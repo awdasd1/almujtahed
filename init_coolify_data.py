@@ -199,57 +199,48 @@ def init_shamela_databases():
             print(f"❌ خطأ أثناء تحميل الشاملة: {hf_err}")
 
 def init_ai_models():
-    """فحص وسحب نماذج التضمين وإعادة الترتيب"""
-    print_banner("3. فحص نماذج الذكاء الاصطناعي (Embedding & Reranker Models)")
+    """فحص وسحب نماذج التضمين وإعادة الترتيب المكممة GGUF"""
+    print_banner("3. فحص نماذج الذكاء الاصطناعي (GGUF Embedding & Reranker Models)")
     models_dir = ROOT_DIR / "models"
-    models_dir.mkdir(parents=True, exist_ok=True)
+    gguf_dir = models_dir / "gguf"
+    gguf_dir.mkdir(parents=True, exist_ok=True)
+    token = os.getenv("HF_TOKEN") or None
 
-    # 1. نموذج التضمين الشرعي
-    emb_dir = models_dir / "embedding"
-    emb_ready = (
-        (emb_dir / "adapter_config.json").exists()
-        or (emb_dir / "config.json").exists()
-        or (emb_dir / "config_sentence_transformers.json").exists()
-        or (models_dir / "gguf" / "almojtahed-embedding-8b-Q4_K_M.gguf").exists()
-    )
-    if emb_ready:
-        print("✅ نموذج التضمين الشرعي (Embedding) موجود وجاهز.")
+    # 1. نموذج التضمين الشرعي المكمم 8B GGUF
+    emb_gguf_path = gguf_dir / "almojtahed-embedding-8b-Q4_K_M.gguf"
+    if emb_gguf_path.exists() and emb_gguf_path.stat().st_size > 1024**3:
+        print(f"✅ نموذج التضمين المكمم Al-Mojtahed 8B موجود وجاهز ({emb_gguf_path.stat().st_size / (1024**3):.2f} GB).")
     else:
-        print(f"📥 جاري سحب نموذج التضمين من: {EMBEDDING_MODEL_REPO}...")
+        print(f"📥 جاري سحب ملف التضمين المكمم {emb_gguf_path.name} من {EMBEDDING_MODEL_REPO}...")
         try:
-            from huggingface_hub import snapshot_download
-            token = os.getenv("HF_TOKEN") or None
-            snapshot_download(
+            from huggingface_hub import hf_hub_download
+            hf_hub_download(
                 repo_id=EMBEDDING_MODEL_REPO,
-                local_dir=str(emb_dir),
+                filename="almojtahed-embedding-8b-Q4_K_M.gguf",
+                local_dir=str(gguf_dir),
                 token=token
             )
-            print("✅ تم تحميل نموذج التضمين الشرعي بنجاح!")
+            print("✅ تم تحميل نموذج التضمين المكمم Al-Mojtahed 8B GGUF بنجاح!")
         except Exception as ex:
-            print(f"⚠️ تعذر سحب نموذج التضمين: {ex}")
+            print(f"⚠️ تعذر سحب نموذج GGUF التضمين: {ex}")
 
-    # 2. نموذج الريرانكر
-    rerank_dir = models_dir / "reranker"
-    rerank_ready = (
-        (rerank_dir / "adapter_config.json").exists()
-        or (rerank_dir / "config.json").exists()
-        or (models_dir / "gguf" / "almojtahed-reranker-8b-Q4_K_M.gguf").exists()
-    )
-    if rerank_ready:
-        print("✅ نموذج إعادة الترتيب (Reranker) موجود وجاهز.")
+    # 2. نموذج الريرانكر المكمم 8B GGUF
+    rerank_gguf_path = gguf_dir / "almojtahed-reranker-8b-Q4_K_M.gguf"
+    if rerank_gguf_path.exists() and rerank_gguf_path.stat().st_size > 1024**3:
+        print(f"✅ نموذج الريرانكر المكمم موجود وجاهز ({rerank_gguf_path.stat().st_size / (1024**3):.2f} GB).")
     else:
-        print(f"📥 جاري سحب نموذج الريرانكر من: {RERANKER_MODEL_REPO}...")
+        print(f"📥 جاري سحب ملف الريرانكر المكمم {rerank_gguf_path.name} من {RERANKER_MODEL_REPO}...")
         try:
-            from huggingface_hub import snapshot_download
-            token = os.getenv("HF_TOKEN") or None
-            snapshot_download(
+            from huggingface_hub import hf_hub_download
+            hf_hub_download(
                 repo_id=RERANKER_MODEL_REPO,
-                local_dir=str(rerank_dir),
+                filename="almojtahed-reranker-8b-Q4_K_M.gguf",
+                local_dir=str(gguf_dir),
                 token=token
             )
-            print("✅ تم تحميل نموذج الريرانكر بنجاح!")
+            print("✅ تم تحميل نموذج الريرانكر المكمم Al-Mojtahed 8B GGUF بنجاح!")
         except Exception as ex:
-            print(f"⚠️ تعذر سحب نموذج الريرانكر: {ex}")
+            print(f"⚠️ تعذر سحب نموذج GGUF الريرانكر: {ex}")
 
 def main():
     print("\n" + "=" * 75)
