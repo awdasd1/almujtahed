@@ -86,59 +86,43 @@ def init_qdrant_snapshot(client):
         else:
             print(f"🔍 المجموعة «{COLLECTION_NAME}» غير موجودة في Qdrant. جاري التجهيز للاستعادة...")
 
-        # مجلد التحميل المؤقت (يتحقق أولاً من المجلد المشترك بين الحاويات /qdrant/snapshots)
-        shared_snapshots_dir = Path("/qdrant/snapshots")
-        if shared_snapshots_dir.exists() and os.access(str(shared_snapshots_dir), os.W_OK):
-            snapshots_dir = shared_snapshots_dir
-        else:
-            snapshots_dir = ROOT_DIR / "qdrant_service" / "snapshots"
-        snapshots_dir.mkdir(parents=True, exist_ok=True)
-        local_snapshot_path = snapshots_dir / SNAPSHOT_FILENAME
+        # التحقق أولاً من وجود رابط السنابشوت المباشر على Hugging Face
+        token = os.getenv("HF_TOKEN") or None
+        direct_url = f"https://huggingface.co/datasets/{SNAPSHOT_REPO}/resolve/main/{SNAPSHOT_FILENAME}"
+        if token:
+            direct_url = f"https://oauth2:{token}@huggingface.co/datasets/{SNAPSHOT_REPO}/resolve/main/{SNAPSHOT_FILENAME}"
 
-        if not local_snapshot_path.exists():
-            print(f"📥 جاري سحب ملف السنابشوت من Hugging Face ({SNAPSHOT_REPO})...")
-            print("💡 حجم السنابشوت حوالي 171 جيجابايت، يرجى الانتظار حسب سرعة الخادم...")
-            
-            token = os.getenv("HF_TOKEN") or None
-            direct_url = f"https://huggingface.co/datasets/{SNAPSHOT_REPO}/resolve/main/{SNAPSHOT_FILENAME}"
-            if token:
-                direct_url = f"https://oauth2:{token}@huggingface.co/datasets/{SNAPSHOT_REPO}/resolve/main/{SNAPSHOT_FILENAME}"
-
-            aria2_cmd = [
-                "aria2c", "-x", "16", "-s", "16", "-k", "1M",
-                "-c", "-d", str(snapshots_dir), "-o", SNAPSHOT_FILENAME, direct_url
-            ]
-            try:
-                print("⚡ جاري التحميل فائق السرعة عبر aria2c متعدد المسارات...")
-                subprocess.run(aria2_cmd, check=True)
-            except Exception as aria_err:
-                print(f"⚠️ تعذر التحميل بـ aria2c ({aria_err})، جاري التحميل البديل عبر curl...")
-                subprocess.run(["curl", "-L", "-C", "-", "-o", str(local_snapshot_path), direct_url], check=True)
-
-        if local_snapshot_path.exists():
-            print(f"📦 تم التحقق من وجود ملف السنابشوت: {local_snapshot_path.stat().st_size / (1024**3):.2f} GB")
-            print(f"⏳ بدء تركيب واستعادة السنابشوت داخل محرك Qdrant...")
-            
-            # في بيئة Docker يقرأ Qdrant من مسار /qdrant/snapshots المشترك
-            if str(snapshots_dir).startswith("/qdrant/snapshots"):
-                snapshot_uri = f"file:///qdrant/snapshots/{SNAPSHOT_FILENAME}"
-            else:
-                snapshot_uri = f"file://{local_snapshot_path.resolve()}"
-
+        print(f"📥 جاري استعادة السنابشوت مباشرة من Hugging Face ({SNAPSHOT_REPO})...")
+        print("💡 يتم التدفق والفك المباشر في Qdrant دون الحاجة لمساحة تخزين مضاعفة...")
+        try:
             client.recover_snapshot(
                 collection_name=COLLECTION_NAME,
-                location=snapshot_uri,
-                priority="snapshot"
+                location=direct_url,
+                priority="snapshot",
+                wait=True
             )
             print("✅ تم استعادة وتركيب السنابشوت في Qdrant بنجاح تام!")
-            
-            # حذف ملف السنابشوت بعد تركيبه لتوفير 171 جيجابايت فوراً
-            print("🧹 جاري حذف ملف السنابشوت المؤرشف لتوفير 171 جيجابايت مساحة تخزين...")
-            try:
-                local_snapshot_path.unlink()
-                print("✨ تم توفير المساحة بنجاح وبقيت قاعدة البيانات الحية في Qdrant!")
-            except Exception as e:
-                print(f"تنبيه: تعذر حذف الملف تلقائياً: {e}")
+        except Exception as direct_err:
+            print(f"⚠️ الاستعادة المباشرة عبر الرابط أعادت ملاحظة ({direct_err})، التحقق من توفر السنابشوت محلياً...")
+            shared_snapshots_dir = Path("/qdrant/snapshots")
+            if shared_snapshots_dir.exists() and os.access(str(shared_snapshots_dir), os.W_OK):
+                snapshots_dir = shared_snapshots_dir
+            else:
+                snapshots_dir = ROOT_DIR / "qdrant_service" / "snapshots"
+            local_snapshot_path = snapshots_dir / SNAPSHOT_FILENAME
+            if local_snapshot_path.exists():
+                snapshot_uri = f"file://{local_snapshot_path.resolve()}"
+                client.recover_snapshot(
+                    collection_name=COLLECTION_NAME,
+                    location=snapshot_uri,
+                    priority="snapshot",
+                    wait=True
+                )
+                print("✅ تم استعادة السنابشوت من الملف المحلي بنجاح!")
+                try:
+                    local_snapshot_path.unlink()
+                except Exception:
+                    pass
 
     except Exception as ex:
         print(f"❌ خطأ أثناء استعادة سنابشوت Qdrant: {ex}")

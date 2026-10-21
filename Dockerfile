@@ -32,7 +32,7 @@ RUN ARCH=$(uname -m) && \
         Q_ARCH="x86_64-unknown-linux-gnu"; \
     fi && \
     mkdir -p /app/qdrant_service && \
-    curl -sL "https://github.com/qdrant/qdrant/releases/download/v1.11.0/qdrant-${Q_ARCH}.tar.gz" | tar -xz -C /app/qdrant_service && \
+    curl -sL "https://github.com/qdrant/qdrant/releases/download/v1.19.1/qdrant-${Q_ARCH}.tar.gz" | tar -xz -C /app/qdrant_service && \
     chmod +x /app/qdrant_service/qdrant
 
 # تثبيت اعتماديات بايثون
