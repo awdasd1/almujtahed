@@ -1460,6 +1460,50 @@ async def get_books_catalog(category_id: Optional[int] = None):
     return all_books
 
 
+@app.get("/api/system_status")
+async def get_system_status():
+    """فحص حالة النظام والمخزن وقاعدة البيانات ونماذج الذكاء الاصطناعي"""
+    q_connected = False
+    colls = []
+    points_count = 0
+    if app_state.get("qdrant"):
+        try:
+            q_connected = True
+            c_info = app_state["qdrant"].get_collections().collections
+            colls = [c.name for c in c_info]
+            if app_state.get("collection_name") and app_state["collection_name"] in colls:
+                info = app_state["qdrant"].get_collection(app_state["collection_name"])
+                points_count = info.points_count or 0
+        except Exception as e:
+            q_connected = False
+
+    embedder_type = "none"
+    if app_state.get("llama_embedder"):
+        embedder_type = "llama_8b_gguf"
+    elif app_state.get("st_embedder"):
+        embedder_type = "sentence_transformers_8b"
+    elif app_state.get("embed_model"):
+        embedder_type = "bge_m3"
+
+    free_gb = 0.0
+    try:
+        du = shutil.disk_usage("/app" if Path("/app").exists() else ".")
+        free_gb = round(du.free / (1024**3), 2)
+    except Exception:
+        pass
+
+    return {
+        "status": "ok" if (q_connected and points_count > 0 and embedder_type != "none") else "warning",
+        "qdrant_connected": q_connected,
+        "collection_name": app_state.get("collection_name"),
+        "points_count": points_count,
+        "collections_available": colls,
+        "embedder_type": embedder_type,
+        "is_ready": app_state.get("is_ready", False),
+        "disk_free_gb": free_gb
+    }
+
+
 @app.post("/api/search")
 async def search_endpoint(req: SearchRequest):
     """
@@ -1470,12 +1514,28 @@ async def search_endpoint(req: SearchRequest):
         return {"results": [], "query": query}
 
     t0 = time.time()
-    results = []
+    # التحقق من جاهزية الاتصال ومحرك التضمين
+    if not app_state.get("qdrant"):
+        return {
+            "results": [],
+            "query": query,
+            "error": "مخزن المتجهات Qdrant غير متصل أو لم تكتمل استعادة السنابشوت بعد.",
+            "count": 0,
+            "duration": round(time.time() - t0, 3)
+        }
 
-    # إذا كان أي نموذج تضمين و Qdrant متصلين
     has_embedder = bool(app_state.get("llama_embedder") or app_state.get("st_embedder") or app_state.get("embed_model"))
-    if has_embedder and app_state["qdrant"]:
-        try:
+    if not has_embedder:
+        return {
+            "results": [],
+            "query": query,
+            "error": "نموذج التضمين (Embedding Model) قيد التحميل في الذاكرة ولم يصبح جاهزاً بعد.",
+            "count": 0,
+            "duration": round(time.time() - t0, 3)
+        }
+
+    error_message = None
+    try:
             # 1. استخراج متجه البحث الكثيف (4096D للنموذج 8B أو 1024D لـ BGE-M3)
             is_8b_col = app_state.get("is_8b", False)
             if is_8b_col and app_state.get("llama_embedder"):
@@ -1688,13 +1748,13 @@ async def search_endpoint(req: SearchRequest):
                 item.pop("page_raw", None)
                 item.pop("rerank_score", None)
                 results.append(item)
-
-        except Exception as e:
-            print(f"Error during live search: {e}")
+    except Exception as e:
+        error_message = f"تعذر استخراج النتائج من Qdrant: {e}"
+        print(f"❌ {error_message}")
 
     duration = round(time.time() - t0, 3)
 
-    return {
+    resp = {
         "results": results,
         "query": query,
         "duration": duration,
@@ -1704,6 +1764,9 @@ async def search_endpoint(req: SearchRequest):
         "is_hybrid": is_hybrid_active if 'is_hybrid_active' in locals() else False,
         "is_reranked": is_hybrid_active if 'is_hybrid_active' in locals() else False
     }
+    if error_message:
+        resp["error"] = error_message
+    return resp
 
 
 CANONICAL_BOOK_ALIASES: Dict[str, str] = {

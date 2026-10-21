@@ -206,7 +206,13 @@ def init_ai_models():
 
     # 1. نموذج التضمين الشرعي
     emb_dir = models_dir / "embedding"
-    if (emb_dir / "config.json").exists() or (models_dir / "gguf" / "almojtahed-embedding-8b-Q4_K_M.gguf").exists():
+    emb_ready = (
+        (emb_dir / "adapter_config.json").exists()
+        or (emb_dir / "config.json").exists()
+        or (emb_dir / "config_sentence_transformers.json").exists()
+        or (models_dir / "gguf" / "almojtahed-embedding-8b-Q4_K_M.gguf").exists()
+    )
+    if emb_ready:
         print("✅ نموذج التضمين الشرعي (Embedding) موجود وجاهز.")
     else:
         print(f"📥 جاري سحب نموذج التضمين من: {EMBEDDING_MODEL_REPO}...")
@@ -224,7 +230,12 @@ def init_ai_models():
 
     # 2. نموذج الريرانكر
     rerank_dir = models_dir / "reranker"
-    if (rerank_dir / "config.json").exists():
+    rerank_ready = (
+        (rerank_dir / "adapter_config.json").exists()
+        or (rerank_dir / "config.json").exists()
+        or (models_dir / "gguf" / "almojtahed-reranker-8b-Q4_K_M.gguf").exists()
+    )
+    if rerank_ready:
         print("✅ نموذج إعادة الترتيب (Reranker) موجود وجاهز.")
     else:
         print(f"📥 جاري سحب نموذج الريرانكر من: {RERANKER_MODEL_REPO}...")

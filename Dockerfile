@@ -39,7 +39,7 @@ RUN ARCH=$(uname -m) && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir sentence-transformers FlagEmbedding && \
+    pip install --no-cache-dir sentence-transformers FlagEmbedding peft accelerate && \
     pip install --no-cache-dir -r requirements.txt
 
 # نسخ كود وملفات المنظومة البرمجية
