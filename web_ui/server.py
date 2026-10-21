@@ -274,6 +274,7 @@ app_state = {
     "qdrant": None,
     "embed_model": None,
     "llama_embedder": None,
+    "st_embedder": None,
     "is_8b": False,
     "collection_name": "shamela_almojtahed_8b_dense",
     "books_cache": None,
@@ -340,7 +341,7 @@ def load_models_and_db():
     if not GGUF_8B_PATH.exists():
         GGUF_8B_PATH = SYSTEM_ROOT / "models" / "gguf" / "almojtahed-embedding-8b-Q4_K_M.gguf"
     if app_state.get("is_8b") and GGUF_8B_PATH.exists():
-        print(f"⏳ [المجتهد] تحميل نموذج التضمين المكمم Al-Mojtahed 8B ({GGUF_8B_PATH.name}) عبر Metal GPU...")
+        print(f"⏳ [المجتهد] تحميل نموذج التضمين المكمم Al-Mojtahed 8B ({GGUF_8B_PATH.name})...")
         try:
             from llama_cpp import Llama
             app_state["llama_embedder"] = Llama(
@@ -349,17 +350,37 @@ def load_models_and_db():
                 n_gpu_layers=-1,
                 verbose=False
             )
-            print("✅ تم تحميل نموذج التضمين المكمم Al-Mojtahed 8B بنجاح عبر Metal GPU!")
+            print("✅ تم تحميل نموذج التضمين المكمم Al-Mojtahed 8B بنجاح!")
             app_state["is_ready"] = True
         except Exception as e:
             print(f"⚠️ تعذر تحميل Llama 8B embedder: {e}")
 
-    # تحميل BGE-M3 كاحتياطي أو إذا كانت المجموعة الأساسية 1024D
-    if not app_state.get("is_8b") or not app_state.get("llama_embedder"):
-        print("⏳ [المجتهد] تحميل نموذج التضمين BGE-M3 من الذاكرة المحلية...")
+    # فحص وتحميل نموذج التضمين الشرعي cs95/almojtahed-qwen3-8b عبر SentenceTransformers
+    emb_hf_dir = PACKAGE_ROOT / "models" / "embedding"
+    if not emb_hf_dir.exists():
+        emb_hf_dir = SYSTEM_ROOT / "models" / "embedding"
+    if not app_state.get("llama_embedder"):
+        try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else ("mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() else "cpu")
+            from sentence_transformers import SentenceTransformer
+            if emb_hf_dir.exists() and ((emb_hf_dir / "config.json").exists() or (emb_hf_dir / "config_sentence_transformers.json").exists()):
+                print(f"⏳ [المجتهد] تحميل نموذج التضمين الشرعي Al-Mojtahed 8B من المسار المحلي ({emb_hf_dir}) على [{device}]...")
+                app_state["st_embedder"] = SentenceTransformer(str(emb_hf_dir), device=device)
+            else:
+                print(f"⏳ [المجتهد] تحميل نموذج التضمين الشرعي Al-Mojtahed 8B من Hugging Face على [{device}]...")
+                app_state["st_embedder"] = SentenceTransformer("cs95/almojtahed-qwen3-8b", device=device)
+            print(f"✅ تم تحميل نموذج التضمين الشرعي Al-Mojtahed 8B عبر SentenceTransformer ({device}) بنجاح!")
+            app_state["is_ready"] = True
+        except Exception as e:
+            print(f"⚠️ تعذر تحميل نموذج التضمين الشرعي: {e}")
+
+    # تحميل BGE-M3 كاحتياطي أخير
+    if not app_state.get("is_ready"):
+        print("⏳ [المجتهد] محاولة تحميل نموذج التضمين BGE-M3 كاحتياطي...")
         try:
             from FlagEmbedding import BGEM3FlagModel
-            app_state["embed_model"] = BGEM3FlagModel('BAAI/bge-m3', use_fp16=True, device='cpu')
+            app_state["embed_model"] = BGEM3FlagModel('BAAI/bge-m3', use_fp16=False, device='cpu')
             print("✅ تم تحميل نموذج التضمين BGE-M3 بنجاح!")
             app_state["is_ready"] = True
         except Exception as e:
@@ -1451,8 +1472,9 @@ async def search_endpoint(req: SearchRequest):
     t0 = time.time()
     results = []
 
-    # إذا كان النموذج و Qdrant متصلين
-    if (app_state.get("llama_embedder") or app_state.get("embed_model")) and app_state["qdrant"]:
+    # إذا كان أي نموذج تضمين و Qdrant متصلين
+    has_embedder = bool(app_state.get("llama_embedder") or app_state.get("st_embedder") or app_state.get("embed_model"))
+    if has_embedder and app_state["qdrant"]:
         try:
             # 1. استخراج متجه البحث الكثيف (4096D للنموذج 8B أو 1024D لـ BGE-M3)
             is_8b_col = app_state.get("is_8b", False)
@@ -1464,7 +1486,11 @@ async def search_endpoint(req: SearchRequest):
                 if norm > 0:
                     raw_vec = raw_vec / norm
                 dense_vec = raw_vec.tolist()
-            else:
+            elif app_state.get("st_embedder"):
+                with EMBEDDING_LOCK:
+                    raw_vec = app_state["st_embedder"].encode(query, prompt_name="query", normalize_embeddings=True)
+                dense_vec = raw_vec.tolist() if hasattr(raw_vec, "tolist") else list(raw_vec)
+            elif app_state.get("embed_model"):
                 with EMBEDDING_LOCK:
                     enc = app_state["embed_model"].encode(query, return_dense=True, return_sparse=False)
                 dense_vec = enc["dense_vecs"].tolist()
@@ -2029,7 +2055,8 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
         return []
 
     clean_q = query.strip()
-    if not (app_state.get("llama_embedder") or app_state.get("embed_model")) or not app_state.get("qdrant"):
+    has_embedder = bool(app_state.get("llama_embedder") or app_state.get("st_embedder") or app_state.get("embed_model"))
+    if not has_embedder or not app_state.get("qdrant"):
         return []
 
     is_8b_col = app_state.get("is_8b", False)
@@ -2060,6 +2087,10 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
                 if norm > 0:
                     raw_vec = raw_vec / norm
                 return raw_vec.tolist()
+            elif app_state.get("st_embedder"):
+                with EMBEDDING_LOCK:
+                    raw_vec = app_state["st_embedder"].encode(q_text, prompt_name="query", normalize_embeddings=True)
+                return raw_vec.tolist() if hasattr(raw_vec, "tolist") else list(raw_vec)
             elif app_state.get("embed_model"):
                 with EMBEDDING_LOCK:
                     enc = app_state["embed_model"].encode(q_text, return_dense=True, return_sparse=False)
