@@ -73,6 +73,9 @@ function switchMainTab(tabName) {
     if (typeof updateChatHybridToggleUI === 'function') {
       updateChatHybridToggleUI();
     }
+    if (typeof renderChatAssistantTools === 'function') {
+      renderChatAssistantTools();
+    }
   } else if (tabName === 'agents') {
     document.getElementById('paneAgents').classList.add('active');
     document.getElementById('tabNavAgents').classList.add('active');

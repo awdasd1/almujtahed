@@ -107,12 +107,22 @@ function renderToolsGrid() {
     return;
   }
 
+  const enabledChatIds = (function() {
+    try {
+      const s = localStorage.getItem('almojtahed_chat_enabled_tools');
+      return s ? JSON.parse(s) : ['markmap_mindmap', 'charts_metrics'];
+    } catch (e) {
+      return ['markmap_mindmap', 'charts_metrics'];
+    }
+  })();
+
   grid.innerHTML = list.map(t => {
     const isWeb = t.tool_type === 'ready_web_lib';
     const badgeClass = isWeb ? 'tool-badge-web' : 'tool-badge-python';
     const badgeText = isWeb ? '🌐 مكتبة ويب جاهزة' : '🐍 كود بايثون مخصص';
     const isEnabled = t.enabled !== false;
     const isBuiltin = ['charts_metrics', 'astronomy_hijri_sync', 'hadith_isnad_tree'].includes(t.id);
+    const isChatEnabled = enabledChatIds.includes(t.id);
 
     return `
       <div class="tool-card ${isEnabled ? '' : 'disabled'}" id="tool-card-${escapeHtml(t.id)}">
@@ -125,7 +135,7 @@ function renderToolsGrid() {
             <span class="tool-card-type-badge ${badgeClass}">${badgeText}</span>
           </div>
 
-          <label class="switch" title="${isEnabled ? 'تعطيل الأداة' : 'تفعيل الأداة'}">
+          <label class="switch" title="${isEnabled ? 'تعطيل الأداة عن النظام' : 'تفعيل الأداة في النظام'}">
             <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleToolEnabled('${escapeHtml(t.id)}', this.checked)">
             <span class="slider round"></span>
           </label>
@@ -135,17 +145,38 @@ function renderToolsGrid() {
           ${escapeHtml(t.description || 'لا يوجد وصف مدون للأداة.')}
         </div>
 
+        <!-- شريط تفعيل واستدعاء الأداة في الشات الذكي -->
+        <div class="tool-chat-toggle-box" style="display: flex; align-items: center; justify-content: space-between; margin: 8px 0 6px; padding: 7px 12px; background: ${isChatEnabled ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-muted)'}; border: 1px solid ${isChatEnabled ? 'rgba(37, 99, 235, 0.28)' : 'var(--border-subtle)'}; border-radius: var(--radius-md); transition: all 0.2s ease;">
+          <div style="display: flex; align-items: center; gap: 7px;">
+            <span style="font-size: 15px;">💬</span>
+            <div>
+              <div style="font-size: 12px; font-weight: 700; color: ${isChatEnabled ? '#2563eb' : 'var(--text-main)'};">
+                تفعيل في المحادثة (الشات)
+              </div>
+              <div style="font-size: 10.5px; color: var(--text-muted);">
+                ${isChatEnabled ? 'الأداة ظاهرة في الشريط الجانبي للشات' : 'معطلة عن الظهور في قسم أدوات الشات'}
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn-tool-chat-toggle" onclick="toggleToolChatEnabled('${escapeHtml(t.id)}', !${isChatEnabled})" style="padding: 4px 10px; font-size: 11.5px; border-radius: 6px; cursor: pointer; border: 1px solid ${isChatEnabled ? '#2563eb' : 'var(--border-subtle)'}; background: ${isChatEnabled ? '#2563eb' : 'var(--bg-surface)'}; color: ${isChatEnabled ? '#fff' : 'var(--text-muted)'}; font-weight: 600; display: flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
+            <span>${isChatEnabled ? 'مفعلة بالشات ✅' : 'تفعيل في الشات ➕'}</span>
+          </button>
+        </div>
+
         <div class="tool-card-meta">
           <div><strong>معرّف الأداة:</strong> <code>${escapeHtml(t.id)}</code></div>
           ${isWeb && t.library_url ? `<div style="text-overflow: ellipsis; overflow: hidden; white-space: nowrap;"><strong>المصدر:</strong> <a href="${escapeHtml(t.library_url)}" target="_blank" rel="noopener" style="color: var(--accent-clay);">${escapeHtml(t.library_url)}</a></div>` : ''}
           ${!isWeb && t.entry_function ? `<div><strong>نقطة الدخول:</strong> <code>def ${escapeHtml(t.entry_function)}()</code></div>` : ''}
-          <div><strong>حالة الاعتماد:</strong> <span style="color: ${isEnabled ? '#16a34a' : '#ef4444'}; font-weight: 600;">${isEnabled ? '✅ معتمدة ومتاحة لمهندس المشروع' : '⏸️ معطلة مؤقتاً'}</span></div>
+          <div><strong>حالة الاعتماد:</strong> <span style="color: ${isEnabled ? '#16a34a' : '#ef4444'}; font-weight: 600;">${isEnabled ? '✅ معتمدة ومتاحة للمنظومة' : '⏸️ معطلة مؤقتاً'}</span></div>
         </div>
 
         <div class="tool-card-footer">
           <div class="tool-card-actions">
             <button class="btn-secondary-action" onclick="openToolPlayground('${escapeHtml(t.id)}')" style="padding: 6px 12px; font-size: 12.5px;">
               <span>تجربة 🧪</span>
+            </button>
+            <button class="btn-secondary-action" onclick="toggleToolChatEnabled('${escapeHtml(t.id)}', !${isChatEnabled})" style="padding: 6px 10px; font-size: 12px; ${isChatEnabled ? 'border-color: #2563eb; color: #2563eb; background: rgba(37,99,235,0.08); font-weight: 600;' : ''}" title="${isChatEnabled ? 'تعطيل ظهور الأداة في الشات' : 'تفعيل ظهور الأداة في الشات'}">
+              <span>${isChatEnabled ? 'بالشات 💬' : 'إضافة للشات 💬'}</span>
             </button>
             <button class="btn-secondary-action" onclick="openEditToolModal('${escapeHtml(t.id)}')" style="padding: 6px 10px; font-size: 12.5px;" title="تعديل خصائص الأداة">
               ✏️
@@ -167,6 +198,51 @@ function renderToolsGrid() {
     `;
   }).join('');
 }
+
+// =============================================================================
+// تفعيل / تعطيل ظهور الأداة في شات المحادثة
+// =============================================================================
+function toggleToolChatEnabled(toolId, isEnabled) {
+  let enabledIds = [];
+  try {
+    const saved = localStorage.getItem('almojtahed_chat_enabled_tools');
+    if (saved) enabledIds = JSON.parse(saved);
+    else enabledIds = ['markmap_mindmap', 'charts_metrics'];
+  } catch (e) {
+    enabledIds = ['markmap_mindmap', 'charts_metrics'];
+  }
+
+  if (isEnabled) {
+    if (!enabledIds.includes(toolId)) enabledIds.push(toolId);
+  } else {
+    enabledIds = enabledIds.filter(id => id !== toolId);
+  }
+
+  try {
+    localStorage.setItem('almojtahed_chat_enabled_tools', JSON.stringify(enabledIds));
+  } catch (e) {
+    console.error('Error saving chat enabled tools:', e);
+  }
+
+  const tool = toolsState.tools.find(t => t.id === toolId);
+  if (tool) {
+    tool.enabled_in_chat = isEnabled;
+  }
+
+  renderToolsGrid();
+
+  // تحديث فوري لقائمة الأدوات في الشريط الجانبي للشات
+  if (typeof renderChatAssistantTools === 'function') {
+    renderChatAssistantTools();
+  } else if (typeof window.renderChatAssistantTools === 'function') {
+    window.renderChatAssistantTools();
+  }
+
+  const toolName = tool ? tool.name : toolId;
+  showToast(isEnabled ? `تم تفعيل «${toolName}» في المحادثة والشات 💬` : `تم تعطيل ظهور «${toolName}» في الشات`);
+}
+
+window.toggleToolChatEnabled = toggleToolChatEnabled;
 
 // =============================================================================
 // تفعيل / تعطيل أداة

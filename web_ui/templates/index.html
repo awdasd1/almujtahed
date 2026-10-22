@@ -272,10 +272,31 @@
                         <i data-lucide="plus" class="icon" aria-hidden="true"></i>
                     </button>
 
-                    <div style="font-size: 11.5px; font-weight: 600; color: var(--text-light); margin: 6px 4px 2px;">
-                        المحادثات الأخيرة</div>
-                    <div class="history-list" id="chatHistoryList">
+                    <div class="chat-history-header-row" style="display: flex; align-items: center; justify-content: space-between; margin: 6px 4px 2px;">
+                        <span style="font-size: 11.5px; font-weight: 700; color: var(--text-light);">سجل المحادثات</span>
+                        <span id="chatSessionsCountBadge" style="font-size: 10px; background: var(--bg-muted); color: var(--text-muted); padding: 1px 6px; border-radius: 10px;">0</span>
+                    </div>
+
+                    <!-- قائمة المحادثات (تظهر آخر 5 محادثات مع شريط تمرير لاستعراض الباقي) -->
+                    <div class="history-list chat-history-scrollable" id="chatHistoryList">
                         <!-- يتم تعبئة جلسات المحادثة ديناميكياً -->
+                    </div>
+
+                    <!-- قسم الأدوات المساعدة المفعّلة في الشات -->
+                    <div class="chat-assistant-tools-section" id="chatAssistantToolsSection">
+                        <div class="chat-tools-header-row" style="display: flex; align-items: center; justify-content: space-between; margin: 10px 4px 6px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
+                            <span style="font-size: 12px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 5px;">
+                                <span>🛠️</span>
+                                <span>الأدوات المساعدة</span>
+                            </span>
+                            <button type="button" class="chat-manage-tools-btn" onclick="switchMainTab('tools')" title="إدارة وتفعيل الأدوات والإضافات في الشات" style="background: transparent; border: none; font-size: 11px; color: var(--accent-clay); cursor: pointer; padding: 2px 4px; border-radius: var(--radius-sm);">
+                                إدارة ⚙️
+                            </button>
+                        </div>
+                        <!-- حاوية أزرار الأدوات المفعلة في المحادثة -->
+                        <div class="chat-assistant-tools-list" id="chatAssistantToolsList">
+                            <!-- يتم تعبئة أزرار الأدوات المفعلة في المحادثة ديناميكياً -->
+                        </div>
                     </div>
                 </aside>
 
@@ -4279,13 +4300,13 @@
     <script src="/static/js/d3.min.js"></script>
     <script src="/static/js/markmap-view.min.js"></script>
     <script src="/static/js/markmap-lib.min.js"></script>
-    <script src="/static/js/app.js?v=1792620000"></script>
+    <script src="/static/js/app.js?v=1792700000"></script>
     <script src="/static/js/search.js?v=1792695000"></script>
     <script src="/static/js/reader.js?v=1792695000"></script>
-    <script src="/static/js/chat.js?v=1792695000"></script>
+    <script src="/static/js/chat.js?v=1792700000"></script>
     <script src="/static/js/agents.js?v=1792620000"></script>
     <script src="/static/js/providers.js?v=1792620000"></script>
-    <script src="/static/js/tools.js?v=1792620000"></script>
+    <script src="/static/js/tools.js?v=1792700000"></script>
     <script src="/static/js/projects.js?v=1792690000"></script>
 
     <script>

@@ -202,6 +202,9 @@ function setThinkingLevel(level) {
 // عرض قائمة المحادثات في الشريط الجانبي
 function renderChatHistorySidebar() {
   const container = document.getElementById('chatHistoryList');
+  const countBadge = document.getElementById('chatSessionsCountBadge');
+  if (countBadge) countBadge.textContent = chatSessions.length;
+
   if (!container) return;
 
   container.innerHTML = chatSessions.map(sess => {
@@ -1771,11 +1774,160 @@ window.updateChatDispatchModeUI = function() {
   }
 };
 
+// =============================================================================
+// إدارة واستدعاء الأدوات المساعدة داخل الشات (التشجير، الشارتات، الأسانيد، الحساب)
+// =============================================================================
+const CHAT_ENABLED_TOOLS_KEY = 'almojtahed_chat_enabled_tools';
+let _cachedToolsForChat = [];
+
+function getChatEnabledToolIds() {
+  try {
+    const saved = localStorage.getItem(CHAT_ENABLED_TOOLS_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {
+    console.error('Error reading chat enabled tools:', e);
+  }
+  // التفعيل الافتراضي: أداة التشجير والخرائط الذهنية Markmap والشارتات البيانية
+  return ['markmap_mindmap', 'charts_metrics'];
+}
+
+async function fetchAllToolsForChat() {
+  if (window.toolsState && Array.isArray(window.toolsState.tools) && window.toolsState.tools.length > 0) {
+    _cachedToolsForChat = window.toolsState.tools;
+    return _cachedToolsForChat;
+  }
+  try {
+    const res = await fetch('/api/tools');
+    if (res.ok) {
+      const data = await res.json();
+      _cachedToolsForChat = (data.tools || (Array.isArray(data) ? data : [])).map(t => ({
+        ...t,
+        tool_type: t.tool_type || (t.type === 'python_script' ? 'python_code' : 'ready_web_lib'),
+        description: t.description || t.desc || '',
+        name: t.name || t.id
+      }));
+      return _cachedToolsForChat;
+    }
+  } catch (e) {
+    console.warn('Could not fetch tools for chat:', e);
+  }
+  return _cachedToolsForChat;
+}
+
+// بناء القالب التوجيهي والمثال المطلوب عند استدعاء الأداة في الشات
+function buildToolPromptTemplate(tool) {
+  const toolName = tool.name || 'الأداة المساعدة';
+  let exampleStr = '';
+
+  // استخراج المثال من mock_data أو mock_test_data
+  let mock = tool.mock_data || tool.mock_test_data;
+  if (typeof mock === 'string') {
+    try {
+      mock = JSON.parse(mock);
+    } catch (e) {
+      exampleStr = mock.trim();
+    }
+  }
+
+  if (!exampleStr && mock && typeof mock === 'object') {
+    if (mock.markdown) {
+      exampleStr = String(mock.markdown).trim();
+    } else {
+      exampleStr = JSON.stringify(mock, null, 2);
+    }
+  }
+
+  if (!exampleStr && tool.test_input) {
+    exampleStr = typeof tool.test_input === 'string' ? tool.test_input.trim() : JSON.stringify(tool.test_input, null, 2);
+  }
+
+  if (!exampleStr) {
+    exampleStr = (tool.description || tool.desc || 'لا يوجد مثال مدون للأداة').trim();
+  }
+
+  return `استخدم هذه الاداة (فضلا حدد هنا ما تريده من هذه الأداة)\n\n[تنبيه للنموذج بكيفية الإخراج واستخدام الأداة: ${toolName}]:\n${exampleStr}`;
+}
+
+// عند الضغط على زر الأداة في الشريط الجانبي للشات
+async function useToolInChatPrompt(toolId) {
+  let tools = _cachedToolsForChat;
+  if (!tools || tools.length === 0) {
+    tools = await fetchAllToolsForChat();
+  }
+  const tool = tools.find(t => t.id === toolId);
+  if (!tool) {
+    showToast('تعذر العثور على بيانات الأداة', true);
+    return;
+  }
+
+  const promptText = buildToolPromptTemplate(tool);
+  const input = document.getElementById('chatInputText');
+  if (input) {
+    input.value = promptText;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 260)}px`;
+
+    // وضع التحديد التلقائي على عبارة (فضلا حدد هنا ما تريده من هذه الأداة)
+    const targetPhrase = '(فضلا حدد هنا ما تريده من هذه الأداة)';
+    const startIdx = promptText.indexOf(targetPhrase);
+    input.focus();
+    if (startIdx !== -1) {
+      input.setSelectionRange(startIdx, startIdx + targetPhrase.length);
+    } else {
+      input.scrollTop = 0;
+    }
+  }
+
+  // نسخ إلى الحافظة
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(promptText).catch(() => {});
+  }
+
+  showToast(`تم إدراج قالب «${tool.name}» في مربع المحادثة 🛠️`);
+}
+
+// عرض قائمة أزرار الأدوات المساعدة المفعلة في الشريط الجانبي للشات
+async function renderChatAssistantTools() {
+  const container = document.getElementById('chatAssistantToolsList');
+  if (!container) return;
+
+  const enabledIds = getChatEnabledToolIds();
+  const tools = await fetchAllToolsForChat();
+
+  const activeTools = tools.filter(t => enabledIds.includes(t.id) && t.enabled !== false);
+
+  if (activeTools.length === 0) {
+    container.innerHTML = `
+      <div class="chat-tools-empty-hint">
+        لا توجد أدوات مفعلة في الشات حالياً.
+        <br>
+        <button type="button" class="btn-flat-secondary" onclick="switchMainTab('tools')" style="margin-top: 6px; padding: 2px 8px; font-size: 11px; color: var(--accent-clay);">
+          تفعيل أدوات من المستودع ⚙️
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = activeTools.map(t => {
+    const isWeb = t.tool_type === 'ready_web_lib' || t.type === 'web_library';
+    const icon = t.id === 'markmap_mindmap' ? '🌳' : (isWeb ? '📊' : '⚙️');
+    return `
+      <button type="button" class="btn-chat-tool-action" onclick="useToolInChatPrompt('${escapeHtml(t.id)}')" title="إدراج قالب واستدعاء «${escapeHtml(t.name)}» في الشات">
+        <span class="tool-btn-icon">${icon}</span>
+        <span class="tool-btn-name">${escapeHtml(t.name)}</span>
+        <span class="tool-btn-badge">إدراج ✍️</span>
+      </button>
+    `;
+  }).join('');
+}
+
 // تهيئة نمط الشات عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     updateChatDispatchModeUI();
     updateChatHybridToggleUI();
+    renderChatAssistantTools();
   }, 100);
 });
 
@@ -1785,3 +1937,6 @@ window.initChatHybridToggleState = initChatHybridToggleState;
 window.createNewChatSession = createNewChatSession;
 window.openOrReuseChatSession = openOrReuseChatSession;
 window.startNewChatWithPrompt = startNewChatWithPrompt;
+window.renderChatAssistantTools = renderChatAssistantTools;
+window.useToolInChatPrompt = useToolInChatPrompt;
+window.buildToolPromptTemplate = buildToolPromptTemplate;
