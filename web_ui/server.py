@@ -2195,18 +2195,19 @@ def resolve_canonical_book_name(name: str, cursor=None) -> str:
     # تنظيف الأقواس الشائعة إن وجدت
     c_name = re.sub(r'^[«"\'\[(]+|[»"\'\])]+$', '', c_name).strip()
 
-    # 1. إذا كان المدخل رقماً أو يحتوي على رقم معرّف كتاب مثل #1852 أو [1852] أو 1852
-    id_match = re.search(r'#?(\d+)', c_name)
-    if id_match and cursor:
+    # إذا كان المدخل مجرد إشارة لجزء أو صفحة (مثل: ج 18، ص 546، جـ: 1) فليس اسم كتاب
+    if re.match(r'^(?:جـ?|جزء|الجزء|صـ?|صفحة|الصفحة)\s*[:\s\d٠-٩]+$', c_name):
+        return ""
+
+    # 1. إذا كان المدخل رقماً صريحاً أو معرّف كتاب صريح مثل #1852
+    if c_name.startswith('#') or (c_name.isdigit() and len(c_name) <= 5):
         try:
-            bid = int(id_match.group(1))
-            if 1 <= bid <= 8589:
-                # إذا كان المدخل رقماً أو يبدأ بـ # أو يشتمل على معرف
-                if c_name.startswith('#') or c_name.isdigit() or len(c_name.split()) <= 2:
-                    cursor.execute("SELECT title_ar FROM books WHERE book_id = ? LIMIT 1", (bid,))
-                    r = cursor.fetchone()
-                    if r:
-                        return r["title_ar"] if hasattr(r, "__getitem__") else r[0]
+            bid = int(c_name.lstrip('#'))
+            if 1 <= bid <= 8589 and cursor:
+                cursor.execute("SELECT title_ar FROM books WHERE book_id = ? LIMIT 1", (bid,))
+                r = cursor.fetchone()
+                if r:
+                    return r["title_ar"] if hasattr(r, "__getitem__") else r[0]
         except Exception:
             pass
 

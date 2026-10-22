@@ -3772,8 +3772,8 @@ window.openProjectCitationReader = openProjectCitationReader;
 function enhanceProjectCitationsWithBookReader(container) {
   if (!container) return;
 
-  // نمط مطابقات الإحالات التراثية الدقيقة: (الكتاب والمؤلف جـ: X ص: Y) أو [الكتاب ص: Y]
-  const CITATION_REGEX = /([\(\[])\s*([^()\[\]\n<>{}\"'\u00ab\u00bb]{3,120}?)\s*(?:[-–،,]\s*)?(?:(?:جـ?|جزء|الجزء)\s*[:\s]\s*([0-9٠-٩]+)\s*[-–،,]?\s*)?(?:(?:صـ?|صفحة|الصفحة)\s*[:\s]\s*([0-9٠-٩]+))\s*([\)\]])/g;
+  // نمط مطابقات الأقواس المحتوية على إحالات أو أرقام صفحات
+  const PAREN_REGEX = /([\(\[])([^\(\)\[\]\n<>{}\"'\u00ab\u00bb]{3,140})([\)\]])/g;
 
   const targetElements = container.querySelectorAll('p, li, td, blockquote, dd, div.markdown-body');
   if (!targetElements.length) return;
@@ -3783,19 +3783,52 @@ function enhanceProjectCitationsWithBookReader(container) {
     if (el.querySelector('.btn-verify-citation')) return;
 
     const fullText = el.textContent || '';
-    if (!fullText.match(CITATION_REGEX)) return;
+    if (!fullText.includes('ص') && !fullText.includes('ج')) return;
 
     // معالجة نصوص العنصر دون الإضرار بالوسوم الأخرى
-    const newHtml = el.innerHTML.replace(CITATION_REGEX, (match, openB, rawBook, part, page, closeB, offset, origStr) => {
-      // تنظيف اسم الكتاب وحذف أي مقدمات
-      let cleanBook = (rawBook || '').trim()
-        .replace(/^(المصدر|المرجع|انظر|راجع|تخريج|كتاب|في)\s*[:\s-–]*/g, '')
-        .trim();
+    const newHtml = el.innerHTML.replace(PAREN_REGEX, (match, openB, inside, closeB, offset, origStr) => {
+      // فحص وجود الجزء أو الصفحة داخل القوس
+      const vpMatch = inside.match(/(?:(?:جـ?|جزء|الجزء)\s*[:\s]\s*([0-9٠-٩]+)\s*[\-–،,]?\s*)?(?:(?:صـ?|صفحة|الصفحة)\s*[:\s]\s*([0-9٠-٩]+))/);
+      if (!vpMatch) return match;
 
       // تحويل الأرقام المشرقية
       const convDigits = (s) => (s || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-      const cleanPart = convDigits(part || '').trim();
-      const cleanPage = convDigits(page || '').trim();
+      const cleanPart = convDigits(vpMatch[1] || '').trim();
+      const cleanPage = convDigits(vpMatch[2] || '').trim();
+
+      // فحص هل اسم الكتاب داخل القوس (قبل الجزء والصفحة) أم خارجه
+      const textBeforeVp = inside.slice(0, vpMatch.index).trim().replace(/[\-–،,:]+$/, '').trim();
+      let rawBook = '';
+
+      if (textBeforeVp && textBeforeVp.length >= 3 && !textBeforeVp.match(/^(?:جـ?|جزء|الجزء|صـ?|صفحة|الصفحة|\d|[\s،,\-])+$/)) {
+        // الحالة الأولى: اسم الكتاب مذكور داخل القوسين (مثل: المصباح المنير... جـ: 1 ص: 278)
+        rawBook = textBeforeVp;
+      } else {
+        // الحالة الثانية: اسم الكتاب مذكور خارج القوسين قبلهما مباشرة (مثل: المصنف - ابن أبي شيبة... (ج 18، ص 546))
+        const textBeforeParen = origStr.slice(0, offset);
+        const quoteBookMatch = textBeforeParen.match(/[«"]([^»"\n<>{]{2,80})[»"]\s*(?:ل[^،\n:]+)?\s*$/);
+        if (quoteBookMatch) {
+          rawBook = quoteBookMatch[1].trim();
+        } else {
+          // استخلاص آخر جملة مفيدة قبل القوس مع تجاوز وسوم HTML
+          const plainBefore = textBeforeParen.replace(/<[^>]+>/g, ' ').trim();
+          const chunks = plainBefore.split(/[:\n•\*]|\bالمصدر\b|\bالمرجع\b/);
+          let lastChunk = chunks[chunks.length - 1].trim();
+          if (lastChunk.length > 95) {
+            const commaParts = lastChunk.split(/[،,]/);
+            lastChunk = commaParts.slice(-2).join('، ').trim();
+          }
+          rawBook = lastChunk;
+        }
+      }
+
+      // تنظيف اسم الكتاب وحذف أي مقدمات أو علامات ترقيم زائدة
+      let cleanBook = (rawBook || '').trim()
+        .replace(/^(?:المصدر|المرجع|انظر|راجع|تخريج(?:\s+حديث)?[^:]*|كتاب|في|وجاء\s+في|قال)\s*[:\s\-–]*/g, '')
+        .replace(/^[،,:\-\s]+/, '')
+        .trim();
+
+      if (!cleanBook) return match;
 
       // استخراج نص المقتبس القريب إن وجد لتظليله في القارئ
       let quoteSnippet = '';
