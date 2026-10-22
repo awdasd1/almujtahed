@@ -2419,18 +2419,23 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
     db = get_db()
     cursor = db.cursor() if db else None
 
-    # 1. حل وتوسيع أسماء الكتب الشائعة إلى العناوين الحرفية المعتمدة في المخزن
+    # 1. حل وتوسيع أسماء الكتب الشائعة إلى العناوين الحرفية المعتمدة في المخزن بدقة تامة
     resolved_books = []
-    if selected_books and cursor:
-        for b in selected_books:
-            b_str = str(b).strip()
-            if not b_str:
-                continue
-            matched_title = resolve_canonical_book_name(b_str, cursor)
-            if matched_title and matched_title not in resolved_books:
-                resolved_books.append(matched_title)
-    elif selected_books:
-        resolved_books = [str(b).strip() for b in selected_books if str(b).strip()]
+    if selected_books:
+        # استخدام دالة حل العناوين الشاملة مع فك الترميز والتوسيع للطبعات
+        expanded = resolve_book_titles_for_search(selected_books, cursor=cursor)
+        for eb in expanded:
+            if eb and eb not in resolved_books:
+                resolved_books.append(eb)
+        # التحقق المعياري الاحتياطي عبر resolve_canonical_book_name
+        if cursor:
+            for b in selected_books:
+                b_str = str(b).strip()
+                if not b_str:
+                    continue
+                matched_title = resolve_canonical_book_name(b_str, cursor)
+                if matched_title and matched_title not in resolved_books:
+                    resolved_books.append(matched_title)
 
     # 2. إنشاء متجه الاستعلام
     def compute_dense_vector(q_text: str):
