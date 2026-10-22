@@ -28,10 +28,9 @@ almujtahed/
 │   ├── templates/                 # صفحات الواجهة (index.html, mindmap.html)
 │   └── uploads/                   # مجلد الحفظ المركزي (Bucket) لملفات وصور المستخدم
 │
-├── 🧠 models/                      # نماذج التضمين الدلالي وإعادة الترتيب المكممة
+├── 🧠 models/                      # نماذج التضمين الدلالي الشرعي المكممة
 │   └── gguf/
-│       ├── almojtahed-embedding-8b-Q4_K_M.gguf  # نموذج التضمين الدلالي 8B (4.4 GB)
-│       └── almojtahed-reranker-8b-Q4_K_M.gguf   # نموذج إعادة الترتيب الدلالي 8B (4.4 GB)
+│       └── almojtahed-embedding-8b-Q4_K_M.gguf  # نموذج التضمين الدلالي 8B (4.4 GB)
 │
 ├── 🗄️ qdrant_service/             # محرك وقاعدة بيانات المتجهات Qdrant الجاهزة للعمل
 │   ├── qdrant                     # الملف التنفيذي لمحرك Qdrant

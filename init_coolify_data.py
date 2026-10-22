@@ -30,7 +30,6 @@ SNAPSHOT_REPO = "cs95/shamela-full-7m-qdrant"
 SNAPSHOT_FILENAME = "shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot"
 SHAMELA_DB_REPO = "AuthenticIlm/Shamela4_Full_DB"
 EMBEDDING_MODEL_REPO = "cs95/almojtahed-qwen3-8b"
-RERANKER_MODEL_REPO = "cs95/almojtahed-reranker-8b"
 
 def print_banner(msg):
     print("\n" + "=" * 75)
@@ -208,23 +207,14 @@ def init_ai_models():
         except Exception as ex:
             print(f"⚠️ تعذر سحب نموذج GGUF التضمين: {ex}")
 
-    # 2. نموذج الريرانكر المكمم 8B GGUF
+    # إزالة نموذج الريرانكر إن وجد لتوفير 4.4 جيجابايت
     rerank_gguf_path = gguf_dir / "almojtahed-reranker-8b-Q4_K_M.gguf"
-    if rerank_gguf_path.exists() and rerank_gguf_path.stat().st_size > 1024**3:
-        print(f"✅ نموذج الريرانكر المكمم موجود وجاهز ({rerank_gguf_path.stat().st_size / (1024**3):.2f} GB).")
-    else:
-        print(f"📥 جاري سحب ملف الريرانكر المكمم {rerank_gguf_path.name} من {RERANKER_MODEL_REPO}...")
+    if rerank_gguf_path.exists():
         try:
-            from huggingface_hub import hf_hub_download
-            hf_hub_download(
-                repo_id=RERANKER_MODEL_REPO,
-                filename="almojtahed-reranker-8b-Q4_K_M.gguf",
-                local_dir=str(gguf_dir),
-                token=token
-            )
-            print("✅ تم تحميل نموذج الريرانكر المكمم Al-Mojtahed 8B GGUF بنجاح!")
-        except Exception as ex:
-            print(f"⚠️ تعذر سحب نموذج GGUF الريرانكر: {ex}")
+            rerank_gguf_path.unlink()
+            print("🧹 تم حذف نموذج الريرانكر لتوفير 4.4 جيجابايت من مساحة القرص.")
+        except Exception:
+            pass
 
 def main():
     print("\n" + "=" * 75)
