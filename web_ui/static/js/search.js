@@ -795,17 +795,41 @@ function copyPassageText(idx) {
   });
 }
 
-// إرسال النص مباشرة إلى نافذة الشات للمناقشة
+// إرسال النص مباشرة إلى نافذة الشات للمناقشة في محادثة مستقلة جديدة لمنع التراكم والتداخل
 function sendToChat(idx) {
   const item = window._lastSearchResults?.[idx];
   if (!item) return;
 
-  switchMainTab('chat');
-  const chatInput = document.getElementById('chatInputText');
-  if (chatInput) {
-    chatInput.value = `أرجو شرح وتخريج هذا النص ومقارنة أقوال الفقهاء فيه:\n\n«${item.text || item.content}»\n(من كتاب: ${item.book_title || item.book} للمؤلف: ${item.author})`;
-    chatInput.focus();
+  const bookName = (item.book_title || item.book || 'مصدر تراثي').trim();
+  const authorName = (item.author || '').trim();
+  const locParts = [
+    item.volume ? `الجزء: ${item.volume}` : (item.part ? `الجزء: ${item.part}` : ''),
+    item.page ? `الصفحة: ${item.page}` : ''
+  ].filter(Boolean).join('، ');
+  const locCitation = locParts ? ` [${locParts}]` : '';
+  const authorCitation = authorName ? ` للمؤلف: ${authorName}` : '';
+  const chapterCitation = item.chapter ? ` (باب: ${item.chapter})` : '';
+
+  const promptMessage = `أرجو شرح وتخريج هذا النص ومقارنة أقوال الفقهاء فيه:\n\n«${item.text || item.content}»\n\n📚 **المصدر:** «${bookName}»${authorCitation}${locCitation}${chapterCitation}`;
+  const sessionTitle = `مناقشة: ${bookName.slice(0, 32)}`;
+
+  if (typeof startNewChatWithPrompt === 'function') {
+    startNewChatWithPrompt(promptMessage, sessionTitle);
+  } else {
+    switchMainTab('chat');
+    if (typeof createNewChatSession === 'function') {
+      createNewChatSession(true, sessionTitle);
+    }
+    const chatInput = document.getElementById('chatInputText');
+    if (chatInput) {
+      chatInput.value = promptMessage;
+      chatInput.style.height = 'auto';
+      chatInput.style.height = `${Math.min(chatInput.scrollHeight, 200)}px`;
+      chatInput.focus();
+    }
   }
+
+  showToast('تم فتح محادثة جديدة ونقل النص إلى الشات 💬');
 }
 
 // حماية من XSS
@@ -824,3 +848,4 @@ window.openSearchScopeModal = openSearchScopeModal;
 window.closeSearchScopeModal = closeSearchScopeModal;
 window.applySearchScopeSelection = applySearchScopeSelection;
 window.resetSearchScope = resetSearchScope;
+window.sendToChat = sendToChat;

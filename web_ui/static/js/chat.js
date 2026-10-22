@@ -110,10 +110,10 @@ function initChatHistory() {
 }
 
 // إنشاء جلسة محادثة جديدة
-function createNewChatSession(save = true) {
+function createNewChatSession(save = true, customTitle = null) {
   const newSession = {
     id: 'chat_' + Date.now(),
-    title: 'محادثة تراثية جديدة',
+    title: customTitle || 'محادثة تراثية جديدة',
     createdAt: new Date().toISOString(),
     messages: [
       {
@@ -135,6 +135,44 @@ function createNewChatSession(save = true) {
     input.value = '';
     input.focus();
   }
+  return newSession;
+}
+
+// فتح جلسة محادثة جديدة مخصصة، أو استغلال الجلسة الحالية فقط إذا كانت عذراء وفارغة تماماً
+function openOrReuseChatSession(customTitle = null) {
+  const currentSession = chatSessions.find(s => s.id === activeSessionId);
+  const isCompletelyEmpty = currentSession && 
+    (!currentSession.messages || currentSession.messages.filter(m => m.role === 'user').length === 0) &&
+    (!currentSession.title || currentSession.title === 'محادثة تراثية جديدة' || currentSession.title === 'محادثة جديدة');
+
+  if (isCompletelyEmpty) {
+    if (customTitle) {
+      currentSession.title = customTitle;
+      saveChatSessions();
+      renderChatHistorySidebar();
+    }
+    renderSessionMessages(currentSession.id);
+    return currentSession;
+  }
+
+  return createNewChatSession(true, customTitle);
+}
+
+// بدء محادثة جديدة في الشات مع نص وعنوان مخصص (تمنع تراكم وتداخل النقاشات السابقة)
+function startNewChatWithPrompt(promptText, customTitle = null) {
+  if (typeof switchMainTab === 'function') {
+    switchMainTab('chat');
+  }
+  const sess = openOrReuseChatSession(customTitle);
+  const input = document.getElementById('chatInputText');
+  if (input) {
+    input.value = promptText;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 220)}px`;
+    input.focus();
+    input.scrollTop = input.scrollHeight;
+  }
+  return sess;
 }
 
 // تبديل عمق التفكير
@@ -523,9 +561,11 @@ async function sendChatMessage() {
   const session = chatSessions.find(s => s.id === activeSessionId);
   if (!session) return;
 
-  // إذا كانت هذه أول رسالة للمستخدم، قم بتحديث عنوان المحادثة
+  // إذا كانت هذه أول رسالة للمستخدم، قم بتحديث عنوان المحادثة إن لم يكن محدداً مسبقاً بعنوان مخصص
   if (session.messages.length <= 1) {
-    session.title = (text || (validAttachments[0] ? validAttachments[0].name : 'محادثة جديدة')).slice(0, 35);
+    if (!session.title || session.title === 'محادثة تراثية جديدة' || session.title === 'محادثة جديدة') {
+      session.title = (text || (validAttachments[0] ? validAttachments[0].name : 'محادثة جديدة')).slice(0, 35);
+    }
     renderChatHistorySidebar();
   }
 
@@ -1742,3 +1782,6 @@ document.addEventListener('DOMContentLoaded', () => {
 window.toggleChatHybridSearchMode = toggleChatHybridSearchMode;
 window.updateChatHybridToggleUI = updateChatHybridToggleUI;
 window.initChatHybridToggleState = initChatHybridToggleState;
+window.createNewChatSession = createNewChatSession;
+window.openOrReuseChatSession = openOrReuseChatSession;
+window.startNewChatWithPrompt = startNewChatWithPrompt;

@@ -390,19 +390,29 @@ function sendReaderSelectionToChat() {
 
   const promptMessage = `أرجو شرح وتحرير هذه المسألة التراثية وبيان مذاهب الفقهاء فيها:\n\n«${passage}»\n\n📚 **المصدر:** «${readerState.bookTitle}» للمصنف ${readerState.author}${readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : ''}${locCitation}`;
 
-  // إغلاق القارئ والانتقال للشات
+  // إغلاق القارئ
   closeBookReader();
-  switchMainTab('chat');
 
-  const chatInput = document.getElementById('chatInputText');
-  if (chatInput) {
-    chatInput.value = promptMessage;
-    chatInput.style.height = 'auto';
-    chatInput.style.height = `${Math.min(chatInput.scrollHeight, 180)}px`;
-    chatInput.focus();
+  const bookName = (readerState.bookTitle || 'نص من الكتاب').trim();
+  const sessionTitle = `مطالعة: ${bookName.slice(0, 32)}`;
+
+  if (typeof startNewChatWithPrompt === 'function') {
+    startNewChatWithPrompt(promptMessage, sessionTitle);
+  } else {
+    switchMainTab('chat');
+    if (typeof createNewChatSession === 'function') {
+      createNewChatSession(true, sessionTitle);
+    }
+    const chatInput = document.getElementById('chatInputText');
+    if (chatInput) {
+      chatInput.value = promptMessage;
+      chatInput.style.height = 'auto';
+      chatInput.style.height = `${Math.min(chatInput.scrollHeight, 200)}px`;
+      chatInput.focus();
+    }
   }
 
-  showToast('تم نقل النص والتوثيق إلى نافذة الشات الذكي');
+  showToast('تم فتح محادثة جديدة ونقل النص والتوثيق إلى نافذة الشات 💬');
 }
 
 // إغلاق القارئ
@@ -572,4 +582,6 @@ async function loadSurroundingPagesView() {
 // تصدير الدوال على النطاق العام
 window.toggleSurroundingPagesView = toggleSurroundingPagesView;
 window.loadSurroundingPagesView = loadSurroundingPagesView;
+window.sendReaderSelectionToChat = sendReaderSelectionToChat;
+window.closeBookReader = closeBookReader;
 
