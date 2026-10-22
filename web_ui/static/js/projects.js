@@ -3664,6 +3664,7 @@ function renderProjectExecutionView() {
   // تفعيل تصدير CSV وضبط اتجاه RTL لكافة جداول الماركداون
   if (liveContent) {
     enhanceChatTablesWithCsvExport(liveContent);
+    enhanceProjectCitationsWithBookReader(liveContent);
   }
 
   // تفعيل استخراج المؤشرات والشارتات البيانية التلقائي من جداول المقارنات
@@ -3727,6 +3728,99 @@ function enhanceChatTablesWithCsvExport(container) {
   });
 }
 window.enhanceChatTablesWithCsvExport = enhanceChatTablesWithCsvExport;
+
+// =============================================================================
+// تفعيل فحص وتصفح النصوص المنقولة في الكتاب الأصلي (Verify Citations with Reader)
+// =============================================================================
+
+function openProjectCitationReader(btnEl) {
+  if (!btnEl) return;
+  const book = (btnEl.getAttribute('data-book') || '').trim();
+  const part = (btnEl.getAttribute('data-part') || '').trim();
+  const page = (btnEl.getAttribute('data-page') || '').trim();
+  const quote = (btnEl.getAttribute('data-quote') || '').trim();
+
+  if (!book && !page) {
+    if (typeof showToast === 'function') showToast('تعذر استخراج بيانات الإحالة');
+    return;
+  }
+
+  // تحويل الأرقام العربية المشرقية إن وجدت
+  const convDigits = (str) => {
+    if (!str) return '';
+    const ar = '٠١٢٣٤٥٦٧٨٩';
+    return String(str).replace(/[٠-٩]/g, d => ar.indexOf(d));
+  };
+
+  const cleanPart = convDigits(part);
+  const cleanPage = parseInt(convDigits(page), 10) || null;
+
+  if (typeof openBookReader === 'function') {
+    openBookReader({
+      book_title: book,
+      part: cleanPart,
+      page_num: cleanPage,
+      highlight: quote
+    });
+  } else {
+    console.error('openBookReader is not available');
+    if (typeof showToast === 'function') showToast('نافذة القارئ غير مهيأة');
+  }
+}
+window.openProjectCitationReader = openProjectCitationReader;
+
+function enhanceProjectCitationsWithBookReader(container) {
+  if (!container) return;
+
+  // نمط مطابقات الإحالات التراثية الدقيقة: (الكتاب والمؤلف جـ: X ص: Y) أو [الكتاب ص: Y]
+  const CITATION_REGEX = /([\(\[])\s*([^()\[\]\n<>{}\"'\u00ab\u00bb]{3,120}?)\s*(?:[-–،,]\s*)?(?:(?:جـ?|جزء|الجزء)\s*[:\s]\s*([0-9٠-٩]+)\s*[-–،,]?\s*)?(?:(?:صـ?|صفحة|الصفحة)\s*[:\s]\s*([0-9٠-٩]+))\s*([\)\]])/g;
+
+  const targetElements = container.querySelectorAll('p, li, td, blockquote, dd, div.markdown-body');
+  if (!targetElements.length) return;
+
+  targetElements.forEach(el => {
+    // تخطي العناصر التي تحتوي بالفعل على أزرار تصفح
+    if (el.querySelector('.btn-verify-citation')) return;
+
+    const fullText = el.textContent || '';
+    if (!fullText.match(CITATION_REGEX)) return;
+
+    // معالجة نصوص العنصر دون الإضرار بالوسوم الأخرى
+    const newHtml = el.innerHTML.replace(CITATION_REGEX, (match, openB, rawBook, part, page, closeB, offset, origStr) => {
+      // تنظيف اسم الكتاب وحذف أي مقدمات
+      let cleanBook = (rawBook || '').trim()
+        .replace(/^(المصدر|المرجع|انظر|راجع|تخريج|كتاب|في)\s*[:\s-–]*/g, '')
+        .trim();
+
+      // تحويل الأرقام المشرقية
+      const convDigits = (s) => (s || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+      const cleanPart = convDigits(part || '').trim();
+      const cleanPage = convDigits(page || '').trim();
+
+      // استخراج نص المقتبس القريب إن وجد لتظليله في القارئ
+      let quoteSnippet = '';
+      const textBefore = origStr.slice(0, offset);
+      const quoteMatch = textBefore.match(/(?:«([^»]{4,150})»|"([^"]{4,150})"|“([^”]{4,150})”)(?!.*(?:«|"|“))/);
+      if (quoteMatch) {
+        quoteSnippet = (quoteMatch[1] || quoteMatch[2] || quoteMatch[3] || '').trim();
+      }
+
+      const safeBook = escapeHtml(cleanBook);
+      const safeQuote = escapeHtml(quoteSnippet.slice(0, 100));
+      const pageLabel = cleanPage ? `ص: ${cleanPage}` : '';
+      const partLabel = cleanPart ? `جـ: ${cleanPart}` : '';
+      const locInfo = [partLabel, pageLabel].filter(Boolean).join(' ');
+      const tooltip = `تصفح في الكتاب الأصلي «${safeBook}» ${locInfo} للتحقق من صحة المنقول 📖`;
+
+      return `${match} <button type="button" class="btn-verify-citation" onclick="openProjectCitationReader(this)" data-book="${safeBook}" data-part="${cleanPart}" data-page="${cleanPage}" data-quote="${safeQuote}" title="${tooltip}" aria-label="تصفح في الكتاب الأصلي">📖</button>`;
+    });
+
+    if (newHtml !== el.innerHTML) {
+      el.innerHTML = newHtml;
+    }
+  });
+}
+window.enhanceProjectCitationsWithBookReader = enhanceProjectCitationsWithBookReader;
 
 // دالة استكمال الجولة التالية لمدير المشروع
 async function continueProjectExecutionRound() {

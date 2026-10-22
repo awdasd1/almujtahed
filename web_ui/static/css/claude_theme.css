@@ -7439,3 +7439,35 @@ select {
     align-items: flex-start;
   }
 }
+
+/* زر تصفح الكتاب الأصلي والتحقق من صحة المنقول في المشاريع والتقارير */
+.btn-verify-citation {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(204, 120, 92, 0.12);
+  color: var(--accent-clay);
+  border: 1px solid rgba(204, 120, 92, 0.35);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 13.5px;
+  cursor: pointer;
+  margin-right: 4px;
+  margin-left: 2px;
+  vertical-align: middle;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  line-height: 1.3;
+  user-select: none;
+  text-decoration: none;
+}
+
+.btn-verify-citation:hover {
+  background: var(--accent-clay);
+  color: #ffffff;
+  transform: translateY(-1px) scale(1.08);
+  box-shadow: 0 3px 8px rgba(204, 120, 92, 0.38);
+}
+
+.btn-verify-citation:active {
+  transform: translateY(0) scale(0.96);
+}

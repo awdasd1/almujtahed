@@ -332,6 +332,15 @@ function renderSessionMessages(sessionId) {
     }
   }
 
+  // تفعيل التحقق من صحة المنقول وتصفح الكتاب الأصلي للإحالات
+  if (typeof window.enhanceProjectCitationsWithBookReader === 'function') {
+    try {
+      window.enhanceProjectCitationsWithBookReader(container);
+    } catch (e) {
+      console.warn('Citation reader enhance error:', e);
+    }
+  }
+
   scrollToBottom();
 }
 

@@ -720,6 +720,22 @@ def resolve_book_path(rel_path: Optional[str], book_title: Optional[str]) -> Tup
                 )
                 row = cursor.fetchone()
                 if not row:
+                    # محاولة عبر الأسماء المعيارية المشهورة
+                    try:
+                        canon = resolve_canonical_book_name(bt, cursor)
+                        if canon and canon != bt:
+                            cursor.execute("SELECT rel_path FROM books WHERE title_ar = ? AND rel_path IS NOT NULL LIMIT 1", (canon,))
+                            row = cursor.fetchone()
+                    except Exception:
+                        pass
+                if not row:
+                    # فحص ما إذا كان اسم الكتاب مضمناً في النص (عند اقتران اسم المؤلف بالعنوان مثل: المصباح المنير...الفيومي أو المغني لابن قدامة)
+                    cursor.execute(
+                        "SELECT rel_path FROM books WHERE ? LIKE '%' || title_ar || '%' AND rel_path IS NOT NULL AND LENGTH(title_ar) >= 4 ORDER BY LENGTH(title_ar) DESC LIMIT 1",
+                        (bt,)
+                    )
+                    row = cursor.fetchone()
+                if not row:
                     cursor.execute(
                         "SELECT rel_path FROM books WHERE title_ar LIKE ? AND rel_path IS NOT NULL LIMIT 1",
                         (f"%{bt}%",)
