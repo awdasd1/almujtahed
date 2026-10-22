@@ -695,7 +695,7 @@
 
                     <!-- أزرار الإجراءات العليا -->
                     <div class="projects-hero-actions">
-                        <button type="button" class="btn-primary-gradient" onclick="openProjectPlanningModal()"
+                        <button type="button" class="btn-primary-gradient" onclick="openProjectPlanningModal('new')"
                             id="btnStartProjectPlanning">
                             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2.2">
@@ -3148,12 +3148,17 @@
                         </svg>
                     </div>
                     <div>
-                        <h3>استوديو تخطيط وهندسة المشروع (حوار مباشر مع العقل المدبر)</h3>
-                        <p class="modal-subtitle">محاورة تفاعلية مع كبير المهندسين المعماريين لتأسيس الوكلاء والأدوات
+                        <h3 id="planningStudioModalTitle">استوديو تخطيط وهندسة المشروع (حوار مباشر مع العقل المدبر)</h3>
+                        <p class="modal-subtitle" id="planningStudioModalSubtitle">محاورة تفاعلية مع كبير المهندسين المعماريين لتأسيس الوكلاء والأدوات
                             الحسابية واعتماد الخطة</p>
                     </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" class="btn-secondary-action" onclick="startFreshProjectPlanning()"
+                        id="btnStudioNewProject" title="بدء مشروع جديد تماماً وتفريغ ذاكرة الحوار الحالي"
+                        style="padding: 6px 12px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 5px; font-weight: 600;">
+                        <span>مشروع جديد ➕</span>
+                    </button>
                     <div class="planner-model-picker">
                         <label for="architectModelSelect">نموذج المهندس:</label>
                         <select id="architectModelSelect" class="form-select-sm" style="max-width: 380px;">

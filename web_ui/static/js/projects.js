@@ -177,7 +177,7 @@ function renderProjectsList(filtered = null) {
         <div class="empty-icon">📂</div>
         <h3>لا توجد مشاريع بحثية حالياً</h3>
         <p>ابدأ بهندسة مشروعك البحثي التراثي الأول بالنقر على «تخطيط وهندسة المشروع» لتوليد الخطة القياسية المتكاملة.</p>
-        <button type="button" class="btn-primary-gradient" onclick="openProjectPlanningModal()">
+        <button type="button" class="btn-primary-gradient" onclick="openProjectPlanningModal('new')">
           <span>تخطيط وهندسة المشروع</span>
         </button>
       </div>
@@ -352,6 +352,9 @@ function openProjectWorkspace(projectId) {
 function closeProjectWorkspace() {
   saveCurrentProjectWorkspaceState();
   activeProjectId = null;
+  currentPlanningProjectId = null;
+  architectHistory = [];
+  currentStudioBlueprint = null;
 
   const listWrapper = document.getElementById('projectsListViewWrapper');
   const wsWrapper = document.getElementById('projectDetailWorkspaceWrapper');
@@ -1667,15 +1670,31 @@ async function openProjectPlanningModal(projectId = null) {
   const inputEl = document.getElementById('architectUserInput');
   modal.style.display = 'flex';
 
-  // تحديد المشروع المستهدف بدقة؛ إن لم يُمرر projectId ولم يكن هناك activeProjectId فهو تأسيس جديد
-  const targetPid = (projectId !== null && projectId !== undefined) ? projectId : (activeProjectId || null);
-  currentPlanningProjectId = targetPid;
+  // 1. تحديد هل المطلوب تعديل مشروع قائم ومحدد صراحة أم تأسيس مشروع جديد
+  // إذا لم يُمرر projectId أو كان 'new'، فهو تأسيس جديد حتماً برقم فريد وذاكرة ممسوحة
+  let targetPid = null;
+  if (projectId && projectId !== 'new' && projectId !== 'null') {
+    targetPid = projectId;
+  }
+
   let targetModel = 'google/gemini-2.5-flash';
   let loadedFromProject = false;
+
+  const titleEl = document.getElementById('planningStudioModalTitle');
+  const subtitleEl = document.getElementById('planningStudioModalSubtitle');
+  const updateBtn = document.getElementById('btnUpdateActiveProjectCards');
+  const applyBtn = document.getElementById('btnApplyStudioBlueprint');
+  const statusBadge = document.getElementById('blueprintLiveStatus');
 
   if (targetPid) {
     const p = projectsList.find(x => x.id === targetPid);
     if (p) {
+      currentPlanningProjectId = targetPid;
+      activeProjectId = targetPid;
+
+      if (titleEl) titleEl.textContent = `استوديو تطوير وهندسة: «${p.title || 'مشروع بحثي'}»`;
+      if (subtitleEl) subtitleEl.innerHTML = `معرّف المشروع: <code style="color:var(--accent-clay); font-weight:700;">${p.id}</code> — حوار مباشر لمراجعة وتطوير الخطة والكروت دون تكرار`;
+
       if (p.architect_model) targetModel = p.architect_model;
       if ((p.architect_dialog && p.architect_dialog.length > 0) || (p.architect_history && p.architect_history.length > 0)) {
         architectHistory = [...(p.architect_dialog || p.architect_history)];
@@ -1683,7 +1702,7 @@ async function openProjectPlanningModal(projectId = null) {
         loadedFromProject = true;
       } else {
         const title = p.title || 'مشروعك البحثي';
-        const welcomeText = `مرحباً بك أستاذنا الباحث الكريم في استوديو هندسة وتطوير المشاريع 🧭.\n\nأنا مهندسك المعماري ومستشارك التخطيطي لهذا المشروع: «**${title}**».\nأنا معك لمراجعة خطة المشروع، أو إعادة هندسة كروت الوكلاء والمصادر، أو ضبط وتطوير أدوات التحقق الحسابية والتقويمية وتوجيهات المدير.\n\nما الجانب الذي تود تحسينه أو إضافته في هذا المشروع؟`;
+        const welcomeText = `مرحباً بك أستاذنا الباحث الكريم في استوديو هندسة وتطوير المشاريع 🧭.\n\nأنا مهندسك المعماري ومستشارك التخطيطي لهذا المشروع: «**${title}**» (معرّف: \`${p.id}\`).\nأنا معك لمراجعة خطة المشروع، أو إعادة هندسة كروت الوكلاء والمصادر، أو ضبط وتطوير أدوات التحقق الحسابية والتقويمية وتوجيهات المدير.\n\nما الجانب الذي تود تحسينه أو تعديله في هذا المشروع؟`;
         architectHistory = [{ role: 'assistant', content: welcomeText }];
         renderArchitectChat();
         loadedFromProject = true;
@@ -1708,9 +1727,19 @@ async function openProjectPlanningModal(projectId = null) {
       }
       renderStudioCardsPreview(currentStudioBlueprint);
 
-      const applyBtn = document.getElementById('btnApplyStudioBlueprint');
-      const statusBadge = document.getElementById('blueprintLiveStatus');
-      if (applyBtn) applyBtn.disabled = false;
+      if (updateBtn) {
+        updateBtn.style.display = 'inline-flex';
+        updateBtn.disabled = false;
+        updateBtn.innerHTML = `
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+          <span>تحديث وحفظ كروت هذا المشروع فورياً بالخطة المعدلة ⚡</span>
+        `;
+      }
+      if (applyBtn) {
+        applyBtn.style.display = 'inline-flex';
+        applyBtn.disabled = false;
+        applyBtn.innerHTML = `<span>حفظ التعديلات في هذا المشروع ✅</span>`;
+      }
       if (statusBadge) {
         statusBadge.textContent = 'خطة المشروع معتمدة ومحفوظة ✅';
         statusBadge.className = 'p-status-pill active';
@@ -1718,23 +1747,45 @@ async function openProjectPlanningModal(projectId = null) {
     }
   }
 
-  // إذا كان تأسيس مشروع جديد تماماً دون مشروع محدد سابقاً
+  // 2. إذا كان تأسيس مشروع جديد تماماً: مسح الذاكرة بالكامل وتوليد رقم فريد جديد
   if (!loadedFromProject) {
-    currentPlanningProjectId = null;
+    const newUniqueId = 'proj_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    currentPlanningProjectId = newUniqueId;
+    activeProjectId = null; // فك أي ارتباط بالمشاريع السابقة تماماً
     architectHistory = [];
     currentStudioBlueprint = null;
 
+    if (titleEl) titleEl.textContent = 'استوديو تخطيط وهندسة مشروع جديد';
+    if (subtitleEl) subtitleEl.innerHTML = `معرّف فريد جديد: <code style="color:var(--accent-clay); font-weight:700;">${newUniqueId}</code> — محاورة تفاعلية مع كبير المهندسين المعماريين لتأسيس الخطة`;
+
     const cardsStream = document.getElementById('studioCardsStream');
-    if (cardsStream) cardsStream.innerHTML = '';
-    const applyBtn = document.getElementById('btnApplyStudioBlueprint');
-    const statusBadge = document.getElementById('blueprintLiveStatus');
-    if (applyBtn) applyBtn.disabled = true;
+    if (cardsStream) {
+      cardsStream.innerHTML = `
+        <div class="studio-empty-blueprint" id="studioEmptyBlueprint">
+          <div class="empty-icon">🧭</div>
+          <h4>غرفة التخطيط والهندسة المفتوحة</h4>
+          <p>حاور كبير المهندسين على اليمين؛ وسيقوم باستنباط وتشكيل كروت الوكلاء، وتوجيهات المدير، وأداة التحقق الحسابية، والمقارنة المرجعية وتحديثها لحظياً هنا أمامك.</p>
+        </div>
+      `;
+    }
+
+    if (updateBtn) {
+      updateBtn.style.display = 'none'; // إخفاء زر التحديث لأنه لا يوجد مشروع قائم بعد
+    }
+    if (applyBtn) {
+      applyBtn.style.display = 'inline-flex';
+      applyBtn.disabled = true;
+      applyBtn.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        <span>اعتماد وتأسيس المشروع الجديد 🚀</span>
+      `;
+    }
     if (statusBadge) {
       statusBadge.textContent = 'بانتظار النقاش ⏳';
       statusBadge.className = 'p-status-pill';
     }
 
-    const welcomeText = `مرحباً بك أستاذنا الباحث الكريم في **استوديو تخطيط وهندسة المشاريع التراثية الكبرى** 🧭.\n\nأنا **كبير المهندسين المعماريين** لمنظومة «المجتهد»، ومهمتي أن أحاورك وأناقشك خطوة بخطوة في فكرة مسألتك أو مشروعك البحثي (مثل: تحرير مسائل الأوقاف، نفي ولد الفراش بالقيافة والقرائن الطبية المعاصرة، رصد الحوادث التاريخية والفلكية، أو دراسة الأسانيد والعلل).\n\nسنحدد سوياً:\n1. 📜 النطاق الزمني والمصادري الدقيق في الشاملة.\n2. 👥 تشكيل كروت الوكلاء المساعدين التخصصيين وتوجيهاتهم الخاصة.\n3. 📐 أداة التحقق والمقارنة الأكاديمية أو الحسابية المطلوبة.\n4. ⚖️ مصفوفة المقارنة المرجعية (Benchmark).\n\n**تفضل بطرح موضوعك أو مسألتك وما تصبو إلى تحقيقه لنبدأ نقاشنا فوراً!**`;
+    const welcomeText = `مرحباً بك أستاذنا الباحث الكريم في **استوديو تخطيط وهندسة المشاريع التراثية الكبرى** 🧭.\n\nأنا **كبير المهندسين المعماريين** لمنظومة «المجتهد»، ومهمتي أن أحاورك وأناقشك خطوة بخطوة في فكرة مسألتك أو مشروعك البحثي الجديد (المعرّف الفريد: \`${newUniqueId}\`).\n\nسنحدد سوياً:\n1. 📜 النطاق الزمني والمصادري الدقيق في الشاملة.\n2. 👥 تشكيل كروت الوكلاء المساعدين التخصصيين وتوجيهاتهم الخاصة.\n3. 📐 أداة التحقق والمقارنة الأكاديمية أو الحسابية المطلوبة.\n4. ⚖️ مصفوفة المقارنة المرجعية (Benchmark).\n\n**تفضل بطرح موضوعك أو مسألتك وما تصبو إلى تحقيقه لنبدأ نقاشنا فوراً!**`;
     architectHistory = [{ role: 'assistant', content: welcomeText }];
     renderArchitectChat();
   }
@@ -1744,6 +1795,13 @@ async function openProjectPlanningModal(projectId = null) {
 
   if (inputEl) {
     setTimeout(() => inputEl.focus(), 150);
+  }
+}
+
+function startFreshProjectPlanning() {
+  openProjectPlanningModal('new');
+  if (typeof showToast === 'function') {
+    showToast('✨ تم تفريغ ذاكرة الاستوديو وتوليد رقم فريد لمشروع جديد!');
   }
 }
 
@@ -1861,8 +1919,8 @@ async function sendArchitectMessage() {
       architectHistory.push({ role: 'assistant', content: data.reply });
       renderArchitectChat();
 
-      // حفظ سجل المحادثة ونموذج المهندس فورياً في كائن المشروع المرتبط
-      const targetId = currentPlanningProjectId || activeProjectId;
+      // حفظ سجل المحادثة ونموذج المهندس فورياً في كائن المشروع المرتبط إذا كان مشروعاً قائماً محفوظاً
+      const targetId = currentPlanningProjectId;
       if (targetId) {
         const curProj = projectsList.find(x => x.id === targetId);
         if (curProj) {
@@ -2431,8 +2489,14 @@ async function applyStudioBlueprint() {
     }
 
     const bp = currentStudioBlueprint;
-    const newProjectId = 'proj_' + Date.now();
-    const newGroupId = 'group_' + Date.now();
+
+    // فحص ما إذا كان التعديل لمشروع قائم أو لتأسيس مشروع جديد
+    const existingProject = (currentPlanningProjectId && projectsList.find(p => p.id === currentPlanningProjectId))
+      || (activeProjectId && projectsList.find(p => p.id === activeProjectId))
+      || null;
+
+    const targetProjectId = existingProject ? existingProject.id : (currentPlanningProjectId || ('proj_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)));
+    const targetGroupId = (existingProject && existingProject.linked_group_id) ? existingProject.linked_group_id : ('group_' + Date.now());
 
     // مطابقة أسماء كتب الوكلاء مع العناوين الحرفية في المخزن قبل التأسيس
     let booksToResolve = [];
@@ -2462,7 +2526,7 @@ async function applyStudioBlueprint() {
       }
     }
 
-    // 1. تسجيل مجموعة الوكلاء المخصصة في agentGroups
+    // 1. تسجيل أو تحديث مجموعة الوكلاء المخصصة في agentGroups
     if (bp.subagents_group?.agents && bp.subagents_group.agents.length > 0) {
       let groups = window.agentGroups || [];
       if (groups.length === 0) {
@@ -2475,7 +2539,7 @@ async function applyStudioBlueprint() {
         const canonicalBooks = (ag.books || []).map(b => resolvedBookMap[b] || b);
         const prompt = ag.system_prompt || ag.systemPrompt || ag.directive || ag.prompt || ag.desc || 'استخرج نصوص المسألة بدقة مع أرقام الأجزاء والصفحات.';
         return {
-          id: `agent_${Date.now()}_${i}`,
+          id: ag.id || `agent_${Date.now()}_${i}`,
           name: ag.name || `وكيل ${i + 1}`,
           desc: ag.desc || 'استخراج نصوص الشاملة',
           model: ag.model || 'google/gemini-2.5-flash',
@@ -2496,18 +2560,18 @@ async function applyStudioBlueprint() {
         };
       });
 
-      const newGroup = {
-        id: newGroupId,
+      const updatedGroup = {
+        id: targetGroupId,
         name: bp.subagents_group.name || `فريق: ${(bp.title || 'المشروع').slice(0, 20)}`,
         desc: bp.subagents_group.desc || 'مجموعة وكلاء مخصصة لهذا المشروع البحثي',
         agents: mappedAgents
       };
 
-      const existingIdx = groups.findIndex(g => g.id === newGroupId);
+      const existingIdx = groups.findIndex(g => g.id === targetGroupId);
       if (existingIdx >= 0) {
-        groups[existingIdx] = newGroup;
+        groups[existingIdx] = updatedGroup;
       } else {
-        groups.unshift(newGroup);
+        groups.unshift(updatedGroup);
       }
       window.agentGroups = groups;
       localStorage.setItem('almojtahed_agent_groups', JSON.stringify(groups));
@@ -2516,46 +2580,77 @@ async function applyStudioBlueprint() {
       }
     }
 
-    // 2. بناء كائن المشروع المتكامل
+    // 2. بناء كائن المشروع أو تحديثه في مكانه دون تكرار
     const directorPrompt = bp.director?.system_prompt || 'أنت مدير هذا المشروع البحثي، تشرف على قيادة الوكلاء وتفريغ النتائج في جداول قياسية. تمتلك الصلاحية العلمية الكاملة لتوجيه إعادة البحث والتحقق من صحة الحديث وتخريجه أو التأكد من نسبة قول أو أثر حتى 3 مرات قبل اعتماد النتائج وإصدار الحكم النهائي.';
     const chosenArchitectModel = document.getElementById('architectModelSelect')?.value || 'google/gemini-2.5-flash';
-    const newProject = {
-      id: newProjectId,
-      title: bp.title || 'مشروع بحثي جديد',
-      desc: bp.desc || `مشروع بحثي: ${bp.title || 'غير معنون'}`,
-      status: 'جاهز للتنفيذ',
-      created_at: new Date().toISOString().split('T')[0],
-      architect_model: chosenArchitectModel,
-      architect_dialog: [...architectHistory],
-      architect_history: [...architectHistory],
-      blueprint: bp,
-      director: {
-        name: bp.director?.name || 'مدير المشروع العام',
-        model: bp.director?.model || 'google/gemini-2.5-flash',
-        thinking: bp.director?.thinking || 'high',
-        max_tokens: bp.director?.max_tokens || 262144,
-        system_prompt: directorPrompt
-      },
-      linked_group_id: newGroupId,
-      subagents_group: {
-        id: newGroupId,
-        name: bp.subagents_group?.name || `فريق: ${(bp.title || 'المشروع').slice(0, 20)}`,
-        desc: bp.subagents_group?.desc || '',
-        agents: (bp.subagents_group?.agents && bp.subagents_group.agents.length > 0) ? (window.agentGroups?.find(g => g.id === newGroupId)?.agents || []) : []
-      },
-      extraction_capacity: bp.extraction_capacity || 150,
-      retrieval_anchors: bp.retrieval_anchors || [],
-      internal_benchmark: bp.internal_benchmark || { enabled: false, title: '', author: '', methodology: '' },
-      external_web_benchmark: bp.external_web_benchmark || { enabled: false, query: bp.title || '', domains: [], prompt: '' },
-      computational_tool: bp.computational_tool || { enabled: false, tool_type: 'none', name: 'بدون أداة مساعدة', desc: 'لا يتطلب أدوات مساعدة خارجية' },
-      output_formats: bp.output_formats || { csv_results: true, csv_benchmark: true, formatted_txt: true, academic_pdf: true }
-    };
 
-    await saveProjectToStorage(newProject);
+    let targetProject = existingProject;
+    if (targetProject) {
+      targetProject.title = bp.title || targetProject.title || 'مشروع بحثي';
+      targetProject.desc = bp.desc || targetProject.desc || '';
+      targetProject.architect_model = chosenArchitectModel;
+      targetProject.architect_dialog = [...architectHistory];
+      targetProject.architect_history = [...architectHistory];
+      targetProject.blueprint = bp;
+      targetProject.director = {
+        name: bp.director?.name || targetProject.director?.name || 'مدير المشروع العام',
+        model: bp.director?.model || targetProject.director?.model || 'google/gemini-2.5-flash',
+        thinking: bp.director?.thinking || targetProject.director?.thinking || 'high',
+        max_tokens: bp.director?.max_tokens || targetProject.director?.max_tokens || 262144,
+        system_prompt: directorPrompt
+      };
+      targetProject.linked_group_id = targetGroupId;
+      targetProject.subagents_group = {
+        id: targetGroupId,
+        name: bp.subagents_group?.name || targetProject.subagents_group?.name || `فريق: ${(bp.title || targetProject.title).slice(0, 20)}`,
+        desc: bp.subagents_group?.desc || '',
+        agents: (bp.subagents_group?.agents && bp.subagents_group.agents.length > 0) ? (window.agentGroups?.find(g => g.id === targetGroupId)?.agents || []) : (targetProject.subagents_group?.agents || [])
+      };
+      if (bp.extraction_capacity) targetProject.extraction_capacity = bp.extraction_capacity;
+      if (bp.retrieval_anchors) targetProject.retrieval_anchors = bp.retrieval_anchors;
+      if (bp.internal_benchmark) targetProject.internal_benchmark = bp.internal_benchmark;
+      if (bp.external_web_benchmark) targetProject.external_web_benchmark = bp.external_web_benchmark;
+      if (bp.computational_tool) targetProject.computational_tool = bp.computational_tool;
+      if (bp.output_formats) targetProject.output_formats = bp.output_formats;
+    } else {
+      targetProject = {
+        id: targetProjectId,
+        title: bp.title || 'مشروع بحثي جديد',
+        desc: bp.desc || `مشروع بحثي: ${bp.title || 'غير معنون'}`,
+        status: 'جاهز للتنفيذ',
+        created_at: new Date().toISOString().split('T')[0],
+        architect_model: chosenArchitectModel,
+        architect_dialog: [...architectHistory],
+        architect_history: [...architectHistory],
+        blueprint: bp,
+        director: {
+          name: bp.director?.name || 'مدير المشروع العام',
+          model: bp.director?.model || 'google/gemini-2.5-flash',
+          thinking: bp.director?.thinking || 'high',
+          max_tokens: bp.director?.max_tokens || 262144,
+          system_prompt: directorPrompt
+        },
+        linked_group_id: targetGroupId,
+        subagents_group: {
+          id: targetGroupId,
+          name: bp.subagents_group?.name || `فريق: ${(bp.title || 'المشروع').slice(0, 20)}`,
+          desc: bp.subagents_group?.desc || '',
+          agents: (bp.subagents_group?.agents && bp.subagents_group.agents.length > 0) ? (window.agentGroups?.find(g => g.id === targetGroupId)?.agents || []) : []
+        },
+        extraction_capacity: bp.extraction_capacity || 150,
+        retrieval_anchors: bp.retrieval_anchors || [],
+        internal_benchmark: bp.internal_benchmark || { enabled: false, title: '', author: '', methodology: '' },
+        external_web_benchmark: bp.external_web_benchmark || { enabled: false, query: bp.title || '', domains: [], prompt: '' },
+        computational_tool: bp.computational_tool || { enabled: false, tool_type: 'none', name: 'بدون أداة مساعدة', desc: 'لا يتطلب أدوات مساعدة خارجية' },
+        output_formats: bp.output_formats || { csv_results: true, csv_benchmark: true, formatted_txt: true, academic_pdf: true }
+      };
+    }
+
+    await saveProjectToStorage(targetProject);
     closeProjectPlanningModal();
     renderProjectsList();
-    openProjectWorkspace(newProject.id);
-    showToast('🎉 تم اعتماد الخطة وتأسيس المشروع بكافة بطاقاته وأدواته المخصصة بنجاح!');
+    openProjectWorkspace(targetProject.id);
+    showToast(existingProject ? '⚡ تم تحديث وحفظ بيانات وكروت المشروع بنجاح دون أي تكرار!' : '🎉 تم اعتماد الخطة وتأسيس المشروع الجديد بكافة بطاقاته وأدواته المخصصة بنجاح!');
   } catch (err) {
     console.error('Error applying blueprint:', err);
     showToast(`تعذر اعتماد الخطة: ${err.message}`);
@@ -5780,3 +5875,4 @@ window.updateCardQuickSummaries = updateCardQuickSummaries;
 window.transferProjectResultToChat = transferProjectResultToChat;
 window.toggleProjectHybridSearchMode = toggleProjectHybridSearchMode;
 window.updateProjectHybridToggleUI = updateProjectHybridToggleUI;
+window.startFreshProjectPlanning = startFreshProjectPlanning;
