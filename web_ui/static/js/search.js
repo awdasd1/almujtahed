@@ -181,11 +181,15 @@ async function performSearch() {
   const startTime = performance.now();
 
   try {
+    const activeBooks = (window._searchTabBooks && window._searchTabBooks.length > 0)
+      ? window._searchTabBooks
+      : (selectedBooksScope && selectedBooksScope.length > 0 ? selectedBooksScope : null);
+
     const payload = {
       query: query,
-      category: category || null,
+      category: (!activeBooks && category) ? category : null,
       book_name: bookName || null,
-      selected_books: (selectedBooksScope && selectedBooksScope.length > 0) ? selectedBooksScope : null,
+      selected_books: activeBooks,
       death_max: deathMax ? parseInt(deathMax) : null,
       use_reranker: false,
       use_hybrid: isHybridSearchEnabled,
@@ -523,12 +527,29 @@ function closeSearchScopeModal() {
   }
 }
 
-// إغلاق عند النقر على الخلفية
+// إغلاق عند النقر على الخلفية ومزامنة فلاتر البحث
 document.addEventListener('DOMContentLoaded', () => {
   const modal = document.getElementById('searchScopeModal');
   if (modal) {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) closeSearchScopeModal();
+    });
+  }
+
+  const filterCat = document.getElementById('filterCategory');
+  if (filterCat) {
+    filterCat.addEventListener('change', () => {
+      if (filterCat.value) {
+        // إذا اختار قسماً معيناً من القائمة الرئيسية، نلغي أي حصر يدوي بكتب فردية قديمة لمنع التضارب
+        window._searchTabBooks = [];
+        selectedBooksScope = [];
+        const label = document.getElementById('scopeSelectorLabel');
+        if (label) label.textContent = 'جميع كتب الشاملة';
+        const badge = document.getElementById('scopeSelectedBadge');
+        if (badge) badge.style.display = 'none';
+        const clearBtn = document.getElementById('btnClearScope');
+        if (clearBtn) clearBtn.style.display = 'none';
+      }
     });
   }
 });
@@ -574,12 +595,12 @@ function renderScopeBooks() {
   listContainer.innerHTML = displaySlice.map(b => {
     const isSelected = selectedBooksScope.includes(b.title);
     const death = b.death ? `(ت: ${b.death} هـ)` : '';
-    const safeTitle = escapeJsString(b.title);
+    const encodedTitle = escapeHtml(b.title);
     return `
-      <div class="scope-book-card ${isSelected ? 'selected' : ''}" onclick="toggleScopeBook('${safeTitle}', this)">
-        <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleScopeBook('${safeTitle}', this.closest('.scope-book-card'))">
+      <div class="scope-book-card ${isSelected ? 'selected' : ''}" data-book-title="${encodedTitle}" onclick="toggleScopeBookElement(this)">
+        <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleScopeBookElement(this)">
         <div style="flex: 1; min-width: 0;">
-          <div class="scope-book-title">${escapeHtml(b.title)}</div>
+          <div class="scope-book-title">${encodedTitle}</div>
           <div class="scope-book-meta">
             <span>${escapeHtml(b.author)} ${death}</span>
             <span class="scope-cat-tag">${escapeHtml(b.category_name || 'عام')}</span>
@@ -596,6 +617,17 @@ function renderScopeBooks() {
 
 function escapeJsString(str) {
   return (str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// تبديل اختيار كتاب من خلال عنصره الحاوي مباشرة لمنع أي خطأ ترميز
+function toggleScopeBookElement(el) {
+  if (!el) return;
+  const card = el.classList.contains('scope-book-card') ? el : el.closest('.scope-book-card');
+  if (!card) return;
+  const title = card.getAttribute('data-book-title');
+  if (title) {
+    toggleScopeBook(title, card);
+  }
 }
 
 // تبديل اختيار كتاب محدد
@@ -721,16 +753,30 @@ function applySearchScopeSelection() {
   }
 
   // الوضع الافتراضي لتبويب البحث الدلالي
-  window._searchTabBooks = [...selectedBooksScope];
   const label = document.getElementById('scopeSelectorLabel');
   const badge = document.getElementById('scopeSelectedBadge');
   const clearBtn = document.getElementById('btnClearScope');
+  const filterCat = document.getElementById('filterCategory');
 
   if (selectedBooksScope.length === 0) {
+    window._searchTabBooks = [];
+    if (currentScopeCategory) {
+      if (filterCat) filterCat.value = currentScopeCategory;
+      const catSelect = document.getElementById('scopeCategorySelect');
+      const catText = catSelect && catSelect.selectedIndex >= 0 ? catSelect.options[catSelect.selectedIndex].text : '';
+      if (label) label.textContent = catText ? `قسم: ${catText}` : 'حسب التصنيف المختار';
+      if (badge) badge.style.display = 'none';
+      if (clearBtn) clearBtn.style.display = 'inline-block';
+      closeSearchScopeModal();
+      showToast(`تم تطبيق نطاق القسم: ${catText || currentScopeCategory}`);
+      return;
+    }
     if (label) label.textContent = 'جميع كتب الشاملة';
     if (badge) badge.style.display = 'none';
     if (clearBtn) clearBtn.style.display = 'none';
   } else if (selectedBooksScope.length === 1) {
+    window._searchTabBooks = [...selectedBooksScope];
+    if (filterCat) filterCat.value = ''; // تفريغ حقل التصنيف العام لمنع تضارب الفلاتر
     if (label) label.textContent = selectedBooksScope[0];
     if (badge) {
       badge.textContent = '1';
@@ -738,6 +784,8 @@ function applySearchScopeSelection() {
     }
     if (clearBtn) clearBtn.style.display = 'inline-block';
   } else {
+    window._searchTabBooks = [...selectedBooksScope];
+    if (filterCat) filterCat.value = ''; // تفريغ حقل التصنيف العام لمنع تضارب الفلاتر
     if (label) label.textContent = `محدد: ${selectedBooksScope.length} كتب`;
     if (badge) {
       badge.textContent = selectedBooksScope.length;
@@ -771,14 +819,45 @@ function resetAgentSearchScope(event) {
 // إلغاء النطاق والعودة لجميع الكتب في البحث الدلالي
 function scopeResetToAllBooks() {
   selectedBooksScope = [];
-  applySearchScopeSelection();
+  window._searchTabBooks = [];
+  currentScopeCategory = '';
+  currentScopeSearchQuery = '';
+  const filterCat = document.getElementById('filterCategory');
+  if (filterCat) filterCat.value = '';
+  const scopeCatSelect = document.getElementById('scopeCategorySelect');
+  if (scopeCatSelect) scopeCatSelect.value = '';
+  const scopeFilterInp = document.getElementById('scopeFilterQuery');
+  if (scopeFilterInp) scopeFilterInp.value = '';
+  const label = document.getElementById('scopeSelectorLabel');
+  if (label) label.textContent = 'جميع كتب الشاملة';
+  const badge = document.getElementById('scopeSelectedBadge');
+  if (badge) badge.style.display = 'none';
+  const clearBtn = document.getElementById('btnClearScope');
+  if (clearBtn) clearBtn.style.display = 'none';
+  closeSearchScopeModal();
+  showToast('تمت العودة للبحث في جميع كتب الشاملة');
 }
 
 // إلغاء النطاق من الزر الصغير في شريط الفلاتر
 function resetSearchScope(event) {
   if (event) event.stopPropagation();
   selectedBooksScope = [];
-  applySearchScopeSelection();
+  window._searchTabBooks = [];
+  currentScopeCategory = '';
+  currentScopeSearchQuery = '';
+  const filterCat = document.getElementById('filterCategory');
+  if (filterCat) filterCat.value = '';
+  const scopeCatSelect = document.getElementById('scopeCategorySelect');
+  if (scopeCatSelect) scopeCatSelect.value = '';
+  const scopeFilterInp = document.getElementById('scopeFilterQuery');
+  if (scopeFilterInp) scopeFilterInp.value = '';
+  const label = document.getElementById('scopeSelectorLabel');
+  if (label) label.textContent = 'جميع كتب الشاملة';
+  const badge = document.getElementById('scopeSelectedBadge');
+  if (badge) badge.style.display = 'none';
+  const clearBtn = document.getElementById('btnClearScope');
+  if (clearBtn) clearBtn.style.display = 'none';
+  showToast('تمت العودة للبحث في جميع كتب الشاملة');
 }
 
 // نسخ النص إلى الحافظة

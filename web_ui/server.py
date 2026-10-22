@@ -14,6 +14,7 @@ import re
 import urllib.request
 import urllib.error
 import urllib.parse
+import html
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
@@ -118,6 +119,116 @@ CATEGORY_MAP = {
     "كتب عامة": 39, "39": 39,
     "علوم أخرى": 40, "40": 40
 }
+
+# أسماء الأقسام والتصنيفات الأربعين المعتمدة والمطابقة تماماً لمفهرس Qdrant
+ID_TO_CATEGORY_NAME = {
+    1: "العقيدة",
+    2: "الفرق والردود",
+    3: "التفسير",
+    4: "علوم القرآن وأصول التفسير",
+    5: "التجويد والقراءات",
+    6: "كتب السنة",
+    7: "شروح الحديث",
+    8: "التخريج والأطراف",
+    9: "العلل والسؤلات الحديثية",
+    10: "علوم الحديث",
+    11: "أصول الفقه",
+    12: "علوم الفقه والقواعد الفقهية",
+    13: "المنطق",
+    14: "الفقه الحنفي",
+    15: "الفقه المالكي",
+    16: "الفقه الشافعي",
+    17: "الفقه الحنبلي",
+    18: "الفقه العام",
+    19: "مسائل فقهية",
+    20: "السياسة الشرعية والقضاء",
+    21: "الفرائض والوصايا",
+    22: "الفتاوى",
+    23: "الرقائق والآداب والأذكار",
+    24: "السيرة النبوية",
+    25: "التاريخ",
+    26: "التراجم والطبقات",
+    27: "الأنساب",
+    28: "البلدان والرحلات",
+    29: "كتب اللغة",
+    30: "الغريب والمعاجم",
+    31: "النحو والصرف",
+    32: "الأدب",
+    33: "العروض والقوافي",
+    34: "الشعر ودواوينه",
+    35: "البلاغة",
+    36: "الجوامع",
+    37: "فهارس الكتب والأدلة",
+    38: "الطب",
+    39: "كتب عامة",
+    40: "علوم أخرى"
+}
+
+def resolve_clean_category_name(raw_cat: Any) -> Optional[str]:
+    """تحويل التصنيف سواء كان رقماً (1 أو '1' أو '01') أو اسماً عربياً إلى الاسم الرسمي المطابق في Qdrant"""
+    if raw_cat is None:
+        return None
+    raw_str = str(raw_cat).strip()
+    if not raw_str:
+        return None
+
+    # 1. إذا كان رقماً صحيحاً أو نصاً رقمياً
+    try:
+        numeric_val = int(raw_str)
+        if numeric_val in ID_TO_CATEGORY_NAME:
+            return ID_TO_CATEGORY_NAME[numeric_val]
+    except ValueError:
+        pass
+
+    # 2. فحص التطابق التام مع الأسماء الرسمية
+    for name in ID_TO_CATEGORY_NAME.values():
+        if raw_str == name:
+            return name
+
+    # 3. فحص الخريطة المرادفة CATEGORY_MAP
+    if raw_str in CATEGORY_MAP:
+        cid = CATEGORY_MAP[raw_str]
+        if cid in ID_TO_CATEGORY_NAME:
+            return ID_TO_CATEGORY_NAME[cid]
+
+    # 4. البحث الجزئي بالكلمات
+    for k, cid in CATEGORY_MAP.items():
+        if not k.isdigit() and k in raw_str:
+            if cid in ID_TO_CATEGORY_NAME:
+                return ID_TO_CATEGORY_NAME[cid]
+
+    return raw_str
+
+def resolve_book_titles_for_search(raw_books: List[str], cursor=None) -> List[str]:
+    """تنظيف وتوسيع أسماء الكتب لتطابق عناوين Qdrant بدقة متناهية"""
+    if not raw_books:
+        return []
+    resolved = set()
+    for b in raw_books:
+        if not b or not str(b).strip():
+            continue
+        cleaned = html.unescape(str(b)).strip()
+        if not cleaned:
+            continue
+        resolved.add(cleaned)
+
+        # إذا كان المؤشر لقاعدة البيانات متاحاً، نبحث إن كان عنواناً مختصراً كـ (صحيح البخاري)
+        if cursor:
+            try:
+                # 1. محاولة المطابقة المباشرة أولاً
+                cursor.execute("SELECT title_ar FROM books WHERE title_ar = ? LIMIT 1", (cleaned,))
+                row = cursor.fetchone()
+                if row and row["title_ar"]:
+                    resolved.add(row["title_ar"])
+                else:
+                    # 2. محاولة البحث كبادئة أو جزء من الاسم (مثلاً: صحيح البخاري -> جميع طبعات البخاري)
+                    cursor.execute("SELECT title_ar FROM books WHERE title_ar LIKE ? LIMIT 50", (f"%{cleaned}%",))
+                    matches = [r["title_ar"] for r in cursor.fetchall() if r["title_ar"]]
+                    if matches:
+                        resolved.update(matches)
+            except Exception:
+                pass
+    return list(resolved)
 
 app = FastAPI(
     title="منظومة المجتهد",
@@ -1749,10 +1860,12 @@ async def search_endpoint(req: SearchRequest):
             book_key = "book_title" if is_8b_col else "title_ar"
 
             # فلترة نطاق البحث المحدد من قبل المستخدم
+            has_explicit_books = False
             if req.selected_books and len(req.selected_books) > 0:
-                clean_books = [b.strip() for b in req.selected_books if b and b.strip()]
+                clean_books = resolve_book_titles_for_search(req.selected_books, cursor=cursor)
                 if clean_books:
-                    conditions.append(FieldCondition(key=book_key, match=MatchAny(any=clean_books)))
+                    has_explicit_books = True
+                    conditions.append(FieldCondition(key=book_key, match=MatchAny(any=clean_books[:500])))
             # أو فلترة اسم الكتاب النصي إن وجد
             elif req.book_name and req.book_name.strip():
                 bname = req.book_name.strip()
@@ -1764,34 +1877,27 @@ async def search_endpoint(req: SearchRequest):
                     except Exception:
                         pass
                 if matching_titles:
+                    has_explicit_books = True
                     conditions.append(FieldCondition(key=book_key, match=MatchAny(any=matching_titles)))
                 else:
+                    has_explicit_books = True
                     conditions.append(FieldCondition(key=book_key, match=MatchAny(any=[bname])))
 
-            # فلترة التصنيف
-            if req.category:
-                raw_cat = str(req.category).strip()
+            # فلترة التصنيف: تطبق عند تحديد قسم ولا تتعارض مع الكتب المحددة صراحة
+            if req.category and not has_explicit_books:
+                clean_cat = resolve_clean_category_name(req.category)
                 if is_8b_col:
-                    clean_cat = raw_cat
-                    for k in CATEGORY_MAP.keys():
-                        if k in raw_cat and not k.isdigit():
-                            clean_cat = k
-                            break
-                    conditions.append(FieldCondition(key="category_name", match=MatchValue(value=clean_cat)))
+                    if clean_cat:
+                        conditions.append(FieldCondition(key="category_name", match=MatchValue(value=clean_cat)))
                 else:
                     cat_id = None
-                    if raw_cat in CATEGORY_MAP:
-                        cat_id = CATEGORY_MAP[raw_cat]
+                    if clean_cat and clean_cat in CATEGORY_MAP:
+                        cat_id = CATEGORY_MAP[clean_cat]
                     else:
                         for k, v in CATEGORY_MAP.items():
-                            if k in raw_cat:
+                            if k in str(req.category):
                                 cat_id = v
                                 break
-                        if cat_id is None:
-                            try:
-                                cat_id = int(''.join(filter(str.isdigit, raw_cat)))
-                            except ValueError:
-                                pass
                     if cat_id:
                         conditions.append(FieldCondition(key="category_id", match=MatchValue(value=cat_id)))
 
