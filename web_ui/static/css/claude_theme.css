@@ -4049,6 +4049,12 @@ input:checked+.slider-toggle:before {
   background: rgba(59, 130, 246, 0.12);
 }
 
+.action-icon-btn.btn-export-group:hover {
+  color: #10b981;
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+}
+
 .action-icon-btn.btn-delete-group:hover {
   color: #ef4444;
   border-color: #ef4444;

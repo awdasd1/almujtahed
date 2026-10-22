@@ -214,9 +214,15 @@ function renderProjectsList(filtered = null) {
           <button type="button" class="btn-card-action primary" onclick="openProjectWorkspace('${p.id}')">
             <span>فتح مساحة العمل 📂</span>
           </button>
-          <button type="button" class="btn-card-action danger" onclick="deleteProject('${p.id}', event)" title="حذف المشروع">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </button>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button type="button" class="btn-card-action" onclick="exportSingleProject('${p.id}', event)" title="تصدير هذا المشروع كملف JSON">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span>تصدير 📤</span>
+            </button>
+            <button type="button" class="btn-card-action danger" onclick="deleteProject('${p.id}', event)" title="حذف المشروع">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -2970,6 +2976,71 @@ function exportProjectsData() {
   showToast('💾 تم تصدير حزمة المشاريع الكاملة (المشاريع، الوكلاء، نماذج وسجلات المهندس) بنجاح!');
 }
 
+// تصدير مشروع واحد محدد كملف JSON مستقل
+function exportSingleProject(projectId, event) {
+  if (event && typeof event.stopPropagation === 'function') {
+    event.stopPropagation();
+  }
+  const p = projectsList.find(item => item.id === projectId);
+  if (!p) {
+    if (typeof showToast === 'function') showToast('المشروع غير موجود لتصديره', true);
+    return;
+  }
+
+  // إذا كان هذا المشروع هو المفتوح حالياً، نحفظ حالته أولاً
+  if (activeProjectId === projectId && typeof saveCurrentProjectWorkspaceState === 'function') {
+    saveCurrentProjectWorkspaceState();
+  }
+
+  // نجلب مجموعة الوكلاء المرتبطة بهذا المشروع إن وجدت
+  let groups = window.agentGroups || [];
+  if (groups.length === 0) {
+    try {
+      groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+    } catch (e) { }
+  }
+  const linkedGroupId = p.subagents_group?.id || p.linked_group_id || `group_${p.id}`;
+  const linkedGroup = groups.find(g => g.id === linkedGroupId) || p.subagents_group || null;
+
+  const projectData = {
+    ...p,
+    architect_dialog: p.architect_dialog || p.architect_history || (p.id === activeProjectId ? architectHistory : []),
+    architect_model: p.architect_model || (p.id === activeProjectId ? document.getElementById('architectModelSelect')?.value : '') || 'google/gemini-2.5-flash'
+  };
+
+  const exportPayload = {
+    app: 'almojtahed_system',
+    version: '2.0',
+    export_type: 'single_project',
+    exported_at: new Date().toISOString(),
+    project: projectData,
+    agent_groups: linkedGroup ? [linkedGroup] : [],
+    // للتوافق المباشر مع استيراد المشروع:
+    id: projectData.id,
+    title: projectData.title,
+    desc: projectData.desc,
+    ...projectData
+  };
+
+  const cleanTitle = (p.title || 'project').slice(0, 40).replace(/[^a-zA-Z0-9\u0600-\u06FF_-]/g, '_');
+  const filename = `project_${cleanTitle}_${new Date().toISOString().split('T')[0]}.json`;
+
+  const jsonStr = JSON.stringify(exportPayload, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  if (typeof showToast === 'function') {
+    showToast(`📤 تم تصدير مشروع «${(p.title || '').slice(0, 35)}» كملف JSON بنجاح!`);
+  }
+}
+
 function triggerImportProjectFile() {
   const input = document.getElementById('projectImportFileInput');
   if (input) input.click();
@@ -5676,6 +5747,7 @@ window.closeManualProjectModal = closeManualProjectModal;
 window.saveNewManualProject = saveNewManualProject;
 window.deleteProject = deleteProject;
 window.exportProjectsData = exportProjectsData;
+window.exportSingleProject = exportSingleProject;
 window.triggerImportProjectFile = triggerImportProjectFile;
 window.handleProjectFileImport = handleProjectFileImport;
 window.runCurrentProjectExecution = runCurrentProjectExecution;

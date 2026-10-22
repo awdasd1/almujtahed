@@ -253,6 +253,11 @@ function renderGroupsTable() {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="13" height="13" x="9" y="9" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
 
+            <!-- زر تصدير المجموعة (أيقونة) -->
+            <button type="button" class="action-icon-btn btn-export-group" onclick="exportSingleGroup('${group.id}')" title="تصدير هذه المجموعة مع كافة وكلائها كملف JSON">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </button>
+
             <!-- زر حذف المجموعة (أيقونة) -->
             <button type="button" class="action-icon-btn btn-delete-group" onclick="deleteGroup('${group.id}')" title="حذف المجموعة">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
@@ -382,6 +387,183 @@ async function deleteGroup(groupId) {
     renderGroupsTable();
     showToast(`تم حذف مجموعة "${group.name}" بنجاح`);
   }
+}
+
+// دالة مساعدة لتنزيل ملفات JSON
+function downloadAgentJsonFile(filename, dataObj) {
+  const jsonStr = JSON.stringify(dataObj, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// 1. تصدير مجموعة وكلاء كاملة كملف JSON
+function exportSingleGroup(groupId) {
+  const group = agentGroups.find(g => g.id === groupId);
+  if (!group) {
+    if (typeof showToast === 'function') showToast('المجموعة غير موجودة لتصديرها', true);
+    return;
+  }
+  const cleanName = (group.name || 'group').slice(0, 40).replace(/[^a-zA-Z0-9\u0600-\u06FF_-]/g, '_');
+  const filename = `agent_group_${cleanName}_${new Date().toISOString().split('T')[0]}.json`;
+  const exportPayload = {
+    app: 'almojtahed_system',
+    version: '2.0',
+    type: 'almojtahed_agent_group',
+    exported_at: new Date().toISOString(),
+    group: group,
+    id: group.id,
+    name: group.name,
+    desc: group.desc,
+    agents: group.agents || []
+  };
+  downloadAgentJsonFile(filename, exportPayload);
+  if (typeof showToast === 'function') {
+    showToast(`📤 تم تصدير مجموعة «${group.name}» (${(group.agents || []).length} وكلاء) بنجاح!`);
+  }
+}
+
+// 2. تصدير المجموعة النشطة حالياً
+function exportCurrentActiveGroup() {
+  if (!currentActiveGroupId) {
+    const first = agentGroups[0];
+    if (first) exportSingleGroup(first.id);
+    return;
+  }
+  exportSingleGroup(currentActiveGroupId);
+}
+
+// 3. تصدير وكيل مفرد كملف JSON
+function exportSingleAgent(agentId) {
+  const currentGroup = agentGroups.find(g => g.id === currentActiveGroupId) || agentGroups[0];
+  const agents = currentGroup && currentGroup.agents ? currentGroup.agents : subAgentsList;
+  const agent = agents.find(a => a.id === agentId);
+  if (!agent) {
+    if (typeof showToast === 'function') showToast('الوكيل غير موجود لتصديره', true);
+    return;
+  }
+  const cleanName = (agent.name || 'agent').slice(0, 40).replace(/[^a-zA-Z0-9\u0600-\u06FF_-]/g, '_');
+  const filename = `agent_${cleanName}_${new Date().toISOString().split('T')[0]}.json`;
+  const exportPayload = {
+    app: 'almojtahed_system',
+    version: '2.0',
+    type: 'almojtahed_single_agent',
+    exported_at: new Date().toISOString(),
+    agent: agent,
+    ...agent
+  };
+  downloadAgentJsonFile(filename, exportPayload);
+  if (typeof showToast === 'function') {
+    showToast(`📤 تم تصدير الوكيل «${agent.name}» كملف JSON بنجاح!`);
+  }
+}
+
+// 4. استيراد مجموعة وكلاء أو وكيل مفرد
+function triggerImportAgentFile() {
+  const input = document.getElementById('agentImportFileInput');
+  if (input) {
+    input.value = '';
+    input.click();
+  }
+}
+
+async function handleAgentFileImport(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!imported) throw new Error('الملف فارغ');
+
+      // أ) استيراد مجموعة كاملة
+      if (imported.type === 'almojtahed_agent_group' || (imported.agents && Array.isArray(imported.agents) && imported.name)) {
+        const groupData = imported.group || imported;
+        const newGroup = {
+          id: groupData.id || `group_${Date.now()}`,
+          name: groupData.name || 'مجموعة وكلاء مستوردة',
+          desc: groupData.desc || 'مجموعة مستوردة من ملف JSON',
+          agents: Array.isArray(groupData.agents) ? groupData.agents : []
+        };
+        const existingIdx = agentGroups.findIndex(g => g.id === newGroup.id);
+        if (existingIdx !== -1) {
+          agentGroups[existingIdx] = newGroup;
+        } else {
+          agentGroups.push(newGroup);
+        }
+        saveAgentGroups();
+        renderGroupsTable();
+        if (typeof showToast === 'function') {
+          showToast(`📥 تم استيراد مجموعة «${newGroup.name}» بنجاح!`);
+        }
+        return;
+      }
+
+      // ب) استيراد وكيل مفرد
+      if (imported.type === 'almojtahed_single_agent' || imported.systemPrompt || imported.system_prompt || imported.role) {
+        const agentData = imported.agent || imported;
+        const currentGroup = agentGroups.find(g => g.id === currentActiveGroupId) || agentGroups[0];
+        if (!currentGroup) {
+          throw new Error('لا توجد مجموعة نشطة لإضافة الوكيل إليها');
+        }
+        if (!currentGroup.agents) currentGroup.agents = [];
+
+        const newAgent = {
+          ...agentData,
+          id: agentData.id || `agent_${Date.now()}`,
+          name: agentData.name || 'وكيل مستورد'
+        };
+
+        const existingAgentIdx = currentGroup.agents.findIndex(a => a.id === newAgent.id);
+        if (existingAgentIdx !== -1) {
+          currentGroup.agents[existingAgentIdx] = newAgent;
+        } else {
+          currentGroup.agents.push(newAgent);
+        }
+        saveAgentGroups();
+        renderAgentsGrid();
+        renderGroupsTable();
+        if (typeof showToast === 'function') {
+          showToast(`📥 تم استيراد الوكيل «${newAgent.name}» إلى مجموعة «${currentGroup.name}» بنجاح!`);
+        }
+        return;
+      }
+
+      // ج) مصفوفة مجموعات أو وكلاء
+      if (Array.isArray(imported)) {
+        let importedCount = 0;
+        imported.forEach(item => {
+          if (item && item.agents && Array.isArray(item.agents)) {
+            agentGroups.push(item);
+            importedCount++;
+          }
+        });
+        if (importedCount > 0) {
+          saveAgentGroups();
+          renderGroupsTable();
+          if (typeof showToast === 'function') {
+            showToast(`📥 تم استيراد ${importedCount} مجموعات بنجاح!`);
+          }
+          return;
+        }
+      }
+
+      throw new Error('صيغة الملف غير مدعومة');
+    } catch (err) {
+      console.error('Import error:', err);
+      if (typeof showToast === 'function') {
+        showToast('تعذر استيراد الملف: ' + (err.message || 'صيغة غير صالحة'), true);
+      }
+    }
+  };
+  reader.readAsText(file, 'utf-8');
 }
 
 // =============================================================================
@@ -516,10 +698,15 @@ function renderAgentsGrid() {
         ` : ''}
 
         <div class="agent-card-footer">
-          <button type="button" class="btn-flat-secondary" onclick="editAgent('${agent.id}')" style="font-size: 12.5px; padding: 4px 12px;">
-            تعديل
-          </button>
-          <button type="button" class="btn-flat-secondary" onclick="deleteAgent('${agent.id}')" style="font-size: 12.5px; padding: 4px 10px; color: #c0392b;">
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button type="button" class="btn-flat-secondary" onclick="editAgent('${agent.id}')" style="font-size: 12.5px; padding: 4px 12px;">
+              تعديل
+            </button>
+            <button type="button" class="btn-flat-secondary" onclick="exportSingleAgent('${agent.id}')" style="font-size: 12.5px; padding: 4px 10px;" title="تصدير هذا الوكيل كملف JSON">
+              <span>تصدير 📤</span>
+            </button>
+          </div>
+          <button type="button" class="btn-flat-secondary" onclick="deleteAgent('${agent.id}')" style="font-size: 12.5px; padding: 4px 10px; color: #c0392b;" title="حذف الوكيل">
             حذف
           </button>
         </div>
@@ -1027,3 +1214,8 @@ window.closeAgentModelDropdown = closeAgentModelDropdown;
 window.clearAgentModelSearch = clearAgentModelSearch;
 window.filterAgentCustomModels = filterAgentCustomModels;
 window.selectCustomAgentModel = selectCustomAgentModel;
+window.exportSingleGroup = exportSingleGroup;
+window.exportCurrentActiveGroup = exportCurrentActiveGroup;
+window.exportSingleAgent = exportSingleAgent;
+window.triggerImportAgentFile = triggerImportAgentFile;
+window.handleAgentFileImport = handleAgentFileImport;

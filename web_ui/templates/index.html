@@ -578,14 +578,28 @@
                                 التراثي
                             </p>
                         </div>
-                        <button type="button" class="btn-flat-primary" onclick="openCreateGroupModal()"
-                            id="btnCreateAgentGroup">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M12 5v14M5 12h14" />
-                            </svg>
-                            <span>إنشاء مجموعة</span>
-                        </button>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button type="button" class="btn-flat-secondary" onclick="triggerImportAgentFile()"
+                                title="استيراد مجموعة وكلاء أو وكيل مفرد من ملف JSON">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                                <span>استيراد 📥</span>
+                            </button>
+                            <input type="file" id="agentImportFileInput" accept=".json" style="display: none;"
+                                onchange="handleAgentFileImport(event)">
+                            <button type="button" class="btn-flat-primary" onclick="openCreateGroupModal()"
+                                id="btnCreateAgentGroup">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M12 5v14M5 12h14" />
+                                </svg>
+                                <span>إنشاء مجموعة</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- جدول عرض المجموعات -->
@@ -631,13 +645,25 @@
                                 وكلاء أذكياء متخصصون في سحب وتحضير المسائل من الشاملة بالبحث الدلالي
                             </p>
                         </div>
-                        <button type="button" class="btn-flat-primary" onclick="openAddAgentModal()">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M12 5v14M5 12h14" />
-                            </svg>
-                            <span>إضافة وكيل مساعد جديد</span>
-                        </button>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button type="button" class="btn-flat-secondary" onclick="exportCurrentActiveGroup()"
+                                title="تصدير هذه المجموعة مع كافة وكلائها كملف JSON">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="17 8 12 3 7 8" />
+                                    <line x1="12" y1="3" x2="12" y2="15" />
+                                </svg>
+                                <span>تصدير المجموعة 📤</span>
+                            </button>
+                            <button type="button" class="btn-flat-primary" onclick="openAddAgentModal()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M12 5v14M5 12h14" />
+                                </svg>
+                                <span>إضافة وكيل مساعد جديد</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- شبكة بطاقات الوكلاء المساعدين للمجموعة -->
@@ -785,6 +811,16 @@
                                     <polyline points="7 3 7 8 15 8" />
                                 </svg>
                                 <span>حفظ ضبط البطاقات 💾</span>
+                            </button>
+                            <button type="button" class="btn-secondary-action" onclick="exportSingleProject(activeProjectId)"
+                                id="btnExportActiveProject" title="تصدير هذا المشروع بكافة بياناته وسجل حواراته كملف JSON">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="17 8 12 3 7 8" />
+                                    <line x1="12" y1="3" x2="12" y2="15" />
+                                </svg>
+                                <span>تصدير المشروع 📤</span>
                             </button>
                             <!-- زر تبديل نمط تشغيل الوكلاء في المشروع: متوازي vs موحد مباشر (حفظ خط الرجعة) -->
                             <button type="button" class="chat-dispatch-mode-toggle" id="projectDispatchModeToggleBtn"
