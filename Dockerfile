@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     aria2 \
     sqlite3 \
     ca-certificates \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # تثبيت محرك Qdrant الرسمي كخيار تشغيل مدمج فوري
