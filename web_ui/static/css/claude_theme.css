@@ -7133,3 +7133,203 @@ select {
 .app-dialog-btn.confirm-primary:hover {
   background: var(--accent-hover);
 }
+
+/* =============================================================================
+   مؤشر صحة وموارد السيرفر الحي (Server Telemetry & Health Dashboard)
+   ============================================================================= */
+.server-health-btn {
+  position: relative !important;
+}
+
+.status-pulse-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+.status-pulse-dot.status-green {
+  background-color: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse-ring-green 2s infinite ease-in-out;
+}
+
+.status-pulse-dot.status-yellow {
+  background-color: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+  animation: pulse-ring-yellow 2s infinite ease-in-out;
+}
+
+.status-pulse-dot.status-red {
+  background-color: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+  animation: pulse-ring-red 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-ring-green {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@keyframes pulse-ring-yellow {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+@keyframes pulse-ring-red {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8); }
+  70% { transform: scale(1.2); box-shadow: 0 0 0 7px rgba(239, 68, 68, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.live-dot-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #10b981;
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 680px) {
+  .telemetry-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.telemetry-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.telemetry-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+}
+
+.telemetry-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.telemetry-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.telemetry-icon-box .icon {
+  width: 17px;
+  height: 17px;
+}
+
+.telemetry-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  flex: 1;
+}
+
+.telemetry-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--bg-muted);
+  color: var(--text-muted);
+}
+
+.telemetry-big-stat {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 10px;
+  letter-spacing: -0.5px;
+}
+
+.telemetry-progress-container {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-muted);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.telemetry-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.telemetry-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.telemetry-subinfo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.telemetry-subinfo .info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.telemetry-subinfo .info-row .label {
+  color: var(--text-muted);
+}
+
+.telemetry-subinfo .info-row .val {
+  color: var(--text-main);
+}
+
+.telemetry-actions-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 680px) {
+  .telemetry-actions-panel {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

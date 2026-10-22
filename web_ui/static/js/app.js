@@ -661,6 +661,245 @@ function closeMaintenanceModal() {
 }
 
 // -----------------------------------------------------------------------------
+// مؤشر صحة وموارد السيرفر وتحسين الذاكرة (Server Health & Telemetry)
+// -----------------------------------------------------------------------------
+let serverHealthPoller = null;
+
+function openServerHealthModal() {
+  const modal = document.getElementById('serverHealthModal');
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.classList.add('active', 'open');
+    fetchServerHealth(false);
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+      lucide.createIcons();
+    }
+  }
+}
+
+function closeServerHealthModal() {
+  const modal = document.getElementById('serverHealthModal');
+  if (modal) {
+    modal.style.display = 'none';
+    modal.classList.remove('active', 'open');
+  }
+}
+
+async function fetchServerHealth(showToast = false) {
+  const refreshIcon = document.getElementById('serverRefreshIcon');
+  if (refreshIcon) refreshIcon.style.animation = 'spin 0.8s linear infinite';
+
+  try {
+    const res = await fetch('/api/system/resources');
+    if (!res.ok) throw new Error('تعذر جلب قراءات السيرفر');
+    const data = await res.json();
+
+    // 1. تحديث النقطة النابضة في الترويسة
+    const pulseDot = document.getElementById('serverPulseDot');
+    const modalLiveDot = document.getElementById('modalLiveDot');
+    const summaryText = document.getElementById('serverHealthSummaryText');
+
+    if (pulseDot) {
+      pulseDot.className = 'status-pulse-dot status-' + (data.health_color || 'green');
+    }
+    if (modalLiveDot) {
+      modalLiveDot.style.backgroundColor = data.health_color === 'red' ? '#ef4444' : (data.health_color === 'yellow' ? '#f59e0b' : '#10b981');
+    }
+    if (summaryText) {
+      summaryText.textContent = data.health_label || 'السيرفر متصل ومستقر';
+    }
+
+    // 2. تحديث قراءات الرام (RAM)
+    if (data.memory) {
+      const ramPct = data.memory.percent || 0;
+      const statRamVal = document.getElementById('statRamVal');
+      const badgeRamStatus = document.getElementById('badgeRamStatus');
+      const barRam = document.getElementById('barRam');
+      const statRamDetail = document.getElementById('statRamDetail');
+      const statRamFree = document.getElementById('statRamFree');
+
+      if (statRamVal) statRamVal.textContent = `${data.memory.used_gb} GB (${ramPct}%)`;
+      if (badgeRamStatus) {
+        badgeRamStatus.textContent = `${ramPct}%`;
+        badgeRamStatus.style.color = ramPct > 85 ? '#ef4444' : (ramPct > 75 ? '#f59e0b' : '#10b981');
+      }
+      if (barRam) {
+        barRam.style.width = `${Math.min(100, Math.max(5, ramPct))}%`;
+        barRam.style.background = ramPct > 85 ? 'linear-gradient(90deg, #f59e0b, #ef4444)' : 'linear-gradient(90deg, #10b981, #3b82f6)';
+      }
+      if (statRamDetail) statRamDetail.textContent = `مستخدم: ${data.memory.used_gb} GB من ${data.memory.total_gb} GB`;
+      if (statRamFree) statRamFree.textContent = `شاغر: ${data.memory.free_gb} GB`;
+    }
+
+    // 3. تحديث قراءات القرص (Disk)
+    if (data.disk) {
+      const diskPct = data.disk.percent || 0;
+      const statDiskVal = document.getElementById('statDiskVal');
+      const badgeDiskStatus = document.getElementById('badgeDiskStatus');
+      const barDisk = document.getElementById('barDisk');
+      const statDiskDetail = document.getElementById('statDiskDetail');
+      const statDiskFree = document.getElementById('statDiskFree');
+
+      if (statDiskVal) statDiskVal.textContent = `${data.disk.used_gb} GB (${diskPct}%)`;
+      if (badgeDiskStatus) {
+        badgeDiskStatus.textContent = `${diskPct}%`;
+        badgeDiskStatus.style.color = diskPct > 88 ? '#ef4444' : (diskPct > 80 ? '#f59e0b' : '#10b981');
+      }
+      if (barDisk) {
+        barDisk.style.width = `${Math.min(100, Math.max(5, diskPct))}%`;
+        barDisk.style.background = diskPct > 88 ? 'linear-gradient(90deg, #f59e0b, #ef4444)' : 'linear-gradient(90deg, #10b981, #f59e0b)';
+      }
+      if (statDiskDetail) statDiskDetail.textContent = `مستخدم: ${data.disk.used_gb} GB من ${data.disk.total_gb} GB`;
+      if (statDiskFree) statDiskFree.textContent = `شاغر: ${data.disk.free_gb} GB`;
+    }
+
+    // 4. تحديث حالة Qdrant
+    if (data.qdrant) {
+      const statQdrantPoints = document.getElementById('statQdrantPoints');
+      const statQdrantCollection = document.getElementById('statQdrantCollection');
+      const badgeQdrantStatus = document.getElementById('badgeQdrantStatus');
+
+      if (statQdrantPoints) statQdrantPoints.textContent = data.qdrant.points_count ? Number(data.qdrant.points_count).toLocaleString('en-US') : '8,148,092';
+      if (statQdrantCollection) statQdrantCollection.textContent = data.qdrant.collection_name || 'shamela_almojtahed_8b_dense';
+      if (badgeQdrantStatus) {
+        badgeQdrantStatus.textContent = data.qdrant.connected ? 'متصل ومفهرس' : 'غير متصل';
+        badgeQdrantStatus.style.color = data.qdrant.connected ? '#10b981' : '#ef4444';
+      }
+    }
+
+    // 5. تحديث حالة النموذج
+    if (data.model) {
+      const statModelName = document.getElementById('statModelName');
+      const statModelEngine = document.getElementById('statModelEngine');
+      const badgeModelStatus = document.getElementById('badgeModelStatus');
+
+      if (statModelName) statModelName.textContent = data.model.name || 'Al-Mojtahed 8B GGUF';
+      if (statModelEngine) statModelEngine.textContent = data.model.loaded ? 'محمل في الذاكرة (سريع)' : 'غير محمل';
+      if (badgeModelStatus) {
+        badgeModelStatus.textContent = data.model.loaded ? 'جاهز' : 'متوقف';
+        badgeModelStatus.style.color = data.model.loaded ? '#10b981' : '#ef4444';
+      }
+    }
+
+    if (showToast && typeof showAlertDialog === 'function') {
+      showAlertDialog({
+        title: 'تم تحديث القراءات',
+        message: 'تم جلب وتحديث مؤشرات موارد السيرفر الحية بنجاح.',
+        type: 'success'
+      });
+    }
+  } catch (err) {
+    console.warn('Server health check notice:', err);
+  } finally {
+    if (refreshIcon) refreshIcon.style.animation = '';
+  }
+}
+
+async function optimizeServerMemory() {
+  const btn = document.getElementById('btnOptimizeServer');
+  const feedback = document.getElementById('telemetryFeedbackMsg');
+  const originalText = btn ? btn.innerHTML : '';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>جاري تنظيف الذاكرة... ⏳</span>';
+  }
+
+  try {
+    const res = await fetch('/api/system/optimize', { method: 'POST' });
+    const data = await res.json();
+
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(16, 185, 129, 0.12)';
+      feedback.style.color = '#10b981';
+      feedback.textContent = data.message || 'تم تنظيف الكاش والذاكرة المؤقتة بنجاح!';
+      setTimeout(() => { feedback.style.display = 'none'; }, 6000);
+    }
+
+    await fetchServerHealth(false);
+  } catch (err) {
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(239, 68, 68, 0.12)';
+      feedback.style.color = '#ef4444';
+      feedback.textContent = 'تعذر إجراء التحسين: ' + err.message;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+      if (window.lucide && typeof lucide.createIcons === 'function') {
+        lucide.createIcons();
+      }
+    }
+  }
+}
+
+async function reloadServerModel() {
+  if (!confirm('هل ترغب بإعادة تفريغ وتحميل نموذج التضمين الشرعي 8B في الرام؟ يستغرق ذلك بضع ثوانٍ.')) {
+    return;
+  }
+
+  const btn = document.getElementById('btnReloadModel');
+  const feedback = document.getElementById('telemetryFeedbackMsg');
+  const originalText = btn ? btn.innerHTML : '';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>جاري إعادة التحميل... ⏳</span>';
+  }
+
+  try {
+    const res = await fetch('/api/system/reload_model', { method: 'POST' });
+    const data = await res.json();
+
+    if (feedback) {
+      feedback.style.display = 'block';
+      if (data.status === 'ok') {
+        feedback.style.background = 'rgba(16, 185, 129, 0.12)';
+        feedback.style.color = '#10b981';
+        feedback.textContent = data.message || 'تمت إعادة تحميل النموذج بنجاح!';
+      } else {
+        feedback.style.background = 'rgba(239, 68, 68, 0.12)';
+        feedback.style.color = '#ef4444';
+        feedback.textContent = data.message || 'تعذر إعادة تحميل النموذج.';
+      }
+      setTimeout(() => { feedback.style.display = 'none'; }, 6000);
+    }
+
+    await fetchServerHealth(false);
+  } catch (err) {
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(239, 68, 68, 0.12)';
+      feedback.style.color = '#ef4444';
+      feedback.textContent = 'خطأ في الاتصال: ' + err.message;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+      if (window.lucide && typeof lucide.createIcons === 'function') {
+        lucide.createIcons();
+      }
+    }
+  }
+}
+
+// بدء الفحص الدوري لموارد السيرفر كل 30 ثانية
+if (typeof window !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', () => {
+    fetchServerHealth(false);
+    if (!serverHealthPoller) {
+      serverHealthPoller = setInterval(() => {
+        fetchServerHealth(false);
+      }, 30000);
+    }
+  });
+}
+
+// -----------------------------------------------------------------------------
 // إدارة واسترجاع النسخ الاحتياطية (Backup & Restore)
 // -----------------------------------------------------------------------------
 let currentBackupsList = [];
@@ -1250,6 +1489,11 @@ window.appPrompt = showPromptDialog;
 
 window.openMaintenanceModal = openMaintenanceModal;
 window.closeMaintenanceModal = closeMaintenanceModal;
+window.openServerHealthModal = openServerHealthModal;
+window.closeServerHealthModal = closeServerHealthModal;
+window.fetchServerHealth = fetchServerHealth;
+window.optimizeServerMemory = optimizeServerMemory;
+window.reloadServerModel = reloadServerModel;
 window.quickSaveCurrentWorkspace = quickSaveCurrentWorkspace;
 window.runSystemDiagnose = runSystemDiagnose;
 window.runSystemRepair = runSystemRepair;

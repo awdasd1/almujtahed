@@ -66,6 +66,11 @@
 
         <!-- إجراءات الترويسة -->
         <div class="header-actions">
+            <button class="btn-icon server-health-btn" id="serverHealthBtn" onclick="openServerHealthModal()"
+                title="مؤشر موارد وحالة السيرفر (الذاكرة والقرص)">
+                <span class="status-pulse-dot status-green" id="serverPulseDot"></span>
+                <i data-lucide="activity" class="icon" aria-hidden="true"></i>
+            </button>
             <button class="btn-icon" id="systemMaintenanceBtn" onclick="openMaintenanceModal()"
                 title="مركز الصيانة والفحص الذاتي الشامل">
                 <i data-lucide="shield-check" class="icon" aria-hidden="true"></i>
@@ -3674,6 +3679,148 @@
                 </div>
             </div>
 
+        </div>
+    </div>
+
+    <!-- =======================================================================
+       نافذة مراقبة موارد وصحة السيرفر الحيّة
+       ======================================================================= -->
+    <div class="modal-overlay" id="serverHealthModal" onclick="if(event.target===this) closeServerHealthModal()">
+        <div class="modal-window server-health-modal-window" style="max-width: 820px; width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+            <!-- ترويسة النافذة -->
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle); padding: 14px 22px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(16, 185, 129, 0.12); display: flex; align-items: center; justify-content: center; color: #10b981; font-size: 20px;">
+                        <i data-lucide="server" class="icon" aria-hidden="true"></i>
+                    </div>
+                    <div>
+                        <div class="modal-title" style="margin: 0; font-size: 16.5px; font-weight: 700; color: var(--text-main);">صحة وموارد خادم المجتهد</div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px; display: flex; align-items: center; gap: 6px;">
+                            <span class="live-dot-indicator" id="modalLiveDot"></span>
+                            <span id="serverHealthSummaryText">السيرفر متصل ومستقر</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" class="btn-secondary-action" onclick="fetchServerHealth(true)" style="font-size: 12px; padding: 6px 12px; display: flex; align-items: center; gap: 5px;">
+                        <i data-lucide="refresh-cw" class="icon" id="serverRefreshIcon" style="width: 14px; height: 14px;"></i>
+                        <span>تحديث القراءات</span>
+                    </button>
+                    <button class="btn-icon" onclick="closeServerHealthModal()" title="إغلاق">
+                        <i data-lucide="x" class="icon" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- محتوى بطاقات الموارد -->
+            <div class="modal-body" style="padding: 20px 22px; overflow-y: auto;">
+                <div class="telemetry-grid">
+                    <!-- 1. بطاقة الرام -->
+                    <div class="telemetry-card" id="cardRam">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6;">
+                                <i data-lucide="cpu" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">الذاكرة العشوائية (RAM)</span>
+                            <span class="telemetry-badge" id="badgeRamStatus">--%</span>
+                        </div>
+                        <div class="telemetry-big-stat" id="statRamVal">-- GB</div>
+                        <div class="telemetry-progress-container">
+                            <div class="telemetry-progress-bar" id="barRam" style="width: 0%; background: linear-gradient(90deg, #10b981, #3b82f6);"></div>
+                        </div>
+                        <div class="telemetry-card-footer">
+                            <span id="statRamDetail">مستخدم: -- GB من -- GB</span>
+                            <span id="statRamFree" class="sub-muted">شاغر: -- GB</span>
+                        </div>
+                    </div>
+
+                    <!-- 2. بطاقة القرص الصلب -->
+                    <div class="telemetry-card" id="cardDisk">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">
+                                <i data-lucide="hard-drive" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">القرص الصلب (SSD)</span>
+                            <span class="telemetry-badge" id="badgeDiskStatus">--%</span>
+                        </div>
+                        <div class="telemetry-big-stat" id="statDiskVal">-- GB</div>
+                        <div class="telemetry-progress-container">
+                            <div class="telemetry-progress-bar" id="barDisk" style="width: 0%; background: linear-gradient(90deg, #10b981, #f59e0b);"></div>
+                        </div>
+                        <div class="telemetry-card-footer">
+                            <span id="statDiskDetail">مستخدم: -- GB من -- GB</span>
+                            <span id="statDiskFree" class="sub-muted">شاغر: -- GB</span>
+                        </div>
+                    </div>
+
+                    <!-- 3. بطاقة قاعدة بيانات المتجهات Qdrant -->
+                    <div class="telemetry-card" id="cardQdrant">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">
+                                <i data-lucide="database" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">مخزن المتجهات (Qdrant)</span>
+                            <span class="telemetry-badge" id="badgeQdrantStatus" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">متصل</span>
+                        </div>
+                        <div class="telemetry-big-stat" id="statQdrantPoints">8,148,092</div>
+                        <div class="telemetry-subinfo">
+                            <div class="info-row">
+                                <span class="label">المجموعة:</span>
+                                <span class="val font-mono" id="statQdrantCollection">shamela_almojtahed_8b_dense</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">المطابقة والتكميم:</span>
+                                <span class="val" style="color: #10b981; font-weight: 600;">int8 On-Disk (نشط)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. بطاقة نموذج التضمين الشرعي 8B -->
+                    <div class="telemetry-card" id="cardModel">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(168, 85, 247, 0.12); color: #a855f7;">
+                                <i data-lucide="sparkles" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">نموذج التضمين (Embedding)</span>
+                            <span class="telemetry-badge" id="badgeModelStatus" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">محمل</span>
+                        </div>
+                        <div class="telemetry-big-stat" style="font-size: 16.5px;" id="statModelName">Al-Mojtahed 8B GGUF</div>
+                        <div class="telemetry-subinfo">
+                            <div class="info-row">
+                                <span class="label">الأبعاد الدلالية:</span>
+                                <span class="val font-mono">4096 بُعد شرعي</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">حالة المحرك:</span>
+                                <span class="val" style="color: #10b981; font-weight: 600;" id="statModelEngine">محمل في الذاكرة (سريع)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- شريط الإجراءات والتحسين -->
+                <div class="telemetry-actions-panel">
+                    <div>
+                        <div style="font-weight: 700; font-size: 14px; color: var(--text-main); margin-bottom: 3px;">⚡ تحسين وتنظيف كاش الذاكرة</div>
+                        <div style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+                            ينظف كاش بايثون ومخلفات الاستعلامات المتراكمة، كما يمكنك إعادة إنعاش وتحميل النموذج من جديد في الرام بعد ساعات العمل الكثيفة.
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <button type="button" class="btn-primary" id="btnOptimizeServer" onclick="optimizeServerMemory()" style="display: flex; align-items: center; gap: 6px; padding: 8px 16px; font-weight: 700; font-size: 12.5px;">
+                            <i data-lucide="sparkles" class="icon" style="width: 15px; height: 15px;"></i>
+                            <span>تنظيف الكاش وتحسين الذاكرة</span>
+                        </button>
+                        <button type="button" class="btn-secondary-action" id="btnReloadModel" onclick="reloadServerModel()" style="display: flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 12.5px;">
+                            <i data-lucide="rotate-ccw" class="icon" style="width: 15px; height: 15px;"></i>
+                            <span>إعادة تحميل النموذج</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="telemetryFeedbackMsg" style="display: none; margin-top: 14px; padding: 12px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;"></div>
+            </div>
         </div>
     </div>
 
