@@ -1535,6 +1535,7 @@ async def search_endpoint(req: SearchRequest):
         }
 
     error_message = None
+    results = []
     try:
             # 1. استخراج متجه البحث الكثيف (4096D للنموذج 8B أو 1024D لـ BGE-M3)
             is_8b_col = app_state.get("is_8b", False)
