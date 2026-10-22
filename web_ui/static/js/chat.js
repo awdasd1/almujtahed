@@ -309,7 +309,18 @@ function renderSessionMessages(sessionId) {
           📋 نسخ
         </button>
       </div>
-    ` : '';
+    ` : `
+      <div class="chat-user-msg-actions-bar" style="display: flex; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(204, 120, 92, 0.25); justify-content: flex-start; flex-wrap: wrap;">
+        <button type="button" class="btn-user-msg-action" onclick="regenerateAnswerForUserMessage(${idx})" title="إعادة توليد الإجابة مرة أخرى بناءً على هذا السؤال">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+          <span>إعادة التوليد</span>
+        </button>
+        <button type="button" class="btn-user-msg-action" onclick="copyUserMessageText(${idx})" title="نسخ نص السؤال">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span>نسخ السؤال</span>
+        </button>
+      </div>
+    `;
 
     return `
       <div class="message-bubble ${isUser ? 'user' : 'assistant'}">
@@ -602,6 +613,17 @@ async function sendChatMessage() {
   renderAttachmentsPreview();
   renderSessionMessages(activeSessionId);
 
+
+  // إرسال الطلب للنموذج واستقبال الرد
+  await triggerChatCompletion(session, outgoingAttachments);
+}
+
+// =============================================================================
+// دورة توليد الإجابة وإرسال الطلب للنموذج أو الوكلاء (مشتركة مع إعادة التوليد)
+// =============================================================================
+async function triggerChatCompletion(session, attachments = []) {
+  if (!session) return;
+
   const selectedModel = document.getElementById('chatModelSelect')?.value || 
                         localStorage.getItem('almojtahed_active_chat_model') || 
                         'anthropic/claude-3.7-sonnet';
@@ -648,7 +670,7 @@ async function sendChatMessage() {
       // إذا اختار المستخدم وكيلاً واحداً صراحة أو فريقاً محدداً
       const isMultiAgents = candidateAgents.length > 1;
       const agentsNames = candidateAgents.map(a => a.name).join(' + ');
-      let activeAgent = candidateAgents[0];
+      activeAgent = candidateAgents[0];
 
       // تجميع نطاق كتب الوكلاء المختارين (دمج نطاق جميع الوكلاء المحددين دون تكرار)
       const booksSet = new Set();
@@ -713,7 +735,6 @@ async function sendChatMessage() {
   let executionTopK = currentSettings.modelParams?.topK;
 
   if (activeAgent) {
-    // إسناد الوكيل يوفر توجيه استخراج الشاملة وتخصيص التفكير دون مصادرة النموذج المختار
     if (activeAgent.thinking && !executionThinking) executionThinking = activeAgent.thinking;
     if (activeAgent.systemPrompt) executionPrompt = activeAgent.systemPrompt;
     if (activeAgent.temp !== undefined && executionTemp === undefined) executionTemp = activeAgent.temp;
@@ -763,7 +784,7 @@ async function sendChatMessage() {
         providers: currentSettings.providers,
         agent_group: assignedGroupPayload,
         agent_dispatch_mode: window.chatAgentDispatchMode || 'parallel',
-        attachments: outgoingAttachments.map(a => ({
+        attachments: (attachments || []).map(a => ({
           filename: a.name,
           safe_filename: a.safeName,
           file_url: a.url,
@@ -801,6 +822,40 @@ async function sendChatMessage() {
     renderSessionMessages(activeSessionId);
   }
 }
+
+// إعادة توليد الإجابة مرة أخرى بناءً على سؤال المستخدم المحدد
+async function regenerateAnswerForUserMessage(idx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  if (!session || !session.messages || !session.messages[idx]) return;
+
+  // التأكد من أن الرسالة هي سؤال المستخدم
+  if (session.messages[idx].role !== 'user') return;
+
+  // إذا كان هناك توليد جارٍ حالياً نمنع التكرار
+  if (document.getElementById('typingBubbleIndicator')) {
+    showToast('جارٍ معالجة إجابة حالياً، يرجى الانتظار...');
+    return;
+  }
+
+  // اقتطاع المحادثة حتى هذا السؤال لبدء توليد جديد من عنده
+  session.messages = session.messages.slice(0, idx + 1);
+  saveChatSessions();
+  renderSessionMessages(activeSessionId);
+
+  showToast('جارٍ إعادة توليد الإجابة... 🔄');
+  await triggerChatCompletion(session, []);
+}
+window.regenerateAnswerForUserMessage = regenerateAnswerForUserMessage;
+
+// نسخ نص سؤال المستخدم إلى الحافظة
+function copyUserMessageText(idx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  if (!session || !session.messages || !session.messages[idx]) return;
+  const content = session.messages[idx].content || '';
+  navigator.clipboard.writeText(content);
+  showToast('تم نسخ نص السؤال إلى الحافظة 📋');
+}
+window.copyUserMessageText = copyUserMessageText;
 
 // =============================================================================
 // إدارة ربط الشات بمجموعات الوكلاء المساعدين
