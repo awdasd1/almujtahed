@@ -5849,7 +5849,7 @@ def _run_architect_tool_call(tool_call: Dict[str, Any]) -> Dict[str, Any]:
         return {"args": args, "result": {"error": f"أداة غير معروفة: {name}", "results": []}}
 
 class ArchitectDialogRequest(BaseModel):
-    messages: List[Dict[str, str]]
+    messages: List[Dict[str, Any]]
     planning_model: Optional[str] = "google/gemini-2.5-flash"
     api_key: Optional[str] = ""
 
@@ -5861,6 +5861,11 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest):
     يستكشف الكتب من قاعدة البيانات الببليوغرافية للمخزن، ويرشح وكلاء وأدوات حسابية مخصصة.
     """
     key = (req.api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+    if not key:
+        return {
+            "status": "error",
+            "message": "لم يتم العثور على مفتاح OpenRouter API. يرجى إدخال المفتاح في إعدادات المنظومة أو ملف .env لمحادثة مهندس التخطيط المعماري."
+        }
     call_model = (req.planning_model or "").strip() or "google/gemini-2.5-flash"
     
     # تطبيع الاختصارات القديمة فقط دون المساس بنماذج Anthropic المختارة
@@ -5876,8 +5881,12 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest):
         call_model = legacy_aliases[call_model]
 
     # استكشاف الكتب المتوفرة في المخزن تلقائياً بناءً على حوار الباحث وفنون المسألة وحدودها الزمنية
-    all_user_text = " ".join([m.get("content", "") for m in req.messages if m.get("role") == "user"])
-    discovered_books = explore_bibliographic_books(all_user_text, limit=800)
+    all_user_text = " ".join([str(m.get("content") or "") for m in req.messages if m.get("role") == "user"])
+    discovered_books = []
+    try:
+        discovered_books = explore_bibliographic_books(all_user_text, limit=800)
+    except Exception as eb_err:
+        print(f"⚠️ Warning in explore_bibliographic_books: {eb_err}")
 
     books_catalog_section = ""
     if discovered_books:
@@ -6144,57 +6153,82 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest):
                 },
                 data=json.dumps(payload).encode("utf-8")
             )
-            with urllib.request.urlopen(o_req, timeout=140) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                choice = data["choices"][0]
-                msg_obj = choice["message"]
-                chunk = msg_obj.get("content") or msg_obj.get("reasoning") or msg_obj.get("reasoning_content") or ""
-                tool_calls = msg_obj.get("tool_calls") or []
-                finish_reason = choice.get("finish_reason")
+            try:
+                with urllib.request.urlopen(o_req, timeout=140) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as he:
+                err_body = he.read().decode("utf-8", errors="ignore")
+                err_msg = f"HTTP {he.code}: {he.reason}"
+                try:
+                    err_json = json.loads(err_body)
+                    if "error" in err_json and "message" in err_json["error"]:
+                        err_msg = err_json["error"]["message"]
+                except Exception:
+                    pass
+                print(f"❌ [OpenRouter Error in Architect Dialog] {err_msg}")
+                return {
+                    "status": "error",
+                    "message": f"خطأ من مزود النموذج (OpenRouter): {err_msg}"
+                }
+            except Exception as net_err:
+                print(f"❌ [Network/Timeout Error in Architect Dialog] {net_err}")
+                return {
+                    "status": "error",
+                    "message": f"تعذر استكمال الاتصال بمزود الذكاء الاصطناعي: {str(net_err)}"
+                }
 
-                # إذا استدعى المهندس أداة البحث الحي في الفهرس الكامل
-                if tool_calls:
+            choices = data.get("choices") or []
+            if not choices:
+                break
+            choice = choices[0]
+            msg_obj = choice.get("message") or {}
+            chunk = msg_obj.get("content") or msg_obj.get("reasoning") or msg_obj.get("reasoning_content") or ""
+            tool_calls = msg_obj.get("tool_calls") or []
+            finish_reason = choice.get("finish_reason")
+
+            # إذا استدعى المهندس أداة البحث الحي في الفهرس الكامل
+            if tool_calls:
+                current_messages.append({
+                    "role": "assistant",
+                    "content": chunk,
+                    "tool_calls": tool_calls
+                })
+                for tc in tool_calls:
+                    t_id = tc.get("id") or f"call_{len(current_messages)}"
+                    res_info = _run_architect_tool_call(tc)
+                    t_res = res_info.get("result", {})
+                    # إضافة أي كتب عثر عليها المهندس بالبحث الحي إلى قائمة الكتب المستكشفة للواجهة
+                    for b in t_res.get("results", []):
+                        bid = b.get("book_id")
+                        if bid and bid not in discovered_books_map:
+                            discovered_books_map[bid] = {
+                                "book_id": bid,
+                                "title": b.get("title"),
+                                "author": b.get("author"),
+                                "death": b.get("death"),
+                                "category": b.get("category"),
+                                "betaka_snippet": b.get("betaka_snippet", ""),
+                                "matched_from": f"بحث المهندس الحي: {res_info.get('args', {})}"
+                            }
                     current_messages.append({
-                        "role": "assistant",
-                        "content": chunk,
-                        "tool_calls": tool_calls
+                        "role": "tool",
+                        "tool_call_id": t_id,
+                        "name": tc.get("function", {}).get("name", "search_books_catalog"),
+                        "content": json.dumps(t_res, ensure_ascii=False)
                     })
-                    for tc in tool_calls:
-                        t_id = tc.get("id") or f"call_{len(current_messages)}"
-                        res_info = _run_architect_tool_call(tc)
-                        t_res = res_info.get("result", {})
-                        # إضافة أي كتب عثر عليها المهندس بالبحث الحي إلى قائمة الكتب المستكشفة للواجهة
-                        for b in t_res.get("results", []):
-                            bid = b.get("book_id")
-                            if bid and bid not in discovered_books_map:
-                                discovered_books_map[bid] = {
-                                    "book_id": bid,
-                                    "title": b.get("title"),
-                                    "author": b.get("author"),
-                                    "death": b.get("death"),
-                                    "category": b.get("category"),
-                                    "betaka_snippet": b.get("betaka_snippet", ""),
-                                    "matched_from": f"بحث المهندس الحي: {res_info.get('args', {})}"
-                                }
-                        current_messages.append({
-                            "role": "tool",
-                            "tool_call_id": t_id,
-                            "name": tc.get("function", {}).get("name", "search_books_catalog"),
-                            "content": json.dumps(t_res, ensure_ascii=False)
-                        })
-                    print(f"🔍 [Architect Tool] Turn {turn + 1}: Executed {len(tool_calls)} search calls.")
-                    continue
+                print(f"🔍 [Architect Tool] Turn {turn + 1}: Executed {len(tool_calls)} search calls.")
+                continue
 
-                reply_text += chunk
+            reply_text += chunk
 
-                # إذا انتهى الرد طبيعياً أو اكتمل المخطط نخرج
-                if finish_reason != "length" or "```" in chunk:
-                    break
+            # إذا انتهى الرد طبيعياً أو اكتمل المخطط نخرج
+            if finish_reason != "length" or "```" in chunk:
+                break
 
-                # إذا انقطع الكلام بسبب سقف الطول، نضيف التوجيه لاستكمال الباقي فوراً
-                current_messages.append({"role": "assistant", "content": chunk})
-                current_messages.append({"role": "user", "content": "أكمل فوراً من النقطة التي توقفت عندها بالضبط دون إعادة وأغلق كائن المخطط JSON كاملاً."})
-                print(f"🔄 [Architect Auto-Continue] Continuing truncated architect response...")
+            # إذا انقطع الكلام بسبب سقف الطول، نضيف التوجيه لاستكمال الباقي فوراً
+            current_messages.append({"role": "assistant", "content": chunk})
+            current_messages.append({"role": "user", "content": "أكمل فوراً من النقطة التي توقفت عندها بالضبط دون إعادة وأغلق كائن المخطط JSON كاملاً."})
+            print(f"🔄 [Architect Auto-Continue] Continuing truncated architect response...")
 
         final_explored_books = list(discovered_books_map.values())
             
@@ -6270,8 +6304,10 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest):
             "model_used": call_model
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Architect dialog error: {e}")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": f"خطأ أثناء معالجة استشارة المهندس: {str(e)}"}
 
 class ExportPdfRequest(BaseModel):
     html: str

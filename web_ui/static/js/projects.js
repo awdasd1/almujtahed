@@ -1912,8 +1912,20 @@ async function sendArchitectMessage() {
     const waitEl = document.getElementById(tempMsgId);
     if (waitEl) waitEl.remove();
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const errJson = await res.json();
+        if (errJson.detail) errMsg = errJson.detail;
+        else if (errJson.message) errMsg = errJson.message;
+      } catch (e) { }
+      throw new Error(errMsg);
+    }
     const data = await res.json();
+
+    if (data.status === 'error') {
+      throw new Error(data.message || 'تعذر استدعاء مهندس التخطيط');
+    }
 
     if (data.reply) {
       architectHistory.push({ role: 'assistant', content: data.reply });
@@ -3109,6 +3121,7 @@ function exportSingleProject(projectId, event) {
     export_type: 'single_project',
     exported_at: new Date().toISOString(),
     project: projectData,
+    projects: [projectData],
     agent_groups: linkedGroup ? [linkedGroup] : [],
     // للتوافق المباشر مع استيراد المشروع:
     id: projectData.id,
@@ -3152,16 +3165,23 @@ async function handleProjectFileImport(event) {
       let projectsToImport = [];
       let groupsToImport = [];
 
-      // 1. التعامل مع صيغة الحزمة الكاملة المتطورة (Comprehensive Bundle)
-      if (imported && (imported.projects || imported.agent_groups)) {
-        if (Array.isArray(imported.projects)) projectsToImport = imported.projects;
-        if (Array.isArray(imported.agent_groups)) groupsToImport = imported.agent_groups;
-      } else if (Array.isArray(imported)) {
-        // صيغة مصفوفة مشاريع تقليدية
-        projectsToImport = imported;
-      } else if (imported && imported.id) {
-        // مشروع مفرد
-        projectsToImport = [imported];
+      // 1. التعامل الشامل مع جميع صيغ الملفات (حزمة كاملة، مشروع مفرد، مصفوفة مشاريع)
+      if (imported) {
+        if (Array.isArray(imported.projects) && imported.projects.length > 0) {
+          projectsToImport = imported.projects;
+        } else if (imported.project && typeof imported.project === 'object') {
+          projectsToImport = [imported.project];
+        } else if (Array.isArray(imported)) {
+          projectsToImport = imported;
+        } else if (imported.id && typeof imported.id === 'string' && (imported.title || imported.director || imported.subagents_group)) {
+          projectsToImport = [imported];
+        }
+
+        if (Array.isArray(imported.agent_groups)) {
+          groupsToImport = imported.agent_groups;
+        } else if (imported.agent_group && typeof imported.agent_group === 'object') {
+          groupsToImport = [imported.agent_group];
+        }
       }
 
       // 2. استيراد وتثبيت مجموعات الوكلاء أولاً
