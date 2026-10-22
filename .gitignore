@@ -42,3 +42,8 @@ Thumbs.db
 tmp/
 .tempmediaStorage/
 
+# ملفات النسخ الاحتياطي ومرفوعات المستخدم والبيانات المؤقتة
+web_ui/backups/
+web_ui/uploads/*
+!web_ui/uploads/.gitkeep
+web_app/user_assistants.json
