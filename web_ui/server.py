@@ -684,6 +684,8 @@ def load_models_and_db():
 @app.on_event("startup")
 def on_startup():
     load_models_and_db()
+    if _bundled_qdrant_path():
+        threading.Thread(target=_qdrant_watchdog, name="qdrant-watchdog", daemon=True).start()
 
 # نماذج البيانات
 class SearchRequest(BaseModel):
@@ -2376,6 +2378,115 @@ def _qdrant_dir_bytes():
         _QDRANT_SIZE_SAMPLE["busy"] = False
     return received
 
+_QDRANT_ENGINE = {"starting": False, "last_message": ""}
+_QDRANT_START_LOCK = threading.Lock()
+
+def _bundled_qdrant_path():
+    binary = Path("/app/qdrant_service/qdrant")
+    return binary if binary.is_file() else None
+
+def _qdrant_port_open(port=6333):
+    import socket
+    sock = socket.socket()
+    sock.settimeout(1.0)
+    try:
+        sock.connect(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+def _start_bundled_qdrant():
+    """تشغيل محرك الحاوية فقط. لا يمس عملية Qdrant المحلية على جهاز التطوير."""
+    binary = _bundled_qdrant_path()
+    if binary is None:
+        return False, "إعادة التشغيل التلقائي تعمل داخل حاوية التطبيق"
+    if _qdrant_port_open():
+        _ensure_qdrant_client()
+        _QDRANT_ENGINE["last_message"] = "المخزن يعمل"
+        return True, "المخزن يعمل"
+    if not _QDRANT_START_LOCK.acquire(blocking=False):
+        return True, "جارٍ تشغيل المخزن"
+    try:
+        if _qdrant_port_open():
+            message = "المخزن يعمل"
+        else:
+            _QDRANT_ENGINE["starting"] = True
+            log_path = Path("/app/qdrant_service/qdrant.log")
+            log_handle = open(log_path, "ab", buffering=0)
+            subprocess.Popen(
+                [str(binary), "--config-path", "/app/qdrant_service/config/config.yaml"],
+                cwd="/app/qdrant_service",
+                stdout=log_handle,
+                stderr=log_handle,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            message = "المحرك لم يرد بعد التشغيل"
+            for _ in range(30):
+                if _qdrant_port_open():
+                    message = "تم تشغيل المخزن"
+                    break
+                time.sleep(1)
+        _QDRANT_ENGINE["last_message"] = message
+    except Exception as ex:
+        message = "تعذر تشغيل المخزن"
+        _QDRANT_ENGINE["last_message"] = message
+        print(f"⚠️ تعذر تشغيل Qdrant: {type(ex).__name__}")
+    finally:
+        _QDRANT_ENGINE["starting"] = False
+        _QDRANT_START_LOCK.release()
+    if _qdrant_port_open():
+        _ensure_qdrant_client()
+        return True, _QDRANT_ENGINE["last_message"]
+    return False, _QDRANT_ENGINE["last_message"]
+
+def _stop_bundled_qdrant():
+    binary = _bundled_qdrant_path()
+    if binary is None:
+        return False
+    try:
+        output = subprocess.check_output(["lsof", "-nP", "-iTCP:6333", "-sTCP:LISTEN", "-t"], text=True, timeout=5)
+    except Exception:
+        return True
+    stopped = False
+    for raw in output.split():
+        try:
+            pid = int(raw)
+            cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+        except Exception:
+            continue
+        if "qdrant" not in cmdline:
+            continue
+        try:
+            os.kill(pid, 15)
+            stopped = True
+        except OSError:
+            continue
+    for _ in range(10):
+        if not _qdrant_port_open():
+            return True
+        time.sleep(0.4)
+    if stopped:
+        for raw in output.split():
+            try:
+                os.kill(int(raw), 9)
+            except OSError:
+                pass
+    return not _qdrant_port_open()
+
+def _qdrant_watchdog():
+    while True:
+        time.sleep(20)
+        try:
+            if not _qdrant_port_open():
+                _start_bundled_qdrant()
+            elif not app_state.get("qdrant"):
+                _ensure_qdrant_client()
+        except Exception:
+            pass
+
 def _snapshot_restore_view(connected, points_count):
     status = _read_bootstrap_status() or {}
     phase = status.get("phase") or ""
@@ -2460,6 +2571,9 @@ async def get_system_resources_endpoint():
             "connected": q_connected,
             "collection_name": collection_name,
             "points_count": points_count,
+            "engine_up": _qdrant_port_open(),
+            "can_restart": _bundled_qdrant_path() is not None,
+            "engine_message": _QDRANT_ENGINE.get("last_message") or "",
             "restore": restore
         },
         "model": {
@@ -2469,6 +2583,17 @@ async def get_system_resources_endpoint():
         }
     }
 
+
+@app.post("/api/system/qdrant/restart")
+async def restart_qdrant_endpoint(request: Request):
+    """إعادة تشغيل محرك المتجهات المدمج داخل الحاوية دون مسح البيانات."""
+    require_admin(request)
+    if _bundled_qdrant_path() is None:
+        return {"status": "unavailable", "message": "هذا الزر يشغّل محرك الحاوية. المخزن المحلي يعمل بشكل منفصل."}
+    _stop_bundled_qdrant()
+    app_state["qdrant"] = None
+    ok, message = _start_bundled_qdrant()
+    return {"status": "ok" if ok else "error", "message": message}
 
 @app.post("/api/system/optimize")
 async def optimize_system_resources_endpoint():

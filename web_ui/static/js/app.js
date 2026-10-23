@@ -865,6 +865,8 @@ async function fetchServerHealth(showToast = false) {
           persistWarn.textContent = '';
         }
       }
+      const restartBtn = document.getElementById('btnRestartQdrant');
+      if (restartBtn) restartBtn.disabled = false;
     }
 
     // 5. تحديث حالة النموذج
@@ -933,6 +935,31 @@ async function optimizeServerMemory() {
         lucide.createIcons();
       }
     }
+  }
+}
+
+async function restartQdrantStore() {
+  const btn = document.getElementById('btnRestartQdrant');
+  const feedback = document.getElementById('telemetryFeedbackMsg');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/system/qdrant/restart', { method: 'POST' });
+    const data = await res.json();
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = data.status === 'ok' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)';
+      feedback.style.color = data.status === 'ok' ? '#10b981' : '#b45309';
+      feedback.textContent = data.message || 'تمت إعادة تشغيل المخزن';
+    }
+    await fetchServerHealth(false);
+  } catch (err) {
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.color = '#ef4444';
+      feedback.textContent = 'تعذر إعادة تشغيل المخزن';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
