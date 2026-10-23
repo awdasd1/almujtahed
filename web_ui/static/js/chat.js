@@ -1327,8 +1327,8 @@ function formatMarkdown(text) {
   // معالجة احتياطية في حال عدم توفر مكتبة marked
   if (!html) {
     let res = escapeHtml(text);
-    res = res.replace(/^### (.*$)/gim, '<h4 style="font-family: var(--font-amiri); font-size: 19px; margin: 12px 0 6px; color: var(--text-main);">$1</h4>');
-    res = res.replace(/^## (.*$)/gim, '<h3 style="font-family: var(--font-amiri); font-size: 21px; margin: 14px 0 8px; color: var(--accent-clay);">$1</h3>');
+    res = res.replace(/^### (.*$)/gim, '<h4 style="font-family: var(--font-reading); font-size: 19px; margin: 12px 0 6px; color: var(--text-main);">$1</h4>');
+    res = res.replace(/^## (.*$)/gim, '<h3 style="font-family: var(--font-reading); font-size: 21px; margin: 14px 0 8px; color: var(--accent-clay);">$1</h3>');
     res = res.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     res = res.replace(/\*(.*?)\*/g, '<em>$1</em>');
     res = res.replace(/^\- (.*$)/gim, '<li style="margin-right: 18px; margin-bottom: 4px;">$1</li>');

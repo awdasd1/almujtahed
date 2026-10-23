@@ -49,6 +49,9 @@ window.almujtahedIdentity = fetch('/api/auth/status')
 const DEFAULT_SETTINGS = {
   themePreset: 'sand',
   fontFamily: "'Amiri', 'Noto Naskh Arabic', 'Lotus Linotype', serif",
+  fontHeading: 'google:Amiri',
+  fontApp: 'google:Amiri',
+  fontReading: 'google:Noto Naskh Arabic',
   textSize: 19,
   providers: {
     claude: '',
@@ -74,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initThemeSelects();
   setupEventListeners();
+  initFontSystem();
 
   // استعادة التبويب النشط من الـ URL hash أو التخزين المحلي
   const hashTab = (window.location.hash || '').replace('#', '');
@@ -296,7 +300,12 @@ function initThemeSelects() {
     const label = wrap.querySelector('.theme-select-label');
     const trigger = wrap.querySelector('.theme-select-trigger');
     const selected = select.selectedOptions[0];
-    if (label) label.textContent = selected ? selected.textContent.trim() : '';
+    if (label) {
+      label.textContent = selected ? selected.textContent.trim() : '';
+      const stack = selected && selected.dataset.fontStack;
+      if (stack) label.style.setProperty('font-family', stack, 'important');
+      else label.style.removeProperty('font-family');
+    }
     if (trigger) trigger.disabled = select.disabled;
   }
 
@@ -308,7 +317,7 @@ function initThemeSelects() {
     menu.hidden = false;
     const width = Math.min(menu.offsetWidth, window.innerWidth - 16);
     menu.style.width = width + 'px';
-    const height = Math.min(menu.scrollHeight, 280);
+    const height = Math.min(menu.scrollHeight, 360);
     const spaceBelow = window.innerHeight - rect.bottom;
     const top = spaceBelow < height + 12 && rect.top > height
       ? rect.top - height - 6
@@ -325,6 +334,9 @@ function initThemeSelects() {
       item.type = 'button';
       item.className = 'theme-select-option';
       item.textContent = option.textContent.trim() || option.value;
+      if (option.dataset.fontStack) {
+        item.style.setProperty('font-family', option.dataset.fontStack, 'important');
+      }
       item.disabled = option.disabled;
       item.setAttribute('role', 'option');
       if (option.selected) item.classList.add('is-selected');
@@ -472,8 +484,328 @@ function initThemeSelects() {
   }, true);
 }
 
+const GOOGLE_FONT_CATALOG = [
+  { family: 'Amiri', label: 'أميري', weights: '400;700', generic: 'serif' },
+  { family: 'Amiri Quran', label: 'أميري قرآن', weights: '400', generic: 'serif' },
+  { family: 'Noto Naskh Arabic', label: 'نوتو نسخ', weights: '400;500;600;700', generic: 'serif' },
+  { family: 'Noto Sans Arabic', label: 'نوتو سانس', weights: '400;500;600;700', generic: 'sans-serif' },
+  { family: 'Noto Kufi Arabic', label: 'نوتو كوفي', weights: '400;500;600;700', generic: 'sans-serif' },
+  { family: 'Scheherazade New', label: 'شهرزاد', weights: '400;700', generic: 'serif' },
+  { family: 'Lateef', label: 'لطيف', weights: '400;700', generic: 'serif' },
+  { family: 'Markazi Text', label: 'مركزي', weights: '400;500;600;700', generic: 'serif' },
+  { family: 'Aref Ruqaa', label: 'عارف رقعة', weights: '400;700', generic: 'serif' },
+  { family: 'Mirza', label: 'ميرزا', weights: '400;500;600;700', generic: 'serif' },
+  { family: 'Cairo', label: 'القاهرة', weights: '400;600;700', generic: 'sans-serif' },
+  { family: 'Tajawal', label: 'تجوال', weights: '400;500;700', generic: 'sans-serif' },
+  { family: 'Almarai', label: 'المراعي', weights: '400;700', generic: 'sans-serif' },
+  { family: 'IBM Plex Sans Arabic', label: 'آي بي إم بليكس', weights: '400;500;600;700', generic: 'sans-serif' },
+  { family: 'Readex Pro', label: 'ريدكس', weights: '400;500;600;700', generic: 'sans-serif' },
+  { family: 'El Messiri', label: 'المسيري', weights: '400;500;600;700', generic: 'sans-serif' },
+  { family: 'Changa', label: 'تشانغا', weights: '400;600;700', generic: 'sans-serif' },
+  { family: 'Mada', label: 'مدى', weights: '400;500;600;700', generic: 'sans-serif' },
+  { family: 'Harmattan', label: 'هرمتان', weights: '400;700', generic: 'sans-serif' },
+  { family: 'Kufam', label: 'كوفام', weights: '400;600;700', generic: 'sans-serif' },
+  { family: 'Reem Kufi', label: 'ريم كوفي', weights: '400;600;700', generic: 'sans-serif' },
+  { family: 'Lemonada', label: 'ليمونادة', weights: '400;600;700', generic: 'sans-serif' },
+  { family: 'Rubik', label: 'روبيك', weights: '400;500;600;700', generic: 'sans-serif' },
+  { family: 'Lalezar', label: 'لاله‌زار', weights: '400', generic: 'serif' },
+  { family: 'Rakkas', label: 'رقّاص', weights: '400', generic: 'serif' },
+  { family: 'Katibeh', label: 'كتيبة', weights: '400', generic: 'serif' },
+];
+
+const FONT_ROLE_FIELDS = {
+  heading: { key: 'fontHeading', selectId: 'fontHeadingSelect', previewId: 'fontHeadingPreview' },
+  app: { key: 'fontApp', selectId: 'fontAppSelect', previewId: 'fontAppPreview' },
+  reading: { key: 'fontReading', selectId: 'fontReadingSelect', previewId: 'fontReadingPreview' },
+};
+
+let customFonts = [];
+let customFontsReady = false;
+
+function cssFontFamily(name) {
+  return `'${String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function stackForFontChoice(choice) {
+  if (!choice || choice === 'system') {
+    return "-apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, sans-serif";
+  }
+  if (String(choice).startsWith('google:')) {
+    const family = String(choice).slice(7);
+    const meta = GOOGLE_FONT_CATALOG.find((font) => font.family === family);
+    return `${cssFontFamily(family)}, 'Noto Naskh Arabic', ${meta ? meta.generic : 'serif'}`;
+  }
+  if (String(choice).startsWith('custom:')) {
+    const filename = String(choice).slice(7);
+    const font = customFonts.find((item) => item.filename === filename);
+    const family = font ? font.family : filename.replace(/\.[^.]+$/, '');
+    return `${cssFontFamily(family)}, 'Noto Naskh Arabic', serif`;
+  }
+  return "'Amiri', 'Noto Naskh Arabic', serif";
+}
+
+function migrateFontSettings(settings) {
+  if (!settings || typeof settings !== 'object') return;
+  const hasRoles = settings.fontHeading && settings.fontApp && settings.fontReading;
+  if (hasRoles) return;
+  const legacy = String(settings.fontFamily || '');
+  const system = /apple-system|BlinkMacSystemFont/.test(legacy);
+  if (!settings.fontHeading) settings.fontHeading = system ? 'system' : 'google:Amiri';
+  if (!settings.fontApp) settings.fontApp = system ? 'system' : 'google:Amiri';
+  if (!settings.fontReading) settings.fontReading = 'google:Noto Naskh Arabic';
+}
+
+function ensureGoogleFontsStylesheet() {
+  if (document.getElementById('almujtahed-google-fonts')) return;
+  const families = GOOGLE_FONT_CATALOG.map((font) => {
+    const name = encodeURIComponent(font.family).replace(/%20/g, '+');
+    return `family=${name}:wght@${font.weights}`;
+  }).join('&');
+  const link = document.createElement('link');
+  link.id = 'almujtahed-google-fonts';
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
+  document.head.appendChild(link);
+}
+
+function ensureCustomFontFaces() {
+  let style = document.getElementById('almujtahed-custom-fonts');
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'almujtahed-custom-fonts';
+    document.head.appendChild(style);
+  }
+  style.textContent = customFonts.map((font) => {
+    const family = cssFontFamily(font.family);
+    const url = String(font.url || '').replace(/'/g, '%27');
+    return `@font-face{font-family:${family};src:url('${url}') format('${font.format || 'truetype'}');font-weight:100 900;font-style:normal;font-display:swap;}`;
+  }).join('\n');
+}
+
 function applyFontFamily(font) {
-  document.documentElement.style.setProperty('--font-amiri', font);
+  currentSettings.fontHeading = font && String(font).includes('apple-system') ? 'system' : 'google:Amiri';
+  applyFontRoles();
+}
+
+function applyFontRoles() {
+  const root = document.documentElement;
+  root.style.setProperty('--font-heading', stackForFontChoice(currentSettings.fontHeading));
+  root.style.setProperty('--font-app', stackForFontChoice(currentSettings.fontApp));
+  root.style.setProperty('--font-reading', stackForFontChoice(currentSettings.fontReading));
+  updateFontPreviews();
+}
+
+function updateFontPreviews() {
+  Object.values(FONT_ROLE_FIELDS).forEach((field) => {
+    const preview = document.getElementById(field.previewId);
+    if (!preview) return;
+    preview.style.setProperty('font-family', stackForFontChoice(currentSettings[field.key]), 'important');
+  });
+}
+
+function appendFontOption(parent, value, label, stack) {
+  const option = document.createElement('option');
+  option.value = value;
+  option.textContent = label;
+  option.dataset.fontStack = stack;
+  parent.appendChild(option);
+}
+
+function populateFontSelects() {
+  Object.values(FONT_ROLE_FIELDS).forEach((field) => {
+    const select = document.getElementById(field.selectId);
+    if (!select) return;
+    const selected = currentSettings[field.key] || select.value;
+    select.replaceChildren();
+
+    appendFontOption(select, 'system', 'خط النظام', stackForFontChoice('system'));
+
+    const googleGroup = document.createElement('optgroup');
+    googleGroup.label = 'خطوط جوجل';
+    GOOGLE_FONT_CATALOG.forEach((font) => {
+      const value = `google:${font.family}`;
+      appendFontOption(googleGroup, value, font.label, stackForFontChoice(value));
+    });
+    select.appendChild(googleGroup);
+
+    if (customFonts.length) {
+      const customGroup = document.createElement('optgroup');
+      customGroup.label = 'خطوط خاصة';
+      customFonts.forEach((font) => {
+        const value = `custom:${font.filename}`;
+        appendFontOption(customGroup, value, font.family, stackForFontChoice(value));
+      });
+      select.appendChild(customGroup);
+    }
+
+    const known = [...select.options].some((option) => option.value === selected);
+    const waitingForCustom = String(selected).startsWith('custom:') && !customFontsReady;
+    if (known) {
+      select.value = selected;
+    } else if (!waitingForCustom) {
+      select.value = field.key === 'fontReading' ? 'google:Noto Naskh Arabic' : 'google:Amiri';
+      currentSettings[field.key] = select.value;
+    }
+    select.dispatchEvent(new CustomEvent('theme-select-sync'));
+  });
+  updateFontPreviews();
+}
+
+function persistFontSettings() {
+  localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(currentSettings));
+}
+
+function handleFontRoleChange(role, value) {
+  const field = FONT_ROLE_FIELDS[role];
+  if (!field) return;
+  currentSettings[field.key] = value;
+  persistFontSettings();
+  applyFontRoles();
+}
+
+function renderCustomFontsList() {
+  const list = document.getElementById('customFontsList');
+  if (!list) return;
+  list.replaceChildren();
+  if (!customFonts.length) {
+    const empty = document.createElement('div');
+    empty.className = 'custom-fonts-empty';
+    empty.textContent = 'لا توجد خطوط خاصة بعد. ارفع ملفاً أو ضعه في مجلد web_ui/fonts.';
+    list.appendChild(empty);
+    return;
+  }
+  customFonts.forEach((font) => {
+    const row = document.createElement('div');
+    row.className = 'custom-font-row';
+    const meta = document.createElement('div');
+    meta.className = 'custom-font-meta';
+    const name = document.createElement('div');
+    name.className = 'custom-font-name';
+    name.textContent = font.family;
+    name.style.setProperty('font-family', stackForFontChoice(`custom:${font.filename}`), 'important');
+    const file = document.createElement('div');
+    file.className = 'custom-font-file';
+    const sizeKb = Math.max(1, Math.round((font.size || 0) / 1024));
+    file.textContent = `${font.filename} · ${sizeKb.toLocaleString()} ك.ب`;
+    meta.append(name, file);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn-flat-secondary';
+    remove.textContent = 'حذف';
+    remove.addEventListener('click', () => deleteCustomFont(font.filename));
+    row.append(meta, remove);
+    list.appendChild(row);
+  });
+}
+
+async function loadCustomFonts() {
+  const response = await fetch('/api/fonts');
+  if (!response.ok) throw new Error('تعذر قراءة مجلد الخطوط');
+  const data = await response.json();
+  customFonts = Array.isArray(data.fonts) ? data.fonts : [];
+  customFontsReady = true;
+  ensureCustomFontFaces();
+  renderCustomFontsList();
+}
+
+async function initFontSystem() {
+  migrateFontSettings(currentSettings);
+  ensureGoogleFontsStylesheet();
+  applyFontRoles();
+  populateFontSelects();
+  try {
+    await loadCustomFonts();
+    populateFontSelects();
+    applyFontRoles();
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function apiErrorDetail(data, fallback) {
+  if (data && typeof data.detail === 'string') return data.detail;
+  return fallback;
+}
+
+function rememberCustomFonts(fonts) {
+  const known = new Set(customFonts.map((font) => font.filename));
+  fonts.forEach((font) => {
+    if (!font || !font.filename || known.has(font.filename)) return;
+    customFonts.push(font);
+    known.add(font.filename);
+  });
+  customFontsReady = true;
+  ensureCustomFontFaces();
+  renderCustomFontsList();
+  populateFontSelects();
+  applyFontRoles();
+}
+
+async function uploadCustomFonts(event) {
+  const input = event.target;
+  const files = [...(input.files || [])];
+  input.value = '';
+  if (!files.length) return;
+  const added = [];
+  const errors = [];
+  for (const file of files) {
+    const body = new FormData();
+    body.append('file', file);
+    try {
+      const response = await fetch('/api/fonts/upload', { method: 'POST', body });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.font) {
+        errors.push(apiErrorDetail(data, `تعذر رفع ${file.name}`));
+        continue;
+      }
+      added.push(data.font);
+    } catch (error) {
+      errors.push(`تعذر رفع ${file.name}`);
+    }
+  }
+  if (added.length) rememberCustomFonts(added);
+  try {
+    await loadCustomFonts();
+    populateFontSelects();
+    applyFontRoles();
+  } catch (error) {
+    if (!added.length) errors.push('تعذرت قراءة مجلد الخطوط. أعد تشغيل خادم المنظومة ثم أعد الرفع.');
+  }
+  if (added.length) {
+    showToast(added.length === 1 ? 'تم حفظ الخط في مجلد fonts' : `تم حفظ ${added.length} خطوط في مجلد fonts`);
+  } else if (errors.length) {
+    showToast(errors[0]);
+  }
+}
+
+async function deleteCustomFont(filename) {
+  try {
+    const response = await fetch('/api/fonts/' + encodeURIComponent(filename), { method: 'DELETE' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showToast(apiErrorDetail(data, 'تعذر حذف الخط'));
+      return;
+    }
+  } catch (error) {
+    showToast('تعذر حذف الخط');
+    return;
+  }
+  Object.values(FONT_ROLE_FIELDS).forEach((field) => {
+    if (currentSettings[field.key] === `custom:${filename}`) {
+      currentSettings[field.key] = field.key === 'fontReading' ? 'google:Noto Naskh Arabic' : 'google:Amiri';
+    }
+  });
+  persistFontSettings();
+  try {
+    await loadCustomFonts();
+  } catch (error) {
+    customFonts = customFonts.filter((font) => font.filename !== filename);
+    ensureCustomFontFaces();
+    renderCustomFontsList();
+  }
+  populateFontSelects();
+  applyFontRoles();
+  showToast('تم حذف الخط من مجلد fonts');
 }
 
 function updateTextSize(size, save = true) {
@@ -496,6 +828,12 @@ function updateTextSize(size, save = true) {
 // =============================================================================
 function openSettingsModal() {
   syncSettingsToUI();
+  loadCustomFonts()
+    .then(() => {
+      populateFontSelects();
+      applyFontRoles();
+    })
+    .catch(() => {});
   if (typeof updateAuxiliaryModelsList === 'function') {
     updateAuxiliaryModelsList();
   }
@@ -541,6 +879,7 @@ function loadSettings() {
     if (raw) {
       const parsed = JSON.parse(raw);
       delete parsed.providers;
+      migrateFontSettings(parsed);
       currentSettings = { ...DEFAULT_SETTINGS, ...parsed, providers: {} };
     }
   } catch (e) {
@@ -595,6 +934,12 @@ function saveAllSettings() {
     body: JSON.stringify(providers)
   }).catch(() => {});
   currentSettings.providers = {};
+
+  Object.values(FONT_ROLE_FIELDS).forEach((field) => {
+    const select = document.getElementById(field.selectId);
+    if (select && select.value) currentSettings[field.key] = select.value;
+  });
+  applyFontRoles();
 
   currentSettings.modelParams = {
     systemPrompt: document.getElementById('systemPromptInput')?.value.trim() || '',

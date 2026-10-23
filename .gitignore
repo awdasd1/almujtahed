@@ -52,4 +52,6 @@ web_ui/app_memory.db-shm
 web_ui/almojtahed.db
 web_ui/uploads/*
 !web_ui/uploads/.gitkeep
+web_ui/fonts/*
+!web_ui/fonts/.gitkeep
 web_app/user_assistants.json

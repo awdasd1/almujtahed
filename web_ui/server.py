@@ -16,6 +16,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import html
+import mimetypes
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
@@ -522,6 +523,7 @@ async def auth_middleware(request: Request, call_next):
     # السماح بالملفات الثابتة ومسارات المصادقة والمستندات
     if (
         path.startswith("/static/") or
+        path.startswith("/fonts/") or
         path.startswith("/api/auth/") or
         path.startswith("/join/") or
         path == "/login" or
@@ -563,6 +565,99 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_BUCKET_DIR)), name="uploads")
+
+# خطوط المستخدم الخاصة — تُقرأ من المجلد مباشرة وتُخدم على /fonts
+FONTS_DIR = BASE_DIR / "fonts"
+FONTS_DIR.mkdir(parents=True, exist_ok=True)
+FONT_EXTENSIONS = {".ttf": "truetype", ".otf": "opentype", ".woff": "woff", ".woff2": "woff2"}
+MAX_FONT_BYTES = 20 * 1024 * 1024
+for _ext, _mime in (("ttf", "font/ttf"), ("otf", "font/otf"), ("woff", "font/woff"), ("woff2", "font/woff2")):
+    mimetypes.add_type(_mime, f".{_ext}")
+
+def _font_family_name(path: Path, used: set) -> str:
+    family = (path.stem or path.name).strip() or "font"
+    if family in used:
+        family = f"{family} {path.suffix.lower().lstrip('.')}"
+    used.add(family)
+    return family
+
+def _iter_custom_fonts() -> List[Dict[str, Any]]:
+    records = []
+    used_families = set()
+    if not FONTS_DIR.exists():
+        return records
+    for path in sorted(FONTS_DIR.iterdir(), key=lambda item: item.name.lower()):
+        if not path.is_file():
+            continue
+        font_format = FONT_EXTENSIONS.get(path.suffix.lower())
+        if not font_format:
+            continue
+        filename = path.name
+        records.append({
+            "filename": filename,
+            "family": _font_family_name(path, used_families),
+            "url": "/fonts/" + urllib.parse.quote(filename),
+            "format": font_format,
+            "size": path.stat().st_size,
+        })
+    return records
+
+def _sanitize_font_filename(original: str) -> str:
+    base = Path(original or "").name.replace("\\", "").replace("/", "")
+    base = re.sub(r"[\x00-\x1f]", "", base).strip()
+    stem, ext = os.path.splitext(base)
+    ext = ext.lower()
+    if ext not in FONT_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="صيغة الخط غير مدعومة. المسموح: ttf و otf و woff و woff2")
+    stem = re.sub(r"[^\w\u0600-\u06FF .\-]+", "_", stem, flags=re.UNICODE).strip(" ._")
+    if not stem or stem in {".", ".."} or ".." in stem:
+        stem = "font"
+    candidate = f"{stem}{ext}"
+    if not (FONTS_DIR / candidate).exists():
+        return candidate
+    index = 2
+    while (FONTS_DIR / f"{stem}-{index}{ext}").exists():
+        index += 1
+    return f"{stem}-{index}{ext}"
+
+def _font_path_or_404(filename: str) -> Path:
+    safe = Path(filename or "").name
+    if not safe or safe != filename or safe.startswith("."):
+        raise HTTPException(status_code=400, detail="اسم الخط غير صالح")
+    if Path(safe).suffix.lower() not in FONT_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="صيغة الخط غير مدعومة")
+    path = (FONTS_DIR / safe).resolve()
+    if path.parent != FONTS_DIR.resolve() or not path.is_file():
+        raise HTTPException(status_code=404, detail="الخط غير موجود في مجلد fonts")
+    return path
+
+@app.get("/api/fonts")
+async def list_custom_fonts():
+    """قراءة الخطوط الخاصة من مجلد fonts"""
+    return {"fonts": _iter_custom_fonts()}
+
+@app.post("/api/fonts/upload")
+async def upload_custom_font(file: UploadFile = File(...)):
+    """حفظ خط خاص داخل مجلد fonts"""
+    filename = _sanitize_font_filename(file.filename or "")
+    contents = await file.read()
+    if len(contents) < 16:
+        raise HTTPException(status_code=400, detail="ملف الخط فارغ أو تالف")
+    if len(contents) > MAX_FONT_BYTES:
+        raise HTTPException(status_code=413, detail="حجم الخط أكبر من 20 ميغابايت")
+    destination = FONTS_DIR / filename
+    destination.write_bytes(contents)
+    saved = next((item for item in _iter_custom_fonts() if item["filename"] == filename), None)
+    return {"success": True, "font": saved}
+
+@app.delete("/api/fonts/{filename}")
+async def delete_custom_font(filename: str):
+    """حذف خط خاص من مجلد fonts"""
+    path = _font_path_or_404(filename)
+    path.unlink()
+    return {"success": True}
+
+app.mount("/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
 # الحالة العامة للنظام والنموذج
 app_state = {

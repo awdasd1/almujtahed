@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792739000">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792812600">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -2639,13 +2639,37 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="fontSelect">نوع الخط الأساسي:</label>
-                            <select id="fontSelect" class="form-select" onchange="applyFontFamily(this.value)">
-                                <option value="'Amiri', serif" selected>خط الأميري من جوجل (Google Amiri) - الخط
-                                    الافتراضي الأصيل</option>
-                                <option value="-apple-system, BlinkMacSystemFont, sans-serif">خط النظام العصري (System
-                                    Sans-serif)</option>
-                            </select>
+                            <label for="fontHeadingSelect">خط العناوين</label>
+                            <select id="fontHeadingSelect" class="form-select font-role-select"
+                                onchange="handleFontRoleChange('heading', this.value)"></select>
+                            <span class="font-role-preview" id="fontHeadingPreview">المجتهد — البحث الدلالي التراثي</span>
+                            <span class="form-help">اسم المنظومة، وعناوين الصفحات والأقسام والبطاقات.</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fontAppSelect">خط التطبيق</label>
+                            <select id="fontAppSelect" class="form-select font-role-select"
+                                onchange="handleFontRoleChange('app', this.value)"></select>
+                            <span class="font-role-preview" id="fontAppPreview">بحث · محادثات · وكلاء · إعدادات</span>
+                            <span class="form-help">القوائم، الأزرار، الحقول، وبقية واجهة المنظومة.</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fontReadingSelect">خط نتيجة البحث الدلالي والشات</label>
+                            <select id="fontReadingSelect" class="form-select font-role-select"
+                                onchange="handleFontRoleChange('reading', this.value)"></select>
+                            <span class="font-role-preview" id="fontReadingPreview">قال الإمام: الاستدلال بالنص مقدم على القياس عند التعارض.</span>
+                            <span class="form-help">نص بطاقة نتيجة البحث، وفقّاعات المحادثة والمقارنة.</span>
+                        </div>
+
+                        <div class="settings-section-title" style="margin-top: 15px;">خطوط خاصة</div>
+                        <div class="form-group">
+                            <label for="customFontInput">رفع خط إلى مجلد fonts</label>
+                            <input type="file" id="customFontInput" class="form-input"
+                                accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" multiple
+                                onchange="uploadCustomFonts(event)">
+                            <span class="form-help">الصيغ: TTF و OTF و WOFF و WOFF2. يُحفظ الملف في مجلد web_ui/fonts ويظهر مباشرة في القوائم الثلاث، وكذلك أي خط تضعه في المجلد يدوياً.</span>
+                            <div id="customFontsList" class="custom-fonts-list"></div>
                         </div>
 
                         <div class="form-group">
@@ -4505,11 +4529,11 @@
     <script src="/static/js/markmap-view.min.js"></script>
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/members.js?v=1792743600"></script>
-    <script src="/static/js/app.js?v=1792769000"></script>
+    <script src="/static/js/app.js?v=1792813600"></script>
     <script src="/static/js/search.js?v=1792729000"></script>
     <script src="/static/js/reader.js?v=1792731000"></script>
     <script src="/static/js/force3d.js?v=1792738800"></script>
-    <script src="/static/js/chat.js?v=1792743600"></script>
+    <script src="/static/js/chat.js?v=1792812600"></script>
     <script src="/static/js/agents.js?v=1792743600"></script>
     <script src="/static/js/providers.js?v=1792743600"></script>
     <script src="/static/js/tools.js?v=1792743600"></script>
