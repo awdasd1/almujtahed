@@ -8,7 +8,8 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
     PORT=8085 \
-    HOST=0.0.0.0
+    HOST=0.0.0.0 \
+    ALMUJTAHED_DATA_DIR=/data
 
 WORKDIR /app
 

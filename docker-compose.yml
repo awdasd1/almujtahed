@@ -12,21 +12,13 @@ services:
       - PORT=8085
       - QDRANT_HOST=localhost
       - QDRANT_PORT=6333
+      - ALMUJTAHED_DATA_DIR=/data
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - HF_TOKEN=${HF_TOKEN:-}
     volumes:
-      - qdrant_storage:/app/qdrant_service/storage
-      - qdrant_snapshots:/app/qdrant_service/snapshots
-      - shamela_data:/app/shamela4_data
-      - models_data:/app/models
+      - almujtahed_data:/data
     restart: unless-stopped
 
 volumes:
-  qdrant_storage:
-    name: almujtahed_qdrant_storage
-  qdrant_snapshots:
-    name: almujtahed_qdrant_snapshots
-  shamela_data:
-    name: almujtahed_shamela_data
-  models_data:
-    name: almujtahed_models_data
+  almujtahed_data:
+    name: almujtahed_data
