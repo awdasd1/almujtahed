@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تفعيل العضوية | المجتهد</title>
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792738800">
+    <style>
+        body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0f1117; color: #e2e8f0; font-family: 'Noto Kufi Arabic', Amiri, sans-serif; }
+        .join-card { width: min(460px, calc(100% - 32px)); background: #181b24; border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 32px 28px; }
+        h1 { margin: 0 0 8px; font-family: Amiri, serif; font-size: 26px; }
+        p { margin: 0 0 18px; color: #94a3b8; line-height: 1.7; }
+        label { display: block; margin: 12px 0 6px; font-size: 13px; }
+        input { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: #0f1117; color: #e2e8f0; font: inherit; }
+        button { margin-top: 18px; width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #b45309; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+        button:disabled { opacity: .6; cursor: wait; }
+        .join-alert { display: none; margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(220,38,38,.12); color: #fca5a5; }
+        .join-alert.show { display: block; }
+    </style>
+</head>
+<body>
+    <form class="join-card" id="joinForm">
+        <h1>تفعيل حساب العضو</h1>
+        <p id="joinHint">اختر اسم المستخدم وكلمة المرور، ثم أعد كتابتها للدخول إلى المجتهد.</p>
+        <div id="joinAlert" class="join-alert"></div>
+        <label for="joinUser">اسم المستخدم</label>
+        <input id="joinUser" autocomplete="username" required placeholder="مثال: researcher1">
+        <label for="joinPass">كلمة المرور</label>
+        <input id="joinPass" type="password" autocomplete="new-password" required>
+        <label for="joinPass2">إعادة كلمة المرور</label>
+        <input id="joinPass2" type="password" autocomplete="new-password" required>
+        <button type="submit" id="joinBtn">دخول المنظومة</button>
+    </form>
+    <script>
+        const token = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+        const alertBox = document.getElementById('joinAlert');
+        function showJoinError(text) {
+            alertBox.textContent = text;
+            alertBox.classList.add('show');
+        }
+        fetch('/api/auth/join/' + encodeURIComponent(token)).then((res) => res.json()).then((data) => {
+            if (!data.valid) showJoinError('رابط الدعوة غير صالح أو استُخدم من قبل.');
+            else if (data.label) document.getElementById('joinHint').textContent = 'دعوة: ' + data.label + '. اختر اسم المستخدم وكلمة المرور ثم أعد كتابتها.';
+        }).catch(() => showJoinError('تعذر التحقق من رابط الدعوة.'));
+        document.getElementById('joinForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const username = document.getElementById('joinUser').value.trim();
+            const password = document.getElementById('joinPass').value;
+            const again = document.getElementById('joinPass2').value;
+            if (password !== again) { showJoinError('كلمتا المرور غير متطابقتين.'); return; }
+            const button = document.getElementById('joinBtn');
+            button.disabled = true;
+            try {
+                const res = await fetch('/api/auth/join', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token, username, password })
+                });
+                const data = await res.json();
+                if (!res.ok) { showJoinError(data.detail || 'تعذر إنشاء الحساب'); button.disabled = false; return; }
+                location.href = '/';
+            } catch (err) {
+                showJoinError('تعذر الاتصال بالخادم');
+                button.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

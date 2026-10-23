@@ -84,24 +84,57 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 400);
 });
 
-// تهيئة سجل المحادثات من التخزين المحلي
-function initChatHistory() {
+let chatSaveTimer = null;
+
+function normalizeChatSessions(list) {
+  return (Array.isArray(list) ? list : []).filter(s => {
+    if (!s || !s.id) return false;
+    return !s.messages?.some(m => m.content && m.content.includes("أجوبة التسولي عن مسائل الأمير عبد القادر") && !m.content.includes("ذخيرة العقبى"));
+  });
+}
+
+// تهيئة سجل المحادثات من قاعدة الخادم، مع نقل ما تبقى في المتصفح مرة واحدة
+async function initChatHistory() {
+  await (window.almujtahedIdentity || Promise.resolve());
+  const chatStorageKey = ownerStorageKey(CHAT_STORAGE_KEY);
+  let localSessions = [];
   try {
-    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
-    if (raw) {
-      chatSessions = JSON.parse(raw);
-      // تنظيف أي بقايا من الجلسات الوهمية التجريبية القديمة
-      chatSessions = chatSessions.filter(s => {
-        return !s.messages.some(m => m.content && m.content.includes("أجوبة التسولي عن مسائل الأمير عبد القادر") && !m.content.includes("ذخيرة العقبى"));
-      });
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatSessions));
+    localSessions = normalizeChatSessions(JSON.parse(localStorage.getItem(chatStorageKey) || '[]'));
+  } catch (e) {
+    localSessions = [];
+  }
+
+  let remoteSessions = [];
+  try {
+    const res = await fetch('/api/chats');
+    if (res.ok) {
+      const data = await res.json();
+      remoteSessions = normalizeChatSessions(data.sessions);
     }
   } catch (e) {
-    console.error('Error loading chat history:', e);
+    console.error('Error loading chats from server:', e);
+  }
+
+  const known = new Set(remoteSessions.map(s => s.id));
+  let imported = 0;
+  localSessions.forEach(session => {
+    if (!known.has(session.id)) {
+      remoteSessions.push(session);
+      known.add(session.id);
+      imported += 1;
+    }
+  });
+
+  chatSessions = remoteSessions;
+  if (imported > 0) {
+    await persistChatSessionsNow();
+  }
+  if (localSessions.length > 0) {
+    localStorage.removeItem(chatStorageKey);
   }
 
   if (chatSessions.length === 0) {
-    createNewChatSession(false);
+    createNewChatSession(true);
   } else {
     activeSessionId = chatSessions[0].id;
     renderChatHistorySidebar();
@@ -256,14 +289,37 @@ async function deleteChatSession(e, id) {
   }
 }
 
-// حفظ المحادثات في LocalStorage
-function saveChatSessions() {
-  try {
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatSessions));
-  } catch (e) {
-    console.error('Failed to save chats to storage:', e);
-  }
+function persistChatSessionsNow() {
+  return fetch('/api/chats', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessions: chatSessions })
+  }).then(res => {
+    if (!res.ok) throw new Error('تعذر حفظ المحادثات');
+  }).catch(err => {
+    console.error('Failed to save chats:', err);
+  });
 }
+
+function saveChatSessions() {
+  clearTimeout(chatSaveTimer);
+  chatSaveTimer = setTimeout(persistChatSessionsNow, 250);
+}
+
+window.addEventListener('pagehide', () => {
+  if (chatSaveTimer) {
+    clearTimeout(chatSaveTimer);
+    chatSaveTimer = null;
+    try {
+      fetch('/api/chats', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessions: chatSessions }),
+        keepalive: true
+      });
+    } catch (e) {}
+  }
+});
 
 // عرض رسائل الجلسة الحالية
 function renderSessionMessages(sessionId) {
@@ -628,10 +684,10 @@ async function triggerChatCompletion(session, attachments = []) {
                         localStorage.getItem('almojtahed_active_chat_model') || 
                         'anthropic/claude-3.7-sonnet';
 
-  const activeProvider = localStorage.getItem('almojtahed_active_provider') || 'openrouter';
+  const activeProvider = localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter';
   let savedKeys = {};
   try {
-    savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}');
+    savedKeys = readProviderKeys();
   } catch (e) {}
   const apiKey = savedKeys[activeProvider] || '';
 
@@ -646,7 +702,7 @@ async function triggerChatCompletion(session, attachments = []) {
   if (useAgentGroup && selectedGroupId) {
     let groups = [];
     try {
-      const raw = localStorage.getItem('almojtahed_agent_groups');
+      const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
       if (raw) groups = JSON.parse(raw);
     } catch (e) {}
     if (!groups.length && window.agentGroups) groups = window.agentGroups;
@@ -781,7 +837,7 @@ async function triggerChatCompletion(session, attachments = []) {
         temperature: executionTemp,
         top_k: executionTopK,
         max_tokens: currentSettings.modelParams?.maxTokens,
-        providers: currentSettings.providers,
+        providers: readProviderKeys(),
         agent_group: assignedGroupPayload,
         agent_dispatch_mode: window.chatAgentDispatchMode || 'parallel',
         attachments: (attachments || []).map(a => ({
@@ -870,7 +926,7 @@ function populateChatAgentGroupsDropdown() {
 
   let groups = [];
   try {
-    const raw = localStorage.getItem('almojtahed_agent_groups');
+    const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
     if (raw) groups = JSON.parse(raw);
   } catch (e) {}
 
@@ -893,7 +949,7 @@ function populateChatAgentGroupsDropdown() {
       }
     ];
     try {
-      localStorage.setItem('almojtahed_agent_groups', JSON.stringify(groups));
+      localStorage.setItem(ownerStorageKey('almojtahed_agent_groups'), JSON.stringify(groups));
     } catch (e) {}
   }
 
@@ -921,6 +977,7 @@ function populateChatAgentGroupsDropdown() {
 
   // تعبئة القائمة الفرعية لوكلاء المجموعة المحددة
   populateSubAgentsDropdown(savedGroupId);
+  if (typeof renderCompareAgents === 'function') renderCompareAgents();
 }
 
 // تعبئة وإدارة القائمة المنسدلة للوكلاء مع دعم التشيك ليست وتحديد أكثر من وكيل
@@ -933,7 +990,7 @@ function populateSubAgentsDropdown(groupId) {
 
   let groups = [];
   try {
-    const raw = localStorage.getItem('almojtahed_agent_groups');
+    const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
     if (raw) groups = JSON.parse(raw);
   } catch (e) {}
   if (!groups.length && window.agentGroups) groups = window.agentGroups;
@@ -1045,7 +1102,7 @@ function toggleSingleSubAgent(agentId, isChecked) {
 
   let groups = [];
   try {
-    const raw = localStorage.getItem('almojtahed_agent_groups');
+    const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
     if (raw) groups = JSON.parse(raw);
   } catch (e) {}
   if (!groups.length && window.agentGroups) groups = window.agentGroups;
@@ -1086,7 +1143,7 @@ function selectAllChatSubAgents(selectAll) {
 
   let groups = [];
   try {
-    const raw = localStorage.getItem('almojtahed_agent_groups');
+    const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
     if (raw) groups = JSON.parse(raw);
   } catch (e) {}
   if (!groups.length && window.agentGroups) groups = window.agentGroups;
@@ -1506,6 +1563,25 @@ const CHAT_OUTPUT_TEMPLATES = {
   - سنن أبي داود
 \`\`\`
 
+ثم أخرج كتلة force3d واحدة يرسمها مشجر الإسناد. كل راوٍ عقدة بمعرّف ثابت، وراوي المدار معرّف واحد تشترك فيه كل الطرق. الاتجاه من الأعلى إلى الأسفل: source الشيخ و target التلميذ. role يكون: صحابي أو تابعي أو مدار أو طريق أو ضعيف أو كتاب.
+\`\`\`force3d
+{
+  "title": "مدار الحديث",
+  "nodes": [
+    {"id": "sahabi", "name": "عمر بن الخطاب", "role": "صحابي", "detail": "رضي الله عنه"},
+    {"id": "madar", "name": "يحيى بن سعيد الأنصاري", "role": "مدار", "detail": "مدار الحديث"},
+    {"id": "malik", "name": "مالك بن أنس", "role": "طريق", "detail": "الموطأ"},
+    {"id": "sufyan", "name": "سفيان بن عيينة", "role": "طريق", "detail": "الطريق الثاني"}
+  ],
+  "links": [
+    {"source": "sahabi", "target": "madar", "label": "عن"},
+    {"source": "madar", "target": "malik", "label": "حدثنا"},
+    {"source": "madar", "target": "sufyan", "label": "حدثنا"}
+  ]
+}
+\`\`\`
+لا تكرر راوي المدار في كل طريق. أبقِ الأسماء العربية كاملة، ولا تجعل JSON داخل جدول.
+
 ## [5] الحكم النهائي والعلل الخفية ##
 بيان العلة القادحة إن وجدت، والحكم الجازم على ثبوت الحديث أو إعلاله، مع توثيق تراجم الرواة وأقوال النقاد في الحاشية.
 ## [6] منهجية الحاشية ##
@@ -1532,6 +1608,22 @@ const CHAT_OUTPUT_TEMPLATES = {
 - التردد بين أصلين أو الاشتراك اللغوي
 ## الترجيح ومآل الفتوى
 - القول الراجح مع وجه الترجيح
+\`\`\`
+
+ثم أخرج كتلة force3d لشبكة الأقوال والأدلة إن اشترك دليل بين أكثر من قول. role يكون: قول أو مذهب أو دليل.
+\`\`\`force3d
+{
+  "title": "شبكة الأقوال والأدلة",
+  "nodes": [
+    {"id": "q1", "name": "الجواز", "role": "قول"},
+    {"id": "q2", "name": "المنع", "role": "قول"},
+    {"id": "d1", "name": "حديث الأعمال بالنيات", "role": "دليل"}
+  ],
+  "links": [
+    {"source": "d1", "target": "q1", "label": "استدل به"},
+    {"source": "d1", "target": "q2", "label": "استدل به"}
+  ]
+}
 \`\`\`
 
 ## [2] التحليل والتأصيل العلمي في المتن ##
@@ -1575,11 +1667,51 @@ const CHAT_OUTPUT_TEMPLATES = {
 
 // الاسم المترادف لأداة Markmap
 CHAT_OUTPUT_TEMPLATES.markmap_mindmap = CHAT_OUTPUT_TEMPLATES.markmap;
+CHAT_OUTPUT_TEMPLATES.graph_isnad = `ارسم شجرة إسناد فقط، لا شجرة أقوال. أخرج كتلة force3d واحدة.
+كل راوٍ عقدة بمعرّف ثابت لا يتكرر، والمدار عقدة واحدة تلتقي عندها الطرق.
+role: صحابي أو تابعي أو مدار أو طريق أو ضعيف أو كتاب.
+source الشيخ و target التلميذ، و label صيغة الأداء.
+\`\`\`force3d
+{"title":"مدار الحديث","nodes":[{"id":"sahabi","name":"عمر بن الخطاب","role":"صحابي"},{"id":"madar","name":"يحيى بن سعيد الأنصاري","role":"مدار"},{"id":"malik","name":"مالك بن أنس","role":"طريق"},{"id":"sufyan","name":"سفيان بن عيينة","role":"طريق"}],"links":[{"source":"sahabi","target":"madar","label":"عن"},{"source":"madar","target":"malik","label":"حدثنا"},{"source":"madar","target":"sufyan","label":"حدثنا"}]}
+\`\`\`
+بعد الكتلة اشرح المدار ووجه التقاء الطرق باختصار.`;
+
+CHAT_OUTPUT_TEMPLATES.graph_fiqh = `ارسم شجرة خلاف فقهي فقط، لا شجرة إسناد. أخرج كتلة force3d واحدة.
+الجذر role مسألة. تحته role قول، وينتسب إليه role مذهب، ويتصل به role دليل. على الدليل role مناقشة، وعلى المناقشة role جواب، وعلى القول المختار role ترجيح. إن كان سبب الخلاف أصلاً فاجعله role سبب الخلاف.
+source هو الأعلى و target هو الفرع. الدليل المشترك عقدة واحدة تتصل بكل قول استُدل به.
+\`\`\`force3d
+{"title":"الخلاف في المسألة","nodes":[{"id":"masala","name":"صورة المسألة","role":"مسألة"},{"id":"q1","name":"الجواز","role":"قول"},{"id":"q2","name":"المنع","role":"قول"},{"id":"hanafi","name":"الحنفية","role":"مذهب"},{"id":"shafii","name":"الشافعية","role":"مذهب"},{"id":"dalil","name":"حديث الأعمال بالنيات","role":"دليل"},{"id":"itirad","name":"الاعتراض على الدلالة","role":"مناقشة"},{"id":"jawab","name":"الجواب عن الاعتراض","role":"جواب"},{"id":"rajih","name":"القول بالجواز","role":"ترجيح"}],"links":[{"source":"masala","target":"q1","label":"القول الأول"},{"source":"masala","target":"q2","label":"القول الثاني"},{"source":"q1","target":"hanafi","label":"ذهب إليه"},{"source":"q2","target":"shafii","label":"ذهب إليه"},{"source":"q1","target":"dalil","label":"استدل به"},{"source":"q2","target":"dalil","label":"استدل به"},{"source":"dalil","target":"itirad","label":"اعترض"},{"source":"itirad","target":"jawab","label":"أجاب"},{"source":"masala","target":"rajih","label":"رجّح"}]}
+\`\`\`
+بعد الكتلة حرّر محل النزاع وسبب الخلاف باختصار.`;
+
+CHAT_OUTPUT_TEMPLATES.graph_aqeedah = `ارسم شجرة خلاف عقدي فقط، لا شجرة إسناد ولا خلافاً فقهياً. أخرج كتلة force3d واحدة.
+الجذر role مسألة. مذهب أهل السنة role مذهب، ومقالة المخالف role مقالة، ودليل السلف role دليل، وشبهة المخالف role شبهة، والرد role جواب.
+source الأعلى و target الفرع.
+\`\`\`force3d
+{"title":"الخلاف العقدي","nodes":[{"id":"masala","name":"المسألة العقدية","role":"مسألة"},{"id":"salaf","name":"مذهب السلف","role":"مذهب"},{"id":"dalil","name":"دليل الكتاب والسنة","role":"دليل"},{"id":"maqala","name":"مقالة المخالف","role":"مقالة"},{"id":"shubha","name":"شبهة المخالف","role":"شبهة"},{"id":"radd","name":"الرد على الشبهة","role":"جواب"}],"links":[{"source":"masala","target":"salaf","label":"المذهب الحق"},{"source":"salaf","target":"dalil","label":"استدل به"},{"source":"masala","target":"maqala","label":"المقالة المخالفة"},{"source":"maqala","target":"shubha","label":"شبهتهم"},{"source":"shubha","target":"radd","label":"الرد"}]}
+\`\`\`
+بعد الكتلة انسب كل مقالة إلى أصحابها باختصار.`;
+
+CHAT_OUTPUT_TEMPLATES.graph_istidlal = `ارسم شجرة استدلال فقط: من الحكم إلى دليله ووجه دلالته وما ورد عليه. أخرج كتلة force3d واحدة.
+role يكون: مسألة أو دليل أو وجه الدلالة أو مناقشة أو جواب. لا تدرج رواة ولا مدار حديث إلا إذا كان الدليل نفسه يحتاج إسناداً، فيبقى الإسناد خارج هذه الشجرة.
+\`\`\`force3d
+{"title":"شجرة الاستدلال","nodes":[{"id":"hukm","name":"الحكم","role":"مسألة"},{"id":"dalil","name":"الدليل النقلي","role":"دليل"},{"id":"wajh","name":"وجه الدلالة","role":"وجه الدلالة"},{"id":"itirad","name":"الاعتراض","role":"مناقشة"},{"id":"jawab","name":"الجواب","role":"جواب"}],"links":[{"source":"hukm","target":"dalil","label":"استدل به"},{"source":"dalil","target":"wajh","label":"وجه الدلالة"},{"source":"dalil","target":"itirad","label":"اعترض"},{"source":"itirad","target":"jawab","label":"أجاب"}]}
+\`\`\`
+بعد الكتلة بيّن ثبوت الدليل ووجه دلالته.`;
+
+CHAT_OUTPUT_TEMPLATES.graph_munaqasha = `ارسم شجرة مناقشة فقط بين طرفي الخلاف. أخرج كتلة force3d واحدة.
+الجذر role محل النزاع. ثم role دعوى لكل طرف، ثم دليله role دليل، ثم role مناقشة، ثم role جواب. لا ترسم إسناداً.
+\`\`\`force3d
+{"title":"شجرة المناقشة","nodes":[{"id":"nizaa","name":"محل النزاع","role":"محل النزاع"},{"id":"muthbit","name":"دعوى المثبت","role":"دعوى"},{"id":"nafi","name":"دعوى النافي","role":"دعوى"},{"id":"dalil1","name":"دليل المثبت","role":"دليل"},{"id":"dalil2","name":"دليل النافي","role":"دليل"},{"id":"itirad","name":"اعتراض النافي","role":"مناقشة"},{"id":"jawab","name":"جواب المثبت","role":"جواب"}],"links":[{"source":"nizaa","target":"muthbit","label":"الطرف الأول"},{"source":"nizaa","target":"nafi","label":"الطرف الثاني"},{"source":"muthbit","target":"dalil1","label":"استدل به"},{"source":"nafi","target":"dalil2","label":"استدل به"},{"source":"dalil1","target":"itirad","label":"اعترض"},{"source":"itirad","target":"jawab","label":"أجاب"}]}
+\`\`\`
+بعد الكتلة لخّص ما سلِم من الأدلة وما سقط.`;
+
+CHAT_OUTPUT_TEMPLATES.force3d = CHAT_OUTPUT_TEMPLATES.graph_fiqh;
 
 window.P2C_OUTPUT_TEMPLATES = window.P2C_OUTPUT_TEMPLATES || CHAT_OUTPUT_TEMPLATES;
 
-function applyChatOutputTemplate(type) {
-  const input = document.getElementById('chatInputText');
+function applyChatOutputTemplate(type, inputId) {
+  const input = document.getElementById(inputId || 'chatInputText');
   if (!input) return;
 
   const templates = window.P2C_OUTPUT_TEMPLATES || CHAT_OUTPUT_TEMPLATES;
@@ -1606,6 +1738,12 @@ function applyChatOutputTemplate(type) {
     isnad_tree: 'أداة شجرة الأسانيد وشبكات الرواة (رسم المدارات)',
     markmap: 'أداة التشجير والخرائط الذهنية (Markmap)',
     markmap_mindmap: 'أداة التشجير والخرائط الذهنية (Markmap)',
+    force3d: 'مشجر الأقوال',
+    graph_isnad: 'شجرة إسناد',
+    graph_fiqh: 'شجرة خلاف فقهي',
+    graph_aqeedah: 'شجرة خلاف عقدي',
+    graph_istidlal: 'شجرة استدلال',
+    graph_munaqasha: 'شجرة مناقشة',
     aqeedah: 'قالب العقيدة ومقالات الفرق'
   };
 
@@ -1767,6 +1905,10 @@ function autoRenderChatInteractiveWidgets(container) {
       }
     });
   }
+
+  if (typeof window.renderForce3dBlocks === 'function') {
+    window.renderForce3dBlocks(container);
+  }
 }
 
 function zoomChatMarkmap(mapId, factor) {
@@ -1797,6 +1939,14 @@ function toggleChatCodeBlock(codeId) {
   }
 }
 
+function insertGraphKind(select) {
+  const type = select.value;
+  const inputId = select.dataset.graphTarget || 'chatInputText';
+  select.value = '';
+  if (type) applyChatOutputTemplate(type, inputId);
+}
+
+window.insertGraphKind = insertGraphKind;
 window.applyChatOutputTemplate = applyChatOutputTemplate;
 window.autoRenderChatInteractiveWidgets = autoRenderChatInteractiveWidgets;
 window.zoomChatMarkmap = zoomChatMarkmap;
@@ -1823,6 +1973,7 @@ window.updateChatDispatchModeUI = function() {
   const btn = document.getElementById('chatDispatchModeToggleBtn');
   const icon = document.getElementById('chatDispatchModeIcon');
   const txt = document.getElementById('chatDispatchModeText');
+  if (typeof updateCompareDispatchModeUI === 'function') updateCompareDispatchModeUI();
   if (!btn) return;
   const isDirect = window.chatAgentDispatchMode === 'direct';
   if (isDirect) {

@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792740000">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792739000">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -35,32 +35,47 @@
         <nav class="main-nav" aria-label="أقسام المنظومة">
             <button class="nav-tab-btn active" id="tabNavSearch" onclick="switchMainTab('search')">
                 <i data-lucide="search" class="icon" aria-hidden="true"></i>
-                <span>البحث الدلالي</span>
+                <span>البحث</span>
             </button>
 
             <button class="nav-tab-btn" id="tabNavChat" onclick="switchMainTab('chat')">
                 <i data-lucide="message-circle" class="icon" aria-hidden="true"></i>
-                <span>الشات الذكي</span>
+                <span>المحادثات</span>
+            </button>
+
+            <button class="nav-tab-btn" id="tabNavCompare" onclick="switchMainTab('compare')">
+                <i data-lucide="columns-2" class="icon" aria-hidden="true"></i>
+                <span>مقارنة</span>
             </button>
 
             <button class="nav-tab-btn" id="tabNavAgents" onclick="switchMainTab('agents')">
                 <i data-lucide="users" class="icon" aria-hidden="true"></i>
-                <span>الوكلاء المساعدون</span>
+                <span>الوكلاء</span>
             </button>
 
             <button class="nav-tab-btn" id="tabNavProjects" onclick="switchMainTab('projects')">
                 <i data-lucide="folder-kanban" class="icon" aria-hidden="true"></i>
-                <span>مشاريع بحثية</span>
+                <span>المشاريع</span>
             </button>
 
             <button class="nav-tab-btn" id="tabNavTools" onclick="switchMainTab('tools')">
                 <i data-lucide="wrench" class="icon" aria-hidden="true"></i>
-                <span>الأدوات والإضافات</span>
+                <span>الأدوات</span>
             </button>
 
             <button class="nav-tab-btn" id="tabNavProviders" onclick="switchMainTab('providers')">
                 <i data-lucide="cpu" class="icon" aria-hidden="true"></i>
-                <span>مزود الخدمة</span>
+                <span>الخدمات</span>
+            </button>
+
+            <button class="nav-tab-btn" id="tabNavArchive" onclick="switchMainTab('archive')">
+                <i data-lucide="archive" class="icon" aria-hidden="true"></i>
+                <span>الأرشفة</span>
+            </button>
+
+            <button class="nav-tab-btn admin-only-tab" id="tabNavMembers" onclick="switchMainTab('members')">
+                <i data-lucide="user-plus" class="icon" aria-hidden="true"></i>
+                <span>الأعضاء</span>
             </button>
         </nav>
 
@@ -464,6 +479,14 @@
                                     onclick="applyChatOutputTemplate('isnad_tree')"
                                     title="أداة شجرة الأسانيد وشبكات الرواة: استخراج ورسم شجرة أسانيد الحديث والمدارات والعُقد بصرياً وتفاعلياً">🌳
                                     شجرة الأسانيد والرواة</button>
+                                <select class="chat-template-chip highlight-chip graph-kind-select" data-graph-target="chatInputText" onchange="insertGraphKind(this)" title="اختر نوع المشجر ليفهم النموذج المطلوب">
+                                    <option value="">🌳 نوع المشجر</option>
+                                    <option value="graph_isnad">شجرة إسناد</option>
+                                    <option value="graph_fiqh">خلاف فقهي</option>
+                                    <option value="graph_aqeedah">خلاف عقدي</option>
+                                    <option value="graph_istidlal">استدلال</option>
+                                    <option value="graph_munaqasha">مناقشة</option>
+                                </select>
                                 <button type="button" class="chat-template-chip highlight-chip"
                                     onclick="applyChatOutputTemplate('markmap')"
                                     title="أداة التشجير والخرائط الذهنية (Markmap): صياغة شجرة المسائل والأقوال والخلافات في خريطة تفاعلية قابلة للطي والتكبير">🧠
@@ -1468,6 +1491,11 @@
                                 </div>
                             </div>
 
+                            <div id="specModelAbout" class="spec-model-about" hidden>
+                                <span class="spec-model-about-label">ماذا يفعل هذا النموذج</span>
+                                <p id="specModelDescription" class="spec-model-description" dir="rtl"></p>
+                            </div>
+
                             <div class="specs-stats-grid">
 
                                 <div class="spec-stat-item">
@@ -2047,6 +2075,164 @@
 
                 </div>
 
+            </div>
+        </section>
+
+        <section class="tab-pane" id="paneCompare">
+            <div class="compare-layout">
+                <div class="compare-toolbar">
+                    <div>
+                        <h2>مقارنة</h2>
+                        <p>اختر نموذجاً من OpenRouter، ثم أضف النموذج الآخر. السؤال الواحد يُجاب في العمودين معاً.</p>
+                    </div>
+                    <div class="compare-pickers" id="comparePickers"></div>
+                </div>
+                <div class="compare-columns" id="compareColumns"></div>
+                <form class="compare-composer" id="compareComposer" onsubmit="submitCompareQuestion(event)">
+                    <div class="chat-agent-group-picker active" id="compareAgentGroupPicker">
+                        <label class="chat-agent-checkbox-label" title="بحث الوكلاء في الشاملة قبل إجابة كل نموذج">
+                            <input type="checkbox" id="compareUseAgentGroupCheckbox" checked onchange="handleCompareAgentToggle()">
+                            <span class="chat-custom-checkbox"></span>
+                            <span class="chat-checkbox-title">المجموعة:</span>
+                        </label>
+                        <div class="chat-agent-select-wrap">
+                            <select id="compareAgentGroupSelect" class="chat-agent-dropdown" onchange="handleCompareAgentGroupChange()" title="مجموعة الوكلاء للبحث في الشاملة">
+                                <option value="">جارٍ تحميل المجموعات...</option>
+                            </select>
+                        </div>
+                        <div class="chat-agent-select-wrap chat-subagent-select-wrap" id="compareSubAgentSelectWrap" style="position: relative;">
+                            <button type="button" class="chat-agent-dropdown chat-subagent-trigger" id="compareSubAgentDropdownBtn" onclick="toggleCompareSubAgentsDropdown(event)">
+                                <span id="compareSubAgentBtnLabel">كل وكلاء المجموعة</span>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                            <div class="chat-subagent-checklist-dropdown" id="compareSubAgentChecklistMenu" style="display: none;">
+                                <div class="chat-checklist-header">
+                                    <div class="chat-checklist-title"><span>تحديد الوكلاء</span></div>
+                                    <div class="chat-checklist-actions">
+                                        <button type="button" class="btn-checklist-action" onclick="selectAllCompareSubAgents(true)">تحديد الكل</button>
+                                        <span class="checklist-sep">•</span>
+                                        <button type="button" class="btn-checklist-action" onclick="selectAllCompareSubAgents(false)">إلغاء الكل</button>
+                                    </div>
+                                </div>
+                                <div class="chat-checklist-items" id="compareSubAgentChecklistItems"></div>
+                                <div class="chat-checklist-footer">
+                                    <span id="compareChecklistCountBadge" class="chat-checklist-count-badge">تم تحديد 0 وكيل</span>
+                                    <button type="button" class="btn-checklist-done" onclick="closeCompareSubAgentsDropdown()">تم الاعتماد ✓</button>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="chat-dispatch-mode-toggle" id="compareDispatchModeToggleBtn" onclick="toggleCompareDispatchMode()" title="نمط توزيع الوكلاء">
+                            <span id="compareDispatchModeIcon">⚡</span>
+                            <span id="compareDispatchModeText">توزيع متوازي</span>
+                        </button>
+                    </div>
+                    <div class="compare-template-row">
+                        <select class="chat-template-chip highlight-chip graph-kind-select" data-graph-target="compareInput" onchange="insertGraphKind(this)" title="اختر نوع المشجر في المقارنة">
+                            <option value="">🌳 نوع المشجر</option>
+                            <option value="graph_isnad">شجرة إسناد</option>
+                            <option value="graph_fiqh">خلاف فقهي</option>
+                            <option value="graph_aqeedah">خلاف عقدي</option>
+                            <option value="graph_istidlal">استدلال</option>
+                            <option value="graph_munaqasha">مناقشة</option>
+                        </select>
+                    </div>
+                    <div class="compare-composer-row">
+                        <textarea id="compareInput" rows="2" placeholder="اكتب السؤال هنا، فيجيب كل نموذج في عموده بعد بحث الوكلاء في الشاملة"></textarea>
+                        <div class="compare-send-stack">
+                            <button type="button" class="btn-flat-secondary" id="compareClearBtn" onclick="clearCompareAnswers()">مسح</button>
+                            <button type="submit" class="btn-flat-primary" id="compareSendBtn">إرسال</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section class="tab-pane" id="paneMembers">
+            <div class="providers-container">
+                <div class="search-hero">
+                    <h2>الأعضاء</h2>
+                    <p id="membersNote">أنشئ رابط دعوة. العضو يختار اسم المستخدم وكلمة المرور ثم يعيد كتابتها، ويدخل بصلاحية المشرف دون هذا التبويب.</p>
+                </div>
+                <form id="memberInviteForm" class="result-card provider-main-card member-invite-form">
+                    <label for="memberInviteLabel">ملاحظة الدعوة (اختيارية)</label>
+                    <input id="memberInviteLabel" type="text" maxlength="80" placeholder="مثال: باحث الفقه">
+                    <button type="submit" class="btn-flat-primary">إنشاء رابط العضو</button>
+                </form>
+                <div id="membersList" class="result-card provider-main-card"></div>
+            </div>
+        </section>
+
+        <section class="tab-pane" id="paneArchive">
+            <div class="providers-container">
+                <div class="search-hero">
+                    <h2>الأرشفة</h2>
+                    <p>حدد ما تريد نقله إلى أرشيف مؤرخ، ثم يُمسح من التطبيق.</p>
+                </div>
+
+                <div class="result-card provider-main-card" style="margin-bottom: 18px;">
+                    <div class="result-header">
+                        <div class="result-book-meta">
+                            <span class="book-title-tag">أرشفة</span>
+                            <span class="author-tag">اختر ما يُنقل ثم يُمسح من التطبيق</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 14px; padding-top: 8px;">
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                            <label class="archive-scope-option">
+                                <input type="checkbox" name="archiveScope" value="chats" onchange="updateArchiveSelection('chats')" />
+                                <span>المحادثات</span>
+                            </label>
+                            <label class="archive-scope-option">
+                                <input type="checkbox" name="archiveScope" value="projects" onchange="updateArchiveSelection('projects')" />
+                                <span>المشاريع</span>
+                            </label>
+                            <label class="archive-scope-option">
+                                <input type="checkbox" name="archiveScope" value="agents" onchange="updateArchiveSelection('agents')" />
+                                <span>الوكلاء</span>
+                            </label>
+                            <label class="archive-scope-option">
+                                <input type="checkbox" name="archiveScope" value="tools" onchange="updateArchiveSelection('tools')" />
+                                <span>الإضافات</span>
+                            </label>
+                            <label class="archive-scope-option">
+                                <input type="checkbox" name="archiveScope" value="all" onchange="updateArchiveSelection('all')" />
+                                <span>الجميع</span>
+                            </label>
+                        </div>
+                        <p id="archiveScopeHint" style="margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-muted);"></p>
+                        <label for="archiveNote" style="display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; font-weight: 700;">
+                            وصف الأرشيف
+                            <textarea id="archiveNote" class="form-textarea" rows="2" maxlength="400" placeholder="اكتب ما يذكّرك بهذه النسخة عند الاسترجاع" style="min-height: 72px; font-weight: 500;"></textarea>
+                        </label>
+                        <div>
+                            <button type="button" class="btn-primary-gradient" id="btnCreateArchive" onclick="createSelectedArchive()" style="padding: 10px 18px; font-weight: 700;" disabled>
+                                أرشفة المحدد
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="result-card provider-main-card">
+                    <div class="result-header">
+                        <div class="result-book-meta">
+                            <span class="book-title-tag">استرجاع الأرشفة</span>
+                            <span class="author-tag">النسخ الأحدث في الأعلى</span>
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button type="button" class="btn-secondary-action" onclick="loadArchiveList()" style="font-size: 12.5px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;">
+                                <i data-lucide="refresh-cw" class="icon" aria-hidden="true"></i>
+                                <span>تحديث القائمة</span>
+                            </button>
+                            <button type="button" onclick="confirmDeleteAllArchives()" style="font-size: 12.5px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; background: #991b1b; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 700;">
+                                <i data-lucide="trash-2" class="icon" aria-hidden="true"></i>
+                                <span>حذف الجميع</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="archiveList" style="display: flex; flex-direction: column; gap: 10px; padding-top: 8px;">
+                        <div style="color: var(--text-muted); font-size: 13.5px;">جارٍ تحميل النسخ المؤرشفة...</div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -3027,10 +3213,14 @@
             <!-- ترويسة القارئ -->
             <div class="reader-header">
                 <div class="reader-header-info">
-                    <div style="display: flex; align-items: center; gap: 10px;">
+                    <div class="reader-title-row">
                         <span style="font-size: 20px;">📖</span>
                         <h3 id="readerModalTitle" class="reader-book-title">عنوان الكتاب</h3>
                         <span id="readerModalCategory" class="reader-category-badge">الفقه</span>
+                        <div class="reader-book-filter" id="readerBookFilter">
+                            <input type="text" id="readerBookFilterInput" placeholder="فلتر المكتبة الشاملة..." autocomplete="off" aria-label="فلتر المكتبة الشاملة">
+                            <div id="readerBookFilterMenu" class="reader-book-filter-menu" hidden></div>
+                        </div>
                     </div>
                     <div id="readerModalAuthor" class="reader-author-meta">اسم المصنف (ت: 000 هـ)</div>
                 </div>
@@ -4300,14 +4490,18 @@
     <script src="/static/js/d3.min.js"></script>
     <script src="/static/js/markmap-view.min.js"></script>
     <script src="/static/js/markmap-lib.min.js"></script>
-    <script src="/static/js/app.js?v=1792700000"></script>
-    <script src="/static/js/search.js?v=1792710000"></script>
-    <script src="/static/js/reader.js?v=1792695000"></script>
-    <script src="/static/js/chat.js?v=1792740000"></script>
-    <script src="/static/js/agents.js?v=1792620000"></script>
-    <script src="/static/js/providers.js?v=1792620000"></script>
-    <script src="/static/js/tools.js?v=1792700000"></script>
-    <script src="/static/js/projects.js?v=1792730000"></script>
+    <script src="/static/js/members.js?v=1792743600"></script>
+    <script src="/static/js/app.js?v=1792743600"></script>
+    <script src="/static/js/search.js?v=1792729000"></script>
+    <script src="/static/js/reader.js?v=1792731000"></script>
+    <script src="/static/js/force3d.js?v=1792738800"></script>
+    <script src="/static/js/chat.js?v=1792743600"></script>
+    <script src="/static/js/agents.js?v=1792743600"></script>
+    <script src="/static/js/providers.js?v=1792743600"></script>
+    <script src="/static/js/tools.js?v=1792743600"></script>
+    <script src="/static/js/projects.js?v=1792743600"></script>
+    <script src="/static/js/archive.js?v=1792709100"></script>
+    <script src="/static/js/compare.js?v=1792743600"></script>
 
     <script>
         window.refreshLucideIcons = function () {

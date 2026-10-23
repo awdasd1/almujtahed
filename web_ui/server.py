@@ -7,6 +7,7 @@
 
 import os
 import sys
+import asyncio
 import json
 import time
 import sqlite3
@@ -31,7 +32,7 @@ from dotenv import load_dotenv
 
 from fastapi import FastAPI, Request, HTTPException, Response, UploadFile, File
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
@@ -332,6 +333,169 @@ def get_current_user_from_request(request: Request) -> Optional[str]:
             return user
     return None
 
+MEMBERS_PATH = BASE_DIR / "members.json"
+_members_lock = threading.Lock()
+MEMBER_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{2,31}$")
+
+def load_members_store() -> Dict[str, Any]:
+    with _members_lock:
+        if not MEMBERS_PATH.exists():
+            return {"invites": [], "accounts": []}
+        try:
+            data = json.loads(MEMBERS_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return {"invites": [], "accounts": []}
+        if not isinstance(data, dict):
+            return {"invites": [], "accounts": []}
+        data.setdefault("invites", [])
+        data.setdefault("accounts", [])
+        return data
+
+def save_members_store(data: Dict[str, Any]) -> None:
+    with _members_lock:
+        MEMBERS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = MEMBERS_PATH.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(MEMBERS_PATH)
+
+def same_text(left: str, right: str) -> bool:
+    left = left or ""
+    right = right or ""
+    if len(left) != len(right):
+        return False
+    return hmac.compare_digest(left, right)
+
+def find_member_account(username: str) -> Optional[Dict[str, Any]]:
+    name = (username or "").strip()
+    for account in load_members_store().get("accounts", []):
+        if account.get("username") == name:
+            return account
+    return None
+
+def account_role(username: Optional[str]) -> Optional[str]:
+    name = (username or "").strip()
+    if not name:
+        return None
+    admin_name = os.getenv("AUTH_USERNAME", "").strip()
+    if admin_name and same_text(name, admin_name):
+        return "admin"
+    account = find_member_account(name)
+    if not account:
+        return None
+    if account.get("disabled"):
+        return "disabled"
+    return "member"
+
+def require_admin(request: Request) -> str:
+    user = get_current_user_from_request(request)
+    if account_role(user) != "admin":
+        raise HTTPException(status_code=403, detail="تبويب الأعضاء متاح للمشرف فقط")
+    return user or ""
+
+ADMIN_OWNER_ID = "admin"
+
+def ensure_member_id(username: str) -> str:
+    store = load_members_store()
+    for account in store.get("accounts", []):
+        if account.get("username") != username:
+            continue
+        if account.get("id"):
+            return str(account["id"])
+        account["id"] = "m_" + secrets.token_hex(8)
+        save_members_store(store)
+        return str(account["id"])
+    raise HTTPException(status_code=401, detail="جلسة غير مصرح بها أو الحساب معطّل")
+
+def current_owner_id(request: Request) -> str:
+    user = get_current_user_from_request(request)
+    role = account_role(user)
+    if role == "admin":
+        return ADMIN_OWNER_ID
+    if role == "member" and user:
+        return ensure_member_id(user)
+    raise HTTPException(status_code=401, detail="جلسة غير مصرح بها أو الحساب معطّل")
+
+PROVIDER_ENV_KEYS = {
+    "openrouter": "OPENROUTER_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "tavily": "TAVILY_API_KEY",
+    "hf": "HF_TOKEN",
+}
+
+def _normalize_provider_name(name: str) -> str:
+    return (name or "").lower().replace("_api_key", "").replace("-", "").replace("_", "")
+
+def _read_provider_record(owner_id: str) -> Optional[dict]:
+    conn = _ensure_app_memory()
+    try:
+        row = conn.execute(
+            "SELECT payload FROM kv_documents WHERE key=?",
+            (_owner_key("providers", owner_id),)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    try:
+        data = json.loads(row["payload"])
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+def _write_provider_record(owner_id: str, keys: dict) -> None:
+    clean = {name: str(value).strip() for name, value in keys.items() if str(value or "").strip()}
+    payload = json.dumps(clean, ensure_ascii=False)
+    now = datetime.now().isoformat()
+    conn = _ensure_app_memory()
+    try:
+        conn.execute(
+            "INSERT INTO kv_documents (key, payload, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
+            (_owner_key("providers", owner_id), payload, now)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def load_provider_keys(owner_id: str) -> dict:
+    stored = _read_provider_record(owner_id)
+    if stored is not None:
+        return stored
+    if owner_id != ADMIN_OWNER_ID:
+        return {}
+    seeded = {}
+    for name, env_name in PROVIDER_ENV_KEYS.items():
+        value = os.getenv(env_name, "").strip()
+        if value:
+            seeded[name] = value
+    _write_provider_record(owner_id, seeded)
+    return seeded
+
+def save_provider_keys(owner_id: str, keys: dict) -> None:
+    _write_provider_record(owner_id, keys)
+    if owner_id != ADMIN_OWNER_ID:
+        return
+    updates = {}
+    for name, env_name in PROVIDER_ENV_KEYS.items():
+        if name in keys:
+            updates[env_name] = str(keys.get(name) or "").strip()
+    if not updates:
+        return
+    update_env_file(updates)
+    if "OPENROUTER_API_KEY" in updates:
+        global OPENROUTER_DEFAULT_KEY
+        OPENROUTER_DEFAULT_KEY = updates["OPENROUTER_API_KEY"]
+
+def owner_openrouter_key(request: Request, provided: Optional[str] = None) -> str:
+    given = (provided or "").strip()
+    if given:
+        return given
+    return (load_provider_keys(current_owner_id(request)).get("openrouter") or "").strip()
+
 class SetupAccountRequest(BaseModel):
     username: str
     password: str
@@ -341,14 +505,25 @@ class LoginAccountRequest(BaseModel):
     username: str
     password: str
 
+class JoinAccountRequest(BaseModel):
+    token: str
+    username: str
+    password: str
+
+class MemberInviteRequest(BaseModel):
+    label: Optional[str] = ""
+
+class MemberDisableRequest(BaseModel):
+    disabled: bool = True
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
     # السماح بالملفات الثابتة ومسارات المصادقة والمستندات
     if (
         path.startswith("/static/") or
-        path.startswith("/uploads/") or
         path.startswith("/api/auth/") or
+        path.startswith("/join/") or
         path == "/login" or
         path == "/favicon.ico"
     ):
@@ -363,11 +538,20 @@ async def auth_middleware(request: Request, call_next):
 
     # فحص جلسة المستخدم المسجل
     user = get_current_user_from_request(request)
-    if not user:
+    if account_role(user) not in ("admin", "member"):
         if path.startswith("/api/"):
-            return JSONResponse(status_code=401, content={"detail": "جلسة غير مصرح بها أو منتهية الصلاحية", "code": "UNAUTHORIZED"})
+            return JSONResponse(status_code=401, content={"detail": "جلسة غير مصرح بها أو الحساب معطّل", "code": "UNAUTHORIZED"})
         auth_file = TEMPLATES_DIR / "auth.html"
         return HTMLResponse(content=auth_file.read_text(encoding="utf-8"))
+
+    if path.startswith("/uploads/"):
+        owner = ADMIN_OWNER_ID if account_role(user) == "admin" else ensure_member_id(user or "")
+        relative = path[len("/uploads/"):].strip("/")
+        parts = [part for part in relative.split("/") if part]
+        if len(parts) >= 2 and parts[0] != owner:
+            return JSONResponse(status_code=403, content={"detail": "هذا المرفق خاص بعضو آخر"})
+        if len(parts) == 1 and owner != ADMIN_OWNER_ID:
+            return JSONResponse(status_code=403, content={"detail": "هذا المرفق خاص بعضو آخر"})
 
     return await call_next(request)
 
@@ -583,7 +767,9 @@ def call_openrouter_raw(
         payload["presence_penalty"] = presence_penalty
     if repetition_penalty is not None:
         payload["repetition_penalty"] = repetition_penalty
-    key = (api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+    key = (api_key or "").strip()
+    if not key:
+        raise RuntimeError("مفتاح OpenRouter الخاص بهذا الحساب غير موجود")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={
@@ -625,6 +811,7 @@ class ChatRequest(BaseModel):
     attachments: Optional[List[Dict[str, Any]]] = None
     agent_dispatch_mode: Optional[str] = "parallel" # "parallel" (موزع متوازي) أو "direct" (موحد مباشر)
     use_hybrid: Optional[bool] = True # تفعيل / تعطيل نمط البحث الهجين (Dense + BM25) في استرجاع نصوص الشات
+    context_only: Optional[bool] = False # تجهيز شواهد الشاملة دون استدعاء نموذج المقارنة
 
 
 class BookResolveRequest(BaseModel):
@@ -694,6 +881,44 @@ def fetch_page_body(rel_path: str, part: Optional[str], page_num: Optional[int])
 BOOK_PAGE_INDEX_CACHE: Dict[str, dict] = {}
 
 
+CITATION_FORMAT_RULE = """
+═══════════════════════════════════════════════════════════
+⛔ إلزام الإحالة القياسية (يسري على كل حديث ونص وعزو إلى كتاب):
+1. اسم الكتاب يُنسخ حرفياً كما هو في قاعدة الشاملة، ومن سطر «الإحالة المعتمدة» المرفق مع المقطع. يُمنع اختصاره أو إضافة اسم المؤلف أو تغيير حرف.
+2. إن كان الكتاب أكثر من جزء، فالموضع يُكتب بهذه الصيغة وحدها: (رقم الجزء-رقم الصفحة) مثل (3-450).
+3. إن كان الكتاب جزءاً واحداً، فالموضع يُكتب بهذه الصيغة وحدها: ص(رقم الصفحة) مثل ص(50).
+4. شكل الإحالة الكامل: «اسم الكتاب كما في القاعدة» (3-450) أو «اسم الكتاب كما في القاعدة» ص(50).
+5. يُمنع جـ وص: و«ج 1، ص 15» وكل صيغة غير هاتين.
+═══════════════════════════════════════════════════════════
+"""
+
+def _plain_locator_number(value: Any) -> str:
+    raw = str(value or "").strip()
+    raw = re.sub(r"^(?:جـ?|جزء|الجزء|صـ?|صفحة|الصفحة)\s*", "", raw).strip()
+    match = re.search(r"\d{1,4}", raw)
+    return match.group(0) if match else ""
+
+def canonical_locator(part: Any, page: Any, volume_count: Any = None) -> str:
+    """صيغة الموضع الوحيدة: (جزء-صفحة) للكتاب المتعدد، وص(صفحة) للكتاب ذي الجزء الواحد."""
+    page_s = _plain_locator_number(page)
+    part_s = _plain_locator_number(part)
+    try:
+        single_volume = int(volume_count) == 1
+    except (TypeError, ValueError):
+        single_volume = False
+    if page_s and (single_volume or not part_s):
+        return f"ص({page_s})"
+    if part_s and page_s:
+        return f"({part_s}-{page_s})"
+    if page_s:
+        return f"ص({page_s})"
+    return ""
+
+def canonical_citation_label(title: str, part: Any, page: Any, volume_count: Any = None) -> str:
+    loc = canonical_locator(part, page, volume_count)
+    name = (title or "").strip()
+    return f"«{name}» {loc}".strip()
+
 def resolve_book_path(rel_path: Optional[str], book_title: Optional[str]) -> Tuple[Optional[str], Optional[Path]]:
     """
     تحديد المسار الفعلي لملف الكتاب في shamela4_data
@@ -709,81 +934,254 @@ def resolve_book_path(rel_path: Optional[str], book_title: Optional[str]) -> Tup
             return resolved_rel, matches[0]
 
     if book_title:
-        db = get_db()
-        if db:
-            try:
-                cursor = db.cursor()
-                bt = book_title.strip()
-                cursor.execute(
-                    "SELECT rel_path FROM books WHERE title_ar = ? AND rel_path IS NOT NULL LIMIT 1",
-                    (bt,)
-                )
-                row = cursor.fetchone()
-                if not row:
-                    # محاولة عبر الأسماء المعيارية المشهورة
-                    try:
-                        canon = resolve_canonical_book_name(bt, cursor)
-                        if canon and canon != bt:
-                            cursor.execute("SELECT rel_path FROM books WHERE title_ar = ? AND rel_path IS NOT NULL LIMIT 1", (canon,))
-                            row = cursor.fetchone()
-                    except Exception:
-                        pass
-                if not row:
-                    # فحص ما إذا كان اسم الكتاب مضمناً في النص (عند اقتران اسم المؤلف بالعنوان مثل: المصباح المنير...الفيومي أو المغني لابن قدامة)
-                    cursor.execute(
-                        "SELECT rel_path FROM books WHERE ? LIKE '%' || title_ar || '%' AND rel_path IS NOT NULL AND LENGTH(title_ar) >= 4 ORDER BY LENGTH(title_ar) DESC LIMIT 1",
-                        (bt,)
-                    )
-                    row = cursor.fetchone()
-                if not row:
-                    cursor.execute(
-                        "SELECT rel_path FROM books WHERE title_ar LIKE ? AND rel_path IS NOT NULL LIMIT 1",
-                        (f"%{bt}%",)
-                    )
-                    row = cursor.fetchone()
-                if not row:
-                    # محاولة بعد إزالة لواحق التحقيق والطبعة مثل - ت التركي أو - ط العلمية
-                    simple_title = bt.split("-")[0].split("=")[0].strip()
-                    if simple_title != bt:
-                        cursor.execute(
-                            "SELECT rel_path FROM books WHERE title_ar LIKE ? AND rel_path IS NOT NULL LIMIT 1",
-                            (f"%{simple_title}%",)
-                        )
-                        row = cursor.fetchone()
-                if not row:
-                    # بحث بعد توحيد الهمزات والألف
-                    norm_bt = bt.replace("أ", "%").replace("إ", "%").replace("آ", "%").replace("ا", "%")
-                    cursor.execute(
-                        "SELECT rel_path FROM books WHERE title_ar LIKE ? AND rel_path IS NOT NULL LIMIT 1",
-                        (f"%{norm_bt}%",)
-                    )
-                    row = cursor.fetchone()
-                if row and row["rel_path"]:
-                    clean_rel = row["rel_path"].replace("shamela4_data/", "").strip("/")
-                    p = SHAMELA_DATA_PATH / clean_rel / "pages.jsonl"
-                    if p.exists():
-                        return clean_rel, p
-            except Exception as e:
-                print(f"Error resolving book path from db: {e}")
-
-        # فحص مباشر لمجلدات shamela4_data بالاسم التقريبي
-        try:
-            bt_clean = re.sub(r"[\u064B-\u065F\u0670]", "", book_title).strip()
-            for cat_dir in SHAMELA_DATA_PATH.iterdir():
-                if cat_dir.is_dir() and not cat_dir.name.startswith((".", "_")):
-                    for b_dir in cat_dir.iterdir():
-                        if b_dir.is_dir():
-                            b_clean = re.sub(r"[\u064B-\u065F\u0670]", "", b_dir.name).replace("-", " ")
-                            if bt_clean in b_clean or b_clean in bt_clean:
-                                pages_f = b_dir / "pages.jsonl"
-                                if pages_f.exists():
-                                    resolved = f"{cat_dir.name}/{b_dir.name}"
-                                    return resolved, pages_f
-        except Exception:
-            pass
+        chosen = _choose_book_rel_path(book_title.strip())
+        if chosen:
+            clean_rel = chosen.replace("shamela4_data/", "").strip("/")
+            pages_file = SHAMELA_DATA_PATH / clean_rel / "pages.jsonl"
+            if pages_file.exists():
+                return clean_rel, pages_file
 
     return None, None
 
+def _fold_book_text(text: str) -> str:
+    cleaned = re.sub(r"[\u064B-\u065F\u0670\u0640]", "", text or "")
+    cleaned = cleaned.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا").replace("ى", "ي").replace("ة", "ه")
+    cleaned = cleaned.replace("«", " ").replace("»", " ").replace("ـ", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ،,;:：-–")
+    cleaned = re.sub(r"^(?:انظر|راجع|قال في|جاء في|كتاب)\s+", "", cleaned)
+    return cleaned.strip()
+
+def _normalize_book_lookup(text: str) -> str:
+    folded = _fold_book_text(text)
+    folded = re.split(r"\s+[-–=]\s+", folded)[0].strip()
+    return folded.strip()
+
+def _book_match_score(query_raw: str, query_norm: str, title: str) -> int:
+    title_full = _fold_book_text(title)
+    title_norm = _normalize_book_lookup(title)
+    if not title_norm or len(title_norm) < 4 or not query_norm:
+        return -1
+    query_full = _fold_book_text(query_raw.split("،")[0].split(",")[0])
+    score = -1
+    if title_full and title_full == query_full:
+        score = 3000 + len(title_full)
+    elif title_norm == query_norm:
+        score = 1800 + len(title_norm)
+    elif query_norm.startswith(title_norm) and len(title_norm) >= 6:
+        score = 800 + len(title_norm)
+    elif title_norm.startswith(query_norm) and len(query_norm) >= 4:
+        extra = title_norm[len(query_norm):].strip()
+        if len(query_norm) < 6 and extra and not re.match(r"^(?:ت|ط|ل|لابن|لابي|بن)\b", extra):
+            score = 250
+        else:
+            score = 700 - min(len(extra), 180)
+    if score < 0:
+        return -1
+    for hint in re.findall(r"(?:ابن|أبي|ابو|أبو)\s+([\u0600-\u06FF]{2,})", query_raw):
+        if _fold_book_text(hint) in title_full:
+            score += 120
+    edition = re.search(r"[طت]\s+([\u0600-\u06FF]{3,}(?:\s+[\u0600-\u06FF]{3,}){0,2})", query_raw)
+    if edition and _fold_book_text(edition.group(1)) in title_full:
+        score += 350
+    return score
+
+def _canon_supports_query(query_norm: str, canon: str) -> bool:
+    canon_norm = _normalize_book_lookup(canon)
+    if len(query_norm) < 4 or not canon_norm:
+        return False
+    if query_norm == canon_norm or canon_norm.startswith(query_norm) or query_norm.startswith(canon_norm):
+        return True
+    return len(query_norm) >= 10 and query_norm in canon_norm
+
+def _choose_book_rel_path(book_title: str) -> Optional[str]:
+    ranked = _rank_book_rel_paths(book_title)
+    return ranked[0][0] if ranked else None
+
+def _rank_book_rel_paths(book_title: str) -> List[Tuple[str, int]]:
+    """اختيار كتاب واحد يطابق العنوان، من غير التقاط كتاب آخر لمجرد اشتراك كلمة."""
+    db = get_db()
+    if not db or not book_title:
+        return []
+    book_title = re.sub(r"[\U0001F300-\U0001FAFF📖]", " ", book_title)
+    primary = re.split(r"[،,]", book_title)[0].strip()
+    primary = re.sub(r"^(?:ص|صفحة|جـ?|جزء|مجلد)\s*\d+\s*[\.،:\-–]*\s*", "", primary).strip()
+    query_norm = _normalize_book_lookup(primary)
+    if len(query_norm) < 4:
+        return []
+    try:
+        cursor = db.cursor()
+        try:
+            canon = resolve_canonical_book_name(primary, cursor) or resolve_canonical_book_name(book_title, cursor)
+        except Exception:
+            canon = ""
+        if canon and not _canon_supports_query(query_norm, canon):
+            canon_norm = _normalize_book_lookup(canon)
+            edition_probe = re.search(r"[طت]\s+([\u0600-\u06FF]{3,})", primary)
+            edition_token = _fold_book_text(edition_probe.group(1)) if edition_probe else ""
+            edition_ok = bool(edition_token) and edition_token in canon_norm
+            content_ok = any(
+                (folded := _fold_book_text(word[1:] if word.startswith("و") and len(word) > 5 else word)) in canon_norm
+                and folded != edition_token
+                for word in re.findall(r"[\u0600-\u06FF]{5,}", primary)
+            )
+            if not (edition_ok and content_ok):
+                canon = ""
+        queries = []
+        for item in (primary, query_norm, _fold_book_text(primary), canon or ""):
+            item = (item or "").strip()
+            if item and item not in queries:
+                queries.append(item)
+        if query_norm.startswith("و") and len(query_norm) > 5:
+            queries.append(query_norm[1:].strip())
+        rows = []
+        seen = set()
+
+        def _take(sql: str, params: tuple):
+            cursor.execute(sql, params)
+            for row in cursor.fetchall():
+                key = row["rel_path"]
+                if key and key not in seen:
+                    seen.add(key)
+                    rows.append(row)
+
+        for item in queries:
+            like_item = item.replace("%", "").replace("_", "")
+            _take(
+                "SELECT title_ar, main_author_name_ar, rel_path FROM books WHERE title_ar = ? AND rel_path IS NOT NULL LIMIT 3",
+                (item,)
+            )
+            _take(
+                """
+                SELECT title_ar, main_author_name_ar, rel_path FROM books
+                WHERE rel_path IS NOT NULL AND title_ar LIKE ? || '%'
+                ORDER BY LENGTH(title_ar) ASC LIMIT 12
+                """,
+                (like_item,)
+            )
+            if len(like_item) >= 8:
+                _take(
+                    """
+                    SELECT title_ar, main_author_name_ar, rel_path FROM books
+                    WHERE rel_path IS NOT NULL AND LENGTH(title_ar) >= 6 AND ? LIKE title_ar || '%'
+                    ORDER BY LENGTH(title_ar) DESC LIMIT 8
+                    """,
+                    (like_item,)
+                )
+
+        edition = re.search(r"[طت]\s+([\u0600-\u06FF]{3,}(?:\s+[\u0600-\u06FF]{3,}){0,2})", primary)
+        edition_tokens = []
+        if edition:
+            edition_tokens = [
+                _fold_book_text(word) for word in edition.group(1).split()
+                if len(_fold_book_text(word)) >= 4
+            ]
+        content_words = []
+        content_like = []
+        for word in re.findall(r"[\u0600-\u06FF]{4,}", primary):
+            raw_word = word[1:] if word.startswith("و") and len(word) > 5 else word
+            folded = _fold_book_text(raw_word)
+            if len(folded) >= 4 and folded not in edition_tokens:
+                content_words.append(folded)
+                content_like.append(raw_word)
+        author_words = [
+            _fold_book_text(word) for word in re.findall(r"[\u0600-\u06FF]{3,}", " ".join(re.split(r"[،,]", book_title)[1:]))
+            if len(_fold_book_text(word)) >= 4
+        ]
+        if edition_tokens and content_words:
+            edition_word = edition.group(1).split()[0]
+            content_word = max(content_like, key=len)
+            if len(edition_word) >= 4 and len(content_word) >= 4:
+                _take(
+                    """
+                    SELECT title_ar, main_author_name_ar, rel_path FROM books
+                    WHERE rel_path IS NOT NULL AND title_ar LIKE ? AND title_ar LIKE ?
+                    LIMIT 15
+                    """,
+                    (f"%{content_word}%", f"%{edition_word}%")
+                )
+        if len(query_norm) >= 10:
+            _take(
+                """
+                SELECT title_ar, main_author_name_ar, rel_path FROM books
+                WHERE rel_path IS NOT NULL AND title_ar LIKE '%' || ? || '%'
+                ORDER BY LENGTH(title_ar) ASC LIMIT 8
+                """,
+                (query_norm.replace("%", "").replace("_", ""),)
+            )
+        distinctive_authors = [word for word in author_words if len(word) >= 5 and word not in {"ابو", "بكر", "ابن"}]
+        if edition_tokens and distinctive_authors and len(query_norm) < 12:
+            _take(
+                """
+                SELECT title_ar, main_author_name_ar, rel_path FROM books
+                WHERE rel_path IS NOT NULL AND title_ar LIKE ? AND title_ar LIKE ?
+                LIMIT 8
+                """,
+                (f"%{max(distinctive_authors, key=len)}%", f"%{max(edition_tokens, key=len)}%")
+            )
+
+        ranked = []
+        for row in rows:
+            score = _book_match_score(primary, query_norm, row["title_ar"] or "")
+            if canon:
+                score = max(score, _book_match_score(canon, _normalize_book_lookup(canon), row["title_ar"] or ""))
+            title_full = _fold_book_text(row["title_ar"] or "")
+            author_full = _fold_book_text(row["main_author_name_ar"] or "")
+            title_norm = _normalize_book_lookup(row["title_ar"] or "")
+            if len(query_norm) >= 10 and query_norm in title_norm:
+                score = max(score, 1000 + len(query_norm))
+            if edition_tokens and content_words and any(token in title_full for token in edition_tokens):
+                if any(word in title_full for word in content_words if len(word) >= 4):
+                    fragment_score = 1100
+                    if author_words and any(word in author_full for word in author_words):
+                        fragment_score += 500
+                    score = max(score, fragment_score)
+            if edition_tokens and distinctive_authors and len(query_norm) < 12:
+                if any(token in title_full for token in edition_tokens) and any(word in title_full for word in distinctive_authors):
+                    score = max(score, 1400)
+            if score >= 500 and row["rel_path"]:
+                ranked.append((row["rel_path"], score))
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        return ranked[:6]
+    except Exception as e:
+        print(f"Error resolving book path from db: {e}")
+        return []
+
+
+def _quote_words(highlight: str) -> List[str]:
+    folded = _fold_book_text(highlight)
+    words = []
+    for word in folded.split():
+        if len(word) >= 4 and word not in words:
+            words.append(word)
+        if len(words) >= 6:
+            break
+    return words
+
+def _body_matches_quote(body: str, words: List[str]) -> bool:
+    if len(words) < 2:
+        return False
+    folded = _fold_book_text(re.sub(r"<[^>]+>", " ", body or ""))
+    hits = sum(1 for word in words if word in folded)
+    return hits >= min(3, len(words))
+
+def _locate_reader_entry(entries: list, part: Optional[str], page_num: Optional[int], seq: Optional[int]):
+    if not entries:
+        return None
+    target_idx = 0
+    if seq is not None and 1 <= seq <= len(entries):
+        target_idx = seq - 1
+    elif part is not None and page_num is not None:
+        p_str = "" if str(part).strip() == "None" else str(part).strip()
+        found = next((i for i, e in enumerate(entries) if e["part"] == p_str and e["page_num"] == page_num), None)
+        if found is None:
+            found = next((i for i, e in enumerate(entries) if e["page_num"] == page_num), 0)
+        target_idx = found
+    elif page_num is not None:
+        target_idx = next((i for i, e in enumerate(entries) if e["page_num"] == page_num), 0)
+    elif part is not None:
+        p_str = str(part).strip()
+        target_idx = next((i for i, e in enumerate(entries) if e["part"] == p_str), 0)
+    return target_idx, entries[target_idx]
 
 def get_or_build_book_index(rel_path: str, pages_file: Path) -> dict:
     """
@@ -1057,7 +1455,9 @@ async def get_book_page(
     book_title: Optional[str] = None,
     part: Optional[str] = None,
     page_num: Optional[int] = None,
-    seq: Optional[int] = None
+    seq: Optional[int] = None,
+    highlight: Optional[str] = None,
+    strict: Optional[str] = None
 ):
     """
     جلب صفحة محددة من الكتاب الأصلي مع نصوص الحواشي ومعلومات الأجزاء والتنقل
@@ -1071,9 +1471,11 @@ async def get_book_page(
     if not entries:
         raise HTTPException(status_code=404, detail="الكتاب لا يحتوي صفحات صالحة للقراءة")
 
+    strict_mode = str(strict or "").strip().lower() in ("1", "true", "yes")
+
     # تحديد الصفحة المستهدفة بدقة
     target_idx = 0
-    if seq is not None and 1 <= seq <= len(entries):
+    if seq is not None and not strict_mode and 1 <= seq <= len(entries):
         target_idx = seq - 1
     elif part is not None and page_num is not None:
         p_str = str(part).strip()
@@ -1085,6 +1487,28 @@ async def get_book_page(
                 target_idx = i
                 found = True
                 break
+        if not found and strict_mode:
+            meta = idx["meta"]
+            return {
+                "book_title": meta.get("title_ar") or book_title or resolved_rel.split("/")[-1],
+                "author": meta.get("main_author_name_ar") or "أحد أئمة التراث",
+                "death_year": meta.get("main_author_death_hijri"),
+                "category": meta.get("category_name_ar") or "عام",
+                "betaka_text": meta.get("betaka_text") or "",
+                "rel_path": resolved_rel,
+                "part": p_str,
+                "page_num": page_num,
+                "seq": None,
+                "total_pages": len(entries),
+                "parts": idx["parts"],
+                "annalistic_year": None,
+                "fiqh_issue": None,
+                "body": "",
+                "footnotes": "",
+                "prev_page": None,
+                "next_page": None,
+                "missing": True
+            }
         if not found:
             for i, e in enumerate(entries):
                 if e["page_num"] == page_num:
@@ -1117,6 +1541,39 @@ async def get_book_page(
 
     raw_body = page_data.get("body", "")
     clean_body = re.sub(r"<[^>]+>", "", raw_body).strip()
+    quote_words = _quote_words(highlight or "")
+    if quote_words and book_title and not rel_path and not _body_matches_quote(clean_body, quote_words):
+        for alt_rel, _alt_score in _rank_book_rel_paths(book_title)[1:4]:
+            alt_clean = alt_rel.replace("shamela4_data/", "").strip("/")
+            alt_file = SHAMELA_DATA_PATH / alt_clean / "pages.jsonl"
+            if not alt_file.exists() or alt_clean == resolved_rel:
+                continue
+            alt_idx = get_or_build_book_index(alt_clean, alt_file)
+            alt_entries = alt_idx.get("entries") or []
+            alt_target = _locate_reader_entry(alt_entries, part, page_num, seq)
+            if alt_target is None:
+                continue
+            alt_i, alt_entry = alt_target
+            try:
+                with open(alt_file, "rb") as alt_handle:
+                    alt_handle.seek(alt_entry["offset"])
+                    alt_line = alt_handle.readline()
+                    alt_page = json.loads(alt_line.decode("utf-8")) if alt_line else {}
+            except Exception:
+                continue
+            alt_body = alt_page.get("body", "")
+            if not _body_matches_quote(alt_body, quote_words):
+                continue
+            resolved_rel = alt_clean
+            pages_file = alt_file
+            idx = alt_idx
+            entries = alt_entries
+            target_idx = alt_i
+            entry = alt_entry
+            page_data = alt_page
+            raw_body = alt_body
+            clean_body = re.sub(r"<[^>]+>", "", raw_body).strip()
+            break
     footnotes = page_data.get("footnotes") or ""
     if footnotes:
         footnotes = re.sub(r"<[^>]+>", "", footnotes).strip()
@@ -1159,7 +1616,8 @@ async def get_book_page(
         "body": clean_body,
         "footnotes": footnotes,
         "prev_page": prev_p,
-        "next_page": next_p
+        "next_page": next_p,
+        "missing": False
     }
 
 
@@ -1336,10 +1794,14 @@ async def login_page_route(request: Request):
 async def get_auth_status(request: Request):
     configured = is_auth_configured()
     current_user = get_current_user_from_request(request)
+    role = account_role(current_user) if current_user else None
+    active = role in ("admin", "member")
     return {
         "is_configured": configured,
-        "is_authenticated": bool(current_user),
-        "username": current_user or ""
+        "is_authenticated": active,
+        "username": current_user if active else "",
+        "role": role if active else "",
+        "owner_id": (ADMIN_OWNER_ID if role == "admin" else ensure_member_id(current_user)) if active and current_user else ""
     }
 
 @app.post("/api/auth/setup")
@@ -1393,15 +1855,22 @@ async def login_auth_endpoint(req: LoginAccountRequest, response: Response):
     expected_user = os.getenv("AUTH_USERNAME", "").strip()
     expected_hash = os.getenv("AUTH_PASSWORD_HASH", "").strip()
     salt = os.getenv("AUTH_SALT", "").strip()
+    name = req.username.strip()
 
-    if req.username.strip() != expected_user:
-        raise HTTPException(status_code=401, detail="اسم المستخدم أو كلمة المرور غير صحيحة")
+    if same_text(name, expected_user):
+        computed_hash = hash_password(req.password, salt)
+        if not same_text(computed_hash, expected_hash):
+            raise HTTPException(status_code=401, detail="اسم المستخدم أو كلمة المرور غير صحيحة")
+        session_name = expected_user
+    else:
+        account = find_member_account(name)
+        if not account or not same_text(hash_password(req.password, account.get("salt", "")), account.get("password_hash", "")):
+            raise HTTPException(status_code=401, detail="اسم المستخدم أو كلمة المرور غير صحيحة")
+        if account.get("disabled"):
+            raise HTTPException(status_code=403, detail="تم تعطيل هذا الحساب، راجع المشرف")
+        session_name = account["username"]
 
-    computed_hash = hash_password(req.password, salt)
-    if not hmac.compare_digest(computed_hash, expected_hash):
-        raise HTTPException(status_code=401, detail="اسم المستخدم أو كلمة المرور غير صحيحة")
-
-    token = generate_session_token(expected_user)
+    token = generate_session_token(session_name)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
@@ -1413,7 +1882,7 @@ async def login_auth_endpoint(req: LoginAccountRequest, response: Response):
     return {
         "status": "success",
         "message": "تم تسجيل الدخول بنجاح",
-        "username": expected_user,
+        "username": session_name,
         "token": token
     }
 
@@ -1422,49 +1891,170 @@ async def logout_auth_endpoint(response: Response):
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
     return {"status": "success", "message": "تم تسجيل الخروج بنجاح"}
 
-@app.get("/api/config/providers")
-async def get_providers_config():
-    """معرفة حالة المزودين المحفوظين في البيئة .env"""
-    keys = {
-        "openrouter": bool(os.getenv("OPENROUTER_API_KEY")),
-        "openai": bool(os.getenv("OPENAI_API_KEY")),
-        "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
-        "gemini": bool(os.getenv("GEMINI_API_KEY")),
-        "deepseek": bool(os.getenv("DEEPSEEK_API_KEY")),
-        "groq": bool(os.getenv("GROQ_API_KEY")),
-        "tavily": bool(os.getenv("TAVILY_API_KEY"))
+def member_invite_url(request: Request, token: str) -> str:
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/join/{token}"
+
+def public_invite(invite: Dict[str, Any], request: Request) -> Dict[str, Any]:
+    return {
+        "id": invite.get("id"),
+        "label": invite.get("label") or "",
+        "url": member_invite_url(request, invite.get("token", "")),
+        "created_at": invite.get("created_at"),
+        "used": bool(invite.get("used")),
+        "used_by": invite.get("used_by") or ""
     }
-    return {"status": "ok", "providers": keys}
+
+@app.get("/join/{token}", response_class=HTMLResponse)
+async def join_member_page(token: str):
+    page = TEMPLATES_DIR / "join.html"
+    return HTMLResponse(content=page.read_text(encoding="utf-8"))
+
+@app.get("/api/auth/join/{token}")
+async def join_member_status(token: str):
+    store = load_members_store()
+    invite = next((item for item in store.get("invites", []) if item.get("token") == token), None)
+    if not invite or invite.get("used"):
+        return {"valid": False}
+    return {"valid": True, "label": invite.get("label") or ""}
+
+@app.post("/api/auth/join")
+async def join_member_account(req: JoinAccountRequest, response: Response):
+    username = (req.username or "").strip()
+    password = req.password or ""
+    if not MEMBER_USERNAME_RE.match(username):
+        raise HTTPException(status_code=400, detail="اسم المستخدم من 3 إلى 32 حرفاً إنجليزياً أو رقماً، ويبدأ بحرف أو رقم")
+    if len(password) < 4:
+        raise HTTPException(status_code=400, detail="كلمة المرور أربعة أحرف على الأقل")
+    admin_name = os.getenv("AUTH_USERNAME", "").strip()
+    if admin_name and same_text(username, admin_name):
+        raise HTTPException(status_code=400, detail="اسم المستخدم مستخدم")
+    if find_member_account(username):
+        raise HTTPException(status_code=400, detail="اسم المستخدم مستخدم")
+
+    store = load_members_store()
+    invite = next((item for item in store.get("invites", []) if item.get("token") == (req.token or "").strip()), None)
+    if not invite or invite.get("used"):
+        raise HTTPException(status_code=400, detail="رابط الدعوة غير صالح أو استُخدم من قبل")
+
+    salt = secrets.token_hex(16)
+    account = {
+        "id": "m_" + secrets.token_hex(8),
+        "username": username,
+        "salt": salt,
+        "password_hash": hash_password(password, salt),
+        "disabled": False,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "invite_id": invite.get("id")
+    }
+    invite["used"] = True
+    invite["used_by"] = username
+    invite["used_at"] = account["created_at"]
+    store.setdefault("accounts", []).append(account)
+    save_members_store(store)
+
+    token = generate_session_token(username)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=SESSION_DURATION_SECONDS,
+        httponly=True,
+        samesite="lax",
+        path="/"
+    )
+    return {"status": "success", "message": "تم إنشاء الحساب والدخول", "username": username}
+
+@app.get("/api/members")
+async def list_members(request: Request):
+    require_admin(request)
+    store = load_members_store()
+    return {
+        "admin_username": os.getenv("AUTH_USERNAME", "").strip(),
+        "invites": [public_invite(item, request) for item in store.get("invites", [])],
+        "accounts": [
+            {
+                "id": item.get("id") or "",
+                "username": item.get("username"),
+                "disabled": bool(item.get("disabled")),
+                "created_at": item.get("created_at") or ""
+            }
+            for item in store.get("accounts", [])
+        ]
+    }
+
+@app.post("/api/members/invites")
+async def create_member_invite(req: MemberInviteRequest, request: Request):
+    require_admin(request)
+    label = (req.label or "").strip()[:80]
+    invite = {
+        "id": secrets.token_hex(8),
+        "token": secrets.token_urlsafe(24),
+        "label": label,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "used": False,
+        "used_by": ""
+    }
+    store = load_members_store()
+    store.setdefault("invites", []).insert(0, invite)
+    save_members_store(store)
+    return {"status": "success", "invite": public_invite(invite, request)}
+
+@app.delete("/api/members/invites/{invite_id}")
+async def delete_member_invite(invite_id: str, request: Request):
+    require_admin(request)
+    store = load_members_store()
+    kept = []
+    removed = False
+    for item in store.get("invites", []):
+        if item.get("id") == invite_id and not item.get("used"):
+            removed = True
+            continue
+        kept.append(item)
+    if not removed:
+        raise HTTPException(status_code=404, detail="الدعوة غير موجودة أو استُخدمت")
+    store["invites"] = kept
+    save_members_store(store)
+    return {"status": "success"}
+
+@app.post("/api/members/{username}/disabled")
+async def set_member_disabled(username: str, req: MemberDisableRequest, request: Request):
+    require_admin(request)
+    store = load_members_store()
+    found = False
+    for account in store.get("accounts", []):
+        if account.get("username") == username:
+            account["disabled"] = bool(req.disabled)
+            found = True
+            break
+    if not found:
+        raise HTTPException(status_code=404, detail="العضو غير موجود")
+    save_members_store(store)
+    return {"status": "success", "disabled": bool(req.disabled)}
+
+@app.get("/api/config/providers")
+async def get_providers_config(request: Request):
+    """مفاتيح المزودين الخاصة بالعضو الحالي فقط"""
+    return {"status": "ok", "keys": load_provider_keys(current_owner_id(request))}
 
 @app.post("/api/config/providers")
-async def save_providers_config(req: Dict[str, str]):
-    """حفظ وتحديث مفاتيح الذكاء الاصطناعي في ملف البيئة .env مباشرة"""
-    allowed_map = {
-        "openrouter": "OPENROUTER_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "gemini": "GEMINI_API_KEY",
-        "deepseek": "DEEPSEEK_API_KEY",
-        "groq": "GROQ_API_KEY",
-        "tavily": "TAVILY_API_KEY",
-        "hf": "HF_TOKEN",
-        "hftoken": "HF_TOKEN"
-    }
-    updates = {}
-    for k, v in req.items():
-        if v is None:
+async def save_providers_config(req: Dict[str, str], request: Request):
+    """حفظ مفاتيح العضو الحالي في مساحته، دون الكتابة فوق حساب غيره"""
+    owner_id = current_owner_id(request)
+    current = load_provider_keys(owner_id)
+    allowed = set(PROVIDER_ENV_KEYS)
+    for name, value in req.items():
+        if value is None:
             continue
-        val = str(v).strip()
-        k_norm = k.lower().replace("_api_key", "").replace("-", "").replace("_", "")
-        if k_norm in allowed_map:
-            env_var = allowed_map[k_norm]
-            updates[env_var] = val
-            if env_var == "OPENROUTER_API_KEY":
-                global OPENROUTER_DEFAULT_KEY
-                OPENROUTER_DEFAULT_KEY = val
-    if updates:
-        update_env_file(updates)
-    return {"status": "success", "message": "تم حفظ المفاتيح في البيئة بنجاح"}
+        normalized = _normalize_provider_name(name)
+        if normalized not in allowed:
+            continue
+        text = str(value).strip()
+        if text:
+            current[normalized] = text
+        else:
+            current.pop(normalized, None)
+    save_provider_keys(owner_id, current)
+    return {"status": "success", "message": "تم حفظ المفاتيح في حسابك"}
 
 
 
@@ -2584,6 +3174,7 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
         death_year = p.get("author_death_hijri") or p.get("death_hijri")
         cached_text = p.get("text", "")
         rel_path = ""
+        volume_count = None
 
         page_key = f"{title}_{part}_{page_num}"
         if page_key in seen_keys:
@@ -2591,13 +3182,14 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
 
         if cursor:
             try:
-                cursor.execute("SELECT main_author_name_ar, main_author_death_hijri, category_name_ar, rel_path FROM books WHERE title_ar = ? LIMIT 1", (title,))
+                cursor.execute("SELECT main_author_name_ar, main_author_death_hijri, category_name_ar, rel_path, volume_count_observed FROM books WHERE title_ar = ? LIMIT 1", (title,))
                 row = cursor.fetchone()
                 if row:
                     if not author: author = row["main_author_name_ar"] or ""
                     if death_year is None: death_year = row["main_author_death_hijri"]
                     if cat_name in ("", "عام"): cat_name = row["category_name_ar"] or "عام"
                     rel_path = row["rel_path"] or ""
+                    volume_count = row["volume_count_observed"]
             except Exception:
                 pass
 
@@ -2645,6 +3237,8 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
                 "category": cat_name,
                 "vol": f"ج {part}" if part not in (None, "None") else "",
                 "page": f"ص {page_num}" if page_num is not None else "",
+                "volume_count": volume_count,
+                "citation_label": canonical_citation_label(title, part, page_num, volume_count),
                 "part_raw": str(part or ""),
                 "page_num_raw": page_num,
                 "rel_path": rel_path,
@@ -2792,14 +3386,16 @@ def extract_text_from_file(file_path: Path, filename: str, mime_type: str) -> Tu
 
 
 @app.post("/api/chat/upload")
-async def upload_chat_file(file: UploadFile = File(...)):
-    """حفظ الملف في مجلد uploads (Bucket) واستخراج نصوصه وبياناته للنموذج"""
+async def upload_chat_file(request: Request, file: UploadFile = File(...)):
+    """حفظ الملف في مجلد العضو واستخراج نصوصه وبياناته للنموذج"""
+    owner_id = current_owner_id(request)
     try:
         original_filename = file.filename or "uploaded_file"
         clean_name = re.sub(r'[^\w\.-]', '_', original_filename)
         timestamp = int(time.time() * 1000)
         safe_filename = f"{timestamp}_{clean_name}"
-        saved_path = UPLOADS_BUCKET_DIR / safe_filename
+        saved_path = UPLOADS_BUCKET_DIR / owner_id / safe_filename
+        saved_path.parent.mkdir(parents=True, exist_ok=True)
 
         contents = await file.read()
         with open(saved_path, "wb") as f:
@@ -2812,7 +3408,7 @@ async def upload_chat_file(file: UploadFile = File(...)):
             "success": True,
             "filename": original_filename,
             "safe_filename": safe_filename,
-            "file_url": f"/uploads/{safe_filename}",
+            "file_url": f"/uploads/{owner_id}/{safe_filename}",
             "file_path": str(saved_path),
             "file_size": len(contents),
             "file_type": mime_type,
@@ -2891,8 +3487,128 @@ def detect_book_page_request(msg: str) -> Optional[Dict[str, Any]]:
     }
 
 
+class CompareSide(BaseModel):
+    model: str
+    messages: List[ChatMessage]
+
+class CompareRequest(BaseModel):
+    sides: List[CompareSide]
+    api_key: Optional[str] = None
+
+@app.post("/api/compare")
+async def compare_models_endpoint(req: CompareRequest, request: Request):
+    """إجابة السؤال نفسه من نموذجين في OpenRouter، بلا بحث في الشاملة."""
+    sides = [side for side in (req.sides or []) if side.model and side.messages][:2]
+    if not sides:
+        raise HTTPException(status_code=400, detail="اختر نموذجاً واكتب سؤالاً")
+    key = owner_openrouter_key(request, req.api_key)
+
+    def _ask(side: CompareSide) -> Dict[str, Any]:
+        messages = [{"role": "system", "content": "أجب بالعربية بوضوح. هذه مقارنة بين النماذج، فأجب عن سؤال المستخدم مباشرة. إذا طُلب مشجر فأخرج كتلة ```force3d واحدة لنوع واحد: إسناد، أو خلاف فقهي، أو خلاف عقدي، أو استدلال، أو مناقشة. source الأعلى و target الفرع، ولا تخلط الإسناد بالأقوال."}]
+        messages.extend({"role": m.role, "content": m.content} for m in side.messages if m.role in ("user", "assistant") and m.content)
+        started = time.perf_counter()
+        try:
+            reply = call_openrouter_raw(
+                model_id=side.model,
+                messages=messages,
+                api_key=key,
+                temperature=0.4,
+                max_tokens=4096,
+                timeout=120
+            )
+            return {"model": side.model, "reply": reply, "elapsed_ms": int((time.perf_counter() - started) * 1000)}
+        except Exception as exc:
+            return {"model": side.model, "error": str(exc), "elapsed_ms": int((time.perf_counter() - started) * 1000)}
+
+    results = await asyncio.gather(*[asyncio.to_thread(_ask, side) for side in sides])
+    return {"results": results}
+
+
+class CompareStreamRequest(BaseModel):
+    model: str
+    messages: List[ChatMessage]
+    api_key: Optional[str] = None
+    system: Optional[str] = None
+
+@app.post("/api/compare/stream")
+async def compare_stream_endpoint(req: CompareStreamRequest, request: Request):
+    """بث جواب نموذج واحد لحظة وصوله، حتى تظهر أعمدة المقارنة كلٌّ على حدة."""
+    model_id = (req.model or "").strip()
+    if not model_id or not req.messages:
+        raise HTTPException(status_code=400, detail="اختر نموذجاً واكتب سؤالاً")
+    key = owner_openrouter_key(request, req.api_key)
+    messages = [{"role": "system", "content": (req.system or "").strip() or "أجب بالعربية بوضوح. هذه مقارنة بين النماذج، فأجب عن سؤال المستخدم مباشرة. إذا طُلب مشجر فأخرج كتلة ```force3d واحدة لنوع واحد: إسناد، أو خلاف فقهي، أو خلاف عقدي، أو استدلال، أو مناقشة. source الأعلى و target الفرع، ولا تخلط الإسناد بالأقوال."}]
+    messages.extend(
+        {"role": m.role, "content": m.content}
+        for m in req.messages
+        if m.role in ("user", "assistant") and m.content
+    )
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def _worker():
+        try:
+            payload = {
+                "model": normalize_model_id(model_id),
+                "messages": messages,
+                "temperature": 0.4,
+                "max_tokens": 4096,
+                "stream": True
+            }
+            request = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8085",
+                    "X-Title": "Al-Mojtahed Compare"
+                },
+                data=json.dumps(payload).encode("utf-8")
+            )
+            with urllib.request.urlopen(request, timeout=120) as resp:
+                for raw in resp:
+                    line = raw.decode("utf-8", errors="ignore").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = ((chunk.get("choices") or [{}])[0].get("delta") or {})
+                    if delta.get("content"):
+                        loop.call_soon_threadsafe(queue.put_nowait, {"delta": delta.get("content"), "kind": "content"})
+                    elif delta.get("reasoning"):
+                        loop.call_soon_threadsafe(queue.put_nowait, {"delta": delta.get("reasoning"), "kind": "reasoning"})
+        except Exception as exc:
+            loop.call_soon_threadsafe(queue.put_nowait, {"error": str(exc)})
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+    async def _generate():
+        while True:
+            item = await queue.get()
+            if item is None:
+                yield "data: {\"done\": true}\n\n"
+                break
+            if isinstance(item, dict) and item.get("error") and not item.get("delta"):
+                yield "data: " + json.dumps({"error": item["error"]}, ensure_ascii=False) + "\n\n"
+                break
+            yield "data: " + json.dumps(item, ensure_ascii=False) + "\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
+
+
 @app.post("/api/chat")
-async def chat_endpoint(req: ChatRequest):
+async def chat_endpoint(req: ChatRequest, request: Request):
     last_user_msg = ""
     for m in reversed(req.messages):
         if m.role == "user":
@@ -3063,7 +3779,7 @@ async def chat_endpoint(req: ChatRequest):
                     part_num = pg.get("part") or selected_part_label
                     body_text = pg.get("body", "").strip()
                     fn_text = pg.get("footnotes", "").strip()
-                    block = f"### 📄 [الكتاب: {b_title} | الجزء: {part_num} | الصفحة: {p_num}]\n{body_text}"
+                    block = f"### الإحالة المعتمدة: {canonical_citation_label(b_title, part_num, p_num)}\n{body_text}"
                     if fn_text:
                         block += f"\n\n**[هوامش وتخريج الصفحة {p_num}]:**\n{fn_text}"
                     page_blocks.append(block)
@@ -3127,7 +3843,7 @@ async def chat_endpoint(req: ChatRequest):
         print(f"📖 [Chat Direct Page Reading Active] Bypass RAG search, serving {len(retrieved_citations)} verbatim pages from Shamela.")
     elif is_parallel_dispatch:
         print(f"🚀 [Multi-Agent Parallel Dispatch] Dispatching {len(active_agents)} subagents in parallel with their dedicated models...")
-        api_key_to_use = (req.api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+        api_key_to_use = owner_openrouter_key(request, req.api_key)
 
         def _worker_subagent(ag: Dict[str, Any]):
             ag_name = ag.get("name") or "وكيل مساعد"
@@ -3165,8 +3881,7 @@ async def chat_endpoint(req: ChatRequest):
             # صياغة نصوص الشواهد للوكيل مع تضمين رأس الحولية ورأس المسألة الفقهية الحاكمة
             snippets_items = []
             for c in cits[:ag_top_k]:
-                loc_parts = [p for p in [c.get('vol'), c.get('page')] if p]
-                loc_str = f" ({'، '.join(loc_parts)})" if loc_parts else ""
+                loc_str = c.get("citation_label") or canonical_citation_label(c.get("title"), c.get("vol"), c.get("page"), c.get("volume_count"))
                 meta_tags = []
                 if c.get('annalistic_year'):
                     meta_tags.append(f"📅 [رأس الحولية التاريخية الحاكمة: {c['annalistic_year']}]")
@@ -3174,7 +3889,7 @@ async def chat_endpoint(req: ChatRequest):
                     meta_tags.append(f"⚖️ [رأس المسألة الفقهية الحاكمة: {c['fiqh_header']}]")
                 tag_line = (" " + " ".join(meta_tags)) if meta_tags else ""
                 snippets_items.append(
-                    f"- «{c['title']}» للمصنف {c['author']}{loc_str}{tag_line}:\n  {c['snippet']}"
+                    f"- الإحالة المعتمدة: {loc_str} | المصنف: {c['author']}{tag_line}:\n  {c['snippet']}"
                 )
             snippets_txt = "\n\n".join(snippets_items)
 
@@ -3182,14 +3897,15 @@ async def chat_endpoint(req: ChatRequest):
                 f"أنت الوكيل المساعد التخصصي: «{ag_name}».\n"
                 f"تخصصك: {ag_desc}.\n"
                 f"التوجيه التخصصي المعتمد: {ag_prompt or 'استخراج وتحرير وتوثيق نصوص المسألة بدقة'}.\n"
-                f"المهمة: طالع نصوص الشاملة المرفقة المستخرجة من نطاق كتبك التراثية المخصصة ({len(ag_books)} كتاباً)، واستخلص نصوص المسألة بدقة متناهية مع ذكر اسم الكتاب، والمؤلف وسنة وفاته، ورقم الجزء والصفحة.\n"
+                f"المهمة: طالع نصوص الشاملة المرفقة المستخرجة من نطاق كتبك التراثية المخصصة ({len(ag_books)} كتاباً)، واستخلص نصوص المسألة بدقة متناهية، وانسخ الإحالة المعتمدة حرفياً كما هي.\n"
+                f"{CITATION_FORMAT_RULE}\n"
                 f"لخص المذاهب والأدلة بأسلوب علمي رصين وموجز تمهيداً لرفعه لمدير المشروع."
             )
             sub_user = (
                 f"موضوع المسألة: {search_query}\n\n"
                 f"النصوص التراثية المستخرجة من نطاق كتبك ({len(cits)} مقطعاً):\n"
                 f"{snippets_txt}\n\n"
-                f"المطلوب منك كوكيل متخصص: استخلص نصوص المسألة بدقة مع التوثيق الحرفي بالأجزاء والصفحات وصياغة تقريرك المركز المرفوع لمدير المشروع."
+                f"المطلوب منك كوكيل متخصص: استخلص نصوص المسألة، وانسخ كل إحالة من سطر «الإحالة المعتمدة» بلا تغيير، ثم ارفع تقريرك لمدير المشروع."
             )
 
             # استخراج معلمات الضبط الدقيقة للنموذج
@@ -3294,13 +4010,12 @@ async def chat_endpoint(req: ChatRequest):
     included_citations_count = 0
     if retrieved_citations:
         for i, c in enumerate(retrieved_citations, 1):
-            loc_parts = [p for p in [c.get('vol'), c.get('page')] if p]
-            loc_str = f" ({'، '.join(loc_parts)})" if loc_parts else ""
+            loc_str = c.get("citation_label") or canonical_citation_label(c.get("title"), c.get("vol"), c.get("page"), c.get("volume_count"))
             year_tag = f" [رأس الحولية الحاكمة المستخرجة: {c['annalistic_year']}]" if c.get('annalistic_year') else ""
             fiqh_tag = f" [رأس المسألة الفقهية الحاكمة: {c['fiqh_header']}]" if c.get('fiqh_header') else ""
             c_death = f" {c.get('death')}" if c.get('death') else ""
             c_cat = f" [{c.get('category')}]" if c.get('category') else ""
-            entry = f"{i}. «{c.get('title', '')}» للمصنف {c.get('author', '')}{c_death}{c_cat}{loc_str}{year_tag}{fiqh_tag}:\n   - نص الشاهد التراثي: {c.get('snippet', '')}\n\n"
+            entry = f"{i}. الإحالة المعتمدة: {loc_str} | المصنف: {c.get('author', '')}{c_death}{c_cat}{year_tag}{fiqh_tag}:\n   - نص الشاهد التراثي: {c.get('snippet', '')}\n\n"
             
             if len(citations_text) + len(entry) > max_allowed_citation_chars:
                 citations_text += f"\n... [تم استيعاب {included_citations_count} مقطعاً تراثياً وفق أقصى سياق متاح لنموذج {target_model_name}]\n"
@@ -3422,7 +4137,7 @@ async def chat_endpoint(req: ChatRequest):
     live_reply = None
     if req.model and req.model != "local-almojtahed-8b":
         try:
-            key = (req.api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+            key = owner_openrouter_key(request, req.api_key)
             if is_study_discussion:
                 system_instruction = (
                     "أنت عالم ومحقق ومحكّم أكاديمي متخصص في العلوم الشرعية والتراثية (الفقه وأصوله، والحديث وعلله، والتفسير ومناهجه، واللغة والتاريخ).\n"
@@ -3438,10 +4153,12 @@ async def chat_endpoint(req: ChatRequest):
                 system_instruction = (
                     "أنت المجتهد، مساعد ذكي وباحث محقق متخصص في العلوم الإسلامية والفقهية واللغوية والتاريخية.\n"
                     "أجب مباشرة وبتوسع وتحرير علمي رصين عن استفسار وسؤال المستخدم باللغة العربية الفصحى.\n"
-                    "حلل المسألة وفرغ النتائج في جداول ماركداون واضحة ولا تسرد اقتباسات خاماً بدون معالجة وجداول."
+                    "حلل المسألة وفرغ النتائج في جداول ماركداون واضحة ولا تسرد اقتباسات خاماً بدون معالجة وجداول.\n"
+                    "إذا طُلب مشجر، أخرج كتلة ```force3d واحدة واختر نوعاً واحداً لا تخلطه بغيره: إسناد (صحابي|تابعي|مدار|طريق|كتاب، والسهم من الشيخ إلى التلميذ)، أو خلاف فقهي (مسألة ثم قول ومذهب ودليل ومناقشة وجواب وترجيح)، أو خلاف عقدي (مسألة ثم مذهب ومقالة وشبهة وجواب)، أو استدلال (حكم ثم دليل ثم وجه الدلالة ثم مناقشة ثم جواب)، أو مناقشة (محل النزاع ثم دعوى كل طرف ثم دليله). source هو الأعلى و target هو الفرع."
                 )
             if agent_routing_instruction:
                 system_instruction += agent_routing_instruction
+            system_instruction += "\n" + CITATION_FORMAT_RULE
 
             # تضمين المستندات والملفات المرفوعة والمحفوظة في مجلد uploads (Bucket)
             if req.attachments and isinstance(req.attachments, list) and len(req.attachments) > 0:
@@ -3471,6 +4188,13 @@ async def chat_endpoint(req: ChatRequest):
                 att_lines.append("توجيه إلزامي ومباشر: يرجى التفاعل مع هذا الملف المرفق واستخراج نصوصه أو مناقشته والإجابة عن استفسار المستخدم بالاستناد إلى محتواه ومساره المذكور أعلاه.")
                 
                 system_instruction += "\n" + "\n".join(att_lines)
+
+            if req.context_only:
+                return {
+                    "context_only": True,
+                    "system": system_instruction,
+                    "agent_group": group_name if req.agent_group else None
+                }
 
             messages_payload = [{"role": "system", "content": system_instruction}]
             for idx_m, m in enumerate(req.messages):
@@ -3615,14 +4339,16 @@ OPENROUTER_DEFAULT_KEY = os.getenv("OPENROUTER_API_KEY", "").strip() or OPENROUT
 openrouter_cache = {"data": None, "timestamp": 0}
 
 @app.get("/api/openrouter/models")
-async def get_openrouter_models(api_key: Optional[str] = None):
-    """جلب قائمة نماذج OpenRouter وأسعارها وتصنيفاتها المعيارية"""
+async def get_openrouter_models(request: Request, api_key: Optional[str] = None):
+    """جلب قائمة نماذج OpenRouter بمفتاح الحساب الحالي"""
     import urllib.request
     now = time.time()
-    key = (api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+    key = owner_openrouter_key(request, api_key)
+    if not key:
+        raise HTTPException(status_code=400, detail="أدخل مفتاح OpenRouter الخاص بحسابك في تبويب الخدمات")
 
     # استخدام الذاكرة المخبأة إذا كانت سارية (أقل من 30 دقيقة) لنفس المفتاح الافتراضي
-    if openrouter_cache["data"] and (now - openrouter_cache["timestamp"] < 1800) and (not api_key or api_key == OPENROUTER_DEFAULT_KEY):
+    if openrouter_cache["data"] and (now - openrouter_cache["timestamp"] < 1800) and key == (OPENROUTER_DEFAULT_KEY or ""):
         return openrouter_cache["data"]
 
     try:
@@ -3667,23 +4393,152 @@ async def get_openrouter_models(api_key: Optional[str] = None):
             })
 
         res_data = {"status": "ok", "count": len(parsed), "models": parsed}
-        if not api_key or api_key == OPENROUTER_DEFAULT_KEY:
+        if key == (OPENROUTER_DEFAULT_KEY or ""):
             openrouter_cache["data"] = res_data
             openrouter_cache["timestamp"] = now
 
         return res_data
     except Exception as e:
         print(f"Error fetching OpenRouter models: {e}")
-        if openrouter_cache["data"]:
+        if key == (OPENROUTER_DEFAULT_KEY or "") and openrouter_cache["data"]:
             return openrouter_cache["data"]
-        raise HTTPException(status_code=502, detail=f"تعذر الاتصال بـ OpenRouter: {e}")
+        raise HTTPException(status_code=502, detail="تعذر الاتصال بـ OpenRouter بمفتاح هذا الحساب")
+
+
+openrouter_about_cache: Dict[str, str] = {}
+ABOUT_TRANSLATOR_MODEL = "google/gemini-2.5-flash-lite"
+ABOUT_AR_CACHE_PATH = BASE_DIR / "model_about_ar_cache.json"
+
+def _load_about_ar_cache() -> None:
+    if not ABOUT_AR_CACHE_PATH.exists():
+        return
+    try:
+        saved = json.loads(ABOUT_AR_CACHE_PATH.read_text(encoding="utf-8"))
+        if isinstance(saved, dict):
+            openrouter_about_cache.update({str(k): str(v) for k, v in saved.items() if v})
+    except Exception as e:
+        print(f"Could not load Arabic model descriptions cache: {e}")
+
+def _save_about_ar_cache() -> None:
+    try:
+        ABOUT_AR_CACHE_PATH.write_text(
+            json.dumps(openrouter_about_cache, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+    except Exception as e:
+        print(f"Could not save Arabic model descriptions cache: {e}")
+
+_load_about_ar_cache()
+
+def _extract_openrouter_page_description(page: str) -> str:
+    """أطول وصف ظاهر في صفحة النموذج، لأن واجهة القائمة تقطع النص بعلامة ..."""
+    found = re.findall(r'"description"\s*:\s*"((?:\\.|[^"\\])*)"', page)
+    texts = []
+    for raw in found:
+        try:
+            text = json.loads('"' + raw + '"')
+        except Exception:
+            text = raw.replace("\\n", "\n").replace('\\"', '"')
+        text = html.unescape(str(text)).strip()
+        if text:
+            texts.append(text)
+    if not texts:
+        return ""
+    texts.sort(key=len, reverse=True)
+    return texts[0]
+
+def _english_model_about(model_id: str) -> str:
+    page_url = "https://openrouter.ai/" + urllib.parse.quote(model_id, safe="/")
+    description = ""
+    try:
+        req = urllib.request.Request(page_url, headers={"User-Agent": "Al-Mojtahed/1.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            page = resp.read().decode("utf-8", "replace")
+        description = _extract_openrouter_page_description(page)
+    except Exception as e:
+        print(f"Error fetching OpenRouter model about for {model_id}: {e}")
+    if not description:
+        for model in (openrouter_cache.get("data") or {}).get("models") or []:
+            if model.get("id") == model_id:
+                description = re.sub(r"\s*\.\.\.$", "", (model.get("description") or "").strip())
+                break
+    description = re.sub(r"\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)", r"\1", description or "")
+    return description.strip()
+
+def _translate_model_about_to_arabic(english: str, api_key: str) -> str:
+    """ترجمة وصف النموذج بنموذج خفيف وسريع، دون إظهار خطوة الترجمة للمستخدم."""
+    system = (
+        "أنت مترجم تعريفات تقنية إلى العربية الفصحى. "
+        "ترجم الفقرة ترجمة احترافية طبيعية كما تُكتب في بطاقة تعريف النموذج. "
+        "أبقِ أسماء النماذج والشركات والمنتجات والأرقام والاختصارات بحروفها اللاتينية كما وردت "
+        "(مثل Gemini وOpenRouter و1M). "
+        "كلمة decode في وصف النماذج تعني توليد النص، فترجمها إلى «توليد» لا «فك التشفير»، وtokens إلى «رموز». "
+        "لا تشرح، ولا تضف عنواناً، ولا تضع علامات اقتباس حول النص. أعد الفقرة العربية فقط."
+    )
+    payload = {
+        "model": ABOUT_TRANSLATOR_MODEL,
+        "temperature": 0.1,
+        "max_tokens": 600,
+        "reasoning": {"enabled": False},
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": english}
+        ]
+    }
+    key = (api_key or "").strip()
+    if not key:
+        raise RuntimeError("missing owner provider key")
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8085",
+            "X-Title": "Al-Mojtahed Sharia Engine"
+        },
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    )
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        resp_data = json.loads(resp.read().decode("utf-8"))
+    content = ((resp_data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+    content = content.strip().strip("«»\"'`")
+    content = re.sub(r"^(الترجمة|النص المترجم)\s*:\s*", "", content).strip()
+    arabic_chars = len(re.findall(r"[\u0600-\u06FF]", content))
+    if arabic_chars < 20:
+        raise RuntimeError("translation was not Arabic")
+    return content
+
+@app.get("/api/openrouter/model-about")
+async def get_openrouter_model_about(model_id: str, request: Request):
+    """وصف النموذج بالعربية، قبل السعر والسياق، دون إظهار الأصل الإنجليزي."""
+    model_id = (model_id or "").strip().strip("/")
+    if not re.fullmatch(r"[A-Za-z0-9_.:~/-]+", model_id) or ".." in model_id:
+        raise HTTPException(status_code=400, detail="معرّف النموذج غير صالح")
+    cached = openrouter_about_cache.get(model_id)
+    if cached:
+        return {"status": "ok", "id": model_id, "description": cached}
+
+    english = _english_model_about(model_id)
+    if not english:
+        raise HTTPException(status_code=404, detail="لم يُعثر على وصف لهذا النموذج")
+    try:
+        arabic = _translate_model_about_to_arabic(english, owner_openrouter_key(request))
+    except Exception as e:
+        print(f"Error translating model about for {model_id}: {e}")
+        raise HTTPException(status_code=502, detail="تعذر تجهيز وصف النموذج")
+
+    openrouter_about_cache[model_id] = arabic
+    _save_about_ar_cache()
+    return {"status": "ok", "id": model_id, "description": arabic}
 
 
 @app.get("/api/openrouter/credits")
-async def get_openrouter_credits(api_key: Optional[str] = None):
-    """جلب تفاصيل الرصيد والاستهلاك من OpenRouter بالدولار والريال السعودي"""
+async def get_openrouter_credits(request: Request, api_key: Optional[str] = None):
+    """جلب رصيد حساب OpenRouter الخاص بالعضو الحالي"""
     import urllib.request
-    key = (api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+    key = owner_openrouter_key(request, api_key)
+    if not key:
+        raise HTTPException(status_code=400, detail="أدخل مفتاح OpenRouter الخاص بحسابك")
     SAR_RATE = 3.75
 
     headers = {
@@ -3754,76 +4609,204 @@ DEFAULT_PROJECTS = []
 
 AGENT_GROUPS_FILE = os.path.join(os.path.dirname(__file__), "agent_groups_data.json")
 
-def load_stored_projects():
-    if os.path.exists(PROJECTS_FILE):
-        try:
-            with open(PROJECTS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Error loading projects: {e}")
-    return DEFAULT_PROJECTS
+APP_MEMORY_DB = BASE_DIR / "app_memory.db"
+MEMORY_WIPE_PHRASE = "امسح المحفوظات"
+_BOOK_INDEX_PATHS = (
+    PACKAGE_ROOT / "shamela_index.db",
+    BASE_DIR / "shamela_index.db",
+    PACKAGE_ROOT / "books.csv",
+)
 
-def save_stored_projects(projects):
+def _owner_key(kind: str, owner_id: str) -> str:
+    return f"{kind}:{owner_id}"
+
+def _load_owned_list(owner_id: str, kind: str) -> Optional[list]:
+    conn = _ensure_app_memory()
     try:
-        with open(PROJECTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(projects, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error saving projects: {e}")
+        row = conn.execute(
+            "SELECT payload FROM kv_documents WHERE key=?",
+            (_owner_key(kind, owner_id),)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    try:
+        data = json.loads(row["payload"])
+    except Exception:
+        return []
+    return data if isinstance(data, list) else []
 
-def load_stored_agent_groups():
-    groups = []
+def _save_owned_list(owner_id: str, kind: str, items: list) -> None:
+    payload = json.dumps(items, ensure_ascii=False)
+    now = datetime.now().isoformat()
+    conn = _ensure_app_memory()
+    try:
+        conn.execute(
+            "INSERT INTO kv_documents (key, payload, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
+            (_owner_key(kind, owner_id), payload, now)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def _migrate_owner_scope(conn: sqlite3.Connection) -> None:
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(chat_sessions)")]
+    if columns and "owner_id" not in columns:
+        conn.execute("ALTER TABLE chat_sessions RENAME TO chat_sessions_shared")
+        conn.execute("""
+            CREATE TABLE chat_sessions (
+                owner_id TEXT NOT NULL,
+                id TEXT NOT NULL,
+                title TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                sort_index INTEGER,
+                payload TEXT NOT NULL,
+                PRIMARY KEY (owner_id, id)
+            )
+        """)
+        conn.execute(
+            """
+            INSERT INTO chat_sessions (owner_id, id, title, created_at, updated_at, sort_index, payload)
+            SELECT ?, id, title, created_at, updated_at, sort_index, payload
+            FROM chat_sessions_shared
+            """,
+            (ADMIN_OWNER_ID,)
+        )
+        conn.execute("DROP TABLE chat_sessions_shared")
+
+    def adopt(kind: str, payload: Optional[str]) -> None:
+        key = _owner_key(kind, ADMIN_OWNER_ID)
+        if conn.execute("SELECT 1 FROM kv_documents WHERE key=?", (key,)).fetchone():
+            return
+        if payload is None:
+            return
+        conn.execute(
+            "INSERT INTO kv_documents (key, payload, updated_at) VALUES (?, ?, ?)",
+            (key, payload, datetime.now().isoformat())
+        )
+
+    projects_payload = None
+    legacy = conn.execute("SELECT payload FROM kv_documents WHERE key='projects'").fetchone()
+    if legacy:
+        projects_payload = legacy["payload"]
+    elif os.path.exists(PROJECTS_FILE):
+        try:
+            with open(PROJECTS_FILE, "r", encoding="utf-8") as handle:
+                existing = json.load(handle)
+            if isinstance(existing, list):
+                projects_payload = json.dumps(existing, ensure_ascii=False)
+        except Exception as exc:
+            print(f"Could not import projects into owner scope: {exc}")
+    adopt("projects", projects_payload)
+
     if os.path.exists(AGENT_GROUPS_FILE):
         try:
-            with open(AGENT_GROUPS_FILE, "r", encoding="utf-8") as f:
-                groups = json.load(f)
-        except Exception as e:
-            print(f"Error loading agent groups: {e}")
-            groups = []
+            with open(AGENT_GROUPS_FILE, "r", encoding="utf-8") as handle:
+                groups = json.load(handle)
+            if isinstance(groups, list):
+                adopt("agents", json.dumps(groups, ensure_ascii=False))
+        except Exception as exc:
+            print(f"Could not import agent groups into owner scope: {exc}")
+    else:
+        adopt("agents", "[]")
 
-    # تنظيف وتزامن صارم مع المشاريع النشطة فعلياً في projects_data.json
-    active_projects = load_stored_projects()
-    active_group_ids = set()
-    active_proj_ids = set()
-    for p in active_projects:
-        active_proj_ids.add(p.get("id"))
-        sag = p.get("subagents_group") or {}
-        gid = sag.get("id") or p.get("linked_group_id") or f"group_{p.get('id')}"
-        active_group_ids.add(gid)
+    if os.path.exists(TOOLS_FILE):
+        try:
+            with open(TOOLS_FILE, "r", encoding="utf-8") as handle:
+                tools = json.load(handle)
+            if isinstance(tools, list):
+                adopt("tools", json.dumps(tools, ensure_ascii=False))
+        except Exception as exc:
+            print(f"Could not import tools into owner scope: {exc}")
+    conn.commit()
 
-    # نحتفظ بالمجموعة الافتراضية العامة والمجموعات التابعة لمشاريع نشطة فقط، ونحذف أي مجموعات قديمة لمشاريع محذوفة
-    pruned_groups = []
-    for g in groups:
-        gid = g.get("id", "")
-        if gid == "group_heritage_default" or gid in active_group_ids or any(pid in gid for pid in active_proj_ids if pid):
-            pruned_groups.append(g)
-
-    # التأكد من إدراج مجموعات المشاريع النشطة الحالية
-    seen_ids = {g.get("id") for g in pruned_groups if isinstance(g, dict) and g.get("id")}
-    changed = len(pruned_groups) != len(groups)
-    for p in active_projects:
-        sag = p.get("subagents_group")
-        if sag and isinstance(sag, dict) and sag.get("agents"):
-            gid = sag.get("id") or p.get("linked_group_id") or f"group_{p.get('id')}"
-            if gid not in seen_ids:
-                seen_ids.add(gid)
-                pruned_groups.append({
-                    "id": gid,
-                    "name": sag.get("name") or f"فريق وكلاء: {p.get('title', '')[:30]}",
-                    "desc": sag.get("desc") or f"مجموعة وكلاء مخصصة لمشروع: {p.get('title', '')}",
-                    "agents": sag.get("agents", [])
-                })
-                changed = True
-    
-    if changed:
-        save_stored_agent_groups(pruned_groups)
-    return pruned_groups
-
-def save_stored_agent_groups(groups):
+def _book_index_status() -> Dict[str, Any]:
+    """قراءة فقط لفهرس الكتب. لا يُفتح للكتابة ولا يُمس في الأرشفة أو المسح."""
+    path = DB_INDEX_PATH
+    info = {
+        "path": str(path),
+        "exists": path.exists(),
+        "bytes": path.stat().st_size if path.exists() else 0,
+        "books": 0,
+    }
+    if not path.exists():
+        return info
     try:
-        with open(AGENT_GROUPS_FILE, "w", encoding="utf-8") as f:
-            json.dump(groups, f, ensure_ascii=False, indent=2)
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10)
+        info["books"] = int(conn.execute("SELECT COUNT(*) FROM books").fetchone()[0])
+        conn.close()
     except Exception as e:
-        print(f"Error saving agent groups: {e}")
+        info["error"] = str(e)
+    return info
+
+def _ensure_app_memory() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(APP_MEMORY_DB), timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_sessions (
+            owner_id TEXT NOT NULL,
+            id TEXT NOT NULL,
+            title TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            sort_index INTEGER,
+            payload TEXT NOT NULL,
+            PRIMARY KEY (owner_id, id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS kv_documents (
+            key TEXT PRIMARY KEY,
+            payload TEXT NOT NULL,
+            updated_at TEXT
+        )
+    """)
+    _migrate_owner_scope(conn)
+    return conn
+
+def _write_projects_snapshot(projects: list) -> None:
+    with open(PROJECTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(projects, f, ensure_ascii=False, indent=2)
+
+def load_stored_projects(owner_id: str):
+    data = _load_owned_list(owner_id, "projects")
+    if isinstance(data, list):
+        return data
+    if owner_id == ADMIN_OWNER_ID and os.path.exists(PROJECTS_FILE):
+        try:
+            with open(PROJECTS_FILE, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if isinstance(data, list):
+                return data
+        except Exception as exc:
+            print(f"Error loading projects: {exc}")
+    return DEFAULT_PROJECTS
+
+def save_stored_projects(projects, owner_id: str):
+    _save_owned_list(owner_id, "projects", projects)
+    if owner_id == ADMIN_OWNER_ID:
+        try:
+            _write_projects_snapshot(projects)
+        except Exception as exc:
+            print(f"Error saving projects snapshot: {exc}")
+
+def load_stored_agent_groups(owner_id: str):
+    """قراءة مجموعات وكلاء هذا العضو فقط."""
+    data = _load_owned_list(owner_id, "agents")
+    return data if isinstance(data, list) else []
+
+def save_stored_agent_groups(groups, owner_id: str):
+    _save_owned_list(owner_id, "agents", groups)
+    if owner_id == ADMIN_OWNER_ID:
+        try:
+            with open(AGENT_GROUPS_FILE, "w", encoding="utf-8") as handle:
+                json.dump(groups, handle, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            print(f"Error saving agent groups: {exc}")
 
 class PlanRequest(BaseModel):
     topic: str
@@ -3842,27 +4825,56 @@ class TavilySearchRequest(BaseModel):
     include_domains: Optional[List[str]] = None
     max_results: Optional[int] = 5
 
+@app.get("/api/chats")
+async def get_chats(request: Request):
+    """سجل محادثات العضو الحالي فقط"""
+    owner_id = current_owner_id(request)
+    conn = _ensure_app_memory()
+    rows = conn.execute(
+        "SELECT payload FROM chat_sessions WHERE owner_id=? ORDER BY sort_index ASC, updated_at DESC",
+        (owner_id,)
+    ).fetchall()
+    conn.close()
+    sessions = []
+    for row in rows:
+        try:
+            sessions.append(json.loads(row["payload"]))
+        except Exception:
+            continue
+    return {"sessions": sessions}
+
+@app.put("/api/chats")
+async def put_chats(payload: dict, request: Request):
+    """استبدال محادثات العضو الحالي. لا يمس محادثات غيره ولا فهرس الكتب."""
+    owner_id = current_owner_id(request)
+    sessions = payload.get("sessions")
+    if not isinstance(sessions, list):
+        raise HTTPException(status_code=400, detail="قائمة المحادثات غير صالحة")
+    kept = _replace_chat_sessions(sessions, owner_id)
+    return {"status": "ok", "count": kept}
+
 @app.get("/api/projects")
-async def get_projects():
-    """جلب قائمة المشاريع البحثية المحفوظة"""
-    return load_stored_projects()
+async def get_projects(request: Request):
+    """جلب مشاريع العضو الحالي"""
+    return load_stored_projects(current_owner_id(request))
 
 @app.post("/api/projects")
-async def save_project(payload: dict):
-    """حفظ أو تحديث مشروع بحثي مع حفظ سجل مهندس المشروع ونموذجه ومجموعة وكلائه"""
-    projects = load_stored_projects()
+async def save_project(payload: dict, request: Request):
+    """حفظ مشروع داخل مساحة العضو الحالي"""
+    owner_id = current_owner_id(request)
+    projects = load_stored_projects(owner_id)
     p_id = payload.get("id") or f"proj_{int(time.time())}"
     payload["id"] = p_id
+    payload["owner_id"] = owner_id
     payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    # مزامنة مجموعة وكلاء المشروع مع ملف مجموعات الوكلاء على الخادم تلقائياً
     if payload.get("subagents_group") and payload.get("subagents_group", {}).get("agents"):
         sag = payload["subagents_group"]
         gid = payload.get("linked_group_id") or sag.get("id") or f"group_{p_id}"
         sag["id"] = gid
         payload["linked_group_id"] = gid
         
-        stored_groups = load_stored_agent_groups()
+        stored_groups = load_stored_agent_groups(owner_id)
         g_idx = next((i for i, g in enumerate(stored_groups) if g.get("id") == gid), -1)
         group_entry = {
             "id": gid,
@@ -3874,50 +4886,51 @@ async def save_project(payload: dict):
             stored_groups[g_idx] = group_entry
         else:
             stored_groups.append(group_entry)
-        save_stored_agent_groups(stored_groups)
+        save_stored_agent_groups(stored_groups, owner_id)
 
-    # تحديث إن وجد أو إضافة
     idx = next((i for i, p in enumerate(projects) if p.get("id") == p_id), -1)
     if idx >= 0:
         projects[idx] = payload
     else:
         projects.insert(0, payload)
     
-    save_stored_projects(projects)
+    save_stored_projects(projects, owner_id)
     return {"status": "ok", "project": payload}
 
 @app.delete("/api/projects/{project_id}")
-async def delete_project(project_id: str):
-    """حذف مشروع بحثي وحذف مجموعة وكلائه ومخلفاته نهائياً من الخادم"""
-    projects = load_stored_projects()
+async def delete_project(project_id: str, request: Request):
+    """حذف مشروع من مساحة العضو الحالي فقط"""
+    owner_id = current_owner_id(request)
+    projects = load_stored_projects(owner_id)
     deleted_proj = next((p for p in projects if p.get("id") == project_id), None)
     projects = [p for p in projects if p.get("id") != project_id]
-    save_stored_projects(projects)
+    save_stored_projects(projects, owner_id)
 
     if deleted_proj:
         sag = deleted_proj.get("subagents_group") or {}
         sag_id = sag.get("id") or deleted_proj.get("linked_group_id") or f"group_{project_id}"
-        groups = load_stored_agent_groups()
+        groups = load_stored_agent_groups(owner_id)
         groups = [g for g in groups if g.get("id") != sag_id and g.get("id") != f"group_{project_id}"]
-        save_stored_agent_groups(groups)
+        save_stored_agent_groups(groups, owner_id)
 
     return {"status": "ok"}
 
 @app.get("/api/agent-groups")
-async def get_agent_groups_endpoint():
-    """جلب قائمة مجموعات الوكلاء المحفوظة في خادم المنظومة"""
-    groups = load_stored_agent_groups()
-    return groups
+async def get_agent_groups_endpoint(response: Response, request: Request):
+    """مجموعات وكلاء العضو الحالي"""
+    response.headers["X-Agent-Groups-Stored"] = "1"
+    return load_stored_agent_groups(current_owner_id(request))
 
 @app.post("/api/agent-groups")
-async def save_agent_groups_endpoint(payload: Any):
-    """حفظ أو تحديث مجموعات الوكلاء على خادم المنظومة"""
+async def save_agent_groups_endpoint(payload: Any, request: Request):
+    """حفظ مجموعات وكلاء العضو الحالي دون المساس بغيره"""
+    owner_id = current_owner_id(request)
     if isinstance(payload, dict) and "groups" in payload:
         groups = payload["groups"]
     elif isinstance(payload, list):
         groups = payload
     elif isinstance(payload, dict) and "id" in payload:
-        existing = load_stored_agent_groups()
+        existing = load_stored_agent_groups(owner_id)
         idx = next((i for i, g in enumerate(existing) if g.get("id") == payload.get("id")), -1)
         if idx >= 0:
             existing[idx] = payload
@@ -3927,7 +4940,7 @@ async def save_agent_groups_endpoint(payload: Any):
     else:
         groups = []
     
-    save_stored_agent_groups(groups)
+    save_stored_agent_groups(groups, owner_id)
     return {"status": "ok", "count": len(groups)}
 
 # =============================================================================
@@ -3936,21 +4949,18 @@ async def save_agent_groups_endpoint(payload: Any):
 
 TOOLS_FILE = os.path.join(os.path.dirname(__file__), "tools_data.json")
 
-def load_stored_tools():
-    if os.path.exists(TOOLS_FILE):
-        try:
-            with open(TOOLS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Error loading tools: {e}")
-    return []
+def load_stored_tools(owner_id: str):
+    data = _load_owned_list(owner_id, "tools")
+    return data if isinstance(data, list) else []
 
-def save_stored_tools(tools):
-    try:
-        with open(TOOLS_FILE, "w", encoding="utf-8") as f:
-            json.dump(tools, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error saving tools: {e}")
+def save_stored_tools(tools, owner_id: str):
+    _save_owned_list(owner_id, "tools", tools)
+    if owner_id == ADMIN_OWNER_ID:
+        try:
+            with open(TOOLS_FILE, "w", encoding="utf-8") as handle:
+                json.dump(tools, handle, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            print(f"Error saving tools: {exc}")
 
 class ToolItem(BaseModel):
     id: Optional[str] = None
@@ -3995,9 +5005,9 @@ class ImportToolsRequest(BaseModel):
     overwrite: Optional[bool] = False
 
 @app.get("/api/tools")
-async def get_tools_endpoint():
+async def get_tools_endpoint(request: Request):
     """جلب قائمة الأدوات البرمجية المعتمدة في المنظومة"""
-    return load_stored_tools()
+    return load_stored_tools(current_owner_id(request))
 
 @app.post("/api/tools/fetch-repo")
 async def fetch_tool_repo_endpoint(req: FetchToolRepoRequest):
@@ -4102,9 +5112,10 @@ Markmap.create(svg, { autoFit: true, duration: 300 }, root);"""
     return result
 
 @app.post("/api/tools")
-async def save_tool_endpoint(tool: ToolItem):
-    """إضافة أو تحديث أداة برمجية في المنظومة"""
-    tools = load_stored_tools()
+async def save_tool_endpoint(tool: ToolItem, request: Request):
+    """إضافة أو تحديث أداة داخل مساحة العضو الحالي"""
+    owner_id = current_owner_id(request)
+    tools = load_stored_tools(owner_id)
     tool_dict = tool.dict()
     
     # توحيد الحقول المترادفة لمنع أي خطأ
@@ -4132,21 +5143,22 @@ async def save_tool_endpoint(tool: ToolItem):
     else:
         tools.append(tool_dict)
         
-    save_stored_tools(tools)
+    save_stored_tools(tools, owner_id)
     return {"status": "ok", "tool": tool_dict}
 
 @app.delete("/api/tools/{tool_id}")
-async def delete_tool_endpoint(tool_id: str):
-    """حذف أداة من المنظومة"""
-    tools = load_stored_tools()
+async def delete_tool_endpoint(tool_id: str, request: Request):
+    """حذف أداة من مساحة العضو الحالي"""
+    owner_id = current_owner_id(request)
+    tools = load_stored_tools(owner_id)
     tools = [t for t in tools if t.get("id") != tool_id]
-    save_stored_tools(tools)
+    save_stored_tools(tools, owner_id)
     return {"status": "ok"}
 
 @app.get("/api/tools/export/{tool_id}")
-async def export_single_tool_endpoint(tool_id: str):
+async def export_single_tool_endpoint(tool_id: str, request: Request):
     """تصدير أداة محددة كملف JSON"""
-    tools = load_stored_tools()
+    tools = load_stored_tools(current_owner_id(request))
     tool = next((t for t in tools if t.get("id") == tool_id), None)
     if not tool:
         raise HTTPException(status_code=404, detail="الأداة غير موجودة")
@@ -4162,9 +5174,9 @@ async def export_single_tool_endpoint(tool_id: str):
     )
 
 @app.get("/api/tools/export")
-async def export_all_tools_endpoint():
+async def export_all_tools_endpoint(request: Request):
     """تصدير كافة الأدوات كحزمة JSON"""
-    tools = load_stored_tools()
+    tools = load_stored_tools(current_owner_id(request))
     export_payload = {
         "export_version": "1.0",
         "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -4178,7 +5190,7 @@ async def export_all_tools_endpoint():
     )
 
 @app.post("/api/tools/import")
-async def import_tools_endpoint(req: ImportToolsRequest):
+async def import_tools_endpoint(req: ImportToolsRequest, request: Request):
     """استيراد أداة أو حزمة أدوات إلى المنظومة"""
     raw_data = req.data
     imported_list = []
@@ -4196,7 +5208,8 @@ async def import_tools_endpoint(req: ImportToolsRequest):
     if not imported_list:
         raise HTTPException(status_code=400, detail="صيغة بيانات الأداة غير صالحة")
         
-    tools = load_stored_tools()
+    owner_id = current_owner_id(request)
+    tools = load_stored_tools(owner_id)
     saved_tools = []
     
     for item in imported_list:
@@ -4232,7 +5245,7 @@ async def import_tools_endpoint(req: ImportToolsRequest):
             tools.append(tool_item)
         saved_tools.append(tool_item)
         
-    save_stored_tools(tools)
+    save_stored_tools(tools, owner_id)
     return {"status": "ok", "imported_count": len(saved_tools), "tools": saved_tools}
 
 @app.post("/api/tools/test-python")
@@ -4350,9 +5363,9 @@ except Exception as e:
         return {"status": "error", "success": False, "error": str(e), "message": str(e)}
 
 @app.post("/api/tools/generate-code")
-async def generate_tool_code_endpoint(req: ToolGenerateCodeRequest):
+async def generate_tool_code_endpoint(req: ToolGenerateCodeRequest, request: Request):
     """محاورة نموذج OpenRouter لبناء كود بايثون مخصص لأداة جديدة"""
-    key = (req.api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+    key = owner_openrouter_key(request, req.api_key)
     model = req.model or "google/gemini-2.5-flash"
     
     task_desc = req.prompt.strip() if req.prompt else f"اسم الأداة: {req.tool_name}\nوصف الأداة: {req.tool_desc}"
@@ -4478,10 +5491,10 @@ class SubagentTestRequest(BaseModel):
     api_key: Optional[str] = None
 
 @app.post("/api/subagents/test")
-async def test_subagent_endpoint(req: SubagentTestRequest):
+async def test_subagent_endpoint(req: SubagentTestRequest, request: Request):
     """اختبار استجابة الوكيل المساعد حياً مع استخراج شواهد كتبه التراثية وتطبيق التوجيه والمعلمات بدقة وفق سياق المشروع"""
     t0 = time.time()
-    key = (req.api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+    key = owner_openrouter_key(request, req.api_key)
     resolved_model = normalize_model_id(req.model or "google/gemini-2.5-flash")
     
     ag_name = (req.agent_name or "الوكيل المساعد").strip()
@@ -4512,15 +5525,14 @@ async def test_subagent_endpoint(req: SubagentTestRequest):
     snippets_items = []
     citations_meta = []
     for c in cits:
-        loc_parts = [p for p in [c.get('vol'), c.get('page')] if p]
-        loc_str = f" ({'، '.join(loc_parts)})" if loc_parts else ""
+        loc_str = c.get("citation_label") or canonical_citation_label(c.get("title"), c.get("vol"), c.get("page"), c.get("volume_count"))
         citations_meta.append({
             "title": c.get('title'),
             "author": c.get('author'),
             "loc": loc_str
         })
         snippets_items.append(
-            f"- «{c.get('title', 'كتاب تراثي')}» للمصنف {c.get('author', 'غير محدد')}{loc_str}:\n  {c.get('snippet', '')}"
+            f"- الإحالة المعتمدة: {loc_str} | المصنف: {c.get('author', 'غير محدد')}:\n  {c.get('snippet', '')}"
         )
     snippets_txt = "\n\n".join(snippets_items) if snippets_items else ""
     
@@ -4530,7 +5542,8 @@ async def test_subagent_endpoint(req: SubagentTestRequest):
         f"أنت الوكيل المساعد التخصصي: «{ag_name}»{project_ctx}.\n"
         f"تخصصك ودورك: {ag_role}.\n"
         f"التوجيه التخصصي الصارم المعتمد: {directive}\n"
-        f"المهمة: أجب بدقة متناهية والتزام تام بتوجيهك وتخصصك."
+        f"المهمة: أجب بدقة متناهية والتزام تام بتوجيهك وتخصصك.\n"
+        f"{CITATION_FORMAT_RULE}"
     )
     
     if snippets_txt:
@@ -4715,6 +5728,23 @@ async def system_diagnose_endpoint():
         "message": f"المجموعة النشطة: {col_name} (دقة التضمين 8B جاهزة ومفعلة)"
     })
 
+    book_index = _book_index_status()
+    if book_index["exists"] and book_index["books"] > 0:
+        checks.append({
+            "category": "فهرس الكتب المحمي",
+            "item": "فهرس المكتبة الشاملة",
+            "status": "ok",
+            "message": f"محمي ولا يُمسحه الأرشيف أو المسح: {book_index['books']} كتاباً"
+        })
+    else:
+        checks.append({
+            "category": "فهرس الكتب المحمي",
+            "item": "فهرس المكتبة الشاملة",
+            "status": "error",
+            "message": "فهرس الكتب غير موجود أو فارغ. لا تشغّل المسح قبل استعادته، لأن التطبيق لن يعرف الكتب."
+        })
+        has_issues = True
+
     return {
         "status": "issues_found" if has_issues else "healthy",
         "summary": "تم اكتشاف بعض الملاحظات تحتاج صيانة وإصلاحاً" if has_issues else "كافة أجزاء المنظومة تعمل بكفاءة تامة وملفات النظام سليمة",
@@ -4723,8 +5753,9 @@ async def system_diagnose_endpoint():
     }
 
 @app.post("/api/system/repair")
-async def system_repair_endpoint():
+async def system_repair_endpoint(request: Request):
     """إجراء الصيانة التلقائية والإصلاح الشامل مع نسخ احتياطي فوري للمشاريع والبيانات"""
+    require_admin(request)
     actions_taken = []
     
     # 1. إنشاء نسخة احتياطية آمنة في مجلد backups
@@ -4735,7 +5766,8 @@ async def system_repair_endpoint():
         os.path.join(BASE_DIR, "projects_data.json"),
         TOOLS_FILE,
         os.path.join(BASE_DIR, "agent_groups_data.json"),
-        os.path.join(BASE_DIR, "providers_data.json")
+        os.path.join(BASE_DIR, "providers_data.json"),
+        str(APP_MEMORY_DB),
     ]
     backed_up_count = 0
     for df in data_files:
@@ -4784,7 +5816,7 @@ async def system_repair_endpoint():
                 "library_url": "/static/js/markmap-view.min.js", "enabled": True, "is_builtin": True
             }
         ]
-        save_stored_tools(default_tools)
+        save_stored_tools(default_tools, ADMIN_OWNER_ID)
         actions_taken.append("تمت استعادة وتثبيت أدوات المنظومة الأساسية الأربعة في tools_data.json")
 
     prov_p = os.path.join(BASE_DIR, "providers_data.json")
@@ -4834,6 +5866,586 @@ async def system_repair_endpoint():
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
+def _archive_user_memory() -> Dict[str, Any]:
+    """نسخ محفوظات المستخدم فقط. فهرس الكتب ونصوص الشاملة ومخزن المتجهات خارج النسخة."""
+    stamp = time.strftime("archive_%Y%m%d_%H%M%S")
+    archive_dir = os.path.join(BASE_DIR, "backups", stamp)
+    os.makedirs(archive_dir, exist_ok=True)
+    copied = []
+
+    try:
+        conn = _ensure_app_memory()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Memory checkpoint skipped: {e}")
+
+    if APP_MEMORY_DB.exists():
+        shutil.copy2(APP_MEMORY_DB, os.path.join(archive_dir, APP_MEMORY_DB.name))
+        copied.append(APP_MEMORY_DB.name)
+
+    for path in (PROJECTS_FILE, AGENT_GROUPS_FILE):
+        if os.path.exists(path):
+            shutil.copy2(path, archive_dir)
+            copied.append(os.path.basename(path))
+
+    uploads_dir = BASE_DIR / "uploads"
+    if uploads_dir.exists():
+        dest = os.path.join(archive_dir, "uploads")
+        shutil.copytree(uploads_dir, dest, dirs_exist_ok=True)
+        copied.append("uploads")
+
+    return {
+        "archive_path": archive_dir,
+        "archive_id": stamp,
+        "copied": copied,
+        "book_index": _book_index_status(),
+    }
+
+def _clear_upload_files() -> int:
+    uploads_dir = BASE_DIR / "uploads"
+    removed = 0
+    if not uploads_dir.exists():
+        return 0
+    for path in uploads_dir.iterdir():
+        if path.name == ".gitkeep" or path.name in ("shamela_index.db", "books.csv"):
+            continue
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+            removed += 1
+        elif path.is_dir():
+            shutil.rmtree(path)
+            removed += 1
+    return removed
+
+class MemoryActionRequest(BaseModel):
+    action: str
+    confirm: Optional[str] = ""
+
+@app.post("/api/system/memory")
+async def system_memory_action(req: MemoryActionRequest, request: Request):
+    """مسح مساحة المشرف بعد تأكيد صريح. مساحات الأعضاء وفهرس الكتب تبقى."""
+    require_admin(request)
+    owner_id = ADMIN_OWNER_ID
+    action = (req.action or "").strip().lower()
+    if action not in ("archive", "wipe"):
+        raise HTTPException(status_code=400, detail="الإجراء يجب أن يكون أرشفة أو مسحاً")
+    if action == "wipe" and (req.confirm or "").strip() != MEMORY_WIPE_PHRASE:
+        raise HTTPException(status_code=400, detail="اكتب عبارة التأكيد كما هي قبل المسح")
+
+    for protected in _BOOK_INDEX_PATHS:
+        if protected.exists() and protected.stat().st_size <= 0:
+            raise HTTPException(status_code=409, detail="فهرس الكتب فارغ. أُوقف الإجراء حتى لا يُفقد مرجع الكتب.")
+
+    before = _book_index_status()
+    if action == "wipe" and before.get("books", 0) <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail="فهرس الكتب غير متاح أو فارغ. أُوقف المسح لأن التطبيق لن يعرف الكتب من غيره."
+        )
+    archive = _archive_user_memory()
+    if action == "archive":
+        return {
+            "status": "archived",
+            "message": "أُرشفت المحادثات والمشاريع والمرفقات. فهرس الكتب لم يُنسخ ولم يُمس.",
+            **archive,
+            "book_index_before": before,
+        }
+
+    conn = _ensure_app_memory()
+    chat_count = int(conn.execute("SELECT COUNT(*) FROM chat_sessions WHERE owner_id=?", (owner_id,)).fetchone()[0])
+    conn.execute("DELETE FROM chat_sessions WHERE owner_id=?", (owner_id,))
+    conn.commit()
+    conn.close()
+    save_stored_projects([], owner_id)
+    save_stored_agent_groups([], owner_id)
+    removed_uploads = 0
+    admin_uploads = UPLOADS_BUCKET_DIR / owner_id
+    if admin_uploads.exists():
+        shutil.rmtree(admin_uploads)
+        removed_uploads += 1
+    after = _book_index_status()
+    if after["books"] != before["books"] or after["bytes"] != before["bytes"]:
+        raise HTTPException(status_code=500, detail="تغيّر فهرس الكتب أثناء المسح. أوقف الاستخدام وافحص النسخة فوراً.")
+
+    return {
+        "status": "wiped",
+        "message": "مُسحت المحادثات والمشاريع ومجموعات الوكلاء والمرفقات. فهرس الكتب ما زال في مكانه.",
+        "removed_chats": chat_count,
+        "removed_uploads": removed_uploads,
+        "book_index": after,
+        **archive,
+    }
+
+def _chat_has_owner(conn: sqlite3.Connection) -> bool:
+    return "owner_id" in [row[1] for row in conn.execute("PRAGMA table_info(chat_sessions)")]
+
+def _read_chat_sessions(conn: sqlite3.Connection, owner_id: Optional[str] = None) -> List[dict]:
+    sessions = []
+    if _chat_has_owner(conn) and owner_id:
+        rows = conn.execute(
+            "SELECT payload FROM chat_sessions WHERE owner_id=? ORDER BY sort_index ASC, updated_at DESC",
+            (owner_id,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT payload FROM chat_sessions ORDER BY sort_index ASC, updated_at DESC"
+        ).fetchall()
+    for row in rows:
+        try:
+            item = json.loads(row["payload"])
+            if isinstance(item, dict) and item.get("id"):
+                sessions.append(item)
+        except Exception:
+            continue
+    return sessions
+
+def _replace_chat_sessions(sessions: list, owner_id: str) -> int:
+    now = datetime.now().isoformat()
+    conn = _ensure_app_memory()
+    kept = 0
+    try:
+        conn.execute("BEGIN")
+        conn.execute("DELETE FROM chat_sessions WHERE owner_id=?", (owner_id,))
+        for index, session in enumerate(sessions):
+            if not isinstance(session, dict) or not session.get("id"):
+                continue
+            conn.execute(
+                "INSERT INTO chat_sessions (owner_id, id, title, created_at, updated_at, sort_index, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    owner_id,
+                    str(session["id"]),
+                    str(session.get("title") or ""),
+                    str(session.get("createdAt") or now),
+                    now,
+                    index,
+                    json.dumps(session, ensure_ascii=False),
+                )
+            )
+            kept += 1
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return kept
+
+def _read_agent_groups_file() -> list:
+    if not os.path.exists(AGENT_GROUPS_FILE):
+        return []
+    try:
+        with open(AGENT_GROUPS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+def _archive_scope_label(scope: str) -> str:
+    known = {
+        "chats": "المحادثات",
+        "projects": "المشاريع",
+        "agents": "الوكلاء",
+        "tools": "الإضافات",
+        "all": "الجميع",
+        "legacy": "نسخة كاملة سابقة",
+    }
+    if scope in known:
+        return known[scope]
+    parts = [part for part in str(scope or "").split("+") if part]
+    if parts:
+        return _label_for_scopes(parts)
+    return scope or "أرشيف"
+
+def _format_archive_stamp(archive_id: str) -> str:
+    parts = archive_id.split("_")
+    if len(parts) >= 3 and len(parts[1]) == 8 and len(parts[2]) >= 6:
+        raw_d, raw_t = parts[1], parts[2]
+        return f"{raw_d[:4]}/{raw_d[4:6]}/{raw_d[6:]} — {raw_t[:2]}:{raw_t[2:4]}:{raw_t[4:6]}"
+    return archive_id
+
+def _assert_book_index_stable(before: Dict[str, Any]) -> Dict[str, Any]:
+    after = _book_index_status()
+    if after.get("books") != before.get("books") or after.get("bytes") != before.get("bytes"):
+        raise HTTPException(status_code=500, detail="تغيّر فهرس الكتب. أُوقف الإجراء.")
+    return after
+
+def _copy_uploads_to(dest_dir: str) -> bool:
+    uploads_dir = BASE_DIR / "uploads"
+    if not uploads_dir.exists():
+        return False
+    has_files = any(path.name != ".gitkeep" for path in uploads_dir.iterdir())
+    if not has_files:
+        return False
+    shutil.copytree(uploads_dir, dest_dir, dirs_exist_ok=True)
+    return True
+
+def list_user_archives(owner_id: str) -> List[dict]:
+    backups_dir = BASE_DIR / "backups"
+    if not backups_dir.exists():
+        return []
+    entries = []
+    for path in backups_dir.iterdir():
+        if not path.is_dir() or not path.name.startswith("archive_"):
+            continue
+        manifest_path = path / "manifest.json"
+        scope = "legacy"
+        created_at = _format_archive_stamp(path.name)
+        counts = {}
+        scope_label = ""
+        note = ""
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                scope = manifest.get("scope") or "legacy"
+                created_at = manifest.get("created_at") or created_at
+                counts = manifest.get("counts") or {}
+                scope_label = manifest.get("scope_label") or ""
+                note = str(manifest.get("note") or "").strip()
+                archive_owner = str(manifest.get("owner_id") or ADMIN_OWNER_ID)
+            except Exception:
+                archive_owner = ADMIN_OWNER_ID
+        else:
+            archive_owner = ADMIN_OWNER_ID
+        if archive_owner != owner_id:
+            continue
+        if not scope_label:
+            scope_label = _archive_scope_label(scope)
+        summary_bits = []
+        if "chats" in counts:
+            summary_bits.append(f"{counts['chats']} محادثة")
+        if "projects" in counts:
+            summary_bits.append(f"{counts['projects']} مشروع")
+        if "agents" in counts:
+            summary_bits.append(f"{counts['agents']} مجموعة وكلاء")
+        if "tools" in counts:
+            summary_bits.append(f"{counts['tools']} إضافة")
+        if counts.get("uploads"):
+            summary_bits.append("مع المرفقات")
+        entries.append({
+            "id": path.name,
+            "scope": scope,
+            "scope_label": scope_label,
+            "note": note,
+            "created_at": created_at,
+            "summary": " · ".join(summary_bits) or "نسخة محفوظة",
+            "counts": counts,
+        })
+    entries.sort(key=lambda item: item["id"], reverse=True)
+    return entries
+
+class ArchiveCreateRequest(BaseModel):
+    scope: Optional[str] = ""
+    scopes: Optional[List[str]] = None
+    note: Optional[str] = ""
+    agent_groups: Optional[List[Any]] = None
+
+class ArchiveRestoreRequest(BaseModel):
+    archive_id: str
+
+def _normalize_archive_scopes(req: ArchiveCreateRequest) -> List[str]:
+    allowed = ["chats", "projects", "agents", "tools"]
+    raw = req.scopes if req.scopes else []
+    if not raw and req.scope:
+        raw = ["chats", "projects", "agents", "tools"] if req.scope == "all" else [req.scope]
+    scopes = []
+    for item in raw:
+        name = str(item or "").strip().lower()
+        if name in allowed and name not in scopes:
+            scopes.append(name)
+    return scopes
+
+def _label_for_scopes(scopes: List[str]) -> str:
+    names = {
+        "chats": "المحادثات",
+        "projects": "المشاريع",
+        "agents": "الوكلاء",
+        "tools": "الإضافات",
+    }
+    ordered = [names[name] for name in ["chats", "projects", "agents", "tools"] if name in scopes]
+    if len(ordered) == 4:
+        return "الجميع"
+    return " و".join(ordered) or "أرشيف"
+
+@app.get("/api/archives")
+async def get_archives(request: Request):
+    return {"archives": list_user_archives(current_owner_id(request))}
+
+@app.post("/api/archives")
+async def create_archive(req: ArchiveCreateRequest, request: Request):
+    """نقل عناصر العضو الحالي إلى أرشيفه ثم مسحها من مساحته فقط."""
+    owner_id = current_owner_id(request)
+    scopes = _normalize_archive_scopes(req)
+    note = " ".join(str(req.note or "").split())[:400]
+    if not scopes:
+        raise HTTPException(status_code=400, detail="حدد ما تريد أرشفته")
+    if not note:
+        raise HTTPException(status_code=400, detail="اكتب وصفاً يذكّرك بهذه الأرشفة")
+    before = _book_index_status()
+    if before.get("books", 0) <= 0:
+        raise HTTPException(status_code=409, detail="فهرس الكتب غير متاح. أُوقفت الأرشفة حتى لا يُفقد مرجع الكتب.")
+
+    conn = _ensure_app_memory()
+    chats = _read_chat_sessions(conn, owner_id)
+    conn.close()
+    projects = load_stored_projects(owner_id)
+    groups = load_stored_agent_groups(owner_id)
+    tools = load_stored_tools(owner_id)
+    if not isinstance(tools, list):
+        tools = []
+    available = {
+        "chats": bool(chats),
+        "projects": bool(projects),
+        "agents": bool(groups),
+        "tools": bool(tools),
+    }
+    if not any(available[name] for name in scopes):
+        raise HTTPException(status_code=400, detail="لا توجد بيانات في العناصر المحددة لأرشفتها")
+
+    archive_id = time.strftime("archive_%Y%m%d_%H%M%S")
+    archive_dir = os.path.join(BASE_DIR, "backups", archive_id)
+    os.makedirs(archive_dir, exist_ok=True)
+    created_at = time.strftime("%Y/%m/%d — %H:%M:%S")
+    counts: Dict[str, Any] = {}
+    saved_scopes = []
+
+    if "chats" in scopes and chats:
+        with open(os.path.join(archive_dir, "chats.json"), "w", encoding="utf-8") as f:
+            json.dump(chats, f, ensure_ascii=False, indent=2)
+        counts["chats"] = len(chats)
+        saved_scopes.append("chats")
+        owner_uploads = UPLOADS_BUCKET_DIR / owner_id
+        if owner_uploads.exists() and any(owner_uploads.iterdir()):
+            shutil.copytree(owner_uploads, os.path.join(archive_dir, "uploads"), dirs_exist_ok=True)
+            counts["uploads"] = True
+    if "projects" in scopes and projects:
+        with open(os.path.join(archive_dir, "projects_data.json"), "w", encoding="utf-8") as f:
+            json.dump(projects, f, ensure_ascii=False, indent=2)
+        counts["projects"] = len(projects)
+        saved_scopes.append("projects")
+    if "agents" in scopes and groups:
+        with open(os.path.join(archive_dir, "agent_groups_data.json"), "w", encoding="utf-8") as f:
+            json.dump(groups, f, ensure_ascii=False, indent=2)
+        counts["agents"] = len(groups)
+        saved_scopes.append("agents")
+    if "tools" in scopes and tools:
+        with open(os.path.join(archive_dir, "tools_data.json"), "w", encoding="utf-8") as f:
+            json.dump(tools, f, ensure_ascii=False, indent=2)
+        counts["tools"] = len(tools)
+        saved_scopes.append("tools")
+
+    scope_label = _label_for_scopes(saved_scopes)
+    manifest = {
+        "id": archive_id,
+        "scope": "all" if len(saved_scopes) == 4 else "+".join(saved_scopes),
+        "scopes": saved_scopes,
+        "scope_label": scope_label,
+        "note": note,
+        "owner_id": owner_id,
+        "created_at": created_at,
+        "counts": counts,
+    }
+    with open(os.path.join(archive_dir, "manifest.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+    if "chats" in saved_scopes:
+        _replace_chat_sessions([], owner_id)
+        owner_uploads = UPLOADS_BUCKET_DIR / owner_id
+        if owner_uploads.exists():
+            shutil.rmtree(owner_uploads)
+    if "projects" in saved_scopes:
+        save_stored_projects([], owner_id)
+    if "agents" in saved_scopes:
+        save_stored_agent_groups([], owner_id)
+    if "tools" in saved_scopes:
+        save_stored_tools([], owner_id)
+
+    after = _assert_book_index_stable(before)
+    return {
+        "status": "archived",
+        "archive_id": archive_id,
+        "scopes": saved_scopes,
+        "scope_label": scope_label,
+        "note": note,
+        "created_at": created_at,
+        "counts": counts,
+        "book_index": after,
+        "message": "نُقلت العناصر المحددة إلى الأرشيف ومُسحت من التطبيق.",
+    }
+
+def _restore_user_archive(archive_id: str, owner_id: str) -> Dict[str, Any]:
+    if not re.fullmatch(r"archive_\d{8}_\d{6}", archive_id or ""):
+        raise HTTPException(status_code=400, detail="معرّف الأرشيف غير صالح")
+    archive_dir = os.path.join(BASE_DIR, "backups", archive_id)
+    if not os.path.isdir(archive_dir):
+        raise HTTPException(status_code=404, detail="الأرشيف غير موجود")
+    before = _book_index_status()
+    if before.get("books", 0) <= 0:
+        raise HTTPException(status_code=409, detail="فهرس الكتب غير متاح. أُوقف الاسترجاع.")
+
+    restored = []
+    restored_chats = False
+    restored_projects = False
+    restored_agents = False
+    restored_tools = False
+    manifest_path = os.path.join(archive_dir, "manifest.json")
+    if os.path.exists(manifest_path):
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        archive_owner = str(manifest.get("owner_id") or ADMIN_OWNER_ID)
+        if archive_owner != owner_id:
+            raise HTTPException(status_code=403, detail="هذا الأرشيف خاص بعضو آخر")
+        scopes = manifest.get("scopes")
+        if not isinstance(scopes, list) or not scopes:
+            scope = manifest.get("scope") or ""
+            if scope == "all":
+                scopes = ["chats", "projects", "agents"]
+            elif scope == "projects":
+                scopes = ["projects", "agents"]
+            elif scope:
+                scopes = [part for part in str(scope).split("+") if part]
+            else:
+                scopes = []
+        if "chats" in scopes:
+            chats_path = os.path.join(archive_dir, "chats.json")
+            if os.path.exists(chats_path):
+                with open(chats_path, "r", encoding="utf-8") as f:
+                    chats = json.load(f)
+                if isinstance(chats, list):
+                    _replace_chat_sessions(chats, owner_id)
+                    restored.append("chats")
+                    restored_chats = True
+            uploads_src = os.path.join(archive_dir, "uploads")
+            if os.path.isdir(uploads_src):
+                dest = UPLOADS_BUCKET_DIR / owner_id
+                dest.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(uploads_src, dest, dirs_exist_ok=True)
+                restored.append("uploads")
+        if "projects" in scopes:
+            projects_path = os.path.join(archive_dir, "projects_data.json")
+            if os.path.exists(projects_path):
+                with open(projects_path, "r", encoding="utf-8") as f:
+                    projects = json.load(f)
+                if isinstance(projects, list):
+                    save_stored_projects(projects, owner_id)
+                    restored.append("projects")
+                    restored_projects = True
+        if "agents" in scopes:
+            groups_path = os.path.join(archive_dir, "agent_groups_data.json")
+            if os.path.exists(groups_path):
+                with open(groups_path, "r", encoding="utf-8") as f:
+                    groups = json.load(f)
+                if isinstance(groups, list):
+                    save_stored_agent_groups(groups, owner_id)
+                    restored.append("agents")
+                    restored_agents = True
+        if "tools" in scopes:
+            tools_path = os.path.join(archive_dir, "tools_data.json")
+            if os.path.exists(tools_path):
+                with open(tools_path, "r", encoding="utf-8") as f:
+                    tools = json.load(f)
+                if isinstance(tools, list):
+                    save_stored_tools(tools, owner_id)
+                    restored.append("tools")
+                    restored_tools = True
+    else:
+        if owner_id != ADMIN_OWNER_ID:
+            raise HTTPException(status_code=403, detail="هذا الأرشيف خاص بالمشرف")
+        memory_src = os.path.join(archive_dir, "app_memory.db")
+        if os.path.isfile(memory_src):
+            src = sqlite3.connect(f"file:{memory_src}?mode=ro", uri=True)
+            src.row_factory = sqlite3.Row
+            chats = _read_chat_sessions(src, ADMIN_OWNER_ID)
+            row = src.execute(
+                "SELECT payload FROM kv_documents WHERE key=?",
+                (_owner_key("projects", ADMIN_OWNER_ID),)
+            ).fetchone()
+            if row is None:
+                row = src.execute("SELECT payload FROM kv_documents WHERE key='projects'").fetchone()
+            src.close()
+            _replace_chat_sessions(chats, owner_id)
+            restored_chats = True
+            restored.append("chats")
+            if row:
+                projects = json.loads(row["payload"])
+                if isinstance(projects, list):
+                    save_stored_projects(projects, owner_id)
+                    restored_projects = True
+                    restored.append("projects")
+        groups_path = os.path.join(archive_dir, "agent_groups_data.json")
+        if os.path.exists(groups_path):
+            with open(groups_path, "r", encoding="utf-8") as f:
+                groups = json.load(f)
+            if isinstance(groups, list):
+                save_stored_agent_groups(groups, owner_id)
+                restored_agents = True
+                restored.append("agents")
+
+    after = _assert_book_index_stable(before)
+    return {
+        "status": "restored",
+        "archive_id": archive_id,
+        "restored": restored,
+        "restored_chats": restored_chats,
+        "restored_projects": restored_projects,
+        "restored_agents": restored_agents,
+        "restored_tools": restored_tools,
+        "book_index": after,
+        "message": "عادت النسخة المؤرشفة إلى التطبيق.",
+    }
+
+def _archive_folder(archive_id: str) -> str:
+    if not re.fullmatch(r"archive_\d{8}_\d{6}", archive_id or ""):
+        raise HTTPException(status_code=400, detail="معرّف الأرشيف غير صالح")
+    backups_dir = (BASE_DIR / "backups").resolve()
+    target = (backups_dir / archive_id).resolve()
+    if backups_dir not in target.parents or not target.is_dir():
+        raise HTTPException(status_code=404, detail="الأرشيف غير موجود")
+    return str(target)
+
+@app.post("/api/archives/restore")
+async def restore_archive(req: ArchiveRestoreRequest, request: Request):
+    return _restore_user_archive(req.archive_id, current_owner_id(request))
+
+@app.delete("/api/archives/{archive_id}")
+async def delete_archive(archive_id: str, request: Request):
+    owner_id = current_owner_id(request)
+    target = _archive_folder(archive_id)
+    manifest_path = os.path.join(target, "manifest.json")
+    archive_owner = ADMIN_OWNER_ID
+    if os.path.exists(manifest_path):
+        try:
+            archive_owner = str(json.loads(Path(manifest_path).read_text(encoding="utf-8")).get("owner_id") or ADMIN_OWNER_ID)
+        except Exception:
+            archive_owner = ADMIN_OWNER_ID
+    if archive_owner != owner_id:
+        raise HTTPException(status_code=403, detail="هذا الأرشيف خاص بعضو آخر")
+    shutil.rmtree(target)
+    return {"status": "deleted", "archive_id": archive_id}
+
+@app.delete("/api/archives")
+async def delete_all_archives(request: Request):
+    owner_id = current_owner_id(request)
+    backups_dir = BASE_DIR / "backups"
+    removed = []
+    if backups_dir.exists():
+        for path in list(backups_dir.iterdir()):
+            if not (path.is_dir() and path.name.startswith("archive_") and re.fullmatch(r"archive_\d{8}_\d{6}", path.name)):
+                continue
+            manifest_path = path / "manifest.json"
+            archive_owner = ADMIN_OWNER_ID
+            if manifest_path.exists():
+                try:
+                    archive_owner = str(json.loads(manifest_path.read_text(encoding="utf-8")).get("owner_id") or ADMIN_OWNER_ID)
+                except Exception:
+                    archive_owner = ADMIN_OWNER_ID
+            if archive_owner != owner_id:
+                continue
+            shutil.rmtree(path)
+            removed.append(path.name)
+    return {"status": "deleted", "count": len(removed), "archives": removed}
+
 class RestoreBackupRequest(BaseModel):
     backup_id: str
 
@@ -4852,7 +6464,7 @@ async def list_system_backups_endpoint():
 
     for item in items:
         full_p = os.path.join(backups_dir, item)
-        if os.path.isdir(full_p) and (item.startswith("backup_") or item.startswith("pre_restore_")):
+        if os.path.isdir(full_p) and (item.startswith("backup_") or item.startswith("pre_restore_") or item.startswith("archive_")):
             mtime = os.path.getmtime(full_p)
             dt_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
             
@@ -4900,8 +6512,9 @@ async def list_system_backups_endpoint():
     return {"backups": entries, "count": len(entries)}
 
 @app.post("/api/system/restore")
-async def restore_system_backup_endpoint(req: RestoreBackupRequest):
+async def restore_system_backup_endpoint(req: RestoreBackupRequest, request: Request):
     """استرجاع بيانات المشاريع والأدوات والمجموعات من نسخة احتياطية سابقة"""
+    require_admin(request)
     backup_id = (req.backup_id or "").strip()
     if not backup_id or not re.match(r'^[a-zA-Z0-9_]+$', backup_id):
         raise HTTPException(status_code=400, detail="معرّف النسخة الاحتياطية غير صالح أو غير آمن")
@@ -4909,6 +6522,13 @@ async def restore_system_backup_endpoint(req: RestoreBackupRequest):
     target_backup_dir = os.path.join(BASE_DIR, "backups", backup_id)
     if not os.path.isdir(target_backup_dir):
         raise HTTPException(status_code=404, detail="مجلد النسخة الاحتياطية المحدد غير موجود")
+    if backup_id.startswith("archive_"):
+        restored = _restore_user_archive(backup_id, ADMIN_OWNER_ID)
+        restored["status"] = "success"
+        restored["restored_files"] = restored.get("restored") or []
+        restored["pre_restore_backup"] = ""
+        restored["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        return restored
 
     # أمان إضافي: حفظ نسخة أمان سريعة قبل الاسترجاع Pre-Restore Snapshot
     pre_snap_dir = os.path.join(BASE_DIR, "backups", time.strftime("pre_restore_%Y%m%d_%H%M%S"))
@@ -4921,15 +6541,39 @@ async def restore_system_backup_endpoint(req: RestoreBackupRequest):
             except Exception:
                 pass
 
-    # استرجاع ونسخ الملفات من النسخة المحددة إلى BASE_DIR
+    # استرجاع المحفوظات فقط. فهرس الكتب لا يُنسخ من الأرشيف ولا يُستبدل.
     restored_files = []
     for fn in os.listdir(target_backup_dir):
+        if fn in ("shamela_index.db", "books.csv"):
+            continue
         if fn.endswith(".json"):
             src_fp = os.path.join(target_backup_dir, fn)
             dst_fp = os.path.join(BASE_DIR, fn)
             if os.path.isfile(src_fp):
                 shutil.copy2(src_fp, dst_fp)
                 restored_files.append(fn)
+
+    memory_src = os.path.join(target_backup_dir, "app_memory.db")
+    if os.path.isfile(memory_src):
+        for suffix in ("", "-wal", "-shm"):
+            stale = Path(str(APP_MEMORY_DB) + suffix) if suffix else APP_MEMORY_DB
+            if suffix and stale.exists():
+                stale.unlink()
+        shutil.copy2(memory_src, APP_MEMORY_DB)
+        restored_files.append("app_memory.db")
+    elif "projects_data.json" in restored_files:
+        try:
+            with open(PROJECTS_FILE, "r", encoding="utf-8") as f:
+                restored_projects = json.load(f)
+            if isinstance(restored_projects, list):
+                save_stored_projects(restored_projects, ADMIN_OWNER_ID)
+        except Exception as e:
+            print(f"Could not import restored projects into SQLite: {e}")
+
+    uploads_src = os.path.join(target_backup_dir, "uploads")
+    if os.path.isdir(uploads_src):
+        shutil.copytree(uploads_src, str(BASE_DIR / "uploads"), dirs_exist_ok=True)
+        restored_files.append("uploads")
 
     # تحديث الكاش البرمجي
     new_v = int(time.time())
@@ -4954,12 +6598,12 @@ async def restore_system_backup_endpoint(req: RestoreBackupRequest):
     }
 
 @app.post("/api/projects/plan")
-async def plan_project_architecture(req: PlanRequest):
+async def plan_project_architecture(req: PlanRequest, request: Request):
     """
     تخطيط وهندسة المشروع (العقل المدبر)
     توليد خطة قياسية متكاملة خطوة بخطوة لهندسة المشروع البحثي وتوزيع الوكلاء
     """
-    key = (req.api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+    key = owner_openrouter_key(request, req.api_key)
     call_model = (req.planning_model or "").strip() or "google/gemini-2.5-flash"
     
     # تطبيع الاختصارات القديمة فقط دون المساس بنماذج Anthropic المختارة
@@ -4976,7 +6620,8 @@ async def plan_project_architecture(req: PlanRequest):
 
     planner_system_prompt = (
         "أنت «العقل المدبر والمخطط المنهجي للمشاريع البحثية التراثية» في منظومة المجتهد المتصلة بالمكتبة الشاملة (8.15 مليون نص تراثي).\n"
-        "مهمتك: صياغة «المخطط القياسي الكامل لتنفيذ المشروع (Standard Project Blueprint)» بدقة علمية وهندسة برمجية فائقة.\n\n"
+        "مهمتك: صياغة «المخطط القياسي الكامل لتنفيذ المشروع (Standard Project Blueprint)» بدقة علمية وهندسة برمجية فائقة.\n"
+        "في توجيه المدير وكل وكيل: ألزمهم بنسخ اسم الكتاب حرفياً من قاعدة الشاملة، وبكتابة الموضع (3-450) إن تعددت الأجزاء، أو ص(50) إن كان الكتاب جزءاً واحداً.\n\n"
         "يجب أن يتضمن ردك أولاً بنية JSON صالحة للتنفيذ البرمجي ومحصورة بين علامات ```json و ``` تحتوي الحقول التالية تماماً:\n"
         "{\n"
         '  "title": "عنوان المشروع البحثي بدقة",\n'
@@ -5982,13 +7627,13 @@ class ArchitectDialogRequest(BaseModel):
     api_key: Optional[str] = ""
 
 @app.post("/api/projects/architect-dialog")
-async def architect_dialog_endpoint(req: ArchitectDialogRequest):
+async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Request):
     """
     حوار واستشارات مهندس التخطيط المعماري (Architect Model)
     حوار تفاعلي مباشر يناقش الباحث في فكرة مشروعه، يسأله أسئلة استكشافية،
     يستكشف الكتب من قاعدة البيانات الببليوغرافية للمخزن، ويرشح وكلاء وأدوات حسابية مخصصة.
     """
-    key = (req.api_key or "").strip() or OPENROUTER_DEFAULT_KEY
+    key = owner_openrouter_key(request, req.api_key)
     if not key:
         return {
             "status": "error",
@@ -6033,7 +7678,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest):
             ])
         )
 
-    stored_tools = load_stored_tools()
+    stored_tools = load_stored_tools(current_owner_id(request))
     tools_catalog_desc = "\n".join([
         f"- معرّف الأداة: `{t['id']}` | الاسم: «{t['name']}» | النوع: {t.get('tool_type', 'ready_web_lib')} | الوصف: {t.get('description', '')}"
         for t in stored_tools if t.get('enabled', True)
@@ -6058,7 +7703,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest):
         "2. الأمانة العلمية الصارمة: لا يُختلق نص، ولا مصدر، ولا رقم جزء أو صفحة، ولا اسم محقق أو طبعة. ما لم يُتحقق منه يُوسم صراحةً: [غير متحقق]. وما ورد من الذاكرة ولم يوجد في المستودع يُوسم: [من الذاكرة: غير موجود في المستودع]، ولا يُبنى عليه ترجيح.\n"
         "3. نسبة الأقوال إلى أصحابها من كتبهم، أو من كتب مذهبهم المعتمدة. لا يُكتفى بحكاية المخالف عن خصمه إلا مع التنبيه على ذلك.\n"
         "4. التمييز الدائم بين ثلاثة أشياء: النص المنقول بلفظه، والمعنى المنقول بتصرف، والاستنباط أو الترجيح الخاص بالفريق.\n"
-        "5. التوثيق الكامل لكل معلومة من البيانات الوصفية للصفحة لا من الذاكرة: المؤلف، والكتاب، والمحقق، والناشر، والطبعة، والجزء، والصفحة، ورقم الحديث أو الفقرة، ومعرّف المستودع.\n"
+        "5. التوثيق الكامل لكل معلومة من البيانات الوصفية للصفحة لا من الذاكرة. اسم الكتاب يُنسخ كما في القاعدة، والموضع بصيغة (3-450) إن تعددت الأجزاء، أو ص(50) إن كان الكتاب جزءاً واحداً، داخل «اسم الكتاب».\n"
         "6. درجات الثقة لكل معلومة:\n"
         "   [مقطوع: متحقق من الأصل]، [راجح: من مصدر ثانوي موثوق]، [محتمل: يحتاج تحققاً]، [مشكوك: تعارضت المصادر]، [غير متحقق].\n"
         "7. الأدوات تعرض وتحسب ولا تحكم: كل مُدخل لأي أداة مأخوذ من المدونة بمعرّفاته، وكل مُخرج منها مرتبط بالنصوص التي بُني عليها.\n"
@@ -6158,8 +7803,12 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest):
         "【عاشراً: الأدوات وصيغها الإلزامية】\n"
         "(1) أداة الخريطة الذهنية وتفريع المسائل (Markmap):\n"
         "- كتل كود ```markmap مستقلة، جذر واحد (#)، إزاحة مسافتين، عُقد موجزة، خاتمة العقد بمعرف النص 〔معرّف〕.\n"
-        "(2) أداة تشجير الأسانيد (Markmap / Vis.js):\n"
-        "- الاتجاه من الصحابي نزولاً إلى المصنف المخرِّج، والمدار يبرز في عنوان (###)، وتُثبت علامات التحمل والعلل، وعند تشابك الطرق تُعد بيانات Vis.js (عُقد وروابط).\n"
+        "(2) أداة المشجر (Cytoscape) وخريطة Markmap:\n"
+        "- اختر نوعاً واحداً للكتلة ```force3d ولا تخلطه: إسناد، خلاف فقهي، خلاف عقدي، استدلال، أو مناقشة.\n"
+        "- الإسناد: role صحابي|تابعي|مدار|طريق|ضعيف|كتاب، والسهم من الشيخ إلى التلميذ، والمدار عقدة واحدة.\n"
+        "- الخلاف الفقهي: مسألة ثم قول ومذهب ودليل ومناقشة وجواب وترجيح. العقدي: مسألة ثم مذهب ومقالة وشبهة وجواب.\n"
+        "- الاستدلال: حكم ثم دليل ثم وجه الدلالة ثم مناقشة ثم جواب. المناقشة: محل النزاع ثم دعوى كل طرف ثم دليله.\n"
+        "- source هو الأعلى و target هو الفرع.\n"
         "(3) أداة الحساب الفلكي والتقويمي:\n"
         "- أداة شرطية خاصة: تُفعّل فقط لمطابقة وقائع التاريخ والكسوف والخسوف وأطوار القمر، وتُعطّل وجوباً في الفقه والتفسير واللغة.\n"
         "(4) أداة الرسوم البيانية والشارتات (Chart.js):\n"

@@ -3,6 +3,8 @@
 // تقليب الصفحات، اختيار الأجزاء، إظهار/إخفاء التشكيل، وبطاقة الكتاب، ونقل التحديد للشات
 // =============================================================================
 
+let readerLoadToken = 0;
+
 let readerState = {
   isOpen: false,
   relPath: '',
@@ -26,8 +28,11 @@ let readerState = {
   selectedText: '',
   prevPage: null,
   nextPage: null,
-  highlightText: ''
+  highlightText: '',
+  missing: false
 };
+
+let readerBooksCatalog = null;
 
 // تشغيل مستمعات الأحداث
 document.addEventListener('DOMContentLoaded', () => {
@@ -54,6 +59,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  const filterInput = document.getElementById('readerBookFilterInput');
+  const filterMenu = document.getElementById('readerBookFilterMenu');
+  if (filterInput) {
+    filterInput.addEventListener('input', () => renderReaderBookFilter(filterInput.value));
+    filterInput.addEventListener('focus', () => renderReaderBookFilter(filterInput.value));
+  }
+  if (filterMenu) {
+    filterMenu.addEventListener('click', (event) => {
+      const item = event.target.closest('[data-reader-book]');
+      if (!item) return;
+      const book = (filterMenu._books || [])[Number(item.dataset.readerBook)];
+      if (book) switchReaderBook(book);
+    });
+  }
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('#readerBookFilter')) closeReaderBookFilter();
+  });
 });
 
 // فتح قارئ الكتاب من بطاقة نتيجة البحث الدلالي
@@ -107,8 +130,9 @@ async function openBookReader(arg1, arg2, arg3, arg4, arg5) {
   await loadReaderPage(params);
 }
 
-// استدعاء الصفحة من الخادم
+// استدعاء الصفحة من الخادم. كل فتح يلغي نتيجة الطلب السابق حتى لا تبقى نافذة عالقة.
 async function loadReaderPage(params) {
+  const myToken = ++readerLoadToken;
   try {
     const q = new URLSearchParams();
     if (params.rel_path) q.set('rel_path', params.rel_path);
@@ -116,6 +140,8 @@ async function loadReaderPage(params) {
     if (params.part !== undefined && params.part !== null) q.set('part', params.part);
     if (params.page_num) q.set('page_num', params.page_num);
     if (params.seq) q.set('seq', params.seq);
+    if (params.highlight) q.set('highlight', String(params.highlight).slice(0, 180));
+    if (params.strict) q.set('strict', '1');
 
     const res = await fetch(`/api/book/page?${q.toString()}`);
     if (!res.ok) {
@@ -124,6 +150,7 @@ async function loadReaderPage(params) {
     }
 
     const data = await res.json();
+    if (myToken !== readerLoadToken || !readerState.isOpen) return;
 
     // تحديث الحالة
     readerState.relPath = data.rel_path;
@@ -144,6 +171,7 @@ async function loadReaderPage(params) {
     readerState.isSurroundingView = false;
     readerState.prevPage = data.prev_page;
     readerState.nextPage = data.next_page;
+    readerState.missing = !!data.missing;
 
     const btnSurrounding = document.getElementById('btnToggleSurrounding');
     if (btnSurrounding) btnSurrounding.classList.remove('active');
@@ -151,6 +179,18 @@ async function loadReaderPage(params) {
     renderReaderView();
 
   } catch (err) {
+    if (myToken !== readerLoadToken || !readerState.isOpen) return;
+    if (params.strict) {
+      readerState.missing = true;
+      readerState.rawBody = '';
+      readerState.footnotes = '';
+      readerState.prevPage = null;
+      readerState.nextPage = null;
+      readerState.part = params.part || '';
+      readerState.pageNum = params.page_num;
+      renderReaderView();
+      return;
+    }
     console.error('Reader load error:', err);
     document.getElementById('readerPageBody').innerHTML = `
       <div style="text-align: center; padding: 40px; color: #c0392b;">
@@ -168,6 +208,10 @@ function renderReaderView() {
   const authorStr = readerState.author + (readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : '');
   document.getElementById('readerModalAuthor').textContent = authorStr;
   document.getElementById('readerModalCategory').textContent = readerState.category || 'عام';
+  const filterInput = document.getElementById('readerBookFilterInput');
+  if (filterInput && document.activeElement !== filterInput) {
+    filterInput.value = readerState.bookTitle || '';
+  }
 
   // عرض بانر رأس الحولية التاريخية أو رأس المسألة الفقهية الحاكمة
   const banner = document.getElementById('readerContextBanner');
@@ -190,9 +234,13 @@ function renderReaderView() {
   // تحديث قائمة الأجزاء المنسدلة
   const volSelect = document.getElementById('readerVolumeSelect');
   if (volSelect) {
-    if (readerState.parts && readerState.parts.length > 0) {
+    const readerParts = [...(readerState.parts || [])];
+    if (readerState.part && !readerParts.map(part => String(part)).includes(String(readerState.part))) {
+      readerParts.unshift(readerState.part);
+    }
+    if (readerParts.length > 0) {
       volSelect.parentElement.style.display = 'flex';
-      volSelect.innerHTML = readerState.parts.map(p => {
+      volSelect.innerHTML = readerParts.map(p => {
         const label = p ? (isNaN(p) ? p : `الجزء ${p}`) : 'المجلد الرئيسي';
         const isSel = String(p) === String(readerState.part) ? 'selected' : '';
         return `<option value="${escapeHtml(p)}" ${isSel}>${escapeHtml(label)}</option>`;
@@ -211,7 +259,8 @@ function renderReaderView() {
   // مؤشر الصفحة الإجمالية
   const partLabel = readerState.part ? `[جـ: ${readerState.part}] ` : '';
   const pageLabel = readerState.pageNum ? `ص: ${readerState.pageNum}` : `مقطع ${readerState.seq}`;
-  document.getElementById('readerPageIndicator').textContent = `${partLabel}${pageLabel} (موضع: ${readerState.seq} من ${readerState.totalPages})`;
+  const placeLabel = readerState.missing ? '' : ` (موضع: ${readerState.seq} من ${readerState.totalPages})`;
+  document.getElementById('readerPageIndicator').textContent = `${partLabel}${pageLabel}${placeLabel}`;
 
   // أزرار التقليب
   const btnPrev = document.getElementById('btnReaderPrevPage');
@@ -248,6 +297,13 @@ function renderReaderBodyText() {
   if (btnTashkeel) {
     btnTashkeel.textContent = readerState.showTashkeel ? 'إخفاء التشكيل' : 'إظهار التشكيل';
     btnTashkeel.classList.toggle('active', !readerState.showTashkeel);
+  }
+
+  if (readerState.missing) {
+    bodyContainer.innerHTML = '<div class="reader-empty-page"></div>';
+    footContainer.style.display = 'none';
+    bodyContainer.scrollTop = 0;
+    return;
   }
 
   let text = readerState.rawBody;
@@ -307,6 +363,70 @@ function toggleReaderBetaka() {
   if (btn) {
     btn.classList.toggle('active', readerState.showBetaka);
   }
+}
+
+function closeReaderBookFilter() {
+  const menu = document.getElementById('readerBookFilterMenu');
+  if (menu) menu.hidden = true;
+}
+
+async function ensureReaderBooks() {
+  if (readerBooksCatalog) return readerBooksCatalog;
+  const response = await fetch('/api/books');
+  if (!response.ok) throw new Error('تعذر تحميل فهرس الكتب');
+  readerBooksCatalog = await response.json();
+  return readerBooksCatalog;
+}
+
+function renderReaderBookFilter(query) {
+  const menu = document.getElementById('readerBookFilterMenu');
+  if (!menu) return;
+  const needle = (query || '').trim();
+  ensureReaderBooks().then(books => {
+    const list = (books || []).filter(book => {
+      const haystack = `${book.title || ''} ${book.author || ''} ${book.category_name || ''}`;
+      return !needle || haystack.includes(needle);
+    }).slice(0, 40);
+    menu._books = list;
+    menu.hidden = false;
+    menu.innerHTML = list.length
+      ? list.map((book, index) => `
+          <button type="button" class="reader-book-filter-item" data-reader-book="${index}">
+            <span>${escapeHtml(book.title || '')}</span>
+            <small>${escapeHtml(book.category_name || '')}</small>
+          </button>
+        `).join('')
+      : '<div class="reader-book-filter-empty">لا توجد كتب مطابقة</div>';
+  }).catch(() => {
+    menu.hidden = false;
+    menu.innerHTML = '<div class="reader-book-filter-empty">تعذر تحميل فهرس الشاملة</div>';
+  });
+}
+
+async function switchReaderBook(book) {
+  if (!book || !readerState.isOpen) return;
+  closeReaderBookFilter();
+  const part = readerState.part || '';
+  const pageNum = readerState.pageNum;
+  readerState.bookTitle = book.title || '';
+  readerState.category = book.category_name || 'عام';
+  readerState.author = book.author || '';
+  readerState.deathYear = book.death || null;
+  readerState.relPath = '';
+  readerState.highlightText = '';
+  readerState.isSurroundingView = false;
+  const input = document.getElementById('readerBookFilterInput');
+  if (input) input.value = readerState.bookTitle;
+  document.getElementById('readerModalTitle').textContent = readerState.bookTitle;
+  document.getElementById('readerModalCategory').textContent = readerState.category;
+  const authorStr = readerState.author + (readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : '');
+  document.getElementById('readerModalAuthor').textContent = authorStr;
+  await loadReaderPage({
+    book_title: readerState.bookTitle,
+    part,
+    page_num: pageNum,
+    strict: '1'
+  });
 }
 
 // تغيير الجزء من القائمة المنسدلة
@@ -417,10 +537,12 @@ function sendReaderSelectionToChat() {
 
 // إغلاق القارئ
 function closeBookReader() {
+  readerLoadToken++;
   const modal = document.getElementById('bookReaderModal');
   if (modal) modal.style.display = 'none';
   document.body.style.overflow = '';
   readerState.isOpen = false;
+  readerState.highlightText = '';
   const tooltip = document.getElementById('readerSelectionTooltip');
   if (tooltip) tooltip.style.display = 'none';
 }

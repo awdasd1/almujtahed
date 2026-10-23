@@ -389,7 +389,7 @@ async function initToolAiModels(preferredModel = null) {
     try {
       if (countBadge) countBadge.textContent = 'جارٍ جلب النماذج... ⏳';
       let savedKeys = {};
-      try { savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}'); } catch (e) { }
+      try { savedKeys = readProviderKeys(); } catch (e) { }
       const apiKey = savedKeys.openrouter || '';
       const url = `/api/openrouter/models${apiKey ? '?api_key=' + encodeURIComponent(apiKey) : ''}`;
       const res = await fetch(url);
@@ -519,7 +519,7 @@ async function generatePythonToolAI() {
   const genBtn = document.getElementById('toolAiGenBtn');
 
   let savedKeys = {};
-  try { savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}'); } catch (e) { }
+  try { savedKeys = readProviderKeys(); } catch (e) { }
   const apiKey = savedKeys.openrouter || '';
 
   if (genBtn) {

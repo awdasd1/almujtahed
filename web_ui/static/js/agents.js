@@ -98,8 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // تحميل المجموعات من التخزين المحلي وخادم المنظومة
 async function loadAgentGroups() {
+  await (window.almujtahedIdentity || Promise.resolve());
   try {
-    const rawGroups = localStorage.getItem(AGENT_GROUPS_STORAGE_KEY);
+    const rawGroups = localStorage.getItem(ownerStorageKey(AGENT_GROUPS_STORAGE_KEY));
     if (rawGroups) {
       agentGroups = JSON.parse(rawGroups);
     }
@@ -107,23 +108,24 @@ async function loadAgentGroups() {
     console.error('Error reading local agent groups:', e);
   }
 
-  // مزامنة فورية مع خادم المنظومة (في حال تنظيف الكاش أو فتح متصفح جديد)
+  // ملف الخادم هو المرجع بعد الأرشفة والاسترجاع، بما في ذلك القائمة الفارغة
+  let storedOnServer = false;
   try {
     const res = await fetch('/api/agent-groups');
     if (res.ok) {
       const serverGroups = await res.json();
-      if (Array.isArray(serverGroups) && serverGroups.length > 0) {
-        // اعتماد قائمة الخادم المحققة لضمان إزالة مخلفات أي مشاريع سابقة تم حذفها
+      storedOnServer = res.headers.get('X-Agent-Groups-Stored') === '1';
+      if (Array.isArray(serverGroups) && (storedOnServer || serverGroups.length > 0)) {
         agentGroups = serverGroups;
-        localStorage.setItem(AGENT_GROUPS_STORAGE_KEY, JSON.stringify(agentGroups));
+        localStorage.setItem(ownerStorageKey(AGENT_GROUPS_STORAGE_KEY), JSON.stringify(agentGroups));
       }
     }
   } catch (err) {
     console.warn('Could not fetch server agent groups:', err);
   }
 
-  // إذا لم تكن هناك مجموعات حتى الآن، نبني المجموعة التراثية الأساسية الافتراضية
-  if (!agentGroups || agentGroups.length === 0) {
+  // المجموعة الافتراضية تُنشأ مرة واحدة فقط إذا لم يُحفظ شيء بعد على الخادم
+  if ((!agentGroups || agentGroups.length === 0) && !storedOnServer) {
     let initialAgents = [...DEFAULT_AGENTS];
     const legacyRaw = localStorage.getItem(LEGACY_AGENTS_STORAGE_KEY);
     if (legacyRaw) {
@@ -165,7 +167,7 @@ function saveAgentGroups(updatedGroups = null) {
       agentGroups = window.agentGroups;
     }
     window.agentGroups = agentGroups;
-    localStorage.setItem(AGENT_GROUPS_STORAGE_KEY, JSON.stringify(agentGroups));
+    localStorage.setItem(ownerStorageKey(AGENT_GROUPS_STORAGE_KEY), JSON.stringify(agentGroups));
     syncSubAgentsList();
     if (typeof populateChatAgentGroupsDropdown === 'function') {
       populateChatAgentGroupsDropdown();
@@ -185,6 +187,19 @@ function saveAgentGroups(updatedGroups = null) {
 }
 
 // مزامنة قائمة subAgentsList لضمان توافق الشات وإعدادات النماذج
+function clearAgentGroupsFromApp() {
+  agentGroups = [];
+  currentActiveGroupId = null;
+  subAgentsList = [];
+  try {
+    localStorage.setItem(ownerStorageKey(AGENT_GROUPS_STORAGE_KEY), '[]');
+    localStorage.removeItem(LEGACY_AGENTS_STORAGE_KEY);
+  } catch (e) {}
+  window.agentGroups = [];
+  if (typeof populateChatAgentGroupsDropdown === 'function') populateChatAgentGroupsDropdown();
+  if (typeof renderGroupsTable === 'function') renderGroupsTable();
+}
+
 function syncSubAgentsList() {
   if (currentActiveGroupId) {
     const curGroup = agentGroups.find(g => g.id === currentActiveGroupId);
@@ -764,7 +779,7 @@ function populateAgentModelDropdown(targetModelId = null) {
   const hiddenInput = document.getElementById('agentSelectedModelId');
   if (!customListEl) return;
 
-  const activeProvider = localStorage.getItem('almojtahed_active_provider') || 'openrouter';
+  const activeProvider = localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter';
   const selectedModelId = targetModelId || hiddenInput?.value || 'anthropic/claude-3.7-sonnet';
 
   const groups = [];

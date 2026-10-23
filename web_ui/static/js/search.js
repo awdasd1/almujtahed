@@ -314,6 +314,9 @@ function renderSearchResults(results, query, duration, rawData = {}) {
 
   // حفظ النتائج في الذاكرة لتسهيل الوصول إليها عند النسخ أو المناقشة
   window._lastSearchResults = results;
+  if (typeof enhanceProjectCitationsWithBookReader === 'function') {
+    enhanceProjectCitationsWithBookReader(container);
+  }
 }
 
 // متغير للاحتفاظ بمعلومات النتيجة التي تم فحصها لفتحها في القارئ
@@ -343,10 +346,19 @@ function openBookReaderFromMcp() {
 async function verifySearchResultQuote(idx) {
   if (!window._lastSearchResults || !window._lastSearchResults[idx]) return;
   const item = window._lastSearchResults[idx];
-  const quote = (item.text || item.content || '').slice(0, 160);
-  const book = item.book_title || item.book;
-  const pageHint = item.page ? parseInt(item.page, 10) : null;
-  const partHint = item.volume ? String(item.volume) : null;
+  return openMcpLiteralVerify({
+    book: item.book_title || item.book,
+    quote: (item.text || item.content || '').slice(0, 160),
+    page: item.page ? parseInt(item.page, 10) : null,
+    part: item.volume ? String(item.volume) : null,
+    rel_path: item.rel_path || ''
+  });
+}
+
+async function openMcpLiteralVerify({ book, quote, page, part, rel_path }) {
+  const pageHint = page ? parseInt(page, 10) : null;
+  const partHint = part ? String(part) : null;
+  const quoteText = (quote || '').slice(0, 160);
 
   const modal = document.getElementById('mcpVerifyModal');
   const loading = document.getElementById('mcpVerifyLoading');
@@ -380,7 +392,7 @@ async function verifySearchResultQuote(idx) {
         name: 'verify_quote',
         arguments: {
           book: book,
-          quote_text: quote,
+          quote_text: quoteText,
           page_hint: pageHint,
           part: partHint
         }
@@ -397,8 +409,8 @@ async function verifySearchResultQuote(idx) {
         part: match.part || partHint,
         page_num: match.page_num || pageHint,
         seq: match.seq || null,
-        rel_path: data.rel_path || item.rel_path || null,
-        snippet: match.snippet || quote
+        rel_path: data.rel_path || rel_path || null,
+        snippet: match.snippet || quoteText
       };
 
       bookSpan.textContent = data.book_title || book;
@@ -457,6 +469,8 @@ async function verifySearchResultQuote(idx) {
     if (window.refreshLucideIcons) window.refreshLucideIcons();
   }
 }
+window.openMcpLiteralVerify = openMcpLiteralVerify;
+window.verifySearchResultQuote = verifySearchResultQuote;
 
 
 

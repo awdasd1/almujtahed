@@ -39,35 +39,33 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initProvidersTab() {
-  // استرجاع المفاتيح المخزنة أو تعيين الافتراضي
-  let savedKeys = {};
-  try {
-    savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}');
-  } catch (e) {
-    savedKeys = {};
-  }
-
-  if (!savedKeys.openrouter) {
-    savedKeys.openrouter = DEFAULT_OPENROUTER_KEY;
-    localStorage.setItem('almojtahed_provider_keys', JSON.stringify(savedKeys));
-  }
-
-  const providerSelect = document.getElementById('providerSelect');
-  if (providerSelect) {
-    providerSelect.value = localStorage.getItem('almojtahed_active_provider') || 'openrouter';
-    handleProviderChange(providerSelect.value);
-  }
-
-  // جلب رصيد OpenRouter فورياً لتحديث شارة التبويب
-  loadOpenRouterCredits(false);
-
-  // تهيئة مفتاح Tavily
-  initTavilyConfig();
+  window.almujtahedIdentity?.then(async () => {
+    try {
+      const res = await fetch('/api/config/providers');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.keys && typeof data.keys === 'object') {
+          writeProviderKeys(data.keys);
+          writeTavilyKey(data.keys.tavily || '');
+        }
+      }
+    } catch (e) {}
+    const savedKeys = readProviderKeys();
+    const providerSelect = document.getElementById('providerSelect');
+    if (providerSelect) {
+      providerSelect.value = localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter';
+      handleProviderChange(providerSelect.value);
+    }
+    loadOpenRouterCredits(false);
+    initTavilyConfig();
+    if (typeof syncSettingsToUI === 'function') syncSettingsToUI();
+    return savedKeys;
+  });
 }
 
 // تغيير المزود المختار
 async function handleProviderChange(provider) {
-  localStorage.setItem('almojtahed_active_provider', provider);
+  localStorage.setItem(ownerStorageKey('almojtahed_active_provider'), provider);
   const keyInput = document.getElementById('providerApiKey');
   const modelsSelect = document.getElementById('providerModelSelect');
   const modelsContainer = document.getElementById('providerModelsContainer');
@@ -75,10 +73,7 @@ async function handleProviderChange(provider) {
   const searchFilterBox = document.getElementById('modelSearchFilterWrapper');
 
   // استرجاع المفتاح المحفوظ
-  let savedKeys = {};
-  try {
-    savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}');
-  } catch (e) {}
+  const savedKeys = readProviderKeys();
 
   if (keyInput) {
     keyInput.value = savedKeys[provider] || (provider === 'openrouter' ? DEFAULT_OPENROUTER_KEY : '');
@@ -98,25 +93,21 @@ async function handleProviderChange(provider) {
 function saveCurrentApiKey() {
   const provider = document.getElementById('providerSelect').value;
   const key = document.getElementById('providerApiKey').value.trim();
-  let savedKeys = {};
-  try {
-    savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}');
-  } catch (e) {}
+  const savedKeys = readProviderKeys();
   savedKeys[provider] = key;
-  localStorage.setItem('almojtahed_provider_keys', JSON.stringify(savedKeys));
+  writeProviderKeys(savedKeys);
 
-  // الحفظ التلقائي في ملف البيئة .env بالخادم
   fetch('/api/config/providers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ [provider]: key })
-  }).catch(e => console.warn('Could not sync key to server .env:', e));
+  }).catch(e => console.warn('Could not sync key to account:', e));
 
   if (provider === 'openrouter') {
     loadOpenRouterModelsList(true);
   }
 
-  showToast(`تم حفظ مفتاح ${getProviderLabel(provider)} في المتصفح وبيئة الخادم بنجاح`);
+  showToast(`تم حفظ مفتاح ${getProviderLabel(provider)} في حسابك`);
 }
 
 // تبديل إظهار وإخفاء المفتاح
@@ -160,6 +151,7 @@ function displayPresetModelSpecs(model) {
 
   document.getElementById('specModelTitle').textContent = model.name || model.id;
   document.getElementById('specModelId').textContent = model.id;
+  setModelAboutText('');
   document.getElementById('specPromptPrice').textContent = `$${model.prompt} / 1M توكن`;
   document.getElementById('specCompletionPrice').textContent = `$${model.completion} / 1M توكن`;
   document.getElementById('specContextLength').textContent = `${model.context} توكن`;
@@ -290,6 +282,7 @@ function displayOpenRouterModelSpecs(model) {
 
   document.getElementById('specModelTitle').textContent = model.name || model.id;
   document.getElementById('specModelId').textContent = model.id;
+  showModelAbout(model);
 
   const prompt1m = model.pricing?.prompt_per_1m ?? 0;
   const comp1m = model.pricing?.completion_per_1m ?? 0;
@@ -331,6 +324,43 @@ function displayOpenRouterModelSpecs(model) {
 
   document.getElementById('specAcademicRank').textContent = rankText;
   document.getElementById('specIntelligenceIndex').textContent = intelIndex != null ? `${intelIndex} نقطة (مؤشر الذكاء الأكاديمي)` : (codingIndex != null ? `${codingIndex} (مؤشر المنطق)` : 'تقييم فائق');
+}
+
+function plainModelDescription(text) {
+  return String(text || '')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1')
+    .replace(/\s*\.\.\.$/, '')
+    .trim();
+}
+
+const modelAboutArCache = {};
+
+function setModelAboutText(text) {
+  const wrap = document.getElementById('specModelAbout');
+  const el = document.getElementById('specModelDescription');
+  if (!wrap || !el) return;
+  const clean = plainModelDescription(text);
+  el.textContent = clean;
+  wrap.hidden = !clean;
+}
+
+function showModelAbout(model) {
+  const requestedId = model.id;
+  const cached = modelAboutArCache[requestedId];
+  if (cached) {
+    setModelAboutText(cached);
+    return;
+  }
+  setModelAboutText('');
+  fetch('/api/openrouter/model-about?model_id=' + encodeURIComponent(requestedId))
+    .then(res => res.ok ? res.json() : null)
+    .then(data => {
+      if (!data || !data.description) return;
+      modelAboutArCache[requestedId] = data.description;
+      if (!currentSelectedModelData || currentSelectedModelData.id !== requestedId) return;
+      setModelAboutText(data.description);
+    })
+    .catch(() => {});
 }
 
 // تسميات المزودين بالعربية
@@ -431,10 +461,7 @@ let lastCreditsData = null;
 async function loadOpenRouterCredits(forceRefresh = false) {
   const refreshIcon = document.getElementById('refreshCreditsIcon');
 
-  let savedKeys = {};
-  try {
-    savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}');
-  } catch (e) {}
+  const savedKeys = readProviderKeys();
   const apiKey = savedKeys.openrouter || DEFAULT_OPENROUTER_KEY;
 
   try {
@@ -558,7 +585,7 @@ function getModelTag(id) {
 // تدعم كلاً من select المخفي والقائمة المنسدلة المخصصة مع فلترة سريعة بالبحث
 // =============================================================================
 function syncChatModelDropdown(provider = null, targetModelId = null) {
-  const activeProvider = provider || localStorage.getItem('almojtahed_active_provider') || 'openrouter';
+  const activeProvider = provider || localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter';
   const chatModelSelect = document.getElementById('chatModelSelect');
   const chatProviderNameEl = document.getElementById('chatActiveProviderName');
   const customListEl = document.getElementById('chatCustomModelOptionsList');
@@ -725,6 +752,7 @@ function syncChatModelDropdown(provider = null, targetModelId = null) {
     searchInput.value = '';
     filterChatCustomModels('');
   }
+  if (typeof refreshCompareModelLists === 'function') refreshCompareModelLists();
 }
 
 // فتح وإغلاق القائمة المنسدلة للنماذج
@@ -900,7 +928,7 @@ function navigateToConsumptionTab() {
 function initTavilyConfig() {
   const input = document.getElementById('tavilyApiKeyInput');
   const badge = document.getElementById('tavilyStatusBadge');
-  const savedKey = localStorage.getItem('almojtahed_tavily_key') || '';
+  const savedKey = readTavilyKey();
   if (input) input.value = savedKey;
   if (badge) {
     if (savedKey) {
@@ -920,7 +948,12 @@ function initTavilyConfig() {
 function saveTavilyApiKey() {
   const input = document.getElementById('tavilyApiKeyInput');
   const key = (input?.value || '').trim();
-  localStorage.setItem('almojtahed_tavily_key', key);
+  writeTavilyKey(key);
+  fetch('/api/config/providers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tavily: key })
+  }).catch(() => {});
   initTavilyConfig();
   if (key) {
     showToast('تم حفظ مفتاح Tavily API بنجاح');
@@ -938,7 +971,7 @@ function toggleTavilyKeyVisibility() {
 
 async function testTavilyConnection() {
   const input = document.getElementById('tavilyApiKeyInput');
-  const key = (input?.value || localStorage.getItem('almojtahed_tavily_key') || '').trim();
+  const key = (input?.value || readTavilyKey() || '').trim();
   if (!key) {
     showToast('يرجى إدخال مفتاح Tavily أولاً لإجراء الفحص');
     return;

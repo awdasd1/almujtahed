@@ -11,6 +11,40 @@ const STORAGE_KEYS = {
   ACTIVE_TAB: 'almojtahed_active_tab',
 };
 
+function ownerStorageKey(base) {
+  const owner = window._almujtahedOwner || 'pending';
+  return `${base}::${owner}`;
+}
+
+function readProviderKeys() {
+  try {
+    return JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_provider_keys')) || '{}');
+  } catch (e) {
+    return {};
+  }
+}
+
+function writeProviderKeys(keys) {
+  localStorage.setItem(ownerStorageKey('almojtahed_provider_keys'), JSON.stringify(keys || {}));
+}
+
+function readTavilyKey() {
+  return localStorage.getItem(ownerStorageKey('almojtahed_tavily_key')) || '';
+}
+
+function writeTavilyKey(key) {
+  localStorage.setItem(ownerStorageKey('almojtahed_tavily_key'), key || '');
+}
+
+window.almujtahedIdentity = fetch('/api/auth/status')
+  .then((res) => res.json())
+  .then((data) => {
+    window._almujtahedOwner = data.owner_id || '';
+    document.body.classList.toggle('is-admin', data.role === 'admin');
+    return data;
+  })
+  .catch(() => ({}));
+
 // الإعدادات الافتراضية
 const DEFAULT_SETTINGS = {
   themePreset: 'sand',
@@ -44,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // استعادة التبويب النشط من الـ URL hash أو التخزين المحلي
   const hashTab = (window.location.hash || '').replace('#', '');
   const savedTab = hashTab || localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB) || 'search';
-  if (['search', 'chat', 'agents', 'projects', 'providers'].includes(savedTab)) {
+  if (['search', 'chat', 'agents', 'projects', 'providers', 'tools', 'archive'].includes(savedTab)) {
     switchMainTab(savedTab);
   }
 });
@@ -53,6 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // إدارة التبويبات الرئيسية (Main Navigation Tabs)
 // =============================================================================
 function switchMainTab(tabName) {
+  if (tabName === 'members' && !document.body.classList.contains('is-admin')) return;
   // إخفاء كافة الألواح
   document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-tab-btn').forEach(el => el.classList.remove('active'));
@@ -76,6 +111,12 @@ function switchMainTab(tabName) {
     if (typeof renderChatAssistantTools === 'function') {
       renderChatAssistantTools();
     }
+  } else if (tabName === 'compare') {
+    const pane = document.getElementById('paneCompare');
+    if (pane) pane.classList.add('active');
+    const btn = document.getElementById('tabNavCompare');
+    if (btn) btn.classList.add('active');
+    if (typeof initCompareTab === 'function') initCompareTab();
   } else if (tabName === 'agents') {
     document.getElementById('paneAgents').classList.add('active');
     document.getElementById('tabNavAgents').classList.add('active');
@@ -101,6 +142,18 @@ function switchMainTab(tabName) {
   } else if (tabName === 'providers') {
     document.getElementById('paneProviders').classList.add('active');
     document.getElementById('tabNavProviders').classList.add('active');
+  } else if (tabName === 'archive') {
+    document.getElementById('paneArchive').classList.add('active');
+    document.getElementById('tabNavArchive').classList.add('active');
+    if (typeof loadArchiveCenter === 'function') {
+      loadArchiveCenter();
+    }
+  } else if (tabName === 'members') {
+    const pane = document.getElementById('paneMembers');
+    const btn = document.getElementById('tabNavMembers');
+    if (pane) pane.classList.add('active');
+    if (btn) btn.classList.add('active');
+    if (typeof loadMembersPanel === 'function') loadMembersPanel();
   }
 
   localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, tabName);
@@ -486,7 +539,9 @@ function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (raw) {
-      currentSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      delete parsed.providers;
+      currentSettings = { ...DEFAULT_SETTINGS, ...parsed, providers: {} };
     }
   } catch (e) {
     console.error('Error reading settings from localStorage:', e);
@@ -496,7 +551,7 @@ function loadSettings() {
 // عكس الإعدادات على عناصر واجهة المستخدم في Modal
 function syncSettingsToUI() {
   // المزودون والمفاتيح
-  const p = currentSettings.providers || {};
+  const p = readProviderKeys();
   if (document.getElementById('apiKeyClaude')) document.getElementById('apiKeyClaude').value = p.claude || '';
   if (document.getElementById('apiKeyGoogle')) document.getElementById('apiKeyGoogle').value = p.google || '';
   if (document.getElementById('apiKeyDeepSeek')) document.getElementById('apiKeyDeepSeek').value = p.deepseek || '';
@@ -526,13 +581,20 @@ function syncSettingsToUI() {
 
 // حفظ كافة الإعدادات
 function saveAllSettings() {
-  currentSettings.providers = {
+  const providers = {
     claude: document.getElementById('apiKeyClaude')?.value.trim() || '',
     google: document.getElementById('apiKeyGoogle')?.value.trim() || '',
     deepseek: document.getElementById('apiKeyDeepSeek')?.value.trim() || '',
     openai: document.getElementById('apiKeyOpenAI')?.value.trim() || '',
     openrouter: document.getElementById('apiKeyOpenRouter')?.value.trim() || '',
   };
+  writeProviderKeys({ ...readProviderKeys(), ...providers });
+  fetch('/api/config/providers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(providers)
+  }).catch(() => {});
+  currentSettings.providers = {};
 
   currentSettings.modelParams = {
     systemPrompt: document.getElementById('systemPromptInput')?.value.trim() || '',

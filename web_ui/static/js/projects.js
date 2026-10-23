@@ -82,6 +82,7 @@ async function initProjectsTab() {
 
 // تحميل المشاريع من الخادم أو التخزين المحلي
 async function loadProjectsData() {
+  await (window.almujtahedIdentity || Promise.resolve());
   try {
     const res = await fetch('/api/projects');
     if (res.ok) {
@@ -98,7 +99,7 @@ async function loadProjectsData() {
 
   // في حال تعذر الخادم، القراءة من التخزين المحلي
   try {
-    const raw = localStorage.getItem(PROJECTS_STORAGE_KEY);
+    const raw = localStorage.getItem(ownerStorageKey(PROJECTS_STORAGE_KEY));
     if (raw) {
       projectsList = JSON.parse(raw);
     }
@@ -122,7 +123,7 @@ function safeSaveProjectsLocalStorage() {
       }
       return copy;
     });
-    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(lightList));
+    localStorage.setItem(ownerStorageKey(PROJECTS_STORAGE_KEY), JSON.stringify(lightList));
   } catch (e) {
     console.warn('localStorage quota reached, backend server handles full storage safely:', e);
   }
@@ -534,7 +535,7 @@ function populateLinkedAgentGroupsDropdown(selectedGroupId = null) {
   let groups = window.agentGroups || [];
   if (groups.length === 0) {
     try {
-      const raw = localStorage.getItem('almojtahed_agent_groups');
+      const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
       if (raw) groups = JSON.parse(raw);
     } catch (e) { }
   }
@@ -560,7 +561,7 @@ function syncProjectLinkedGroup(groupId) {
   let groups = window.agentGroups || [];
   if (groups.length === 0) {
     try {
-      groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+      groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
     } catch (e) { }
   }
 
@@ -730,7 +731,7 @@ async function openProjectSubagentConfigModal(agentIdx, focusTest = false) {
       if (project.linked_group_id) {
         let groups = window.agentGroups || [];
         if (groups.length === 0) {
-          try { groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]'); } catch (e) { }
+          try { groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]'); } catch (e) { }
         }
         const grp = groups.find(g => g.id === project.linked_group_id);
         if (grp && grp.agents) {
@@ -948,7 +949,7 @@ async function populateProjectSubagentModelsDropdown(preferredModel = null, filt
     try {
       if (countBadge) countBadge.textContent = 'جارٍ فحص النماذج... ⏳';
       let savedKeys = {};
-      try { savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}'); } catch (e) { }
+      try { savedKeys = readProviderKeys(); } catch (e) { }
       const apiKey = savedKeys.openrouter || '';
       const url = `/api/openrouter/models${apiKey ? '?api_key=' + encodeURIComponent(apiKey) : ''}`;
       const res = await fetch(url);
@@ -1127,7 +1128,7 @@ function openProjectSubagentScopePickerFromCard(agentIdx) {
     if (project.linked_group_id) {
       let groups = window.agentGroups || [];
       if (groups.length === 0) {
-        try { groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]'); } catch (e) { }
+        try { groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]'); } catch (e) { }
       }
       const grp = groups.find(g => g.id === project.linked_group_id);
       if (grp && grp.agents) {
@@ -1228,7 +1229,7 @@ async function deleteCurrentProjectSubagent() {
     const linked = window.agentGroups.find(g => g.id === project.linked_group_id);
     if (linked) {
       linked.agents = [...project.subagents_group.agents];
-      localStorage.setItem('almojtahed_agent_groups', JSON.stringify(window.agentGroups));
+      localStorage.setItem(ownerStorageKey('almojtahed_agent_groups'), JSON.stringify(window.agentGroups));
     }
   }
 
@@ -1304,7 +1305,7 @@ async function saveProjectSubagentConfig() {
     const linked = window.agentGroups.find(g => g.id === project.linked_group_id);
     if (linked) {
       linked.agents = [...project.subagents_group.agents];
-      localStorage.setItem('almojtahed_agent_groups', JSON.stringify(window.agentGroups));
+      localStorage.setItem(ownerStorageKey('almojtahed_agent_groups'), JSON.stringify(window.agentGroups));
     }
   }
 
@@ -1372,7 +1373,7 @@ async function runProjectSubagentTestLive() {
   const maxTokens = parseInt(document.getElementById('pSubagentMaxTokensInput')?.value) || 1500;
 
   let savedKeys = {};
-  try { savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}'); } catch (e) { }
+  try { savedKeys = readProviderKeys(); } catch (e) { }
   const apiKey = savedKeys.openrouter || '';
 
   const testBtn = document.getElementById('btnRunSubagentTest');
@@ -1637,7 +1638,7 @@ async function resolveAndVerifyProjectBooks() {
             a.scope_summary = a.books.join('، ');
           }
         });
-        localStorage.setItem('almojtahed_agent_groups', JSON.stringify(groups));
+        localStorage.setItem(ownerStorageKey('almojtahed_agent_groups'), JSON.stringify(groups));
       }
     }
 
@@ -1894,7 +1895,7 @@ async function sendArchitectMessage() {
 
   let savedKeys = {};
   try {
-    savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}');
+    savedKeys = readProviderKeys();
   } catch (e) { }
   const apiKey = savedKeys.openrouter || '';
 
@@ -1995,7 +1996,7 @@ async function populateOpenRouterModelDropdown(selectEl, selectedVal) {
   if (allModels.length === 0) {
     try {
       let savedKeys = {};
-      try { savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}'); } catch (e) { }
+      try { savedKeys = readProviderKeys(); } catch (e) { }
       const apiKey = savedKeys.openrouter || '';
       const url = `/api/openrouter/models${apiKey ? '?api_key=' + encodeURIComponent(apiKey) : ''}`;
       const res = await fetch(url);
@@ -2459,7 +2460,7 @@ async function applyStudioBlueprint() {
       // محاولة سريعة لطلب الـ Blueprint من الخادم
       let savedKeys = {};
       try {
-        savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}');
+        savedKeys = readProviderKeys();
       } catch (e) { }
       const apiKey = savedKeys.openrouter || '';
       const chosenModel = document.getElementById('architectModelSelect')?.value || 'google/gemini-2.5-flash';
@@ -2543,7 +2544,7 @@ async function applyStudioBlueprint() {
       let groups = window.agentGroups || [];
       if (groups.length === 0) {
         try {
-          groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+          groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
         } catch (e) { }
       }
 
@@ -2586,7 +2587,7 @@ async function applyStudioBlueprint() {
         groups.unshift(updatedGroup);
       }
       window.agentGroups = groups;
-      localStorage.setItem('almojtahed_agent_groups', JSON.stringify(groups));
+      localStorage.setItem(ownerStorageKey('almojtahed_agent_groups'), JSON.stringify(groups));
       if (typeof saveAgentGroups === 'function') {
         saveAgentGroups(groups);
       }
@@ -2792,7 +2793,7 @@ async function updateActiveProjectCardsFromBlueprint() {
     };
 
     window.agentGroups = groups;
-    localStorage.setItem('almojtahed_agent_groups', JSON.stringify(groups));
+    localStorage.setItem(ownerStorageKey('almojtahed_agent_groups'), JSON.stringify(groups));
     if (typeof saveAgentGroups === 'function') {
       saveAgentGroups(groups);
     }
@@ -2896,7 +2897,7 @@ function openNewManualProjectModal() {
     let groups = window.agentGroups || [];
     if (groups.length === 0) {
       try {
-        groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+        groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
       } catch (e) { }
     }
     if (groups.length > 0) {
@@ -2934,7 +2935,7 @@ async function saveNewManualProject() {
   let groups = window.agentGroups || [];
   if (groups.length === 0) {
     try {
-      groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+      groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
     } catch (e) { }
   }
   const linkedGroup = groups.find(g => g.id === linkedGroupId) || (groups.length > 0 ? groups[0] : null);
@@ -3012,12 +3013,12 @@ async function deleteProject(projectId, event) {
 
   // تنظيف أي مخلفات لمجموعات الوكلاء التابعة للمشروع المحذوف
   try {
-    const rawGroups = localStorage.getItem('almojtahed_agent_groups');
+    const rawGroups = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
     if (rawGroups) {
       let gList = JSON.parse(rawGroups);
       const targetGid = p?.linked_group_id || p?.subagents_group?.id || `group_${projectId}`;
       gList = gList.filter(g => g.id !== targetGid && g.id !== `group_${projectId}`);
-      localStorage.setItem('almojtahed_agent_groups', JSON.stringify(gList));
+      localStorage.setItem(ownerStorageKey('almojtahed_agent_groups'), JSON.stringify(gList));
       if (typeof agentGroups !== 'undefined') agentGroups = gList;
     }
     const currentChatGid = localStorage.getItem('almojtahed_selected_chat_agent_group');
@@ -3047,7 +3048,7 @@ function exportProjectsData() {
   let groups = window.agentGroups || [];
   if (groups.length === 0) {
     try {
-      groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+      groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
     } catch (e) { }
   }
 
@@ -3103,7 +3104,7 @@ function exportSingleProject(projectId, event) {
   let groups = window.agentGroups || [];
   if (groups.length === 0) {
     try {
-      groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+      groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
     } catch (e) { }
   }
   const linkedGroupId = p.subagents_group?.id || p.linked_group_id || `group_${p.id}`;
@@ -3188,7 +3189,7 @@ async function handleProjectFileImport(event) {
       let currentGroups = window.agentGroups || [];
       if (currentGroups.length === 0) {
         try {
-          currentGroups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+          currentGroups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
         } catch (err) { }
       }
 
@@ -3248,7 +3249,7 @@ async function handleProjectFileImport(event) {
 
       // 4. حفظ وتثبيت المجموعات في التخزين المحلي وخادم المنظومة
       window.agentGroups = currentGroups;
-      localStorage.setItem('almojtahed_agent_groups', JSON.stringify(currentGroups));
+      localStorage.setItem(ownerStorageKey('almojtahed_agent_groups'), JSON.stringify(currentGroups));
       if (typeof saveAgentGroups === 'function') {
         saveAgentGroups(currentGroups);
       }
@@ -3333,7 +3334,7 @@ async function runCurrentProjectExecution() {
 
   // 1. استخراج النتائج من الشاملة بموجب توجيه مدير المشروع
   let webBenchmarkResults = [];
-  const tavilyKey = localStorage.getItem('almojtahed_tavily_key') || '';
+  const tavilyKey = readTavilyKey();
 
   try {
     // التحقق من تفعيل البحث الخارجي
@@ -3376,7 +3377,7 @@ async function runCurrentProjectExecution() {
     // استدعاء نموذج مدير المشروع لتركيب التقرير والجداول
     let savedKeys = {};
     try {
-      savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}');
+      savedKeys = readProviderKeys();
     } catch (e) { }
     const apiKey = savedKeys.openrouter || '';
 
@@ -3388,7 +3389,7 @@ async function runCurrentProjectExecution() {
     let groups = window.agentGroups || [];
     if (groups.length === 0) {
       try {
-        groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+        groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
       } catch (e) { }
     }
     if (project.linked_group_id) {
@@ -3431,9 +3432,9 @@ ${webBenchmarkResults.map((r, i) => `${i + 1}. المصدر: ${r.title}\n   ال
 }
 \`\`\``;
     } else if (isIsnad) {
-      toolDirectives = `- [بوابة دراسة الأسانيد]: قم بتوثيق سلاسل الرواة، والتفرّد والمتابعات، وبيان علل الحديث، والحكم على درجات الأسانيد بدقة.`;
+      toolDirectives = `- [بوابة دراسة الأسانيد]: وثّق الطرق والمدار، ثم أخرج كتلة \`\`\`force3d لشجرة إسناد فقط. role: صحابي|تابعي|مدار|طريق|ضعيف|كتاب. source الشيخ و target التلميذ. المدار عقدة واحدة. لا تخلطها بشجرة أقوال.`;
     } else if (isMarkmap) {
-      toolDirectives = `- [بوابة التشجير والخرائط الذهنية]: قم بصياغة شجرة المسائل والأقوال الفقهية وتفريعاتها في كتلة markmap شجرية هرمية تبدأ بـ # و ## وقوائم نقطية، لتقوم أداة Markmap برسم خريطة ذهنية تفاعلية حية تتيح للباحث طي وفرد الفروع وتكبيرها بصرياً.`;
+      toolDirectives = `- [بوابة التشجير]: صغ Markmap للأقوال، ثم كتلة \`\`\`force3d لنوع واحد فقط: خلاف فقهي (مسألة ثم قول ثم مذهب ثم دليل ثم مناقشة ثم جواب ثم ترجيح) أو خلاف عقدي (مسألة ثم مذهب ثم مقالة ثم شبهة ثم جواب) أو استدلال أو مناقشة. source الأعلى و target الفرع. لا ترسم إسناداً إلا إذا طُلب.`;
     } else {
       toolDirectives = `- [التحقيق العلمي الدقيق]: تفريغ المسائل وأقوال المصنفين ومذاهبهم وأدلتهم مع التوثيق الحرفي بالأجزاء والصفحات من أمهات المصادر، وبيان الراجح والجامع للمسألة.`;
     }
@@ -3449,7 +3450,7 @@ ${webEvidenceSection}
 توجيهات التحقيق والجدولة الشاملة:
 - لقد تم استخراج المقاطع التوثيقية من أمهات المصادر المستهدفة في الشاملة.
 - مهمتك كمدير للمشروع: استيعاب كـافـة الشواهد المستخرجة وتفريغ نصوص المسألة كاملة في جدول مفصل وشامل مرتب بالسياق الزمني أو المذهبي أو الموضوعي.
-- اعتمد حصراً على أمهات المصادر التراثية بأرقام أجزائها وصفحاتها المحققة.
+- اعتمد حصراً على أمهات المصادر التراثية. كل حديث أو نص أو إحالة يُكتب باسم الكتاب كما هو في القاعدة، والموضع (3-450) إن تعددت الأجزاء، أو ص(50) إن كان الكتاب جزءاً واحداً. مثال: «صحيح البخاري - ط السلطانية» (1-15).
 - أتبعه بجدول مقارنة أو تحرير فقهي/علمي وخاتمة علمية محررة بالنتائج والاستدراكات.
 - 🔴 إلـزامـي وحـتـمـي في ختام التقرير: يجب إفراد جدول توثيقي شامل بعنوان «📚 ثبت المصادر والمراجع المعتمدة في المشروع» يستوعب كافة الكتب والمصادر التي استُخرجت منها نصوص المسألة أو عُزيت إليها الأقوال، متضمناً الأعمدة الببليوغرافية الكاملة:
 | م | اسم الكتاب المعتمد | المصنف وسنة وفاته الهجرية | المحقق أو الشارح | رقم الطبعة وسنتها | دار النشر والناشر وبياناته | بلد النشر | رقم الكتاب بالشاملة (#BookID) |
@@ -3681,6 +3682,10 @@ function renderProjectExecutionView() {
   if (typeof autoRenderProjectResultMarkmaps === 'function' && liveContent) {
     autoRenderProjectResultMarkmaps(liveContent);
   }
+
+  if (typeof window.renderForce3dBlocks === 'function' && liveContent) {
+    window.renderForce3dBlocks(liveContent);
+  }
 }
 
 // دالة تغليف وضبط اتجاه الجداول من اليمين لليسار مع إضافة شريط تصدير CSV
@@ -3769,88 +3774,256 @@ function openProjectCitationReader(btnEl) {
 }
 window.openProjectCitationReader = openProjectCitationReader;
 
-function enhanceProjectCitationsWithBookReader(container) {
-  if (!container) return;
+function citationToWesternDigits(value) {
+  return String(value || '')
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+}
 
-  // نمط مطابقات الأقواس المحتوية على إحالات أو أرقام صفحات
-  const PAREN_REGEX = /([\(\[])([^\(\)\[\]\n<>{}\"'\u00ab\u00bb]{3,140})([\)\]])/g;
+function cleanCitationBookName(raw) {
+  let book = String(raw || '')
+    .replace(/\u0640/g, '')
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, ' ')
+    .replace(/^(?:ص|صفحة|جـ?|جزء|مجلد)\s*[0-9٠-٩]+\s*[\.،:\-–]*\s*/g, '')
+    .replace(/^(?:المصدر|المرجع|انظر|راجع|يُنظر|ينظر|تخريج(?:\s+حديث)?[^:：]*|كتاب|في|جاء\s+في|وجاء\s+في|قال|من)\s*[:：\s\-–]*/g, '')
+    .replace(/^[«»"'“”\s،,:：\-–\(\)\[\]]+|[\s،,:：\-–\(\)\[\]]+$/g, '')
+    .replace(/\s*\([^)]{0,50}\)?\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const segments = book.split(/[،,]/).map(part => part.trim()).filter(Boolean);
+  if (segments.length > 1 && (segments[0].match(/[\u0600-\u06FF]/g) || []).length >= 6) {
+    book = segments[0];
+  }
+  if (book.length > 90) book = book.slice(0, 90).replace(/\s+\S*$/, '').trim();
+  const arabicLetters = (book.match(/[\u0600-\u06FF]/g) || []).length;
+  if (arabicLetters < 3 || book.length > 90) return '';
+  if (/^(?:ج|ص|جزء|صفحة|الجزء|الصفحة|مجلد)$/.test(book)) return '';
+  return book;
+}
 
-  const targetElements = container.querySelectorAll('p, li, td, blockquote, dd, div.markdown-body');
-  if (!targetElements.length) return;
+function parseCitationLocation(rawInside) {
+  const text = citationToWesternDigits(rawInside).replace(/\u0640/g, '');
+  const vol = '(?:الجزء|جزء|مجلد|مج|ج)';
+  const page = '(?:الصفحة|صفحة|ص)';
+  const gap = '[\\s\\.\\:：]*';
+  const bridge = '[\\s\\.\\:：،,\\/\\-–]*';
+  let match = text.match(new RegExp(vol + gap + '(\\d{1,4})' + bridge + page + gap + '(\\d{1,4})'));
+  if (match) {
+    return { part: match[1], page: match[2], index: match.index };
+  }
+  match = text.match(/(?:^|[\s،,\-–:])(\d{1,3})\s*\/\s*(\d{1,4})(?!\d)/);
+  if (match && /[\u0600-\u06FF]{3,}/.test(text.slice(0, match.index + 1))) {
+    return { part: match[1], page: match[2], index: match.index };
+  }
+  return null;
+}
 
-  targetElements.forEach(el => {
-    // تخطي العناصر التي تحتوي بالفعل على أزرار تصفح
-    if (el.querySelector('.btn-verify-citation')) return;
+function bookBeforeCitation(text, index) {
+  const windowText = text.slice(Math.max(0, index - 260), index);
+  const quoted = windowText.match(/[«"“]([^»"”\n]{3,80})[»"”]\s*$/);
+  if (quoted) return quoted[1];
+  const pieces = windowText.split(/\n|•|(?:المصدر|المرجع)\s*[:：]/);
+  return pieces[pieces.length - 1] || '';
+}
 
-    const fullText = el.textContent || '';
-    if (!fullText.includes('ص') && !fullText.includes('ج')) return;
+function nearestCitationQuote(text, index) {
+  const before = text.slice(Math.max(0, index - 280), index);
+  const match = before.match(/«([^»]{4,150})»|"([^"]{4,150})"|“([^”]{4,150})”/g);
+  if (!match) return '';
+  const last = match[match.length - 1];
+  return last.replace(/^[«"“]|[»"”]$/g, '').trim();
+}
 
-    // معالجة نصوص العنصر دون الإضرار بالوسوم الأخرى
-    const newHtml = el.innerHTML.replace(PAREN_REGEX, (match, openB, inside, closeB, offset, origStr) => {
-      // فحص وجود الجزء أو الصفحة داخل القوس
-      const vpMatch = inside.match(/(?:(?:جـ?|جزء|الجزء)\s*[:\s]\s*([0-9٠-٩]+)\s*[\-–،,]?\s*)?(?:(?:صـ?|صفحة|الصفحة)\s*[:\s]\s*([0-9٠-٩]+))/);
-      if (!vpMatch) return match;
+function findCanonicalCitationSpans(text) {
+  const spans = [];
+  const pattern = /«([^»\n]{3,140})»\s*(?:ص\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*\)|\(\s*([0-9٠-٩۰-۹]{1,3})\s*[-–]\s*([0-9٠-٩۰-۹]{1,4})\s*\))/g;
+  let match;
+  while ((match = pattern.exec(text))) {
+    const book = cleanCitationBookName(match[1]);
+    if (!book) continue;
+    const pageOnly = match[2];
+    spans.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      book,
+      part: pageOnly ? '' : citationToWesternDigits(match[3]),
+      page: citationToWesternDigits(pageOnly || match[4]),
+      quote: nearestCitationQuote(text, match.index)
+    });
+  }
+  return spans;
+}
 
-      // تحويل الأرقام المشرقية
-      const convDigits = (s) => (s || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-      const cleanPart = convDigits(vpMatch[1] || '').trim();
-      const cleanPage = convDigits(vpMatch[2] || '').trim();
+function findCitationSpans(text) {
+  const spans = [];
+  const taken = [];
+  const remember = (span) => {
+    if (taken.some(item => span.start < item.end && span.end > item.start)) return;
+    taken.push(span);
+    spans.push(span);
+  };
+  findCanonicalCitationSpans(text).forEach(remember);
 
-      // فحص هل اسم الكتاب داخل القوس (قبل الجزء والصفحة) أم خارجه
-      const textBeforeVp = inside.slice(0, vpMatch.index).trim().replace(/[\-–،,:]+$/, '').trim();
-      let rawBook = '';
-
-      if (textBeforeVp && textBeforeVp.length >= 3 && !textBeforeVp.match(/^(?:جـ?|جزء|الجزء|صـ?|صفحة|الصفحة|\d|[\s،,\-])+$/)) {
-        // الحالة الأولى: اسم الكتاب مذكور داخل القوسين (مثل: المصباح المنير... جـ: 1 ص: 278)
-        rawBook = textBeforeVp;
-      } else {
-        // الحالة الثانية: اسم الكتاب مذكور خارج القوسين قبلهما مباشرة (مثل: المصنف - ابن أبي شيبة... (ج 18، ص 546))
-        const textBeforeParen = origStr.slice(0, offset);
-        const quoteBookMatch = textBeforeParen.match(/[«"]([^»"\n<>{]{2,80})[»"]\s*(?:ل[^،\n:]+)?\s*$/);
-        if (quoteBookMatch) {
-          rawBook = quoteBookMatch[1].trim();
-        } else {
-          // استخلاص آخر جملة مفيدة قبل القوس مع تجاوز وسوم HTML
-          const plainBefore = textBeforeParen.replace(/<[^>]+>/g, ' ').trim();
-          const chunks = plainBefore.split(/[:\n•\*]|\bالمصدر\b|\bالمرجع\b/);
-          let lastChunk = chunks[chunks.length - 1].trim();
-          if (lastChunk.length > 95) {
-            const commaParts = lastChunk.split(/[،,]/);
-            lastChunk = commaParts.slice(-2).join('، ').trim();
-          }
-          rawBook = lastChunk;
+  for (let i = 0; i < text.length; i++) {
+    const open = text[i];
+    if (open !== '(' && open !== '[' && open !== '（') continue;
+    const close = open === '[' ? ']' : (open === '（' ? '）' : ')');
+    let depth = 1;
+    let end = -1;
+    const limit = Math.min(text.length, i + 380);
+    for (let j = i + 1; j < limit; j++) {
+      if (text[j] === open) depth++;
+      else if (text[j] === close || (close === ')' && text[j] === '）')) {
+        depth--;
+        if (depth === 0) {
+          end = j;
+          break;
         }
       }
-
-      // تنظيف اسم الكتاب وحذف أي مقدمات أو علامات ترقيم زائدة
-      let cleanBook = (rawBook || '').trim()
-        .replace(/^(?:المصدر|المرجع|انظر|راجع|تخريج(?:\s+حديث)?[^:]*|كتاب|في|وجاء\s+في|قال)\s*[:\s\-–]*/g, '')
-        .replace(/^[،,:\-\s]+/, '')
-        .trim();
-
-      if (!cleanBook) return match;
-
-      // استخراج نص المقتبس القريب إن وجد لتظليله في القارئ
-      let quoteSnippet = '';
-      const textBefore = origStr.slice(0, offset);
-      const quoteMatch = textBefore.match(/(?:«([^»]{4,150})»|"([^"]{4,150})"|“([^”]{4,150})”)(?!.*(?:«|"|“))/);
-      if (quoteMatch) {
-        quoteSnippet = (quoteMatch[1] || quoteMatch[2] || quoteMatch[3] || '').trim();
-      }
-
-      const safeBook = escapeHtml(cleanBook);
-      const safeQuote = escapeHtml(quoteSnippet.slice(0, 100));
-      const pageLabel = cleanPage ? `ص: ${cleanPage}` : '';
-      const partLabel = cleanPart ? `جـ: ${cleanPart}` : '';
-      const locInfo = [partLabel, pageLabel].filter(Boolean).join(' ');
-      const tooltip = `تصفح في الكتاب الأصلي «${safeBook}» ${locInfo} للتحقق من صحة المنقول 📖`;
-
-      return `${match} <button type="button" class="btn-verify-citation" onclick="openProjectCitationReader(this)" data-book="${safeBook}" data-part="${cleanPart}" data-page="${cleanPage}" data-quote="${safeQuote}" title="${tooltip}" aria-label="تصفح في الكتاب الأصلي">📖</button>`;
-    });
-
-    if (newHtml !== el.innerHTML) {
-      el.innerHTML = newHtml;
     }
+    if (end < 0) continue;
+    const inside = text.slice(i + 1, end);
+    const location = parseCitationLocation(inside);
+    if (!location) {
+      i = end;
+      continue;
+    }
+    const insideBook = cleanCitationBookName(inside.slice(0, location.index));
+    const book = insideBook || cleanCitationBookName(bookBeforeCitation(text, i));
+    if (!book || !location.page) {
+      i = end;
+      continue;
+    }
+    remember({
+      start: i,
+      end: end + 1,
+      book,
+      part: location.part || '',
+      page: location.page,
+      quote: nearestCitationQuote(text, i)
+    });
+    i = end;
+  }
+
+  const loose = /(?:الجزء|جزء|مجلد|مج|ج)\u0640?\s*[\.\:：]?\s*[0-9٠-٩۰-۹]{1,4}[\s\.\:：،,\/\-–\u0640]*(?:الصفحة|صفحة|ص)\u0640?\s*[\.\:：]?\s*[0-9٠-٩۰-۹]{1,4}/g;
+  let looseMatch;
+  while ((looseMatch = loose.exec(text))) {
+    const location = parseCitationLocation(looseMatch[0]);
+    const book = cleanCitationBookName(bookBeforeCitation(text, looseMatch.index));
+    if (!location || !book) continue;
+    remember({
+      start: looseMatch.index,
+      end: looseMatch.index + looseMatch[0].length,
+      book,
+      part: location.part || '',
+      page: location.page,
+      quote: nearestCitationQuote(text, looseMatch.index)
+    });
+  }
+  return spans.sort((a, b) => a.start - b.start);
+}
+
+function citationVerifyButton(span) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn-verify-citation';
+  button.setAttribute('data-book', span.book);
+  button.setAttribute('data-part', span.part || '');
+  button.setAttribute('data-page', span.page || '');
+  button.setAttribute('data-quote', (span.quote || '').slice(0, 100));
+  const partLabel = span.part ? `جـ: ${span.part}` : '';
+  const pageLabel = span.page ? `ص: ${span.page}` : '';
+  const locInfo = [partLabel, pageLabel].filter(Boolean).join(' ');
+  button.title = `تصفح في الكتاب الأصلي «${span.book}» ${locInfo} للتحقق من صحة المنقول 📖`;
+  button.setAttribute('aria-label', 'تصفح في الكتاب الأصلي');
+  button.textContent = '📖';
+  button.addEventListener('click', () => openProjectCitationReader(button));
+  return button;
+}
+
+function citationMcpButton(span) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn-mcp-verify';
+  button.setAttribute('data-book', span.book);
+  button.setAttribute('data-part', span.part || '');
+  button.setAttribute('data-page', span.page || '');
+  button.setAttribute('data-quote', (span.quote || '').slice(0, 160));
+  const partLabel = span.part ? `جـ: ${span.part}` : '';
+  const pageLabel = span.page ? `ص: ${span.page}` : '';
+  const locInfo = [partLabel, pageLabel].filter(Boolean).join(' ');
+  button.title = `تحقق حرفي (MCP) من «${span.book}» ${locInfo}`;
+  button.setAttribute('aria-label', 'تحقق حرفي');
+  button.textContent = '🔍';
+  button.addEventListener('click', () => {
+    if (typeof openMcpLiteralVerify !== 'function') return;
+    openMcpLiteralVerify({
+      book: button.getAttribute('data-book'),
+      part: button.getAttribute('data-part'),
+      page: button.getAttribute('data-page'),
+      quote: button.getAttribute('data-quote')
+    });
+  });
+  return button;
+}
+
+function enhanceProjectCitationsWithBookReader(container) {
+  if (!container) return;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const value = node.nodeValue || '';
+      if (!/[صججزءصفحةمجلد0-9٠-٩۰-۹]/.test(value)) return NodeFilter.FILTER_REJECT;
+      const parent = node.parentElement;
+      if (!parent || parent.closest('button, a, script, style, code, pre, .btn-verify-citation, .btn-mcp-verify')) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+  textNodes.forEach(node => {
+    const text = node.nodeValue || '';
+    let prefix = '';
+    let previous = node.previousSibling;
+    while (previous && prefix.length < 180) {
+      const chunk = previous.nodeType === Node.TEXT_NODE ? previous.nodeValue : (previous.textContent || '');
+      prefix = chunk + prefix;
+      previous = previous.previousSibling;
+    }
+    const spans = findCitationSpans(prefix + text)
+      .filter(span => span.end > prefix.length)
+      .map(span => ({
+        ...span,
+        start: Math.max(0, span.start - prefix.length),
+        end: span.end - prefix.length
+      }));
+    if (!spans.length) return;
+    if (
+      spans.length === 1 &&
+      spans[0].end === text.length &&
+      node.nextSibling &&
+      node.nextSibling.classList &&
+      node.nextSibling.classList.contains('btn-verify-citation')
+    ) {
+      const bookButton = node.nextSibling;
+      const mcpButton = bookButton.nextSibling;
+      if (!mcpButton || !mcpButton.classList || !mcpButton.classList.contains('btn-mcp-verify')) {
+        bookButton.after(citationMcpButton(spans[0]));
+      }
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    spans.forEach(span => {
+      fragment.appendChild(document.createTextNode(text.slice(cursor, span.end)));
+      fragment.appendChild(citationVerifyButton(span));
+      fragment.appendChild(citationMcpButton(span));
+      cursor = span.end;
+    });
+    if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)));
+    node.parentNode.replaceChild(fragment, node);
   });
 }
 window.enhanceProjectCitationsWithBookReader = enhanceProjectCitationsWithBookReader;
@@ -3941,7 +4114,7 @@ async function continueProjectExecutionRound() {
   try {
     let savedKeys = {};
     try {
-      savedKeys = JSON.parse(localStorage.getItem('almojtahed_provider_keys') || '{}');
+      savedKeys = readProviderKeys();
     } catch (e) { }
     const apiKey = savedKeys.openrouter || '';
 
@@ -3953,7 +4126,7 @@ async function continueProjectExecutionRound() {
     let groups = window.agentGroups || [];
     if (groups.length === 0) {
       try {
-        groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+        groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
       } catch (e) { }
     }
     if (project.linked_group_id) {
@@ -3982,7 +4155,7 @@ async function continueProjectExecutionRound() {
    - وجّه الوكلاء لسد الفجوات التوثيقية، وتخريج الأحاديث وبيان عللها ورجالها، والتثبت من نسبة الأقوال والآثار إلى أصحابها في أمهات المصادر.
    - حقق في التواريخ والوقائع والمطابقات، واستخرج الشواهد الإضافية لتأكيد ما هو متردد أو محتمل.
 2. أضف النتائج والاستدراكات الجديدة إلى الجداول المعتمدة مع إبراز ما تم إثباته وحسمه في هذه الجولة.
-3. قدّم تقرير الجولة رقم ${nextRoundNum} بصياغة علمية محررة رصينة، واذكر صراحة ما إذا كانت هذه الجولة قد حسمت أهداف المشروع تماماً، واحرص في الجولة الختامية على استيفاء «📚 ثبت المصادر والمراجع المعتمدة في المشروع» بكافة بيانات الطبعات والمحققين ودور النشر وأرقام الشاملة.
+3. قدّم تقرير الجولة رقم ${nextRoundNum} بصياغة علمية محررة رصينة، واذكر صراحة ما إذا كانت هذه الجولة قد حسمت أهداف المشروع تماماً. كل إحالة في هذه الجولة باسم الكتاب كما في القاعدة، وبصيغة (3-450) أو ص(50) فقط. واحرص في الجولة الختامية على استيفاء «📚 ثبت المصادر والمراجع المعتمدة في المشروع» بكافة بيانات الطبعات والمحققين ودور النشر وأرقام الشاملة.
 `;
 
     messages.push({ role: 'user', content: continueUserPrompt });
@@ -4543,7 +4716,7 @@ function populateP2CGroupsDropdown(project) {
   let groups = window.agentGroups || [];
   if (!groups.length) {
     try {
-      groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+      groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
     } catch (e) { }
   }
 
@@ -4582,7 +4755,7 @@ function renderP2CAgentsCheckboxes(groupId, preselectedIds) {
   let groups = window.agentGroups || [];
   if (!groups.length) {
     try {
-      groups = JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+      groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
     } catch (e) { }
   }
 
