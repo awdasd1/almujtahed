@@ -78,24 +78,35 @@ fi
 
 echo "💾 البيانات الثابتة على: $DATA_DIR"
 
-# 2. فحص هل يوجد خادم Qdrant متاح، وإن لم يتوفر يتم تشغيل محرك Qdrant المدمج تلقائياً
+# 2. Qdrant عملية مستقلة. nohup يبقيها بعد انطلاق واجهة المجتهد.
 echo "📡 التحقق من جاهزية محرك Qdrant..."
-if ! curl -s http://qdrant:6333/collections >/dev/null 2>&1 && ! curl -s http://localhost:6333/collections >/dev/null 2>&1; then
+if ! curl -sf --max-time 2 http://127.0.0.1:6333/collections >/dev/null 2>&1; then
     if [ -f /app/qdrant_service/qdrant ]; then
         echo "⚡ جاري تشغيل محرك Qdrant المدمج داخل الحاوية..."
         mkdir -p /app/qdrant_service/storage /app/qdrant_service/snapshots /app/qdrant_service/config
         cd /app/qdrant_service
-        ./qdrant --config-path /app/qdrant_service/config/config.yaml > /app/qdrant_service/qdrant.log 2>&1 &
+        nohup ./qdrant --config-path /app/qdrant_service/config/config.yaml >> /app/qdrant_service/qdrant.log 2>&1 &
         cd /app
-        sleep 4
     fi
 fi
+qdrant_ready=0
+for _try in $(seq 1 45); do
+    if curl -sf --max-time 2 http://127.0.0.1:6333/collections >/dev/null 2>&1; then
+        qdrant_ready=1
+        echo "✅ Qdrant يستمع على المنفذ 6333"
+        break
+    fi
+    sleep 2
+done
+if [ "$qdrant_ready" -ne 1 ]; then
+    echo "⚠️ Qdrant لم يرد بعد. الواجهة ستعيد المحاولة، وآخر السجل:"
+    tail -n 20 /app/qdrant_service/qdrant.log 2>/dev/null || true
+fi
 
-# 3. فحص وتهيئة بيانات Hugging Face واللقطة في خلفية التشغيل إذا لم تكن موجودة
+# 3. جلب البيانات في الخلفية حتى تفتح الواجهة وتعرض شريط التقدم أثناء السحب
 echo "🔄 فحص جاهزية مخازن الشاملة والمتجهات والموديلات من Hugging Face..."
-python3 /app/init_coolify_data.py || {
-    echo "⚠️ تم تسجيل ملاحظة أثناء جلب البيانات، يستمر الخادم في الإقلاع..."
-}
+nohup python3 /app/init_coolify_data.py >> "$DATA_DIR/web/init.log" 2>&1 &
+echo "📥 جلب البيانات يعمل في الخلفية. شريط التقدم يظهر في نافذة صحة الخادم."
 
 # 3. إطلاق خادم التطبيق
 echo "🚀 تشغيل خادم المجتهد (FastAPI)..."

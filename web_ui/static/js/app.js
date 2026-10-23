@@ -824,11 +824,46 @@ async function fetchServerHealth(showToast = false) {
       const statQdrantCollection = document.getElementById('statQdrantCollection');
       const badgeQdrantStatus = document.getElementById('badgeQdrantStatus');
 
-      if (statQdrantPoints) statQdrantPoints.textContent = data.qdrant.points_count ? Number(data.qdrant.points_count).toLocaleString('en-US') : '8,148,092';
+      const restore = data.qdrant.restore || null;
+      const restoreWrap = document.getElementById('qdrantRestoreWrap');
+      const restoreBar = document.getElementById('barQdrantRestore');
+      const restoreLabel = document.getElementById('statQdrantRestore');
+      const persistWarn = document.getElementById('qdrantPersistWarn');
+      const restoring = !!(restore && restore.active);
+
+      if (statQdrantPoints) {
+        if (restoring) {
+          statQdrantPoints.textContent = `${restore.received_gb} / ${restore.expected_gb} GB`;
+        } else if (data.qdrant.points_count) {
+          statQdrantPoints.textContent = Number(data.qdrant.points_count).toLocaleString('en-US');
+        } else {
+          statQdrantPoints.textContent = '—';
+        }
+      }
       if (statQdrantCollection) statQdrantCollection.textContent = data.qdrant.collection_name || 'shamela_almojtahed_8b_dense';
       if (badgeQdrantStatus) {
-        badgeQdrantStatus.textContent = data.qdrant.connected ? 'متصل ومفهرس' : 'غير متصل';
-        badgeQdrantStatus.style.color = data.qdrant.connected ? '#10b981' : '#ef4444';
+        if (restoring && restore.phase === 'error') {
+          badgeQdrantStatus.textContent = 'تعثّر السحب';
+          badgeQdrantStatus.style.color = '#ef4444';
+        } else if (restoring) {
+          badgeQdrantStatus.textContent = 'جاري السحب';
+          badgeQdrantStatus.style.color = '#f59e0b';
+        } else {
+          badgeQdrantStatus.textContent = data.qdrant.connected ? 'متصل ومفهرس' : 'غير متصل';
+          badgeQdrantStatus.style.color = data.qdrant.connected ? '#10b981' : '#ef4444';
+        }
+      }
+      if (restoreWrap) restoreWrap.style.display = restoring ? 'block' : 'none';
+      if (restoring && restoreBar) restoreBar.style.width = `${Math.max(2, restore.percent || 0)}%`;
+      if (restoring && restoreLabel) restoreLabel.textContent = restore.label || 'جاري سحب سنابشوت المتجهات...';
+      if (persistWarn) {
+        if (restore && restore.persistent === false) {
+          persistWarn.style.display = 'block';
+          persistWarn.textContent = 'القرص الحالي مؤقت. من Coolify أضف Persistent Storage ووجهته /data وإلا يُمسح السحب عند إعادة النشر.';
+        } else {
+          persistWarn.style.display = 'none';
+          persistWarn.textContent = '';
+        }
       }
     }
 

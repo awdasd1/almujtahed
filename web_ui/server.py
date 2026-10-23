@@ -593,10 +593,10 @@ def load_models_and_db():
     try:
         qdrant = None
         q_candidates = [
+            "127.0.0.1",
+            "localhost",
             os.getenv("QDRANT_HOST", "").strip(),
             "qdrant",
-            "localhost",
-            "127.0.0.1",
             "host.docker.internal"
         ]
         q_port = int(os.getenv("QDRANT_PORT", "6333"))
@@ -2290,11 +2290,132 @@ def _get_live_disk_usage():
         }
 
 
+_QDRANT_ATTACH_LOCK = threading.Lock()
+_SNAPSHOT_EXPECTED_BYTES = 172 * (1024 ** 3)
+
+def _read_bootstrap_status():
+    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    if not data_dir:
+        return None
+    path = Path(data_dir) / "web" / "bootstrap_status.json"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+def _data_disk_is_persistent():
+    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    if not data_dir or not os.path.isdir(data_dir):
+        return None
+    try:
+        return os.stat(data_dir).st_dev != os.stat("/").st_dev
+    except OSError:
+        return None
+
+def _ensure_qdrant_client():
+    """إعادة الربط إذا اكتمل السنابشوت بعد إقلاع الواجهة."""
+    if app_state.get("qdrant"):
+        return
+    if not _QDRANT_ATTACH_LOCK.acquire(blocking=False):
+        return
+    try:
+        if app_state.get("qdrant"):
+            return
+        hosts = []
+        for host in ("127.0.0.1", "localhost", os.getenv("QDRANT_HOST", "").strip()):
+            if host and host not in hosts:
+                hosts.append(host)
+        port = int(os.getenv("QDRANT_PORT", "6333"))
+        for host in hosts:
+            try:
+                client = QdrantClient(host=host, port=port, timeout=3)
+                names = [item.name for item in client.get_collections().collections]
+                if "shamela_almojtahed_8b_dense" in names:
+                    app_state["qdrant"] = client
+                    app_state["collection_name"] = "shamela_almojtahed_8b_dense"
+                    app_state["is_8b"] = True
+                    return
+                if "shamela_corpus" in names:
+                    app_state["qdrant"] = client
+                    app_state["collection_name"] = "shamela_corpus"
+                    app_state["is_8b"] = False
+                    return
+            except Exception:
+                continue
+    finally:
+        _QDRANT_ATTACH_LOCK.release()
+
+_QDRANT_SIZE_SAMPLE = {"at": 0.0, "bytes": 0, "busy": False}
+
+def _qdrant_dir_bytes():
+    """قياس مخزن المتجهات كل 20 ثانية. الواجهة تعمل أثناء السحب وQdrant يكمل التنزيل وحده."""
+    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    if not data_dir:
+        return 0
+    target = Path(data_dir) / "qdrant"
+    if not target.exists():
+        return 0
+    now = time.time()
+    with _QDRANT_ATTACH_LOCK:
+        if _QDRANT_SIZE_SAMPLE["busy"]:
+            return int(_QDRANT_SIZE_SAMPLE["bytes"])
+        if _QDRANT_SIZE_SAMPLE["at"] and now - _QDRANT_SIZE_SAMPLE["at"] < 20:
+            return int(_QDRANT_SIZE_SAMPLE["bytes"])
+        _QDRANT_SIZE_SAMPLE["busy"] = True
+    received = int(_QDRANT_SIZE_SAMPLE["bytes"])
+    try:
+        output = subprocess.check_output(["du", "-sb", str(target)], text=True, timeout=25)
+        received = int(output.split()[0])
+    except Exception:
+        pass
+    with _QDRANT_ATTACH_LOCK:
+        _QDRANT_SIZE_SAMPLE["at"] = time.time()
+        _QDRANT_SIZE_SAMPLE["bytes"] = received
+        _QDRANT_SIZE_SAMPLE["busy"] = False
+    return received
+
+def _snapshot_restore_view(connected, points_count):
+    status = _read_bootstrap_status() or {}
+    phase = status.get("phase") or ""
+    expected = int(status.get("expected_bytes") or _SNAPSHOT_EXPECTED_BYTES) or _SNAPSHOT_EXPECTED_BYTES
+    ready = bool(connected and points_count > 1000)
+    received = 0 if ready else max(int(status.get("received_bytes") or 0), _qdrant_dir_bytes())
+    downloading = (not ready) and received >= (1024 ** 3)
+    percent = 100 if ready else min(99, int(received * 100 / expected))
+    received_gb = round(received / (1024 ** 3), 1)
+    expected_gb = round(expected / (1024 ** 3), 1)
+    if ready:
+        label = "مخزن المتجهات جاهز"
+        active = False
+    elif downloading or phase == "snapshot":
+        label = f"جاري السحب والتركيب: {received_gb} من {expected_gb} غيغابايت. لا توقف الحاوية."
+        active = True
+    elif phase == "error":
+        label = status.get("message") or "توقفت استعادة المتجهات"
+        active = True
+    else:
+        label = ""
+        active = False
+    return {
+        "active": active,
+        "phase": "ready" if ready else (phase or "idle"),
+        "percent": percent,
+        "label": label,
+        "received_gb": received_gb,
+        "expected_gb": expected_gb,
+        "persistent": _data_disk_is_persistent(),
+    }
+
 @app.get("/api/system/resources")
 async def get_system_resources_endpoint():
     """مؤشر موارد الخادم الحي: الرام، القرص، حالة Qdrant، ونموذج التضمين"""
     mem = _get_live_memory_usage()
     disk = _get_live_disk_usage()
+
+    if not app_state.get("qdrant"):
+        _ensure_qdrant_client()
 
     q_connected = False
     points_count = 0
@@ -2306,12 +2427,17 @@ async def get_system_resources_endpoint():
             points_count = info.points_count or 0
         except Exception:
             q_connected = False
+            app_state["qdrant"] = None
 
+    restore = _snapshot_restore_view(q_connected, points_count)
     model_loaded = bool(app_state.get("llama_embedder") or app_state.get("st_embedder") or app_state.get("embed_model"))
     model_name = "almojtahed-embedding-8b-Q4_K_M.gguf" if app_state.get("is_8b") else "Al-Mojtahed Model"
 
     # حساب الحالة العامة ولون المؤشر
-    if not q_connected or not model_loaded:
+    if restore.get("active"):
+        health_color = "yellow"
+        health_label = restore.get("label") or "جاري سحب مخزن المتجهات"
+    elif not q_connected or not model_loaded:
         health_color = "red"
         health_label = "حرج - توقف إحدى الخدمات الأساسية"
     elif mem["percent"] > 90 or disk["percent"] > 92:
@@ -2333,7 +2459,8 @@ async def get_system_resources_endpoint():
         "qdrant": {
             "connected": q_connected,
             "collection_name": collection_name,
-            "points_count": points_count
+            "points_count": points_count,
+            "restore": restore
         },
         "model": {
             "loaded": model_loaded,

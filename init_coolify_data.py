@@ -8,11 +8,13 @@
 4. نموذج الريرانكر المتخصص (cs95/almojtahed-reranker-8b)
 """
 
+import json
 import os
 import sys
 import time
 import shutil
 import subprocess
+import threading
 import urllib.request
 from pathlib import Path
 from dotenv import load_dotenv
@@ -24,12 +26,66 @@ load_dotenv(ROOT_DIR / ".env")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant").strip()
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 COLLECTION_NAME = "shamela_almojtahed_8b_dense"
+DATA_DIR = Path(os.getenv("ALMUJTAHED_DATA_DIR", "/data"))
+BOOTSTRAP_STATUS_PATH = DATA_DIR / "web" / "bootstrap_status.json"
+SNAPSHOT_EXPECTED_BYTES = 172 * (1024 ** 3)
 
 # روابط Hugging Face
 SNAPSHOT_REPO = "cs95/shamela-full-7m-qdrant"
 SNAPSHOT_FILENAME = "shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot"
 SHAMELA_DB_REPO = "AuthenticIlm/Shamela4_Full_DB"
 EMBEDDING_MODEL_REPO = "cs95/almojtahed-qwen3-8b"
+
+def write_bootstrap_status(phase, message, received_bytes=0):
+    """ملف صغير تقرأه واجهة الصحة. لا يُقاس الحجم عند كل طلب حتى لا يُثقل القرص."""
+    try:
+        BOOTSTRAP_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "phase": phase,
+            "message": message,
+            "received_bytes": int(received_bytes or 0),
+            "expected_bytes": SNAPSHOT_EXPECTED_BYTES,
+            "updated_at": time.time(),
+        }
+        temporary = BOOTSTRAP_STATUS_PATH.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(BOOTSTRAP_STATUS_PATH)
+    except Exception as ex:
+        print(f"⚠️ تعذر تحديث حالة السحب: {ex}")
+
+def qdrant_bytes_on_disk():
+    target = DATA_DIR / "qdrant"
+    if not target.exists():
+        return 0
+    try:
+        output = subprocess.check_output(["du", "-sb", str(target)], text=True, timeout=30)
+        return int(output.split()[0])
+    except Exception:
+        return 0
+
+class _SnapshotProgress:
+    def __init__(self):
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        write_bootstrap_status("snapshot", "جاري سحب سنابشوت المتجهات وتركيبه في Qdrant", qdrant_bytes_on_disk())
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        while not self._stop.wait(20):
+            write_bootstrap_status(
+                "snapshot",
+                "جاري سحب سنابشوت المتجهات وتركيبه في Qdrant",
+                qdrant_bytes_on_disk(),
+            )
+
+    def finish(self, phase, message):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+        write_bootstrap_status(phase, message, qdrant_bytes_on_disk())
 
 def print_banner(msg):
     print("\n" + "=" * 75)
@@ -73,12 +129,19 @@ def init_qdrant_snapshot(client):
         print("⏭️ تم تخطي فحص Qdrant لعدم توفر الاتصال حالياً.")
         return
 
+    on_disk = DATA_DIR / "qdrant" / "storage" / "collections" / COLLECTION_NAME
+    if on_disk.is_dir():
+        print(f"✅ ملفات المجموعة «{COLLECTION_NAME}» موجودة على القرص. لن يُعاد سحب السنابشوت.")
+        write_bootstrap_status("ready", "مخزن المتجهات موجود على القرص", qdrant_bytes_on_disk())
+        return
+
     try:
         collections = [c.name for c in client.get_collections().collections]
         if COLLECTION_NAME in collections:
             info = client.get_collection(COLLECTION_NAME)
             if info.points_count and info.points_count > 1000:
                 print(f"✅ مجموعة الشاملة «{COLLECTION_NAME}» جاهزة ونشطة بالفعل! (عدد المتجهات: {info.points_count:,})")
+                write_bootstrap_status("ready", "مخزن المتجهات جاهز", qdrant_bytes_on_disk())
                 return
             else:
                 print(f"⚠️ المجموعة موجودة ولكن فارغة، سيتم استعادة السنابشوت...")
@@ -93,6 +156,8 @@ def init_qdrant_snapshot(client):
 
         print(f"📥 جاري استعادة السنابشوت مباشرة من Hugging Face ({SNAPSHOT_REPO})...")
         print("💡 يتم التدفق والفك المباشر في Qdrant دون الحاجة لمساحة تخزين مضاعفة...")
+        progress = _SnapshotProgress()
+        progress.start()
         try:
             client.recover_snapshot(
                 collection_name=COLLECTION_NAME,
@@ -100,9 +165,11 @@ def init_qdrant_snapshot(client):
                 priority="snapshot",
                 wait=True
             )
+            progress.finish("ready", "اكتمل سحب سنابشوت المتجهات وتركيبه")
             print("✅ تم استعادة وتركيب السنابشوت في Qdrant بنجاح تام!")
         except Exception as direct_err:
-            print(f"⚠️ الاستعادة المباشرة عبر الرابط أعادت ملاحظة ({direct_err})، التحقق من توفر السنابشوت محلياً...")
+            progress.finish("snapshot", "السحب مستمر داخل Qdrant والواجهة تعمل أثناء ذلك")
+            print(f"⚠️ الاستعادة المباشرة توقفت ({type(direct_err).__name__})، التحقق من توفر السنابشوت محلياً...")
             shared_snapshots_dir = Path("/qdrant/snapshots")
             if shared_snapshots_dir.exists() and os.access(str(shared_snapshots_dir), os.W_OK):
                 snapshots_dir = shared_snapshots_dir
@@ -118,6 +185,7 @@ def init_qdrant_snapshot(client):
                     wait=True
                 )
                 print("✅ تم استعادة السنابشوت من الملف المحلي بنجاح!")
+                write_bootstrap_status("ready", "اكتمل تركيب السنابشوت من الملف المحلي", qdrant_bytes_on_disk())
                 try:
                     local_snapshot_path.unlink()
                 except Exception:
@@ -125,6 +193,7 @@ def init_qdrant_snapshot(client):
 
     except Exception as ex:
         print(f"❌ خطأ أثناء استعادة سنابشوت Qdrant: {ex}")
+        write_bootstrap_status("error", "توقفت استعادة سنابشوت المتجهات", qdrant_bytes_on_disk())
 
 def init_shamela_databases():
     """فحص وسحب قاعدة نصوص الشاملة الكاملة عبر git clone السريع جداً وتفادي قيود API"""
