@@ -2444,7 +2444,7 @@ def _ensure_qdrant_client():
     finally:
         _QDRANT_ATTACH_LOCK.release()
 
-_QDRANT_SIZE_SAMPLE = {"at": 0.0, "bytes": 0, "busy": False}
+_QDRANT_SIZE_SAMPLE = {"at": 0.0, "bytes": 0, "busy": False, "speed_bps": None}
 
 def _qdrant_dir_bytes():
     """قياس مخزن المتجهات كل 20 ثانية. الواجهة تعمل أثناء السحب وQdrant يكمل التنزيل وحده."""
@@ -2467,11 +2467,23 @@ def _qdrant_dir_bytes():
         received = int(output.split()[0])
     except Exception:
         pass
+    now = time.time()
     with _QDRANT_ATTACH_LOCK:
-        _QDRANT_SIZE_SAMPLE["at"] = time.time()
+        prev_at = float(_QDRANT_SIZE_SAMPLE["at"] or 0)
+        prev_bytes = int(_QDRANT_SIZE_SAMPLE["bytes"] or 0)
+        if prev_at and now > prev_at and received >= prev_bytes:
+            _QDRANT_SIZE_SAMPLE["speed_bps"] = (received - prev_bytes) / (now - prev_at)
+        _QDRANT_SIZE_SAMPLE["at"] = now
         _QDRANT_SIZE_SAMPLE["bytes"] = received
         _QDRANT_SIZE_SAMPLE["busy"] = False
     return received
+
+def _format_transfer_speed(bps):
+    if not bps or bps < 1:
+        return "جاري قياس السرعة"
+    if bps >= 1024 ** 2:
+        return f"{bps / (1024 ** 2):.1f} ميغابايت/ث"
+    return f"{max(1, round(bps / 1024))} كيلوبايت/ث"
 
 _QDRANT_ENGINE = {"starting": False, "last_message": ""}
 _QDRANT_START_LOCK = threading.Lock()
@@ -2596,7 +2608,8 @@ def _snapshot_restore_view(connected, points_count):
         label = "مخزن المتجهات جاهز"
         active = False
     elif downloading or phase == "snapshot":
-        label = f"جاري السحب والتركيب: {received_gb} من {expected_gb} غيغابايت. لا توقف الحاوية."
+        speed = _format_transfer_speed(_QDRANT_SIZE_SAMPLE.get("speed_bps"))
+        label = f"جاري السحب والتركيب: {received_gb} من {expected_gb} غيغابايت · {speed}. لا توقف الحاوية."
         active = True
     elif phase == "error":
         label = status.get("message") or "توقفت استعادة المتجهات"
