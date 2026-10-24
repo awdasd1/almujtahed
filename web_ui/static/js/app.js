@@ -1223,8 +1223,19 @@ async function fetchServerHealth(showToast = false) {
       if (statModelName) statModelName.textContent = data.model.name || 'Al-Mojtahed 8B GGUF';
       if (statModelEngine) statModelEngine.textContent = data.model.loaded ? 'محمل في الذاكرة (سريع)' : 'غير محمل';
       if (badgeModelStatus) {
-        badgeModelStatus.textContent = data.model.loaded ? 'جاهز' : 'متوقف';
-        badgeModelStatus.style.color = data.model.loaded ? '#10b981' : '#ef4444';
+        if (data.model.download && data.model.download.running) {
+          badgeModelStatus.textContent = 'جاري السحب';
+          badgeModelStatus.style.color = '#f59e0b';
+        } else {
+          badgeModelStatus.textContent = data.model.loaded ? 'جاهز' : 'متوقف';
+          badgeModelStatus.style.color = data.model.loaded ? '#10b981' : '#ef4444';
+        }
+      }
+      const modelDownload = document.getElementById('statModelDownload');
+      if (modelDownload) {
+        const note = data.model.download && data.model.download.message;
+        modelDownload.style.display = note ? 'block' : 'none';
+        modelDownload.textContent = note || '';
       }
     }
 
@@ -1280,6 +1291,31 @@ async function optimizeServerMemory() {
         lucide.createIcons();
       }
     }
+  }
+}
+
+async function downloadEmbeddingModel() {
+  const btn = document.getElementById('btnDownloadEmbedding');
+  const feedback = document.getElementById('telemetryFeedbackMsg');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/system/embedding/download', { method: 'POST' });
+    const data = await res.json();
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(245, 158, 11, 0.12)';
+      feedback.style.color = '#b45309';
+      feedback.textContent = data.message || 'بدأ سحب نموذج التضمين';
+    }
+    await fetchServerHealth(false);
+  } catch (err) {
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.color = '#ef4444';
+      feedback.textContent = 'تعذر بدء سحب نموذج التضمين';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 

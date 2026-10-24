@@ -264,17 +264,28 @@ def init_ai_models():
         print(f"✅ نموذج التضمين المكمم Al-Mojtahed 8B موجود وجاهز ({emb_gguf_path.stat().st_size / (1024**3):.2f} GB).")
     else:
         print(f"📥 جاري سحب ملف التضمين المكمم {emb_gguf_path.name} من {EMBEDDING_MODEL_REPO}...")
-        try:
-            from huggingface_hub import hf_hub_download
-            hf_hub_download(
-                repo_id=EMBEDDING_MODEL_REPO,
-                filename="almojtahed-embedding-8b-Q4_K_M.gguf",
-                local_dir=str(gguf_dir),
-                token=token
-            )
-            print("✅ تم تحميل نموذج التضمين المكمم Al-Mojtahed 8B GGUF بنجاح!")
-        except Exception as ex:
-            print(f"⚠️ تعذر سحب نموذج GGUF التضمين: {ex}")
+        from huggingface_hub import hf_hub_download
+        last_error = None
+        for attempt in range(1, 5):
+            try:
+                print(f"📥 محاولة سحب نموذج التضمين {attempt} من 4...")
+                hf_hub_download(
+                    repo_id=EMBEDDING_MODEL_REPO,
+                    filename="almojtahed-embedding-8b-Q4_K_M.gguf",
+                    local_dir=str(gguf_dir),
+                    token=token
+                )
+                if emb_gguf_path.exists() and emb_gguf_path.stat().st_size > 1024**3:
+                    print("✅ تم تحميل نموذج التضمين المكمم Al-Mojtahed 8B GGUF بنجاح!")
+                    last_error = None
+                    break
+                last_error = "وصل ملف أصغر من النموذج المتوقع"
+            except Exception as ex:
+                last_error = type(ex).__name__
+                print(f"⚠️ تعذر سحب نموذج GGUF التضمين في المحاولة {attempt}: {last_error}")
+                time.sleep(min(60, 8 * attempt))
+        if last_error:
+            print(f"⚠️ بقي نموذج التضمين غير مكتمل بعد 4 محاولات: {last_error}")
 
     # إزالة نموذج الريرانكر إن وجد لتوفير 4.4 جيجابايت
     rerank_gguf_path = gguf_dir / "almojtahed-reranker-8b-Q4_K_M.gguf"

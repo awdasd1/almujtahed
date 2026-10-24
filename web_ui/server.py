@@ -2687,7 +2687,12 @@ async def get_system_resources_endpoint():
         "model": {
             "loaded": model_loaded,
             "name": model_name,
-            "type": "8B GGUF (4096D)" if app_state.get("is_8b") else "Standard"
+            "type": "8B GGUF (4096D)" if app_state.get("is_8b") else "Standard",
+            "download": {
+                "running": bool(_EMBED_FETCH["running"]),
+                "message": _EMBED_FETCH.get("message") or "",
+                "attempt": int(_EMBED_FETCH.get("attempt") or 0),
+            }
         }
     }
 
@@ -2702,6 +2707,86 @@ async def restart_qdrant_endpoint(request: Request):
     app_state["qdrant"] = None
     ok, message = _start_bundled_qdrant()
     return {"status": "ok" if ok else "error", "message": message}
+
+EMBED_GGUF_NAME = "almojtahed-embedding-8b-Q4_K_M.gguf"
+EMBED_GGUF_REPO = "cs95/almojtahed-qwen3-8b"
+_EMBED_FETCH = {"running": False, "message": "", "attempt": 0}
+_EMBED_FETCH_LOCK = threading.Lock()
+
+def _embedding_gguf_path():
+    name = EMBED_GGUF_NAME
+    for root in (PACKAGE_ROOT, SYSTEM_ROOT):
+        path = root / "models" / "gguf" / name
+        if path.is_file() and path.stat().st_size > 1024 ** 3:
+            return path
+    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    if data_dir:
+        return Path(data_dir) / "models" / "gguf" / name
+    return PACKAGE_ROOT / "models" / "gguf" / name
+
+def _activate_gguf_embedder(path: Path):
+    from llama_cpp import Llama
+    with EMBEDDING_LOCK:
+        app_state["llama_embedder"] = Llama(
+            model_path=str(path),
+            embedding=True,
+            n_gpu_layers=-1,
+            verbose=False
+        )
+        app_state["is_8b"] = True
+        app_state["is_ready"] = True
+
+def _download_embedding_worker():
+    path = _embedding_gguf_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file() and path.stat().st_size > 1024 ** 3:
+            _activate_gguf_embedder(path)
+            _EMBED_FETCH["message"] = "النموذج موجود وتم تحميله في الذاكرة"
+            return
+        token = os.getenv("HF_TOKEN") or None
+        from huggingface_hub import hf_hub_download
+        for attempt in range(1, 5):
+            _EMBED_FETCH["attempt"] = attempt
+            _EMBED_FETCH["message"] = f"محاولة سحب نموذج التضمين {attempt} من 4"
+            try:
+                hf_hub_download(
+                    repo_id=EMBED_GGUF_REPO,
+                    filename=EMBED_GGUF_NAME,
+                    local_dir=str(path.parent),
+                    token=token,
+                )
+                if path.is_file() and path.stat().st_size > 1024 ** 3:
+                    _activate_gguf_embedder(path)
+                    _EMBED_FETCH["message"] = "اكتمل سحب نموذج التضمين وتحميله في الذاكرة"
+                    return
+                _EMBED_FETCH["message"] = "وصل ملف أصغر من النموذج المتوقع"
+            except Exception as ex:
+                _EMBED_FETCH["message"] = f"فشلت المحاولة {attempt} من 4"
+                print(f"⚠️ سحب نموذج التضمين، المحاولة {attempt}: {type(ex).__name__}")
+                time.sleep(min(60, 8 * attempt))
+    except Exception as ex:
+        _EMBED_FETCH["message"] = "تعذر تحميل نموذج التضمين في الذاكرة"
+        print(f"⚠️ تحميل نموذج التضمين: {type(ex).__name__}")
+    finally:
+        _EMBED_FETCH["running"] = False
+
+def _start_embedding_download():
+    with _EMBED_FETCH_LOCK:
+        if _EMBED_FETCH["running"]:
+            return False, "سحب نموذج التضمين يعمل الآن"
+        _EMBED_FETCH["running"] = True
+        _EMBED_FETCH["attempt"] = 0
+        _EMBED_FETCH["message"] = "بدأ سحب نموذج التضمين"
+    threading.Thread(target=_download_embedding_worker, name="embed-download", daemon=True).start()
+    return True, "بدأ سحب نموذج التضمين. تتحدث البطاقة مع كل محاولة."
+
+@app.post("/api/system/embedding/download")
+async def download_embedding_endpoint(request: Request):
+    """إعادة سحب نموذج التضمين فقط، من غير مسح مخزن المتجهات."""
+    require_admin(request)
+    ok, message = _start_embedding_download()
+    return {"status": "ok" if ok else "busy", "message": message}
 
 @app.post("/api/system/optimize")
 async def optimize_system_resources_endpoint():
