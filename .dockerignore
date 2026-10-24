@@ -41,6 +41,7 @@ qdrant_bin
 
 # Models & Data
 models
+models/local
 shamela4_data/*
 !shamela4_data/_meta/
 shamela4_data/_meta/*.jsonl

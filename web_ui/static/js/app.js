@@ -1095,6 +1095,72 @@ function closeServerHealthModal() {
   }
 }
 
+function formatStatCount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return Math.max(0, Math.trunc(number)).toLocaleString('en-US');
+}
+
+function openLibraryStatsModal() {
+  const modal = document.getElementById('libraryStatsModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  modal.classList.add('active', 'open');
+  loadLibraryStats();
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function closeLibraryStatsModal() {
+  const modal = document.getElementById('libraryStatsModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  modal.classList.remove('active', 'open');
+}
+
+async function loadLibraryStats() {
+  const refreshIcon = document.getElementById('statsRefreshIcon');
+  if (refreshIcon) refreshIcon.style.animation = 'spin 0.8s linear infinite';
+  try {
+    const res = await fetch('/api/stats');
+    if (!res.ok) throw new Error('تعذر جلب الإحصائيات');
+    const data = await res.json();
+    const books = document.getElementById('statBooksCount');
+    const texts = document.getElementById('statTextsCount');
+    const members = document.getElementById('statMembersCount');
+    const membersDetail = document.getElementById('statMembersDetail');
+    const textsBadge = document.getElementById('badgeTextsStatus');
+    if (books) books.textContent = formatStatCount(data.books);
+    if (texts) texts.textContent = data.texts_ready ? formatStatCount(data.texts) : '—';
+    if (textsBadge) {
+      textsBadge.textContent = data.texts_ready ? 'متصل' : 'غير متصل';
+      textsBadge.style.background = data.texts_ready ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.12)';
+      textsBadge.style.color = data.texts_ready ? '#10b981' : '#ef4444';
+    }
+    if (members) members.textContent = formatStatCount(data.members);
+    if (membersDetail) {
+      const total = Number(data.members_total) || 0;
+      const active = Number(data.members) || 0;
+      const disabled = Math.max(0, total - active);
+      membersDetail.textContent = disabled > 0
+        ? `عضو نشط · ${formatStatCount(disabled)} معطّل`
+        : 'عضو نشط';
+    }
+    const projects = document.getElementById('statProjectsCount');
+    const chats = document.getElementById('statChatsCount');
+    const shares = document.getElementById('statSharesCount');
+    if (projects) projects.textContent = formatStatCount(data.projects);
+    if (chats) chats.textContent = formatStatCount(data.chats);
+    if (shares) shares.textContent = formatStatCount(data.shares);
+  } catch (err) {
+    const hint = document.getElementById('libraryStatsHint');
+    if (hint) hint.textContent = 'تعذر تحديث الإحصائيات';
+  } finally {
+    if (refreshIcon) refreshIcon.style.animation = '';
+  }
+}
+
 async function fetchServerHealth(showToast = false) {
   const refreshIcon = document.getElementById('serverRefreshIcon');
   if (refreshIcon) refreshIcon.style.animation = 'spin 0.8s linear infinite';
@@ -1221,7 +1287,10 @@ async function fetchServerHealth(showToast = false) {
       const badgeModelStatus = document.getElementById('badgeModelStatus');
 
       if (statModelName) statModelName.textContent = data.model.name || 'Al-Mojtahed 8B GGUF';
-      if (statModelEngine) statModelEngine.textContent = data.model.loaded ? 'محمل في الذاكرة (سريع)' : 'غير محمل';
+      if (statModelEngine) {
+        const place = data.model.on_gpu ? 'على كرت الشاشة' : 'على المعالج';
+        statModelEngine.textContent = data.model.loaded ? `محمل في الذاكرة · ${place}` : 'غير محمل';
+      }
       const download = data.model.download || {};
       const modelWrap = document.getElementById('modelDownloadWrap');
       const modelBar = document.getElementById('barModelDownload');
@@ -1256,6 +1325,8 @@ async function fetchServerHealth(showToast = false) {
       }
     }
 
+    renderGpuCard(data.gpu || {});
+
     if (showToast && typeof showAlertDialog === 'function') {
       showAlertDialog({
         title: 'تم تحديث القراءات',
@@ -1267,6 +1338,85 @@ async function fetchServerHealth(showToast = false) {
     console.warn('Server health check notice:', err);
   } finally {
     if (refreshIcon) refreshIcon.style.animation = '';
+  }
+}
+
+function renderGpuCard(gpu) {
+  const badge = document.getElementById('badgeGpuStatus');
+  const name = document.getElementById('statGpuName');
+  const memory = document.getElementById('statGpuMemory');
+  const util = document.getElementById('statGpuUtil');
+  const osName = document.getElementById('statGpuOs');
+  const driver = document.getElementById('statGpuDriver');
+  const appLink = document.getElementById('statGpuApp');
+  const hint = document.getElementById('statGpuHint');
+  const usageWrap = document.getElementById('gpuUsageWrap');
+  const bar = document.getElementById('barGpu');
+  const enableWrap = document.getElementById('gpuEnableWrap');
+  const active = !!gpu.app_active;
+  const present = !!gpu.present;
+  if (badge) {
+    badge.textContent = gpu.status_label || 'غير موجود';
+    badge.style.color = active ? '#10b981' : (present && gpu.driver_ready ? '#f59e0b' : '#ef4444');
+    badge.style.background = active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)';
+  }
+  if (name) name.textContent = present ? (gpu.name || 'كرت شاشة') : 'لا يوجد كرت شاشة';
+  if (osName) osName.textContent = gpu.os_name || '—';
+  if (driver) {
+    if (!present) driver.textContent = '—';
+    else if (gpu.driver) driver.textContent = gpu.driver_ready ? gpu.driver : `${gpu.driver} · غير مفعّل`;
+    else driver.textContent = gpu.driver_ready ? 'مفعّل' : 'غير مفعّل';
+  }
+  if (appLink) {
+    appLink.textContent = active ? 'يعمل مع نموذج التضمين' : (present ? 'لا يعمل مع التطبيق' : '—');
+    appLink.style.color = active ? '#10b981' : 'inherit';
+    appLink.style.fontWeight = active ? '700' : '400';
+  }
+  const hasMemory = gpu.memory_total_gb != null && Number.isFinite(Number(gpu.memory_total_gb));
+  if (memory) {
+    if (hasMemory) memory.textContent = `الذاكرة: ${gpu.memory_used_gb ?? '—'} / ${gpu.memory_total_gb} GB`;
+    else if (gpu.cores) memory.textContent = `${gpu.cores} نواة`;
+    else memory.textContent = present ? (gpu.vendor || '') : '';
+  }
+  if (util) {
+    util.textContent = gpu.utilization != null && Number.isFinite(Number(gpu.utilization)) ? `الاستخدام ${gpu.utilization}%` : '';
+  }
+  const percent = gpu.memory_percent == null ? NaN : Number(gpu.memory_percent);
+  if (usageWrap) usageWrap.style.display = Number.isFinite(percent) ? 'block' : 'none';
+  if (bar && Number.isFinite(percent)) bar.style.width = `${Math.min(100, Math.max(4, percent))}%`;
+  if (hint) {
+    hint.style.display = gpu.hint ? 'block' : 'none';
+    hint.textContent = gpu.hint || '';
+  }
+  if (enableWrap) {
+    const isAdmin = document.body.classList.contains('is-admin');
+    enableWrap.hidden = !(isAdmin && gpu.can_enable);
+  }
+}
+
+async function enableServerGpu() {
+  const btn = document.getElementById('btnEnableGpu');
+  const feedback = document.getElementById('telemetryFeedbackMsg');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/system/gpu/enable', { method: 'POST' });
+    const data = await res.json();
+    const ok = res.ok && data.status === 'ok';
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = ok ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)';
+      feedback.style.color = ok ? '#10b981' : '#b45309';
+      feedback.textContent = data.message || (ok ? 'تم تشغيل الكرت' : 'تعذر تشغيل الكرت');
+    }
+    await fetchServerHealth(false);
+  } catch (err) {
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.color = '#ef4444';
+      feedback.textContent = 'تعذر تشغيل الكرت مع التطبيق';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -2015,6 +2165,9 @@ window.openMaintenanceModal = openMaintenanceModal;
 window.closeMaintenanceModal = closeMaintenanceModal;
 window.openServerHealthModal = openServerHealthModal;
 window.closeServerHealthModal = closeServerHealthModal;
+window.openLibraryStatsModal = openLibraryStatsModal;
+window.closeLibraryStatsModal = closeLibraryStatsModal;
+window.loadLibraryStats = loadLibraryStats;
 window.fetchServerHealth = fetchServerHealth;
 window.optimizeServerMemory = optimizeServerMemory;
 window.reloadServerModel = reloadServerModel;

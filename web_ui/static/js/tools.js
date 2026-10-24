@@ -45,6 +45,11 @@ async function loadToolsList() {
     updateToolsCounts();
     renderToolsGrid();
     populateProjectToolsDropdown(toolsState.tools);
+    if (window._openSharedToolId) {
+      const sharedId = window._openSharedToolId;
+      window._openSharedToolId = '';
+      openToolPlayground(sharedId);
+    }
   } catch (err) {
     console.error('Error loading tools:', err);
     if (grid) {
@@ -181,8 +186,8 @@ function renderToolsGrid() {
             <button class="btn-secondary-action" onclick="openEditToolModal('${escapeHtml(t.id)}')" style="padding: 6px 10px; font-size: 12.5px;" title="تعديل خصائص الأداة">
               ✏️
             </button>
-            <button class="btn-secondary-action" onclick="exportSingleTool('${escapeHtml(t.id)}')" style="padding: 6px 10px; font-size: 12.5px;" title="تصدير الأداة كملف JSON">
-              <span>تصدير 📤</span>
+            <button class="btn-secondary-action" type="button" data-share-kind="tool" data-share-id="${escapeHtml(t.id)}" data-share-label="${escapeHtml(t.name || 'الأداة')}" style="padding: 6px 10px; font-size: 12.5px;" title="مشاركة الأداة مع الأعضاء أو حفظها في الجهاز">
+              <span>مشاركة</span>
             </button>
           </div>
 
@@ -1224,7 +1229,7 @@ function exportSingleTool(toolId) {
     tool: tool
   };
   downloadJsonFile(filename, exportPayload);
-  showToast(`📤 تم تصدير أداة «${tool.name}» كملف JSON بنجاح!`);
+  showToast(`تم حفظ أداة «${tool.name}» في جهازك`);
 }
 
 // 2. تصدير كافة الأدوات كحزمة كاملة
@@ -1246,6 +1251,14 @@ function exportAllTools() {
 }
 
 // 3. تصدير الأداة الحالية المفتوحة في المحرر
+function shareCurrentModalTool() {
+  const id = (document.getElementById('toolIdInput')?.value || '').trim();
+  const name = (document.getElementById('toolNameInput')?.value || '').trim() || 'الأداة';
+  const saved = toolsState.tools.some(tool => tool.id === id);
+  if (typeof openSharePicker !== 'function') return;
+  openSharePicker('tool', id, name, { device: 'editor', unsaved: !saved });
+}
+
 function exportCurrentModalTool() {
   const idInput = document.getElementById('toolIdInput');
   const nameInput = document.getElementById('toolNameInput');
@@ -1256,8 +1269,8 @@ function exportCurrentModalTool() {
   const description = descInput ? descInput.value.trim() : '';
 
   if (!name && !id) {
-    showToast('يرجى كتابة اسم أو معرّف للأداة قبل تصديرها', true);
-    return;
+    showToast('يرجى كتابة اسم أو معرّف للأداة قبل حفظها', true);
+    return false;
   }
 
   const isWeb = document.getElementById('radioTypeWeb').checked;
@@ -1306,7 +1319,8 @@ function exportCurrentModalTool() {
     tool: toolData
   };
   downloadJsonFile(filename, exportPayload);
-  showToast(`📤 تم تصدير بيانات الأداة من المحرر كملف JSON بنجاح!`);
+  showToast('تم حفظ الأداة في جهازك');
+  return true;
 }
 
 // 4. معالجة استيراد أداة أو حزمة من ملف JSON (التبويب الرئيسي)
@@ -2344,6 +2358,7 @@ window.fitPlaygroundMarkmap = fitPlaygroundMarkmap;
 window.exportSingleTool = exportSingleTool;
 window.exportAllTools = exportAllTools;
 window.exportCurrentModalTool = exportCurrentModalTool;
+window.shareCurrentModalTool = shareCurrentModalTool;
 window.handleImportToolFile = handleImportToolFile;
 window.handleImportModalToolFile = handleImportModalToolFile;
 window.autoDetectMockDataFromCode = autoDetectMockDataFromCode;

@@ -6,6 +6,14 @@
 // المفتاح الافتراضي التجريبي لأوبن راوتر
 const DEFAULT_OPENROUTER_KEY = "";
 
+const PROVIDER_KEY_PAGES = {
+  openrouter: 'https://openrouter.ai/workspaces/default/keys',
+  claude: 'https://console.anthropic.com/settings/keys',
+  google: 'https://aistudio.google.com/apikey',
+  openai: 'https://platform.openai.com/api-keys',
+  deepseek: 'https://platform.deepseek.com/api_keys'
+};
+
 // نماذج المزودين الثابتة
 const PROVIDER_MODELS_PRESETS = {
   claude: [
@@ -31,6 +39,7 @@ const PROVIDER_MODELS_PRESETS = {
 
 // كاش نماذج OpenRouter المسترجعة حياً
 let openrouterModelsList = [];
+let openrouterRankedIds = [];
 let currentSelectedModelData = null;
 
 // تهيئة التبويب عند التحميل
@@ -66,6 +75,7 @@ function initProvidersTab() {
 // تغيير المزود المختار
 async function handleProviderChange(provider) {
   localStorage.setItem(ownerStorageKey('almojtahed_active_provider'), provider);
+  if (typeof resetProviderKeyTest === 'function') resetProviderKeyTest();
   const keyInput = document.getElementById('providerApiKey');
   const modelsSelect = document.getElementById('providerModelSelect');
   const modelsContainer = document.getElementById('providerModelsContainer');
@@ -79,12 +89,21 @@ async function handleProviderChange(provider) {
     keyInput.value = savedKeys[provider] || (provider === 'openrouter' ? DEFAULT_OPENROUTER_KEY : '');
   }
 
+  const keyLink = document.getElementById('providerKeyLink');
+  if (keyLink) {
+    const page = PROVIDER_KEY_PAGES[provider] || PROVIDER_KEY_PAGES.openrouter;
+    const label = typeof getProviderLabel === 'function' ? getProviderLabel(provider) : provider;
+    keyLink.href = page;
+    keyLink.title = `فتح صفحة إنشاء المفتاح لدى ${label}`;
+  }
+
   if (provider === 'openrouter') {
     if (searchFilterBox) searchFilterBox.style.display = 'flex';
     await loadOpenRouterModelsList();
   } else {
     if (searchFilterBox) searchFilterBox.style.display = 'none';
     populatePresetModels(provider);
+    loadOpenRouterRankings();
   }
   syncChatModelDropdown(provider);
 }
@@ -111,6 +130,39 @@ function saveCurrentApiKey() {
 }
 
 // تبديل إظهار وإخفاء المفتاح
+function resetProviderKeyTest() {
+  const button = document.getElementById('providerKeyTestBtn');
+  if (!button) return;
+  button.classList.remove('is-success', 'is-failure');
+  button.disabled = false;
+  button.textContent = 'اختبار';
+}
+
+async function testCurrentProviderKey() {
+  const button = document.getElementById('providerKeyTestBtn');
+  const provider = document.getElementById('providerSelect')?.value || '';
+  const key = (document.getElementById('providerApiKey')?.value || '').trim();
+  if (!button) return;
+  button.classList.remove('is-success', 'is-failure');
+  button.disabled = true;
+  button.textContent = 'اختبار';
+  let ok = false;
+  try {
+    const res = await fetch('/api/config/providers/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, key })
+    });
+    const data = await res.json().catch(() => ({}));
+    ok = res.ok && data.ok === true;
+  } catch (err) {
+    ok = false;
+  }
+  button.disabled = false;
+  button.classList.add(ok ? 'is-success' : 'is-failure');
+  button.textContent = ok ? 'نجاح' : 'فشل';
+}
+
 function toggleApiKeyVisibility() {
   const input = document.getElementById('providerApiKey');
   if (!input) return;
@@ -180,10 +232,8 @@ async function loadOpenRouterModelsList(forceRefresh = false) {
 
     renderOpenRouterSelectOptions(openrouterModelsList);
 
-    // اختيار Claude 3.7 Sonnet كخيار افتراضي متقدم
-    const defaultModel = openrouterModelsList.find(m => m.id.includes('claude-3.7-sonnet')) || 
-                         openrouterModelsList.find(m => m.id.includes('claude-3.5-sonnet')) || 
-                         openrouterModelsList[0];
+    const savedModelId = localStorage.getItem('almojtahed_active_chat_model');
+    const defaultModel = openrouterModelsList.find(m => m.id === savedModelId) || openrouterModelsList[0];
     if (defaultModel) {
       modelsSelect.value = defaultModel.id;
       displayOpenRouterModelSpecs(defaultModel);
@@ -203,6 +253,7 @@ async function loadOpenRouterModelsList(forceRefresh = false) {
     if (typeof populateAgentModelDropdown === 'function') {
       populateAgentModelDropdown();
     }
+    loadOpenRouterRankings();
 
   } catch (err) {
     console.error('Error loading OpenRouter models:', err);
@@ -235,24 +286,14 @@ function renderOpenRouterSelectOptions(list) {
     return;
   }
 
-  // فرز النماذج ذات الشعبية العالية بالترتيب المرتب
-  const priorityIds = [
-    'anthropic/claude-3.7-sonnet',
-    'anthropic/claude-3.5-sonnet',
-    'google/gemini-2.5-pro',
-    'deepseek/deepseek-r1',
-    'openai/o3-mini',
-    'openai/gpt-4o',
-    'meta-llama/llama-3.3-70b-instruct',
-    'qwen/qwen-2.5-72b-instruct'
-  ];
+  const priorityIds = openrouterRankedIds;
 
   const priorityModels = [];
   const otherModels = [];
 
   // إدراج النماذج المفضلة أولاً بالترتيب
   priorityIds.forEach(pid => {
-    const found = list.find(m => m.id === pid || m.id.includes(pid));
+    const found = list.find(m => m.id === pid);
     if (found && !priorityModels.some(p => p.id === found.id)) {
       priorityModels.push(found);
     }
@@ -269,8 +310,94 @@ function renderOpenRouterSelectOptions(list) {
   // عرض اسم النموذج فقط بدون أرقام تسعير أو سياق، لأنها تظهر في الأسفل
   modelsSelect.innerHTML = sorted.map(m => {
     const cleanName = m.name || m.id;
-    return `<option value="${m.id}">${cleanName}</option>`;
+    return `<option value="${escapeHtml(m.id)}">${escapeHtml(cleanName)}</option>`;
   }).join('');
+}
+
+function formatRankingTokens(value) {
+  const amount = Number(value) || 0;
+  if (amount >= 1e12) return (amount / 1e12).toFixed(1) + 'T';
+  if (amount >= 1e9) return (amount / 1e9).toFixed(1) + 'B';
+  if (amount >= 1e6) return (amount / 1e6).toFixed(1) + 'M';
+  if (amount >= 1e3) return (amount / 1e3).toFixed(1) + 'K';
+  return String(Math.round(amount));
+}
+
+function renderRankingColumn(containerId, items) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!items.length) {
+    container.innerHTML = '<div class="ranking-item-sub">لا توجد نماذج متاحة في هذا الترتيب.</div>';
+    return;
+  }
+  container.innerHTML = items.map(item => {
+    const price = `$${Number(item.prompt_per_1m || 0).toFixed(2)} / $${Number(item.completion_per_1m || 0).toFixed(2)}`;
+    return `
+      <div class="ranking-item-row" data-model-id="${escapeHtml(item.id)}" onclick="selectModelDirectly(this.dataset.modelId)">
+        <span class="ranking-num-tag">${item.rank}</span>
+        <div class="ranking-item-body">
+          <div class="ranking-item-title">${escapeHtml(item.name)}</div>
+          <div class="ranking-item-sub">${escapeHtml(item.id)}</div>
+        </div>
+        <div class="ranking-item-pills">
+          <span class="rank-price-tag">${price}</span>
+          <span class="score-badge">${formatRankingTokens(item.tokens)} توكن</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadOpenRouterRankings() {
+  const daily = document.getElementById('rankingDailyList');
+  const weekly = document.getElementById('rankingWeeklyList');
+  const note = document.getElementById('rankingSourceNote');
+  const selected = document.getElementById('providerSelect')?.value;
+  const typed = selected === 'openrouter' ? (document.getElementById('providerApiKey')?.value || '').trim() : '';
+  const stored = typeof readProviderKeys === 'function' ? (readProviderKeys().openrouter || '') : '';
+  const key = typed || stored;
+  if (!key) {
+    const empty = '<div class="ranking-item-sub">أدخل مفتاح أوبن راوتر لجلب الترتيب الحي.</div>';
+    if (daily) daily.innerHTML = empty;
+    if (weekly) weekly.innerHTML = empty;
+    return;
+  }
+  try {
+    const res = await fetch('/api/openrouter/rankings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: key })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر جلب الترتيب');
+    renderRankingColumn('rankingDailyList', data.daily || []);
+    renderRankingColumn('rankingWeeklyList', data.weekly || []);
+    const badge = document.getElementById('rankingDailyBadge');
+    if (badge && data.day) badge.textContent = data.day;
+    if (note) {
+      note.textContent = data.as_of
+        ? `ترتيب أوبن راوتر الحي حتى ${data.as_of}. النماذج الموقوفة لا تظهر.`
+        : 'تُجلب بمفتاح أوبن راوتر من ترتيب الاستخدام الحي، ولا تُعرض النماذج الموقوفة.';
+    }
+    openrouterRankedIds = [...(data.daily || []), ...(data.weekly || [])].map(item => item.id);
+    const select = document.getElementById('providerModelSelect');
+    if (select && document.getElementById('providerSelect')?.value === 'openrouter' && openrouterModelsList.length) {
+      const current = select.value;
+      renderOpenRouterSelectOptions(openrouterModelsList);
+      const stillThere = [...select.options].some(option => option.value === current);
+      const ranked = openrouterModelsList.find(model => model.id === (data.daily?.[0] || {}).id);
+      if (stillThere && openrouterModelsList.some(model => model.id === current)) {
+        select.value = current;
+      } else if (ranked) {
+        select.value = ranked.id;
+        displayOpenRouterModelSpecs(ranked);
+        localStorage.setItem('almojtahed_active_chat_model', ranked.id);
+      }
+    }
+  } catch (err) {
+    const message = `<div class="ranking-item-sub">${escapeHtml(err.message || 'تعذر جلب الترتيب')}</div>`;
+    if (daily) daily.innerHTML = message;
+    if (weekly) weekly.innerHTML = message;
+  }
 }
 
 // عرض بطاقة مواصفات OpenRouter الحقيقية
@@ -314,12 +441,6 @@ function displayOpenRouterModelSpecs(model) {
     if (topArena) {
       rankText = `المرتبة #${topArena.rank} في ساحة النماذج (ELO: ${topArena.elo})`;
     }
-  } else if (model.id.includes('claude-3.7-sonnet')) {
-    rankText = "المتصدر الأول في التحليل الأكاديمي والتراثي (Top 1 Academic)";
-  } else if (model.id.includes('deepseek-r1')) {
-    rankText = "الأول في الاستدلال المنطقي والعلل الشرعية (Top 1 Reasoning)";
-  } else if (model.id.includes('gemini-2.5-pro')) {
-    rankText = "الأول في سياق المجلدات والوثائق الضخمة (Top 1 Long-Context)";
   }
 
   document.getElementById('specAcademicRank').textContent = rankText;
@@ -364,6 +485,21 @@ function showModelAbout(model) {
 }
 
 // تسميات المزودين بالعربية
+function openProviderKeyShare(provider) {
+  const name = provider || document.getElementById('providerSelect')?.value || 'openrouter';
+  const labels = {
+    tavily: 'Tavily',
+    openrouter: 'أوبن راوتر',
+    claude: 'كلود',
+    google: 'جوجل',
+    openai: 'أوبن إي آي',
+    deepseek: 'ديب سيك'
+  };
+  openSharePicker('key', name, labels[name] || (typeof getProviderLabel === 'function' ? getProviderLabel(name) : name));
+}
+
+window.openProviderKeyShare = openProviderKeyShare;
+
 function getProviderLabel(provider) {
   const map = {
     openrouter: 'أوبن راوتر (OpenRouter)',

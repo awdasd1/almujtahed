@@ -561,6 +561,23 @@ function escapeRegex(str) {
 // استيفاء وتقليب باقة الصفحات المتتالية (-2 إلى +2) لكشف رأس المسألة أو الحولية
 // =============================================================================
 
+function readerSurroundingSpan() {
+  const read = (id) => {
+    const el = document.getElementById(id);
+    const n = parseInt(el && el.value, 10);
+    if (!Number.isFinite(n) || n < 0) return 3;
+    return Math.min(n, 100);
+  };
+  return {
+    before: read('readerBeforePages'),
+    after: read('readerAfterPages')
+  };
+}
+
+function onReaderSurroundingSpanChange() {
+  if (readerState.isSurroundingView) loadSurroundingPagesView();
+}
+
 async function toggleSurroundingPagesView() {
   readerState.isSurroundingView = !readerState.isSurroundingView;
   const btnToolbar = document.getElementById('btnToggleSurrounding');
@@ -578,10 +595,11 @@ async function loadSurroundingPagesView() {
   const footContainer = document.getElementById('readerFootnotes');
   if (!bodyContainer) return;
 
+  const span = readerSurroundingSpan();
   bodyContainer.innerHTML = `
     <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
       <div style="display: inline-block; width: 28px; height: 28px; border: 3px solid var(--border-subtle); border-top-color: var(--accent-clay); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 10px;"></div>
-      <p style="font-family: var(--font-amiri); font-size: 17px;">جارٍ استيفاء وتقليب باقة الصفحات المتتالية (-2 إلى +2) من الأصل التراثي...</p>
+      <p style="font-family: var(--font-amiri); font-size: 17px;">جارٍ استيفاء ${span.before} صفحة سابقة و${span.after} صفحة لاحقة من الأصل التراثي...</p>
     </div>
   `;
   if (footContainer) footContainer.style.display = 'none';
@@ -592,8 +610,8 @@ async function loadSurroundingPagesView() {
     if (readerState.bookTitle) q.set('book_title', readerState.bookTitle);
     if (readerState.part !== undefined && readerState.part !== null) q.set('part', readerState.part);
     if (readerState.pageNum) q.set('page_num', readerState.pageNum);
-    q.set('before', '2');
-    q.set('after', '2');
+    q.set('before', String(span.before));
+    q.set('after', String(span.after));
 
     const res = await fetch(`/api/book/surrounding-pages?${q.toString()}`);
     if (!res.ok) throw new Error('تعذر جلب باقة الصفحات المتتالية');
@@ -702,6 +720,7 @@ async function loadSurroundingPagesView() {
 }
 
 // تصدير الدوال على النطاق العام
+window.onReaderSurroundingSpanChange = onReaderSurroundingSpanChange;
 window.toggleSurroundingPagesView = toggleSurroundingPagesView;
 window.loadSurroundingPagesView = loadSurroundingPagesView;
 window.sendReaderSelectionToChat = sendReaderSelectionToChat;

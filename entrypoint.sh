@@ -63,6 +63,7 @@ bind_dir "$DATA_DIR/web/uploads" /app/web_ui/uploads
 bind_dir "$DATA_DIR/web/backups" /app/web_ui/backups
 bind_file "$DATA_DIR/web/app_memory.db" /app/web_ui/app_memory.db
 bind_file "$DATA_DIR/web/members.json" /app/web_ui/members.json
+bind_file "$DATA_DIR/web/notices.json" /app/web_ui/notices.json
 if [ -f /app/shamela_index.db ] && [ ! -L /app/shamela_index.db ] && [ ! -f "$DATA_DIR/web/shamela_index.db" ]; then
   mv /app/shamela_index.db "$DATA_DIR/web/shamela_index.db"
 fi
@@ -74,6 +75,9 @@ bind_file "$DATA_DIR/web/app.env" /app/.env /app/.env.example
 
 if [ ! -s "$DATA_DIR/web/members.json" ]; then
   printf '%s\n' '{"invites":[],"accounts":[]}' > "$DATA_DIR/web/members.json"
+fi
+if [ ! -s "$DATA_DIR/web/notices.json" ]; then
+  printf '%s\n' '{"notices":[]}' > "$DATA_DIR/web/notices.json"
 fi
 
 echo "💾 البيانات الثابتة على: $DATA_DIR"

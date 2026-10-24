@@ -245,15 +245,69 @@ function renderChatHistorySidebar() {
     return `
       <div class="history-item ${isActive ? 'active' : ''}" onclick="selectChatSession('${sess.id}')" title="${escapeHtml(sess.title)}">
         <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(sess.title)}</span>
-        <button onclick="deleteChatSession(event, '${sess.id}')" style="background: transparent; border: none; color: var(--text-light); cursor: pointer; padding: 2px 4px;" title="حذف">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-        </button>
+        <span class="history-item-actions">
+          <button type="button" class="history-share-btn" data-share-kind="chat" data-share-id="${escapeHtml(sess.id)}" data-share-label="${escapeHtml(sess.title)}" title="مشاركة">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>
+          </button>
+          <button onclick="deleteChatSession(event, '${sess.id}')" style="background: transparent; border: none; color: var(--text-light); cursor: pointer; padding: 2px 4px;" title="حذف">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </span>
       </div>
     `;
   }).join('');
 }
 
 // اختيار جلسة من الشريط الجانبي
+async function revealSharedChat(itemId) {
+  switchMainTab('chat');
+  try {
+    const res = await fetch('/api/chats');
+    if (res.ok) {
+      const data = await res.json();
+      chatSessions = normalizeChatSessions(data.sessions);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+  if (!chatSessions.some(item => item.id === itemId)) return;
+  selectChatSession(itemId);
+}
+
+function exportChatSessionFile(sessionId) {
+  const session = chatSessions.find(item => item.id === sessionId);
+  if (!session) {
+    showToast('المحادثة غير موجودة لحفظها', true);
+    return false;
+  }
+  const payload = {
+    export_version: '1.0',
+    exported_at: new Date().toISOString(),
+    type: 'almojtahed_chat',
+    chat: session
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  const safeId = String(session.id || 'chat').replace(/[^a-zA-Z0-9_-]/g, '_');
+  link.href = URL.createObjectURL(blob);
+  link.download = `chat_${safeId}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+  showToast('تم حفظ المحادثة في جهازك');
+  return true;
+}
+
+function shareActiveChat() {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  if (!session) {
+    showToast('اختر محادثة أولاً');
+    return;
+  }
+  openSharePicker('chat', session.id, session.title || 'المحادثة');
+}
+
 function selectChatSession(id) {
   activeSessionId = id;
   renderChatHistorySidebar();
@@ -1435,6 +1489,7 @@ function downloadTableAsCSV(btn) {
 
 window.downloadTableAsCSV = downloadTableAsCSV;
 window.formatMarkdown = formatMarkdown;
+window.exportChatSessionFile = exportChatSessionFile;
 window.exportChatMessageHtml = exportChatMessageHtml;
 window.exportChatMessagePdf = exportChatMessagePdf;
 window.copyChatMessageText = copyChatMessageText;

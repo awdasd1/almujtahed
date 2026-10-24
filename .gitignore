@@ -20,6 +20,7 @@ build/
 .env.local
 *.log
 web_ui/members.json
+web_ui/notices.json
 
 # الملفات وقواعد البيانات الضخمة (تُسحب آلياً عبر Coolify عند التنصيب)
 qdrant_service/storage/
@@ -31,7 +32,10 @@ qdrant_store/
 shamela4_data/
 models/
 inference_models/
+# النماذج المحلية التي تُسحب داخل التطبيق تبقى على الخادم ولا تُرفع للمستودع
+models/local/
 *.gguf
+*.partial
 *.bin
 *.safetensors
 *.tar.gz
@@ -49,6 +53,7 @@ web_ui/model_about_ar_cache.json
 web_ui/app_memory.db
 web_ui/app_memory.db-wal
 web_ui/app_memory.db-shm
+web_ui/gpu_mode.json
 web_ui/almojtahed.db
 web_ui/uploads/*
 !web_ui/uploads/.gitkeep

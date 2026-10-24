@@ -17,7 +17,7 @@ import urllib.error
 import urllib.parse
 import html
 import mimetypes
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
 import numpy as np
@@ -335,7 +335,10 @@ def get_current_user_from_request(request: Request) -> Optional[str]:
     return None
 
 MEMBERS_PATH = BASE_DIR / "members.json"
+NOTICES_PATH = BASE_DIR / "notices.json"
 _members_lock = threading.Lock()
+_notices_lock = threading.Lock()
+_share_lock = threading.Lock()
 MEMBER_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{2,31}$")
 
 def load_members_store() -> Dict[str, Any]:
@@ -517,6 +520,12 @@ class MemberInviteRequest(BaseModel):
 class MemberDisableRequest(BaseModel):
     disabled: bool = True
 
+class NoticeCreateRequest(BaseModel):
+    title: str
+    body: str
+    everyone: bool = False
+    usernames: List[str] = []
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
@@ -673,6 +682,348 @@ app_state = {
 
 EMBEDDING_LOCK = threading.Lock()
 _db_local = threading.local()
+_GPU_PROBE_LOCK = threading.Lock()
+_GPU_ENABLE_LOCK = threading.Lock()
+_GPU_PROBE_CACHE = {"at": 0.0, "data": None}
+
+
+def _gpu_mode_path() -> Path:
+    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    if data_dir:
+        return Path(data_dir) / "web" / "gpu_mode.json"
+    return BASE_DIR / "gpu_mode.json"
+
+
+def _gpu_mode() -> str:
+    try:
+        data = json.loads(_gpu_mode_path().read_text(encoding="utf-8"))
+        mode = str(data.get("mode") or "auto")
+    except Exception:
+        return "auto"
+    return mode if mode in ("auto", "gpu", "cpu") else "auto"
+
+
+def _set_gpu_mode(mode: str):
+    path = _gpu_mode_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"mode": mode}, ensure_ascii=False), encoding="utf-8")
+
+
+def _command_text(args, timeout=4):
+    if not args or not shutil.which(args[0]):
+        return ""
+    try:
+        return subprocess.check_output(args, text=True, timeout=timeout, stderr=subprocess.DEVNULL)
+    except Exception:
+        return ""
+
+
+def _read_os_release():
+    info = {}
+    if not os.path.exists("/etc/os-release"):
+        return info
+    try:
+        with open("/etc/os-release", encoding="utf-8") as handle:
+            for line in handle:
+                if "=" not in line:
+                    continue
+                key, value = line.strip().split("=", 1)
+                info[key] = value.strip().strip('"')
+    except OSError:
+        return {}
+    return info
+
+
+def _os_label():
+    if sys.platform == "darwin":
+        return "macOS", False
+    info = _read_os_release()
+    pretty = info.get("PRETTY_NAME") or info.get("NAME") or sys.platform
+    ubuntu = info.get("ID") == "ubuntu" or "ubuntu" in pretty.lower()
+    return pretty, ubuntu
+
+
+def _llama_supports_gpu() -> bool:
+    try:
+        from llama_cpp import llama_cpp
+        fn = getattr(llama_cpp, "llama_supports_gpu_offload", None)
+        return bool(fn()) if fn else False
+    except Exception:
+        return False
+
+
+def _torch_cuda_ready() -> bool:
+    try:
+        import torch
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+def _pick_torch_device() -> str:
+    if _gpu_mode() == "cpu":
+        return "cpu"
+    if _torch_cuda_ready():
+        return "cuda"
+    try:
+        import torch
+        mps = getattr(torch.backends, "mps", None)
+        if mps and torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        return "cpu"
+    return "cpu"
+
+
+def _desired_gpu_layers() -> int:
+    if _gpu_mode() == "cpu":
+        return 0
+    return -1 if _llama_supports_gpu() else 0
+
+
+def _mark_llama_runtime(model, layers: int):
+    app_state["embed_backend"] = "llama"
+    app_state["embed_gpu_layers"] = int(layers)
+    app_state["embed_on_gpu"] = bool(layers) and _llama_supports_gpu()
+    app_state["embed_device"] = "gpu" if app_state["embed_on_gpu"] else "cpu"
+
+
+def _engine_can_use_gpu() -> bool:
+    if _llama_supports_gpu() or _torch_cuda_ready():
+        return True
+    try:
+        import torch
+        mps = getattr(torch.backends, "mps", None)
+        return bool(mps and torch.backends.mps.is_available())
+    except Exception:
+        return False
+
+
+def _parse_nvidia_smi(text: str):
+    devices = []
+    for line in text.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) < 5:
+            continue
+        driver, util, used, total = parts[-1], parts[-2], parts[-3], parts[-4]
+        name = ", ".join(parts[:-4]).strip()
+        if not name:
+            continue
+
+        def _number(value):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        total_mib = _number(total)
+        used_mib = _number(used)
+        devices.append({
+            "name": name,
+            "vendor": "NVIDIA",
+            "memory_total_gb": round(total_mib / 1024, 1) if total_mib else None,
+            "memory_used_gb": round(used_mib / 1024, 1) if used_mib else None,
+            "utilization": _number(util),
+            "driver": driver or "",
+        })
+    return devices
+
+
+def _lspci_gpus():
+    text = _command_text(["lspci", "-nn"], timeout=4)
+    devices = []
+    for line in text.splitlines():
+        low = line.lower()
+        if "vga" not in low and "3d controller" not in low and "display controller" not in low:
+            continue
+        if "nvidia" in low:
+            vendor = "NVIDIA"
+        elif "amd" in low or "advanced micro" in low:
+            vendor = "AMD"
+        elif "intel" in low:
+            vendor = "Intel"
+        else:
+            vendor = "أخرى"
+        devices.append({
+            "name": line.split(": ", 1)[-1].strip(),
+            "vendor": vendor,
+            "memory_total_gb": None,
+            "memory_used_gb": None,
+            "utilization": None,
+            "driver": "",
+        })
+    return devices
+
+
+def _apple_gpu():
+    text = _command_text(["system_profiler", "SPDisplaysDataType"], timeout=8)
+    if "Chipset Model:" not in text:
+        return None
+    fields = {}
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        fields[key.strip()] = value.strip()
+    name = fields.get("Chipset Model") or "Apple GPU"
+    metal = fields.get("Metal", "")
+    metal_low = metal.lower()
+    metal_off = "غير مدعوم" in metal or "not supported" in metal_low
+    metal_on = (not metal_off) and ("supported" in metal_low or "مدعوم" in metal or not metal.strip())
+    cores = fields.get("Total Number of Cores", "")
+    return {
+        "name": name,
+        "vendor": "Apple",
+        "memory_total_gb": None,
+        "memory_used_gb": None,
+        "utilization": None,
+        "driver": "Metal" if metal_on else "",
+        "cores": cores,
+        "metal": metal_on,
+    }
+
+
+def _probe_gpu_hardware():
+    os_name, ubuntu = _os_label()
+    nvidia_text = _command_text([
+        "nvidia-smi",
+        "--query-gpu=name,memory.total,memory.used,utilization.gpu,driver_version",
+        "--format=csv,noheader,nounits",
+    ], timeout=5)
+    devices = _parse_nvidia_smi(nvidia_text)
+    driver_ready = bool(devices)
+    if not devices:
+        devices = _lspci_gpus()
+    apple = None
+    if not devices and sys.platform == "darwin":
+        apple = _apple_gpu()
+        if apple:
+            devices = [apple]
+            driver_ready = bool(apple.get("metal"))
+    if devices and devices[0].get("vendor") == "NVIDIA" and not driver_ready:
+        driver_ready = bool(nvidia_text.strip()) or os.path.exists("/dev/nvidia0") or os.path.exists("/proc/driver/nvidia/version")
+    if devices and devices[0].get("vendor") == "AMD" and not driver_ready:
+        driver_ready = os.path.exists("/dev/kfd") or bool(_command_text(["rocm-smi", "-i"], timeout=4))
+    primary = devices[0] if devices else {}
+    return {
+        "present": bool(devices),
+        "count": len(devices),
+        "name": primary.get("name") or "",
+        "vendor": primary.get("vendor") or "",
+        "memory_total_gb": primary.get("memory_total_gb"),
+        "memory_used_gb": primary.get("memory_used_gb"),
+        "utilization": primary.get("utilization"),
+        "driver": primary.get("driver") or "",
+        "cores": primary.get("cores") or "",
+        "driver_ready": bool(devices) and driver_ready,
+        "os_name": os_name,
+        "ubuntu": ubuntu,
+    }
+
+
+def _gpu_hardware():
+    now = time.time()
+    with _GPU_PROBE_LOCK:
+        cached = _GPU_PROBE_CACHE["data"]
+        if cached and now - float(_GPU_PROBE_CACHE["at"]) < 20:
+            return dict(cached)
+    data = _probe_gpu_hardware()
+    with _GPU_PROBE_LOCK:
+        _GPU_PROBE_CACHE["at"] = time.time()
+        _GPU_PROBE_CACHE["data"] = data
+    return dict(data)
+
+
+def _gpu_status():
+    hardware = _gpu_hardware()
+    app_active = bool(app_state.get("embed_on_gpu"))
+    engine_ready = _engine_can_use_gpu()
+    present = hardware["present"]
+    driver_ready = hardware["driver_ready"]
+    if not present:
+        label = "غير موجود"
+        hint = "لم يُرصد كرت شاشة. على أوبونتو يُفحص تعريف NVIDIA، وداخل الحاوية يلزم تمرير الكرت إلى الخدمة."
+    elif app_active:
+        label = "يعمل مع التطبيق"
+        hint = "نموذج التضمين يعمل على الكرت لزيادة سرعة البحث."
+    elif not driver_ready:
+        label = "غير مفعّل"
+        if hardware["ubuntu"] or hardware["vendor"] == "NVIDIA":
+            hint = "الكرت ظاهر لكن تعريفه غير محمّل. على أوبونتو ثبّت تعريف NVIDIA ومرّر الجهاز إلى الخدمة إن كان التطبيق داخل حاوية."
+        else:
+            hint = "الكرت ظاهر في النظام لكن تعريفه غير جاهز للاستخدام."
+    elif engine_ready:
+        label = "جاهز للتشغيل"
+        hint = "الكرت جاهز ويمكن نقل نموذج التضمين إليه."
+    else:
+        label = "لا يستخدمه التطبيق"
+        hint = "الكرت مفعّل في النظام، لكن محرك التضمين الحالي مبني للمعالج فقط."
+    memory_total = hardware.get("memory_total_gb")
+    memory_used = hardware.get("memory_used_gb")
+    memory_percent = None
+    if memory_total and memory_used is not None and memory_total > 0:
+        memory_percent = round(memory_used * 100 / memory_total, 1)
+    return {
+        "present": present,
+        "count": hardware["count"],
+        "name": hardware["name"],
+        "vendor": hardware["vendor"],
+        "memory_total_gb": memory_total,
+        "memory_used_gb": memory_used,
+        "memory_percent": memory_percent,
+        "utilization": hardware.get("utilization"),
+        "driver": hardware["driver"],
+        "cores": hardware.get("cores") or "",
+        "driver_ready": driver_ready,
+        "os_name": hardware["os_name"],
+        "ubuntu": hardware["ubuntu"],
+        "app_active": app_active,
+        "engine_ready": engine_ready,
+        "can_enable": bool(present and driver_ready and engine_ready and not app_active),
+        "status_label": label,
+        "hint": (app_state.get("embed_gpu_error") or hint) if not app_active else hint,
+        "backend": app_state.get("embed_backend") or "",
+    }
+
+
+def _enable_app_gpu():
+    if not _GPU_ENABLE_LOCK.acquire(blocking=False):
+        return False, "جارٍ نقل النموذج إلى الكرت"
+    try:
+        status = _gpu_status()
+        if not status["present"]:
+            return False, status["hint"]
+        if not status["driver_ready"]:
+            return False, status["hint"]
+        if status["app_active"] and _gpu_mode() != "cpu":
+            return True, "الكرت يعمل مع التطبيق مسبقاً"
+        if not status["engine_ready"]:
+            return False, status["hint"]
+        _set_gpu_mode("gpu")
+        with _GPU_PROBE_LOCK:
+            _GPU_PROBE_CACHE["at"] = 0.0
+        path = _embedding_gguf_path()
+        if path.is_file() and path.stat().st_size > 1024 ** 3 and _llama_supports_gpu():
+            _activate_gguf_embedder(path)
+            if app_state.get("embed_on_gpu"):
+                return True, "تم تشغيل الكرت مع نموذج التضمين"
+            return False, app_state.get("embed_gpu_error") or "أُعيد تحميل النموذج وبقي على المعالج"
+        device = _pick_torch_device()
+        embedder = app_state.get("st_embedder")
+        if embedder is not None and device in ("cuda", "mps"):
+            try:
+                app_state["st_embedder"] = embedder.to(device)
+                app_state["embed_backend"] = "sentence_transformers"
+                app_state["embed_on_gpu"] = True
+                app_state["embed_device"] = device
+                app_state["embed_gpu_error"] = ""
+                return True, "تم نقل نموذج التضمين إلى الكرت"
+            except Exception:
+                app_state["embed_gpu_error"] = "تعذر نقل النموذج إلى الكرت، وبقي على المعالج"
+                return False, app_state["embed_gpu_error"]
+        return False, "الكرت جاهز، لكن نموذج التضمين غير محمّل لنقله إليه"
+    finally:
+        _GPU_ENABLE_LOCK.release()
 
 def get_db():
     if not hasattr(_db_local, "conn") or _db_local.conn is None:
@@ -733,14 +1084,9 @@ def load_models_and_db():
     if app_state.get("is_8b") and GGUF_8B_PATH.exists():
         print(f"⏳ [المجتهد] تحميل نموذج التضمين المكمم Al-Mojtahed 8B ({GGUF_8B_PATH.name})...")
         try:
-            from llama_cpp import Llama
-            app_state["llama_embedder"] = Llama(
-                model_path=str(GGUF_8B_PATH),
-                embedding=True,
-                n_gpu_layers=-1,
-                verbose=False
-            )
-            print("✅ تم تحميل نموذج التضمين المكمم Al-Mojtahed 8B بنجاح!")
+            _activate_gguf_embedder(GGUF_8B_PATH)
+            where = "الكرت" if app_state.get("embed_on_gpu") else "المعالج"
+            print(f"✅ تم تحميل نموذج التضمين المكمم Al-Mojtahed 8B على {where}!")
             app_state["is_ready"] = True
         except Exception as e:
             print(f"⚠️ تعذر تحميل Llama 8B embedder: {e}")
@@ -751,8 +1097,7 @@ def load_models_and_db():
         emb_hf_dir = SYSTEM_ROOT / "models" / "embedding"
     if not app_state.get("llama_embedder"):
         try:
-            import torch
-            device = "cuda" if torch.cuda.is_available() else ("mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() else "cpu")
+            device = _pick_torch_device()
             from sentence_transformers import SentenceTransformer
             if emb_hf_dir.exists() and ((emb_hf_dir / "config.json").exists() or (emb_hf_dir / "config_sentence_transformers.json").exists()):
                 print(f"⏳ [المجتهد] تحميل نموذج التضمين الشرعي Al-Mojtahed 8B من المسار المحلي ({emb_hf_dir}) على [{device}]...")
@@ -761,6 +1106,10 @@ def load_models_and_db():
                 print(f"⏳ [المجتهد] تحميل نموذج التضمين الشرعي Al-Mojtahed 8B من Hugging Face على [{device}]...")
                 app_state["st_embedder"] = SentenceTransformer("cs95/almojtahed-qwen3-8b", device=device)
             print(f"✅ تم تحميل نموذج التضمين الشرعي Al-Mojtahed 8B عبر SentenceTransformer ({device}) بنجاح!")
+            app_state["embed_backend"] = "sentence_transformers"
+            app_state["embed_on_gpu"] = device in ("cuda", "mps")
+            app_state["embed_device"] = device
+            app_state["embed_gpu_error"] = ""
             app_state["is_ready"] = True
         except Exception as e:
             print(f"⚠️ تعذر تحميل نموذج التضمين الشرعي: {e}")
@@ -771,6 +1120,9 @@ def load_models_and_db():
         try:
             from FlagEmbedding import BGEM3FlagModel
             app_state["embed_model"] = BGEM3FlagModel('BAAI/bge-m3', use_fp16=False, device='cpu')
+            app_state["embed_backend"] = "bge"
+            app_state["embed_on_gpu"] = False
+            app_state["embed_device"] = "cpu"
             print("✅ تم تحميل نموذج التضمين BGE-M3 بنجاح!")
             app_state["is_ready"] = True
         except Exception as e:
@@ -834,6 +1186,252 @@ def normalize_model_id(m: str) -> str:
     m_clean = str(m).strip()
     return MODEL_ALIAS_MAP.get(m_clean, m_clean)
 
+LOCAL_CHAT_DIR_NAME = "local"
+_LOCAL_LLM = {"path": "", "model": None}
+_LOCAL_LLM_LOCK = threading.Lock()
+_LOCAL_FETCH_LOCK = threading.Lock()
+_LOCAL_FETCH = {
+    "running": False,
+    "percent": 0,
+    "received": 0,
+    "expected": 0,
+    "message": "",
+    "error": "",
+    "filename": "",
+}
+
+
+def _local_chat_dir() -> Path:
+    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    root = Path(data_dir) / "models" / LOCAL_CHAT_DIR_NAME if data_dir else PACKAGE_ROOT / "models" / LOCAL_CHAT_DIR_NAME
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _format_model_size(size_bytes: int) -> str:
+    if size_bytes >= 1024 ** 3:
+        return f"{size_bytes / (1024 ** 3):.2f} GB"
+    if size_bytes >= 1024 ** 2:
+        return f"{size_bytes / (1024 ** 2):.0f} MB"
+    return f"{max(1, size_bytes // 1024)} KB"
+
+
+def _scan_local_chat_models() -> List[Dict[str, Any]]:
+    root = _local_chat_dir()
+    found = []
+    for item in sorted(root.rglob("*.gguf")):
+        if not item.is_file() or item.name.endswith(".partial"):
+            continue
+        try:
+            size = item.stat().st_size
+        except OSError:
+            continue
+        if size < 1024 * 1024:
+            continue
+        rel = item.relative_to(root).as_posix()
+        found.append({
+            "id": "local:" + rel,
+            "name": item.stem.replace("_", " ").replace("-", " "),
+            "filename": item.name,
+            "size_bytes": size,
+            "size_str": _format_model_size(size),
+            "format": "gguf",
+        })
+    return found
+
+
+def _local_model_path(model_id: str) -> Path:
+    raw = str(model_id or "").strip()
+    if not raw.startswith("local:"):
+        raise ValueError("هذا ليس نموذجاً محلياً")
+    rel = raw[len("local:"):].strip().lstrip("/")
+    parts = Path(rel).parts
+    if not rel or any(part in ("", ".", "..") for part in parts):
+        raise ValueError("مسار النموذج غير صالح")
+    root = _local_chat_dir().resolve()
+    path = (root / rel).resolve()
+    if path != root and root not in path.parents:
+        raise ValueError("مسار النموذج غير صالح")
+    if not path.is_file():
+        raise FileNotFoundError("النموذج المحلي غير موجود في المجلد")
+    return path
+
+
+def _flatten_message_content(content) -> str:
+    if isinstance(content, list):
+        bits = []
+        for part in content:
+            if isinstance(part, dict):
+                bits.append(str(part.get("text") or ""))
+            else:
+                bits.append(str(part))
+        return "\n".join(bit for bit in bits if bit).strip()
+    return str(content or "").strip()
+
+
+def _complete_local_text(model_id: str, messages: list, temperature: float = 0.2, max_tokens: int = 2048) -> str:
+    path = _local_model_path(model_id)
+    layers = _desired_gpu_layers()
+    clean = []
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        content = _flatten_message_content(message.get("content"))
+        if not content:
+            continue
+        role = message.get("role") if message.get("role") in ("system", "user", "assistant") else "user"
+        clean.append({"role": role, "content": content})
+    if not clean:
+        raise RuntimeError("لا توجد رسائل لإرسالها إلى النموذج المحلي")
+    limit = max(128, min(int(max_tokens or 2048), 4096))
+    with _LOCAL_LLM_LOCK:
+        if _LOCAL_LLM["path"] != str(path) or _LOCAL_LLM["model"] is None:
+            import gc
+            from llama_cpp import Llama
+            old = _LOCAL_LLM.get("model")
+            _LOCAL_LLM["model"] = None
+            if old is not None:
+                del old
+                gc.collect()
+            _LOCAL_LLM["model"] = Llama(
+                model_path=str(path),
+                n_ctx=8192,
+                n_gpu_layers=layers,
+                n_threads=min(8, os.cpu_count() or 4),
+                verbose=False,
+            )
+            _LOCAL_LLM["path"] = str(path)
+        result = _LOCAL_LLM["model"].create_chat_completion(
+            messages=clean,
+            temperature=max(0.0, float(temperature or 0.2)),
+            max_tokens=limit,
+        )
+    choice = (result.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    text = (message.get("content") or "").strip()
+    if not text:
+        raise RuntimeError("أعاد النموذج المحلي جواباً فارغاً")
+    return text
+
+
+def _local_download_view() -> Dict[str, Any]:
+    expected = int(_LOCAL_FETCH.get("expected") or 0)
+    received = int(_LOCAL_FETCH.get("received") or 0)
+    return {
+        "running": bool(_LOCAL_FETCH.get("running")),
+        "percent": int(_LOCAL_FETCH.get("percent") or 0),
+        "received_gb": round(received / (1024 ** 3), 2),
+        "expected_gb": round(expected / (1024 ** 3), 2) if expected else 0,
+        "message": _LOCAL_FETCH.get("message") or "",
+        "error": _LOCAL_FETCH.get("error") or "",
+        "filename": _LOCAL_FETCH.get("filename") or "",
+    }
+
+
+def _safe_gguf_name(name: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._\-]+", "_", urllib.parse.unquote(name or "")).strip("._")
+    if not cleaned.lower().endswith(".gguf"):
+        return ""
+    return cleaned[:180]
+
+
+def _resolve_model_download(url: str):
+    raw = (url or "").strip()
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("ضع رابطاً يبدأ بـ http أو https")
+    if "huggingface.co" in parsed.netloc and "/blob/" in parsed.path:
+        raw = raw.replace("/blob/", "/resolve/", 1)
+        parsed = urllib.parse.urlparse(raw)
+    filename = _safe_gguf_name(parsed.path.rsplit("/", 1)[-1])
+    if filename:
+        return raw, filename
+    parts = [part for part in parsed.path.split("/") if part]
+    if parts and parts[0] == "models":
+        parts = parts[1:]
+    if len(parts) >= 3 and parts[2] in ("tree", "discussions", "commits"):
+        parts = parts[:2]
+    if "huggingface.co" in parsed.netloc and len(parts) >= 2 and parts[0] not in ("datasets", "spaces", "api"):
+        repo = f"{parts[0]}/{parts[1]}"
+        request = urllib.request.Request(
+            f"https://huggingface.co/api/models/{repo}",
+            headers={"User-Agent": "almujtahed-local-models"},
+        )
+        with urllib.request.urlopen(request, timeout=25) as response:
+            info = json.loads(response.read().decode("utf-8"))
+        names = [
+            str(item.get("rfilename") or "")
+            for item in (info.get("siblings") or [])
+            if str(item.get("rfilename") or "").lower().endswith(".gguf")
+        ]
+        if not names:
+            raise ValueError("لم يُعثر على ملف GGUF في مستودع هجينج فيس")
+        preferred = next((name for name in names if "Q4_K_M" in name.upper()), names[0])
+        safe = _safe_gguf_name(Path(preferred).name)
+        if not safe:
+            raise ValueError("اسم ملف النموذج غير صالح")
+        quoted = urllib.parse.quote(preferred)
+        return f"https://huggingface.co/{repo}/resolve/main/{quoted}", safe
+    raise ValueError("ضع رابط ملف GGUF أو صفحة نموذج على هجينج فيس")
+
+
+def _download_local_model_worker(url: str):
+    final_path = None
+    partial = None
+    try:
+        file_url, filename = _resolve_model_download(url)
+        root = _local_chat_dir()
+        final_path = root / filename
+        if final_path.exists():
+            stem = final_path.stem
+            suffix = final_path.suffix
+            index = 2
+            while final_path.exists():
+                final_path = root / f"{stem}-{index}{suffix}"
+                index += 1
+        partial = final_path.with_name(final_path.name + ".partial")
+        _LOCAL_FETCH["filename"] = final_path.name
+        _LOCAL_FETCH["message"] = f"جارٍ سحب {final_path.name}"
+        request = urllib.request.Request(file_url, headers={"User-Agent": "almujtahed-local-models"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            expected = int(response.headers.get("Content-Length") or 0)
+            _LOCAL_FETCH["expected"] = expected
+            received = 0
+            with open(partial, "wb") as handle:
+                while True:
+                    chunk = response.read(256 * 1024)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    received += len(chunk)
+                    _LOCAL_FETCH["received"] = received
+                    if expected:
+                        _LOCAL_FETCH["percent"] = min(99, int(received * 100 / expected))
+        header = partial.read_bytes()[:4] if partial.exists() else b""
+        if header != b"GGUF" or partial.stat().st_size < 1024 * 1024:
+            partial.unlink(missing_ok=True)
+            raise ValueError("الملف الذي وصل ليس نموذج GGUF صالحاً")
+        partial.replace(final_path)
+        _LOCAL_FETCH["percent"] = 100
+        _LOCAL_FETCH["message"] = "اكتمل السحب وظهر النموذج في القائمة"
+        _LOCAL_FETCH["error"] = ""
+    except Exception as exc:
+        if partial is not None:
+            try:
+                partial.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if isinstance(exc, ValueError) and str(exc):
+            _LOCAL_FETCH["error"] = str(exc)
+        else:
+            _LOCAL_FETCH["error"] = "تعذر سحب النموذج. تأكد أن الرابط صفحة نموذج أو ملف GGUF."
+        _LOCAL_FETCH["message"] = _LOCAL_FETCH["error"]
+        print(f"⚠️ تعذر سحب نموذج محلي: {type(exc).__name__}")
+    finally:
+        _LOCAL_FETCH["running"] = False
+        _LOCAL_FETCH_LOCK.release()
+
+
 def call_openrouter_raw(
     model_id: str,
     messages: list,
@@ -847,6 +1445,8 @@ def call_openrouter_raw(
     repetition_penalty: Optional[float] = None,
     timeout: int = 90
 ) -> str:
+    if str(model_id or "").startswith("local:"):
+        return _complete_local_text(model_id, messages, temperature, max_tokens)
     resolved_model = normalize_model_id(model_id)
     payload = {
         "model": resolved_model,
@@ -1724,8 +2324,8 @@ async def get_book_surrounding_pages(
     rel_path: Optional[str] = None,
     part: Optional[str] = None,
     page_num: Optional[int] = 1,
-    before: int = 2,
-    after: int = 2
+    before: int = 3,
+    after: int = 3
 ):
     """
     استيفاء السياق وتقليب الصفحات الحقيقي:
@@ -1747,8 +2347,8 @@ async def get_book_surrounding_pages(
     if not entries:
         raise HTTPException(status_code=404, detail="الكتاب لا يحتوي صفحات صالحة للقراءة")
 
-    before = max(0, min(int(before or 2), 5))
-    after = max(0, min(int(after or 2), 5))
+    before = max(0, min(int(before), 100))
+    after = max(0, min(int(after), 100))
     p_int = int(page_num or 1)
     p_str = str(part or "").strip()
     if p_str == "None":
@@ -2038,6 +2638,7 @@ async def join_member_account(req: JoinAccountRequest, response: Response):
     account = {
         "id": "m_" + secrets.token_hex(8),
         "username": username,
+        "display_name": str(invite.get("label") or "").strip()[:80],
         "salt": salt,
         "password_hash": hash_password(password, salt),
         "disabled": False,
@@ -2128,6 +2729,156 @@ async def set_member_disabled(username: str, req: MemberDisableRequest, request:
     save_members_store(store)
     return {"status": "success", "disabled": bool(req.disabled)}
 
+def load_notices_store() -> Dict[str, Any]:
+    with _notices_lock:
+        if not NOTICES_PATH.exists() or NOTICES_PATH.stat().st_size == 0:
+            return {"notices": []}
+        try:
+            data = json.loads(NOTICES_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return {"notices": []}
+        if not isinstance(data, dict):
+            return {"notices": []}
+        notices = data.get("notices")
+        if not isinstance(notices, list):
+            data["notices"] = []
+        return data
+
+def save_notices_store(data: Dict[str, Any]) -> None:
+    with _notices_lock:
+        NOTICES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = NOTICES_PATH.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(NOTICES_PATH)
+
+def active_member_usernames() -> List[str]:
+    names = []
+    for account in load_members_store().get("accounts", []):
+        username = str(account.get("username") or "").strip()
+        if username and not account.get("disabled"):
+            names.append(username)
+    return names
+
+def require_signed_in(request: Request) -> str:
+    user = get_current_user_from_request(request)
+    role = account_role(user)
+    if not user or role in (None, "disabled"):
+        raise HTTPException(status_code=401, detail="يلزم تسجيل الدخول")
+    return user
+
+def _notice_reads(notice: Dict[str, Any]) -> Dict[str, str]:
+    reads = notice.get("reads")
+    return reads if isinstance(reads, dict) else {}
+
+@app.get("/api/notices")
+async def list_my_notices(request: Request):
+    user = require_signed_in(request)
+    items = []
+    for notice in load_notices_store().get("notices", []):
+        recipients = notice.get("recipients") or []
+        if user not in recipients:
+            continue
+        read_at = _notice_reads(notice).get(user) or ""
+        items.append({
+            "id": notice.get("id"),
+            "title": notice.get("title") or "",
+            "body": notice.get("body") or "",
+            "created_at": notice.get("created_at") or "",
+            "read": bool(read_at),
+            "read_at": read_at,
+        })
+    unread = [item for item in items if not item["read"]]
+    read = [item for item in items if item["read"]]
+    unread.sort(key=lambda item: item["created_at"], reverse=True)
+    read.sort(key=lambda item: item["created_at"], reverse=True)
+    ordered = unread + read
+    return {"notices": ordered, "unread": len(unread)}
+
+@app.post("/api/notices/{notice_id}/read")
+async def mark_notice_read(notice_id: str, request: Request):
+    user = require_signed_in(request)
+    store = load_notices_store()
+    found = False
+    for notice in store.get("notices", []):
+        if notice.get("id") != notice_id:
+            continue
+        if user not in (notice.get("recipients") or []):
+            raise HTTPException(status_code=404, detail="الرسالة غير موجهة إليك")
+        reads = _notice_reads(notice)
+        reads.setdefault(user, datetime.now().isoformat(timespec="seconds"))
+        notice["reads"] = reads
+        found = True
+        break
+    if not found:
+        raise HTTPException(status_code=404, detail="الرسالة غير موجودة")
+    save_notices_store(store)
+    return {"status": "success"}
+
+@app.get("/api/notices/admin")
+async def list_admin_notices(request: Request):
+    require_admin(request)
+    result = []
+    for notice in load_notices_store().get("notices", []):
+        reads = _notice_reads(notice)
+        recipients = [str(name) for name in (notice.get("recipients") or [])]
+        result.append({
+            "id": notice.get("id"),
+            "title": notice.get("title") or "",
+            "body": notice.get("body") or "",
+            "created_at": notice.get("created_at") or "",
+            "audience": notice.get("audience") or "selected",
+            "readers": [{"username": name, "read_at": reads.get(name) or ""} for name in recipients if reads.get(name)],
+            "pending": [name for name in recipients if not reads.get(name)],
+        })
+    result.sort(key=lambda item: item["created_at"], reverse=True)
+    return {"notices": result}
+
+@app.post("/api/notices")
+async def create_notice(req: NoticeCreateRequest, request: Request):
+    require_admin(request)
+    title = (req.title or "").strip()[:120]
+    body = (req.body or "").strip()[:4000]
+    if not title or not body:
+        raise HTTPException(status_code=400, detail="اكتب عنوان الرسالة ونصها")
+    known = active_member_usernames()
+    if req.everyone:
+        recipients = known
+        audience = "all"
+    else:
+        wanted = []
+        for name in req.usernames or []:
+            clean = str(name or "").strip()
+            if clean and clean in known and clean not in wanted:
+                wanted.append(clean)
+        recipients = wanted
+        audience = "selected"
+    if not recipients:
+        raise HTTPException(status_code=400, detail="اختر عضواً واحداً على الأقل، أو الجميع")
+    notice = {
+        "id": "n_" + secrets.token_hex(8),
+        "title": title,
+        "body": body,
+        "audience": audience,
+        "recipients": recipients,
+        "reads": {},
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    store = load_notices_store()
+    store.setdefault("notices", []).insert(0, notice)
+    save_notices_store(store)
+    return {"status": "success", "id": notice["id"], "recipients": len(recipients)}
+
+@app.delete("/api/notices/{notice_id}")
+async def delete_notice(notice_id: str, request: Request):
+    require_admin(request)
+    store = load_notices_store()
+    kept = [item for item in store.get("notices", []) if item.get("id") != notice_id]
+    if len(kept) == len(store.get("notices", [])):
+        raise HTTPException(status_code=404, detail="الرسالة غير موجودة")
+    store["notices"] = kept
+    save_notices_store(store)
+    return {"status": "success"}
+
 @app.get("/api/config/providers")
 async def get_providers_config(request: Request):
     """مفاتيح المزودين الخاصة بالعضو الحالي فقط"""
@@ -2153,6 +2904,46 @@ async def save_providers_config(req: Dict[str, str], request: Request):
     save_provider_keys(owner_id, current)
     return {"status": "success", "message": "تم حفظ المفاتيح في حسابك"}
 
+
+def _provider_key_ok(provider: str, key: str) -> bool:
+    """يفحص المفتاح لدى مزوده دون تسجيل قيمته."""
+    name = _normalize_provider_name(provider)
+    headers = {"Accept": "application/json"}
+    if name == "openrouter":
+        url = "https://openrouter.ai/api/v1/auth/key"
+        headers["Authorization"] = f"Bearer {key}"
+    elif name in ("claude", "anthropic"):
+        url = "https://api.anthropic.com/v1/models"
+        headers["x-api-key"] = key
+        headers["anthropic-version"] = "2023-06-01"
+    elif name in ("google", "gemini"):
+        url = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=" + urllib.parse.quote(key, safe="")
+    elif name == "openai":
+        url = "https://api.openai.com/v1/models"
+        headers["Authorization"] = f"Bearer {key}"
+    elif name == "deepseek":
+        url = "https://api.deepseek.com/models"
+        headers["Authorization"] = f"Bearer {key}"
+    else:
+        return False
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            return 200 <= int(getattr(response, "status", 200)) < 300
+    except Exception:
+        return False
+
+
+@app.post("/api/config/providers/test")
+async def test_provider_key(req: Dict[str, str], request: Request):
+    """يجرّب مفتاح المزود الحالي. لا يعيد المفتاح ولا يحفظه."""
+    current_owner_id(request)
+    provider = str(req.get("provider") or "").strip()
+    key = str(req.get("key") or "").strip()
+    if not key or len(key) > 500:
+        return {"ok": False}
+    ok = await asyncio.to_thread(_provider_key_ok, provider, key)
+    return {"ok": bool(ok)}
 
 
 @app.get("/api/status")
@@ -2316,6 +3107,79 @@ async def get_system_status():
         "is_ready": app_state.get("is_ready", False),
         "disk_free_gb": free_gb
     }
+
+
+@app.get("/api/stats")
+async def library_stats(request: Request):
+    """أعداد المكتبة والنصوص والأعضاء. قراءة فقط، بلا تعديل على الفهرس أو المخزن."""
+    require_signed_in(request)
+    books = int(_book_index_status().get("books") or 0)
+    texts = 0
+    texts_ready = False
+    if app_state.get("qdrant") and app_state.get("collection_name"):
+        try:
+            info = app_state["qdrant"].get_collection(app_state["collection_name"])
+            texts = int(info.points_count or 0)
+            texts_ready = True
+        except Exception:
+            texts_ready = False
+    active = 0
+    total = 0
+    for account in load_members_store().get("accounts") or []:
+        if not isinstance(account, dict):
+            continue
+        if not str(account.get("username") or "").strip():
+            continue
+        total += 1
+        if not account.get("disabled"):
+            active += 1
+    activity = _activity_counts()
+    return {
+        "books": books,
+        "texts": texts,
+        "texts_ready": texts_ready,
+        "members": active,
+        "members_total": total,
+        "projects": activity["projects"],
+        "chats": activity["chats"],
+        "shares": activity["shares"],
+    }
+
+
+def _activity_counts() -> Dict[str, int]:
+    """يجمع مشاريع ومحادثات كل الحسابات. المشاركات تُحسب عند وجودها فقط."""
+    counts = {"projects": 0, "chats": 0, "shares": 0}
+    if not APP_MEMORY_DB.exists():
+        return counts
+    conn = sqlite3.connect(f"file:{APP_MEMORY_DB}?mode=ro", uri=True, timeout=10)
+    conn.row_factory = sqlite3.Row
+    try:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "kv_documents" in tables:
+            for row in conn.execute("SELECT payload FROM kv_documents WHERE key LIKE 'projects:%'"):
+                try:
+                    data = json.loads(row["payload"])
+                except Exception:
+                    continue
+                if isinstance(data, list):
+                    counts["projects"] += len(data)
+            share_row = conn.execute("SELECT payload FROM kv_documents WHERE key='shares'").fetchone()
+            if share_row:
+                try:
+                    share_data = json.loads(share_row["payload"])
+                except Exception:
+                    share_data = None
+                if isinstance(share_data, list):
+                    counts["shares"] = len(share_data)
+        if "chat_sessions" in tables:
+            counts["chats"] = int(conn.execute("SELECT COUNT(*) FROM chat_sessions").fetchone()[0])
+        if "member_shares" in tables:
+            counts["shares"] = int(conn.execute("SELECT COUNT(*) FROM member_shares").fetchone()[0])
+    except Exception:
+        return counts
+    finally:
+        conn.close()
+    return counts
 
 
 def _get_live_memory_usage():
@@ -2688,9 +3552,19 @@ async def get_system_resources_endpoint():
             "loaded": model_loaded,
             "name": model_name,
             "type": "8B GGUF (4096D)" if app_state.get("is_8b") else "Standard",
+            "on_gpu": bool(app_state.get("embed_on_gpu")),
             "download": _embedding_download_view(),
-        }
+        },
+        "gpu": _gpu_status(),
     }
+
+
+@app.post("/api/system/gpu/enable")
+async def enable_gpu_endpoint(request: Request):
+    """ينقل نموذج التضمين إلى كرت ظاهر ومعرّفه جاهز. لا يثبّت تعريفات النظام."""
+    require_admin(request)
+    ok, message = await asyncio.to_thread(_enable_app_gpu)
+    return {"status": "ok" if ok else "error", "message": message, "gpu": _gpu_status()}
 
 
 @app.post("/api/system/qdrant/restart")
@@ -2742,14 +3616,39 @@ def _embedding_gguf_path():
     return PACKAGE_ROOT / "models" / "gguf" / name
 
 def _activate_gguf_embedder(path: Path):
+    import gc
     from llama_cpp import Llama
+    layers = _desired_gpu_layers()
     with EMBEDDING_LOCK:
-        app_state["llama_embedder"] = Llama(
-            model_path=str(path),
-            embedding=True,
-            n_gpu_layers=-1,
-            verbose=False
-        )
+        old = app_state.get("llama_embedder")
+        app_state["llama_embedder"] = None
+        if old is not None:
+            del old
+            gc.collect()
+        try:
+            model = Llama(
+                model_path=str(path),
+                embedding=True,
+                n_gpu_layers=layers,
+                n_threads=min(8, os.cpu_count() or 4),
+                verbose=False,
+            )
+            used_layers = layers
+            app_state["embed_gpu_error"] = ""
+        except Exception:
+            if layers == 0:
+                raise
+            model = Llama(
+                model_path=str(path),
+                embedding=True,
+                n_gpu_layers=0,
+                n_threads=min(8, os.cpu_count() or 4),
+                verbose=False,
+            )
+            used_layers = 0
+            app_state["embed_gpu_error"] = "تعذر نقل النموذج إلى الكرت، وبقي على المعالج"
+        app_state["llama_embedder"] = model
+        _mark_llama_runtime(model, used_layers)
         app_state["is_8b"] = True
         app_state["is_ready"] = True
 
@@ -2899,17 +3798,11 @@ async def reload_system_model_endpoint():
                 GGUF_8B_PATH = SYSTEM_ROOT / "models" / "gguf" / "almojtahed-embedding-8b-Q4_K_M.gguf"
 
             if GGUF_8B_PATH.exists():
-                from llama_cpp import Llama
-                app_state["llama_embedder"] = Llama(
-                    model_path=str(GGUF_8B_PATH),
-                    embedding=True,
-                    n_threads=min(8, os.cpu_count() or 4),
-                    n_ctx=2048,
-                    verbose=False
-                )
+                _activate_gguf_embedder(GGUF_8B_PATH)
+                where = "على كرت الشاشة" if app_state.get("embed_on_gpu") else "على المعالج"
                 return {
                     "status": "ok",
-                    "message": "تمت إعادة تحميل نموذج التضمين الشرعي 8B في الذاكرة بنجاح تام!",
+                    "message": f"تمت إعادة تحميل نموذج التضمين الشرعي 8B {where}.",
                     "memory": _get_live_memory_usage(),
                     "disk": _get_live_disk_usage()
                 }
@@ -4061,6 +4954,10 @@ async def compare_stream_endpoint(req: CompareStreamRequest, request: Request):
 
     def _worker():
         try:
+            if str(model_id).startswith("local:"):
+                text = _complete_local_text(model_id, messages, 0.4, 4096)
+                loop.call_soon_threadsafe(queue.put_nowait, {"delta": text, "kind": "content"})
+                return
             payload = {
                 "model": normalize_model_id(model_id),
                 "messages": messages,
@@ -4807,7 +5704,15 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     return content
 
             try:
-                live_reply = _query_openrouter(call_model, safe_max_output_tokens)
+                if str(call_model or "").startswith("local:"):
+                    live_reply = _complete_local_text(
+                        call_model,
+                        messages_payload,
+                        req.temperature or 0.2,
+                        min(safe_max_output_tokens, 4096),
+                    )
+                else:
+                    live_reply = _query_openrouter(call_model, safe_max_output_tokens)
             except urllib.error.HTTPError as he:
                 err_body = he.read().decode("utf-8", errors="ignore")
                 print(f"OpenRouter HTTP Error ({he.code}) for model {call_model}: {err_body}")
@@ -4818,7 +5723,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 except Exception as retry_err:
                     print(f"Retry with same model failed: {retry_err}")
             except Exception as e:
-                print(f"Live model query error for {call_model}: {e}")
+                if str(call_model or "").startswith("local:"):
+                    live_reply = "تعذر تشغيل النموذج المحلي. تأكد أن ملف GGUF سليم وأن ذاكرة الجهاز تكفي لتحميله."
+                print(f"Live model query error for {call_model}: {type(e).__name__}")
         except Exception as outer_e:
             print(f"Outer live model handler error: {outer_e}")
 
@@ -4850,6 +5757,44 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 # =============================================================================
 OPENROUTER_DEFAULT_KEY = os.getenv("OPENROUTER_API_KEY", "").strip() or OPENROUTER_DEFAULT_KEY
 openrouter_cache = {"data": None, "timestamp": 0}
+
+class LocalModelDownloadRequest(BaseModel):
+    url: str
+
+
+@app.get("/api/local-models")
+async def list_local_models():
+    """النماذج المحلية الموجودة في مجلد models/local داخل التطبيق."""
+    return {
+        "status": "ok",
+        "folder": "models/local",
+        "models": _scan_local_chat_models(),
+        "download": _local_download_view(),
+    }
+
+
+@app.post("/api/local-models/download")
+async def download_local_model(req: LocalModelDownloadRequest, request: Request):
+    """يسحب ملف GGUF من رابط مباشر أو من صفحة نموذج على هجينج فيس."""
+    if account_role(get_current_user_from_request(request)) not in ("admin", "member"):
+        raise HTTPException(status_code=401, detail="يلزم تسجيل الدخول لسحب نموذج محلي")
+    url = (req.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="ضع رابط النموذج")
+    if not _LOCAL_FETCH_LOCK.acquire(blocking=False):
+        return {"status": "busy", "message": "يوجد سحب قائم", "download": _local_download_view()}
+    _LOCAL_FETCH.update({
+        "running": True,
+        "percent": 0,
+        "received": 0,
+        "expected": 0,
+        "message": "بدأ السحب",
+        "error": "",
+        "filename": "",
+    })
+    threading.Thread(target=_download_local_model_worker, args=(url,), name="local-model-download", daemon=True).start()
+    return {"status": "ok", "message": "بدأ سحب النموذج", "download": _local_download_view()}
+
 
 @app.get("/api/openrouter/models")
 async def get_openrouter_models(request: Request, api_key: Optional[str] = None):
@@ -4887,6 +5832,7 @@ async def get_openrouter_models(request: Request, api_key: Optional[str] = None)
 
             parsed.append({
                 "id": m.get("id"),
+                "canonical_slug": m.get("canonical_slug") or m.get("id"),
                 "name": m.get("name") or m.get("id"),
                 "description": m.get("description", ""),
                 "context_length": m.get("context_length", 0),
@@ -4916,6 +5862,148 @@ async def get_openrouter_models(request: Request, api_key: Optional[str] = None)
         if key == (OPENROUTER_DEFAULT_KEY or "") and openrouter_cache["data"]:
             return openrouter_cache["data"]
         raise HTTPException(status_code=502, detail="تعذر الاتصال بـ OpenRouter بمفتاح هذا الحساب")
+
+
+_rankings_cache: Dict[str, Dict[str, Any]] = {}
+
+def _openrouter_get(url: str, key: str) -> dict:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "HTTP-Referer": "http://localhost:8085",
+            "X-Title": "Al-Mojtahed Sharia Engine",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+def _catalog_model(raw: dict) -> dict:
+    pricing = raw.get("pricing") or {}
+    prompt_token = float(pricing.get("prompt") or 0.0)
+    completion_token = float(pricing.get("completion") or 0.0)
+    return {
+        "id": raw.get("id"),
+        "canonical_slug": raw.get("canonical_slug") or raw.get("id"),
+        "name": raw.get("name") or raw.get("id"),
+        "pricing": {
+            "prompt_per_1m": round(prompt_token * 1_000_000, 4),
+            "completion_per_1m": round(completion_token * 1_000_000, 4),
+        },
+    }
+
+def _live_model_index(models: List[dict]) -> Dict[str, dict]:
+    index: Dict[str, dict] = {}
+    for model in models:
+        model_id = str(model.get("id") or "")
+        if not model_id:
+            continue
+        index[model_id] = model
+        slug = str(model.get("canonical_slug") or "")
+        if slug:
+            index.setdefault(slug, model)
+    return index
+
+def _token_totals(rows: List[dict]) -> List[tuple]:
+    bucket: Dict[str, int] = {}
+    for row in rows:
+        slug = str(row.get("model_permaslug") or "")
+        if not slug or slug == "other":
+            continue
+        try:
+            tokens = int(row.get("total_tokens") or 0)
+        except (TypeError, ValueError):
+            tokens = 0
+        bucket[slug] = bucket.get(slug, 0) + tokens
+    return sorted(bucket.items(), key=lambda item: item[1], reverse=True)
+
+def _pack_ranked_models(ordered: List[tuple], index: Dict[str, dict], skip: set, limit: int = 5) -> List[dict]:
+    items = []
+    seen = set(skip)
+    for slug, tokens in ordered:
+        base = slug.split(":", 1)[0]
+        model = index.get(slug) or index.get(base)
+        if not model or model["id"] in seen:
+            continue
+        seen.add(model["id"])
+        pricing = model.get("pricing") or {}
+        items.append({
+            "rank": len(items) + 1,
+            "id": model["id"],
+            "name": model.get("name") or model["id"],
+            "tokens": tokens,
+            "prompt_per_1m": pricing.get("prompt_per_1m") or 0,
+            "completion_per_1m": pricing.get("completion_per_1m") or 0,
+        })
+        if len(items) >= limit:
+            break
+    return items
+
+def _build_openrouter_rankings(key: str) -> dict:
+    end = datetime.utcnow().date()
+    start = end - timedelta(days=6)
+    rankings = _openrouter_get(
+        "https://openrouter.ai/api/v1/datasets/rankings-daily"
+        f"?start_date={start.isoformat()}&end_date={end.isoformat()}",
+        key,
+    )
+    catalog = [
+        _catalog_model(item)
+        for item in (_openrouter_get("https://openrouter.ai/api/v1/models", key).get("data") or [])
+        if item.get("id")
+    ]
+    index = _live_model_index(catalog)
+    rows = rankings.get("data") or []
+    dates = [row.get("date") for row in rows if row.get("date")]
+    latest = max(dates) if dates else ""
+    daily = _pack_ranked_models(
+        _token_totals([row for row in rows if row.get("date") == latest]),
+        index,
+        set(),
+    )
+    weekly = _pack_ranked_models(_token_totals(rows), index, {item["id"] for item in daily})
+    if len(weekly) < 5:
+        seen = {item["id"] for item in weekly}
+        for item in _pack_ranked_models(_token_totals(rows), index, set(), limit=10):
+            if item["id"] in seen:
+                continue
+            weekly.append(item)
+            seen.add(item["id"])
+            if len(weekly) >= 5:
+                break
+        for position, item in enumerate(weekly, 1):
+            item["rank"] = position
+    meta = rankings.get("meta") or {}
+    return {
+        "status": "ok",
+        "as_of": meta.get("as_of") or "",
+        "day": latest,
+        "daily": daily,
+        "weekly": weekly,
+    }
+
+@app.post("/api/openrouter/rankings")
+async def get_openrouter_rankings(req: Dict[str, str], request: Request):
+    """ترتيب أوبن راوتر الحي بمفتاح الحساب. النماذج الموقوفة عن الكتالوج لا تُعاد."""
+    key = owner_openrouter_key(request, (req or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="أدخل مفتاح OpenRouter الخاص بحسابك في تبويب الخدمات")
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+    cached = _rankings_cache.get(digest)
+    now = time.time()
+    if cached and now - cached["timestamp"] < 600:
+        return cached["data"]
+    try:
+        data = await asyncio.to_thread(_build_openrouter_rankings, key)
+    except urllib.error.HTTPError as err:
+        if err.code in (401, 403):
+            raise HTTPException(status_code=400, detail="مفتاح أوبن راوتر لم يُقبل عند جلب الترتيب")
+        raise HTTPException(status_code=502, detail="تعذر جلب ترتيب أوبن راوتر")
+    except Exception:
+        raise HTTPException(status_code=502, detail="تعذر جلب ترتيب أوبن راوتر")
+    _rankings_cache[digest] = {"timestamp": now, "data": data}
+    return data
 
 
 openrouter_about_cache: Dict[str, str] = {}
@@ -5278,6 +6366,31 @@ def _ensure_app_memory() -> sqlite3.Connection:
             updated_at TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS member_shares (
+            id TEXT PRIMARY KEY,
+            kind TEXT,
+            source_id TEXT,
+            from_owner TEXT,
+            to_owner TEXT,
+            created_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS share_invites (
+            id TEXT PRIMARY KEY,
+            kind TEXT,
+            title TEXT,
+            from_username TEXT,
+            from_name TEXT,
+            to_owner TEXT,
+            to_username TEXT,
+            payload TEXT,
+            status TEXT,
+            created_at TEXT,
+            resolved_at TEXT
+        )
+    """)
     _migrate_owner_scope(conn)
     return conn
 
@@ -5337,6 +6450,405 @@ class TavilySearchRequest(BaseModel):
     search_depth: Optional[str] = "advanced"
     include_domains: Optional[List[str]] = None
     max_results: Optional[int] = 5
+
+class ShareRequest(BaseModel):
+    kind: str
+    item_id: str
+    everyone: bool = False
+    usernames: List[str] = []
+    key_mode: str = "mine"
+    key: str = ""
+
+def _person_display_name(username: str) -> str:
+    """اسم العضو المكتوب في الدعوة، لا اسم الدخول."""
+    admin_name = os.getenv("AUTH_USERNAME", "").strip()
+    if admin_name and same_text(username or "", admin_name):
+        return "المشرف"
+    account = find_member_account(username)
+    if not account:
+        return "عضو"
+    saved = str(account.get("display_name") or "").strip()
+    if saved:
+        return saved
+    invite_id = account.get("invite_id")
+    for invite in load_members_store().get("invites") or []:
+        if invite.get("id") == invite_id:
+            label = str(invite.get("label") or "").strip()
+            if label:
+                return label
+    return "عضو"
+
+def _share_people() -> List[Dict[str, str]]:
+    people = []
+    admin_name = os.getenv("AUTH_USERNAME", "").strip()
+    if admin_name:
+        people.append({
+            "username": admin_name,
+            "owner_id": ADMIN_OWNER_ID,
+            "label": "المشرف",
+            "display_name": "المشرف",
+        })
+    for account in load_members_store().get("accounts") or []:
+        if not isinstance(account, dict):
+            continue
+        username = str(account.get("username") or "").strip()
+        if not username or account.get("disabled"):
+            continue
+        owner_id = str(account.get("id") or "").strip() or ensure_member_id(username)
+        people.append({
+            "username": username,
+            "owner_id": owner_id,
+            "label": "عضو",
+            "display_name": _person_display_name(username),
+        })
+    return people
+
+def _share_kind_label(kind: str) -> str:
+    return {"chat": "محادثة", "project": "مشروع", "tool": "إضافة", "key": "مفتاح"}.get(kind, "عنصر")
+
+def _share_key_spec(raw: str):
+    """يعيد الاسم المحفوظ، اسم الواجهة، والتسمية العربية. بلا قيمة المفتاح."""
+    name = _normalize_provider_name(raw)
+    catalog = {
+        "openrouter": ("openrouter", "openrouter", "أوبن راوتر"),
+        "claude": ("anthropic", "claude", "كلود"),
+        "anthropic": ("anthropic", "claude", "كلود"),
+        "google": ("gemini", "google", "جوجل"),
+        "gemini": ("gemini", "google", "جوجل"),
+        "openai": ("openai", "openai", "أوبن إي آي"),
+        "deepseek": ("deepseek", "deepseek", "ديب سيك"),
+        "tavily": ("tavily", "tavily", "Tavily"),
+        "groq": ("groq", "groq", "Groq"),
+        "hf": ("hf", "hf", "Hugging Face"),
+        "huggingface": ("hf", "hf", "Hugging Face"),
+    }
+    return catalog.get(name)
+
+def _deliver_shared_key(owner_id: str, payload: Dict[str, Any]) -> None:
+    secret = str(payload.get("key") or "").strip()
+    canonical = str(payload.get("provider") or "").strip()
+    ui_name = str(payload.get("ui") or canonical).strip()
+    if not secret or not canonical:
+        raise HTTPException(status_code=400, detail="تعذر إضافة المفتاح")
+    current = load_provider_keys(owner_id)
+    current[canonical] = secret
+    if ui_name and ui_name != canonical:
+        current[ui_name] = secret
+    save_provider_keys(owner_id, current)
+
+def _share_item_title(kind: str, item: Dict[str, Any]) -> str:
+    if kind == "tool":
+        raw = item.get("name") or item.get("title") or "إضافة"
+    else:
+        raw = item.get("title") or "بدون عنوان"
+    return " ".join(str(raw).split())[:180] or "بدون عنوان"
+
+def _send_direct_notice(recipient: str, title: str, body: str) -> None:
+    recipient = (recipient or "").strip()
+    if not recipient:
+        return
+    store = load_notices_store()
+    store.setdefault("notices", []).insert(0, {
+        "id": "n_" + secrets.token_hex(8),
+        "title": title.strip()[:180],
+        "body": body.strip()[:4000],
+        "audience": "selected",
+        "recipients": [recipient],
+        "reads": {},
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    })
+    save_notices_store(store)
+
+def _share_clone(item: Dict[str, Any], sender: str) -> Dict[str, Any]:
+    clone = json.loads(json.dumps(item, ensure_ascii=False))
+    clone["shared_from"] = {
+        "username": sender,
+        "source_id": str(item.get("id") or ""),
+        "at": datetime.now().isoformat(),
+    }
+    clone["id"] = "share_" + secrets.token_hex(8)
+    return clone
+
+def _load_share_item(kind: str, item_id: str, owner_id: str) -> Optional[Dict[str, Any]]:
+    if kind == "chat":
+        conn = _ensure_app_memory()
+        try:
+            sessions = _read_chat_sessions(conn, owner_id)
+        finally:
+            conn.close()
+        return next((item for item in sessions if str(item.get("id")) == item_id), None)
+    if kind == "project":
+        return next((item for item in load_stored_projects(owner_id) if str(item.get("id")) == item_id), None)
+    if kind == "tool":
+        return next((item for item in load_stored_tools(owner_id) if str(item.get("id")) == item_id), None)
+    return None
+
+def _deliver_shared_chat(owner_id: str, session: Dict[str, Any]) -> None:
+    conn = _ensure_app_memory()
+    try:
+        sessions = _read_chat_sessions(conn, owner_id)
+    finally:
+        conn.close()
+    sessions.insert(0, session)
+    _replace_chat_sessions(sessions, owner_id)
+
+def _deliver_shared_project(owner_id: str, project: Dict[str, Any]) -> None:
+    group = project.get("subagents_group")
+    if isinstance(group, dict):
+        new_group_id = "share_g_" + secrets.token_hex(6)
+        group["id"] = new_group_id
+        project["linked_group_id"] = new_group_id
+        groups = load_stored_agent_groups(owner_id)
+        groups.append({
+            "id": new_group_id,
+            "name": group.get("name") or "فريق وصل مع مشروع مشارك",
+            "desc": group.get("desc") or "مجموعة وصلت مع مشروع مشارك",
+            "agents": group.get("agents") or [],
+        })
+        save_stored_agent_groups(groups, owner_id)
+    projects = load_stored_projects(owner_id)
+    projects.insert(0, project)
+    save_stored_projects(projects, owner_id)
+
+def _deliver_shared_tool(owner_id: str, tool: Dict[str, Any]) -> None:
+    tools = load_stored_tools(owner_id)
+    tools.insert(0, tool)
+    save_stored_tools(tools, owner_id)
+
+def _record_share(kind: str, source_id: str, from_owner: str, to_owner: str) -> None:
+    conn = _ensure_app_memory()
+    try:
+        conn.execute(
+            "INSERT INTO member_shares (id, kind, source_id, from_owner, to_owner, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("s_" + secrets.token_hex(8), kind, source_id, from_owner, to_owner, datetime.now().isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+@app.get("/api/share/members")
+async def list_share_members(request: Request):
+    """أسماء من يمكن مشاركتهم، بلا كلمات مرور أو معرفات داخلية."""
+    me = require_signed_in(request)
+    members = [
+        {
+            "username": person["username"],
+            "label": person["label"],
+            "display_name": person.get("display_name") or person["label"],
+        }
+        for person in _share_people()
+        if not same_text(person["username"], me)
+    ]
+    return {"members": members}
+
+@app.post("/api/shares")
+async def create_share(req: ShareRequest, request: Request):
+    """يحفظ دعوة مشاركة معلّقة. النسخة لا تُضاف إلا بعد القبول، والأصل يبقى عند المشارك."""
+    sender = require_signed_in(request)
+    owner_id = current_owner_id(request)
+    kind = (req.kind or "").strip()
+    if kind not in ("chat", "project", "tool", "key"):
+        raise HTTPException(status_code=400, detail="نوع المشاركة غير معروف")
+    item_id = (req.item_id or "").strip()
+    if not item_id:
+        raise HTTPException(status_code=400, detail="حدد ما تريد مشاركته")
+    eligible = [person for person in _share_people() if not same_text(person["username"], sender)]
+    if req.everyone:
+        targets = eligible
+    else:
+        targets = []
+        seen = set()
+        for name in req.usernames or []:
+            person = next((item for item in eligible if same_text(item["username"], str(name).strip())), None)
+            if person and person["owner_id"] not in seen:
+                seen.add(person["owner_id"])
+                targets.append(person)
+    if not targets:
+        raise HTTPException(status_code=400, detail="اختر عضواً واحداً على الأقل، أو الجميع")
+    sender_name = _person_display_name(sender)
+    key_payload = ""
+    key_title = ""
+    if kind == "key":
+        spec = _share_key_spec(item_id)
+        if not spec:
+            raise HTTPException(status_code=400, detail="الخدمة غير معروفة")
+        canonical, ui_name, label = spec
+        mode = (req.key_mode or "mine").strip()
+        if mode not in ("mine", "new"):
+            raise HTTPException(status_code=400, detail="اختر المفتاح الخاص أو مفتاحاً جديداً")
+        secret = ""
+        if mode == "mine":
+            stored = load_provider_keys(owner_id)
+            secret = str(stored.get(ui_name) or stored.get(canonical) or "").strip()
+            if not secret:
+                secret = str(req.key or "").strip()
+            if not secret:
+                raise HTTPException(status_code=400, detail="لا يوجد مفتاح محفوظ لهذه الخدمة")
+        else:
+            secret = str(req.key or "").strip()
+            if len(secret) < 8:
+                raise HTTPException(status_code=400, detail="اكتب المفتاح الجديد")
+        if len(secret) > 500:
+            raise HTTPException(status_code=400, detail="المفتاح أطول من الحد المسموح")
+        key_title = label
+        key_payload = json.dumps({"provider": canonical, "ui": ui_name, "key": secret}, ensure_ascii=False)
+    with _share_lock:
+        if kind == "key":
+            source = {"title": key_title}
+            title = key_title
+        else:
+            source = _load_share_item(kind, item_id, owner_id)
+            if not source:
+                raise HTTPException(status_code=404, detail="العنصر غير موجود في حسابك")
+            title = _share_item_title(kind, source)
+        sent = []
+        now = datetime.now().isoformat(timespec="seconds")
+        conn = _ensure_app_memory()
+        try:
+            for person in targets:
+                if kind == "key":
+                    payload = key_payload
+                else:
+                    payload = json.dumps(_share_clone(source, sender), ensure_ascii=False)
+                conn.execute(
+                    """
+                    INSERT INTO share_invites
+                    (id, kind, title, from_username, from_name, to_owner, to_username, payload, status, created_at, resolved_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, '')
+                    """,
+                    (
+                        "inv_" + secrets.token_hex(8),
+                        kind,
+                        title,
+                        sender,
+                        sender_name,
+                        person["owner_id"],
+                        person["username"],
+                        payload,
+                        now,
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO member_shares (id, kind, source_id, from_owner, to_owner, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    ("s_" + secrets.token_hex(8), kind, item_id, owner_id, person["owner_id"], now),
+                )
+                sent.append(person["username"])
+            conn.commit()
+        finally:
+            conn.close()
+    return {"status": "ok", "sent": sent}
+
+def _load_share_invite(invite_id: str, owner_id: str):
+    conn = _ensure_app_memory()
+    try:
+        return conn.execute(
+            "SELECT * FROM share_invites WHERE id=? AND to_owner=?",
+            (invite_id, owner_id),
+        ).fetchone()
+    finally:
+        conn.close()
+
+def _resolve_share_invite(invite_id: str, owner_id: str, status: str) -> None:
+    conn = _ensure_app_memory()
+    try:
+        conn.execute(
+            "UPDATE share_invites SET status=?, resolved_at=?, payload='' WHERE id=? AND to_owner=? AND status='pending'",
+            (status, datetime.now().isoformat(timespec="seconds"), invite_id, owner_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+@app.get("/api/shares/incoming")
+async def incoming_shares(request: Request):
+    owner_id = current_owner_id(request)
+    conn = _ensure_app_memory()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, kind, title, from_name, created_at
+            FROM share_invites
+            WHERE to_owner=? AND status='pending'
+            ORDER BY created_at ASC
+            """,
+            (owner_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {
+        "invites": [
+            {
+                "id": row["id"],
+                "kind": row["kind"],
+                "kind_label": _share_kind_label(row["kind"]),
+                "title": row["title"] or "",
+                "from_name": row["from_name"] or "عضو",
+                "created_at": row["created_at"] or "",
+            }
+            for row in rows
+        ]
+    }
+
+@app.post("/api/shares/incoming/{invite_id}/accept")
+async def accept_share_invite(invite_id: str, request: Request):
+    user = require_signed_in(request)
+    owner_id = current_owner_id(request)
+    with _share_lock:
+        row = _load_share_invite(invite_id, owner_id)
+        if not row or row["status"] != "pending":
+            raise HTTPException(status_code=404, detail="المشاركة لم تعد بانتظارك")
+        try:
+            clone = json.loads(row["payload"] or "")
+        except Exception:
+            clone = None
+        if not isinstance(clone, dict):
+            raise HTTPException(status_code=400, detail="تعذر فتح المشاركة")
+        kind = row["kind"]
+        if kind == "key":
+            _deliver_shared_key(owner_id, clone)
+            delivered_id = str(clone.get("ui") or clone.get("provider") or "")
+        elif not clone.get("id"):
+            raise HTTPException(status_code=400, detail="تعذر فتح المشاركة")
+        elif kind == "chat":
+            _deliver_shared_chat(owner_id, clone)
+            delivered_id = clone["id"]
+        elif kind == "project":
+            _deliver_shared_project(owner_id, clone)
+            delivered_id = clone["id"]
+        elif kind == "tool":
+            _deliver_shared_tool(owner_id, clone)
+            delivered_id = clone["id"]
+        else:
+            raise HTTPException(status_code=400, detail="نوع المشاركة غير معروف")
+        _resolve_share_invite(invite_id, owner_id, "accepted")
+    receiver = _person_display_name(user)
+    kind_label = _share_kind_label(row["kind"])
+    item_title = row["title"] or "بدون عنوان"
+    _send_direct_notice(
+        row["from_username"],
+        "شكراً لمشاركتك",
+        f"يشكرك {receiver} على مشاركة {kind_label} «{item_title}»، وقد قبلها.",
+    )
+    return {"status": "ok", "kind": kind, "item_id": delivered_id, "title": item_title}
+
+@app.post("/api/shares/incoming/{invite_id}/reject")
+async def reject_share_invite(invite_id: str, request: Request):
+    user = require_signed_in(request)
+    owner_id = current_owner_id(request)
+    with _share_lock:
+        row = _load_share_invite(invite_id, owner_id)
+        if not row or row["status"] != "pending":
+            raise HTTPException(status_code=404, detail="المشاركة لم تعد بانتظارك")
+        _resolve_share_invite(invite_id, owner_id, "rejected")
+    receiver = _person_display_name(user)
+    kind_label = _share_kind_label(row["kind"])
+    item_title = row["title"] or "بدون عنوان"
+    _send_direct_notice(
+        row["from_username"],
+        f"{receiver} يعتذر إليك عن قبول المشاركة ويشكر اهتمامك",
+        f"بخصوص {kind_label} «{item_title}».",
+    )
+    return {"status": "ok"}
 
 @app.get("/api/chats")
 async def get_chats(request: Request):
@@ -5906,78 +7418,81 @@ async def generate_tool_code_endpoint(req: ToolGenerateCodeRequest, request: Req
     }
     
     try:
-        o_req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:8085",
-                "X-Title": "Al-Mojtahed Tool Code Generator"
-            },
-            data=json.dumps(payload).encode()
-        )
-        with urllib.request.urlopen(o_req, timeout=35) as resp:
-            data = json.loads(resp.read().decode())
-            reply = data["choices"][0]["message"]["content"]
-            match = re.search(r"```python\s*([\s\S]*?)\s*```", reply)
-            extracted_code = match.group(1).strip() if match else reply.strip()
-            
-            # استخراج بيانات الاختبار الوهمية من الكود إن وجدت
-            sample_input = None
-            mock_match = re.search(r"(?:input_data_example|mock_test_input|sample_input|example_input|test_input|mock_data)\s*=\s*(\{[\s\S]*?\n\s*\})", extracted_code)
-            if mock_match:
+        if str(model).startswith("local:"):
+            data = {"choices": [{"message": {"content": _complete_local_text(model, payload["messages"], 0.2, 4096)}}]}
+        else:
+            o_req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8085",
+                    "X-Title": "Al-Mojtahed Tool Code Generator"
+                },
+                data=json.dumps(payload).encode()
+            )
+            with urllib.request.urlopen(o_req, timeout=35) as resp:
+                data = json.loads(resp.read().decode())
+        reply = data["choices"][0]["message"]["content"]
+        match = re.search(r"```python\s*([\s\S]*?)\s*```", reply)
+        extracted_code = match.group(1).strip() if match else reply.strip()
+        
+        # استخراج بيانات الاختبار الوهمية من الكود إن وجدت
+        sample_input = None
+        mock_match = re.search(r"(?:input_data_example|mock_test_input|sample_input|example_input|test_input|mock_data)\s*=\s*(\{[\s\S]*?\n\s*\})", extracted_code)
+        if mock_match:
+            try:
+                import ast
+                sample_input = ast.literal_eval(mock_match.group(1))
+            except Exception:
                 try:
-                    import ast
-                    sample_input = ast.literal_eval(mock_match.group(1))
+                    sample_input = json.loads(mock_match.group(1))
                 except Exception:
-                    try:
-                        sample_input = json.loads(mock_match.group(1))
-                    except Exception:
-                        pass
-            
-            if not sample_input:
-                keys = re.findall(r"input_data(?:\.get\(|\[)['\"]([a-zA-Z0-9_]+)['\"]", extracted_code)
-                if keys:
-                    sample_input = {}
-                    for k in set(keys):
-                        k_lower = k.lower()
-                        if any(x in k_lower for x in ["date1", "start_date", "from_date", "first_date"]):
-                            sample_input[k] = "2023-01-01"
-                        elif any(x in k_lower for x in ["date2", "end_date", "to_date", "second_date"]):
-                            sample_input[k] = "2024-03-15"
-                        elif any(x in k_lower for x in ["date", "time"]):
-                            sample_input[k] = "2024-01-01"
-                        elif any(x in k_lower for x in ["year", "hijri", "solar"]):
-                            sample_input[k] = 1445 if "hijri" in k_lower else 2024
-                        elif any(x in k_lower for x in ["num", "count", "day", "month", "id", "page"]):
-                            sample_input[k] = 1
-                        elif any(x in k_lower for x in ["text", "title", "name", "city", "word", "query", "phrase"]):
-                            sample_input[k] = "بغداد" if "city" in k_lower else "نص تجريبي للتحقق"
-                        elif any(x in k_lower for x in ["is_", "has_", "flag", "enabled", "strict"]):
-                            sample_input[k] = True
-                        elif any(x in k_lower for x in ["list", "items", "books", "authors"]):
-                            sample_input[k] = ["عنصر 1", "عنصر 2"]
-                        else:
-                            sample_input[k] = "قيمة تجريبية"
-                else:
-                    sample_input = {"date1": "2023-01-01", "date2": "2024-03-15"}
-                    
-            # اقتراح اسم ومعرف للأداة إن لم يكن محدداً
-            clean_prompt = re.sub(r"[^\w\s\u0600-\u06FF]", "", req.prompt or "").strip()
-            words = clean_prompt.split()
-            suggested_name = " ".join(words[:5]) if words else "أداة بايثون مخصصة"
-            suggested_id = "tool_py_" + "_".join([re.sub(r'[^a-zA-Z0-9]', '', w) for w in words[:3] if re.sub(r'[^a-zA-Z0-9]', '', w)])
-            if not suggested_id or suggested_id == "tool_py_":
-                suggested_id = f"tool_py_{int(time.time())}"
-            
-            return {
-                "status": "ok",
-                "code": extracted_code,
-                "sample_input": sample_input,
-                "tool_name": suggested_name,
-                "tool_id": suggested_id.lower(),
-                "raw_reply": reply
-            }
+                    pass
+        
+        if not sample_input:
+            keys = re.findall(r"input_data(?:\.get\(|\[)['\"]([a-zA-Z0-9_]+)['\"]", extracted_code)
+            if keys:
+                sample_input = {}
+                for k in set(keys):
+                    k_lower = k.lower()
+                    if any(x in k_lower for x in ["date1", "start_date", "from_date", "first_date"]):
+                        sample_input[k] = "2023-01-01"
+                    elif any(x in k_lower for x in ["date2", "end_date", "to_date", "second_date"]):
+                        sample_input[k] = "2024-03-15"
+                    elif any(x in k_lower for x in ["date", "time"]):
+                        sample_input[k] = "2024-01-01"
+                    elif any(x in k_lower for x in ["year", "hijri", "solar"]):
+                        sample_input[k] = 1445 if "hijri" in k_lower else 2024
+                    elif any(x in k_lower for x in ["num", "count", "day", "month", "id", "page"]):
+                        sample_input[k] = 1
+                    elif any(x in k_lower for x in ["text", "title", "name", "city", "word", "query", "phrase"]):
+                        sample_input[k] = "بغداد" if "city" in k_lower else "نص تجريبي للتحقق"
+                    elif any(x in k_lower for x in ["is_", "has_", "flag", "enabled", "strict"]):
+                        sample_input[k] = True
+                    elif any(x in k_lower for x in ["list", "items", "books", "authors"]):
+                        sample_input[k] = ["عنصر 1", "عنصر 2"]
+                    else:
+                        sample_input[k] = "قيمة تجريبية"
+            else:
+                sample_input = {"date1": "2023-01-01", "date2": "2024-03-15"}
+                
+        # اقتراح اسم ومعرف للأداة إن لم يكن محدداً
+        clean_prompt = re.sub(r"[^\w\s\u0600-\u06FF]", "", req.prompt or "").strip()
+        words = clean_prompt.split()
+        suggested_name = " ".join(words[:5]) if words else "أداة بايثون مخصصة"
+        suggested_id = "tool_py_" + "_".join([re.sub(r'[^a-zA-Z0-9]', '', w) for w in words[:3] if re.sub(r'[^a-zA-Z0-9]', '', w)])
+        if not suggested_id or suggested_id == "tool_py_":
+            suggested_id = f"tool_py_{int(time.time())}"
+        
+        return {
+            "status": "ok",
+            "code": extracted_code,
+            "sample_input": sample_input,
+            "tool_name": suggested_name,
+            "tool_id": suggested_id.lower(),
+            "raw_reply": reply
+        }
     except Exception as e:
         return {"status": "error", "message": f"خطأ في توليد الكود: {str(e)}"}
 
@@ -7223,35 +8738,38 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
     }
 
     try:
-        o_req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:8085",
-                "X-Title": "Al-Mojtahed Research Architect"
-            },
-            data=json.dumps(payload).encode("utf-8")
-        )
-        with urllib.request.urlopen(o_req, timeout=120) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            content = data["choices"][0]["message"]["content"]
+        if str(call_model).startswith("local:"):
+            data = {"choices": [{"message": {"content": _complete_local_text(call_model, payload["messages"], 0.2, 4096)}}]}
+        else:
+            o_req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8085",
+                    "X-Title": "Al-Mojtahed Research Architect"
+                },
+                data=json.dumps(payload).encode("utf-8")
+            )
+            with urllib.request.urlopen(o_req, timeout=120) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        content = data["choices"][0]["message"]["content"]
             
-            # محاولة استخراج JSON من الرد
-            json_match = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", content)
-            parsed_blueprint = None
-            if json_match:
-                try:
-                    parsed_blueprint = json.loads(json_match.group(1))
-                except Exception:
-                    pass
+        # محاولة استخراج JSON من الرد
+        json_match = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", content)
+        parsed_blueprint = None
+        if json_match:
+            try:
+                parsed_blueprint = json.loads(json_match.group(1))
+            except Exception:
+                pass
 
-            return {
-                "status": "ok",
-                "raw_plan": content,
-                "blueprint": parsed_blueprint,
-                "model_used": call_model
-            }
+        return {
+            "status": "ok",
+            "raw_plan": content,
+            "blueprint": parsed_blueprint,
+            "model_used": call_model
+        }
     except Exception as e:
         print(f"Project Planning Error: {e}")
         # رد بديل آلي في حال انقطاع الشبكة
@@ -8433,6 +9951,9 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
                 "tool_choice": "auto"
             }
 
+            if str(call_model).startswith("local:"):
+                reply_text = _complete_local_text(call_model, current_messages, 0.3, 4096)
+                break
             o_req = urllib.request.Request(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers={

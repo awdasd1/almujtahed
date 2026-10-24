@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792828200">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792862000">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -22,16 +22,44 @@
        الترويسة الرئيسية (هوية المجتهد — رملي · طيني · زمردي)
        ======================================================================= -->
     <header class="app-header">
-        <div class="brand-section">
-            <div class="brand-title">
-                <span class="brand-icon" aria-hidden="true"></span>
-                <span>المجتهد</span>
+        <div class="header-top">
+            <div class="brand-section">
+                <div class="brand-title">
+                    <span class="brand-icon" aria-hidden="true"></span>
+                    <span>المجتهد</span>
+                </div>
+                <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
-            <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
-            <span class="brand-subtitle-2">بحث دلالي عميق · 8,148,092 نصاً تراثياً</span>
+
+            <div class="header-actions">
+                <button class="btn-icon" id="libraryStatsBtn" type="button" onclick="openLibraryStatsModal()" title="إحصائيات المكتبة والأعضاء" aria-label="الإحصائيات">
+                    <i data-lucide="bar-chart-3" class="icon" aria-hidden="true"></i>
+                </button>
+                <button class="btn-icon notice-bell-btn" id="noticeBellBtn" type="button" onclick="openNoticesModal()" title="الرسائل" aria-label="الرسائل">
+                    <i data-lucide="bell" class="icon" aria-hidden="true"></i>
+                    <span class="notice-badge" id="noticeBadge" hidden aria-hidden="true">0</span>
+                </button>
+                <button class="btn-icon server-health-btn" id="serverHealthBtn" onclick="openServerHealthModal()"
+                    title="مؤشر موارد وحالة السيرفر (الذاكرة والقرص)">
+                    <span class="status-pulse-dot status-green" id="serverPulseDot"></span>
+                    <i data-lucide="activity" class="icon" aria-hidden="true"></i>
+                </button>
+                <button class="btn-icon" id="systemMaintenanceBtn" onclick="openMaintenanceModal()"
+                    title="مركز الصيانة والفحص الذاتي الشامل">
+                    <i data-lucide="shield-check" class="icon" aria-hidden="true"></i>
+                </button>
+                <button class="btn-icon" id="themeToggleBtn" onclick="toggleTheme()" title="تبديل الثيم">
+                    <i data-lucide="sun" class="icon" id="themeIconSun" aria-hidden="true"></i>
+                </button>
+                <button class="btn-icon" id="settingsOpenBtn" onclick="openSettingsModal()" title="إعدادات المنظومة">
+                    <i data-lucide="settings" class="icon" aria-hidden="true"></i>
+                </button>
+                <button class="btn-icon" id="logoutBtn" onclick="logoutAlmujtahed()" title="تسجيل الخروج من المنظومة" style="color: #ef4444;">
+                    <i data-lucide="log-out" class="icon" aria-hidden="true"></i>
+                </button>
+            </div>
         </div>
 
-        <!-- شريط التبويبات الرئيسية -->
         <nav class="main-nav" aria-label="أقسام المنظومة">
             <button class="nav-tab-btn active" id="tabNavSearch" onclick="switchMainTab('search')">
                 <i data-lucide="search" class="icon" aria-hidden="true"></i>
@@ -78,28 +106,6 @@
                 <span>الأعضاء</span>
             </button>
         </nav>
-
-        <!-- إجراءات الترويسة -->
-        <div class="header-actions">
-            <button class="btn-icon server-health-btn" id="serverHealthBtn" onclick="openServerHealthModal()"
-                title="مؤشر موارد وحالة السيرفر (الذاكرة والقرص)">
-                <span class="status-pulse-dot status-green" id="serverPulseDot"></span>
-                <i data-lucide="activity" class="icon" aria-hidden="true"></i>
-            </button>
-            <button class="btn-icon" id="systemMaintenanceBtn" onclick="openMaintenanceModal()"
-                title="مركز الصيانة والفحص الذاتي الشامل">
-                <i data-lucide="shield-check" class="icon" aria-hidden="true"></i>
-            </button>
-            <button class="btn-icon" id="themeToggleBtn" onclick="toggleTheme()" title="تبديل الثيم">
-                <i data-lucide="sun" class="icon" id="themeIconSun" aria-hidden="true"></i>
-            </button>
-            <button class="btn-icon" id="settingsOpenBtn" onclick="openSettingsModal()" title="إعدادات المنظومة">
-                <i data-lucide="settings" class="icon" aria-hidden="true"></i>
-            </button>
-            <button class="btn-icon" id="logoutBtn" onclick="logoutAlmujtahed()" title="تسجيل الخروج من المنظومة" style="color: #ef4444;">
-                <i data-lucide="log-out" class="icon" aria-hidden="true"></i>
-            </button>
-        </div>
     </header>
 
     <!-- =======================================================================
@@ -413,6 +419,10 @@
                                 <span id="labelChatHybridToggle">بحث هجين مفعّل (Dense + BM25)</span>
                             </button>
                         </div>
+
+                        <button type="button" class="btn-secondary-action chat-share-btn" onclick="shareActiveChat()" title="مشاركة هذه المحادثة مع الأعضاء">
+                            مشاركة
+                        </button>
 
                         <!-- بطاقة الرصيد التفاعلية في ترويسة الشات بدلاً من الإعدادات المكررة -->
                         <button type="button" class="chat-balance-badge" id="chatHeaderBalanceBadge"
@@ -856,15 +866,9 @@
                                 </svg>
                                 <span>حفظ ضبط البطاقات 💾</span>
                             </button>
-                            <button type="button" class="btn-secondary-action" onclick="exportSingleProject(activeProjectId)"
-                                id="btnExportActiveProject" title="تصدير هذا المشروع بكافة بياناته وسجل حواراته كملف JSON">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                    <polyline points="17 8 12 3 7 8" />
-                                    <line x1="12" y1="3" x2="12" y2="15" />
-                                </svg>
-                                <span>تصدير المشروع 📤</span>
+                            <button type="button" class="btn-secondary-action" onclick="shareActiveProject()"
+                                id="btnExportActiveProject" title="مشاركة هذا المشروع مع الأعضاء أو حفظه في الجهاز">
+                                <span>مشاركة</span>
                             </button>
                             <!-- زر تبديل نمط تشغيل الوكلاء في المشروع: متوازي vs موحد مباشر (حفظ خط الرجعة) -->
                             <button type="button" class="chat-dispatch-mode-toggle" id="projectDispatchModeToggleBtn"
@@ -1418,7 +1422,7 @@
              =============================================================== -->
                 <div class="provider-subtab-pane active" id="paneSubtab-models">
 
-                    <div class="result-card provider-main-card">
+                    <div class="result-card provider-main-card" id="providerServiceCard">
 
                         <div class="result-header">
                             <div class="result-book-meta">
@@ -1433,25 +1437,31 @@
 
                             <div class="filter-item provider-ctrl-item">
                                 <label for="providerSelect">مزود الخدمة:</label>
-                                <select id="providerSelect" class="filter-select"
-                                    onchange="handleProviderChange(this.value)">
-                                    <option value="openrouter" selected>أوبن راوتر (OpenRouter)</option>
-                                    <option value="claude">كلود (Anthropic Claude)</option>
-                                    <option value="google">جوجل (Google Gemini)</option>
-                                    <option value="openai">أوبن إي آي (OpenAI)</option>
-                                    <option value="deepseek">ديب سيك (DeepSeek)</option>
-                                </select>
+                                <div class="provider-select-row">
+                                    <select id="providerSelect" class="filter-select"
+                                        onchange="handleProviderChange(this.value)">
+                                        <option value="openrouter" selected>أوبن راوتر (OpenRouter)</option>
+                                        <option value="claude">كلود (Anthropic Claude)</option>
+                                        <option value="google">جوجل (Google Gemini)</option>
+                                        <option value="openai">أوبن إي آي (OpenAI)</option>
+                                        <option value="deepseek">ديب سيك (DeepSeek)</option>
+                                    </select>
+                                    <a id="providerKeyLink" class="btn-flat-secondary btn-save-pad" href="https://openrouter.ai/workspaces/default/keys" target="_blank" rel="noopener noreferrer" title="فتح صفحة إنشاء المفتاح لدى أوبن راوتر">إنشاء مفتاح</a>
+                                </div>
                             </div>
 
                             <div class="filter-item provider-ctrl-item provider-key-wrapper">
                                 <label for="providerApiKey">المفتاح:</label>
                                 <div class="provider-key-actions">
                                     <input type="password" id="providerApiKey" class="filter-input"
-                                        placeholder="مفتاح API..." value="" autocomplete="off" />
+                                        placeholder="مفتاح API..." value="" autocomplete="off" oninput="resetProviderKeyTest()" />
                                     <button type="button" class="btn-flat-secondary btn-icon-pad"
                                         onclick="toggleApiKeyVisibility()" title="إظهار / إخفاء المفتاح">👁️</button>
+                                    <button type="button" id="providerKeyTestBtn" class="btn-flat-secondary btn-save-pad" onclick="testCurrentProviderKey()" title="اختبار المفتاح الحالي لدى المزود">اختبار</button>
                                     <button type="button" class="btn-flat-primary btn-save-pad"
                                         onclick="saveCurrentApiKey()" title="حفظ المفتاح">حفظ</button>
+                                    <button type="button" class="btn-flat-secondary btn-save-pad"
+                                        onclick="openProviderKeyShare()" title="مشاركة المفتاح مع الأعضاء">مشاركة</button>
                                 </div>
                             </div>
 
@@ -1463,7 +1473,7 @@
                                         جارِ التحميل...</span>
                                 </label>
                                 <select id="providerModelSelect" class="filter-select">
-                                    <option value="anthropic/claude-3.7-sonnet">Claude 3.7 Sonnet</option>
+                                    <option value="">جارٍ جلب النماذج...</option>
                                 </select>
                             </div>
 
@@ -1483,8 +1493,8 @@
                                     <span
                                         style="font-size: 11.5px; color: var(--accent-clay); font-weight: 700; display: block; margin-bottom: 2px;">النموذج
                                         المختار</span>
-                                    <span id="specModelTitle" class="specs-panel-title">Claude 3.7 Sonnet</span>
-                                    <span id="specModelId" class="specs-panel-id">anthropic/claude-3.7-sonnet</span>
+                                    <span id="specModelTitle" class="specs-panel-title">جارٍ جلب النماذج</span>
+                                    <span id="specModelId" class="specs-panel-id"></span>
                                 </div>
                                 <div>
                                     <span class="score-badge" id="specIntelligenceIndex">58.4 نقطة (مؤشر الذكاء)</span>
@@ -1537,8 +1547,7 @@
                                     <h3
                                         style="font-family: var(--font-amiri); font-size: 21px; font-weight: 700; color: var(--text-main); margin: 0;">
                                         أفضل النماذج من أوبن راوتر (OpenRouter Rankings)</h3>
-                                    <p style="font-size: 13px; color: var(--text-muted); margin-top: 3px;">استناداً إلى
-                                        الاختبارات المعيارية والتقييمات المعتمدة عالمياً</p>
+                                    <p id="rankingSourceNote" style="font-size: 13px; color: var(--text-muted); margin-top: 3px;">تُجلب بمفتاح أوبن راوتر من ترتيب الاستخدام الحي، ولا تُعرض النماذج الموقوفة.</p>
                                 </div>
                                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                                     <a href="https://openrouter.ai/benchmarks" target="_blank" rel="noopener noreferrer"
@@ -1558,167 +1567,23 @@
                                 <!-- القائمة 1: أفضل 5 نماذج على مستوى البحث الأكاديمي -->
                                 <div class="ranking-subcard">
                                     <div class="ranking-subcard-header">
-                                        <span class="score-badge">البحث الأكاديمي</span>
+                                        <span class="score-badge" id="rankingDailyBadge">اليوم</span>
                                         <span
-                                            style="font-family: var(--font-amiri); font-size: 17px; font-weight: 700; color: var(--text-main);">أفضل
-                                            ٥ نماذج على مستوى البحث الأكاديمي</span>
+                                            style="font-family: var(--font-amiri); font-size: 17px; font-weight: 700; color: var(--text-main);">أفضل ٥ نماذج اليوم</span>
                                     </div>
 
-                                    <div class="ranking-items-list">
-
-                                        <div class="ranking-item-row"
-                                            onclick="selectModelDirectly('anthropic/claude-3.7-sonnet')">
-                                            <span class="ranking-num-tag">1</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">Claude 3.7 Sonnet (Anthropic)</div>
-                                                <div class="ranking-item-sub">المتصدر المطلق في الاستدلال المركب،
-                                                    التفكيك النحوي، والتحليل التراثي</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$3.0 / $15.0</span>
-                                                <span class="score-badge">Elo 1340+</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="ranking-item-row"
-                                            onclick="selectModelDirectly('google/gemini-2.5-pro')">
-                                            <span class="ranking-num-tag">2</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">Gemini 2.5 Pro (Google)</div>
-                                                <div class="ranking-item-sub">الرائد في معالجة المجلدات الضخمة بسياق 2
-                                                    مليون توكن واستقراء المخطوطات</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$1.25 / $10.0</span>
-                                                <span class="score-badge">سياق 2M</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="ranking-item-row"
-                                            onclick="selectModelDirectly('deepseek/deepseek-r1')">
-                                            <span class="ranking-num-tag">3</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">DeepSeek R1 (DeepSeek)</div>
-                                                <div class="ranking-item-sub">أقوى نموذج تفكير استدلالي مفتوح المصدر
-                                                    (Reasoning) لمطابقة العلل والأصول</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$0.70 / $2.50</span>
-                                                <span class="score-badge">R1 Logic</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="ranking-item-row" onclick="selectModelDirectly('openai/o3-mini')">
-                                            <span class="ranking-num-tag">4</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">o3-mini (OpenAI)</div>
-                                                <div class="ranking-item-sub">سرعة برهان فائقة في التحليلات المقارنة
-                                                    والتجريد المنطقي الصارم</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$1.10 / $4.40</span>
-                                                <span class="score-badge">Reasoning</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="ranking-item-row"
-                                            onclick="selectModelDirectly('meta-llama/llama-3.3-70b-instruct')">
-                                            <span class="ranking-num-tag">5</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">Llama 3.3 70B Instruct (Meta)</div>
-                                                <div class="ranking-item-sub">أعلى نموذج كفاءة واستقرار مفتوح المصدر
-                                                    للاستعلامات التراثية</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$0.12 / $0.30</span>
-                                                <span class="score-badge">Open Weight</span>
-                                            </div>
-                                        </div>
-
-                                    </div>
+                                    <div class="ranking-items-list" id="rankingDailyList"><div class="ranking-item-sub">جارٍ جلب الترتيب من أوبن راوتر...</div></div>
                                 </div>
 
                                 <!-- القائمة 2: أفضل 5 نماذج على المستوى القانوني والصياغة الفقهية -->
                                 <div class="ranking-subcard">
                                     <div class="ranking-subcard-header">
-                                        <span class="score-badge">المستوى القانوني</span>
+                                        <span class="score-badge">الأسبوع</span>
                                         <span
-                                            style="font-family: var(--font-amiri); font-size: 17px; font-weight: 700; color: var(--text-main);">أفضل
-                                            ٥ نماذج على المستوى القانوني والصياغة الفقهية</span>
+                                            style="font-family: var(--font-amiri); font-size: 17px; font-weight: 700; color: var(--text-main);">أفضل ٥ نماذج خلال الأسبوع</span>
                                     </div>
 
-                                    <div class="ranking-items-list">
-
-                                        <div class="ranking-item-row"
-                                            onclick="selectModelDirectly('anthropic/claude-3.7-sonnet')">
-                                            <span class="ranking-num-tag">1</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">Claude 3.7 Sonnet / Opus</div>
-                                                <div class="ranking-item-sub">أعلى دقة في ضبط المصطلحات القانونية،
-                                                    الصياغة المحكمة، والأمانة الفقهية</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$3.0 / $15.0</span>
-                                                <span class="score-badge">صياغة قانونية</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="ranking-item-row" onclick="selectModelDirectly('openai/gpt-4o')">
-                                            <span class="ranking-num-tag">2</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">GPT-4o (OpenAI)</div>
-                                                <div class="ranking-item-sub">موسوعي وسريع في استيعاب الأنظمة واللوائح
-                                                    والقرارات القضائية</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$2.50 / $10.0</span>
-                                                <span class="score-badge">Omni 128k</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="ranking-item-row"
-                                            onclick="selectModelDirectly('deepseek/deepseek-r1')">
-                                            <span class="ranking-num-tag">3</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">DeepSeek R1 (DeepSeek)</div>
-                                                <div class="ranking-item-sub">تفكيك الشروط والموانع وحصر الفروع وتصنيف
-                                                    القواعد الفقهية الكلية</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$0.70 / $2.50</span>
-                                                <span class="score-badge">تأصيل فقهي</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="ranking-item-row"
-                                            onclick="selectModelDirectly('google/gemini-2.5-pro')">
-                                            <span class="ranking-num-tag">4</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">Gemini 2.5 Pro (Google)</div>
-                                                <div class="ranking-item-sub">المقارنة الشاملة بين المذاهب الأربعة عبر
-                                                    فحص نصوص أمهات الكتب</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$1.25 / $10.0</span>
-                                                <span class="score-badge">مقارنة مذاهب</span>
-                                            </div>
-                                        </div>
-
-                                        <div class="ranking-item-row"
-                                            onclick="selectModelDirectly('qwen/qwen-2.5-72b-instruct')">
-                                            <span class="ranking-num-tag">5</span>
-                                            <div class="ranking-item-body">
-                                                <div class="ranking-item-title">Qwen 2.5 72B Instruct (Alibaba)</div>
-                                                <div class="ranking-item-sub">براعة لغوية عربية استثنائية وفهم عميق
-                                                    للعبارات الفقهية المتخصصة</div>
-                                            </div>
-                                            <div class="ranking-item-pills">
-                                                <span class="rank-price-tag">$0.35 / $0.40</span>
-                                                <span class="score-badge">عربية متقدمة</span>
-                                            </div>
-                                        </div>
-
-                                    </div>
+                                    <div class="ranking-items-list" id="rankingWeeklyList"><div class="ranking-item-sub">جارٍ جلب الترتيب من أوبن راوتر...</div></div>
                                 </div>
 
                             </div>
@@ -1726,6 +1591,46 @@
                         </div>
 
                     </div> <!-- نهاية بطاقة provider-main-card -->
+
+                    <div class="result-card provider-main-card" id="localModelsCard">
+                        <div class="result-header">
+                            <div class="result-book-meta">
+                                <span class="book-title-tag">النماذج المحلية</span>
+                                <span class="author-tag">ملفات GGUF داخل مجلد models/local</span>
+                            </div>
+                            <span class="score-badge" id="localModelsModeBadge">المزود السحابي فعّال</span>
+                        </div>
+                        <div class="provider-controls-bar">
+                            <div class="filter-item provider-ctrl-item">
+                                <label for="localModelSelect">قائمة النماذج المحلية:</label>
+                                <select id="localModelSelect" class="filter-select" onchange="selectLocalModel(this.value)">
+                                    <option value="">لا توجد نماذج محلية بعد</option>
+                                </select>
+                            </div>
+                            <div class="filter-item provider-ctrl-item">
+                                <label>التشغيل:</label>
+                                <button type="button" id="btnToggleLocalModels" class="btn-flat-primary btn-save-pad" onclick="toggleLocalModelsMode()">تفعيل النماذج المحلية</button>
+                            </div>
+                            <div class="filter-item provider-ctrl-item">
+                                <label>الإضافة:</label>
+                                <button type="button" id="btnAddLocalModel" class="btn-flat-secondary btn-save-pad" onclick="toggleLocalModelForm()">إضافة نموذج محلي</button>
+                            </div>
+                        </div>
+                        <div id="localModelForm" hidden class="local-model-form">
+                            <label for="localModelUrl">رابط النموذج من هجينج فيس أو أي عنوان مباشر:</label>
+                            <div class="local-model-url-row">
+                                <input type="url" id="localModelUrl" class="filter-input" placeholder="https://huggingface.co/org/model" autocomplete="off" />
+                                <button type="button" class="btn-flat-primary btn-save-pad" onclick="startLocalModelDownload()">سحب</button>
+                            </div>
+                            <div id="localDownloadWrap" hidden>
+                                <div class="telemetry-progress-container">
+                                    <div class="telemetry-progress-bar" id="localDownloadBar" style="width: 0%; background: linear-gradient(90deg, #10b981, #0ea5e9);"></div>
+                                </div>
+                                <div id="localDownloadLabel" class="local-download-label">جارٍ السحب</div>
+                            </div>
+                        </div>
+                        <p id="localModelsHint" class="local-models-hint">أي ملف GGUF يُضاف إلى المجلد يظهر في القائمة. عند التفعيل يتعطّل مزود الخدمة الحالي وتُستخدم النماذج المحلية في الشات والمشاريع والمقارنة والوكلاء والمهندس.</p>
+                    </div>
                 </div> <!-- نهاية التبويب الفرعي الأول: paneSubtab-models -->
 
                 <!-- ===============================================================
@@ -2031,6 +1936,9 @@
                                     <button type="button" class="btn-primary-gradient" onclick="saveTavilyApiKey()">
                                         <span>حفظ المفتاح</span>
                                     </button>
+                                    <button type="button" class="btn-secondary-action" onclick="openProviderKeyShare('tavily')" title="مشاركة مفتاح Tavily">
+                                        <span>مشاركة</span>
+                                    </button>
                                     <button type="button" class="btn-secondary-action" onclick="testTavilyConnection()">
                                         <span>اختبار الاتصال ⚡</span>
                                     </button>
@@ -2159,6 +2067,25 @@
                     <button type="submit" class="btn-flat-primary">إنشاء رابط العضو</button>
                 </form>
                 <div id="membersList" class="result-card provider-main-card"></div>
+                <section id="memberNoticesPanel" class="result-card provider-main-card member-notices-panel">
+                    <h3>الرسائل</h3>
+                    <form id="memberNoticeForm" class="member-notice-form">
+                        <label for="noticeTitle">عنوان الرسالة</label>
+                        <input id="noticeTitle" type="text" maxlength="120" placeholder="عنوان يظهر بخط عريض">
+                        <label for="noticeBody">نص الرسالة</label>
+                        <textarea id="noticeBody" maxlength="4000" rows="4" placeholder="نص الرسالة التي تصل إلى جرس العضو"></textarea>
+                        <label for="noticeMemberFilter">الأعضاء</label>
+                        <input id="noticeMemberFilter" type="text" placeholder="صفِّ الأعضاء بالاسم" oninput="filterNoticeMembers(this.value)">
+                        <label class="notice-everyone">
+                            <input id="noticeEveryone" type="checkbox" onchange="toggleNoticeEveryone(this.checked)">
+                            <span>الجميع</span>
+                        </label>
+                        <div id="noticeMemberPicker" class="notice-member-picker"></div>
+                        <button type="submit" class="btn-flat-primary">أرسل</button>
+                        <p id="noticeSendNote" class="member-meta"></p>
+                    </form>
+                    <div id="adminNoticesList"></div>
+                </section>
             </div>
         </section>
 
@@ -2531,8 +2458,8 @@
                     <button type="button" class="btn-secondary-action" onclick="document.getElementById('importModalToolFileInput').click()" title="استيراد كود وبيانات الأداة من ملف JSON إلى المحرر">
                         <span>استيراد ملف أداة 📥</span>
                     </button>
-                    <button type="button" class="btn-secondary-action" onclick="exportCurrentModalTool()" title="تصدير بيانات الأداة الحالية في المحرر كملف JSON">
-                        <span>تصدير الأداة 📤</span>
+                    <button type="button" class="btn-secondary-action" onclick="shareCurrentModalTool()" title="مشاركة الأداة مع الأعضاء أو حفظها في الجهاز">
+                        <span>مشاركة</span>
                     </button>
                 </div>
                 <div style="display: flex; gap: 8px;">
@@ -3261,9 +3188,6 @@
                     <span id="readerContextIcon" style="font-size: 16px;">📅</span>
                     <span id="readerContextText" style="font-weight: 600;"></span>
                 </div>
-                <button type="button" class="btn-flat-secondary reader-mini-btn" id="btnBannerSurrounding" onclick="toggleSurroundingPagesView()" title="استيفاء السياق وتقليب الصفحات السابقة واللاحقة">
-                    استيفاء السياق المتتابع (±2) 🔄
-                </button>
             </div>
 
             <!-- شريط أدوات القارئ والتحكم الفقهي -->
@@ -3297,11 +3221,16 @@
                     بطاقة الكتاب ℹ️
                 </button>
 
-                <!-- زر استيفاء السياق المتتابع -->
-                <button class="btn-flat-secondary reader-tool-btn" id="btnToggleSurrounding" onclick="toggleSurroundingPagesView()"
-                    title="استيفاء السياق وتقليب باقة الصفحات السابقة واللاحقة (-2 إلى +2) لكشف رأس المسألة أو الحولية">
-                    استيفاء السياق (±2) 🔄
-                </button>
+                <div class="reader-tool-item reader-surrounding-span">
+                    <label for="readerBeforePages">سابقة</label>
+                    <input type="number" id="readerBeforePages" class="filter-input reader-page-input" value="3" min="0" max="100" aria-label="عدد الصفحات السابقة" onchange="onReaderSurroundingSpanChange()">
+                    <label for="readerAfterPages">لاحقة</label>
+                    <input type="number" id="readerAfterPages" class="filter-input reader-page-input" value="3" min="0" max="100" aria-label="عدد الصفحات اللاحقة" onchange="onReaderSurroundingSpanChange()">
+                    <button class="btn-flat-secondary reader-tool-btn" id="btnToggleSurrounding" onclick="toggleSurroundingPagesView()"
+                        title="استيفاء السياق بعدد الصفحات السابقة واللاحقة الذي تختاره">
+                        استيفاء السياق 🔄
+                    </button>
+                </div>
 
                 <span class="reader-select-hint">حدد نصاً لمدارسته</span>
             </div>
@@ -3959,6 +3888,206 @@
     </div>
 
     <!-- =======================================================================
+       نافذة رسائل الأعضاء
+       ======================================================================= -->
+    <div class="modal-overlay" id="noticesModal" onclick="if(event.target===this) closeNoticesModal()">
+        <div class="modal-window notices-modal-window" role="dialog" aria-modal="true" aria-labelledby="noticesModalTitle">
+            <div class="modal-header notices-modal-header">
+                <div>
+                    <div class="modal-title" id="noticesModalTitle">الرسائل</div>
+                    <p id="noticesModalHint">رسائل المشرف الموجهة إليك</p>
+                </div>
+                <button class="btn-icon" type="button" onclick="closeNoticesModal()" title="إغلاق" aria-label="إغلاق">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body notices-modal-body" id="noticesModalBody"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="shareGiftModal">
+        <div class="share-gift-window" role="dialog" aria-modal="true" aria-labelledby="shareGiftHeading">
+            <div class="share-gift-icon" aria-hidden="true">
+                <i data-lucide="gift" class="icon"></i>
+            </div>
+            <p class="share-gift-lead" id="shareGiftHeading">قام <strong id="shareGiftName">عضو</strong> بمشاركة</p>
+            <div class="share-gift-kind" id="shareGiftKind">محادثة</div>
+            <h3 class="share-gift-title" id="shareGiftTitle"></h3>
+            <div class="share-gift-actions">
+                <button type="button" class="btn-flat-primary" onclick="respondShareGift('accept')">قبول</button>
+                <button type="button" class="btn-secondary-action" onclick="respondShareGift('reject')">رفض</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="shareModal" onclick="if(event.target===this) closeSharePicker()">
+        <div class="modal-window share-modal-window">
+            <div class="modal-header share-modal-header">
+                <div>
+                    <div class="modal-title" id="shareModalTitle">مشاركة</div>
+                    <div class="share-modal-hint" id="shareModalHint">تبقى النسخة لديك، وتُرسل نسخة إلى من تختار.</div>
+                </div>
+                <button class="btn-icon" type="button" onclick="closeSharePicker()" title="إغلاق" aria-label="إغلاق">
+                    <i data-lucide="x" class="icon" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form id="shareForm" class="share-form">
+                <div id="shareDestination" class="share-key-options">
+                    <div class="share-key-choice" role="radiogroup" aria-label="وجهة المشاركة">
+                        <label class="share-key-option">
+                            <input type="radio" name="shareDestination" value="members" checked onchange="toggleShareDestination()">
+                            <span>مع الأعضاء</span>
+                        </label>
+                        <label class="share-key-option">
+                            <input type="radio" name="shareDestination" value="device" onchange="toggleShareDestination()">
+                            <span>في الجهاز فقط</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="shareKeyOptions" class="share-key-options" hidden>
+                    <div class="share-key-choice" role="radiogroup" aria-label="نوع المفتاح">
+                        <label class="share-key-option">
+                            <input type="radio" name="shareKeyMode" value="mine" checked onchange="toggleShareKeyMode()">
+                            <span>المفتاح الخاص بي</span>
+                        </label>
+                        <label class="share-key-option">
+                            <input type="radio" name="shareKeyMode" value="new" onchange="toggleShareKeyMode()">
+                            <span>مفتاح جديد</span>
+                        </label>
+                    </div>
+                    <div id="shareNewKeyWrap" class="share-new-key" hidden>
+                        <label for="shareNewKey">المفتاح الجديد</label>
+                        <div class="share-new-key-row">
+                            <input id="shareNewKey" class="filter-input" type="password" autocomplete="off" spellcheck="false" placeholder="ألصق المفتاح الجديد">
+                            <button type="button" class="btn-flat-secondary btn-icon-pad" onclick="toggleShareNewKeyVisibility()" title="إظهار / إخفاء المفتاح" aria-label="إظهار أو إخفاء المفتاح">👁️</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="shareMemberFields">
+                    <label for="shareMemberFilter">الأعضاء</label>
+                    <input id="shareMemberFilter" type="text" placeholder="صفِّ الأعضاء بالاسم" oninput="filterShareMembers()">
+                    <label class="share-everyone">
+                        <input id="shareEveryone" type="checkbox" onchange="toggleShareEveryone()">
+                        <span>الجميع</span>
+                    </label>
+                    <div id="shareMemberPicker" class="notice-member-picker"></div>
+                </div>
+                <div class="share-form-footer">
+                    <button type="submit" class="btn-flat-primary" id="shareSubmitBtn">مشاركة</button>
+                </div>
+                <div id="shareFormNote" class="share-form-note"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- =======================================================================
+       نافذة إحصائيات المكتبة والأعضاء
+       ======================================================================= -->
+    <div class="modal-overlay" id="libraryStatsModal" onclick="if(event.target===this) closeLibraryStatsModal()">
+        <div class="modal-window server-health-modal-window" style="max-width: 920px; width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle); padding: 14px 22px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(184, 115, 51, 0.12); display: flex; align-items: center; justify-content: center; color: var(--accent-gold);">
+                        <i data-lucide="bar-chart-3" class="icon" aria-hidden="true"></i>
+                    </div>
+                    <div>
+                        <div class="modal-title" style="margin: 0; font-size: 16.5px; font-weight: 700; color: var(--text-main);">إحصائيات المجتهد</div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;" id="libraryStatsHint">كتب الشاملة والنصوص والأعضاء، ومشاريعهم ومحادثاتهم</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" class="btn-secondary-action" onclick="loadLibraryStats()" style="font-size: 12px; padding: 6px 12px; display: flex; align-items: center; gap: 5px;">
+                        <i data-lucide="refresh-cw" class="icon" id="statsRefreshIcon" style="width: 14px; height: 14px;"></i>
+                        <span>تحديث</span>
+                    </button>
+                    <button class="btn-icon" type="button" onclick="closeLibraryStatsModal()" title="إغلاق" aria-label="إغلاق">
+                        <i data-lucide="x" class="icon" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body" id="libraryStatsBody" style="padding: 20px 22px; overflow-y: auto;">
+                <div class="stats-grid">
+                    <div class="telemetry-card">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(184, 115, 51, 0.12); color: #b87333;">
+                                <i data-lucide="library" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">كتب الشاملة</span>
+                        </div>
+                        <div class="telemetry-big-stat" id="statBooksCount">—</div>
+                        <div class="telemetry-card-footer">
+                            <span>كتاب في فهرس المكتبة الشاملة</span>
+                        </div>
+                    </div>
+                    <div class="telemetry-card">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">
+                                <i data-lucide="file-text" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">النصوص</span>
+                            <span class="telemetry-badge" id="badgeTextsStatus">—</span>
+                        </div>
+                        <div class="telemetry-big-stat" id="statTextsCount">—</div>
+                        <div class="telemetry-card-footer">
+                            <span>نص مضمّن في مخزن البحث</span>
+                        </div>
+                    </div>
+                    <div class="telemetry-card">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6;">
+                                <i data-lucide="users" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">الأعضاء</span>
+                        </div>
+                        <div class="telemetry-big-stat" id="statMembersCount">—</div>
+                        <div class="telemetry-card-footer">
+                            <span id="statMembersDetail">عضو نشط</span>
+                        </div>
+                    </div>
+                    <div class="telemetry-card">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(168, 85, 247, 0.12); color: #a855f7;">
+                                <i data-lucide="folder-kanban" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">المشاريع</span>
+                        </div>
+                        <div class="telemetry-big-stat" id="statProjectsCount">—</div>
+                        <div class="telemetry-card-footer">
+                            <span>مشروع لدى المشرف والأعضاء</span>
+                        </div>
+                    </div>
+                    <div class="telemetry-card">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(14, 165, 233, 0.12); color: #0ea5e9;">
+                                <i data-lucide="messages-square" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">المحادثات</span>
+                        </div>
+                        <div class="telemetry-big-stat" id="statChatsCount">—</div>
+                        <div class="telemetry-card-footer">
+                            <span>محادثة لدى المشرف والأعضاء</span>
+                        </div>
+                    </div>
+                    <div class="telemetry-card">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">
+                                <i data-lucide="share-2" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">المشاركات</span>
+                        </div>
+                        <div class="telemetry-big-stat" id="statSharesCount">—</div>
+                        <div class="telemetry-card-footer">
+                            <span>تُحتسب عندما يتشارك الأعضاء</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =======================================================================
        نافذة مراقبة موارد وصحة السيرفر الحيّة
        ======================================================================= -->
     <div class="modal-overlay" id="serverHealthModal" onclick="if(event.target===this) closeServerHealthModal()">
@@ -4095,6 +4224,46 @@
                         <div style="margin-top: 10px;">
                             <button type="button" id="btnDownloadEmbedding" class="admin-only-tab" onclick="downloadEmbeddingModel()" style="align-items: center; gap: 6px; padding: 7px 12px; font-size: 12.5px;">
                                 إعادة سحب نموذج التضمين
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="telemetry-card telemetry-card-wide" id="cardGpu">
+                        <div class="telemetry-card-header">
+                            <div class="telemetry-icon-box" style="background: rgba(14, 165, 233, 0.12); color: #0ea5e9;">
+                                <i data-lucide="microchip" class="icon"></i>
+                            </div>
+                            <span class="telemetry-title">كرت الشاشة (GPU)</span>
+                            <span class="telemetry-badge" id="badgeGpuStatus">جارٍ الفحص</span>
+                        </div>
+                        <div class="telemetry-big-stat" style="font-size: 18px;" id="statGpuName">جارٍ فحص الكرت</div>
+                        <div id="gpuUsageWrap" style="display:none;">
+                            <div class="telemetry-progress-container">
+                                <div class="telemetry-progress-bar" id="barGpu" style="width: 0%; background: linear-gradient(90deg, #10b981, #0ea5e9);"></div>
+                            </div>
+                        </div>
+                        <div class="telemetry-card-footer">
+                            <span id="statGpuMemory">الذاكرة: —</span>
+                            <span id="statGpuUtil" class="sub-muted"></span>
+                        </div>
+                        <div class="telemetry-subinfo">
+                            <div class="info-row">
+                                <span class="label">النظام:</span>
+                                <span class="val" id="statGpuOs">—</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">التعريف:</span>
+                                <span class="val" id="statGpuDriver">—</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">مع التطبيق:</span>
+                                <span class="val" id="statGpuApp">—</span>
+                            </div>
+                        </div>
+                        <div id="statGpuHint" style="display:none; margin-top: 8px; color: var(--text-muted); font-size: 0.82rem;"></div>
+                        <div id="gpuEnableWrap" hidden style="margin-top: 10px;">
+                            <button type="button" id="btnEnableGpu" class="btn-secondary-action" onclick="enableServerGpu()" style="align-items: center; gap: 6px; padding: 7px 12px; font-size: 12.5px;">
+                                تشغيل الكرت مع التطبيق
                             </button>
                         </div>
                     </div>
@@ -4545,18 +4714,20 @@
     <script src="/static/js/d3.min.js"></script>
     <script src="/static/js/markmap-view.min.js"></script>
     <script src="/static/js/markmap-lib.min.js"></script>
-    <script src="/static/js/members.js?v=1792743600"></script>
-    <script src="/static/js/app.js?v=1792824500"></script>
+    <script src="/static/js/members.js?v=1792835200"></script>
+    <script src="/static/js/app.js?v=1792861100"></script>
     <script src="/static/js/search.js?v=1792729000"></script>
-    <script src="/static/js/reader.js?v=1792828200"></script>
+    <script src="/static/js/reader.js?v=1792832400"></script>
     <script src="/static/js/force3d.js?v=1792738800"></script>
-    <script src="/static/js/chat.js?v=1792812600"></script>
+    <script src="/static/js/share.js?v=1792853600"></script>
+    <script src="/static/js/chat.js?v=1792853600"></script>
     <script src="/static/js/agents.js?v=1792743600"></script>
-    <script src="/static/js/providers.js?v=1792743600"></script>
-    <script src="/static/js/tools.js?v=1792743600"></script>
-    <script src="/static/js/projects.js?v=1792827600"></script>
+    <script src="/static/js/providers.js?v=1792858000"></script>
+    <script src="/static/js/tools.js?v=1792853600"></script>
+    <script src="/static/js/projects.js?v=1792853600"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792743600"></script>
+    <script src="/static/js/local_models.js?v=1792862000"></script>
 
     <script>
         window.refreshLucideIcons = function () {

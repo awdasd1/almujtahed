@@ -78,6 +78,11 @@ async function initProjectsTab() {
   if (typeof loadToolsList === 'function') {
     loadToolsList();
   }
+  if (window._openSharedProjectId) {
+    const sharedId = window._openSharedProjectId;
+    window._openSharedProjectId = '';
+    openProjectWorkspace(sharedId);
+  }
 }
 
 // تحميل المشاريع من الخادم أو التخزين المحلي
@@ -216,9 +221,8 @@ function renderProjectsList(filtered = null) {
             <span>فتح مساحة العمل 📂</span>
           </button>
           <div style="display: flex; gap: 6px; align-items: center;">
-            <button type="button" class="btn-card-action" onclick="exportSingleProject('${p.id}', event)" title="تصدير هذا المشروع كملف JSON">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              <span>تصدير 📤</span>
+            <button type="button" class="btn-card-action" data-share-kind="project" data-share-id="${escapeHtml(p.id)}" data-share-label="${escapeHtml(p.title || 'المشروع')}" title="مشاركة المشروع مع الأعضاء أو حفظه في الجهاز">
+              <span>مشاركة</span>
             </button>
             <button type="button" class="btn-card-action danger" onclick="deleteProject('${p.id}', event)" title="حذف المشروع">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -3085,6 +3089,15 @@ function exportProjectsData() {
 }
 
 // تصدير مشروع واحد محدد كملف JSON مستقل
+function shareActiveProject() {
+  const project = projectsList.find(item => item.id === activeProjectId);
+  if (!project || typeof openSharePicker !== 'function') {
+    if (typeof showToast === 'function') showToast('افتح المشروع أولاً', true);
+    return;
+  }
+  openSharePicker('project', project.id, project.title || 'المشروع');
+}
+
 function exportSingleProject(projectId, event) {
   if (event && typeof event.stopPropagation === 'function') {
     event.stopPropagation();
@@ -3146,7 +3159,7 @@ function exportSingleProject(projectId, event) {
   URL.revokeObjectURL(url);
 
   if (typeof showToast === 'function') {
-    showToast(`📤 تم تصدير مشروع «${(p.title || '').slice(0, 35)}» كملف JSON بنجاح!`);
+    showToast(`تم حفظ مشروع «${(p.title || '').slice(0, 35)}» في جهازك`);
   }
 }
 
@@ -6162,6 +6175,7 @@ window.saveNewManualProject = saveNewManualProject;
 window.deleteProject = deleteProject;
 window.exportProjectsData = exportProjectsData;
 window.exportSingleProject = exportSingleProject;
+window.shareActiveProject = shareActiveProject;
 window.triggerImportProjectFile = triggerImportProjectFile;
 window.handleProjectFileImport = handleProjectFileImport;
 window.runCurrentProjectExecution = runCurrentProjectExecution;
