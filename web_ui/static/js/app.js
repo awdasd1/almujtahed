@@ -1222,8 +1222,13 @@ async function fetchServerHealth(showToast = false) {
 
       if (statModelName) statModelName.textContent = data.model.name || 'Al-Mojtahed 8B GGUF';
       if (statModelEngine) statModelEngine.textContent = data.model.loaded ? 'محمل في الذاكرة (سريع)' : 'غير محمل';
+      const download = data.model.download || {};
+      const modelWrap = document.getElementById('modelDownloadWrap');
+      const modelBar = document.getElementById('barModelDownload');
+      const modelDownload = document.getElementById('statModelDownload');
+      const downloadBtn = document.getElementById('btnDownloadEmbedding');
       if (badgeModelStatus) {
-        if (data.model.download && data.model.download.running) {
+        if (download.running) {
           badgeModelStatus.textContent = 'جاري السحب';
           badgeModelStatus.style.color = '#f59e0b';
         } else {
@@ -1231,11 +1236,23 @@ async function fetchServerHealth(showToast = false) {
           badgeModelStatus.style.color = data.model.loaded ? '#10b981' : '#ef4444';
         }
       }
-      const modelDownload = document.getElementById('statModelDownload');
+      if (modelWrap) modelWrap.style.display = download.running ? 'block' : 'none';
+      if (download.running && modelBar) modelBar.style.width = `${Math.max(2, download.percent || 0)}%`;
       if (modelDownload) {
-        const note = data.model.download && data.model.download.message;
-        modelDownload.style.display = note ? 'block' : 'none';
-        modelDownload.textContent = note || '';
+        modelDownload.style.display = download.message ? 'block' : 'none';
+        modelDownload.textContent = download.message || '';
+      }
+      if (downloadBtn) {
+        downloadBtn.disabled = !!download.running;
+        downloadBtn.textContent = download.running ? 'جاري سحب النموذج...' : 'إعادة سحب نموذج التضمين';
+      }
+      if (download.running) {
+        if (!window._embedDownloadPoller) {
+          window._embedDownloadPoller = setInterval(() => fetchServerHealth(false), 3000);
+        }
+      } else if (window._embedDownloadPoller) {
+        clearInterval(window._embedDownloadPoller);
+        window._embedDownloadPoller = null;
       }
     }
 
@@ -1314,7 +1331,6 @@ async function downloadEmbeddingModel() {
       feedback.style.color = '#ef4444';
       feedback.textContent = 'تعذر بدء سحب نموذج التضمين';
     }
-  } finally {
     if (btn) btn.disabled = false;
   }
 }

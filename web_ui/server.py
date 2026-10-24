@@ -2688,11 +2688,7 @@ async def get_system_resources_endpoint():
             "loaded": model_loaded,
             "name": model_name,
             "type": "8B GGUF (4096D)" if app_state.get("is_8b") else "Standard",
-            "download": {
-                "running": bool(_EMBED_FETCH["running"]),
-                "message": _EMBED_FETCH.get("message") or "",
-                "attempt": int(_EMBED_FETCH.get("attempt") or 0),
-            }
+            "download": _embedding_download_view(),
         }
     }
 
@@ -2710,8 +2706,29 @@ async def restart_qdrant_endpoint(request: Request):
 
 EMBED_GGUF_NAME = "almojtahed-embedding-8b-Q4_K_M.gguf"
 EMBED_GGUF_REPO = "cs95/almojtahed-qwen3-8b"
-_EMBED_FETCH = {"running": False, "message": "", "attempt": 0}
+_EMBED_FETCH = {"running": False, "message": "", "attempt": 0, "received": 0, "expected": 0, "speed_bps": None}
 _EMBED_FETCH_LOCK = threading.Lock()
+
+def _embedding_download_view():
+    received = int(_EMBED_FETCH.get("received") or 0)
+    expected = int(_EMBED_FETCH.get("expected") or 0)
+    running = bool(_EMBED_FETCH["running"])
+    percent = min(99, int(received * 100 / expected)) if running and expected else 0
+    speed = _format_transfer_speed(_EMBED_FETCH.get("speed_bps")) if running else ""
+    received_gb = round(received / (1024 ** 3), 2)
+    expected_gb = round(expected / (1024 ** 3), 2) if expected else 0
+    message = _EMBED_FETCH.get("message") or ""
+    if running and expected:
+        message = f"جاري سحب نموذج التضمين: {received_gb} من {expected_gb} غيغابايت · {speed}"
+    return {
+        "running": running,
+        "message": message,
+        "attempt": int(_EMBED_FETCH.get("attempt") or 0),
+        "received_gb": received_gb,
+        "expected_gb": expected_gb,
+        "percent": percent,
+        "speed": speed,
+    }
 
 def _embedding_gguf_path():
     name = EMBED_GGUF_NAME
@@ -2736,6 +2753,42 @@ def _activate_gguf_embedder(path: Path):
         app_state["is_8b"] = True
         app_state["is_ready"] = True
 
+def _embedding_received_bytes(directory: Path, final: Path) -> int:
+    best = final.stat().st_size if final.is_file() else 0
+    if not directory.is_dir():
+        return best
+    for path in directory.rglob("*"):
+        if not path.is_file():
+            continue
+        if EMBED_GGUF_NAME not in path.name and not path.name.endswith(".incomplete"):
+            continue
+        try:
+            best = max(best, path.stat().st_size)
+        except OSError:
+            continue
+    return best
+
+def _embedding_remote_size(token):
+    try:
+        from huggingface_hub import get_hf_file_metadata, hf_hub_url
+        url = hf_hub_url(EMBED_GGUF_REPO, EMBED_GGUF_NAME)
+        meta = get_hf_file_metadata(url, token=token)
+        return int(meta.size or 0)
+    except Exception:
+        return 0
+
+def _watch_embedding_bytes(directory: Path, final: Path, stop: threading.Event):
+    previous_bytes = 0
+    previous_at = time.time()
+    while not stop.wait(2):
+        received = _embedding_received_bytes(directory, final)
+        now = time.time()
+        if received >= previous_bytes and now > previous_at:
+            _EMBED_FETCH["speed_bps"] = (received - previous_bytes) / (now - previous_at)
+        previous_bytes = received
+        previous_at = now
+        _EMBED_FETCH["received"] = received
+
 def _download_embedding_worker():
     path = _embedding_gguf_path()
     try:
@@ -2745,26 +2798,39 @@ def _download_embedding_worker():
             _EMBED_FETCH["message"] = "النموذج موجود وتم تحميله في الذاكرة"
             return
         token = os.getenv("HF_TOKEN") or None
-        from huggingface_hub import hf_hub_download
-        for attempt in range(1, 5):
-            _EMBED_FETCH["attempt"] = attempt
-            _EMBED_FETCH["message"] = f"محاولة سحب نموذج التضمين {attempt} من 4"
-            try:
-                hf_hub_download(
-                    repo_id=EMBED_GGUF_REPO,
-                    filename=EMBED_GGUF_NAME,
-                    local_dir=str(path.parent),
-                    token=token,
-                )
-                if path.is_file() and path.stat().st_size > 1024 ** 3:
-                    _activate_gguf_embedder(path)
-                    _EMBED_FETCH["message"] = "اكتمل سحب نموذج التضمين وتحميله في الذاكرة"
-                    return
-                _EMBED_FETCH["message"] = "وصل ملف أصغر من النموذج المتوقع"
-            except Exception as ex:
-                _EMBED_FETCH["message"] = f"فشلت المحاولة {attempt} من 4"
-                print(f"⚠️ سحب نموذج التضمين، المحاولة {attempt}: {type(ex).__name__}")
-                time.sleep(min(60, 8 * attempt))
+        _EMBED_FETCH["expected"] = _embedding_remote_size(token)
+        _EMBED_FETCH["received"] = _embedding_received_bytes(path.parent, path)
+        stop_watch = threading.Event()
+        watcher = threading.Thread(
+            target=_watch_embedding_bytes,
+            args=(path.parent, path, stop_watch),
+            daemon=True,
+        )
+        watcher.start()
+        try:
+            from huggingface_hub import hf_hub_download
+            for attempt in range(1, 5):
+                _EMBED_FETCH["attempt"] = attempt
+                _EMBED_FETCH["message"] = f"محاولة سحب نموذج التضمين {attempt} من 4"
+                try:
+                    hf_hub_download(
+                        repo_id=EMBED_GGUF_REPO,
+                        filename=EMBED_GGUF_NAME,
+                        local_dir=str(path.parent),
+                        token=token,
+                    )
+                    if path.is_file() and path.stat().st_size > 1024 ** 3:
+                        _activate_gguf_embedder(path)
+                        _EMBED_FETCH["received"] = path.stat().st_size
+                        _EMBED_FETCH["message"] = "اكتمل سحب نموذج التضمين وتحميله في الذاكرة"
+                        return
+                    _EMBED_FETCH["message"] = "وصل ملف أصغر من النموذج المتوقع"
+                except Exception as ex:
+                    _EMBED_FETCH["message"] = f"فشلت المحاولة {attempt} من 4"
+                    print(f"⚠️ سحب نموذج التضمين، المحاولة {attempt}: {type(ex).__name__}")
+                    time.sleep(min(60, 8 * attempt))
+        finally:
+            stop_watch.set()
     except Exception as ex:
         _EMBED_FETCH["message"] = "تعذر تحميل نموذج التضمين في الذاكرة"
         print(f"⚠️ تحميل نموذج التضمين: {type(ex).__name__}")
@@ -2777,9 +2843,11 @@ def _start_embedding_download():
             return False, "سحب نموذج التضمين يعمل الآن"
         _EMBED_FETCH["running"] = True
         _EMBED_FETCH["attempt"] = 0
+        _EMBED_FETCH["received"] = 0
+        _EMBED_FETCH["speed_bps"] = None
         _EMBED_FETCH["message"] = "بدأ سحب نموذج التضمين"
     threading.Thread(target=_download_embedding_worker, name="embed-download", daemon=True).start()
-    return True, "بدأ سحب نموذج التضمين. تتحدث البطاقة مع كل محاولة."
+    return True, "بدأ سحب نموذج التضمين. الشريط يبيّن التقدم، فلا تكرر الضغط."
 
 @app.post("/api/system/embedding/download")
 async def download_embedding_endpoint(request: Request):
