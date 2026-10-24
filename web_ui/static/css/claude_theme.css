@@ -2254,6 +2254,18 @@ input:checked+.slider-toggle:before {
   flex-shrink: 0;
 }
 
+.reader-close-btn {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  margin-inline-start: 12px;
+}
+
+.reader-close-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
 .reader-header-info {
   display: flex;
   flex-direction: column;
@@ -2411,16 +2423,11 @@ input:checked+.slider-toggle:before {
   border-radius: var(--radius-sm);
 }
 
-.reader-chat-btn {
-  background: var(--accent-clay);
-  color: #FFFFFF !important;
+.reader-select-hint {
   margin-right: auto;
-  border: none;
-  font-weight: 600;
-}
-
-.reader-chat-btn:hover {
-  opacity: 0.92;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .reader-context-banner {
@@ -2583,23 +2590,18 @@ input:checked+.slider-toggle:before {
 .reader-floating-tooltip {
   position: fixed;
   transform: translate(-50%, -100%);
-  background: var(--text-dark);
-  color: #FFFFFF;
-  border-radius: var(--radius-sm);
-  padding: 6px 12px;
+  background: transparent;
+  padding: 0;
   box-shadow: none;
   z-index: 10000;
-  cursor: pointer;
   animation: fadeIn 0.15s ease;
 }
 
-.reader-floating-tooltip button {
-  background: transparent;
-  border: none;
-  color: #FFFFFF;
-  font-family: var(--font-amiri);
-  font-size: 14.5px;
-  cursor: pointer;
+.reader-study-btn {
+  padding: 7px 14px;
+  font-size: 13.5px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
 
 /* =============================================================================
@@ -7712,22 +7714,102 @@ select {
   color: var(--text-main);
 }
 
+#serverHealthModal .modal-body {
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.telemetry-maintenance {
+  width: 100%;
+  margin-top: 4px;
+}
+
 .telemetry-actions-panel {
-  background: var(--bg-surface);
+  background:
+    linear-gradient(180deg, rgba(16, 185, 129, 0.07), transparent 62%),
+    var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  padding: 16px 20px;
+  border-radius: 14px;
+  padding: 16px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.telemetry-actions-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.telemetry-actions-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.telemetry-actions-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.telemetry-actions-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-main);
+}
+
+.telemetry-actions-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+.telemetry-actions-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.telemetry-actions-buttons .btn-primary,
+.telemetry-actions-buttons .btn-secondary-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 210px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.telemetry-actions-buttons .icon {
+  width: 15px;
+  height: 15px;
 }
 
 @media (max-width: 680px) {
   .telemetry-actions-panel {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+  }
+
+  .telemetry-actions-buttons .btn-primary,
+  .telemetry-actions-buttons .btn-secondary-action {
+    width: 100%;
+    min-width: 0;
   }
 }
 

@@ -482,7 +482,7 @@ function onReaderTextSelected() {
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     tooltip.style.display = 'flex';
-    tooltip.style.top = `${rect.top - 42}px`;
+    tooltip.style.top = `${rect.top - 8}px`;
     tooltip.style.left = `${rect.left + (rect.width / 2)}px`;
   } else if (tooltip) {
     tooltip.style.display = 'none';

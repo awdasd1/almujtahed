@@ -4008,9 +4008,9 @@ function enhanceProjectCitationsWithBookReader(container) {
       node.nextSibling.classList.contains('btn-verify-citation')
     ) {
       const bookButton = node.nextSibling;
-      const mcpButton = bookButton.nextSibling;
-      if (!mcpButton || !mcpButton.classList || !mcpButton.classList.contains('btn-mcp-verify')) {
-        bookButton.after(citationMcpButton(spans[0]));
+      const magnifier = bookButton.nextSibling;
+      if (magnifier && magnifier.classList && magnifier.classList.contains('btn-mcp-verify')) {
+        magnifier.remove();
       }
       return;
     }
@@ -4019,7 +4019,6 @@ function enhanceProjectCitationsWithBookReader(container) {
     spans.forEach(span => {
       fragment.appendChild(document.createTextNode(text.slice(cursor, span.end)));
       fragment.appendChild(citationVerifyButton(span));
-      fragment.appendChild(citationMcpButton(span));
       cursor = span.end;
     });
     if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)));
