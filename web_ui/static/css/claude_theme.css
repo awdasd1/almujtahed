@@ -8593,6 +8593,16 @@ select {
   text-decoration: none;
 }
 
+ol.chat-fn-list,
+ol.chat-fn-list li {
+  list-style: none;
+}
+
+ol.chat-fn-list {
+  margin: 0;
+  padding: 0;
+}
+
 a.chat-fn-ref,
 a.chat-fn-back {
   cursor: pointer;

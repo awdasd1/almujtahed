@@ -5885,6 +5885,10 @@ function formatAcademicBody(rawMarkdown) {
   text = text.replace(/(^|\n)(\d+)[.-]\s+/g, (match, lead, num) => `${lead}${toArabicIndicDigits(num)}- `);
   text = text.replace(/(القول الأول:|القول الثاني:|القول الثالث:|الدليل الأول:|الدليل الثاني:|الدليل الثالث:|المطلب الأول:|المطلب الثاني:|المسألة الأولى:|المسألة الثانية:)/g, '<b>$1</b>');
 
+  text = text.replace(/<ol>([\s\S]*?)<\/ol>/gi, (full, inner) => {
+    if (!/fn\d+/.test(inner)) return full;
+    return `<ol class="footnote-list">${inner}</ol>`;
+  });
   let html = typeof marked !== 'undefined' ? marked.parse(text) : text.replace(/\n/g, '<br>');
   let inBibliography = false;
   html = html.replace(/<(p|h[1-6])([^>]*)>([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
@@ -5956,6 +5960,7 @@ function buildAcademicPaperHtml(runData, options) {
     .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: 17pt; text-align: justify; }
     .footnote-line, .biblio-title { text-indent: 0 !important; margin: 0; }
     .footnote-line { font-size: 13.5pt; line-height: 1.8; }
+    ol.footnote-list, ol.footnote-list li { list-style: none; margin: 0; padding: 0; }
     .biblio-title { font-size: 20pt; margin-top: 22px; }
     h1, h2, h3, h4 { text-indent: 0; }
     sup small { font-size: 11pt; font-weight: 700; vertical-align: super; }

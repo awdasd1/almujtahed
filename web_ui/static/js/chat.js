@@ -1397,6 +1397,10 @@ function chatDisplayText(text, scope) {
   if (!/<p[\s>]|<sup[\s>]/i.test(source)) return source;
   const prefix = scope ? `${scope}-` : '';
   let next = source.replace(/\bid=(["'])fn(\d+)\1/gi, (match, quote, number) => `id=${quote}${prefix}fn${number}${quote}`);
+  next = next.replace(/<ol>([\s\S]*?)<\/ol>/gi, (full, inner) => {
+    if (!/fn\d+/.test(inner)) return full;
+    return `<ol class="chat-fn-list">${inner}</ol>`;
+  });
   next = next.replace(/(<li\s+id="[^"]*fn(\d+)"[^>]*>)\s*<sup>\s*<small>\s*(\([^<]{1,12}\))\s*<\/small>\s*<\/sup>/gi, (match, open, number, label) => {
     return `${open}<a class="chat-fn-back" href="#${prefix}ref${number}-1">${label}</a>`;
   });
