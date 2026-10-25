@@ -5160,6 +5160,83 @@ input:checked+.slider-toggle:before {
   color: var(--text-muted);
 }
 
+.model-hover-card {
+  position: fixed;
+  z-index: 1400;
+  width: 320px;
+  max-height: min(420px, calc(100vh - 16px));
+  overflow: auto;
+  padding: 14px 14px 12px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(28, 22, 16, 0.16);
+  pointer-events: none;
+  text-align: right;
+}
+
+.model-hover-card[hidden] { display: none; }
+
+.model-hover-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-clay);
+}
+
+.model-hover-title {
+  font-family: var(--font-amiri);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+
+.model-hover-id {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.model-hover-about-label {
+  margin-top: 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent-clay);
+}
+
+.model-hover-about {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-main);
+}
+
+.model-hover-stats {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.model-hover-stats div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.model-hover-stats span { color: var(--text-muted); }
+
+.model-hover-stats strong {
+  color: var(--text-main);
+  font-weight: 700;
+  direction: ltr;
+}
+
 /* عمق التفكير كقائمة منسدلة */
 .thinking-dropdown {
   font-size: 12px;

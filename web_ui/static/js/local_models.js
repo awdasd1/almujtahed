@@ -44,7 +44,7 @@ function renderLocalChatDropdown() {
   fillLocalSelect(document.getElementById('chatModelSelect'), id);
   if (listEl) {
     listEl.innerHTML = localCatalog().map((item) => `
-      <div class="custom-model-item ${item.id === id ? 'active' : ''}" onclick="selectCustomChatModel('${localText(item.id)}', '${localText(item.name).replace(/'/g, '&#39;')}')">
+      <div class="custom-model-item ${item.id === id ? 'active' : ''}" data-model-id="${localText(item.id)}" data-model-name="${localText(item.name)}" onclick="selectCustomChatModel('${localText(item.id)}', '${localText(item.name).replace(/'/g, '&#39;')}')">
         <span class="custom-model-item-name">${localText(item.name)}</span>
         <span class="custom-model-item-tag">محلي</span>
       </div>
@@ -68,7 +68,7 @@ function renderLocalAgentDropdown() {
   if (trigger) trigger.textContent = model ? model.name : 'لا توجد نماذج محلية';
   if (!listEl) return;
   listEl.innerHTML = localCatalog().map((item) => `
-    <div class="custom-model-item ${item.id === id ? 'active' : ''}" onclick="selectCustomAgentModel('${localText(item.id)}', '${localText(item.name).replace(/'/g, '&#39;')}')">
+    <div class="custom-model-item ${item.id === id ? 'active' : ''}" data-model-id="${localText(item.id)}" data-model-name="${localText(item.name)}" onclick="selectCustomAgentModel('${localText(item.id)}', '${localText(item.name).replace(/'/g, '&#39;')}')">
       <span class="custom-model-item-name">${localText(item.name)}</span>
       <span class="custom-model-item-tag">محلي</span>
     </div>

@@ -913,6 +913,7 @@ function toggleChatModelDropdown(event) {
 function closeChatModelDropdown() {
   const wrapper = document.getElementById('chatCustomModelWrapper');
   if (wrapper) wrapper.classList.remove('open');
+  hideModelHoverCard();
 }
 
 // مسح حقل البحث في قائمة النماذج
@@ -992,6 +993,132 @@ function handleChatModelSearchKey(event) {
     }
   }
 }
+
+let modelHoverItem = null;
+let modelHoverTimer = 0;
+
+function hideModelHoverCard() {
+  clearTimeout(modelHoverTimer);
+  modelHoverItem = null;
+  const card = document.getElementById('modelHoverCard');
+  if (card) card.hidden = true;
+}
+
+function ensureModelHoverCard() {
+  let card = document.getElementById('modelHoverCard');
+  if (card) return card;
+  card = document.createElement('div');
+  card.id = 'modelHoverCard';
+  card.className = 'model-hover-card';
+  card.hidden = true;
+  document.body.appendChild(card);
+  return card;
+}
+
+function lookupOpenRouterModel(id) {
+  const lists = [openrouterModelsList, window.openrouterModelsList];
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    const found = list.find(model => model && model.id === id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function moneyPerMillion(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 'غير محدد';
+  return `$${number.toFixed(3)} / 1M`;
+}
+
+function placeModelHoverCard(item, card) {
+  const rect = item.getBoundingClientRect();
+  const menu = item.closest('.custom-model-dropdown-menu');
+  const menuRect = menu ? menu.getBoundingClientRect() : null;
+  if (!menuRect || rect.bottom < menuRect.top || rect.top > menuRect.bottom) {
+    hideModelHoverCard();
+    return;
+  }
+  const width = 320;
+  const gap = 10;
+  card.hidden = false;
+  const cardHeight = card.offsetHeight || 200;
+  let left = rect.left - width - gap;
+  if (left < 8) left = rect.right + gap;
+  if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+  let top = rect.top;
+  if (top + cardHeight > window.innerHeight - 8) top = Math.max(8, window.innerHeight - cardHeight - 8);
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
+}
+
+function fillModelHoverCard(item) {
+  const card = ensureModelHoverCard();
+  const id = item.getAttribute('data-model-id') || '';
+  const name = item.getAttribute('data-model-name') || item.querySelector('.custom-model-item-name')?.textContent || id;
+  const model = lookupOpenRouterModel(id);
+  const local = !model && (id.indexOf('local-') === 0 || item.querySelector('.custom-model-item-tag')?.textContent === 'محلي');
+  const prompt = model ? moneyPerMillion(model.pricing && model.pricing.prompt_per_1m) : (local ? 'غير مطبّق' : 'غير محدد');
+  const completion = model ? moneyPerMillion(model.pricing && model.pricing.completion_per_1m) : (local ? 'غير مطبّق' : 'غير محدد');
+  const context = model && model.context_length
+    ? `${Number(model.context_length).toLocaleString('en-US')} توكن`
+    : (local ? 'على هذا الجهاز' : 'غير محدد');
+  const about = local
+    ? 'نموذج محلي يعمل على هذا الجهاز من ملف محفوظ، بلا تسعير سحابي.'
+    : (modelAboutArCache[id] || '');
+  card.innerHTML = `
+    <div class="model-hover-kicker">بطاقة النموذج</div>
+    <div class="model-hover-title">${escapeHtml(name)}</div>
+    <div class="model-hover-id" dir="ltr">${escapeHtml(id)}</div>
+    <div class="model-hover-about-label">ماذا يفعل هذا النموذج</div>
+    <p class="model-hover-about">${about ? escapeHtml(about) : 'جارٍ جلب وصف النموذج...'}</p>
+    <div class="model-hover-stats">
+      <div><span>سعر الإدخال</span><strong>${escapeHtml(prompt)}</strong></div>
+      <div><span>سعر الإخراج</span><strong>${escapeHtml(completion)}</strong></div>
+      <div><span>طول السياق</span><strong>${escapeHtml(context)}</strong></div>
+    </div>
+  `;
+  placeModelHoverCard(item, card);
+  if (local || !id || modelAboutArCache[id]) return;
+  clearTimeout(modelHoverTimer);
+  modelHoverTimer = setTimeout(() => {
+    if (modelHoverItem !== item) return;
+    fetch('/api/openrouter/model-about?model_id=' + encodeURIComponent(id))
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data || !data.description || modelHoverItem !== item) return;
+        modelAboutArCache[id] = data.description;
+        fillModelHoverCard(item);
+      })
+      .catch(() => {
+        if (modelHoverItem !== item) return;
+        const aboutEl = card.querySelector('.model-hover-about');
+        if (aboutEl) aboutEl.textContent = 'الوصف غير متاح الآن';
+      });
+  }, 220);
+}
+
+document.addEventListener('mouseover', (event) => {
+  const item = event.target.closest && event.target.closest('.custom-model-item');
+  if (!item || item === modelHoverItem) return;
+  if (!item.closest('.custom-model-dropdown-menu')) return;
+  modelHoverItem = item;
+  fillModelHoverCard(item);
+});
+
+document.addEventListener('mouseout', (event) => {
+  if (!modelHoverItem) return;
+  const next = event.relatedTarget;
+  if (next && modelHoverItem.contains(next)) return;
+  hideModelHoverCard();
+});
+
+document.addEventListener('scroll', (event) => {
+  if (!modelHoverItem) return;
+  const list = event.target && event.target.closest && event.target.closest('.custom-model-options-list');
+  if (!list || !list.contains(modelHoverItem)) return;
+  placeModelHoverCard(modelHoverItem, ensureModelHoverCard());
+}, true);
 
 // اختيار نموذج من القائمة المخصصة
 function selectCustomChatModel(modelId, modelName) {

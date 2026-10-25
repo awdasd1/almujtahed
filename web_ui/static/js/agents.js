@@ -931,6 +931,7 @@ function toggleAgentModelDropdown(event) {
 function closeAgentModelDropdown() {
   const wrapper = document.getElementById('agentCustomModelWrapper');
   if (wrapper) wrapper.classList.remove('open');
+  if (typeof hideModelHoverCard === 'function') hideModelHoverCard();
 }
 
 function clearAgentModelSearch() {
