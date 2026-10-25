@@ -836,7 +836,16 @@ async function handleFileSelected(e) {
         method: 'POST',
         body: formData
       });
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
+
+      if (resp.status === 401) {
+        item.uploading = false;
+        item.error = 'انتهت الجلسة';
+        renderAttachmentsPreview();
+        if (typeof showToast === 'function') showToast('انتهت الجلسة. سجّل الدخول ثم أعد رفع الملف');
+        setTimeout(() => { window.location.href = '/login'; }, 700);
+        return;
+      }
 
       if (data.success) {
         item.uploading = false;
@@ -854,7 +863,7 @@ async function handleFileSelected(e) {
         }
       } else {
         item.uploading = false;
-        item.error = data.error || 'فشل الرفع';
+        item.error = data.detail || data.error || 'فشل الرفع';
         renderAttachmentsPreview();
         if (typeof showToast === 'function') {
           showToast(`❌ فشل حفظ «${file.name}»: ${item.error}`, 3500);
