@@ -1585,13 +1585,20 @@ BOOK_PAGE_INDEX_CACHE: Dict[str, dict] = {}
 
 CITATION_FORMAT_RULE = """
 ═══════════════════════════════════════════════════════════
-⛔ إلزام الإحالة القياسية (يسري على كل حديث ونص وعزو إلى كتاب):
-1. اسم الكتاب يُنسخ حرفياً كما هو في قاعدة الشاملة، ومن سطر «الإحالة المعتمدة» المرفق مع المقطع. يُمنع اختصاره أو إضافة اسم المؤلف أو تغيير حرف.
-2. إن كان الكتاب أكثر من جزء، فالموضع يُكتب بهذه الصيغة وحدها: (رقم الجزء-رقم الصفحة) مثل (3-450).
-3. إن كان الكتاب جزءاً واحداً، فالموضع يُكتب بهذه الصيغة وحدها: ص(رقم الصفحة) مثل ص(50).
-4. شكل الإحالة الكامل: «اسم الكتاب كما في القاعدة» (3-450) أو «اسم الكتاب كما في القاعدة» ص(50).
-5. يُمنع جـ وص: و«ج 1، ص 15» وكل صيغة غير هاتين.
-6. في الشات لا تُخرج وسوم HTML للطباعة ولا حواشي مرتفعة. الإحالة تبقى في المتن بهذا الشكل وحده حتى يعمل زر التصفح.
+⛔ إلزام تام للإحالة القياسية. لا تُقبل صيغة سواها، ويُعاد ضبط كل إحالة إليها:
+1. اسم الكتاب يُنسخ حرفياً كما هو في قاعدة الشاملة، ومن سطر «الإحالة المعتمدة». يُمنع اختصاره أو إضافة اسم المؤلف أو تغيير حرف.
+2. الكتاب المتعدد الأجزاء: اسم الكتاب ثم مسافة ثم القوس، والجزء قبل الصفحة، وبينهما شرطة، والأرقام لاتينية فقط.
+   الصحيح وحده: مجموع الفتاوى (2-368)
+3. الكتاب ذو الجزء الواحد: اسم الكتاب ثم ص(رقم الصفحة) بأرقام لاتينية، مثل: زاد المستقنع ص(50)
+4. هذه الصيغ كلها خطأ وتُمنع:
+   مجموع الفتاوى (٢-٣٦٨)
+   مجموع الفتاوى (٢/٣٦٨)
+   مجموع الفتاوى (٤٦٨/٢)
+   (مجموع الفتاوى ٢/٣٦٨)
+   (مجموع الفتاوى ٣٦٨/٢)
+   (مجموع الفتاوى 2-368)
+   يُمنع كذلك: الشرطة المائلة، والأرقام العربية، وتقديم الصفحة على الجزء، ووضع اسم الكتاب داخل القوس، و«جـ» و«ص:».
+5. في الشات لا تُخرج وسوم HTML للطباعة ولا حواشي مرتفعة. الإحالة تبقى في المتن بهذا الشكل وحده حتى يعمل زر التصفح.
 ═══════════════════════════════════════════════════════════
 """
 
@@ -1619,8 +1626,85 @@ def canonical_locator(part: Any, page: Any, volume_count: Any = None) -> str:
 
 def canonical_citation_label(title: str, part: Any, page: Any, volume_count: Any = None) -> str:
     loc = canonical_locator(part, page, volume_count)
-    name = (title or "").strip()
-    return f"«{name}» {loc}".strip()
+    name = (title or "").strip().strip("«»\"")
+    return f"{name} {loc}".strip()
+
+_EASTERN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+_CITATION_LEAD = re.compile(
+    r"^(?:و?(?:انظر|راجع|ينظر|يُنظر|قال|في|من|جاء|كتاب|المصدر|المرجع|هذا|ذلك|كما|نص|عند|إلى|الى|عن|على|وهو|هي|هو|وقد|قد|ثم|أو|او|بعد|قبل))\s+"
+)
+_CITATION_REJECT = {
+    "الآية", "آية", "الآيات", "السورة", "سورة", "عام", "سنة", "العام", "القرن",
+    "الباب", "الفصل", "المسألة", "القول", "المذهب", "جزء", "الجزء", "صفحة", "الصفحة",
+}
+_CITATION_INSIDE = re.compile(
+    r"\(\s*"
+    r"(«[^»\n]{3,80}»|[\u0600-\u06FF][\u0600-\u06FF\s]{2,70}?)"
+    r"\s+([0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*([0-9٠-٩۰-۹]{1,4})\s*\)"
+)
+_CITATION_OUTSIDE = re.compile(
+    r"(«[^»\n]{3,80}»|[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){0,8})"
+    r"\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*([0-9٠-٩۰-۹]{1,4})\s*\)"
+)
+_CITATION_PAGE = re.compile(r"ص\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*\)")
+
+def _locator_pair(first: str, second: str):
+    try:
+        left = int(str(first).translate(_EASTERN_DIGITS))
+        right = int(str(second).translate(_EASTERN_DIGITS))
+    except ValueError:
+        return None
+    if left >= 1300 and right >= 1300:
+        return None
+    if left > right and left >= 60 and right <= 40 and left >= right * 3:
+        volume, page = right, left
+    else:
+        volume, page = left, right
+    if not (1 <= volume <= 200 and 1 <= page <= 3000):
+        return None
+    return f"({volume}-{page})"
+
+def _citation_title(raw: str):
+    text = (raw or "").strip()
+    if text.startswith("«") and "»" in text:
+        text = text[1:text.rfind("»")].strip()
+    while True:
+        nxt = _CITATION_LEAD.sub("", text, count=1)
+        if nxt == text:
+            break
+        text = nxt
+    text = re.sub(r"\s+", " ", text).strip(" «»\"")
+    if text in _CITATION_REJECT or len(re.findall(r"[\u0600-\u06FF]", text)) < 3 or len(text) > 80:
+        return None
+    return text
+
+def _rewrite_citation_chunk(chunk: str) -> str:
+    def inside(match):
+        title = _citation_title(match.group(1))
+        loc = _locator_pair(match.group(2), match.group(3))
+        if not title or not loc:
+            return match.group(0)
+        return f"{title} {loc}"
+
+    def outside(match):
+        raw = match.group(1)
+        title = _citation_title(raw)
+        loc = _locator_pair(match.group(2), match.group(3))
+        if not title or not loc:
+            return match.group(0)
+        kept = raw[:raw.rfind(title)]
+        return f"{kept}{title} {loc}"
+
+    chunk = _CITATION_INSIDE.sub(inside, chunk)
+    chunk = _CITATION_OUTSIDE.sub(outside, chunk)
+    return _CITATION_PAGE.sub(lambda m: f"ص({str(m.group(1)).translate(_EASTERN_DIGITS)})", chunk)
+
+def enforce_standard_citations(text: str) -> str:
+    """يُبقي الإحالة على: اسم الكتاب (الجزء-الصفحة) بأرقام لاتينية."""
+    if not text:
+        return text
+    parts = re.split(r"(```[\s\S]*?```)", text)
+    return "".join(part if part.startswith("```") else _rewrite_citation_chunk(part) for part in parts)
 
 def resolve_book_path(rel_path: Optional[str], book_title: Optional[str]) -> Tuple[Optional[str], Optional[Path]]:
     """
@@ -5775,7 +5859,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             print(f"Outer live model handler error: {outer_e}")
 
     if live_reply:
-        reply_text = live_reply
+        reply_text = enforce_standard_citations(live_reply)
     elif retrieved_citations:
         prefix_tag = f"### [معالجة واستنباط عبر: {group_name}]\n\n" if group_name else ""
         reply_text = f"""{prefix_tag}{thinking_indicator}⚠️ **تنبيه:** تعذر الاتصال بمزود الذكاء الاصطناعي لتحليل البيانات وتوليد الجدول (يرجى التحقق من مفتاح API أو الرصيد).
@@ -8718,7 +8802,7 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
     planner_system_prompt = (
         "أنت «العقل المدبر والمخطط المنهجي للمشاريع البحثية التراثية» في منظومة المجتهد المتصلة بالمكتبة الشاملة (8.15 مليون نص تراثي).\n"
         "مهمتك: صياغة «المخطط القياسي الكامل لتنفيذ المشروع (Standard Project Blueprint)» بدقة علمية وهندسة برمجية فائقة.\n"
-        "في توجيه المدير وكل وكيل: ألزمهم بنسخ اسم الكتاب حرفياً من قاعدة الشاملة، وبكتابة الموضع (3-450) إن تعددت الأجزاء، أو ص(50) إن كان الكتاب جزءاً واحداً.\n\n"
+        "في توجيه المدير وكل وكيل: الإحالة القياسية وحدها هي اسم الكتاب ثم (الجزء-الصفحة) بأرقام لاتينية، مثل مجموع الفتاوى (2-368). للكتاب ذي الجزء الواحد: زاد المستقنع ص(50). تُمنع الشرطة المائلة والأرقام العربية وعكس الترتيب ووضع اسم الكتاب داخل القوس.\n\n"
         "يجب أن يتضمن ردك أولاً بنية JSON صالحة للتنفيذ البرمجي ومحصورة بين علامات ```json و ``` تحتوي الحقول التالية تماماً:\n"
         "{\n"
         '  "title": "عنوان المشروع البحثي بدقة",\n'
@@ -9803,7 +9887,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "2. الأمانة العلمية الصارمة: لا يُختلق نص، ولا مصدر، ولا رقم جزء أو صفحة، ولا اسم محقق أو طبعة. ما لم يُتحقق منه يُوسم صراحةً: [غير متحقق]. وما ورد من الذاكرة ولم يوجد في المستودع يُوسم: [من الذاكرة: غير موجود في المستودع]، ولا يُبنى عليه ترجيح.\n"
         "3. نسبة الأقوال إلى أصحابها من كتبهم، أو من كتب مذهبهم المعتمدة. لا يُكتفى بحكاية المخالف عن خصمه إلا مع التنبيه على ذلك.\n"
         "4. التمييز الدائم بين ثلاثة أشياء: النص المنقول بلفظه، والمعنى المنقول بتصرف، والاستنباط أو الترجيح الخاص بالفريق.\n"
-        "5. التوثيق الكامل لكل معلومة من البيانات الوصفية للصفحة لا من الذاكرة. اسم الكتاب يُنسخ كما في القاعدة، والموضع بصيغة (3-450) إن تعددت الأجزاء، أو ص(50) إن كان الكتاب جزءاً واحداً، داخل «اسم الكتاب».\n"
+        "5. التوثيق الكامل لكل معلومة من البيانات الوصفية للصفحة لا من الذاكرة. الإحالة القياسية وحدها: اسم الكتاب (الجزء-الصفحة) بأرقام لاتينية، مثل مجموع الفتاوى (2-368)، أو اسم الكتاب ص(50) إن كان جزءاً واحداً.\n"
         "6. درجات الثقة لكل معلومة:\n"
         "   [مقطوع: متحقق من الأصل]، [راجح: من مصدر ثانوي موثوق]، [محتمل: يحتاج تحققاً]، [مشكوك: تعارضت المصادر]، [غير متحقق].\n"
         "7. الأدوات تعرض وتحسب ولا تحكم: كل مُدخل لأي أداة مأخوذ من المدونة بمعرّفاته، وكل مُخرج منها مرتبط بالنصوص التي بُني عليها.\n"

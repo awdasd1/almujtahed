@@ -1849,7 +1849,7 @@ function renderArchitectChat() {
     // تنظيف كتلة الـ JSON من عرض فقاعة المحادثة
     let cleanText = (m.content || '').replace(/```json[\s\S]*?```/g, '').trim();
     if (!cleanText && isUser) cleanText = m.content;
-    const bodyHtml = typeof marked !== 'undefined' ? marked.parse(cleanText) : cleanText.replace(/\n/g, '<br>');
+    const bodyHtml = (typeof formatMarkdown === 'function') ? formatMarkdown(cleanText) : (typeof marked !== 'undefined' ? marked.parse(cleanText) : cleanText.replace(/\n/g, '<br>'));
 
     return `
       <div class="studio-msg ${isUser ? 'user' : 'architect'}">
@@ -3460,7 +3460,7 @@ ${webEvidenceSection}
 توجيهات التحقيق والجدولة الشاملة:
 - لقد تم استخراج المقاطع التوثيقية من أمهات المصادر المستهدفة في الشاملة.
 - مهمتك كمدير للمشروع: استيعاب كـافـة الشواهد المستخرجة وتفريغ نصوص المسألة كاملة في جدول مفصل وشامل مرتب بالسياق الزمني أو المذهبي أو الموضوعي.
-- اعتمد حصراً على أمهات المصادر التراثية. كل حديث أو نص أو إحالة يُكتب باسم الكتاب كما هو في القاعدة، والموضع (3-450) إن تعددت الأجزاء، أو ص(50) إن كان الكتاب جزءاً واحداً. مثال: «صحيح البخاري - ط السلطانية» (1-15).
+- اعتمد حصراً على أمهات المصادر التراثية. كل إحالة تُكتب بالصيغة القياسية وحدها: اسم الكتاب (الجزء-الصفحة) بأرقام لاتينية. الصحيح: مجموع الفتاوى (2-368). وللكتاب ذي الجزء الواحد: زاد المستقنع ص(50). تُمنع الشرطة المائلة، والأرقام العربية، وتقديم الصفحة على الجزء، ووضع اسم الكتاب داخل القوس.
 - أتبعه بجدول مقارنة أو تحرير فقهي/علمي وخاتمة علمية محررة بالنتائج والاستدراكات.
 - 🔴 إلـزامـي وحـتـمـي في ختام التقرير: يجب إفراد جدول توثيقي شامل بعنوان «📚 ثبت المصادر والمراجع المعتمدة في المشروع» يستوعب كافة الكتب والمصادر التي استُخرجت منها نصوص المسألة أو عُزيت إليها الأقوال، متضمناً الأعمدة الببليوغرافية الكاملة:
 | م | اسم الكتاب المعتمد | المصنف وسنة وفاته الهجرية | المحقق أو الشارح | رقم الطبعة وسنتها | دار النشر والناشر وبياناته | بلد النشر | رقم الكتاب بالشاملة (#BookID) |
@@ -3664,7 +3664,7 @@ function renderProjectExecutionView() {
           </span>
         </div>
         <div class="markdown-body" style="padding: 20px; font-size: 14.5px; line-height: 1.8; direction: rtl; text-align: right;">
-          ${typeof marked !== 'undefined' ? marked.parse(r.output || '') : (r.output || '').replace(/\n/g, '<br>')}
+          ${(typeof formatMarkdown === 'function') ? formatMarkdown(r.output || '') : (typeof marked !== 'undefined' ? marked.parse(r.output || '') : (r.output || '').replace(/\n/g, '<br>'))}
         </div>
       </div>
     `;
@@ -3846,18 +3846,22 @@ function nearestCitationQuote(text, index) {
 
 function findCanonicalCitationSpans(text) {
   const spans = [];
-  const pattern = /«([^»\n]{3,140})»([^\n«]{0,90}?)(?:ص\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*\)|\(\s*([0-9٠-٩۰-۹]{1,3})\s*[-–]\s*([0-9٠-٩۰-۹]{1,4})\s*\))/g;
+  const pattern = /«([^»\n]{3,140})»([^\n«]{0,90}?)(?:ص\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*\)|\(\s*([0-9٠-٩۰-۹]{1,3})\s*[-–]\s*([0-9٠-٩۰-۹]{1,4})\s*\))|([\u0600-\u06FF]{2,}(?:\s+[\u0600-\u06FF]{2,}){0,8}) \(([0-9]{1,3})-([0-9]{1,4})\)|([\u0600-\u06FF]{2,}(?:\s+[\u0600-\u06FF]{2,}){0,8}) ص\(([0-9]{1,4})\)/g;
   let match;
   while ((match = pattern.exec(text))) {
-    const book = cleanCitationBookName(match[1]);
+    const book = cleanCitationBookName(match[1] || match[6] || match[9]);
     if (!book) continue;
-    const pageOnly = match[3];
+    const quotedPage = match[3];
+    const barePage = match[10];
+    const titleSource = match[1] || match[6] || match[9] || '';
+    const titleAt = titleSource.lastIndexOf(book);
+    const start = match.index + (titleAt > 0 ? titleAt : 0);
     spans.push({
-      start: match.index,
+      start,
       end: match.index + match[0].length,
       book,
-      part: pageOnly ? '' : citationToWesternDigits(match[4]),
-      page: citationToWesternDigits(pageOnly || match[5]),
+      part: (quotedPage || barePage) ? '' : citationToWesternDigits(match[4] || match[7]),
+      page: citationToWesternDigits(quotedPage || barePage || match[5] || match[8]),
       quote: nearestCitationQuote(text, match.index)
     });
   }
@@ -4164,7 +4168,7 @@ async function continueProjectExecutionRound() {
    - وجّه الوكلاء لسد الفجوات التوثيقية، وتخريج الأحاديث وبيان عللها ورجالها، والتثبت من نسبة الأقوال والآثار إلى أصحابها في أمهات المصادر.
    - حقق في التواريخ والوقائع والمطابقات، واستخرج الشواهد الإضافية لتأكيد ما هو متردد أو محتمل.
 2. أضف النتائج والاستدراكات الجديدة إلى الجداول المعتمدة مع إبراز ما تم إثباته وحسمه في هذه الجولة.
-3. قدّم تقرير الجولة رقم ${nextRoundNum} بصياغة علمية محررة رصينة، واذكر صراحة ما إذا كانت هذه الجولة قد حسمت أهداف المشروع تماماً. كل إحالة في هذه الجولة باسم الكتاب كما في القاعدة، وبصيغة (3-450) أو ص(50) فقط. واحرص في الجولة الختامية على استيفاء «📚 ثبت المصادر والمراجع المعتمدة في المشروع» بكافة بيانات الطبعات والمحققين ودور النشر وأرقام الشاملة.
+3. قدّم تقرير الجولة رقم ${nextRoundNum} بصياغة علمية محررة رصينة، واذكر صراحة ما إذا كانت هذه الجولة قد حسمت أهداف المشروع تماماً. كل إحالة في هذه الجولة بالصيغة القياسية وحدها: اسم الكتاب (الجزء-الصفحة) مثل مجموع الفتاوى (2-368)، أو اسم الكتاب ص(50) إن كان جزءاً واحداً. واحرص في الجولة الختامية على استيفاء «📚 ثبت المصادر والمراجع المعتمدة في المشروع» بكافة بيانات الطبعات والمحققين ودور النشر وأرقام الشاملة.
 `;
 
     messages.push({ role: 'user', content: continueUserPrompt });
@@ -5075,7 +5079,7 @@ function buildStandaloneProjectHtml(runData) {
         <span class="round-badge">جولة معتمدة ومحققة ✓</span>
       </div>
       <div class="markdown-body">
-        ${typeof marked !== 'undefined' ? marked.parse(r.output || '') : (r.output || '').replace(/\n/g, '<br>')}
+        ${(typeof formatMarkdown === 'function') ? formatMarkdown(r.output || '') : (typeof marked !== 'undefined' ? marked.parse(r.output || '') : (r.output || '').replace(/\n/g, '<br>'))}
       </div>
     </div>
   `).join('');
@@ -5865,6 +5869,7 @@ function toArabicIndicDigits(str) {
 }
 
 function formatAcademicBody(rawMarkdown) {
+  rawMarkdown = (typeof enforceStandardCitations === 'function') ? enforceStandardCitations(rawMarkdown || '') : (rawMarkdown || '');
   if (!rawMarkdown) return '';
   let text = String(rawMarkdown).replace(/\n{3,}/g, '\n\n');
   text = text.replace(/([^\n])[ \t]*(أولًا:|أولاً:|ثانيًا:|ثانياً:|ثالثًا:|ثالثاً:|رابعًا:|رابعاً:|خامسًا:|خامساً:|سادسًا:|سابعًا:|ثامنًا:|تاسعًا:|عاشرًا:)/g, '$1\n$2');
