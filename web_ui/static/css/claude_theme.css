@@ -2039,6 +2039,18 @@ select.graph-kind-select {
   background: var(--accent-hover);
 }
 
+.btn-send-chat:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.graph-wait-note {
+  display: inline-block;
+  animation: pulse 1.2s infinite;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
 /* فاصل شريط الإدخال */
 .chat-input-divider {
   display: inline-block;

@@ -1509,6 +1509,7 @@ class ChatRequest(BaseModel):
     agent_dispatch_mode: Optional[str] = "parallel" # "parallel" (موزع متوازي) أو "direct" (موحد مباشر)
     use_hybrid: Optional[bool] = True # تفعيل / تعطيل نمط البحث الهجين (Dense + BM25) في استرجاع نصوص الشات
     context_only: Optional[bool] = False # تجهيز شواهد الشاملة دون استدعاء نموذج المقارنة
+    graph_only: Optional[bool] = False # تشجير النتيجة السابقة بلا بحث جديد
 
 
 class BookResolveRequest(BaseModel):
@@ -5248,6 +5249,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
     # فحص ما إذا كان نمط التوزيع المتوازي مفعلاً وهناك وكلاء في المجموعة
     is_parallel_dispatch = (
+        not req.graph_only and
         not is_direct_page_reading and
         req.agent_dispatch_mode != "direct" and
         len(active_agents) >= 1 and
@@ -5387,7 +5389,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
         print(f"✨ [Multi-Agent Parallel Dispatch] All {len(subagents_dossiers)} subagents finished. Total citations collected: {len(retrieved_citations)}")
 
-    elif search_query and not is_greeting:
+    elif search_query and not is_greeting and not req.graph_only:
         # النمط المباشر الموحد (الوضع السابق - خط الرجعة السريع)
         print(f"🔍 [Chat RAG Direct Monolithic] Query: '{search_query}' | Target Books: {target_books} | Dynamic Anchors: {req.retrieval_anchors} | Count: {agent_top_k}")
         try:
@@ -5530,7 +5532,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     elif any(phrase in last_user_msg for phrase in ["انكسفت الشمس", "انخسف القمر", "كسوف الشمس", "خسوف القمر", "محاق فلكي", "حساب الكسوف"]):
         is_astronomy_enabled = True
 
-    if is_astronomy_enabled:
+    if is_astronomy_enabled and not req.graph_only:
         try:
             combined_corpus = f"{last_user_msg}\n" + "\n".join([c.get('snippet', '') for c in retrieved_citations[:20]])
             astro_report = astronomy_engine.verify_historical_astronomical_event(combined_corpus)
@@ -5555,7 +5557,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     if req.model and req.model != "local-almojtahed-8b":
         try:
             key = owner_openrouter_key(request, req.api_key)
-            if is_study_discussion:
+            if req.graph_only:
+                system_instruction = (req.system_prompt or "شجّر النتيجة المعطاة في كتلة force3d واحدة، بلا بحث جديد وبلا مثال.").strip()
+            elif is_study_discussion:
                 system_instruction = (
                     "أنت عالم ومحقق ومحكّم أكاديمي متخصص في العلوم الشرعية والتراثية (الفقه وأصوله، والحديث وعلله، والتفسير ومناهجه، واللغة والتاريخ).\n"
                     "أمامك نص بحث ودراسة علمية متكاملة أحالها الباحث إليك لمدارستها ونقدها ومناقشتها موضوعياً.\n"
@@ -5573,9 +5577,10 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     "حلل المسألة وفرغ النتائج في جداول ماركداون واضحة ولا تسرد اقتباسات خاماً بدون معالجة وجداول.\n"
                     "إذا طُلب مشجر، أخرج كتلة ```force3d واحدة واختر نوعاً واحداً لا تخلطه بغيره: إسناد (صحابي|تابعي|مدار|طريق|كتاب، والسهم من الشيخ إلى التلميذ)، أو خلاف فقهي (مسألة ثم قول ومذهب ودليل ومناقشة وجواب وترجيح)، أو خلاف عقدي (مسألة ثم مذهب ومقالة وشبهة وجواب)، أو استدلال (حكم ثم دليل ثم وجه الدلالة ثم مناقشة ثم جواب)، أو مناقشة (محل النزاع ثم دعوى كل طرف ثم دليله). source هو الأعلى و target هو الفرع."
                 )
-            if agent_routing_instruction:
-                system_instruction += agent_routing_instruction
-            system_instruction += "\n" + CITATION_FORMAT_RULE
+            if not req.graph_only:
+                if agent_routing_instruction:
+                    system_instruction += agent_routing_instruction
+                system_instruction += "\n" + CITATION_FORMAT_RULE
 
             # تضمين المستندات والملفات المرفوعة والمحفوظة في مجلد uploads (Bucket)
             if req.attachments and isinstance(req.attachments, list) and len(req.attachments) > 0:

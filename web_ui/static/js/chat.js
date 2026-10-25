@@ -683,6 +683,7 @@ async function sendChatMessage() {
   const validAttachments = currentAttachments.filter(a => !a.error && !a.uploading);
 
   if (!text && validAttachments.length === 0) return;
+  if (chatGraphBusy) return;
 
   const session = chatSessions.find(s => s.id === activeSessionId);
   if (!session) return;
@@ -1715,44 +1716,27 @@ const CHAT_OUTPUT_TEMPLATES = {
 
 // الاسم المترادف لأداة Markmap
 CHAT_OUTPUT_TEMPLATES.markmap_mindmap = CHAT_OUTPUT_TEMPLATES.markmap;
-CHAT_OUTPUT_TEMPLATES.graph_isnad = `ارسم شجرة إسناد فقط، لا شجرة أقوال. أخرج كتلة force3d واحدة.
-كل راوٍ عقدة بمعرّف ثابت لا يتكرر، والمدار عقدة واحدة تلتقي عندها الطرق.
+CHAT_OUTPUT_TEMPLATES.graph_isnad = `نوع الشجرة: إسناد فقط.
+كل راوٍ ورد في النتيجة عقدة بمعرّف ثابت لا يتكرر، والمدار عقدة واحدة تلتقي عندها الطرق.
 role: صحابي أو تابعي أو مدار أو طريق أو ضعيف أو كتاب.
-source الشيخ و target التلميذ، و label صيغة الأداء.
-\`\`\`force3d
-{"title":"مدار الحديث","nodes":[{"id":"sahabi","name":"عمر بن الخطاب","role":"صحابي"},{"id":"madar","name":"يحيى بن سعيد الأنصاري","role":"مدار"},{"id":"malik","name":"مالك بن أنس","role":"طريق"},{"id":"sufyan","name":"سفيان بن عيينة","role":"طريق"}],"links":[{"source":"sahabi","target":"madar","label":"عن"},{"source":"madar","target":"malik","label":"حدثنا"},{"source":"madar","target":"sufyan","label":"حدثنا"}]}
-\`\`\`
-بعد الكتلة اشرح المدار ووجه التقاء الطرق باختصار.`;
+source الشيخ و target التلميذ، و label صيغة الأداء كما في النتيجة.
+لا تكرر المدار في كل طريق.`;
 
-CHAT_OUTPUT_TEMPLATES.graph_fiqh = `ارسم شجرة خلاف فقهي فقط، لا شجرة إسناد. أخرج كتلة force3d واحدة.
-الجذر role مسألة. تحته role قول، وينتسب إليه role مذهب، ويتصل به role دليل. على الدليل role مناقشة، وعلى المناقشة role جواب، وعلى القول المختار role ترجيح. إن كان سبب الخلاف أصلاً فاجعله role سبب الخلاف.
-source هو الأعلى و target هو الفرع. الدليل المشترك عقدة واحدة تتصل بكل قول استُدل به.
-\`\`\`force3d
-{"title":"الخلاف في المسألة","nodes":[{"id":"masala","name":"صورة المسألة","role":"مسألة"},{"id":"q1","name":"الجواز","role":"قول"},{"id":"q2","name":"المنع","role":"قول"},{"id":"hanafi","name":"الحنفية","role":"مذهب"},{"id":"shafii","name":"الشافعية","role":"مذهب"},{"id":"dalil","name":"حديث الأعمال بالنيات","role":"دليل"},{"id":"itirad","name":"الاعتراض على الدلالة","role":"مناقشة"},{"id":"jawab","name":"الجواب عن الاعتراض","role":"جواب"},{"id":"rajih","name":"القول بالجواز","role":"ترجيح"}],"links":[{"source":"masala","target":"q1","label":"القول الأول"},{"source":"masala","target":"q2","label":"القول الثاني"},{"source":"q1","target":"hanafi","label":"ذهب إليه"},{"source":"q2","target":"shafii","label":"ذهب إليه"},{"source":"q1","target":"dalil","label":"استدل به"},{"source":"q2","target":"dalil","label":"استدل به"},{"source":"dalil","target":"itirad","label":"اعترض"},{"source":"itirad","target":"jawab","label":"أجاب"},{"source":"masala","target":"rajih","label":"رجّح"}]}
-\`\`\`
-بعد الكتلة حرّر محل النزاع وسبب الخلاف باختصار.`;
+CHAT_OUTPUT_TEMPLATES.graph_fiqh = `نوع الشجرة: خلاف فقهي فقط.
+الجذر role مسألة من النتيجة. تحته role قول، وينتسب إليه role مذهب، ويتصل به role دليل. على الدليل role مناقشة، وعلى المناقشة role جواب، وعلى القول المختار role ترجيح. إن ذُكر سبب الخلاف فاجعله role سبب الخلاف.
+source الأعلى و target الفرع. الدليل المشترك عقدة واحدة.`;
 
-CHAT_OUTPUT_TEMPLATES.graph_aqeedah = `ارسم شجرة خلاف عقدي فقط، لا شجرة إسناد ولا خلافاً فقهياً. أخرج كتلة force3d واحدة.
+CHAT_OUTPUT_TEMPLATES.graph_aqeedah = `نوع الشجرة: خلاف عقدي فقط.
 الجذر role مسألة. مذهب أهل السنة role مذهب، ومقالة المخالف role مقالة، ودليل السلف role دليل، وشبهة المخالف role شبهة، والرد role جواب.
-source الأعلى و target الفرع.
-\`\`\`force3d
-{"title":"الخلاف العقدي","nodes":[{"id":"masala","name":"المسألة العقدية","role":"مسألة"},{"id":"salaf","name":"مذهب السلف","role":"مذهب"},{"id":"dalil","name":"دليل الكتاب والسنة","role":"دليل"},{"id":"maqala","name":"مقالة المخالف","role":"مقالة"},{"id":"shubha","name":"شبهة المخالف","role":"شبهة"},{"id":"radd","name":"الرد على الشبهة","role":"جواب"}],"links":[{"source":"masala","target":"salaf","label":"المذهب الحق"},{"source":"salaf","target":"dalil","label":"استدل به"},{"source":"masala","target":"maqala","label":"المقالة المخالفة"},{"source":"maqala","target":"shubha","label":"شبهتهم"},{"source":"shubha","target":"radd","label":"الرد"}]}
-\`\`\`
-بعد الكتلة انسب كل مقالة إلى أصحابها باختصار.`;
+source الأعلى و target الفرع. خذ الأسماء من النتيجة فقط.`;
 
-CHAT_OUTPUT_TEMPLATES.graph_istidlal = `ارسم شجرة استدلال فقط: من الحكم إلى دليله ووجه دلالته وما ورد عليه. أخرج كتلة force3d واحدة.
-role يكون: مسألة أو دليل أو وجه الدلالة أو مناقشة أو جواب. لا تدرج رواة ولا مدار حديث إلا إذا كان الدليل نفسه يحتاج إسناداً، فيبقى الإسناد خارج هذه الشجرة.
-\`\`\`force3d
-{"title":"شجرة الاستدلال","nodes":[{"id":"hukm","name":"الحكم","role":"مسألة"},{"id":"dalil","name":"الدليل النقلي","role":"دليل"},{"id":"wajh","name":"وجه الدلالة","role":"وجه الدلالة"},{"id":"itirad","name":"الاعتراض","role":"مناقشة"},{"id":"jawab","name":"الجواب","role":"جواب"}],"links":[{"source":"hukm","target":"dalil","label":"استدل به"},{"source":"dalil","target":"wajh","label":"وجه الدلالة"},{"source":"dalil","target":"itirad","label":"اعترض"},{"source":"itirad","target":"jawab","label":"أجاب"}]}
-\`\`\`
-بعد الكتلة بيّن ثبوت الدليل ووجه دلالته.`;
+CHAT_OUTPUT_TEMPLATES.graph_istidlal = `نوع الشجرة: استدلال فقط، من الحكم إلى دليله ووجه دلالته وما ورد عليه.
+role: مسألة أو دليل أو وجه الدلالة أو مناقشة أو جواب.
+لا تدرج رواة إلا إذا كان الراوي نفسه مذكوراً في النتيجة كجزء من الدليل.`;
 
-CHAT_OUTPUT_TEMPLATES.graph_munaqasha = `ارسم شجرة مناقشة فقط بين طرفي الخلاف. أخرج كتلة force3d واحدة.
-الجذر role محل النزاع. ثم role دعوى لكل طرف، ثم دليله role دليل، ثم role مناقشة، ثم role جواب. لا ترسم إسناداً.
-\`\`\`force3d
-{"title":"شجرة المناقشة","nodes":[{"id":"nizaa","name":"محل النزاع","role":"محل النزاع"},{"id":"muthbit","name":"دعوى المثبت","role":"دعوى"},{"id":"nafi","name":"دعوى النافي","role":"دعوى"},{"id":"dalil1","name":"دليل المثبت","role":"دليل"},{"id":"dalil2","name":"دليل النافي","role":"دليل"},{"id":"itirad","name":"اعتراض النافي","role":"مناقشة"},{"id":"jawab","name":"جواب المثبت","role":"جواب"}],"links":[{"source":"nizaa","target":"muthbit","label":"الطرف الأول"},{"source":"nizaa","target":"nafi","label":"الطرف الثاني"},{"source":"muthbit","target":"dalil1","label":"استدل به"},{"source":"nafi","target":"dalil2","label":"استدل به"},{"source":"dalil1","target":"itirad","label":"اعترض"},{"source":"itirad","target":"jawab","label":"أجاب"}]}
-\`\`\`
-بعد الكتلة لخّص ما سلِم من الأدلة وما سقط.`;
+CHAT_OUTPUT_TEMPLATES.graph_munaqasha = `نوع الشجرة: مناقشة فقط بين طرفي الخلاف المذكورين في النتيجة.
+الجذر role محل النزاع، ثم role دعوى لكل طرف، ثم دليله role دليل، ثم role مناقشة، ثم role جواب.
+source الأعلى و target الفرع.`;
 
 CHAT_OUTPUT_TEMPLATES.force3d = CHAT_OUTPUT_TEMPLATES.graph_fiqh;
 
@@ -1987,11 +1971,127 @@ function toggleChatCodeBlock(codeId) {
   }
 }
 
+let chatGraphBusy = false;
+
+function setChatSendLocked(locked) {
+  const button = document.getElementById('btnSendChat');
+  const select = document.querySelector('select.chat-graph-kind-fixed');
+  if (button) button.disabled = !!locked;
+  if (select) select.disabled = !!locked;
+  const trigger = select && select.closest('.theme-select') && select.closest('.theme-select').querySelector('.theme-select-trigger');
+  if (trigger) trigger.disabled = !!locked;
+}
+
+function graphKindInstruction(type) {
+  const labels = {
+    graph_isnad: 'شجرة إسناد',
+    graph_fiqh: 'شجرة خلاف فقهي',
+    graph_aqeedah: 'شجرة خلاف عقدي',
+    graph_istidlal: 'شجرة استدلال',
+    graph_munaqasha: 'شجرة مناقشة'
+  };
+  const templates = window.P2C_OUTPUT_TEMPLATES || CHAT_OUTPUT_TEMPLATES;
+  const shape = String(templates[type] || '').replace(/```[\s\S]*?```/g, '').trim();
+  const label = labels[type] || 'التشجير المطلوب';
+  return `شجّر النتيجة السابقة تشجيراً من نوع «${label}» فقط.
+لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء، ولا تضف شاهداً ليس في النتيجة.
+لا تنسخ شجرة مثال، ولا تستخدم اسماً لم يرد في النتيجة.
+لا تكتب الشرح قبل الشجرة.
+أخرج كتلة force3d واحدة فقط مبنية من ألفاظ النتيجة، ثم سطراً واحداً باسم نوع الشجرة.
+${shape}`;
+}
+
+function stripGraphFences(text) {
+  return String(text || '')
+    .replace(/```(?:force3d|markmap)[\s\S]*?```/g, '')
+    .replace(/^(شجرة إسناد|شجرة خلاف فقهي|شجرة خلاف عقدي|شجرة استدلال|شجرة مناقشة)\s*$/gm, '')
+    .trim();
+}
+
+async function requestChatGraph(type) {
+  if (chatGraphBusy) return;
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const source = session && [...session.messages].reverse().find(item => item.role === 'assistant' && stripGraphFences(item.content).length > 40);
+  if (!source) {
+    if (typeof showToast === 'function') showToast('لا توجد نتيجة سابقة لتشجيرها');
+    return;
+  }
+
+  chatGraphBusy = true;
+  setChatSendLocked(true);
+  const container = document.getElementById('chatMessagesContainer');
+  const typingBubble = document.createElement('div');
+  typingBubble.className = 'message-bubble assistant';
+  typingBubble.id = 'graphTypingIndicator';
+  typingBubble.innerHTML = `
+    <div class="message-avatar">مج</div>
+    <div class="message-content">
+      <span class="graph-wait-note">النموذج يقوم بالتشجير، فضلاً انتظر</span>
+    </div>
+  `;
+  if (container) {
+    container.appendChild(typingBubble);
+    if (typeof scrollToBottom === 'function') scrollToBottom();
+  }
+
+  const instruction = graphKindInstruction(type);
+  const material = stripGraphFences(source.content).slice(0, 24000);
+  const selectedModel = document.getElementById('chatModelSelect')?.value
+    || localStorage.getItem('almojtahed_active_chat_model')
+    || 'anthropic/claude-3.7-sonnet';
+  const activeProvider = localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter';
+  let savedKeys = {};
+  try { savedKeys = readProviderKeys(); } catch (e) {}
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: selectedModel,
+        provider: activeProvider,
+        api_key: savedKeys[activeProvider] || '',
+        thinking_level: currentThinkingLevel,
+        use_hybrid: false,
+        graph_only: true,
+        messages: [{ role: 'user', content: `النتيجة المراد تشجيرها:\n${material}` }],
+        system_prompt: instruction,
+        temperature: 0.2,
+        providers: savedKeys,
+        agent_group: null
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'تعذر التشجير');
+    if (typingBubble.parentNode) typingBubble.remove();
+    session.messages.push({
+      role: 'assistant',
+      content: data.reply || 'تعذر إظهار التشجير.',
+      model: data.model || selectedModel,
+      provider: data.provider || activeProvider,
+      graph_kind: type
+    });
+    saveChatSessions();
+    renderSessionMessages(activeSessionId);
+  } catch (err) {
+    if (typingBubble.parentNode) typingBubble.remove();
+    if (typeof showToast === 'function') showToast(err.message || 'تعذر التشجير');
+  } finally {
+    chatGraphBusy = false;
+    setChatSendLocked(false);
+  }
+}
 function insertGraphKind(select) {
   const type = select.value;
   const inputId = select.dataset.graphTarget || 'chatInputText';
   select.value = '';
-  if (type) applyChatOutputTemplate(type, inputId);
+  select.dispatchEvent(new CustomEvent('theme-select-sync'));
+  if (!type) return;
+  if (inputId === 'chatInputText') {
+    requestChatGraph(type);
+    return;
+  }
+  applyChatOutputTemplate(type, inputId);
 }
 
 window.insertGraphKind = insertGraphKind;
