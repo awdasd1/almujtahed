@@ -490,6 +490,54 @@ body[data-theme="dark"] {
   color: var(--text-muted);
 }
 
+.brand-version {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+
+.changelog-window {
+  width: min(720px, 94vw);
+  height: min(78vh, 720px);
+}
+
+.changelog-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  padding: 8px 28px 28px;
+  overflow-y: auto;
+  line-height: 1.85;
+  color: var(--text-main);
+}
+
+.changelog-body h1 {
+  display: none;
+}
+
+.changelog-body h2,
+.changelog-body ul,
+.changelog-body p {
+  width: 100%;
+}
+
+.changelog-body h2 {
+  margin: 18px 0 8px;
+  font-size: 18px;
+  color: var(--ink-deep);
+}
+
+.changelog-body ul {
+  margin: 0;
+  padding-inline-start: 1.25em;
+}
+
+.changelog-body li + li {
+  margin-top: 6px;
+}
+
 /* ==========================================================================
    أزرار التبويبات العلوية (Navigation Tabs)
    ========================================================================== */

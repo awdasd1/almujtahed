@@ -2487,6 +2487,13 @@ async def login_page_route(request: Request):
     auth_file = TEMPLATES_DIR / "auth.html"
     return HTMLResponse(content=auth_file.read_text(encoding="utf-8"))
 
+@app.get("/changes.md")
+async def read_changes_log():
+    path = PACKAGE_ROOT / "changes.md"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="سجل الإصدارات غير موجود")
+    return FileResponse(path, media_type="text/markdown; charset=utf-8")
+
 @app.get("/api/auth/status")
 async def get_auth_status(request: Request):
     configured = is_auth_configured()

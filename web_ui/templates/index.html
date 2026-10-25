@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792862000">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792863200">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -29,9 +29,13 @@
                     <span>المجتهد</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
+                <span class="brand-version" id="appVersionLabel">إصدار رقم 1.0 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
+                <button class="btn-icon" id="changelogBtn" type="button" onclick="openChangelogModal()" title="سجل التحديثات" aria-label="سجل التحديثات">
+                    <i data-lucide="scroll-text" class="icon" aria-hidden="true"></i>
+                </button>
                 <button class="btn-icon" id="libraryStatsBtn" type="button" onclick="openLibraryStatsModal()" title="إحصائيات المكتبة والأعضاء" aria-label="الإحصائيات">
                     <i data-lucide="bar-chart-3" class="icon" aria-hidden="true"></i>
                 </button>
@@ -3887,6 +3891,18 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="changelogModal" onclick="if(event.target===this) closeChangelogModal()">
+        <div class="modal-window changelog-window" role="dialog" aria-modal="true" aria-labelledby="changelogTitle">
+            <div class="modal-header">
+                <div class="modal-title" id="changelogTitle">سجل الإصدارات</div>
+                <button class="btn-icon" type="button" onclick="closeChangelogModal()" title="إغلاق" aria-label="إغلاق">
+                    <i data-lucide="x" class="icon" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="modal-body changelog-body" id="changelogBody"></div>
+        </div>
+    </div>
+
     <!-- =======================================================================
        نافذة رسائل الأعضاء
        ======================================================================= -->
@@ -4728,6 +4744,7 @@
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792743600"></script>
     <script src="/static/js/local_models.js?v=1792862000"></script>
+    <script src="/static/js/changelog.js?v=1792863100"></script>
 
     <script>
         window.refreshLucideIcons = function () {
