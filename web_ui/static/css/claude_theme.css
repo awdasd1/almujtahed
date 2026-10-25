@@ -1649,6 +1649,13 @@ body:has(#paneChat.active) .main-content {
   overflow: hidden;
 }
 
+.chat-graph-kind-fixed {
+  flex-shrink: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0 0 6px;
+}
+
 .chat-assistant-tools-list {
   scrollbar-width: thin;
   padding-left: 2px;

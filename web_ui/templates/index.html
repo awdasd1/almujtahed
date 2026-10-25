@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792867200">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792868300">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.3 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.4 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -340,6 +340,14 @@
                                 إدارة ⚙️
                             </button>
                         </div>
+                        <select class="btn-chat-tool-action chat-graph-kind-fixed" data-graph-target="chatInputText" onchange="insertGraphKind(this)" title="اختر نوع المشجر ليفهم النموذج المطلوب">
+                            <option value="">نوع المشجر</option>
+                            <option value="graph_isnad">شجرة إسناد</option>
+                            <option value="graph_fiqh">خلاف فقهي</option>
+                            <option value="graph_aqeedah">خلاف عقدي</option>
+                            <option value="graph_istidlal">استدلال</option>
+                            <option value="graph_munaqasha">مناقشة</option>
+                        </select>
                         <!-- حاوية أزرار الأدوات المفعلة في المحادثة -->
                         <div class="chat-assistant-tools-list" id="chatAssistantToolsList">
                             <!-- يتم تعبئة أزرار الأدوات المفعلة في المحادثة ديناميكياً -->
@@ -462,47 +470,6 @@
                             <textarea id="chatInputText" class="chat-textarea"
                                 placeholder="اسأل المجتهد في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل..." rows="1"
                                 onkeydown="handleChatInputKey(event)"></textarea>
-
-                            <!-- شريط قوالب وتنسيق الإخراج التخصصية الجاهزة فوق زر الإرسال -->
-                            <div class="chat-templates-bar" id="chatTemplatesBar">
-                                <span class="chat-templates-label"
-                                    title="أدوات وقوالب جاهزة لتنسيق وإخراج البحث العلمي والتشجير">
-                                    <span style="color: var(--accent-clay); font-size: 13px;">⚡</span>
-                                    <span>قوالب وتنسيق:</span>
-                                </span>
-                                <button type="button" class="chat-template-chip"
-                                    onclick="applyChatOutputTemplate('fiqh')"
-                                    title="إخراج المسألة بهيكل فقهي مقارن ومحكم بالأدلة وأسباب الخلاف والترجيح">📖 قالب
-                                    الفقه</button>
-                                <button type="button" class="chat-template-chip"
-                                    onclick="applyChatOutputTemplate('tafsir')"
-                                    title="إخراج التفسير المأثور والرأي وأسباب النزول والوجوه البلاغية">📜 قالب
-                                    التفسير</button>
-                                <button type="button" class="chat-template-chip"
-                                    onclick="applyChatOutputTemplate('hadith')"
-                                    title="إخراج الحديث بالتخريج الموسع وجمع الطرق والعلل وفقه الحديث">✨ قالب
-                                    الحديث</button>
-                                <button type="button" class="chat-template-chip highlight-chip"
-                                    onclick="applyChatOutputTemplate('isnad_tree')"
-                                    title="أداة شجرة الأسانيد وشبكات الرواة: استخراج ورسم شجرة أسانيد الحديث والمدارات والعُقد بصرياً وتفاعلياً">🌳
-                                    شجرة الأسانيد والرواة</button>
-                                <select class="chat-template-chip highlight-chip graph-kind-select" data-graph-target="chatInputText" onchange="insertGraphKind(this)" title="اختر نوع المشجر ليفهم النموذج المطلوب">
-                                    <option value="">🌳 نوع المشجر</option>
-                                    <option value="graph_isnad">شجرة إسناد</option>
-                                    <option value="graph_fiqh">خلاف فقهي</option>
-                                    <option value="graph_aqeedah">خلاف عقدي</option>
-                                    <option value="graph_istidlal">استدلال</option>
-                                    <option value="graph_munaqasha">مناقشة</option>
-                                </select>
-                                <button type="button" class="chat-template-chip highlight-chip"
-                                    onclick="applyChatOutputTemplate('markmap')"
-                                    title="أداة التشجير والخرائط الذهنية (Markmap): صياغة شجرة المسائل والأقوال والخلافات في خريطة تفاعلية قابلة للطي والتكبير">🧠
-                                    تشجير الأقوال (Markmap)</button>
-                                <button type="button" class="chat-template-chip"
-                                    onclick="applyChatOutputTemplate('aqeedah')"
-                                    title="إخراج المسائل العقدية ومذهب السلف ومقالات الفرق والردود">🛡️ قالب
-                                    العقيدة</button>
-                            </div>
 
                             <div class="chat-input-actions">
                                 <div class="chat-input-left">
