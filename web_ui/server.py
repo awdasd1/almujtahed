@@ -1510,6 +1510,7 @@ class ChatRequest(BaseModel):
     use_hybrid: Optional[bool] = True # تفعيل / تعطيل نمط البحث الهجين (Dense + BM25) في استرجاع نصوص الشات
     context_only: Optional[bool] = False # تجهيز شواهد الشاملة دون استدعاء نموذج المقارنة
     graph_only: Optional[bool] = False # تشجير النتيجة السابقة بلا بحث جديد
+    table_only: Optional[bool] = False # جدولة النتيجة السابقة بلا بحث جديد وبلا جدول تلقائي
 
 
 class BookResolveRequest(BaseModel):
@@ -5250,6 +5251,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     # فحص ما إذا كان نمط التوزيع المتوازي مفعلاً وهناك وكلاء في المجموعة
     is_parallel_dispatch = (
         not req.graph_only and
+        not req.table_only and
         not is_direct_page_reading and
         req.agent_dispatch_mode != "direct" and
         len(active_agents) >= 1 and
@@ -5389,7 +5391,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
         print(f"✨ [Multi-Agent Parallel Dispatch] All {len(subagents_dossiers)} subagents finished. Total citations collected: {len(retrieved_citations)}")
 
-    elif search_query and not is_greeting and not req.graph_only:
+    elif search_query and not is_greeting and not req.graph_only and not req.table_only:
         # النمط المباشر الموحد (الوضع السابق - خط الرجعة السريع)
         print(f"🔍 [Chat RAG Direct Monolithic] Query: '{search_query}' | Target Books: {target_books} | Dynamic Anchors: {req.retrieval_anchors} | Count: {agent_top_k}")
         try:
@@ -5467,8 +5469,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             f"═══════════════════════════════════════════════════════════\n"
             f"🎯 [توجيه قطعي وملزم لمدير المشروع / النموذج الأساسي]:\n"
             f"1. بين يديك الآن تقارير منقحة ومحررة من فريق الوكلاء المساعدين أعلاه بنماذجهم المتخصصة.\n"
-            f"2. مهمتك الكبرى: الموازنة والربط الأصولي بين هذه التقارير، تفريغ الشواهد والمقارنات في جدول ماركداون شامل موحد، وبيان أوجه الاتفاق والاختلاف، وصياغة الترجيح النهائي.\n"
-            f"3. 🔴 حـتـمـي في ختام التقرير: أدرج جدول ثبت المصادر والمراجع المعتمدة مستوعباً كافة الكتب المنقولة مع بيانات الأجزاء والصفحات.\n"
+            f"2. مهمتك الكبرى: الموازنة والربط بين هذه التقارير في نص محرر، وبيان أوجه الاتفاق والاختلاف، وصياغة الترجيح النهائي. لا تُنشئ جداول ماركداون في هذه الإجابة.\n"
+            f"3. اذكر الكتب المنقولة وأجزاءها وصفحاتها داخل الفقرات، بلا جدول ثبت مصادر.\n"
         )
     elif req.agent_group and not is_study_discussion:
         group_name = req.agent_group.get("name", "مجموعة الوكلاء المساعدين")
@@ -5510,17 +5512,12 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             f"📚 [المقاطع والنصوص التراثية المستخرجة فعلياً من الشاملة عبر الوكلاء]:\n"
             f"لقد قام وكيلك المساعد بالمسح والاستخراج الفعلي من كتب الشاملة واستخرج لك {len(retrieved_citations)} مقطعاً موثقاً لمطابقتها مع طلب المستخدم:\n\n"
             f"{citations_text}\n"
-            f"🔴 [تعليمات معالجة الشواهد وتفريغ الجداول التخصصية - للنموذج الأساسي]:\n"
-            f"1. أنت النموذج الأساسي المحلل والمحقق؛ مهمتك ليست سرد نصوص خام، بل معالجة وتحليل كافة الشواهد المستخرجة أعلاه وإجابة سؤال المستخدم بأسلوب تحريري علمي رصين وتفريغ النتائج في جدول ماركداون قياسي (Markdown Table).\n"
+            f"🔴 [تعليمات معالجة الشواهد للنموذج الأساسي]:\n"
+            f"1. أنت النموذج الأساسي المحلل والمحقق؛ مهمتك معالجة الشواهد والإجابة بأسلوب تحريري علمي رصين في فقرات، بلا جداول ماركداون.\n"
             f"2. استوعب كـافـة الشواهد والمقاطع المستخرجة أعلاه (جميع الشواهد من 1 إلى {len(retrieved_citations)}) دون استبعاد أي شاهد وثيق الصلة.\n"
-            f"3. نسّق أعمدة الجدول بذكاء بما يطابق نوع السؤال المطروح:\n"
-            f"   - إذا كان السؤال عن [أحكام ومسائل فقهية أو مذاهب]: صمم الجدول بأعمدة: | م | المسألة / الفرع الفقهي | المذهب والقول الفقهي | الدليل ووجه الاستدلال | المصدر التراثي (الكتاب، المؤلف، الجزء، الصفحة) |\n"
-            f"   - إذا كان السؤال عن [حوادث تاريخية أو كونية أو فلكية]: صمم الجدول بأعمدة: | م | الحادثة والظاهرة | السنة والتاريخ | تفاصيل ووصف الحادثة في النص التراثي | نوع الظاهرة / الاستنباط الفلكي | اسم الكتاب والمؤلف والجزء والصفحة | التحقق الحسابي الفلكي (تأكيد الحساب ومطابقة اليوم والتصحيف) |\n"
-            f"   - إذا كان السؤال عن [حديث وأسانيد وتخريج]: صمم الجدول بأعمدة: | م | متن الحديث أو الأثر | الصحابي والمخرج | درجة الحديث وحكم العلماء | المصدر التراثي |\n"
-            f"   - إذا طلب المستخدم أعمدة محددة بعينها في سؤاله: التزم تماماً بالأعمدة التي طلبها المستخدم حرفياً.\n"
-            f"4. لا تضع علامات اقتباس (>) داخل خلايا الجدول لتظل خلايا الجدول نظيفة وسهلة القراءة والتحميل.\n"
-            f"5. كُتب التاريخ الإسلامي مؤلفة بنظام الحوليات؛ إذا كانت المسألة تاريخية فرقم السنة يُذكر في مطلع الحولية وقد استخرجته لك المنظومة آلياً في [رأس الحولية الحاكمة] فأثبته صراحة في عمود السنة.\n"
-            f"6. هذه المقاطع أعلاه موثقة ومستخرجة فعلياً من أمهات المصادر، فاعتمدها في إجابتك وجدولتك.\n"
+            f"3. اذكر القول والدليل والمصدر (الكتاب، المؤلف، الجزء، الصفحة) داخل النص. لا تفرّغ ذلك في جدول.\n"
+            f"4. كُتب التاريخ الإسلامي مؤلفة بنظام الحوليات؛ إذا كانت المسألة تاريخية فرقم السنة يُذكر في مطلع الحولية وقد استخرجته لك المنظومة آلياً في [رأس الحولية الحاكمة] فأثبته صراحة في متن الجواب.\n"
+            f"5. هذه المقاطع أعلاه موثقة ومستخرجة فعلياً من أمهات المصادر، فاعتمدها في إجابتك.\n"
             f"═══════════════════════════════════════════════════════════\n"
         )
 
@@ -5532,7 +5529,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     elif any(phrase in last_user_msg for phrase in ["انكسفت الشمس", "انخسف القمر", "كسوف الشمس", "خسوف القمر", "محاق فلكي", "حساب الكسوف"]):
         is_astronomy_enabled = True
 
-    if is_astronomy_enabled and not req.graph_only:
+    if is_astronomy_enabled and not req.graph_only and not req.table_only:
         try:
             combined_corpus = f"{last_user_msg}\n" + "\n".join([c.get('snippet', '') for c in retrieved_citations[:20]])
             astro_report = astronomy_engine.verify_historical_astronomical_event(combined_corpus)
@@ -5557,8 +5554,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     if req.model and req.model != "local-almojtahed-8b":
         try:
             key = owner_openrouter_key(request, req.api_key)
-            if req.graph_only:
-                system_instruction = (req.system_prompt or "شجّر النتيجة المعطاة في كتلة force3d واحدة، بلا بحث جديد وبلا مثال.").strip()
+            if req.graph_only or req.table_only:
+                system_instruction = (req.system_prompt or "عالج النتيجة المعطاة فقط، بلا بحث جديد.").strip()
             elif is_study_discussion:
                 system_instruction = (
                     "أنت عالم ومحقق ومحكّم أكاديمي متخصص في العلوم الشرعية والتراثية (الفقه وأصوله، والحديث وعلله، والتفسير ومناهجه، واللغة والتاريخ).\n"
@@ -5574,10 +5571,10 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 system_instruction = (
                     "أنت المجتهد، مساعد ذكي وباحث محقق متخصص في العلوم الإسلامية والفقهية واللغوية والتاريخية.\n"
                     "أجب مباشرة وبتوسع وتحرير علمي رصين عن استفسار وسؤال المستخدم باللغة العربية الفصحى.\n"
-                    "حلل المسألة وفرغ النتائج في جداول ماركداون واضحة ولا تسرد اقتباسات خاماً بدون معالجة وجداول.\n"
+                    "حلل المسألة في فقرات محررة. لا تُنشئ جداول ماركداون ولا ثبت مصادر مجدولاً في هذه الإجابة.\n"
                     "إذا طُلب مشجر، أخرج كتلة ```force3d واحدة واختر نوعاً واحداً لا تخلطه بغيره: إسناد (صحابي|تابعي|مدار|طريق|كتاب، والسهم من الشيخ إلى التلميذ)، أو خلاف فقهي (مسألة ثم قول ومذهب ودليل ومناقشة وجواب وترجيح)، أو خلاف عقدي (مسألة ثم مذهب ومقالة وشبهة وجواب)، أو استدلال (حكم ثم دليل ثم وجه الدلالة ثم مناقشة ثم جواب)، أو مناقشة (محل النزاع ثم دعوى كل طرف ثم دليله). source هو الأعلى و target هو الفرع."
                 )
-            if not req.graph_only:
+            if not req.graph_only and not req.table_only:
                 if agent_routing_instruction:
                     system_instruction += agent_routing_instruction
                 system_instruction += "\n" + CITATION_FORMAT_RULE

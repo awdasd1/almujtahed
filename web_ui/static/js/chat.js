@@ -1987,7 +1987,9 @@ let chatGraphBusy = false;
 function setChatSendLocked(locked) {
   const button = document.getElementById('btnSendChat');
   const select = document.querySelector('select.chat-graph-kind-fixed');
+  const tableButton = document.getElementById('btnChatTable');
   if (button) button.disabled = !!locked;
+  if (tableButton) tableButton.disabled = !!locked;
   if (select) select.disabled = !!locked;
   const trigger = select && select.closest('.theme-select') && select.closest('.theme-select').querySelector('.theme-select-trigger');
   if (trigger) trigger.disabled = !!locked;
@@ -2098,6 +2100,90 @@ async function requestChatGraph(type) {
     setChatSendLocked(false);
   }
 }
+
+function tableInstruction() {
+  return `جدول النتيجة السابقة فقط.
+لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء، ولا تضف شاهداً ليس في النتيجة.
+لا تكتب شرحاً قبل الجدول ولا شجرة.
+أخرج جداول ماركداون فقط، بأعمدة تناسب أبواب النتيجة: القول، والدليل، والمصدر إن ذُكر.
+لا تضع علامة اقتباس داخل الخلايا، وأغلق كل جدول كاملاً.`;
+}
+
+async function requestChatTable() {
+  if (chatGraphBusy) return;
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const source = session && [...session.messages].reverse().find(item => item.role === 'assistant' && stripGraphFences(item.content).length > 40);
+  if (!source) {
+    if (typeof showToast === 'function') showToast('لا توجد نتيجة سابقة لجدولتها');
+    return;
+  }
+
+  chatGraphBusy = true;
+  setChatSendLocked(true);
+  const container = document.getElementById('chatMessagesContainer');
+  const typingBubble = document.createElement('div');
+  typingBubble.className = 'message-bubble assistant';
+  typingBubble.id = 'tableTypingIndicator';
+  typingBubble.innerHTML = `
+    <div class="message-avatar">مج</div>
+    <div class="message-content">
+      <span class="graph-wait-note">النموذج يقوم بالجدولة، فضلاً انتظر</span>
+    </div>
+  `;
+  if (container) {
+    container.appendChild(typingBubble);
+    if (typeof scrollToBottom === 'function') scrollToBottom();
+  }
+
+  const material = stripGraphFences(source.content).slice(0, 24000);
+  const selectedModel = document.getElementById('chatModelSelect')?.value
+    || localStorage.getItem('almojtahed_active_chat_model')
+    || 'anthropic/claude-3.7-sonnet';
+  const activeProvider = localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter';
+  let savedKeys = {};
+  try { savedKeys = readProviderKeys(); } catch (e) {}
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: selectedModel,
+        provider: activeProvider,
+        api_key: savedKeys[activeProvider] || '',
+        thinking_level: currentThinkingLevel,
+        use_hybrid: false,
+        graph_only: false,
+        table_only: true,
+        messages: [{ role: 'user', content: `النتيجة المراد جدولتها:\n${material}` }],
+        system_prompt: tableInstruction(),
+        temperature: 0.2,
+        providers: savedKeys,
+        agent_group: null
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'تعذر الجدولة');
+    if (typingBubble.parentNode) typingBubble.remove();
+    session.messages.push({
+      role: 'assistant',
+      content: data.reply || 'تعذر إظهار الجدول.',
+      model: data.model || selectedModel,
+      provider: data.provider || activeProvider,
+      table_request: true
+    });
+    saveChatSessions();
+    renderSessionMessages(activeSessionId);
+  } catch (err) {
+    if (typingBubble.parentNode) typingBubble.remove();
+    if (typeof showToast === 'function') showToast(err.message || 'تعذر الجدولة');
+  } finally {
+    chatGraphBusy = false;
+    setChatSendLocked(false);
+  }
+}
+
+window.requestChatTable = requestChatTable;
 function insertGraphKind(select) {
   const type = select.value;
   const inputId = select.dataset.graphTarget || 'chatInputText';

@@ -1667,12 +1667,37 @@ body:has(#paneChat.active) .main-content {
   display: flex;
   width: 100%;
   flex-shrink: 0;
-  margin: 2px 0 12px;
+  margin: 2px 0 8px;
 }
 
 .theme-select:has(> .chat-graph-kind-fixed) .theme-select-trigger {
   width: 100%;
   max-width: none;
+}
+
+.chat-table-request-btn {
+  flex-shrink: 0;
+  width: 100%;
+  margin: 0 0 12px;
+  height: 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-table-request-btn:hover {
+  border-color: var(--accent-clay);
+  color: var(--accent-clay);
+}
+
+.chat-table-request-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .chat-assistant-tools-list {
