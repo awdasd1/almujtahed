@@ -2284,6 +2284,94 @@ select.graph-kind-select {
   color: var(--text-muted);
 }
 
+.btn-msg-delete {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.35);
+  padding: 4px 8px;
+}
+
+.btn-msg-delete:hover {
+  color: #fff;
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.chat-delete-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 460;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(28, 22, 16, 0.46);
+}
+
+.chat-delete-overlay[hidden] { display: none; }
+
+.chat-delete-panel {
+  width: min(420px, 100%);
+  padding: 22px 22px 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  text-align: center;
+}
+
+.chat-delete-icon {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #b91c1c;
+  background: rgba(185, 28, 28, 0.12);
+}
+
+.chat-delete-panel h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-amiri);
+  font-size: 26px;
+}
+
+.chat-delete-panel p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.8;
+}
+
+.chat-delete-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.chat-delete-cancel,
+.chat-delete-confirm {
+  min-height: 42px;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-delete-cancel {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-muted);
+  color: var(--text-main);
+}
+
+.chat-delete-confirm {
+  border: 1px solid #b91c1c;
+  background: #b91c1c;
+  color: #fff;
+}
+
 .graph-wait-note {
   display: inline-block;
   animation: pulse 1.2s infinite;
@@ -7383,6 +7471,18 @@ table tr:hover td,
   border-color: var(--accent-clay);
   color: var(--accent-clay);
   background: var(--bg-muted);
+}
+
+.btn-msg-export.btn-msg-delete {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.35);
+  padding: 4px 8px;
+}
+
+.btn-msg-export.btn-msg-delete:hover {
+  color: #fff;
+  background: #b91c1c;
+  border-color: #b91c1c;
 }
 
 /* أزرار تبديل نوع الشارت التفاعلي */

@@ -414,10 +414,43 @@ function scrollChatMessageTop(idx) {
 function deleteChatMessage(idx) {
   const session = chatSessions.find(item => item.id === activeSessionId);
   if (!session || !session.messages[idx]) return;
-  if (!confirm('حذف هذه الإجابة؟')) return;
-  session.messages.splice(idx, 1);
-  saveChatSessions();
-  renderSessionMessages(activeSessionId, { keepPosition: true });
+  let overlay = document.getElementById('chatDeleteOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'chatDeleteOverlay';
+    overlay.className = 'chat-delete-overlay';
+    overlay.hidden = true;
+    overlay.innerHTML = `
+      <div class="chat-delete-panel" role="dialog" aria-modal="true" aria-labelledby="chatDeleteTitle">
+        <div class="chat-delete-icon" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </div>
+        <h3 id="chatDeleteTitle">حذف الإجابة</h3>
+        <p>هل تريد حذف هذه الإجابة؟ لن تبقى في المحادثة بعد التأكيد.</p>
+        <div class="chat-delete-actions">
+          <button type="button" class="chat-delete-cancel" id="chatDeleteCancel">إلغاء</button>
+          <button type="button" class="chat-delete-confirm" id="chatDeleteConfirm">حذف</button>
+        </div>
+      </div>
+    `;
+    overlay.addEventListener('click', (event) => {
+      if (event.target.id === 'chatDeleteOverlay' || event.target.id === 'chatDeleteCancel') {
+        overlay.hidden = true;
+        return;
+      }
+      if (event.target.id !== 'chatDeleteConfirm') return;
+      const target = Number(overlay.dataset.idx);
+      overlay.hidden = true;
+      const current = chatSessions.find(item => item.id === activeSessionId);
+      if (!current || !current.messages[target]) return;
+      current.messages.splice(target, 1);
+      saveChatSessions();
+      renderSessionMessages(activeSessionId, { keepPosition: true });
+    });
+    document.body.appendChild(overlay);
+  }
+  overlay.dataset.idx = String(idx);
+  overlay.hidden = false;
 }
 
 function shareChatMessage(idx) {
@@ -514,8 +547,8 @@ function renderSessionMessages(sessionId, options) {
         <button type="button" class="btn-msg-export" onclick="toggleChatMessageTashkeel(${idx})" title="إزالة التشكيل أو إعادته">
           ${msg.tashkeel_hidden ? 'إعادة التشكيل' : 'إزالة التشكيل'}
         </button>
-        <button type="button" class="btn-msg-export" onclick="deleteChatMessage(${idx})" title="حذف هذه الإجابة">
-          حذف
+        <button type="button" class="btn-msg-export btn-msg-delete" onclick="deleteChatMessage(${idx})" title="حذف هذه الإجابة" aria-label="حذف هذه الإجابة">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
         </button>
       </div>
     ` : `
@@ -3013,6 +3046,11 @@ document.addEventListener('mouseup', () => {
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  const deleteOverlay = document.getElementById('chatDeleteOverlay');
+  if (deleteOverlay && !deleteOverlay.hidden) {
+    deleteOverlay.hidden = true;
+    return;
+  }
   const overlay = document.getElementById('chatSelectOverlay');
   const books = document.getElementById('searchScopeModal');
   if (books && books.classList.contains('open')) return;
