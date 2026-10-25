@@ -2532,82 +2532,92 @@ const selectionResearch = {
 };
 
 function ensureChatSelectPanel() {
-  let panel = document.getElementById('chatSelectPanel');
-  if (panel) return panel;
-  panel = document.createElement('div');
-  panel.id = 'chatSelectPanel';
-  panel.className = 'chat-select-panel';
-  panel.hidden = true;
-  panel.innerHTML = `
-    <div class="chat-select-step" data-step="kinds">
-      <div class="chat-select-head">بحث في النص المحدد</div>
-      <div class="chat-select-quote" id="chatSelectQuote"></div>
-      <div class="chat-select-kinds" id="chatSelectKinds"></div>
-      <div class="chat-select-other" id="chatSelectOther" hidden>
-        <textarea id="chatSelectCustom" rows="3" placeholder="اكتب ما تريده من هذا الجزء"></textarea>
-        <button type="button" class="chat-select-go" id="chatSelectOtherNext">متابعة</button>
+  let overlay = document.getElementById('chatSelectOverlay');
+  if (overlay) return overlay;
+  overlay = document.createElement('div');
+  overlay.id = 'chatSelectOverlay';
+  overlay.className = 'chat-select-overlay';
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <div id="chatSelectPanel" class="chat-select-panel" role="dialog" aria-modal="true">
+      <div class="chat-select-top">
+        <h3 class="chat-select-head" id="chatSelectTitle">بحث في النص المحدد</h3>
+        <button type="button" class="chat-select-close" id="chatSelectClose" aria-label="إغلاق">×</button>
       </div>
-    </div>
-    <div class="chat-select-step" data-step="scope" hidden>
-      <button type="button" class="chat-select-back" id="chatSelectBack">رجوع</button>
-      <div class="chat-select-head">تحديد نطاق البحث</div>
-      <div class="chat-select-kind-name" id="chatSelectKindName"></div>
-      <div class="chat-select-segment" id="chatSelectScope">
-        <button type="button" data-scope="all" class="is-on">المكتبة كاملة</button>
-        <button type="button" data-scope="pick">تحديد</button>
+      <div class="chat-select-progress" id="chatSelectProgress">
+        <span data-progress="kinds" class="is-on">١ التخصص</span>
+        <span data-progress="scope">٢ النطاق والبحث</span>
       </div>
-      <div class="chat-select-pick" id="chatSelectPick" hidden>
-        <div class="chat-select-segment">
-          <button type="button" id="chatSelectSectionsBtn">تحديد أقسام</button>
-          <button type="button" id="chatSelectBooksBtn">تحديد كتب</button>
+      <div class="chat-select-body">
+        <div class="chat-select-step" data-step="kinds">
+          <div class="chat-select-quote" id="chatSelectQuote"></div>
+          <div class="chat-select-kinds" id="chatSelectKinds"></div>
+          <div class="chat-select-other" id="chatSelectOther" hidden>
+            <textarea id="chatSelectCustom" rows="3" placeholder="اكتب ما تريده من هذا الجزء"></textarea>
+          </div>
         </div>
-        <div class="chat-select-sections" id="chatSelectSections" hidden></div>
-        <div class="chat-select-summary" id="chatSelectSummary"></div>
+        <div class="chat-select-step" data-step="scope" hidden>
+          <button type="button" class="chat-select-back" id="chatSelectBack">رجوع</button>
+          <div class="chat-select-kind-name" id="chatSelectKindName"></div>
+          <div class="chat-select-segment" id="chatSelectScope">
+            <button type="button" data-scope="all" class="is-on">المكتبة كاملة</button>
+            <button type="button" data-scope="pick">تحديد</button>
+          </div>
+          <div class="chat-select-pick" id="chatSelectPick" hidden>
+            <div class="chat-select-segment">
+              <button type="button" id="chatSelectSectionsBtn">تحديد أقسام</button>
+              <button type="button" id="chatSelectBooksBtn">تحديد كتب</button>
+            </div>
+            <div class="chat-select-sections" id="chatSelectSections" hidden></div>
+            <div class="chat-select-summary" id="chatSelectSummary"></div>
+          </div>
+          <div class="chat-select-label">نوع البحث</div>
+          <div class="chat-select-segment" id="chatSelectHybrid">
+            <button type="button" data-hybrid="0">بحث دلالي</button>
+            <button type="button" data-hybrid="1">هجين</button>
+          </div>
+          <label class="chat-select-label" for="chatSelectDepth">سعة البحث</label>
+          <select id="chatSelectDepth" class="chat-select-depth">
+            <option value="300">بحث موسع — ٣٠٠ نص</option>
+            <option value="150" selected>متوسط — ١٥٠ نصاً</option>
+            <option value="5">مختصر — ٥ نصوص</option>
+          </select>
+        </div>
       </div>
-      <div class="chat-select-label">نوع البحث</div>
-      <div class="chat-select-segment" id="chatSelectHybrid">
-        <button type="button" data-hybrid="0">بحث دلالي</button>
-        <button type="button" data-hybrid="1">هجين</button>
+      <div class="chat-select-footer">
+        <button type="button" class="chat-select-go" id="chatSelectOtherNext" hidden>متابعة</button>
+        <button type="button" class="chat-select-go" id="chatSelectRun" hidden>ابحث</button>
       </div>
-      <label class="chat-select-label" for="chatSelectDepth">سعة البحث</label>
-      <select id="chatSelectDepth" class="chat-select-depth">
-        <option value="300">بحث موسع</option>
-        <option value="150" selected>متوسط</option>
-        <option value="5">مختصر</option>
-      </select>
-      <p class="chat-select-hint">الموسع يبحث في ٣٠٠ نص، والمتوسط في ١٥٠، والمختصر في ٥.</p>
-      <button type="button" class="chat-select-go" id="chatSelectRun">ابحث</button>
     </div>
   `;
-  document.body.appendChild(panel);
-  const kinds = panel.querySelector('#chatSelectKinds');
-  kinds.innerHTML = SELECTION_RESEARCH_KINDS.map(kind =>
+  document.body.appendChild(overlay);
+  overlay.querySelector('#chatSelectKinds').innerHTML = SELECTION_RESEARCH_KINDS.map(kind =>
     `<button type="button" data-kind="${kind.id}">${kind.label}</button>`
   ).join('');
-  panel.addEventListener('click', onChatSelectPanelClick);
-  return panel;
+  overlay.addEventListener('click', onChatSelectPanelClick);
+  return overlay;
 }
 
 function showChatSelectStep(step) {
-  const panel = ensureChatSelectPanel();
-  panel.querySelectorAll('.chat-select-step').forEach(node => {
+  const overlay = ensureChatSelectPanel();
+  overlay.querySelectorAll('.chat-select-step').forEach(node => {
     node.hidden = node.getAttribute('data-step') !== step;
   });
-}
-
-function placeChatSelectPanel(rect) {
-  const panel = ensureChatSelectPanel();
-  const width = Math.min(420, window.innerWidth - 24);
-  let left = rect.left;
-  let top = rect.bottom + 10;
-  if (left + width > window.innerWidth - 12) left = window.innerWidth - width - 12;
-  if (left < 12) left = 12;
-  panel.hidden = false;
-  panel.style.width = `${width}px`;
-  const height = panel.offsetHeight || 320;
-  if (top + height > window.innerHeight - 12) top = Math.max(12, rect.top - height - 10);
-  panel.style.top = `${Math.max(12, top)}px`;
-  panel.style.left = `${left}px`;
+  overlay.querySelectorAll('#chatSelectProgress span').forEach(node => {
+    node.classList.toggle('is-on', node.getAttribute('data-progress') === step);
+  });
+  const title = overlay.querySelector('#chatSelectTitle');
+  const next = overlay.querySelector('#chatSelectOtherNext');
+  const run = overlay.querySelector('#chatSelectRun');
+  if (step === 'scope') {
+    title.textContent = 'تحديد نطاق البحث';
+    next.hidden = true;
+    run.hidden = false;
+  } else {
+    title.textContent = 'بحث في النص المحدد';
+    run.hidden = true;
+    next.hidden = overlay.querySelector('#chatSelectOther').hidden;
+  }
 }
 
 function openChatSelectionPanel() {
@@ -2619,16 +2629,17 @@ function openChatSelectionPanel() {
   const node = selection.anchorNode;
   const host = node && node.parentElement && node.parentElement.closest('#chatMessagesContainer .message-bubble.assistant .message-content');
   if (!host) return;
+  const overlay = ensureChatSelectPanel();
+  if (!overlay.hidden) return;
   selectionResearch.text = text.slice(0, 2500);
   selectionResearch.kindId = '';
   selectionResearch.custom = '';
-  const panel = ensureChatSelectPanel();
-  panel.querySelector('#chatSelectQuote').textContent = selectionResearch.text;
-  panel.querySelector('#chatSelectOther').hidden = true;
-  panel.querySelector('#chatSelectCustom').value = '';
+  overlay.querySelector('#chatSelectQuote').textContent = selectionResearch.text;
+  overlay.querySelector('#chatSelectOther').hidden = true;
+  overlay.querySelector('#chatSelectCustom').value = '';
   showChatSelectStep('kinds');
-  const rect = selection.getRangeAt(0).getBoundingClientRect();
-  placeChatSelectPanel(rect);
+  overlay.hidden = false;
+  selection.removeAllRanges();
 }
 
 function selectionCategories() {
@@ -2665,7 +2676,9 @@ function onChatSelectPanelClick(event) {
     const kind = SELECTION_RESEARCH_KINDS.find(item => item.id === kindButton.getAttribute('data-kind'));
     if (!kind) return;
     if (kind.custom) {
-      document.getElementById('chatSelectOther').hidden = false;
+      const other = document.getElementById('chatSelectOther');
+      other.hidden = false;
+      document.getElementById('chatSelectOtherNext').hidden = false;
       document.getElementById('chatSelectCustom').focus();
       return;
     }
@@ -2680,6 +2693,10 @@ function onChatSelectPanelClick(event) {
     }
     selectionResearch.custom = custom;
     openSelectionScope(SELECTION_RESEARCH_KINDS.find(item => item.id === 'other'));
+    return;
+  }
+  if (event.target.id === 'chatSelectClose' || event.target.id === 'chatSelectOverlay') {
+    document.getElementById('chatSelectOverlay').hidden = true;
     return;
   }
   if (event.target.id === 'chatSelectBack') {
@@ -2779,22 +2796,27 @@ async function runSelectionResearch() {
   selectionResearch.running = true;
   const session = chatSessions.find(item => item.id === activeSessionId);
   const kind = SELECTION_RESEARCH_KINDS.find(item => item.id === selectionResearch.kindId);
-  if (!session || !kind || !selectionResearch.text) return;
+  if (!session || !kind || !selectionResearch.text) {
+    selectionResearch.running = false;
+    return;
+  }
   const depth = document.getElementById('chatSelectDepth').value || '150';
   const hybrid = document.querySelector('#chatSelectHybrid button.is-on')?.getAttribute('data-hybrid') === '1';
   let books = [];
   try {
     books = await booksForSelectionResearch();
   } catch (err) {
+    selectionResearch.running = false;
     if (typeof showToast === 'function') showToast(err.message || 'تعذر تحديد الكتب');
     return;
   }
   if (selectionResearch.scope === 'pick' && !books.length) {
+    selectionResearch.running = false;
     if (typeof showToast === 'function') showToast('حدد قسماً أو كتباً، أو اختر المكتبة كاملة');
     return;
   }
 
-  document.getElementById('chatSelectPanel').hidden = true;
+  document.getElementById('chatSelectOverlay').hidden = true;
   window.getSelection()?.removeAllRanges();
   chatGraphBusy = true;
   setChatSendLocked(true);
@@ -2864,23 +2886,18 @@ async function runSelectionResearch() {
   }
 }
 
-document.addEventListener('mouseup', (event) => {
-  if (event.target.closest && event.target.closest('#chatSelectPanel, #searchScopeModal')) return;
+document.addEventListener('mouseup', () => {
+  const overlay = document.getElementById('chatSelectOverlay');
+  if (overlay && !overlay.hidden) return;
   setTimeout(openChatSelectionPanel, 0);
-});
-
-document.addEventListener('mousedown', (event) => {
-  const panel = document.getElementById('chatSelectPanel');
-  if (!panel || panel.hidden) return;
-  if (panel.contains(event.target)) return;
-  if (event.target.closest && event.target.closest('#searchScopeModal')) return;
-  panel.hidden = true;
 });
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
-  const panel = document.getElementById('chatSelectPanel');
-  if (panel) panel.hidden = true;
+  const overlay = document.getElementById('chatSelectOverlay');
+  const books = document.getElementById('searchScopeModal');
+  if (books && books.classList.contains('open')) return;
+  if (overlay) overlay.hidden = true;
 });
 
 // تهيئة نمط الشات عند تحميل الصفحة
