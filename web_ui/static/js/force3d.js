@@ -12,7 +12,11 @@ const FORCE3D_COLORS = {
   tarjih: '#b45309',
   usul: '#3f6212',
   book: '#92400e',
-  narrator: '#059669'
+  narrator: '#059669',
+  hadith: '#1e3a5f',
+  prophet: '#7c2d12',
+  tabi: '#0f766e',
+  taba: '#3f6212'
 };
 
 const FORCE3D_EXAMPLES = [
@@ -21,7 +25,7 @@ const FORCE3D_EXAMPLES = [
   { id: 'radial', group: 'شجري', label: 'شعاعي', note: 'الأصل في الوسط والحلقات حوله بحسب الطبقة أو قرب القول من المسألة.' },
   { id: 'madar', group: 'شجري', label: 'المركز', note: 'في الوسط المدار، أو المسألة، أو الدليل المشترك بين الأقوال.' },
   { id: 'fixed', group: 'قيود الباحث', label: 'تثبيت الأصل', note: 'يثبت الصحابي أو المسألة أو محل النزاع في الأعلى، وتترتب الفروع تحته مع مراعاة عرض الأسماء.' },
-  { id: 'align', group: 'قيود الباحث', label: 'محاذاة الطبقات', note: 'كل طبقة في صف واحد: جيل الرواة، أو الأقوال، أو المذاهب، أو الأدلة.' },
+  { id: 'align', group: 'قيود الباحث', label: 'محاذاة الطبقات', note: 'كل طبقة على خط أفقي واحد: الصحابة معاً، ثم التابعون، ثم الكتب. والسهم في الإسناد يصعد من الأدنى إلى الأعلى.' },
   { id: 'sides', group: 'قيود الباحث', label: 'طرفا الخلاف', note: 'يفرّق فرعي الأصل يميناً ويساراً: الجواز والمنع، أو الدعوى ونقيضها، ويُبقي الدليل تحت القول.' },
   { id: 'hybrid', group: 'قيود الباحث', label: 'هجين مقيد', note: 'يجمع تثبيت الأصل ومحاذاة الطبقات وفصل الطرفين في رسم واحد.' },
   { id: 'spring', group: 'قيود الباحث', label: 'توزيع مرن', note: 'توزيع حر بلا صفوف صارمة حين تتكاثر المناقشات ويضيق الشكل الشجري.' },
@@ -82,8 +86,12 @@ function force3dEscape(value) {
 
 function force3dRoleKey(role) {
   const text = String(role || '');
+  if (/حديث|أثر|متن/.test(text)) return 'hadith';
+  if (/نبي|رسول/.test(text)) return 'prophet';
   if (/مدار/.test(text)) return 'madar';
-  if (/صحابي/.test(text)) return 'sahabi';
+  if (/صحاب/.test(text)) return 'sahabi';
+  if (/تابع التابعين|أتباع التابعين|تبع الأتباع/.test(text)) return 'taba';
+  if (/تابعي|التابعون/.test(text)) return 'tabi';
   if (/ضعيف|معلول|متروك|منكر|كذاب/.test(text)) return 'weak';
   if (/مسألة|محل النزاع|دعوى/.test(text)) return 'issue';
   if (/ترجيح/.test(text)) return 'tarjih';
@@ -95,6 +103,36 @@ function force3dRoleKey(role) {
   if (/أصل|قاعدة|سبب الخلاف/.test(text)) return 'usul';
   if (/كتاب|مخرج|مصدر/.test(text)) return 'book';
   return 'narrator';
+}
+
+function force3dIsnadRank(node) {
+  const role = String((node && node.role) || '');
+  const name = String((node && node.name) || '');
+  if (/حديث|أثر|متن/.test(role)) return 0;
+  if (/نبي|رسول/.test(role) || /^(النبي|رسول الله)/.test(name)) return 1;
+  if (/صحاب/.test(role)) return 2;
+  if (/تابع التابعين|أتباع التابعين|تبع الأتباع/.test(role)) return 4;
+  if (/تابعي|التابعون/.test(role)) return 3;
+  if (/مدار/.test(role)) return 5;
+  if (/طريق|ضعيف|معلول/.test(role)) return 6;
+  if (/كتاب|مخرج|مصدر/.test(role)) return 7;
+  return null;
+}
+
+function force3dIsnadGraph(data) {
+  return (data.nodes || []).some((node) => /صحاب|تابعي|كتاب|حديث|أثر|نبي|مدار/.test(String(node.role || '')));
+}
+
+function force3dDisplayLink(link, data) {
+  if (!force3dIsnadGraph(data)) return link;
+  const byId = new Map(data.nodes.map((node) => [node.id, node]));
+  const sourceRank = force3dIsnadRank(byId.get(link.source) || {});
+  const targetRank = force3dIsnadRank(byId.get(link.target) || {});
+  if (sourceRank == null || targetRank == null || sourceRank === targetRank) return link;
+  if (sourceRank < targetRank) {
+    return { source: link.target, target: link.source, label: link.label };
+  }
+  return link;
 }
 
 function force3dExample(id) {
@@ -472,14 +510,17 @@ function cytoscapeElements(data) {
     },
     classes: `role-${force3dRoleKey(node.role)}`
   }));
-  const edges = data.links.map((link, index) => ({
-    data: {
-      id: `e${index}-${link.source}-${link.target}`,
-      source: link.source,
-      target: link.target,
-      label: link.label
-    }
-  }));
+  const edges = data.links.map((link, index) => {
+    const shown = force3dDisplayLink(link, data);
+    return {
+      data: {
+        id: `e${index}-${shown.source}-${shown.target}`,
+        source: shown.source,
+        target: shown.target,
+        label: shown.label
+      }
+    };
+  });
   return nodes.concat(edges);
 }
 
@@ -608,6 +649,38 @@ function applyFcoseLayout(cy, data, exampleId) {
   if (exampleId === 'lib-uwsn') options.relativePlacementConstraint = wideVertical;
   if (exampleId === 'lib-sample4') options.fixedNodeConstraint = anchors;
   cy.layout(force3dFcoseOptions(options)).run();
+  if (exampleId === 'align' || exampleId === 'hybrid' || exampleId === 'lib-callgraph' || exampleId === 'lib-sample2') {
+    force3dSnapLayers(cy, data);
+  }
+}
+
+function force3dSnapLayers(cy, data) {
+  const isnad = force3dIsnadGraph(data);
+  const groups = new Map();
+  data.nodes.forEach((node) => {
+    const key = isnad ? force3dIsnadRank(node) : force3dRoleKey(node.role);
+    if (key == null) return;
+    const bucket = String(key);
+    if (!groups.has(bucket)) groups.set(bucket, []);
+    groups.get(bucket).push(node.id);
+  });
+  groups.forEach((ids) => {
+    if (ids.length < 2) return;
+    const nodes = ids.map((id) => cy.getElementById(id)).filter((node) => node && node.length);
+    if (nodes.length < 2) return;
+    const ys = nodes.map((node) => node.position('y')).sort((a, b) => a - b);
+    const y = ys[Math.floor((ys.length - 1) / 2)];
+    nodes.sort((a, b) => a.position('x') - b.position('x'));
+    nodes.forEach((node) => node.position({ x: node.position('x'), y }));
+    for (let index = 1; index < nodes.length; index += 1) {
+      const previous = nodes[index - 1];
+      const current = nodes[index];
+      const needed = (previous.outerWidth() + current.outerWidth()) / 2 + 36;
+      if (current.position('x') - previous.position('x') < needed) {
+        current.position({ x: previous.position('x') + needed, y });
+      }
+    }
+  });
 }
 
 function applyCytoscapeLayout(cy, data, exampleId) {
