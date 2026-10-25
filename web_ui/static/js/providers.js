@@ -1033,7 +1033,7 @@ function moneyPerMillion(value) {
 
 function placeModelHoverCard(item, card) {
   const rect = item.getBoundingClientRect();
-  const menu = item.closest('.custom-model-dropdown-menu');
+  const menu = item.closest('.custom-model-dropdown-menu, .theme-select-menu, .compare-slot-menu');
   const menuRect = menu ? menu.getBoundingClientRect() : null;
   if (!menuRect || rect.bottom < menuRect.top || rect.top > menuRect.bottom) {
     hideModelHoverCard();
@@ -1054,10 +1054,10 @@ function placeModelHoverCard(item, card) {
 
 function fillModelHoverCard(item) {
   const card = ensureModelHoverCard();
-  const id = item.getAttribute('data-model-id') || '';
-  const name = item.getAttribute('data-model-name') || item.querySelector('.custom-model-item-name')?.textContent || id;
+  const id = item.getAttribute('data-model-id') || item.getAttribute('data-id') || '';
+  const name = item.getAttribute('data-model-name') || item.querySelector('.custom-model-item-name')?.textContent || item.textContent.trim() || id;
   const model = lookupOpenRouterModel(id);
-  const local = !model && (id.indexOf('local-') === 0 || item.querySelector('.custom-model-item-tag')?.textContent === 'محلي');
+  const local = !model && id.indexOf('/') === -1;
   const prompt = model ? moneyPerMillion(model.pricing && model.pricing.prompt_per_1m) : (local ? 'غير مطبّق' : 'غير محدد');
   const completion = model ? moneyPerMillion(model.pricing && model.pricing.completion_per_1m) : (local ? 'غير مطبّق' : 'غير محدد');
   const context = model && model.context_length
@@ -1098,10 +1098,20 @@ function fillModelHoverCard(item) {
   }, 220);
 }
 
+function modelHoverRow(node) {
+  if (!node || !node.closest) return null;
+  const custom = node.closest('.custom-model-item');
+  if (custom && custom.closest('.custom-model-dropdown-menu')) return custom;
+  const themed = node.closest('.theme-select-option');
+  if (themed && themed.dataset.modelId && themed.closest('.theme-select-menu')) return themed;
+  const compared = node.closest('.compare-slot-item');
+  if (compared && compared.dataset.id && compared.closest('.compare-slot-menu')) return compared;
+  return null;
+}
+
 document.addEventListener('mouseover', (event) => {
-  const item = event.target.closest && event.target.closest('.custom-model-item');
+  const item = modelHoverRow(event.target);
   if (!item || item === modelHoverItem) return;
-  if (!item.closest('.custom-model-dropdown-menu')) return;
   modelHoverItem = item;
   fillModelHoverCard(item);
 });
@@ -1115,7 +1125,7 @@ document.addEventListener('mouseout', (event) => {
 
 document.addEventListener('scroll', (event) => {
   if (!modelHoverItem) return;
-  const list = event.target && event.target.closest && event.target.closest('.custom-model-options-list');
+  const list = event.target && event.target.closest && event.target.closest('.custom-model-options-list, .theme-select-menu, .compare-slot-items, .compare-slot-menu');
   if (!list || !list.contains(modelHoverItem)) return;
   placeModelHoverCard(modelHoverItem, ensureModelHoverCard());
 }, true);

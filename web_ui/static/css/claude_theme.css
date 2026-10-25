@@ -5162,7 +5162,7 @@ input:checked+.slider-toggle:before {
 
 .model-hover-card {
   position: fixed;
-  z-index: 1400;
+  z-index: 100040;
   width: 320px;
   max-height: min(420px, calc(100vh - 16px));
   overflow: auto;

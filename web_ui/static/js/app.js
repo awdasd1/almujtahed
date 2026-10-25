@@ -292,6 +292,7 @@ function initThemeSelects() {
     }
     openSelect = null;
     activeIndex = -1;
+    if (typeof hideModelHoverCard === 'function') hideModelHoverCard();
   }
 
   function syncLabel(select) {
@@ -340,6 +341,10 @@ function initThemeSelects() {
       item.disabled = option.disabled;
       item.setAttribute('role', 'option');
       if (option.selected) item.classList.add('is-selected');
+      if (select.dataset.modelPicker === '1' && option.value) {
+        item.dataset.modelId = option.value;
+        item.dataset.modelName = option.textContent.trim();
+      }
       item.addEventListener('click', () => {
         if (option.disabled) return;
         const changed = select.value !== option.value;

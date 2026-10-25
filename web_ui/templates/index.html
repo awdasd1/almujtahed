@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792894000">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792895000">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 3.7 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 3.8 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -941,7 +941,7 @@
                                 <div class="form-row" style="display: flex; gap: 12px; flex-wrap: wrap;">
                                     <div class="form-group" style="flex: 2; min-width: 260px;">
                                         <label>النموذج المقترح من OpenRouter (كامل القائمة):</label>
-                                        <select id="pDirectorModel" class="form-select">
+                                        <select id="pDirectorModel" class="form-select" data-model-picker="1">
                                             <option value="google/gemini-2.5-flash">⚡ Gemini 2.5 Flash (سريع، دقيق، سياق
                                                 1M) — موصى به ⭐</option>
                                             <option value="anthropic/claude-3.7-sonnet">🖋️ Claude 3.7 Sonnet (الأول في
@@ -1440,7 +1440,7 @@
                                         style="display: none; font-size: 11px; color: var(--accent-clay); margin-right: 4px;">⏳
                                         جارِ التحميل...</span>
                                 </label>
-                                <select id="providerModelSelect" class="filter-select">
+                                <select id="providerModelSelect" class="filter-select" data-model-picker="1">
                                     <option value="">جارٍ جلب النماذج...</option>
                                 </select>
                             </div>
@@ -1571,7 +1571,7 @@
                         <div class="provider-controls-bar">
                             <div class="filter-item provider-ctrl-item">
                                 <label for="localModelSelect">قائمة النماذج المحلية:</label>
-                                <select id="localModelSelect" class="filter-select" onchange="selectLocalModel(this.value)">
+                                <select id="localModelSelect" class="filter-select" data-model-picker="1" onchange="selectLocalModel(this.value)">
                                     <option value="">لا توجد نماذج محلية بعد</option>
                                 </select>
                             </div>
@@ -2347,7 +2347,7 @@
                                     title="مسح الفلترة"
                                     style="display: none; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted); font-size: 13px; font-weight: bold;">✕</span>
                             </div>
-                            <select id="toolAiModelSelect" class="form-select"
+                            <select id="toolAiModelSelect" class="form-select" data-model-picker="1"
                                 style="width: 100%; padding: 7px 10px; font-size: 12.5px; border-radius: var(--radius-sm);">
                                 <option value="google/gemini-2.5-flash" selected>Google Gemini 2.5 Flash (سريع ودقيق — موصى به ⭐)</option>
                             </select>
@@ -3293,7 +3293,7 @@
                     </button>
                     <div class="planner-model-picker">
                         <label for="architectModelSelect">نموذج المهندس:</label>
-                        <select id="architectModelSelect" class="form-select-sm" style="max-width: 380px;">
+                        <select id="architectModelSelect" class="form-select-sm" data-model-picker="1" style="max-width: 380px;">
                             <optgroup label="⭐ النماذج الموصى بها لتخطيط وتنفيذ المشاريع">
                                 <option value="google/gemini-2.5-flash" selected>⚡ Gemini 2.5 Flash (سريع، دقيق، سياق
                                     1M) — موصى به ⭐</option>
@@ -3525,7 +3525,7 @@
                 <div class="form-row" style="display: flex; gap: 12px;">
                     <div class="form-group" style="flex: 1.5;">
                         <label>نموذج مدير المشروع (OpenRouter):</label>
-                        <select id="manualProjectDirectorModel" class="form-select">
+                        <select id="manualProjectDirectorModel" class="form-select" data-model-picker="1">
                             <option value="google/gemini-2.5-flash" selected>Gemini 2.5 Flash (سياق 1M - للمسح والجدولة
                                 الشاملة)</option>
                             <option value="anthropic/claude-3.7-sonnet">Claude Sonnet 3.7 / 3.5 (تحرير وبلاغة أكاديمية
@@ -3679,7 +3679,7 @@
                     </div>
 
                     <!-- القائمة المنسدلة بالنماذج -->
-                    <select id="pSubagentModelSelect" class="form-select" style="font-weight: 600; font-size: 13px;" onchange="onProjectSubagentModelChanged(this.value)">
+                    <select id="pSubagentModelSelect" class="form-select" data-model-picker="1" style="font-weight: 600; font-size: 13px;" onchange="onProjectSubagentModelChanged(this.value)">
                         <!-- يتم تعبئتها ديناميكياً مع المجموعات -->
                     </select>
                 </div>
@@ -4587,7 +4587,7 @@
                                 style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
                                 النموذج الذكي (أوبن راوتر OpenRouter):
                             </label>
-                            <select id="p2cModelSelect" class="form-select"
+                            <select id="p2cModelSelect" class="form-select" data-model-picker="1"
                                 style="width: 100%; font-size: 12.5px; padding: 7px 10px; font-weight: 600;">
                                 <!-- تُعبأ ديناميكياً من نماذج OpenRouter -->
                             </select>
@@ -4695,14 +4695,14 @@
     <script src="/static/js/markmap-view.min.js"></script>
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/members.js?v=1792835200"></script>
-    <script src="/static/js/app.js?v=1792869400"></script>
+    <script src="/static/js/app.js?v=1792895000"></script>
     <script src="/static/js/search.js?v=1792887000"></script>
     <script src="/static/js/reader.js?v=1792832400"></script>
     <script src="/static/js/force3d.js?v=1792878800"></script>
     <script src="/static/js/share.js?v=1792892000"></script>
     <script src="/static/js/chat.js?v=1792893000"></script>
     <script src="/static/js/agents.js?v=1792894000"></script>
-    <script src="/static/js/providers.js?v=1792894000"></script>
+    <script src="/static/js/providers.js?v=1792895000"></script>
     <script src="/static/js/tools.js?v=1792853600"></script>
     <script src="/static/js/projects.js?v=1792886100"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
