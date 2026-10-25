@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792864100">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792865000">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.0 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.1 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -292,10 +292,32 @@
 
                 <!-- الشريط الجانبي للمحادثات السابقة -->
                 <aside class="chat-sidebar">
-                    <button class="btn-new-chat" onclick="createNewChatSession()">
-                        <span>محادثة جديدة</span>
-                        <i data-lucide="plus" class="icon" aria-hidden="true"></i>
+                    <button type="button" class="chat-balance-badge chat-sidebar-balance" id="chatHeaderBalanceBadge"
+                        title="الرصيد المتاح في مزود الخدمة - انقر للانتقال المباشر للوحة تفاصيل الاستهلاك والإنفاق"
+                        onclick="navigateToConsumptionTab()">
+                        <span class="chat-balance-icon-wrap">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.2">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                            </svg>
+                        </span>
+                        <span class="chat-balance-label">الرصيد:</span>
+                        <span class="chat-balance-usd" id="chatTopBalanceUsd">$81.19</span>
+                        <span class="chat-balance-divider">|</span>
+                        <span class="chat-balance-sar" id="chatTopBalanceSar">304.47 ﷼</span>
                     </button>
+                    <div class="chat-sidebar-actions">
+                        <button class="btn-new-chat" onclick="createNewChatSession()">
+                            <span>محادثة جديدة</span>
+                            <i data-lucide="plus" class="icon" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" id="btnToggleChatHybridSearch" class="btn-hybrid-toggle is-active chat-sidebar-hybrid"
+                            onclick="toggleChatHybridSearchMode()"
+                            title="انقر للتبديل بين استرجاع النصوص بالبحث الهجين والبحث الدلالي">
+                            <span class="hybrid-indicator-dot"></span>
+                            <span id="labelChatHybridToggle">بحث هجين</span>
+                        </button>
+                    </div>
 
                     <div class="chat-history-header-row" style="display: flex; align-items: center; justify-content: space-between; margin: 6px 4px 2px;">
                         <span style="font-size: 11.5px; font-weight: 700; color: var(--text-light);">سجل المحادثات</span>
@@ -413,36 +435,7 @@
                                     <option value="high">عالي (استدلال وبحث معمق)</option>
                                 </select>
                             </div>
-
-                            <!-- نمط استرجاع نصوص الشات: تفعيل / تعطيل البحث الهجين -->
-                            <button type="button" id="btnToggleChatHybridSearch" class="btn-hybrid-toggle is-active"
-                                onclick="toggleChatHybridSearchMode()"
-                                title="انقر للتبديل بين استرجاع النصوص بالبحث الهجين (Dense + BM25) والبحث الدلالي الصرف">
-                                <span class="hybrid-indicator-dot"></span>
-                                <i data-lucide="layers" id="iconChatHybridToggle" style="width: 14px; height: 14px;"></i>
-                                <span id="labelChatHybridToggle">بحث هجين مفعّل (Dense + BM25)</span>
-                            </button>
                         </div>
-
-                        <button type="button" class="btn-secondary-action chat-share-btn" onclick="shareActiveChat()" title="مشاركة هذه المحادثة مع الأعضاء">
-                            مشاركة
-                        </button>
-
-                        <!-- بطاقة الرصيد التفاعلية في ترويسة الشات بدلاً من الإعدادات المكررة -->
-                        <button type="button" class="chat-balance-badge" id="chatHeaderBalanceBadge"
-                            title="الرصيد المتاح في مزود الخدمة - انقر للانتقال المباشر للوحة تفاصيل الاستهلاك والإنفاق"
-                            onclick="navigateToConsumptionTab()">
-                            <span class="chat-balance-icon-wrap">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2.2">
-                                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                                </svg>
-                            </span>
-                            <span class="chat-balance-label">الرصيد:</span>
-                            <span class="chat-balance-usd" id="chatTopBalanceUsd">$81.19</span>
-                            <span class="chat-balance-divider">|</span>
-                            <span class="chat-balance-sar" id="chatTopBalanceSar">304.47 ﷼</span>
-                        </button>
                     </div>
 
                     <!-- منطقة عرض الرسائل -->
@@ -4736,7 +4729,7 @@
     <script src="/static/js/reader.js?v=1792832400"></script>
     <script src="/static/js/force3d.js?v=1792738800"></script>
     <script src="/static/js/share.js?v=1792853600"></script>
-    <script src="/static/js/chat.js?v=1792853600"></script>
+    <script src="/static/js/chat.js?v=1792865000"></script>
     <script src="/static/js/agents.js?v=1792743600"></script>
     <script src="/static/js/providers.js?v=1792858000"></script>
     <script src="/static/js/tools.js?v=1792853600"></script>

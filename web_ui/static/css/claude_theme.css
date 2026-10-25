@@ -1292,6 +1292,33 @@ body.is-admin .admin-only-tab {
   background: var(--btn-hover, var(--emerald-hover));
 }
 
+.chat-sidebar-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.chat-sidebar-actions .btn-new-chat {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.chat-sidebar-hybrid {
+  flex: 0 0 auto;
+  align-self: stretch;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.chat-sidebar-balance {
+  width: 100%;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+
 .history-list {
   flex: 1;
   overflow-y: auto;

@@ -43,7 +43,6 @@ function toggleChatHybridSearchMode() {
 function updateChatHybridToggleUI() {
   const btn = document.getElementById('btnToggleChatHybridSearch');
   const label = document.getElementById('labelChatHybridToggle');
-  const icon = document.getElementById('iconChatHybridToggle');
   if (!btn || !label) return;
 
   if (isChatHybridSearchEnabled) {
@@ -51,19 +50,13 @@ function updateChatHybridToggleUI() {
     btn.classList.remove('is-disabled');
     btn.setAttribute('aria-pressed', 'true');
     btn.title = 'البحث الهجين في الشات مفعّل: استرجاع الشواهد التراثية بالدمج بين التضمين الدلالي والتطابق اللفظي BM25. انقر للتعطيل.';
-    label.textContent = 'بحث هجين مفعّل (Dense + BM25)';
-    if (icon) icon.setAttribute('data-lucide', 'layers');
+    label.textContent = 'بحث هجين';
   } else {
     btn.classList.remove('is-active');
     btn.classList.add('is-disabled');
     btn.setAttribute('aria-pressed', 'false');
-    btn.title = 'البحث الدلالي الصرف في الشات مفعّل: استرجاع الشواهد التراثية بنموذج المتجهات 8B فقط. انقر لتفعيل البحث الهجين.';
-    label.textContent = 'بحث دلالي صرف (Dense Only)';
-    if (icon) icon.setAttribute('data-lucide', 'cpu');
-  }
-
-  if (window.lucide && typeof window.lucide.createIcons === 'function') {
-    window.lucide.createIcons();
+    btn.title = 'البحث الدلالي في الشات مفعّل. انقر لتفعيل البحث الهجين.';
+    label.textContent = 'بحث دلالي';
   }
 }
 
