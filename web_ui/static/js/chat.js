@@ -292,6 +292,61 @@ function exportChatSessionFile(sessionId) {
   return true;
 }
 
+function importedChatSessions(data) {
+  if (!data || typeof data !== 'object') return [];
+  if (data.type === 'almojtahed_chat' && data.chat) return [data.chat];
+  if (Array.isArray(data.sessions)) return data.sessions;
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.messages)) return [data];
+  return [];
+}
+
+function importChatSessionFile(input) {
+  const file = input && input.files && input.files[0];
+  if (input) input.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(String(reader.result || ''));
+    } catch (err) {
+      showToast('الملف ليس محادثة صالحة');
+      return;
+    }
+    const found = importedChatSessions(data).map(session => {
+      const messages = Array.isArray(session.messages)
+        ? session.messages.filter(message => message && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
+        : [];
+      return {
+        title: String(session.title || '').trim(),
+        createdAt: session.createdAt || new Date().toISOString(),
+        messages
+      };
+    }).filter(session => session.messages.length);
+    if (!found.length) {
+      showToast('لم يُعثر على محادثة في الملف');
+      return;
+    }
+    found.forEach(session => {
+      const imported = {
+        id: 'chat_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        title: session.title || 'محادثة مستوردة',
+        createdAt: session.createdAt,
+        messages: session.messages
+      };
+      chatSessions.unshift(imported);
+      activeSessionId = imported.id;
+    });
+    saveChatSessions();
+    renderChatHistorySidebar();
+    renderSessionMessages(activeSessionId);
+    if (typeof switchMainTab === 'function') switchMainTab('chat');
+    showToast(found.length > 1 ? `تم استيراد ${found.length} محادثات` : 'تم استيراد المحادثة');
+  };
+  reader.readAsText(file);
+}
+
 function shareActiveChat() {
   const session = chatSessions.find(item => item.id === activeSessionId);
   if (!session) {
@@ -1698,6 +1753,7 @@ function downloadTableAsCSV(btn) {
 window.downloadTableAsCSV = downloadTableAsCSV;
 window.formatMarkdown = formatMarkdown;
 window.exportChatSessionFile = exportChatSessionFile;
+window.importChatSessionFile = importChatSessionFile;
 window.exportChatMessageHtml = exportChatMessageHtml;
 window.exportChatMessagePdf = exportChatMessagePdf;
 window.copyChatMessageText = copyChatMessageText;

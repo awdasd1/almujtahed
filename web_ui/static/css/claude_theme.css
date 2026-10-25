@@ -1336,6 +1336,28 @@ body:has(#paneChat.active) .main-content {
   padding: 10px 12px;
 }
 
+.btn-import-chat {
+  width: 100%;
+  margin-top: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  font-family: var(--font-amiri);
+  font-size: 15px;
+  font-weight: 700;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-import-chat:hover {
+  border-color: var(--accent-clay);
+  color: var(--accent-clay);
+}
+
 .chat-sidebar-hybrid {
   flex: 0 0 auto;
   align-self: stretch;

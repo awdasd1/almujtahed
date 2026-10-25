@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792890100">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792891000">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 3.3 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 3.4 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -318,6 +318,11 @@
                             <span id="labelChatHybridToggle">بحث هجين</span>
                         </button>
                     </div>
+                    <button type="button" class="btn-import-chat" onclick="document.getElementById('chatImportFile').click()">
+                        <span>استيراد محادثة</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+                    </button>
+                    <input type="file" id="chatImportFile" accept="application/json,.json" hidden onchange="importChatSessionFile(this)">
 
                     <div class="chat-history-header-row" style="display: flex; align-items: center; justify-content: space-between; margin: 6px 4px 2px;">
                         <span style="font-size: 11.5px; font-weight: 700; color: var(--text-light);">سجل المحادثات</span>
@@ -4687,7 +4692,7 @@
     <script src="/static/js/reader.js?v=1792832400"></script>
     <script src="/static/js/force3d.js?v=1792878800"></script>
     <script src="/static/js/share.js?v=1792853600"></script>
-    <script src="/static/js/chat.js?v=1792890000"></script>
+    <script src="/static/js/chat.js?v=1792891000"></script>
     <script src="/static/js/agents.js?v=1792743600"></script>
     <script src="/static/js/providers.js?v=1792858000"></script>
     <script src="/static/js/tools.js?v=1792853600"></script>
