@@ -3849,18 +3849,18 @@ function nearestCitationQuote(text, index) {
 
 function findCanonicalCitationSpans(text) {
   const spans = [];
-  const pattern = /«([^»\n]{3,140})»\s*(?:ص\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*\)|\(\s*([0-9٠-٩۰-۹]{1,3})\s*[-–]\s*([0-9٠-٩۰-۹]{1,4})\s*\))/g;
+  const pattern = /«([^»\n]{3,140})»([^\n«]{0,90}?)(?:ص\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*\)|\(\s*([0-9٠-٩۰-۹]{1,3})\s*[-–]\s*([0-9٠-٩۰-۹]{1,4})\s*\))/g;
   let match;
   while ((match = pattern.exec(text))) {
     const book = cleanCitationBookName(match[1]);
     if (!book) continue;
-    const pageOnly = match[2];
+    const pageOnly = match[3];
     spans.push({
       start: match.index,
       end: match.index + match[0].length,
       book,
-      part: pageOnly ? '' : citationToWesternDigits(match[3]),
-      page: citationToWesternDigits(pageOnly || match[4]),
+      part: pageOnly ? '' : citationToWesternDigits(match[4]),
+      page: citationToWesternDigits(pageOnly || match[5]),
       quote: nearestCitationQuote(text, match.index)
     });
   }

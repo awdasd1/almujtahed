@@ -1353,8 +1353,19 @@ function scrollToBottom() {
 }
 
 // تحويل نصوص الماركداون القياسية إلى HTML مع دعم كامل للجداول والاقتباسات النبوية والقرآنية
+function chatDisplayText(text) {
+  const source = String(text || '');
+  if (!/<p[\s>]|<sup[\s>]/i.test(source)) return source;
+  return source
+    .replace(/<sup>\s*<small>\s*(\([^<]{1,12}\))\s*<\/small>\s*<\/sup>/gi, '$1')
+    .replace(/<p[^>]*>/gi, '')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<br\s*\/?>/gi, '\n');
+}
+
 function formatMarkdown(text) {
   if (!text) return '';
+  text = chatDisplayText(text);
 
   let html = '';
   if (typeof marked !== 'undefined' && (marked.parse || typeof marked === 'function')) {
