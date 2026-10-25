@@ -9902,11 +9902,85 @@ ARCHITECT_BOOK_TOOLS = [
                 "required": ["book_id_or_title"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_similar_research",
+            "description": (
+                "ابحث في الويب عن أصول البحوث المقاربة لهذا المشروع: دقتها، ومصادرها، ومراجعها، والمراجعات المشابهة. "
+                "استعملها بعد تفكيك المسألة من الذاكرة وبعد مسح فهرس الشاملة، ولا تبنِ الخطة على الويب وحده."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "عبارة بحث أكاديمية عن دراسات ومراجع مقاربة"},
+                    "max_results": {"type": "integer", "description": "عدد النتائج، من 3 إلى 6"}
+                },
+                "required": ["query"]
+            }
+        }
     }
 ]
 
 
-def _run_architect_tool_call(tool_call: Dict[str, Any]) -> Dict[str, Any]:
+def _search_similar_research(query: str, tavily_key: str, max_results: int = 5) -> dict:
+    key = (tavily_key or "").strip()
+    if not key:
+        return {"error": "مفتاح بحث الويب غير مضبوط. أخبر الباحث بإضافته في تبويب الخدمات.", "results": []}
+    limit = min(max(int(max_results or 5), 3), 6)
+    payload = {
+        "api_key": key,
+        "query": (query or "")[:400],
+        "search_depth": "advanced",
+        "include_answer": True,
+        "max_results": limit
+    }
+    request = urllib.request.Request(
+        "https://api.tavily.com/search",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps(payload).encode("utf-8")
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=25) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        return {"error": f"تعذر بحث الويب: {type(exc).__name__}", "results": []}
+    results = []
+    for item in (data.get("results") or [])[:limit]:
+        results.append({
+            "title": item.get("title") or "",
+            "url": item.get("url") or "",
+            "content": (item.get("content") or "")[:500]
+        })
+    return {"answer": (data.get("answer") or "")[:800], "results": results}
+
+def _architect_model_roster() -> str:
+    models = ((openrouter_cache.get("data") or {}).get("models") or [])
+    ranked = sorted(
+        models,
+        key=lambda model: ((model.get("benchmarks") or {}).get("intelligence_index") or 0),
+        reverse=True
+    )
+    lines = []
+    for model in ranked:
+        if len(lines) >= 24:
+            break
+        intel = (model.get("benchmarks") or {}).get("intelligence_index")
+        if not intel and len(lines) >= 12:
+            continue
+        reasoning = model.get("reasoning") or {}
+        efforts = reasoning.get("supported_efforts") if isinstance(reasoning, dict) else None
+        price = (model.get("pricing") or {}).get("prompt_per_1m")
+        lines.append(
+            f"- {model.get('id')} | {model.get('name')} | مؤشر الذكاء: {intel if intel is not None else 'غير منشور'} | "
+            f"السياق: {model.get('context_length') or 0} | الإدخال لكل مليون: {price} | التفكير المقبول: {efforts or 'بلا تفكير داخلي'}"
+        )
+    if not lines:
+        return "لم يُحمَّل فهرس النماذج بعد. لا تخترع معرفاً. استخدم فقط: google/gemini-2.5-flash، google/gemini-3.8-flash، google/gemini-4-argon، ~anthropic/claude-opus-latest، ~anthropic/claude-sonnet-latest، ~openai/gpt-sol-latest، openai/gpt-4o."
+    return "\n".join(lines)
+
+def _run_architect_tool_call(tool_call: Dict[str, Any], tavily_key: str = "") -> Dict[str, Any]:
     fn = (tool_call.get("function") or {})
     name = fn.get("name")
     try:
@@ -9936,6 +10010,12 @@ def _run_architect_tool_call(tool_call: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception:
                     clean.pop(k)
         return {"args": clean, "result": search_books_catalog(**clean)}
+    elif name == "search_similar_research":
+        try:
+            limit = int(args.get("max_results") or 5)
+        except (TypeError, ValueError):
+            limit = 5
+        return {"args": args, "result": _search_similar_research(str(args.get("query") or ""), tavily_key, limit)}
     else:
         return {"args": args, "result": {"error": f"أداة غير معروفة: {name}", "results": []}}
 
@@ -9943,6 +10023,7 @@ class ArchitectDialogRequest(BaseModel):
     messages: List[Dict[str, Any]]
     planning_model: Optional[str] = "google/gemini-2.5-flash"
     thinking_level: Optional[str] = "medium"
+    tavily_key: Optional[str] = ""
     api_key: Optional[str] = ""
 
 @app.post("/api/projects/architect-dialog")
@@ -9953,6 +10034,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
     يستكشف الكتب من قاعدة البيانات الببليوغرافية للمخزن، ويرشح وكلاء وأدوات حسابية مخصصة.
     """
     key = owner_openrouter_key(request, req.api_key)
+    tavily_key = (req.tavily_key or "").strip() or (load_provider_keys(current_owner_id(request)).get("tavily") or "").strip()
     if not key:
         return {
             "status": "error",
@@ -10017,6 +10099,21 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "5. تعيين الخبراء المتخصصين وهيئة المناظرة والمساعدين الفنيين، وصياغة بطاقة تكليف وتوجيه مستقل لكل منهم.\n"
         "6. إخراج كروت المشروع ومخططه البرمجي المعياري (Blueprint JSON) في نهاية كل رد لتحديث لوحة تحكم المنظومة لحظياً.\n\n"
         "صفاتك: صرامة المحقق، وأناة المحدّث، ونَفَس الفقيه المقارن، ونظرة المهندس الذي يتوقع مواضع الخلل قبل وقوعها.\n\n"
+        "【منهج الهندسة الإلزامي، بهذا الترتيب في كل مشروع جديد】\n"
+        "1. فكّك المسألة أولاً من ذاكرتك: صوّرها، وحرّر محل النزاع، وسمِّ الفنون الداخلة، واذكر ما تعرفه عن المظانّ. وسم هذه الخطوة [من الذاكرة] ولا تنسب منها نصاً ولا جزءاً ولا صفحة.\n"
+        "2. بعد التفكيك استعن بفهرس الشاملة قبل اعتماد الخطة: استدعِ search_books_catalog وget_category_core_books، واستعرض الكتب، ثم رشّح أدقها للمشروع بأرقامها #BookID. لا تُتمم المخطط قبل هذا المسح.\n"
+        "3. استدعِ search_similar_research للويب: أصول البحوث المقاربة، ودقتها، ومصادرها، ومراجعها، والمراجعات المشابهة. إن غاب مفتاح الويب فصرّح بذلك ولا تختلق دراسات.\n"
+        "4. عيّن لكل مدير ولكل وكيل نموذجاً من جدول «أقوى نماذج OpenRouter» أدناه، بمعرفه الحرفي. اختر الأعلى تقييماً والأنسب للمهمة، واكتب في البطاقة مستوى التفكير: low أو medium أو high أو max، بشرط أن يكون ضمن «التفكير المقبول» لذلك النموذج. التحرير العميق high أو max، والمسح السريع low أو medium.\n"
+        "5. الهيكل: مدير جامع واحد هو الأصل، لأن التنفيذ يُدمج تحت قيادة واحدة. لا تُعدّد المدراء إلا إذا انقسم المشروع إلى فنون لا يجمعها تحرير واحد، مثل الفقه مع علل الحديث مع الرصد التاريخي. عندئذ أضف `directors` وكل مدير فن ووكلاؤه، واذكر سبب الانقسام، وأبقِ `director` للمدير الجامع.\n"
+        "6. حدّد في كل بطاقة `extract_count`: عدد النصوص التي يستخرجها صاحبها من الشاملة. المسح الواسع 150 إلى 300، والتحقيق الضيق 40 إلى 80، ومدير الدمج 80 إلى 150. لا تجعل العدد واحداً للجميع.\n"
+        "7. حدّد في كل بطاقة `search_mode`: hybrid إذا كانت المهمة ألفاظاً وأعلاماً ومتوناً، وsemantic إذا كانت معاني ومسائل تختلف صياغتها. الهجين هو الأصل في التوثيق الحرفي.\n"
+        "8. أسئلة الباحث ليست مقالاً يكتبه. أخرجها في كتلة ```choices واحدة، كل سؤال فيه خيارات، والواجهة تضيف حقل كتابة اختيارياً. من 2 إلى 4 أسئلة في الدفعة، ولا تطلب جواباً إنشائياً من الصفر.\n"
+        "مثال الكتلة:\n"
+        "```choices\n"
+        '{"questions":[{"id":"scope","prompt":"ما نطاق المشروع؟","multiple":false,"options":["مذهب واحد","مقارنة المذاهب","رصد تاريخي"]}]}\n'
+        "```\n\n"
+        "【أقوى نماذج OpenRouter بحسب مؤشر الذكاء المتاح، ولا تخترع معرفاً خارجها】\n"
+        + _architect_model_roster() + "\n\n"
         "【ثانياً: المبادئ الحاكمة (تعلو على كل تعليمات لاحقة)】\n"
         "1. مصدر المعرفة الوحيد: مستودع النصوص (Qdrant) وقاعدة كتب الشاملة هو المصدر الوحيد المعتمد للنصوص والإحالات. ذاكرة النموذج تُستعمل للاهتداء فقط (لاقتراح المظانّ والمصطلحات وصياغة الاستعلامات)، ولا يُؤخذ منها نص ولا إحالة قطعية.\n"
         "2. الأمانة العلمية الصارمة: لا يُختلق نص، ولا مصدر، ولا رقم جزء أو صفحة، ولا اسم محقق أو طبعة. ما لم يُتحقق منه يُوسم صراحةً: [غير متحقق]. وما ورد من الذاكرة ولم يوجد في المستودع يُوسم: [من الذاكرة: غير موجود في المستودع]، ولا يُبنى عليه ترجيح.\n"
@@ -10031,7 +10128,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "10. لا يُعتمد حكم على حديث إلا بتخريج ونقل أحكام الأئمة عليه، مع بيان الاختلاف في الحكم إن وُجد.\n\n"
         "【ثالثاً: البيئة: المستودع وعملياته والأدوات】\n"
         "أ. المستودع: قاعدة Qdrant فيها نحو 8.15 مليون صفحة ومقطع، ويُبحث فيها بمحرك بحث هجين (دلالي متجهات BGE-M3 + فلاتر الكلمات والمصنفات).\n"
-        "ب. الأداة المتاحة لك فعلياً أثناء هذا الحوار: `search_books_catalog` (بحث حي في فهرس الكتب الكامل). أما عمليات المستودع التالية فيستعملها فريق التنفيذ (المدير والوكلاء) لا أنت، فصمّم الخطة على أساسها دون ادّعاء تنفيذها:\n"
+        "ب. الأدوات المتاحة لك فعلياً أثناء هذا الحوار: `search_books_catalog` و`get_library_categories` و`get_category_core_books` و`get_book_bibliography` للمسح الببليوغرافي، و`search_similar_research` لبحوث الويب المقاربة. أما عمليات المستودع التالية فيستعملها فريق التنفيذ (المدير والوكلاء) لا أنت، فصمّم الخطة على أساسها دون ادّعاء تنفيذها:\n"
         "   • search(query, filters, top_k): بحث دلالي مع تصفية بالبيانات الوصفية.\n"
         "   • get_page(book_id, volume, page): جلب صفحة بعينها مع نصها الكامل.\n"
         "   • get_range(book_id, volume, page_from, page_to): جلب صفحات متتالية («أداة تقليب الصفحات» لاستيفاء السياق وتفادي البتر).\n"
@@ -10053,7 +10150,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "   • التحقق من وجود الكتب: استعمل أداة search_books_catalog بقدر ما تحتاج قبل اعتماد أي بطاقة. أما استرجاع النصوص من Qdrant فيتم في مرحلة التنفيذ ولا تدّعِ أنك قرأت نصاً منه في هذا الحوار.\n"
         "   • سياق التوكن المفتوح الفسيح: أنت تعمل تحت أقصى طول سياق يدعمه النموذج (يصل إلى مليون توكن وأكثر)، فخذ راحتك التامة في التخطيط والتحليل والتفريع والتفصيل دون أي اختصار أو تعجل.\n\n"
         "【رابعاً: المرحلة التمهيدية: دراسة المشروع ومناقشة الباحث】\n"
-        "قبل أي تخطيط، أدِر حواراً استكشافياً منظماً. اسأل على دفعات، من 3 إلى 5 أسئلة في كل دفعة، ولا تُغرق الباحث بالأسئلة دفعة واحدة:\n"
+        "قبل أي تخطيط، وبعد التفكيك من الذاكرة ومسح الشاملة والويب، اعرض ما فهمته ثم سلّم الأسئلة في كتلة ```choices فقط. لا تُغرق الباحث، ولا تطلب منه كتابة الجواب كله.\n"
         "أ. الموضوع والحدود: ما المسائل بدقة؟ وما الذي يخرج عن النطاق؟ وهل البحث في مذهب واحد أم مقارن؟ وما الحدود الزمانية والمكانية إن كان تاريخياً؟\n"
         "ب. الغاية والجمهور: رسالة علمية، موسوعة، تحقيق، أو دراسة نقدية؟ وللمتخصصين أم عامة؟\n"
         "ج. المنهج: استقرائي، تحليلي، مقارن، نقدي، أم تاريخي؟\n"
@@ -10165,8 +10262,10 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '  ],\n'
         '  "director": {\n'
         '    "name": "اسم مدير المشروع التخصصي",\n'
-        '    "model": "google/gemini-2.5-flash",\n'
+        '    "model": "معرّف حرفي من جدول أقوى النماذج",\n'
         '    "thinking": "high",\n'
+        '    "search_mode": "hybrid",\n'
+        '    "extract_count": 120,\n'
         '    "max_tokens": 262144,\n'
         '    "system_prompt": "التوجيه الحرفي الصارم لمدير المشروع قيادة وتنسيقاً وتفريغاً للجداول، مع الصلاحية العلمية الكاملة لإعادة البحث حتى 3 مرات، وإلزاماً حتمياً بإفراد جدول ثبت المصادر والمراجع الببليوغرافي الشامل (الكتاب، المؤلف وسنة وفاته، المحقق، الطبعة، دار النشر، بلد النشر، رقم الشاملة) في خاتمة التقرير النهائي للمشروع"\n'
         '  },\n'
@@ -10177,8 +10276,11 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '      {\n'
         '        "name": "اسم الوكيل المتخصص 1",\n'
         '        "desc": "دوره",\n'
-        '        "model": "google/gemini-2.5-flash",\n'
-        '        "books": ["الكتب الدقيقة المستهدفة في الشاملة لهذا الوكيل برقمها المعياري #BookID من الجدول المعتمد أدناه"],\n'
+        '        "model": "معرّف حرفي من جدول أقوى النماذج",\n'
+        '        "thinking": "high",\n'
+        '        "search_mode": "hybrid",\n'
+        '        "extract_count": 80,\n'
+        '        "books": ["#رقم الكتاب من نتيجة search_books_catalog"],\n'
         '        "pool_size": 1500,\n'
         '        "top_k": 150,\n'
         '        "system_prompt": "التوجيه الحرفي للوكيل في استخراج نصوص المسألة"\n'
@@ -10308,7 +10410,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
                 })
                 for tc in tool_calls:
                     t_id = tc.get("id") or f"call_{len(current_messages)}"
-                    res_info = _run_architect_tool_call(tc)
+                    res_info = _run_architect_tool_call(tc, tavily_key)
                     t_res = res_info.get("result", {})
                     # إضافة أي كتب عثر عليها المهندس بالبحث الحي إلى قائمة الكتب المستكشفة للواجهة
                     for b in t_res.get("results", []):

@@ -1844,22 +1844,83 @@ function applyQuickStudioPrompt(text) {
   }
 }
 
+function extractArchitectChoices(text) {
+  const match = String(text || '').match(/```choices\s*([\s\S]*?)```/);
+  if (!match) return [];
+  try {
+    const data = JSON.parse(match[1]);
+    const questions = Array.isArray(data) ? data : (data.questions || []);
+    return questions.filter(question => question && question.prompt && Array.isArray(question.options) && question.options.length);
+  } catch (e) {
+    return [];
+  }
+}
+
+function architectChoicesHtml(questions, index) {
+  if (!questions.length) return '';
+  const blocks = questions.map((question, qIndex) => {
+    const inputType = question.multiple ? 'checkbox' : 'radio';
+    const options = question.options.map((option, oIndex) => `
+      <label class="architect-choice-option">
+        <input type="${inputType}" name="architectQ${index}_${qIndex}" value="${escapeHtml(String(option))}">
+        <span>${escapeHtml(String(option))}</span>
+      </label>
+    `).join('');
+    return `
+      <div class="architect-choice-q" data-prompt="${escapeHtml(question.prompt)}">
+        <strong>${escapeHtml(question.prompt)}</strong>
+        ${options}
+      </div>
+    `;
+  }).join('');
+  return `
+    <div class="architect-choices" id="architectChoices${index}">
+      ${blocks}
+      <label class="architect-choice-extra">إضافة
+        <textarea rows="2" placeholder="اكتب ما تريد إضافته، إن رغبت"></textarea>
+      </label>
+      <button type="button" class="btn-primary-gradient" onclick="submitArchitectChoices(${index})">إرسال الاختيار</button>
+    </div>
+  `;
+}
+
+function submitArchitectChoices(index) {
+  const root = document.getElementById(`architectChoices${index}`);
+  const input = document.getElementById('architectUserInput');
+  if (!root || !input) return;
+  const lines = [...root.querySelectorAll('.architect-choice-q')].map(block => {
+    const prompt = block.getAttribute('data-prompt') || '';
+    const chosen = [...block.querySelectorAll('input:checked')].map(item => item.value);
+    return chosen.length ? `${prompt}: ${chosen.join('، ')}` : '';
+  }).filter(Boolean);
+  const extra = root.querySelector('textarea')?.value.trim() || '';
+  if (extra) lines.push(`إضافة: ${extra}`);
+  if (!lines.length) {
+    if (typeof showToast === 'function') showToast('اختر جواباً أو اكتب إضافة');
+    return;
+  }
+  input.value = lines.join('\n');
+  sendArchitectMessage();
+}
+window.submitArchitectChoices = submitArchitectChoices;
+
 function renderArchitectChat() {
   const container = document.getElementById('architectChatHistory');
   if (!container) return;
+  const lastAssistant = architectHistory.reduce((found, message, index) => message.role === 'assistant' ? index : found, -1);
 
-  container.innerHTML = architectHistory.map(m => {
+  container.innerHTML = architectHistory.map((m, index) => {
     const isUser = m.role === 'user';
     const avatar = isUser ? '👤' : '🧭';
-    // تنظيف كتلة الـ JSON من عرض فقاعة المحادثة
-    let cleanText = (m.content || '').replace(/```json[\s\S]*?```/g, '').trim();
+    let cleanText = (m.content || '').replace(/```json[\s\S]*?```/g, '').replace(/```choices[\s\S]*?```/g, '').trim();
     if (!cleanText && isUser) cleanText = m.content;
     const bodyHtml = (typeof formatMarkdown === 'function') ? formatMarkdown(cleanText) : (typeof marked !== 'undefined' ? marked.parse(cleanText) : cleanText.replace(/\n/g, '<br>'));
+    const choices = (!isUser && index === lastAssistant) ? architectChoicesHtml(extractArchitectChoices(m.content), index) : '';
 
     return `
       <div class="studio-msg ${isUser ? 'user' : 'architect'}">
         <div class="studio-avatar">${avatar}</div>
-        <div class="studio-bubble">${bodyHtml}</div>
+        <div class="studio-bubble">${bodyHtml}${choices}</div>
       </div>
     `;
   }).join('');
@@ -1921,6 +1982,7 @@ async function sendArchitectMessage() {
         messages: architectHistory,
         planning_model: chosenModel,
         thinking_level: thinkingLevel,
+        tavily_key: (typeof readTavilyKey === 'function' ? readTavilyKey() : '') || (savedKeys.tavily || ''),
         api_key: apiKey
       })
     });
@@ -2210,6 +2272,7 @@ function renderStudioCardsPreview(bp) {
       </div>
       <div class="scp-body">
         <strong>${escapeHtml(bp.director?.name || 'مدير المشروع')}</strong><br>
+        <span style="color: var(--text-muted); font-size: 11.5px;">${escapeHtml(bp.director?.model || '')} · تفكير ${escapeHtml(bp.director?.thinking || 'medium')} · ${escapeHtml(bp.director?.search_mode || 'hybrid')} · ${bp.director?.extract_count || bp.extraction_capacity || 150} نصاً</span><br>
         <span style="color: var(--text-muted); font-size: 11.5px;">التوجيه القيادي التخصصي:</span>
         <div style="background: var(--bg-muted); padding: 6px 8px; border-radius: 4px; margin-top: 4px; font-size: 11.5px; line-height: 1.5;">
           ${escapeHtml(bp.director?.system_prompt || '')}
@@ -2229,7 +2292,8 @@ function renderStudioCardsPreview(bp) {
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px;">
           ${(bp.subagents_group?.agents || []).map((ag, idx) => `
             <div style="background: var(--bg-muted); padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border-subtle); font-size: 12px;">
-              <strong>${idx + 1}. ${escapeHtml(ag.name)}:</strong> ${(ag.books || []).join('، ') || 'أمهات كتب التراث'}
+              <strong>${idx + 1}. ${escapeHtml(ag.name)}:</strong> ${escapeHtml(ag.model || '')} · تفكير ${escapeHtml(ag.thinking || 'medium')} · ${escapeHtml(ag.search_mode || 'hybrid')} · ${ag.extract_count || ag.top_k || 150} نصاً
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${(ag.books || []).join('، ') || 'أمهات كتب التراث'}</div>
               <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">💬 ${escapeHtml(ag.desc || ag.system_prompt || '')}</div>
             </div>
           `).join('')}
@@ -2494,6 +2558,7 @@ async function applyStudioBlueprint() {
             messages: finalizationMessages,
             planning_model: chosenModel,
             thinking_level: document.getElementById('architectThinkingSelect')?.value || 'medium',
+            tavily_key: (typeof readTavilyKey === 'function' ? readTavilyKey() : '') || (savedKeys.tavily || ''),
             api_key: apiKey
           })
         });
@@ -2577,8 +2642,11 @@ async function applyStudioBlueprint() {
           scope_summary: canonicalBooks.join('، ') || 'أمهات كتب التراث',
           pool_size: ag.pool_size || ag.poolSize || 1500,
           poolSize: ag.pool_size || ag.poolSize || 1500,
-          top_k: ag.top_k || ag.topK || 150,
-          topK: ag.top_k || ag.topK || 150,
+          top_k: ag.extract_count || ag.top_k || ag.topK || 150,
+          topK: ag.extract_count || ag.top_k || ag.topK || 150,
+          thinking: ag.thinking || 'medium',
+          search_mode: ag.search_mode || 'hybrid',
+          use_hybrid: (ag.search_mode || 'hybrid') !== 'semantic',
           temp: 0.2,
           max_tokens: 65536,
           maxTokens: 65536,
@@ -2624,9 +2692,12 @@ async function applyStudioBlueprint() {
         name: bp.director?.name || targetProject.director?.name || 'مدير المشروع العام',
         model: bp.director?.model || targetProject.director?.model || 'google/gemini-2.5-flash',
         thinking: bp.director?.thinking || targetProject.director?.thinking || 'high',
+        search_mode: bp.director?.search_mode || targetProject.director?.search_mode || 'hybrid',
+        extract_count: bp.director?.extract_count || targetProject.director?.extract_count || bp.extraction_capacity || 120,
         max_tokens: bp.director?.max_tokens || targetProject.director?.max_tokens || 262144,
         system_prompt: directorPrompt
       };
+      targetProject.use_hybrid = (targetProject.director.search_mode || 'hybrid') !== 'semantic';
       targetProject.linked_group_id = targetGroupId;
       targetProject.subagents_group = {
         id: targetGroupId,
@@ -2656,9 +2727,12 @@ async function applyStudioBlueprint() {
           name: bp.director?.name || 'مدير المشروع العام',
           model: bp.director?.model || 'google/gemini-2.5-flash',
           thinking: bp.director?.thinking || 'high',
+          search_mode: bp.director?.search_mode || 'hybrid',
+          extract_count: bp.director?.extract_count || bp.extraction_capacity || 120,
           max_tokens: bp.director?.max_tokens || 262144,
           system_prompt: directorPrompt
         },
+        use_hybrid: (bp.director?.search_mode || 'hybrid') !== 'semantic',
         linked_group_id: targetGroupId,
         subagents_group: {
           id: targetGroupId,
@@ -2773,8 +2847,11 @@ async function updateActiveProjectCardsFromBlueprint() {
         scope_summary: canonicalBooks.join('، ') || 'أمهات كتب التراث',
         pool_size: ag.pool_size || ag.poolSize || 1500,
         poolSize: ag.pool_size || ag.poolSize || 1500,
-        top_k: ag.top_k || ag.topK || 150,
-        topK: ag.top_k || ag.topK || 150,
+        top_k: ag.extract_count || ag.top_k || ag.topK || 150,
+        topK: ag.extract_count || ag.top_k || ag.topK || 150,
+        thinking: ag.thinking || 'medium',
+        search_mode: ag.search_mode || 'hybrid',
+        use_hybrid: (ag.search_mode || 'hybrid') !== 'semantic',
         temp: 0.2,
         max_tokens: 65536,
         maxTokens: 65536,
