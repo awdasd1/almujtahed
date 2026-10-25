@@ -446,6 +446,7 @@ function saveCurrentProjectWorkspaceState() {
   const selModel = document.getElementById('architectModelSelect')?.value;
   if (selModel && currentPlanningProjectId === p.id) {
     p.architect_model = selModel;
+    p.architect_thinking = document.getElementById('architectThinkingSelect')?.value || p.architect_thinking || 'medium';
   }
 
   saveProjectToStorage(p);
@@ -1705,6 +1706,8 @@ async function openProjectPlanningModal(projectId = null) {
       if (subtitleEl) subtitleEl.innerHTML = `معرّف المشروع: <code style="color:var(--accent-clay); font-weight:700;">${p.id}</code> — حوار مباشر لمراجعة وتطوير الخطة والكروت دون تكرار`;
 
       if (p.architect_model) targetModel = p.architect_model;
+      const studioThink = document.getElementById('architectThinkingSelect');
+      if (studioThink) studioThink.value = p.architect_thinking || 'medium';
       if ((p.architect_dialog && p.architect_dialog.length > 0) || (p.architect_history && p.architect_history.length > 0)) {
         architectHistory = [...(p.architect_dialog || p.architect_history)];
         renderArchitectChat();
@@ -1800,6 +1803,7 @@ async function openProjectPlanningModal(projectId = null) {
   }
 
   await populateArchitectModelsList(targetModel);
+  if (typeof syncThinkingControls === 'function') syncThinkingControls();
   initStudioBooks();
 
   if (inputEl) {
@@ -1877,6 +1881,8 @@ async function sendArchitectMessage() {
   const sendBtn = document.getElementById('btnSendArchitect');
   const modelSelect = document.getElementById('architectModelSelect');
   const chosenModel = modelSelect?.value || 'google/gemini-2.5-flash';
+  const thinkingLevel = document.getElementById('architectThinkingSelect')?.value || 'medium';
+  const thinkingPhrase = (typeof describeThinking === 'function') ? describeThinking(chosenModel, thinkingLevel) : thinkingLevel;
 
   if (sendBtn) {
     sendBtn.disabled = true;
@@ -1894,7 +1900,7 @@ async function sendArchitectMessage() {
       <div class="studio-avatar">🧭</div>
       <div class="studio-bubble" style="color: var(--text-muted); font-style: italic;">
         <span class="status-indicator-spinner" style="display:inline-block; width:13px; height:13px; vertical-align:middle; margin-left:6px;"></span>
-        مهندس التخطيط يدرس فكرتك ويصيغ المقترحات المعمارية والكروت...
+        مهندس التخطيط يدرس فكرتك (${escapeHtml(thinkingPhrase)}) ويصيغ المقترحات المعمارية والكروت...
       </div>
     `;
     container.appendChild(waitDiv);
@@ -1914,6 +1920,7 @@ async function sendArchitectMessage() {
       body: JSON.stringify({
         messages: architectHistory,
         planning_model: chosenModel,
+        thinking_level: thinkingLevel,
         api_key: apiKey
       })
     });
@@ -1948,6 +1955,7 @@ async function sendArchitectMessage() {
           curProj.architect_dialog = [...architectHistory];
           curProj.architect_history = [...architectHistory];
           curProj.architect_model = document.getElementById('architectModelSelect')?.value || curProj.architect_model || 'google/gemini-2.5-flash';
+          curProj.architect_thinking = document.getElementById('architectThinkingSelect')?.value || curProj.architect_thinking || 'medium';
           if (data.blueprint) {
             curProj.blueprint = data.blueprint;
           }
@@ -2482,6 +2490,7 @@ async function applyStudioBlueprint() {
           body: JSON.stringify({
             messages: finalizationMessages,
             planning_model: chosenModel,
+            thinking_level: document.getElementById('architectThinkingSelect')?.value || 'medium',
             api_key: apiKey
           })
         });
@@ -2604,6 +2613,7 @@ async function applyStudioBlueprint() {
       targetProject.title = bp.title || targetProject.title || 'مشروع بحثي';
       targetProject.desc = bp.desc || targetProject.desc || '';
       targetProject.architect_model = chosenArchitectModel;
+      targetProject.architect_thinking = document.getElementById('architectThinkingSelect')?.value || targetProject.architect_thinking || 'medium';
       targetProject.architect_dialog = [...architectHistory];
       targetProject.architect_history = [...architectHistory];
       targetProject.blueprint = bp;
@@ -2635,6 +2645,7 @@ async function applyStudioBlueprint() {
         status: 'جاهز للتنفيذ',
         created_at: new Date().toISOString().split('T')[0],
         architect_model: chosenArchitectModel,
+        architect_thinking: document.getElementById('architectThinkingSelect')?.value || 'medium',
         architect_dialog: [...architectHistory],
         architect_history: [...architectHistory],
         blueprint: bp,
@@ -2803,6 +2814,7 @@ async function updateActiveProjectCardsFromBlueprint() {
 
   // حفظ نموذج وسجل محادثة المهندس المعماري المحدثة
   project.architect_model = document.getElementById('architectModelSelect')?.value || project.architect_model || 'google/gemini-2.5-flash';
+  project.architect_thinking = document.getElementById('architectThinkingSelect')?.value || project.architect_thinking || 'medium';
   project.architect_dialog = [...architectHistory];
   project.architect_history = [...architectHistory];
   project.blueprint = bp;

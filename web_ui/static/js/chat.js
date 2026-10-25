@@ -327,6 +327,7 @@ function syncThinkingControls() {
   syncOneThinking('agentThinkingSelect', document.getElementById('agentSelectedModelId')?.value);
   syncOneThinking('pDirectorThinking', document.getElementById('pDirectorModel')?.value);
   syncOneThinking('p2cThinkingSelect', document.getElementById('p2cModelSelect')?.value);
+  syncOneThinking('architectThinkingSelect', document.getElementById('architectModelSelect')?.value);
 }
 window.syncThinkingControls = syncThinkingControls;
 window.describeThinking = describeThinking;
@@ -334,7 +335,7 @@ window.thinkingEffortLabel = thinkingEffortLabel;
 
 document.addEventListener('change', (event) => {
   const id = event.target && event.target.id;
-  if (['pDirectorModel', 'p2cModelSelect', 'pDirectorThinking', 'p2cThinkingSelect', 'agentThinkingSelect'].includes(id)) {
+  if (['pDirectorModel', 'p2cModelSelect', 'pDirectorThinking', 'p2cThinkingSelect', 'agentThinkingSelect', 'architectModelSelect', 'architectThinkingSelect'].includes(id)) {
     syncThinkingControls();
   }
 });

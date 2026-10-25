@@ -9942,6 +9942,7 @@ def _run_architect_tool_call(tool_call: Dict[str, Any]) -> Dict[str, Any]:
 class ArchitectDialogRequest(BaseModel):
     messages: List[Dict[str, Any]]
     planning_model: Optional[str] = "google/gemini-2.5-flash"
+    thinking_level: Optional[str] = "medium"
     api_key: Optional[str] = ""
 
 @app.post("/api/projects/architect-dialog")
@@ -10237,37 +10238,51 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
                 "tools": ARCHITECT_BOOK_TOOLS,
                 "tool_choice": "auto"
             }
+            attach_reasoning(payload, call_model, req.thinking_level or "medium")
 
             if str(call_model).startswith("local:"):
                 reply_text = _complete_local_text(call_model, current_messages, 0.3, 4096)
                 break
-            o_req = urllib.request.Request(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:8085",
-                    "X-Title": "Al-Mojtahed Architect"
-                },
-                data=json.dumps(payload).encode("utf-8")
-            )
-            try:
+            def _post_architect(body):
+                o_req = urllib.request.Request(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:8085",
+                        "X-Title": "Al-Mojtahed Architect"
+                    },
+                    data=json.dumps(body).encode("utf-8")
+                )
                 with urllib.request.urlopen(o_req, timeout=140) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
+                    return json.loads(resp.read().decode("utf-8"))
+            try:
+                data = None
+                data = _post_architect(payload)
             except urllib.error.HTTPError as he:
                 err_body = he.read().decode("utf-8", errors="ignore")
-                err_msg = f"HTTP {he.code}: {he.reason}"
-                try:
-                    err_json = json.loads(err_body)
-                    if "error" in err_json and "message" in err_json["error"]:
-                        err_msg = err_json["error"]["message"]
-                except Exception:
-                    pass
-                print(f"❌ [OpenRouter Error in Architect Dialog] {err_msg}")
-                return {
-                    "status": "error",
-                    "message": f"خطأ من مزود النموذج (OpenRouter): {err_msg}"
-                }
+                if payload.get("reasoning") and "reasoning" in err_body.lower():
+                    payload.pop("reasoning", None)
+                    try:
+                        data = _post_architect(payload)
+                    except urllib.error.HTTPError as retry_error:
+                        err_body = retry_error.read().decode("utf-8", errors="ignore")
+                        he = retry_error
+                    else:
+                        err_body = ""
+                if not data:
+                    err_msg = f"HTTP {he.code}: {he.reason}"
+                    try:
+                        err_json = json.loads(err_body)
+                        if "error" in err_json and "message" in err_json["error"]:
+                            err_msg = err_json["error"]["message"]
+                    except Exception:
+                        pass
+                    print(f"❌ [OpenRouter Error in Architect Dialog] {err_msg}")
+                    return {
+                        "status": "error",
+                        "message": f"خطأ من مزود النموذج (OpenRouter): {err_msg}"
+                    }
             except Exception as net_err:
                 print(f"❌ [Network/Timeout Error in Architect Dialog] {net_err}")
                 return {
