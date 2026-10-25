@@ -1113,10 +1113,12 @@ async function triggerChatCompletion(session, attachments = []) {
   scrollToBottom();
   const stopAnswerClock = startChatAnswerClock(typingBubble);
 
+  const control = startChatRun();
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: control.signal,
       body: JSON.stringify({
         model: executionModel,
         provider: activeProvider,
@@ -1164,6 +1166,10 @@ async function triggerChatCompletion(session, attachments = []) {
   } catch (err) {
     const durationMs = stopAnswerClock();
     typingBubble.remove();
+    if (chatStopped(err)) {
+      if (typeof showToast === 'function') showToast('تم الإيقاف');
+      return;
+    }
     session.messages.push({
       role: 'assistant',
       content: `⚠️ تعذر استكمال المحادثة: ${err.message}`,
@@ -1171,6 +1177,8 @@ async function triggerChatCompletion(session, attachments = []) {
     });
     saveChatSessions();
     renderSessionMessages(activeSessionId);
+  } finally {
+    endChatRun();
   }
 }
 
@@ -2268,17 +2276,44 @@ function toggleChatCodeBlock(codeId) {
 }
 
 let chatGraphBusy = false;
+let chatAbortController = null;
 
 function setChatSendLocked(locked) {
   const button = document.getElementById('btnSendChat');
+  const stop = document.getElementById('btnStopChat');
   const select = document.querySelector('select.chat-graph-kind-fixed');
   const tableButton = document.getElementById('btnChatTable');
   if (button) button.disabled = !!locked;
+  if (stop) stop.disabled = !locked;
   if (tableButton) tableButton.disabled = !!locked;
   if (select) select.disabled = !!locked;
   const trigger = select && select.closest('.theme-select') && select.closest('.theme-select').querySelector('.theme-select-trigger');
   if (trigger) trigger.disabled = !!locked;
 }
+
+function startChatRun() {
+  chatAbortController = new AbortController();
+  chatGraphBusy = true;
+  setChatSendLocked(true);
+  return chatAbortController;
+}
+
+function endChatRun() {
+  chatAbortController = null;
+  chatGraphBusy = false;
+  setChatSendLocked(false);
+}
+
+function stopChatGeneration() {
+  if (!chatAbortController) return;
+  chatAbortController.abort();
+}
+
+function chatStopped(err) {
+  return !!(err && err.name === 'AbortError');
+}
+
+window.stopChatGeneration = stopChatGeneration;
 
 function graphKindInstruction(type) {
   const labels = {
@@ -2321,8 +2356,7 @@ async function requestChatGraph(type) {
     return;
   }
 
-  chatGraphBusy = true;
-  setChatSendLocked(true);
+  const control = startChatRun();
   const container = document.getElementById('chatMessagesContainer');
   const typingBubble = document.createElement('div');
   typingBubble.className = 'message-bubble assistant';
@@ -2351,6 +2385,7 @@ async function requestChatGraph(type) {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: control.signal,
       body: JSON.stringify({
         model: selectedModel,
         provider: activeProvider,
@@ -2379,10 +2414,11 @@ async function requestChatGraph(type) {
     renderSessionMessages(activeSessionId);
   } catch (err) {
     if (typingBubble.parentNode) typingBubble.remove();
-    if (typeof showToast === 'function') showToast(err.message || 'تعذر التشجير');
+    if (chatStopped(err)) {
+      if (typeof showToast === 'function') showToast('تم الإيقاف');
+    } else if (typeof showToast === 'function') showToast(err.message || 'تعذر التشجير');
   } finally {
-    chatGraphBusy = false;
-    setChatSendLocked(false);
+    endChatRun();
   }
 }
 
@@ -2403,8 +2439,7 @@ async function requestChatTable() {
     return;
   }
 
-  chatGraphBusy = true;
-  setChatSendLocked(true);
+  const control = startChatRun();
   const container = document.getElementById('chatMessagesContainer');
   const typingBubble = document.createElement('div');
   typingBubble.className = 'message-bubble assistant';
@@ -2432,6 +2467,7 @@ async function requestChatTable() {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: control.signal,
       body: JSON.stringify({
         model: selectedModel,
         provider: activeProvider,
@@ -2461,10 +2497,11 @@ async function requestChatTable() {
     renderSessionMessages(activeSessionId);
   } catch (err) {
     if (typingBubble.parentNode) typingBubble.remove();
-    if (typeof showToast === 'function') showToast(err.message || 'تعذر الجدولة');
+    if (chatStopped(err)) {
+      if (typeof showToast === 'function') showToast('تم الإيقاف');
+    } else if (typeof showToast === 'function') showToast(err.message || 'تعذر الجدولة');
   } finally {
-    chatGraphBusy = false;
-    setChatSendLocked(false);
+    endChatRun();
   }
 }
 
@@ -3033,8 +3070,7 @@ async function runSelectionResearch() {
 
   document.getElementById('chatSelectOverlay').hidden = true;
   window.getSelection()?.removeAllRanges();
-  chatGraphBusy = true;
-  setChatSendLocked(true);
+  const control = startChatRun();
   const container = document.getElementById('chatMessagesContainer');
   const typingBubble = document.createElement('div');
   typingBubble.className = 'message-bubble assistant';
@@ -3061,6 +3097,7 @@ async function runSelectionResearch() {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: control.signal,
       body: JSON.stringify({
         model: selectedModel,
         provider: activeProvider,
@@ -3095,13 +3132,14 @@ async function runSelectionResearch() {
     renderSessionMessages(activeSessionId);
   } catch (err) {
     stopAnswerClock();
-    if (typeof showToast === 'function') showToast(err.message || 'تعذر البحث');
+    if (chatStopped(err)) {
+      if (typeof showToast === 'function') showToast('تم الإيقاف');
+    } else if (typeof showToast === 'function') showToast(err.message || 'تعذر البحث');
   } finally {
     const note = document.getElementById('selectionTypingIndicator');
     if (note) note.remove();
-    chatGraphBusy = false;
     selectionResearch.running = false;
-    setChatSendLocked(false);
+    endChatRun();
   }
 }
 

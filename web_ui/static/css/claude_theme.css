@@ -2046,12 +2046,17 @@ select.graph-kind-select {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }
 
 .chat-input-left {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
 }
 
 .btn-attachment {
@@ -2088,6 +2093,38 @@ select.graph-kind-select {
 
 .btn-send-chat:disabled {
   opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-send-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.btn-stop-chat {
+  background: #b91c1c;
+  color: #ffffff;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast);
+}
+
+.btn-stop-chat:hover {
+  background: #991b1b;
+}
+
+.btn-stop-chat:disabled {
+  opacity: 1;
+  background: #b91c1c;
+  color: #ffffff;
   cursor: not-allowed;
 }
 
