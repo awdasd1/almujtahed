@@ -1768,7 +1768,7 @@ async function openProjectPlanningModal(projectId = null) {
     currentStudioBlueprint = null;
 
     if (titleEl) titleEl.textContent = 'استوديو تخطيط وهندسة مشروع جديد';
-    if (subtitleEl) subtitleEl.innerHTML = `معرّف فريد جديد: <code style="color:var(--accent-clay); font-weight:700;">${newUniqueId}</code> — محاورة تفاعلية مع كبير المهندسين المعماريين لتأسيس الخطة`;
+    if (subtitleEl) subtitleEl.innerHTML = `معرّف فريد جديد: <code style="color:var(--accent-clay); font-weight:700;">${newUniqueId}</code>`;
 
     const cardsStream = document.getElementById('studioCardsStream');
     if (cardsStream) {
