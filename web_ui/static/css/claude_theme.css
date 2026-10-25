@@ -1653,7 +1653,18 @@ body:has(#paneChat.active) .main-content {
   flex-shrink: 0;
   width: 100%;
   max-width: none;
-  margin: 0 0 6px;
+}
+
+.theme-select:has(> .chat-graph-kind-fixed) {
+  display: flex;
+  width: 100%;
+  flex-shrink: 0;
+  margin: 2px 0 12px;
+}
+
+.theme-select:has(> .chat-graph-kind-fixed) .theme-select-trigger {
+  width: 100%;
+  max-width: none;
 }
 
 .chat-assistant-tools-list {

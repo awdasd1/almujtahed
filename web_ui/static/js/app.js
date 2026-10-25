@@ -402,6 +402,7 @@ function initThemeSelects() {
     wrap.className = 'theme-select';
     const fluid = select.classList.contains('form-select')
       || select.classList.contains('form-select-sm')
+      || select.classList.contains('chat-graph-kind-fixed')
       || /width\s*:\s*100%/i.test(inline);
     if (fluid) wrap.classList.add('is-fluid');
 
