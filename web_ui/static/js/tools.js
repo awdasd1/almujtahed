@@ -370,14 +370,19 @@ function switchToolModalType(type) {
 // =============================================================================
 // إدارة وفلترة نماذج OpenRouter لأدوات بايثون
 // =============================================================================
-const TOOL_RECOMMENDED_MODELS = [
-  { id: 'google/gemini-2.5-flash', name: '⚡ Gemini 2.5 Flash (سريع ودقيق، سياق ضخم) — موصى به ⭐' },
-  { id: 'anthropic/claude-3.7-sonnet', name: '🖋️ Claude 3.7 Sonnet (الأقوى في هندسة البرمجيات والمنطق) — موصى به ⭐' },
-  { id: 'deepseek/deepseek-r1', name: '🧠 DeepSeek R1 (تفكير استدلالي وهندسة خوارزميات دقيقة) — موصى به ⭐' },
-  { id: 'google/gemini-2.5-pro', name: '📚 Gemini 2.5 Pro (عمق تحليلي وهندسي متقدم) — موصى به ⭐' },
-  { id: 'openai/gpt-4o', name: '🚀 OpenAI GPT-4o (نموذج شامل عالي الكفاءة) — موصى به ⭐' },
-  { id: 'qwen/qwen-2.5-coder-32b-instruct', name: '💻 Qwen 2.5 Coder 32B (متخصص فائق الدقة في أكواد بايثون) — موصى به ⭐' }
-];
+function toolSuggestedModels() {
+  return window.SUGGESTED_MODELS || [
+    { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash' },
+    { id: 'google/gemini-4-argon', name: 'Gemini 4 Argon' },
+    { id: '~anthropic/claude-opus-latest', name: 'Claude Opus Latest' },
+    { id: '~anthropic/claude-sonnet-latest', name: 'Claude Sonnet Latest' },
+    { id: '~anthropic/claude-fable-latest', name: 'Claude Fable Latest' },
+    { id: '~openai/gpt-luna-latest', name: 'GPT Luna Latest' },
+    { id: '~openai/gpt-sol-latest', name: 'GPT Sol Latest' },
+    { id: 'openai/gpt-4o', name: 'GPT-4o' }
+  ];
+}
 
 let toolAiAllModels = [];
 let toolAiSelectedModel = 'google/gemini-2.5-flash';
@@ -426,15 +431,15 @@ function renderToolAiModelsDropdown(filterQuery = '', selectedVal = null) {
     clearBtn.style.display = q ? 'block' : 'none';
   }
 
-  const topIds = new Set(TOOL_RECOMMENDED_MODELS.map(m => m.id));
+  const topIds = new Set(toolSuggestedModels().map(m => m.id));
   const otherModels = (toolAiAllModels || []).filter(m => !topIds.has(m.id));
   otherModels.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
 
-  let matchedTop = TOOL_RECOMMENDED_MODELS;
+  let matchedTop = toolSuggestedModels();
   let matchedOthers = otherModels;
 
   if (q) {
-    matchedTop = TOOL_RECOMMENDED_MODELS.filter(m =>
+    matchedTop = toolSuggestedModels().filter(m =>
       m.id.toLowerCase().includes(q) || (m.name && m.name.toLowerCase().includes(q))
     );
     matchedOthers = otherModels.filter(m =>
@@ -449,7 +454,7 @@ function renderToolAiModelsDropdown(filterQuery = '', selectedVal = null) {
     if (q) {
       countBadge.textContent = `${totalMatched} نموذج مطابق`;
     } else {
-      const totalCount = TOOL_RECOMMENDED_MODELS.length + otherModels.length;
+      const totalCount = toolSuggestedModels().length + otherModels.length;
       countBadge.textContent = `${totalCount} نموذج متاح من OpenRouter 🌐`;
     }
   }
@@ -466,7 +471,7 @@ function renderToolAiModelsDropdown(filterQuery = '', selectedVal = null) {
     const topOptions = matchedTop.map(m =>
       `<option value="${m.id}" ${m.id === currentVal ? 'selected' : ''}>${escapeHtml(m.name)}</option>`
     ).join('');
-    html += `<optgroup label="⭐ النماذج الموصى بها لهندسة وبرمجة أدوات بايثون">${topOptions}</optgroup>`;
+    html += `<optgroup label="⭐ النماذج المقترحة">${topOptions}</optgroup>`;
   }
 
   if (matchedOthers.length > 0) {

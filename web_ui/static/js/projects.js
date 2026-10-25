@@ -591,16 +591,19 @@ function syncProjectLinkedGroup(groupId) {
 }
 
 // قائمة النماذج الموصى بها للوكلاء
-const PROJECT_SUBAGENT_RECOMMENDED_MODELS = [
-  { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash (سريع، فائق الذكاء، اقتصادي)' },
-  { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro (تحليل عميق ومعالجة استثنائية)' },
-  { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet (دقة علمية ومنطقية فائقة)' },
-  { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3 (ذكاء متقدم وسرعة عالية)' },
-  { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1 (تفكير استدلالي عميق)' },
-  { id: 'openai/gpt-4o', name: 'GPT-4o (أعلى كفاءة في الاستيعاب)' },
-  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (سريع وخفيف)' },
-  { id: 'qwen/qwen-2.5-72b-instruct', name: 'Qwen 2.5 72B (ممتاز في اللغة العربية والتراث)' }
-];
+function projectSuggestedModels() {
+  return window.SUGGESTED_MODELS || [
+    { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash' },
+    { id: 'google/gemini-4-argon', name: 'Gemini 4 Argon' },
+    { id: '~anthropic/claude-opus-latest', name: 'Claude Opus Latest' },
+    { id: '~anthropic/claude-sonnet-latest', name: 'Claude Sonnet Latest' },
+    { id: '~anthropic/claude-fable-latest', name: 'Claude Fable Latest' },
+    { id: '~openai/gpt-luna-latest', name: 'GPT Luna Latest' },
+    { id: '~openai/gpt-sol-latest', name: 'GPT Sol Latest' },
+    { id: 'openai/gpt-4o', name: 'GPT-4o' }
+  ];
+}
 
 let projectSubagentAllModels = [];
 let projectSubagentSelectedModel = 'google/gemini-2.5-flash';
@@ -985,15 +988,15 @@ function renderProjectSubagentModelsOptions(filterQuery = '', selectedVal = null
     clearBtn.style.display = q ? 'block' : 'none';
   }
 
-  const topIds = new Set(PROJECT_SUBAGENT_RECOMMENDED_MODELS.map(m => m.id));
+  const topIds = new Set(projectSuggestedModels().map(m => m.id));
   const otherModels = (projectSubagentAllModels || []).filter(m => !topIds.has(m.id));
   otherModels.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
 
-  let matchedTop = PROJECT_SUBAGENT_RECOMMENDED_MODELS;
+  let matchedTop = projectSuggestedModels();
   let matchedOthers = otherModels;
 
   if (q) {
-    matchedTop = PROJECT_SUBAGENT_RECOMMENDED_MODELS.filter(m =>
+    matchedTop = projectSuggestedModels().filter(m =>
       m.id.toLowerCase().includes(q) || (m.name && m.name.toLowerCase().includes(q))
     );
     matchedOthers = otherModels.filter(m =>
@@ -1024,7 +1027,7 @@ function renderProjectSubagentModelsOptions(filterQuery = '', selectedVal = null
     const topOptions = matchedTop.map(m =>
       `<option value="${escapeHtml(m.id)}" ${m.id === currentVal ? 'selected' : ''}>${escapeHtml(m.name)}</option>`
     ).join('');
-    html += `<optgroup label="⭐ النماذج الموصى بها لاستخراج الشاملة والتحقيق">${topOptions}</optgroup>`;
+    html += `<optgroup label="⭐ النماذج المقترحة">${topOptions}</optgroup>`;
   }
 
   if (matchedOthers.length > 0) {
@@ -1988,13 +1991,7 @@ async function populateOpenRouterModelDropdown(selectEl, selectedVal) {
 
   const currentVal = selectedVal || selectEl.value || 'google/gemini-2.5-flash';
 
-  const topFive = [
-    { id: 'google/gemini-2.5-flash', name: '⚡ Gemini 2.5 Flash (سريع، دقيق، سياق 1M) — موصى به ⭐' },
-    { id: 'anthropic/claude-3.7-sonnet', name: '🖋️ Claude 3.7 Sonnet (الأول في الصياغة والتحقيق) — موصى به ⭐' },
-    { id: 'deepseek/deepseek-r1', name: '🧠 DeepSeek R1 (تفكير استدلالي وهندسة معمارية) — موصى به ⭐' },
-    { id: 'google/gemini-2.5-pro', name: '📚 Gemini 2.5 Pro (عمق استيعابي للمكتبات الكبرى) — موصى به ⭐' },
-    { id: 'openai/o3-mini', name: '🔬 OpenAI o3-mini (استدلال منطقي وأكاديمي متقدم) — موصى به ⭐' }
-  ];
+  const topFive = projectSuggestedModels();
 
   let allModels = window.openrouterModelsList || [];
   if (allModels.length === 0) {
@@ -2035,7 +2032,7 @@ async function populateOpenRouterModelDropdown(selectEl, selectedVal) {
 
   selectEl.innerHTML = `
     ${customOption}
-    <optgroup label="⭐ النماذج الخمسة الموصى بها لتخطيط وتنفيذ المشاريع">
+    <optgroup label="⭐ النماذج المقترحة">
       ${topHtml}
     </optgroup>
     <optgroup label="🌐 كافة نماذج OpenRouter المتاحة (${otherModels.length} نموذج)">
@@ -4868,14 +4865,7 @@ function populateP2CModelsDropdown(project) {
   }
 
   if (modelsAdded === 0) {
-    const fallbackModels = [
-      { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash (جوجل - فائق السرعة والسياق)' },
-      { id: 'google/gemini-4-argon', name: 'Gemini 4 Argon (النموذج التحقيقي الأحدث)' },
-      { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet (أنثروبيك - التفكير الأكاديمي)' },
-      { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku (سريع واقتصادي)' },
-      { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3 (ديب سيك)' },
-      { id: 'openai/gpt-4.1-mini', name: 'GPT-4.1 Mini (أوبن إيه آي)' }
-    ];
+    const fallbackModels = projectSuggestedModels();
     fallbackModels.forEach(m => {
       const option = document.createElement('option');
       option.value = m.id;

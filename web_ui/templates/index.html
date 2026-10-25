@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 3.8 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 3.9 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -942,16 +942,15 @@
                                     <div class="form-group" style="flex: 2; min-width: 260px;">
                                         <label>النموذج المقترح من OpenRouter (كامل القائمة):</label>
                                         <select id="pDirectorModel" class="form-select" data-model-picker="1">
-                                            <option value="google/gemini-2.5-flash">⚡ Gemini 2.5 Flash (سريع، دقيق، سياق
-                                                1M) — موصى به ⭐</option>
-                                            <option value="anthropic/claude-3.7-sonnet">🖋️ Claude 3.7 Sonnet (الأول في
-                                                الصياغة والتحقيق) — موصى به ⭐</option>
-                                            <option value="deepseek/deepseek-r1">🧠 DeepSeek R1 (تفكير استدلالي وهندسة
-                                                معمارية) — موصى به ⭐</option>
-                                            <option value="google/gemini-2.5-pro">📚 Gemini 2.5 Pro (عمق استيعابي
-                                                للمكتبات الكبرى) — موصى به ⭐</option>
-                                            <option value="openai/o3-mini">🔬 OpenAI o3-mini (استدلال منطقي وأكاديمي
-                                                متقدم) — موصى به ⭐</option>
+                                            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                            <option value="google/gemini-3.8-flash">Gemini 3.8 Flash</option>
+                                            <option value="google/gemini-4-argon">Gemini 4 Argon</option>
+                                            <option value="~anthropic/claude-opus-latest">Claude Opus Latest</option>
+                                            <option value="~anthropic/claude-sonnet-latest">Claude Sonnet Latest</option>
+                                            <option value="~anthropic/claude-fable-latest">Claude Fable Latest</option>
+                                            <option value="~openai/gpt-luna-latest">GPT Luna Latest</option>
+                                            <option value="~openai/gpt-sol-latest">GPT Sol Latest</option>
+                                            <option value="openai/gpt-4o">GPT-4o</option>
                                         </select>
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 130px;">
@@ -2349,7 +2348,15 @@
                             </div>
                             <select id="toolAiModelSelect" class="form-select" data-model-picker="1"
                                 style="width: 100%; padding: 7px 10px; font-size: 12.5px; border-radius: var(--radius-sm);">
-                                <option value="google/gemini-2.5-flash" selected>Google Gemini 2.5 Flash (سريع ودقيق — موصى به ⭐)</option>
+                                <option value="google/gemini-2.5-flash" selected>Gemini 2.5 Flash</option>
+                                <option value="google/gemini-3.8-flash">Gemini 3.8 Flash</option>
+                                <option value="google/gemini-4-argon">Gemini 4 Argon</option>
+                                <option value="~anthropic/claude-opus-latest">Claude Opus Latest</option>
+                                <option value="~anthropic/claude-sonnet-latest">Claude Sonnet Latest</option>
+                                <option value="~anthropic/claude-fable-latest">Claude Fable Latest</option>
+                                <option value="~openai/gpt-luna-latest">GPT Luna Latest</option>
+                                <option value="~openai/gpt-sol-latest">GPT Sol Latest</option>
+                                <option value="openai/gpt-4o">GPT-4o</option>
                             </select>
                         </div>
 
@@ -3294,19 +3301,16 @@
                     <div class="planner-model-picker">
                         <label for="architectModelSelect">نموذج المهندس:</label>
                         <select id="architectModelSelect" class="form-select-sm" data-model-picker="1" style="max-width: 380px;">
-                            <optgroup label="⭐ النماذج الموصى بها لتخطيط وتنفيذ المشاريع">
-                                <option value="google/gemini-2.5-flash" selected>⚡ Gemini 2.5 Flash (سريع، دقيق، سياق
-                                    1M) — موصى به ⭐</option>
-                                <option value="anthropic/claude-sonnet-5.5">🖋️ Claude Sonnet 5.5 (الأول في الصياغة
-                                    والتحقيق) — موصى به ⭐</option>
-                                <option value="anthropic/claude-haiku-5.5">⚡ Claude Haiku 5.5 (سريع واقتصادي عالي
-                                    الذكاء) — موصى به ⭐</option>
-                                <option value="deepseek/deepseek-r1">🧠 DeepSeek R1 (تفكير استدلالي وهندسة معمارية) —
-                                    موصى به ⭐</option>
-                                <option value="google/gemini-2.5-pro">📚 Gemini 2.5 Pro (عمق استيعابي للمكتبات الكبرى) —
-                                    موصى به ⭐</option>
-                                <option value="openai/o3-mini">🔬 OpenAI o3-mini (استدلال منطقي وأكاديمي متقدم) — موصى
-                                    به ⭐</option>
+                            <optgroup label="⭐ النماذج المقترحة">
+                                <option value="google/gemini-2.5-flash" selected>Gemini 2.5 Flash</option>
+                                <option value="google/gemini-3.8-flash">Gemini 3.8 Flash</option>
+                                <option value="google/gemini-4-argon">Gemini 4 Argon</option>
+                                <option value="~anthropic/claude-opus-latest">Claude Opus Latest</option>
+                                <option value="~anthropic/claude-sonnet-latest">Claude Sonnet Latest</option>
+                                <option value="~anthropic/claude-fable-latest">Claude Fable Latest</option>
+                                <option value="~openai/gpt-luna-latest">GPT Luna Latest</option>
+                                <option value="~openai/gpt-sol-latest">GPT Sol Latest</option>
+                                <option value="openai/gpt-4o">GPT-4o</option>
                             </optgroup>
                             <optgroup id="architectAllModelsGroup"
                                 label="🌐 كافة نماذج OpenRouter المتاحة (300+ نموذج)">
@@ -3526,12 +3530,15 @@
                     <div class="form-group" style="flex: 1.5;">
                         <label>نموذج مدير المشروع (OpenRouter):</label>
                         <select id="manualProjectDirectorModel" class="form-select" data-model-picker="1">
-                            <option value="google/gemini-2.5-flash" selected>Gemini 2.5 Flash (سياق 1M - للمسح والجدولة
-                                الشاملة)</option>
-                            <option value="anthropic/claude-3.7-sonnet">Claude Sonnet 3.7 / 3.5 (تحرير وبلاغة أكاديمية
-                                رصينة)</option>
-                            <option value="deepseek/deepseek-r1">DeepSeek R1 (تفكير استدلالي عميق)</option>
-                            <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (استيعاب موسوعي للمخطوطات)</option>
+                            <option value="google/gemini-2.5-flash" selected>Gemini 2.5 Flash</option>
+                            <option value="google/gemini-3.8-flash">Gemini 3.8 Flash</option>
+                            <option value="google/gemini-4-argon">Gemini 4 Argon</option>
+                            <option value="~anthropic/claude-opus-latest">Claude Opus Latest</option>
+                            <option value="~anthropic/claude-sonnet-latest">Claude Sonnet Latest</option>
+                            <option value="~anthropic/claude-fable-latest">Claude Fable Latest</option>
+                            <option value="~openai/gpt-luna-latest">GPT Luna Latest</option>
+                            <option value="~openai/gpt-sol-latest">GPT Sol Latest</option>
+                            <option value="openai/gpt-4o">GPT-4o</option>
                         </select>
                     </div>
                     <div class="form-group" style="flex: 1.5;">
@@ -4701,12 +4708,12 @@
     <script src="/static/js/force3d.js?v=1792878800"></script>
     <script src="/static/js/share.js?v=1792892000"></script>
     <script src="/static/js/chat.js?v=1792893000"></script>
-    <script src="/static/js/agents.js?v=1792894000"></script>
-    <script src="/static/js/providers.js?v=1792895000"></script>
-    <script src="/static/js/tools.js?v=1792853600"></script>
-    <script src="/static/js/projects.js?v=1792886100"></script>
+    <script src="/static/js/agents.js?v=1792896000"></script>
+    <script src="/static/js/providers.js?v=1792896000"></script>
+    <script src="/static/js/tools.js?v=1792896000"></script>
+    <script src="/static/js/projects.js?v=1792896000"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
-    <script src="/static/js/compare.js?v=1792743600"></script>
+    <script src="/static/js/compare.js?v=1792896000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
     <script src="/static/js/changelog.js?v=1792863100"></script>
 

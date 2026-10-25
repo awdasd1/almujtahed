@@ -10,15 +10,18 @@ const compareFolded = new Set();
 
 function compareModelCatalog() {
   const live = (window.openrouterModelsList || []).filter(model => model && model.id && model.id !== 'local-almojtahed-8b');
-  if (live.length) return live;
-  return [
+  const base = live.length ? live : (window.SUGGESTED_MODELS || [
     { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-    { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-    { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet' },
-    { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1' },
-    { id: 'openai/gpt-4o', name: 'GPT-4o' },
-    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' }
-  ];
+    { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash' },
+    { id: 'google/gemini-4-argon', name: 'Gemini 4 Argon' },
+    { id: '~anthropic/claude-opus-latest', name: 'Claude Opus Latest' },
+    { id: '~anthropic/claude-sonnet-latest', name: 'Claude Sonnet Latest' },
+    { id: '~anthropic/claude-fable-latest', name: 'Claude Fable Latest' },
+    { id: '~openai/gpt-luna-latest', name: 'GPT Luna Latest' },
+    { id: '~openai/gpt-sol-latest', name: 'GPT Sol Latest' },
+    { id: 'openai/gpt-4o', name: 'GPT-4o' }
+  ]);
+  return typeof modelsWithSuggestedFirst === 'function' ? modelsWithSuggestedFirst(base, true) : base;
 }
 
 function compareModelName(modelId) {
@@ -87,17 +90,21 @@ function chooseCompareModel(index, modelId) {
 }
 
 function compareSlotItems(slot, query) {
-  return compareModelCatalog()
-    .filter(model => {
-      const haystack = `${model.name || ''} ${model.id}`.toLowerCase();
-      return !query || haystack.includes(query);
-    })
-    .slice(0, 80)
-    .map(model => `
+  const suggestedIds = new Set((window.SUGGESTED_MODELS || []).map(model => model.id));
+  const models = compareModelCatalog().filter(model => {
+    const haystack = `${model.name || ''} ${model.id}`.toLowerCase();
+    return !query || haystack.includes(query);
+  });
+  const suggested = models.filter(model => suggestedIds.has(model.id));
+  const rest = models.filter(model => !suggestedIds.has(model.id)).slice(0, 80);
+  const row = (model) => `
       <div class="compare-slot-item ${model.id === slot.id ? 'active' : ''}" data-id="${model.id}">
         ${escapeHtml(model.name || model.id)}
       </div>
-    `).join('') || '<div class="compare-slot-item">لا توجد نتائج</div>';
+    `;
+  const title = suggested.length ? '<div class="model-group-title">النماذج المقترحة</div>' : '';
+  return (title + suggested.map(row).join('') + rest.map(row).join(''))
+    || '<div class="compare-slot-item">لا توجد نتائج</div>';
 }
 
 function renderCompareTab() {

@@ -790,38 +790,15 @@ function populateAgentModelDropdown(targetModelId = null) {
       : ((typeof openrouterModelsList !== 'undefined' && openrouterModelsList.length > 0) ? openrouterModelsList : []);
 
     if (modelsList.length > 0) {
-      const priorityIds = [
-        'anthropic/claude-3.7-sonnet',
-        'anthropic/claude-3.5-haiku',
-        'google/gemini-2.5-flash',
-        'google/gemini-3.8-flash',
-        'google/gemini-2.5-pro',
-        'deepseek/deepseek-r1',
-        'deepseek/deepseek-chat',
-        'openai/o3-mini',
-        'openai/gpt-4o',
-        'openai/gpt-4o-mini',
-        'meta-llama/llama-3.3-70b-instruct',
-        'qwen/qwen-2.5-72b-instruct'
-      ];
-      const priorityModels = [];
-      const otherModels = [];
-
-      priorityIds.forEach(pid => {
-        const found = modelsList.find(m => m.id === pid || m.id.includes(pid));
-        if (found && !priorityModels.some(p => p.id === found.id)) {
-          priorityModels.push(found);
-        }
-      });
-
-      modelsList.forEach(m => {
-        if (!priorityModels.some(p => p.id === m.id)) {
-          otherModels.push(m);
-        }
-      });
+      const suggested = window.SUGGESTED_MODELS || [];
+      const ordered = typeof modelsWithSuggestedFirst === 'function'
+        ? modelsWithSuggestedFirst(modelsList, true)
+        : modelsList;
+      const priorityModels = ordered.slice(0, suggested.length);
+      const otherModels = ordered.slice(suggested.length);
 
       groups.push({
-        title: '⭐ نماذج OpenRouter الموصى بها للأبحاث',
+        title: '⭐ النماذج المقترحة',
         models: priorityModels
       });
 
@@ -845,16 +822,8 @@ function populateAgentModelDropdown(targetModelId = null) {
         .catch(e => console.warn('Background models fetch:', e));
 
       groups.push({
-        title: 'نماذج OpenRouter الرائدة',
-        models: [
-          { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet (Thinking)' },
-          { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash (سريع وفائق الاستدلال)' },
-          { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro (Long-Context)' },
-          { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1 (Reasoning)' },
-          { id: 'openai/gpt-4o', name: 'GPT-4o (Omni)' },
-          { id: 'openai/o3-mini', name: 'o3-mini (High Reasoning)' },
-          { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (سريع واقتصادي)' }
-        ]
+        title: '⭐ النماذج المقترحة',
+        models: window.SUGGESTED_MODELS || []
       });
     }
   } else {

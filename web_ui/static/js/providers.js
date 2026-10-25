@@ -39,6 +39,33 @@ const PROVIDER_MODELS_PRESETS = {
 
 // كاش نماذج OpenRouter المسترجعة حياً
 let openrouterModelsList = [];
+
+const SUGGESTED_MODELS = [
+  { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+  { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash' },
+  { id: 'google/gemini-4-argon', name: 'Gemini 4 Argon' },
+  { id: '~anthropic/claude-opus-latest', name: 'Claude Opus Latest' },
+  { id: '~anthropic/claude-sonnet-latest', name: 'Claude Sonnet Latest' },
+  { id: '~anthropic/claude-fable-latest', name: 'Claude Fable Latest' },
+  { id: '~openai/gpt-luna-latest', name: 'GPT Luna Latest' },
+  { id: '~openai/gpt-sol-latest', name: 'GPT Sol Latest' },
+  { id: 'openai/gpt-4o', name: 'GPT-4o' }
+];
+
+function modelsWithSuggestedFirst(list, keepMissing = true) {
+  const source = Array.isArray(list) ? list : [];
+  const pinned = [];
+  SUGGESTED_MODELS.forEach(item => {
+    const found = source.find(model => model && model.id === item.id);
+    if (found) pinned.push(found);
+    else if (keepMissing) pinned.push(item);
+  });
+  const pinnedIds = new Set(pinned.map(model => model.id));
+  return pinned.concat(source.filter(model => model && !pinnedIds.has(model.id)));
+}
+
+window.SUGGESTED_MODELS = SUGGESTED_MODELS;
+window.modelsWithSuggestedFirst = modelsWithSuggestedFirst;
 let openrouterRankedIds = [];
 let currentSelectedModelData = null;
 
@@ -253,6 +280,10 @@ async function loadOpenRouterModelsList(forceRefresh = false) {
     if (typeof populateAgentModelDropdown === 'function') {
       populateAgentModelDropdown();
     }
+    if (typeof populateOpenRouterModelDropdown === 'function') {
+      const manualModel = document.getElementById('manualProjectDirectorModel');
+      if (manualModel) populateOpenRouterModelDropdown(manualModel, manualModel.value);
+    }
     loadOpenRouterRankings();
 
   } catch (err) {
@@ -287,31 +318,35 @@ function renderOpenRouterSelectOptions(list) {
   }
 
   const priorityIds = openrouterRankedIds;
+  const pinned = modelsWithSuggestedFirst(list, false).filter(model => SUGGESTED_MODELS.some(item => item.id === model.id));
+  const pinnedIds = new Set(pinned.map(model => model.id));
+  const remainder = list.filter(model => !pinnedIds.has(model.id));
 
   const priorityModels = [];
   const otherModels = [];
 
   // إدراج النماذج المفضلة أولاً بالترتيب
   priorityIds.forEach(pid => {
-    const found = list.find(m => m.id === pid);
+    const found = remainder.find(m => m.id === pid);
     if (found && !priorityModels.some(p => p.id === found.id)) {
       priorityModels.push(found);
     }
   });
 
-  list.forEach(m => {
+  remainder.forEach(m => {
     if (!priorityModels.some(p => p.id === m.id)) {
       otherModels.push(m);
     }
   });
 
-  const sorted = [...priorityModels, ...otherModels];
-
-  // عرض اسم النموذج فقط بدون أرقام تسعير أو سياق، لأنها تظهر في الأسفل
-  modelsSelect.innerHTML = sorted.map(m => {
-    const cleanName = m.name || m.id;
-    return `<option value="${escapeHtml(m.id)}">${escapeHtml(cleanName)}</option>`;
-  }).join('');
+  const sortedRest = [...priorityModels, ...otherModels];
+  const optionHtml = (model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name || model.id)}</option>`;
+  const pinnedHtml = pinned.map(optionHtml).join('');
+  const restHtml = sortedRest.map(optionHtml).join('');
+  modelsSelect.innerHTML = `
+    ${pinnedHtml ? `<optgroup label="⭐ النماذج المقترحة">${pinnedHtml}</optgroup>` : ''}
+    ${restHtml ? `<optgroup label="كافة النماذج">${restHtml}</optgroup>` : ''}
+  `;
 }
 
 function formatRankingTokens(value) {
@@ -747,40 +782,13 @@ function syncChatModelDropdown(provider = null, targetModelId = null) {
 
   if (activeProvider === 'openrouter') {
     if (openrouterModelsList && openrouterModelsList.length > 0) {
-      const priorityIds = [
-        'anthropic/claude-3.7-sonnet',
-        'anthropic/claude-3.5-haiku',
-        'google/gemini-2.5-flash',
-        'google/gemini-3.8-flash',
-        'google/gemini-2.5-pro',
-        'deepseek/deepseek-r1',
-        'deepseek/deepseek-chat',
-        'openai/o3-mini',
-        'openai/gpt-4o',
-        'openai/gpt-4o-mini',
-        'meta-llama/llama-3.3-70b-instruct',
-        'qwen/qwen-2.5-72b-instruct'
-      ];
-
-      const priorityModels = [];
-      const otherModels = [];
-
-      priorityIds.forEach(pid => {
-        const found = openrouterModelsList.find(m => m.id === pid || m.id.includes(pid));
-        if (found && !priorityModels.some(p => p.id === found.id)) {
-          priorityModels.push(found);
-        }
-      });
-
-      openrouterModelsList.forEach(m => {
-        if (!priorityModels.some(p => p.id === m.id)) {
-          otherModels.push(m);
-        }
-      });
+      const ordered = modelsWithSuggestedFirst(openrouterModelsList, true);
+      const suggested = ordered.slice(0, SUGGESTED_MODELS.length);
+      const otherModels = ordered.slice(SUGGESTED_MODELS.length);
 
       groups.push({
-        title: '⭐ نماذج OpenRouter الموصى بها للأبحاث',
-        models: priorityModels
+        title: '⭐ النماذج المقترحة',
+        models: suggested
       });
 
       if (otherModels.length > 0) {
@@ -790,18 +798,9 @@ function syncChatModelDropdown(provider = null, targetModelId = null) {
         });
       }
     } else {
-      // نماذج جاهزة فورية في حال انتظار جلب الـ API
       groups.push({
-        title: 'نماذج OpenRouter الرائدة',
-        models: [
-          { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet (Thinking)' },
-          { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash (سريع وفائق الاستدلال)' },
-          { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro (Long-Context)' },
-          { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1 (Reasoning)' },
-          { id: 'openai/gpt-4o', name: 'GPT-4o (Omni)' },
-          { id: 'openai/o3-mini', name: 'o3-mini (High Reasoning)' },
-          { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (سريع واقتصادي)' }
-        ]
+        title: '⭐ النماذج المقترحة',
+        models: SUGGESTED_MODELS
       });
     }
   } else {
