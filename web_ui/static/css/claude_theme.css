@@ -8593,6 +8593,22 @@ select {
   text-decoration: none;
 }
 
+a.chat-fn-ref {
+  cursor: pointer;
+  color: var(--accent-clay, #b45309);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+a.chat-fn-ref:hover {
+  text-decoration: underline;
+}
+
+.chat-fn-target {
+  background: rgba(180, 83, 9, 0.16);
+  border-radius: 4px;
+}
+
 .btn-verify-citation:hover {
   background: var(--accent-clay);
   color: #ffffff;

@@ -377,7 +377,7 @@ function renderSessionMessages(sessionId) {
   container.innerHTML = session.messages.map((msg, idx) => {
     const isUser = msg.role === 'user';
     const avatar = isUser ? 'أنت' : 'مج';
-    const parsedText = formatMarkdown(msg.content);
+    const parsedText = formatMarkdown(msg.content, `c${idx}`);
     
     const modelTag = (!isUser && msg.model) ? `
       <div class="message-model-tag" title="النموذج الذي قام بالتحليل والإجابة">
@@ -456,6 +456,21 @@ function renderSessionMessages(sessionId) {
   }
 
   scrollToBottom();
+}
+
+if (!window._chatFnJumpBound) {
+  window._chatFnJumpBound = true;
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest && event.target.closest('a.chat-fn-ref');
+    if (!link) return;
+    const id = decodeURIComponent((link.getAttribute('href') || '').replace(/^#/, ''));
+    const target = id && document.getElementById(id);
+    if (!target) return;
+    event.preventDefault();
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.add('chat-fn-target');
+    window.setTimeout(() => target.classList.remove('chat-fn-target'), 1400);
+  });
 }
 
 // =============================================================================
@@ -1353,19 +1368,32 @@ function scrollToBottom() {
 }
 
 // تحويل نصوص الماركداون القياسية إلى HTML مع دعم كامل للجداول والاقتباسات النبوية والقرآنية
-function chatDisplayText(text) {
+function chatIndicToWestern(value) {
+  return String(value || '')
+    .replace(/[٠-٩]/g, (digit) => '٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
+    .replace(/[۰-۹]/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit));
+}
+
+function chatDisplayText(text, scope) {
   const source = String(text || '');
   if (!/<p[\s>]|<sup[\s>]/i.test(source)) return source;
-  return source
-    .replace(/<sup>\s*<small>\s*(\([^<]{1,12}\))\s*<\/small>\s*<\/sup>/gi, '$1')
+  const prefix = scope ? `${scope}-` : '';
+  let next = source.replace(/\bid=(["'])fn(\d+)\1/gi, (match, quote, number) => `id=${quote}${prefix}fn${number}${quote}`);
+  next = next.replace(/(<li\s+id="[^"]*fn\d+"[^>]*>)\s*<sup>\s*<small>\s*(\([^<]{1,12}\))\s*<\/small>\s*<\/sup>/gi, '$1<span class="chat-fn-mark">$2</span>');
+  next = next.replace(/<sup>\s*<small>\s*\(([^)<]{1,8})\)\s*<\/small>\s*<\/sup>/gi, (match, number) => {
+    const western = chatIndicToWestern(number).replace(/\D/g, '');
+    if (!western) return `(${number})`;
+    return `<a class="chat-fn-ref" href="#${prefix}fn${western}">(${number})</a>`;
+  });
+  return next
     .replace(/<p[^>]*>/gi, '')
     .replace(/<\/p>/gi, '\n\n')
     .replace(/<br\s*\/?>/gi, '\n');
 }
 
-function formatMarkdown(text) {
+function formatMarkdown(text, scope) {
   if (!text) return '';
-  text = chatDisplayText(text);
+  text = chatDisplayText(text, scope);
 
   let html = '';
   if (typeof marked !== 'undefined' && (marked.parse || typeof marked === 'function')) {
