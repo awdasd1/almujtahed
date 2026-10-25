@@ -368,11 +368,98 @@ window.addEventListener('pagehide', () => {
   }
 });
 
+function arabicDuration(ms) {
+  const digits = '٠١٢٣٤٥٦٧٨٩';
+  const toArabic = (value) => String(value).replace(/\d/g, (digit) => digits[digit]);
+  const total = Math.max(1, Math.round((ms || 0) / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes > 0) return `${toArabic(minutes)} د ${toArabic(seconds)} ث`;
+  return `${toArabic(seconds)} ث`;
+}
+
+function startChatAnswerClock(bubble) {
+  const started = Date.now();
+  let stopped = false;
+  const slot = document.createElement('div');
+  slot.className = 'chat-answer-clock';
+  slot.textContent = arabicDuration(0);
+  const host = bubble && bubble.querySelector('.message-content');
+  if (host) host.appendChild(slot);
+  const timer = setInterval(() => {
+    slot.textContent = arabicDuration(Date.now() - started);
+  }, 1000);
+  return () => {
+    if (stopped) return Date.now() - started;
+    stopped = true;
+    clearInterval(timer);
+    return Date.now() - started;
+  };
+}
+
+function chatMessagePaperTitle(msg, session) {
+  const heading = String(msg && msg.content || '').match(/^#{1,3}\s+([^\n]+)/);
+  const made = heading && heading[1].replace(/[*_`]/g, '').trim();
+  if (msg && msg.selection_research) return made || 'إضافة بحثية';
+  return (session && session.title) || 'دراسة وتحقيق بحثي - منظومة المجتهد';
+}
+
+function scrollChatMessageTop(idx) {
+  const message = document.getElementById(`chatMsg${idx}`);
+  const scroller = document.getElementById('chatMessagesContainer');
+  if (!message || !scroller) return;
+  scroller.scrollTo({ top: message.offsetTop, behavior: 'smooth' });
+}
+
+function deleteChatMessage(idx) {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  if (!session || !session.messages[idx]) return;
+  if (!confirm('حذف هذه الإجابة؟')) return;
+  session.messages.splice(idx, 1);
+  saveChatSessions();
+  renderSessionMessages(activeSessionId, { keepPosition: true });
+}
+
+function shareChatMessage(idx) {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  if (!session || !session.messages[idx]) return;
+  if (typeof openSharePicker !== 'function') return;
+  openSharePicker('chat', session.id, chatMessagePaperTitle(session.messages[idx], session));
+}
+
+function toggleChatMessageTashkeel(idx) {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const msg = session && session.messages[idx];
+  if (!msg) return;
+  const marks = /[\u064B-\u065F\u0670\u06D6-\u06ED]/;
+  if (msg.tashkeel_hidden && msg.vocalized_content) {
+    msg.content = msg.vocalized_content;
+    msg.tashkeel_hidden = false;
+  } else {
+    if (!marks.test(msg.content || '')) {
+      if (typeof showToast === 'function') showToast('لا تشكيل في هذه الإجابة');
+      return;
+    }
+    msg.vocalized_content = msg.content;
+    msg.content = msg.content.replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, '');
+    msg.tashkeel_hidden = true;
+  }
+  saveChatSessions();
+  renderSessionMessages(activeSessionId, { keepPosition: true });
+}
+
+window.scrollChatMessageTop = scrollChatMessageTop;
+window.deleteChatMessage = deleteChatMessage;
+window.shareChatMessage = shareChatMessage;
+window.toggleChatMessageTashkeel = toggleChatMessageTashkeel;
+
 // عرض رسائل الجلسة الحالية
-function renderSessionMessages(sessionId) {
+function renderSessionMessages(sessionId, options) {
   const session = chatSessions.find(s => s.id === sessionId);
   const container = document.getElementById('chatMessagesContainer');
   if (!session || !container) return;
+  const keepPosition = options && options.keepPosition;
+  const previousScroll = keepPosition ? container.scrollTop : 0;
 
   container.innerHTML = session.messages.map((msg, idx) => {
     const isUser = msg.role === 'user';
@@ -393,10 +480,17 @@ function renderSessionMessages(sessionId) {
       </div>
     ` : '';
 
-    const tagsHtml = (modelTag || agentGroupTag) ? `
+    const durationTag = (!isUser && msg.duration_ms) ? `
+      <div class="message-model-tag chat-answer-clock" title="زمن الإجابة">
+        <span>زمن الإجابة: ${arabicDuration(msg.duration_ms)}</span>
+      </div>
+    ` : '';
+
+    const tagsHtml = (modelTag || agentGroupTag || durationTag) ? `
       <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px;">
         ${modelTag}
         ${agentGroupTag}
+        ${durationTag}
       </div>
     ` : '';
 
@@ -410,6 +504,18 @@ function renderSessionMessages(sessionId) {
         </button>
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
+        </button>
+        <button type="button" class="btn-msg-export" onclick="shareChatMessage(${idx})" title="مشاركة هذه الإجابة">
+          مشاركة
+        </button>
+        <button type="button" class="btn-msg-export" onclick="scrollChatMessageTop(${idx})" title="الانتقال إلى أعلى هذه الإجابة">
+          أعلى الإجابة
+        </button>
+        <button type="button" class="btn-msg-export" onclick="toggleChatMessageTashkeel(${idx})" title="إزالة التشكيل أو إعادته">
+          ${msg.tashkeel_hidden ? 'إعادة التشكيل' : 'إزالة التشكيل'}
+        </button>
+        <button type="button" class="btn-msg-export" onclick="deleteChatMessage(${idx})" title="حذف هذه الإجابة">
+          حذف
         </button>
       </div>
     ` : `
@@ -426,7 +532,7 @@ function renderSessionMessages(sessionId) {
     `;
 
     return `
-      <div class="message-bubble ${isUser ? 'user' : 'assistant'}">
+      <div class="message-bubble ${isUser ? 'user' : 'assistant'}" id="chatMsg${idx}">
         <div class="message-avatar">${avatar}</div>
         <div class="message-content">
           ${parsedText}
@@ -455,7 +561,8 @@ function renderSessionMessages(sessionId) {
     }
   }
 
-  scrollToBottom();
+  if (keepPosition) container.scrollTop = previousScroll;
+  else scrollToBottom();
 }
 
 if (!window._chatFnJumpBound) {
@@ -531,15 +638,18 @@ async function exportChatMessagePdf(idx) {
   const session = chatSessions.find(s => s.id === activeSessionId);
   if (!session || !session.messages[idx]) return;
   const msg = session.messages[idx];
-  const title = session.title || 'دراسة وتحقيق بحثي - منظومة المجتهد';
+  const title = chatMessagePaperTitle(msg, session);
+  const output = msg.selection_research
+    ? String(msg.content || '').replace(/^#{1,3}\s+[^\n]+\n+/, '')
+    : msg.content;
   const runData = {
     projectTitle: title,
     executedAt: new Date().toLocaleString('ar-SA'),
     directorModel: cleanModelDisplayName(msg.model || 'الذكاء الاصطناعي الأكاديمي'),
     rounds: [{
       round: 1,
-      name: 'النتيجة والدراسة التحريرية المعتمدة',
-      output: msg.content,
+      name: msg.selection_research ? title : 'النتيجة والدراسة التحريرية المعتمدة',
+      output: output,
       executedAt: new Date().toLocaleString('ar-SA')
     }]
   };
@@ -902,6 +1012,7 @@ async function triggerChatCompletion(session, attachments = []) {
   `;
   container.appendChild(typingBubble);
   scrollToBottom();
+  const stopAnswerClock = startChatAnswerClock(typingBubble);
 
   try {
     const response = await fetch('/api/chat', {
@@ -936,6 +1047,7 @@ async function triggerChatCompletion(session, attachments = []) {
     });
 
     const data = await response.json();
+    const durationMs = stopAnswerClock();
     typingBubble.remove();
 
     session.messages.push({
@@ -943,17 +1055,20 @@ async function triggerChatCompletion(session, attachments = []) {
       content: data.reply || 'عذراً، لم أتلقَّ استجابة واضحة من الخادم.',
       model: data.model || selectedModel,
       provider: data.provider || activeProvider,
-      agent_group: data.agent_group || (assignedGroupPayload ? assignedGroupPayload.name : null)
+      agent_group: data.agent_group || (assignedGroupPayload ? assignedGroupPayload.name : null),
+      duration_ms: durationMs
     });
 
     saveChatSessions();
     renderSessionMessages(activeSessionId);
 
   } catch (err) {
+    const durationMs = stopAnswerClock();
     typingBubble.remove();
     session.messages.push({
       role: 'assistant',
-      content: `⚠️ تعذر استكمال المحادثة: ${err.message}`
+      content: `⚠️ تعذر استكمال المحادثة: ${err.message}`,
+      duration_ms: durationMs
     });
     saveChatSessions();
     renderSessionMessages(activeSessionId);
@@ -2832,6 +2947,7 @@ async function runSelectionResearch() {
     container.appendChild(typingBubble);
     if (typeof scrollToBottom === 'function') scrollToBottom();
   }
+  const stopAnswerClock = startChatAnswerClock(typingBubble);
 
   const instruction = selectionResearchInstruction(kind, depth, books);
   const selectedModel = document.getElementById('chatModelSelect')?.value
@@ -2856,7 +2972,7 @@ async function runSelectionResearch() {
         selected_books: books,
         extraction_capacity: parseInt(depth, 10),
         messages: [{ role: 'user', content: instruction }],
-        system_prompt: `أنت تبحث بحثاً مباشراً في شواهد الشاملة المرفقة، بلا وكلاء.\nاكتب بالعربية في فقرات، واجعل أول سطر عنواناً فرعياً: ${kind.title}.\nلا تنشئ جدولاً، ولا تخترع إحالة ليست في الشواهد.\n${instruction}`,
+        system_prompt: `أنت تبحث بحثاً مباشراً في شواهد الشاملة المرفقة، بلا وكلاء.\nالسطر الأول عنوان علمي تنشئه أنت لهذه الإضافة وحدها، بهذا الشكل: ### عنوان الإضافة\nلا تستخدم عنوان السؤال الأصلي ولا عنوان المحادثة.\nلا تنشئ جدولاً، ولا تخترع إحالة ليست في الشواهد.\n${instruction}`,
         temperature: 0.2,
         providers: savedKeys,
         agent_group: null
@@ -2865,17 +2981,20 @@ async function runSelectionResearch() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'تعذر البحث');
     let reply = String(data.reply || '').trim();
-    if (!reply.includes(kind.title)) reply = `### ${kind.title}\n\n${reply}`;
+    if (!/^#{1,3}\s+/m.test(reply)) reply = `### ${kind.title}\n\n${reply}`;
+    const durationMs = stopAnswerClock();
     session.messages.push({
       role: 'assistant',
       content: reply || 'لم تُستخرج نتيجة.',
       model: data.model || selectedModel,
       provider: data.provider || activeProvider,
-      selection_research: kind.id
+      selection_research: kind.id,
+      duration_ms: durationMs
     });
     saveChatSessions();
     renderSessionMessages(activeSessionId);
   } catch (err) {
+    stopAnswerClock();
     if (typeof showToast === 'function') showToast(err.message || 'تعذر البحث');
   } finally {
     const note = document.getElementById('selectionTypingIndicator');

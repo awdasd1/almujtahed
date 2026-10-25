@@ -2279,6 +2279,11 @@ select.graph-kind-select {
   cursor: pointer;
 }
 
+.chat-answer-clock {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 .graph-wait-note {
   display: inline-block;
   animation: pulse 1.2s infinite;
