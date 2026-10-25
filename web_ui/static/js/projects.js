@@ -5878,18 +5878,31 @@ function formatAcademicBody(rawMarkdown) {
   if (!rawMarkdown) return '';
   let text = String(rawMarkdown).replace(/\n{3,}/g, '\n\n');
   text = text.replace(/([^\n])[ \t]*(أولًا:|أولاً:|ثانيًا:|ثانياً:|ثالثًا:|ثالثاً:|رابعًا:|رابعاً:|خامسًا:|خامساً:|سادسًا:|سابعًا:|ثامنًا:|تاسعًا:|عاشرًا:)/g, '$1\n$2');
+  const footnoteBlocks = [];
+  const keptSup = [];
+  text = text.replace(/(?:<br\s*\/?>\s*)*<hr\b[^>]*>(?:\s*<br\s*\/?>)*\s*(?=<ol>)/gi, '');
+  text = text.replace(/<ol>([\s\S]*?)<\/ol>/gi, (full, inner) => {
+    if (!/fn\d+/.test(inner)) return full;
+    const flat = inner.replace(/<\/?sup>|<\/?small>/gi, '');
+    footnoteBlocks.push(`<ol class="footnote-list">${flat}</ol>`);
+    return `\n\nFNBLOCK${footnoteBlocks.length - 1}ENDFN\n\n`;
+  });
+  text = text.replace(/<sup>\s*<small>\s*\(([^<]{1,16})\)\s*<\/small>\s*<\/sup>/gi, (_, number) => {
+    keptSup.push(number);
+    return `SUPKEEP${keptSup.length - 1}ENDSUP`;
+  });
   text = text.replace(/\[\^?(\d+|[٠-٩]+)\]|\(([\d٠-٩]+)\)/g, (match, first, second) => {
     const num = first || second;
     return `<sup><small>(${toArabicIndicDigits(num)})</small></sup>`;
   });
+  text = text.replace(/SUPKEEP(\d+)ENDSUP/g, (_, index) => `<sup><small>(${keptSup[+index] || ''})</small></sup>`);
   text = text.replace(/(^|\n)(\d+)[.-]\s+/g, (match, lead, num) => `${lead}${toArabicIndicDigits(num)}- `);
   text = text.replace(/(القول الأول:|القول الثاني:|القول الثالث:|الدليل الأول:|الدليل الثاني:|الدليل الثالث:|المطلب الأول:|المطلب الثاني:|المسألة الأولى:|المسألة الثانية:)/g, '<b>$1</b>');
 
-  text = text.replace(/<ol>([\s\S]*?)<\/ol>/gi, (full, inner) => {
-    if (!/fn\d+/.test(inner)) return full;
-    return `<ol class="footnote-list">${inner}</ol>`;
-  });
   let html = typeof marked !== 'undefined' ? marked.parse(text) : text.replace(/\n/g, '<br>');
+  html = html.replace(/<p>\s*FNBLOCK(\d+)ENDFN\s*<\/p>/g, (_, index) => footnoteBlocks[+index] || '');
+  html = html.replace(/FNBLOCK(\d+)ENDFN/g, (_, index) => footnoteBlocks[+index] || '');
+  html = html.replace(/(?:<br\s*\/?>\s*)*<hr\b[^>]*>(?:\s*<br\s*\/?>)*\s*(?=<ol class="footnote-list">)/gi, '');
   let inBibliography = false;
   html = html.replace(/<(p|h[1-6])([^>]*)>([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
     const plain = content.replace(/<[^>]+>/g, '').trim();
@@ -5945,7 +5958,7 @@ function buildAcademicPaperHtml(runData, options) {
       background: #FFFFFF;
       color: #111111;
       font-family: 'Amiri', serif;
-      font-size: 17pt;
+      font-size: 18pt;
       line-height: 2.1;
       direction: rtl;
       text-align: right;
@@ -5957,10 +5970,19 @@ function buildAcademicPaperHtml(runData, options) {
     .paper-main-title { font-size: 25pt; font-weight: 700; line-height: 1.6; margin: 0 0 12px; }
     .paper-sub-meta { font-family: 'Tajawal', sans-serif; font-size: 12pt; color: #475569; }
     .academic-round-title { font-size: 21pt; border-bottom: 2px solid #333; padding-bottom: 6px; margin: 24px 0 12px; text-indent: 0; }
-    .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: 17pt; text-align: justify; }
+    .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: 18pt; text-align: justify; }
     .footnote-line, .biblio-title { text-indent: 0 !important; margin: 0; }
-    .footnote-line { font-size: 13.5pt; line-height: 1.8; }
-    ol.footnote-list, ol.footnote-list li { list-style: none; margin: 0; padding: 0; }
+    .footnote-line { font-size: 14pt; line-height: 1.7; }
+    ol.footnote-list { list-style: none; margin: 16px 0 0; padding: 8px 0 0; }
+    ol.footnote-list::before {
+      content: "";
+      display: block;
+      width: 25%;
+      border-top: 1px solid #000;
+      margin: 0 0 8px;
+    }
+    ol.footnote-list li { list-style: none; margin: 0; padding: 0; font-size: 14pt; line-height: 1.7; }
+    ol.footnote-list sup, ol.footnote-list small { vertical-align: baseline; font-size: inherit; font-weight: 400; }
     .biblio-title { font-size: 20pt; margin-top: 22px; }
     h1, h2, h3, h4 { text-indent: 0; }
     sup small { font-size: 11pt; font-weight: 700; vertical-align: super; }
