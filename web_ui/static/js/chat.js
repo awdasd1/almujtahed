@@ -1822,9 +1822,36 @@ function enforceStandardCitations(text) {
 }
 window.enforceStandardCitations = enforceStandardCitations;
 
+function renderScholarlyAnswer(text, scope) {
+  const prefix = scope ? `${scope}-` : '';
+  let next = String(text || '');
+  next = next.replace(/\bid=(["'])fn(\d+)\1/gi, (match, quote, number) => `id=${quote}${prefix}fn${number}${quote}`);
+  next = next.replace(/<ol>([\s\S]*?)<\/ol>/gi, (full, inner) => {
+    if (!/fn\d+/.test(inner)) return full;
+    return `<ol class="chat-fn-list">${inner}</ol>`;
+  });
+  next = next.replace(/(<li\s+id="[^"]*fn(\d+)"[^>]*>)\s*<sup>\s*<small>\s*(\([^<]{1,12}\))\s*<\/small>\s*<\/sup>/gi, (match, open, number, label) => {
+    return `${open}<a class="chat-fn-back" href="#${prefix}ref${number}-1">${label}</a>`;
+  });
+  const seen = {};
+  next = next.replace(/<sup>\s*<small>\s*\(([^)<]{1,8})\)\s*<\/small>\s*<\/sup>/gi, (match, number) => {
+    const western = chatIndicToWestern(number).replace(/\D/g, '');
+    if (!western) return `(${number})`;
+    seen[western] = (seen[western] || 0) + 1;
+    const refId = `${prefix}ref${western}-${seen[western]}`;
+    return `<a class="chat-fn-ref" id="${refId}" href="#${prefix}fn${western}">(${number})</a>`;
+  });
+  next = next.replace(/(?:<br\s*\/?>\s*)*<hr\b[^>]*>(?:\s*<br\s*\/?>)*(?=\s*<ol class="chat-fn-list">)/gi, '');
+  return `<div class="chat-academic">${next}</div>`;
+}
+
 function formatMarkdown(text, scope) {
   if (!text) return '';
-  text = enforceStandardCitations(chatDisplayText(text, scope));
+  text = enforceStandardCitations(text);
+  if (/<p[\s>]|<sup[\s>]|<ol[\s>]/i.test(text)) {
+    return attachTableToolbar(renderScholarlyAnswer(text, scope));
+  }
+  text = chatDisplayText(text, scope);
 
   let html = '';
   if (typeof marked !== 'undefined' && (marked.parse || typeof marked === 'function')) {

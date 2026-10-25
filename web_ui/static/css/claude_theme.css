@@ -9091,6 +9091,50 @@ select {
   text-decoration: none;
 }
 
+.chat-academic p {
+  text-indent: 30px;
+  margin: 0;
+  line-height: 2.05;
+  text-align: justify;
+}
+
+.chat-academic h1,
+.chat-academic h2,
+.chat-academic h3,
+.chat-academic h4,
+.chat-academic li {
+  text-indent: 0;
+}
+
+.chat-academic ol.chat-fn-list {
+  margin: 16px 0 0;
+  padding: 8px 0 0;
+}
+
+.chat-academic ol.chat-fn-list::before {
+  content: "";
+  display: block;
+  width: 25%;
+  border-top: 1.5px solid currentColor;
+  margin: 0 0 8px;
+}
+
+.chat-academic ol.chat-fn-list li {
+  font-size: 0.78em;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.chat-academic a.chat-fn-ref {
+  font-size: 0.72em;
+  vertical-align: super;
+}
+
+.chat-academic a.chat-fn-back {
+  vertical-align: baseline;
+  font-size: 1em;
+}
+
 ol.chat-fn-list,
 ol.chat-fn-list li {
   list-style: none;
