@@ -295,13 +295,13 @@ function describeThinking(modelId, level) {
   return thinkingEffortLabel(effort) || thinkingEffortLabel(level) || 'متوسط · متزن · متوسط التكلفة';
 }
 
-function syncOneThinking(selectId, noteId, modelId) {
+function syncOneThinking(selectId, modelId) {
   const select = document.getElementById(selectId);
-  const note = document.getElementById(noteId);
   if (!select) return;
   const record = modelReasoningRecord(modelId);
   const unsupported = record && (record.local || record.reasoning === null);
   select.disabled = !!unsupported;
+  select.title = unsupported ? 'هذا النموذج بلا تفكير داخلي' : 'جهد التفكير الداخلي وسرعته وتكلفته';
   Array.from(select.options).forEach(option => {
     if (option.value === 'none') {
       option.disabled = false;
@@ -320,17 +320,13 @@ function syncOneThinking(selectId, noteId, modelId) {
     const fallback = Array.from(select.options).find(option => !option.disabled);
     if (fallback) select.value = fallback.value;
   }
-  if (!note) return;
-  if (unsupported) note.textContent = 'بلا تفكير داخلي';
-  else if (!record) note.textContent = '';
-  else note.textContent = describeThinking(modelId, select.value);
 }
 
 function syncThinkingControls() {
-  syncOneThinking('chatThinkingSelect', 'chatThinkingNote', document.getElementById('chatModelSelect')?.value);
-  syncOneThinking('agentThinkingSelect', 'agentThinkingNote', document.getElementById('agentSelectedModelId')?.value);
-  syncOneThinking('pDirectorThinking', 'pDirectorThinkingNote', document.getElementById('pDirectorModel')?.value);
-  syncOneThinking('p2cThinkingSelect', 'p2cThinkingNote', document.getElementById('p2cModelSelect')?.value);
+  syncOneThinking('chatThinkingSelect', document.getElementById('chatModelSelect')?.value);
+  syncOneThinking('agentThinkingSelect', document.getElementById('agentSelectedModelId')?.value);
+  syncOneThinking('pDirectorThinking', document.getElementById('pDirectorModel')?.value);
+  syncOneThinking('p2cThinkingSelect', document.getElementById('p2cModelSelect')?.value);
 }
 window.syncThinkingControls = syncThinkingControls;
 window.describeThinking = describeThinking;

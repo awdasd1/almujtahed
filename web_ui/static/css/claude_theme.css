@@ -5252,12 +5252,6 @@ input:checked+.slider-toggle:before {
   transition: all var(--transition-fast);
 }
 
-.thinking-note {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
 .thinking-dropdown:disabled {
   cursor: default;
   opacity: 0.6;
