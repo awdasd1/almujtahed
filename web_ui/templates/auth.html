@@ -93,8 +93,17 @@
             box-shadow: 0 8px 20px rgba(194, 120, 3, 0.15);
         }
 
-        .auth-title {
+        .auth-title-row {
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 8px 10px;
             margin: 0 0 6px;
+        }
+
+        .auth-title {
+            margin: 0;
             font-size: 22px;
             font-weight: 800;
             font-family: 'Amiri', serif;
@@ -109,11 +118,12 @@
         }
 
         .auth-version {
-            margin: 6px 0 0;
+            margin: 0;
             font-size: 12px;
             font-weight: 700;
-            color: var(--auth-text);
+            color: var(--auth-muted);
             line-height: 1.5;
+            white-space: nowrap;
         }
 
         .auth-form {
@@ -247,9 +257,11 @@
             
             <div class="auth-header">
                 <div class="auth-logo" id="authLogo">🌟</div>
-                <h1 class="auth-title" id="authTitle">منظومة المجتهد</h1>
+                <div class="auth-title-row">
+                    <h1 class="auth-title" id="authTitle">منظومة المجتهد</h1>
+                    <p class="auth-version" id="appVersionLabel">إصدار رقم 1.0 (نسخة تجريبية)</p>
+                </div>
                 <p class="auth-subtitle" id="authSubtitle">المكتبة الشاملة المضمنة والمكممة</p>
-                <p class="auth-version" id="appVersionLabel">إصدار رقم 1.0 (نسخة تجريبية)</p>
             </div>
 
             <div id="authAlert" class="auth-alert"></div>
