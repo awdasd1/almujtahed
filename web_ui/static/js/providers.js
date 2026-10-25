@@ -265,6 +265,7 @@ async function loadOpenRouterModelsList(forceRefresh = false) {
       modelsSelect.value = defaultModel.id;
       displayOpenRouterModelSpecs(defaultModel);
     }
+    if (typeof syncThinkingControls === 'function') syncThinkingControls();
 
     modelsSelect.onchange = function() {
       const selected = openrouterModelsList.find(m => m.id === this.value);
@@ -1173,6 +1174,7 @@ function handleChatModelChange(modelId) {
                     document.getElementById('chatModelSelect')?.selectedOptions[0]?.text || 
                     modelId;
   showToast(`تم تعيين نموذج الإجابة: ${modelName}`);
+  if (typeof syncThinkingControls === 'function') syncThinkingControls();
 }
 
 // إغلاق القائمة المنسدلة عند النقر خارجها

@@ -379,7 +379,8 @@ async function submitCompareQuestion(event) {
           api_key: savedKeys.openrouter || '',
           model: slot.id,
           messages,
-          system: sharedSystem || undefined
+          system: sharedSystem || undefined,
+          thinking_level: (typeof currentThinkingLevel !== 'undefined' ? currentThinkingLevel : 'medium')
         })
       });
       if (!response.ok || !response.body) {

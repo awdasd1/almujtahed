@@ -966,6 +966,7 @@ function selectCustomAgentModel(modelId, modelName) {
   }
 
   closeAgentModelDropdown();
+  if (typeof syncThinkingControls === 'function') syncThinkingControls();
 }
 
 // إغلاق قائمة نماذج الوكيل عند النقر خارجها

@@ -221,9 +221,127 @@ function setThinkingLevel(level) {
   if (level === 'medium') document.getElementById('thinkMed')?.classList.add('active');
   if (level === 'high') document.getElementById('thinkHigh')?.classList.add('active');
 
-  const names = { low: 'منخفض (سريع)', medium: 'متوسط (متزن)', high: 'عالي (استدلال عميق)' };
+  const names = {
+    low: 'منخفض · سريع · أقل تكلفة',
+    medium: 'متوسط · متزن · متوسط التكلفة',
+    high: 'عالي · أعمق · أعلى تكلفة',
+    max: 'أقصى · أبطأ · التكلفة القصوى',
+    none: 'بدون تفكير · بلا تكلفة إضافية'
+  };
   showToast(`تم ضبط التفكير على: ${names[level] || level}`);
+  if (typeof syncThinkingControls === 'function') syncThinkingControls();
 }
+
+const THINKING_EFFORT_LABELS = {
+  none: 'بدون تفكير · بلا تكلفة إضافية',
+  minimal: 'أدنى · سريع · أقل تكلفة',
+  low: 'منخفض · سريع · أقل تكلفة',
+  medium: 'متوسط · متزن · متوسط التكلفة',
+  high: 'عالي · أعمق · أعلى تكلفة',
+  xhigh: 'أقصى · أبطأ · التكلفة القصوى',
+  max: 'أقصى · أبطأ · التكلفة القصوى'
+};
+const THINKING_LADDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+function thinkingEffortLabel(effort) {
+  return THINKING_EFFORT_LABELS[effort] || '';
+}
+
+function modelReasoningRecord(modelId) {
+  if (!modelId || String(modelId).startsWith('local:') || String(modelId).startsWith('local-')) return { local: true };
+  const lists = [];
+  if (typeof openrouterModelsList !== 'undefined') lists.push(openrouterModelsList);
+  if (window.openrouterModelsList) lists.push(window.openrouterModelsList);
+  for (const list of lists) {
+    const found = (list || []).find(model => model && (model.id === modelId || model.canonical_slug === modelId));
+    if (found) return found;
+  }
+  return null;
+}
+
+function resolveThinkingEffort(modelId, level) {
+  const record = modelReasoningRecord(modelId);
+  if (!record || record.local) return record && record.local ? '' : '';
+  const spec = record.reasoning;
+  if (!spec) return '';
+  let wanted = level === 'max' ? 'max' : (level || 'medium');
+  const supported = spec.supported_efforts;
+  if (wanted === 'none') {
+    if (spec.mandatory) wanted = spec.default_effort && spec.default_effort !== 'none' ? spec.default_effort : 'low';
+    else return 'none';
+  }
+  if (wanted === 'max') {
+    const ceiling = ['max', 'xhigh', 'high'].find(item => !supported || supported.includes(item));
+    return ceiling || 'high';
+  }
+  if (!supported) return wanted;
+  if (supported.includes(wanted)) return wanted;
+  const index = THINKING_LADDER.indexOf(wanted);
+  if (index < 0) return supported.includes('medium') ? 'medium' : supported[0];
+  for (let step = 1; step < THINKING_LADDER.length; step++) {
+    const lower = THINKING_LADDER[index - step];
+    const higher = THINKING_LADDER[index + step];
+    if (lower && supported.includes(lower) && !(lower === 'none' && spec.mandatory)) return lower;
+    if (higher && supported.includes(higher)) return higher;
+  }
+  return '';
+}
+
+function describeThinking(modelId, level) {
+  const record = modelReasoningRecord(modelId);
+  if (record && record.local) return 'بلا تفكير داخلي';
+  if (record && !record.reasoning) return 'بلا تفكير داخلي';
+  const effort = resolveThinkingEffort(modelId, level);
+  return thinkingEffortLabel(effort) || thinkingEffortLabel(level) || 'متوسط · متزن · متوسط التكلفة';
+}
+
+function syncOneThinking(selectId, noteId, modelId) {
+  const select = document.getElementById(selectId);
+  const note = document.getElementById(noteId);
+  if (!select) return;
+  const record = modelReasoningRecord(modelId);
+  const unsupported = record && (record.local || record.reasoning === null);
+  select.disabled = !!unsupported;
+  Array.from(select.options).forEach(option => {
+    if (option.value === 'none') {
+      option.disabled = false;
+      return;
+    }
+    if (!record || record.local || !record.reasoning || !record.reasoning.supported_efforts) {
+      option.disabled = false;
+      return;
+    }
+    const supported = record.reasoning.supported_efforts;
+    option.disabled = option.value === 'max'
+      ? !supported.some(item => item === 'max' || item === 'xhigh' || item === 'high')
+      : !supported.includes(option.value);
+  });
+  if (select.selectedOptions[0] && select.selectedOptions[0].disabled) {
+    const fallback = Array.from(select.options).find(option => !option.disabled);
+    if (fallback) select.value = fallback.value;
+  }
+  if (!note) return;
+  if (unsupported) note.textContent = 'بلا تفكير داخلي';
+  else if (!record) note.textContent = '';
+  else note.textContent = describeThinking(modelId, select.value);
+}
+
+function syncThinkingControls() {
+  syncOneThinking('chatThinkingSelect', 'chatThinkingNote', document.getElementById('chatModelSelect')?.value);
+  syncOneThinking('agentThinkingSelect', 'agentThinkingNote', document.getElementById('agentSelectedModelId')?.value);
+  syncOneThinking('pDirectorThinking', 'pDirectorThinkingNote', document.getElementById('pDirectorModel')?.value);
+  syncOneThinking('p2cThinkingSelect', 'p2cThinkingNote', document.getElementById('p2cModelSelect')?.value);
+}
+window.syncThinkingControls = syncThinkingControls;
+window.describeThinking = describeThinking;
+window.thinkingEffortLabel = thinkingEffortLabel;
+
+document.addEventListener('change', (event) => {
+  const id = event.target && event.target.id;
+  if (['pDirectorModel', 'p2cModelSelect', 'pDirectorThinking', 'p2cThinkingSelect', 'agentThinkingSelect'].includes(id)) {
+    syncThinkingControls();
+  }
+});
 
 // عرض قائمة المحادثات في الشريط الجانبي
 function renderChatHistorySidebar() {
@@ -568,7 +686,7 @@ function renderSessionMessages(sessionId, options) {
     const modelTag = (!isUser && msg.model) ? `
       <div class="message-model-tag" title="النموذج الذي قام بالتحليل والإجابة">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-        <span>النموذج: ${escapeHtml(cleanModelDisplayName(msg.model))}</span>
+        <span>النموذج: ${escapeHtml(cleanModelDisplayName(msg.model))}${msg.thinking_label ? ` · ${escapeHtml(msg.thinking_label)}` : ''}</span>
       </div>
     ` : '';
 
@@ -1103,7 +1221,10 @@ async function triggerChatCompletion(session, attachments = []) {
   typingBubble.id = 'typingBubbleIndicator';
 
   const hybridModeName = isChatHybridSearchEnabled ? 'بحث هجين' : 'دلالي صرف';
-  let typingMessage = `جارٍ الاستدلال واستدعاء نصوص الشاملة عبر «<strong>${escapeHtml(modelDisplayName)}</strong>» (${executionThinking === 'high' ? 'استدلال عميق' : 'تفكير سريع'} · ${hybridModeName})...`;
+  const thinkingPhrase = (typeof describeThinking === 'function')
+    ? describeThinking(executionModel, executionThinking)
+    : (executionThinking === 'high' ? 'عالي · أعمق · أعلى تكلفة' : 'متوسط · متزن · متوسط التكلفة');
+  let typingMessage = `جارٍ الاستدلال واستدعاء نصوص الشاملة عبر «<strong>${escapeHtml(modelDisplayName)}</strong>» (${escapeHtml(thinkingPhrase)} · ${hybridModeName})...`;
   if (assignedGroupPayload && activeAgent) {
     typingMessage = `جارٍ تشغيل وكيل «<strong>${escapeHtml(activeAgent.name)}</strong>» عبر نموذج «<strong>${escapeHtml(cleanModelDisplayName(executionModel))}</strong>» والبحث في نطاق كتبه المحدد (${hybridModeName})...`;
   } else if (assignedGroupPayload) {
@@ -1166,7 +1287,9 @@ async function triggerChatCompletion(session, attachments = []) {
       model: data.model || selectedModel,
       provider: data.provider || activeProvider,
       agent_group: data.agent_group || (assignedGroupPayload ? assignedGroupPayload.name : null),
-      duration_ms: durationMs
+      duration_ms: durationMs,
+      thinking_effort: data.thinking_effort || '',
+      thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : ''
     });
 
     saveChatSessions();
@@ -3188,7 +3311,9 @@ async function runSelectionResearch() {
       model: data.model || selectedModel,
       provider: data.provider || activeProvider,
       selection_research: kind.id,
-      duration_ms: durationMs
+      duration_ms: durationMs,
+      thinking_effort: data.thinking_effort || '',
+      thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : ''
     });
     saveChatSessions();
     renderSessionMessages(activeSessionId);

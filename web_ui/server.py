@@ -1186,6 +1186,87 @@ def normalize_model_id(m: str) -> str:
     m_clean = str(m).strip()
     return MODEL_ALIAS_MAP.get(m_clean, m_clean)
 
+OPENROUTER_REASONING: Dict[str, Optional[dict]] = {}
+_EFFORT_LADDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+def remember_model_reasoning(model_id: str, reasoning: Any) -> Optional[dict]:
+    if not model_id:
+        return None
+    spec = None
+    if isinstance(reasoning, dict):
+        efforts = reasoning.get("supported_efforts")
+        spec = {
+            "supported_efforts": efforts if isinstance(efforts, list) else None,
+            "default_effort": reasoning.get("default_effort") or None,
+            "mandatory": bool(reasoning.get("mandatory")),
+        }
+    OPENROUTER_REASONING[model_id] = spec
+    return spec
+
+def _wanted_effort(level: str) -> str:
+    key = str(level or "medium").strip().lower()
+    if key in ("max", "xhigh"):
+        return "max"
+    if key == "high":
+        return "high"
+    if key == "low":
+        return "low"
+    if key in ("none", "off"):
+        return "none"
+    if key == "minimal":
+        return "minimal"
+    return "medium"
+
+def resolve_reasoning_effort(model_id: str, level: str) -> Optional[str]:
+    """أقرب جهد تفكير يقبله النموذج، أو لا شيء إن كان بلا تفكير داخلي."""
+    raw_id = str(model_id or "").strip()
+    if not raw_id or raw_id.startswith("local:") or raw_id.startswith("local-"):
+        return None
+    resolved = normalize_model_id(raw_id)
+    if resolved not in OPENROUTER_REASONING:
+        return None
+    spec = OPENROUTER_REASONING.get(resolved)
+    if not spec:
+        return None
+    wanted = _wanted_effort(level)
+    supported = spec.get("supported_efforts")
+    mandatory = bool(spec.get("mandatory"))
+    if wanted == "none":
+        if mandatory:
+            wanted = spec.get("default_effort") or "medium"
+            if wanted == "none":
+                wanted = "low"
+        else:
+            return "none"
+    if wanted == "max":
+        for candidate in ("max", "xhigh", "high"):
+            if supported is None or candidate in supported:
+                return candidate
+        wanted = "high"
+    if supported is None:
+        return wanted
+    if wanted in supported:
+        return wanted
+    if wanted not in _EFFORT_LADDER:
+        wanted = "medium"
+    index = _EFFORT_LADDER.index(wanted)
+    for step in range(1, len(_EFFORT_LADDER)):
+        for probe in (index - step, index + step):
+            if 0 <= probe < len(_EFFORT_LADDER):
+                candidate = _EFFORT_LADDER[probe]
+                if candidate in supported and not (candidate == "none" and mandatory):
+                    return candidate
+    return None
+
+def attach_reasoning(payload: dict, model_id: str, level: Optional[str]) -> Optional[str]:
+    if not level:
+        return None
+    effort = resolve_reasoning_effort(model_id, level)
+    if not effort:
+        return None
+    payload["reasoning"] = {"effort": effort} if effort == "none" else {"effort": effort, "exclude": True}
+    return effort
+
 LOCAL_CHAT_DIR_NAME = "local"
 _LOCAL_LLM = {"path": "", "model": None}
 _LOCAL_LLM_LOCK = threading.Lock()
@@ -1443,7 +1524,8 @@ def call_openrouter_raw(
     frequency_penalty: Optional[float] = None,
     presence_penalty: Optional[float] = None,
     repetition_penalty: Optional[float] = None,
-    timeout: int = 90
+    timeout: int = 90,
+    thinking_level: Optional[str] = None
 ) -> str:
     if str(model_id or "").startswith("local:"):
         return _complete_local_text(model_id, messages, temperature, max_tokens)
@@ -1454,6 +1536,7 @@ def call_openrouter_raw(
         "temperature": temperature,
         "max_tokens": max_tokens
     }
+    attach_reasoning(payload, resolved_model, thinking_level)
     if top_p is not None:
         payload["top_p"] = top_p
     if top_k is not None and top_k > 0:
@@ -1467,24 +1550,35 @@ def call_openrouter_raw(
     key = (api_key or "").strip()
     if not key:
         raise RuntimeError("مفتاح OpenRouter الخاص بهذا الحساب غير موجود")
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8085",
-            "X-Title": "Al-Mojtahed Multi-Agent Engine"
-        },
-        data=json.dumps(payload).encode("utf-8")
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        resp_data = json.loads(resp.read().decode("utf-8"))
-        choice = resp_data.get("choices", [{}])[0]
-        msg_obj = choice.get("message", {})
-        content = (msg_obj.get("content") or "").strip()
-        if not content and msg_obj.get("reasoning"):
-            content = msg_obj.get("reasoning").strip()
-        return content
+    def _read(body_payload: dict) -> dict:
+        request = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:8085",
+                "X-Title": "Al-Mojtahed Multi-Agent Engine"
+            },
+            data=json.dumps(body_payload).encode("utf-8")
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    try:
+        resp_data = _read(payload)
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="ignore")
+        if payload.get("reasoning") and "reasoning" in detail.lower():
+            payload.pop("reasoning", None)
+            resp_data = _read(payload)
+        else:
+            raise
+    choice = resp_data.get("choices", [{}])[0]
+    msg_obj = choice.get("message", {})
+    content = (msg_obj.get("content") or "").strip()
+    if not content and msg_obj.get("reasoning"):
+        content = msg_obj.get("reasoning").strip()
+    return content
 
 class ChatMessage(BaseModel):
     role: str
@@ -5020,6 +5114,7 @@ class CompareSide(BaseModel):
 class CompareRequest(BaseModel):
     sides: List[CompareSide]
     api_key: Optional[str] = None
+    thinking_level: str = "medium"
 
 @app.post("/api/compare")
 async def compare_models_endpoint(req: CompareRequest, request: Request):
@@ -5040,7 +5135,8 @@ async def compare_models_endpoint(req: CompareRequest, request: Request):
                 api_key=key,
                 temperature=0.4,
                 max_tokens=4096,
-                timeout=120
+                timeout=120,
+                thinking_level=req.thinking_level
             )
             return {"model": side.model, "reply": reply, "elapsed_ms": int((time.perf_counter() - started) * 1000)}
         except Exception as exc:
@@ -5055,6 +5151,7 @@ class CompareStreamRequest(BaseModel):
     messages: List[ChatMessage]
     api_key: Optional[str] = None
     system: Optional[str] = None
+    thinking_level: str = "medium"
 
 @app.post("/api/compare/stream")
 async def compare_stream_endpoint(req: CompareStreamRequest, request: Request):
@@ -5085,18 +5182,30 @@ async def compare_stream_endpoint(req: CompareStreamRequest, request: Request):
                 "max_tokens": 4096,
                 "stream": True
             }
-            request = urllib.request.Request(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:8085",
-                    "X-Title": "Al-Mojtahed Compare"
-                },
-                data=json.dumps(payload).encode("utf-8")
-            )
-            with urllib.request.urlopen(request, timeout=120) as resp:
-                for raw in resp:
+            attach_reasoning(payload, model_id, req.thinking_level)
+            def _open(body):
+                request = urllib.request.Request(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:8085",
+                        "X-Title": "Al-Mojtahed Compare"
+                    },
+                    data=json.dumps(body).encode("utf-8")
+                )
+                return urllib.request.urlopen(request, timeout=120)
+            try:
+                response = _open(payload)
+            except urllib.error.HTTPError as error:
+                detail = error.read().decode("utf-8", errors="ignore")
+                if payload.get("reasoning") and "reasoning" in detail.lower():
+                    payload.pop("reasoning", None)
+                    response = _open(payload)
+                else:
+                    raise
+            with response:
+                for raw in response:
                     line = raw.decode("utf-8", errors="ignore").strip()
                     if not line.startswith("data:"):
                         continue
@@ -5675,6 +5784,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
     # محاولة الاستعلام الحي من النموذج المختار مباشرة (النموذج هو الذي يجيب بذكائه وتحريره)
     live_reply = None
+    applied_effort = None
     if req.model and req.model != "local-almojtahed-8b":
         try:
             key = owner_openrouter_key(request, req.api_key)
@@ -5804,8 +5914,10 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 return max_allowed
 
             safe_max_output_tokens = _get_safe_max_tokens_for_model(call_model, req.max_tokens)
+            applied_effort = None
 
-            def _query_openrouter(target_model: str, max_tok: Optional[int] = None):
+            def _query_openrouter(target_model: str, max_tok: Optional[int] = None, with_reasoning: bool = True):
+                nonlocal applied_effort
                 tok_limit = max_tok if max_tok is not None else _get_safe_max_tokens_for_model(target_model, req.max_tokens)
                 payload = {
                     "model": target_model,
@@ -5813,24 +5925,39 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     "temperature": req.temperature or 0.2,
                     "max_tokens": tok_limit
                 }
-                o_req = urllib.request.Request(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "http://localhost:8085",
-                        "X-Title": "Al-Mojtahed Sharia Engine"
-                    },
-                    data=json.dumps(payload).encode("utf-8")
-                )
-                with urllib.request.urlopen(o_req, timeout=180) as resp:
-                    resp_data = json.loads(resp.read().decode("utf-8"))
-                    choice = resp_data.get("choices", [{}])[0]
-                    msg_obj = choice.get("message", {})
-                    content = (msg_obj.get("content") or "").strip()
-                    if not content and msg_obj.get("reasoning"):
-                        content = msg_obj.get("reasoning").strip()
-                    return content
+                effort = attach_reasoning(payload, target_model, req.thinking_level) if with_reasoning else None
+
+                def _read(body_payload: dict) -> dict:
+                    o_req = urllib.request.Request(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {key}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "http://localhost:8085",
+                            "X-Title": "Al-Mojtahed Sharia Engine"
+                        },
+                        data=json.dumps(body_payload).encode("utf-8")
+                    )
+                    with urllib.request.urlopen(o_req, timeout=180) as resp:
+                        return json.loads(resp.read().decode("utf-8"))
+
+                try:
+                    resp_data = _read(payload)
+                    applied_effort = effort
+                except urllib.error.HTTPError as error:
+                    detail = error.read().decode("utf-8", errors="ignore")
+                    if effort and "reasoning" in detail.lower():
+                        payload.pop("reasoning", None)
+                        applied_effort = None
+                        resp_data = _read(payload)
+                    else:
+                        raise
+                choice = resp_data.get("choices", [{}])[0]
+                msg_obj = choice.get("message", {})
+                content = (msg_obj.get("content") or "").strip()
+                if not content and msg_obj.get("reasoning"):
+                    content = msg_obj.get("reasoning").strip()
+                return content
 
             try:
                 if str(call_model or "").startswith("local:"):
@@ -5848,7 +5975,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 try:
                     # إعادة المحاولة مع نفس النموذج المختار بسعة محافظة (4096) لتجنب أخطاء تجاوز سعة الإخراج
                     print(f"Retrying same model {call_model} with conservative 4,096 tokens...")
-                    live_reply = _query_openrouter(call_model, max_tok=4096)
+                    live_reply = _query_openrouter(call_model, max_tok=4096, with_reasoning=False)
                 except Exception as retry_err:
                     print(f"Retry with same model failed: {retry_err}")
             except Exception as e:
@@ -5877,6 +6004,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         "model": call_model if live_reply else (req.model or "unknown"),
         "provider": req.provider or "openrouter",
         "thinking_level": req.thinking_level,
+        "thinking_effort": applied_effort if live_reply else None,
         "agent_group": group_name if req.agent_group else None
     }
 
@@ -5977,8 +6105,12 @@ async def get_openrouter_models(request: Request, api_key: Optional[str] = None)
                     "agentic_index": art_analysis.get("agentic_index"),
                     "design_arena": benchmarks.get("design_arena") or []
                 },
-                "top_provider": m.get("top_provider") or {}
+                "top_provider": m.get("top_provider") or {},
+                "reasoning": remember_model_reasoning(m.get("id"), m.get("reasoning"))
             })
+            slug = m.get("canonical_slug")
+            if slug and slug != m.get("id"):
+                OPENROUTER_REASONING[slug] = OPENROUTER_REASONING.get(m.get("id"))
 
         res_data = {"status": "ok", "count": len(parsed), "models": parsed}
         if key == (OPENROUTER_DEFAULT_KEY or ""):
@@ -7670,6 +7802,7 @@ class SubagentTestRequest(BaseModel):
     repetition_penalty: Optional[float] = None
     max_tokens: Optional[int] = 1500
     api_key: Optional[str] = None
+    thinking_level: Optional[str] = "medium"
 
 @app.post("/api/subagents/test")
 async def test_subagent_endpoint(req: SubagentTestRequest, request: Request):
@@ -7757,7 +7890,8 @@ async def test_subagent_endpoint(req: SubagentTestRequest, request: Request):
             frequency_penalty=float(req.frequency_penalty) if (req.frequency_penalty is not None and str(req.frequency_penalty).strip() != "") else None,
             presence_penalty=float(req.presence_penalty) if (req.presence_penalty is not None and str(req.presence_penalty).strip() != "") else None,
             repetition_penalty=float(req.repetition_penalty) if (req.repetition_penalty is not None and str(req.repetition_penalty).strip() != "") else None,
-            timeout=70
+            timeout=70,
+            thinking_level=req.thinking_level or "medium"
         )
         elapsed = round(time.time() - t0, 2)
         return {

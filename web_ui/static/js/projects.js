@@ -1419,6 +1419,7 @@ async function runProjectSubagentTestLive() {
         frequency_penalty: freqPen,
         presence_penalty: presPen,
         max_tokens: maxTokens,
+        thinking_level: (typeof getOrResolveActiveProject === 'function' && getOrResolveActiveProject()?.director?.thinking) || 'medium',
         api_key: apiKey
       })
     });

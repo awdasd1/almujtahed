@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792895000">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1792899000">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 4.2 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 4.3 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -433,11 +433,13 @@
                                 <span
                                     style="color: var(--text-muted); font-size: 12px; font-weight: 600;">التفكير:</span>
                                 <select id="chatThinkingSelect" class="filter-select thinking-dropdown"
-                                    onchange="setThinkingLevel(this.value)" title="حدد مستوى تفكير واستدلال النموذج">
-                                    <option value="low">منخفض (سريع ومباشر)</option>
-                                    <option value="medium" selected>متوسط (متزن ودقيق)</option>
-                                    <option value="high">عالي (استدلال وبحث معمق)</option>
+                                    onchange="setThinkingLevel(this.value)" title="جهد التفكير الداخلي وسرعته وتكلفته">
+                                    <option value="low">منخفض · سريع · أقل تكلفة</option>
+                                    <option value="medium" selected>متوسط · متزن · متوسط التكلفة</option>
+                                    <option value="high">عالي · أعمق · أعلى تكلفة</option>
+                                    <option value="max">أقصى · أبطأ · التكلفة القصوى</option>
                                 </select>
+                                <span id="chatThinkingNote" class="thinking-note"></span>
                             </div>
                         </div>
                     </div>
@@ -953,13 +955,15 @@
                                             <option value="openai/gpt-4o">GPT-4o</option>
                                         </select>
                                     </div>
-                                    <div class="form-group" style="flex: 1; min-width: 130px;">
+                                    <div class="form-group" style="flex: 1.4; min-width: 240px;">
                                         <label>مستوى التفكير:</label>
                                         <select id="pDirectorThinking" class="form-select">
-                                            <option value="high">استدلال عميق (High)</option>
-                                            <option value="medium" selected>متوسط (Medium)</option>
-                                            <option value="low">سريع (Low)</option>
+                                            <option value="low">منخفض · سريع · أقل تكلفة</option>
+                                            <option value="medium" selected>متوسط · متزن · متوسط التكلفة</option>
+                                            <option value="high">عالي · أعمق · أعلى تكلفة</option>
+                                            <option value="max">أقصى · أبطأ · التكلفة القصوى</option>
                                         </select>
+                                        <span id="pDirectorThinkingNote" class="thinking-note"></span>
                                     </div>
                                     <div class="form-group" style="flex: 1.2; min-width: 170px;">
                                         <label>سعة التوكن (Context & Output):</label>
@@ -2833,11 +2837,13 @@
                     <div class="form-group">
                         <label for="agentThinkingSelect">التفكير:</label>
                         <select id="agentThinkingSelect" class="filter-select thinking-dropdown"
-                            style="width: 100%; height: 32px;" title="حدد مستوى تفكير واستدلال النموذج">
-                            <option value="low">منخفض (سريع)</option>
-                            <option value="medium" selected>متوسط (متزن)</option>
-                            <option value="high">عالي (استدلال عميق)</option>
+                            style="width: 100%; height: 32px;" title="جهد التفكير الداخلي وسرعته وتكلفته">
+                            <option value="low">منخفض · سريع · أقل تكلفة</option>
+                            <option value="medium" selected>متوسط · متزن · متوسط التكلفة</option>
+                            <option value="high">عالي · أعمق · أعلى تكلفة</option>
+                            <option value="max">أقصى · أبطأ · التكلفة القصوى</option>
                         </select>
+                        <span id="agentThinkingNote" class="thinking-note"></span>
                     </div>
                 </div>
 
@@ -4607,11 +4613,13 @@
                             </label>
                             <select id="p2cThinkingSelect" class="form-select"
                                 style="width: 100%; font-size: 12.5px; padding: 7px 10px;">
-                                <option value="none">بدون تفكير (مباشر)</option>
-                                <option value="low">منخفض (سريع)</option>
-                                <option value="medium" selected>متوسط (متزن ودقيق)</option>
-                                <option value="high">مرتفع (استدلال وبحث معمق)</option>
+                                <option value="none">بدون تفكير · بلا تكلفة إضافية</option>
+                                <option value="low">منخفض · سريع · أقل تكلفة</option>
+                                <option value="medium" selected>متوسط · متزن · متوسط التكلفة</option>
+                                <option value="high">عالي · أعمق · أعلى تكلفة</option>
+                                <option value="max">أقصى · أبطأ · التكلفة القصوى</option>
                             </select>
+                            <span id="p2cThinkingNote" class="thinking-note"></span>
                         </div>
                     </div>
 
@@ -4707,13 +4715,13 @@
     <script src="/static/js/reader.js?v=1792832400"></script>
     <script src="/static/js/force3d.js?v=1792878800"></script>
     <script src="/static/js/share.js?v=1792892000"></script>
-    <script src="/static/js/chat.js?v=1792898000"></script>
-    <script src="/static/js/agents.js?v=1792896000"></script>
-    <script src="/static/js/providers.js?v=1792896000"></script>
+    <script src="/static/js/chat.js?v=1792899000"></script>
+    <script src="/static/js/agents.js?v=1792899000"></script>
+    <script src="/static/js/providers.js?v=1792899000"></script>
     <script src="/static/js/tools.js?v=1792896000"></script>
-    <script src="/static/js/projects.js?v=1792898000"></script>
+    <script src="/static/js/projects.js?v=1792899000"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
-    <script src="/static/js/compare.js?v=1792896000"></script>
+    <script src="/static/js/compare.js?v=1792899000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
     <script src="/static/js/changelog.js?v=1792863100"></script>
 
