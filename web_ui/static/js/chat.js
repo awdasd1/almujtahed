@@ -2458,6 +2458,431 @@ async function renderChatAssistantTools() {
   }).join('');
 }
 
+const SELECTION_RESEARCH_KINDS = [
+  {
+    id: 'aqeeda', label: 'عقيدة', title: 'عقيدة',
+    wide: 'من الناحية العقدية بإسهاب، بيّن عقيدة أهل السنة والجماعة ومخالفيهم والردود والمناقشات بالتفصيل.',
+    mid: 'من الناحية العقدية: بيّن مذهب أهل السنة والجماعة وأبرز أدلتهم، ومذهب المخالفين مع أبرز أدلتهم، ومناقشة أهل السنة لأدلة المخالفين.',
+    brief: 'من الناحية العقدية: عقيدة أهل السنة والجماعة في الموضوع مع أدلتهم.'
+  },
+  {
+    id: 'tafsir', label: 'تفسير', title: 'تفسير',
+    wide: 'من جهة التفسير بإسهاب: المعنى الإجمالي، والمعاني اللغوية، وغريب الألفاظ، والنكت واللطائف، والبلاغة والبيان، وأقوال المفسرين من الصحابة والتابعين والعلماء، وأدلتهم، مع الردود والمناقشات بالتفصيل.',
+    mid: 'من جهة التفسير: المعنى الإجمالي، وبعض المعاني والبلاغة، وأبرز أقوال المفسرين الكبار من الصحابة والعلماء وأدلتهم.',
+    brief: 'من جهة التفسير: المعنى الإجمالي، وبيان الألفاظ الغريبة، وأبرز أقوال المفسرين الكبار من الصحابة والعلماء.'
+  },
+  {
+    id: 'fiqh', label: 'فقه', title: 'فقه',
+    wide: 'من الجهة الفقهية بإسهاب: صورة المسألة، وسبب الخلاف، والأقوال بالتفصيل، والأدلة، ومناقشة كل فريق للآخر، والاعتراضات، والقواعد والأصول.',
+    mid: 'من الجهة الفقهية: صورة المسألة، وسبب الخلاف، وأقوال المذاهب الأربعة، والأدلة، والمناقشة.',
+    brief: 'من الجهة الفقهية: صورة المسألة، وسبب الخلاف، وأبرز الأقوال والأدلة.'
+  },
+  {
+    id: 'usul', label: 'أصول فقه', title: 'أصول فقه',
+    wide: 'من جهة أصول الفقه بإسهاب: صورة المسألة، وسبب الخلاف، والأقوال بالتفصيل، والأدلة، ومناقشة كل فريق للآخر، والاعتراضات، والقواعد والأصول.',
+    mid: 'من جهة أصول الفقه: صورة المسألة، وسبب الخلاف، وأقوال المذاهب الأربعة، والأدلة، والمناقشة.',
+    brief: 'من جهة أصول الفقه: صورة المسألة، وسبب الخلاف، وأبرز الأقوال والأدلة.'
+  },
+  {
+    id: 'qawaid', label: 'قواعد فقهية', title: 'قواعد فقهية',
+    wide: 'من جهة القواعد الفقهية بإسهاب: القاعدة وشرحها والتمثيل لها، والقواعد المتفرعة عنها مع التمثيل، ثم الأقوال بالتفصيل والأدلة ومناقشة كل فريق للآخر والاعتراضات والقواعد والأصول.',
+    mid: 'من جهة القواعد الفقهية: القاعدة وشرحها والتمثيل لها، وأبرز القواعد المتفرعة عنها مع التمثيل.',
+    brief: 'من جهة القواعد الفقهية: القاعدة وشرحها والتمثيل لها.'
+  },
+  {
+    id: 'furuq', label: 'فروق', title: 'فروق وأشباه ونظائر',
+    wide: 'من جهة الفروق والأشباه والنظائر بإسهاب: شرحها، والفروق والأشباه والنظائر، والتمثيل لها، وتخريج الفروع على الأصول، والأقوال بالتفصيل، والأدلة، ومناقشة كل فريق للآخر، والاعتراضات، والقواعد والأصول.',
+    mid: 'من جهة الفروق والأشباه والنظائر: شرحها، والفروق والأشباه والنظائر، والتمثيل لها، وتخريج الفروع على الأصول، والأقوال في المسألة.',
+    brief: 'من جهة الفروق والأشباه والنظائر: شرحها، والفروق والأشباه والنظائر، والتمثيل لها.'
+  },
+  {
+    id: 'maqasid', label: 'مقاصد', title: 'مقاصد',
+    wide: 'من الجهة المقاصدية بإسهاب: المقاصد الشرعية العامة والخاصة مع الشرح والتحليل، والأقوال التي ذكرت مقاصد المسألة بصورة مطولة.',
+    mid: 'من الجهة المقاصدية: المقاصد الشرعية العامة والخاصة مع الشرح والتحليل، والأقوال التي ذكرت مقاصد المسألة بصورة متوسطة.',
+    brief: 'من الجهة المقاصدية: المقصد العام للشريعة في هذا الأمر، مع نقل لبعض الفقهاء المقاصديين.'
+  },
+  {
+    id: 'sharh', label: 'شرح', title: 'شرح',
+    wide: 'اشرحه بشكل مفصل: الأقوال، والخلافات، والمناقشات، والفروع، والآثار المترتبة عليه.',
+    mid: 'اشرحه كما في البحث المطول، ولكن بصورة متوسطة.',
+    brief: 'اشرحه بصورة مختصرة.'
+  },
+  {
+    id: 'takhrij', label: 'تخريج', title: 'تخريج حديث',
+    wide: 'من جهة التخريج بإسهاب: تخريج الحديث، ومداره، وعلله، ودرجته، وأقوال العلماء في درجته ورجاله وإسناده.',
+    mid: 'من جهة التخريج: تخريجه، ومداره، وأقوال المحدثين فيه، ودرجته.',
+    brief: 'من جهة التخريج: تخريجه ودرجته.'
+  },
+  {
+    id: 'language', label: 'لغة', title: 'لغة',
+    wide: 'من الجهة اللغوية بإسهاب: معناها، وغريبها، وأشعارها، وشواهدها، وإعرابها، وأقوال علماء اللغة فيها.',
+    mid: 'من الجهة اللغوية: المعنى والغريب والشواهد والإعراب وأقوال علماء اللغة، بصورة متوسطة.',
+    brief: 'من الجهة اللغوية: المعنى، والتمثيل، وخلاصة الأقوال فيها.'
+  },
+  { id: 'other', label: 'أخرى', title: 'بحث مخصص', custom: true }
+];
+
+const selectionResearch = {
+  text: '',
+  kindId: '',
+  custom: '',
+  scope: 'all',
+  sections: new Set(),
+  books: []
+};
+
+function ensureChatSelectPanel() {
+  let panel = document.getElementById('chatSelectPanel');
+  if (panel) return panel;
+  panel = document.createElement('div');
+  panel.id = 'chatSelectPanel';
+  panel.className = 'chat-select-panel';
+  panel.hidden = true;
+  panel.innerHTML = `
+    <div class="chat-select-step" data-step="kinds">
+      <div class="chat-select-head">بحث في النص المحدد</div>
+      <div class="chat-select-quote" id="chatSelectQuote"></div>
+      <div class="chat-select-kinds" id="chatSelectKinds"></div>
+      <div class="chat-select-other" id="chatSelectOther" hidden>
+        <textarea id="chatSelectCustom" rows="3" placeholder="اكتب ما تريده من هذا الجزء"></textarea>
+        <button type="button" class="chat-select-go" id="chatSelectOtherNext">متابعة</button>
+      </div>
+    </div>
+    <div class="chat-select-step" data-step="scope" hidden>
+      <button type="button" class="chat-select-back" id="chatSelectBack">رجوع</button>
+      <div class="chat-select-head">تحديد نطاق البحث</div>
+      <div class="chat-select-kind-name" id="chatSelectKindName"></div>
+      <div class="chat-select-segment" id="chatSelectScope">
+        <button type="button" data-scope="all" class="is-on">المكتبة كاملة</button>
+        <button type="button" data-scope="pick">تحديد</button>
+      </div>
+      <div class="chat-select-pick" id="chatSelectPick" hidden>
+        <div class="chat-select-segment">
+          <button type="button" id="chatSelectSectionsBtn">تحديد أقسام</button>
+          <button type="button" id="chatSelectBooksBtn">تحديد كتب</button>
+        </div>
+        <div class="chat-select-sections" id="chatSelectSections" hidden></div>
+        <div class="chat-select-summary" id="chatSelectSummary"></div>
+      </div>
+      <div class="chat-select-label">نوع البحث</div>
+      <div class="chat-select-segment" id="chatSelectHybrid">
+        <button type="button" data-hybrid="0">بحث دلالي</button>
+        <button type="button" data-hybrid="1">هجين</button>
+      </div>
+      <label class="chat-select-label" for="chatSelectDepth">سعة البحث</label>
+      <select id="chatSelectDepth" class="chat-select-depth">
+        <option value="300">بحث موسع</option>
+        <option value="150" selected>متوسط</option>
+        <option value="5">مختصر</option>
+      </select>
+      <p class="chat-select-hint">الموسع يبحث في ٣٠٠ نص، والمتوسط في ١٥٠، والمختصر في ٥.</p>
+      <button type="button" class="chat-select-go" id="chatSelectRun">ابحث</button>
+    </div>
+  `;
+  document.body.appendChild(panel);
+  const kinds = panel.querySelector('#chatSelectKinds');
+  kinds.innerHTML = SELECTION_RESEARCH_KINDS.map(kind =>
+    `<button type="button" data-kind="${kind.id}">${kind.label}</button>`
+  ).join('');
+  panel.addEventListener('click', onChatSelectPanelClick);
+  return panel;
+}
+
+function showChatSelectStep(step) {
+  const panel = ensureChatSelectPanel();
+  panel.querySelectorAll('.chat-select-step').forEach(node => {
+    node.hidden = node.getAttribute('data-step') !== step;
+  });
+}
+
+function placeChatSelectPanel(rect) {
+  const panel = ensureChatSelectPanel();
+  const width = Math.min(420, window.innerWidth - 24);
+  let left = rect.left;
+  let top = rect.bottom + 10;
+  if (left + width > window.innerWidth - 12) left = window.innerWidth - width - 12;
+  if (left < 12) left = 12;
+  panel.hidden = false;
+  panel.style.width = `${width}px`;
+  const height = panel.offsetHeight || 320;
+  if (top + height > window.innerHeight - 12) top = Math.max(12, rect.top - height - 10);
+  panel.style.top = `${Math.max(12, top)}px`;
+  panel.style.left = `${left}px`;
+}
+
+function openChatSelectionPanel() {
+  if (chatGraphBusy) return;
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+  const text = selection.toString().replace(/\s+/g, ' ').trim();
+  if (text.length < 2) return;
+  const node = selection.anchorNode;
+  const host = node && node.parentElement && node.parentElement.closest('#chatMessagesContainer .message-bubble.assistant .message-content');
+  if (!host) return;
+  selectionResearch.text = text.slice(0, 2500);
+  selectionResearch.kindId = '';
+  selectionResearch.custom = '';
+  const panel = ensureChatSelectPanel();
+  panel.querySelector('#chatSelectQuote').textContent = selectionResearch.text;
+  panel.querySelector('#chatSelectOther').hidden = true;
+  panel.querySelector('#chatSelectCustom').value = '';
+  showChatSelectStep('kinds');
+  const rect = selection.getRangeAt(0).getBoundingClientRect();
+  placeChatSelectPanel(rect);
+}
+
+function selectionCategories() {
+  const select = document.getElementById('scopeCategorySelect');
+  if (!select) return [];
+  return [...select.options].filter(option => option.value).map(option => ({
+    id: option.value,
+    name: option.textContent.trim()
+  }));
+}
+
+function renderSelectionSections() {
+  const box = document.getElementById('chatSelectSections');
+  if (!box || box.childElementCount) return;
+  box.innerHTML = selectionCategories().map(item =>
+    `<label><input type="checkbox" value="${item.id}"> <span>${item.name}</span></label>`
+  ).join('');
+}
+
+function updateSelectionScopeSummary() {
+  const summary = document.getElementById('chatSelectSummary');
+  if (!summary) return;
+  const sections = selectionResearch.sections.size;
+  const books = selectionResearch.books.length;
+  const parts = [];
+  if (sections) parts.push(`${sections} قسم`);
+  if (books) parts.push(`${books} كتاب`);
+  summary.textContent = parts.length ? parts.join(' · ') : 'لم يُحدَّد قسم ولا كتاب بعد';
+}
+
+function onChatSelectPanelClick(event) {
+  const kindButton = event.target.closest('[data-kind]');
+  if (kindButton) {
+    const kind = SELECTION_RESEARCH_KINDS.find(item => item.id === kindButton.getAttribute('data-kind'));
+    if (!kind) return;
+    if (kind.custom) {
+      document.getElementById('chatSelectOther').hidden = false;
+      document.getElementById('chatSelectCustom').focus();
+      return;
+    }
+    openSelectionScope(kind);
+    return;
+  }
+  if (event.target.id === 'chatSelectOtherNext') {
+    const custom = document.getElementById('chatSelectCustom').value.trim();
+    if (!custom) {
+      if (typeof showToast === 'function') showToast('اكتب ما تريده من الجزء المحدد');
+      return;
+    }
+    selectionResearch.custom = custom;
+    openSelectionScope(SELECTION_RESEARCH_KINDS.find(item => item.id === 'other'));
+    return;
+  }
+  if (event.target.id === 'chatSelectBack') {
+    showChatSelectStep('kinds');
+    return;
+  }
+  const scopeButton = event.target.closest('#chatSelectScope [data-scope]');
+  if (scopeButton) {
+    selectionResearch.scope = scopeButton.getAttribute('data-scope');
+    document.querySelectorAll('#chatSelectScope button').forEach(button => {
+      button.classList.toggle('is-on', button === scopeButton);
+    });
+    document.getElementById('chatSelectPick').hidden = selectionResearch.scope !== 'pick';
+    return;
+  }
+  if (event.target.id === 'chatSelectSectionsBtn') {
+    const box = document.getElementById('chatSelectSections');
+    renderSelectionSections();
+    box.hidden = !box.hidden;
+    return;
+  }
+  if (event.target.id === 'chatSelectBooksBtn') {
+    window._selectionResearchBooks = [...selectionResearch.books];
+    if (typeof openSearchScopeModal === 'function') openSearchScopeModal('selection_research');
+    return;
+  }
+  const hybridButton = event.target.closest('#chatSelectHybrid [data-hybrid]');
+  if (hybridButton) {
+    document.querySelectorAll('#chatSelectHybrid button').forEach(button => {
+      button.classList.toggle('is-on', button === hybridButton);
+    });
+    return;
+  }
+  if (event.target.id === 'chatSelectRun') {
+    runSelectionResearch();
+  }
+}
+
+function openSelectionScope(kind) {
+  selectionResearch.kindId = kind.id;
+  const panel = ensureChatSelectPanel();
+  panel.querySelector('#chatSelectKindName').textContent = kind.title;
+  selectionResearch.scope = 'all';
+  document.querySelectorAll('#chatSelectScope button').forEach(button => {
+    button.classList.toggle('is-on', button.getAttribute('data-scope') === 'all');
+  });
+  document.getElementById('chatSelectPick').hidden = true;
+  document.getElementById('chatSelectSections').hidden = true;
+  const hybridOn = typeof isChatHybridSearchEnabled === 'boolean' ? isChatHybridSearchEnabled : true;
+  document.querySelectorAll('#chatSelectHybrid button').forEach(button => {
+    button.classList.toggle('is-on', button.getAttribute('data-hybrid') === (hybridOn ? '1' : '0'));
+  });
+  updateSelectionScopeSummary();
+  showChatSelectStep('scope');
+}
+
+document.addEventListener('change', (event) => {
+  if (!event.target.closest || !event.target.closest('#chatSelectSections')) return;
+  selectionResearch.sections = new Set(
+    [...document.querySelectorAll('#chatSelectSections input:checked')].map(input => input.value)
+  );
+  updateSelectionScopeSummary();
+});
+
+window.onSelectionResearchBooks = function onSelectionResearchBooks(books) {
+  selectionResearch.books = [...(books || [])];
+  updateSelectionScopeSummary();
+};
+
+async function booksForSelectionResearch() {
+  if (selectionResearch.scope !== 'pick') return [];
+  const titles = new Set(selectionResearch.books);
+  if (selectionResearch.sections.size) {
+    const response = await fetch('/api/books');
+    if (!response.ok) throw new Error('تعذر جلب فهرس الكتب');
+    const books = await response.json();
+    books.forEach(book => {
+      if (selectionResearch.sections.has(String(book.category_id)) && book.title) titles.add(book.title);
+    });
+  }
+  return [...titles];
+}
+
+function selectionResearchInstruction(kind, depth, books) {
+  const scope = books.length ? 'في الكتب المحددة' : 'في المكتبة الشاملة كاملة';
+  const piece = `«${selectionResearch.text}»`;
+  if (kind.custom) {
+    const length = depth === '300' ? 'بإسهاب وتفصيل' : depth === '5' ? 'باختصار' : 'بتوسط';
+    return `ابحث ${scope} عن ${piece} بحسب توجيه الباحث: ${selectionResearch.custom}\nاجعل الجواب ${length}.`;
+  }
+  const body = depth === '300' ? kind.wide : depth === '5' ? kind.brief : kind.mid;
+  return `ابحث ${scope} عن ${piece}. ${body}`;
+}
+
+async function runSelectionResearch() {
+  if (chatGraphBusy || selectionResearch.running) return;
+  selectionResearch.running = true;
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const kind = SELECTION_RESEARCH_KINDS.find(item => item.id === selectionResearch.kindId);
+  if (!session || !kind || !selectionResearch.text) return;
+  const depth = document.getElementById('chatSelectDepth').value || '150';
+  const hybrid = document.querySelector('#chatSelectHybrid button.is-on')?.getAttribute('data-hybrid') === '1';
+  let books = [];
+  try {
+    books = await booksForSelectionResearch();
+  } catch (err) {
+    if (typeof showToast === 'function') showToast(err.message || 'تعذر تحديد الكتب');
+    return;
+  }
+  if (selectionResearch.scope === 'pick' && !books.length) {
+    if (typeof showToast === 'function') showToast('حدد قسماً أو كتباً، أو اختر المكتبة كاملة');
+    return;
+  }
+
+  document.getElementById('chatSelectPanel').hidden = true;
+  window.getSelection()?.removeAllRanges();
+  chatGraphBusy = true;
+  setChatSendLocked(true);
+  const container = document.getElementById('chatMessagesContainer');
+  const typingBubble = document.createElement('div');
+  typingBubble.className = 'message-bubble assistant';
+  typingBubble.id = 'selectionTypingIndicator';
+  typingBubble.innerHTML = `
+    <div class="message-avatar">مج</div>
+    <div class="message-content"><span class="graph-wait-note">جار البحث .. فضلا انتظر</span></div>
+  `;
+  if (container) {
+    container.appendChild(typingBubble);
+    if (typeof scrollToBottom === 'function') scrollToBottom();
+  }
+
+  const instruction = selectionResearchInstruction(kind, depth, books);
+  const selectedModel = document.getElementById('chatModelSelect')?.value
+    || localStorage.getItem('almojtahed_active_chat_model')
+    || 'anthropic/claude-3.7-sonnet';
+  const activeProvider = localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter';
+  let savedKeys = {};
+  try { savedKeys = readProviderKeys(); } catch (e) {}
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: selectedModel,
+        provider: activeProvider,
+        api_key: savedKeys[activeProvider] || '',
+        thinking_level: currentThinkingLevel,
+        use_hybrid: hybrid,
+        library_only: true,
+        library_query: selectionResearch.text.slice(0, 800),
+        selected_books: books,
+        extraction_capacity: parseInt(depth, 10),
+        messages: [{ role: 'user', content: instruction }],
+        system_prompt: `أنت تبحث بحثاً مباشراً في شواهد الشاملة المرفقة، بلا وكلاء.\nاكتب بالعربية في فقرات، واجعل أول سطر عنواناً فرعياً: ${kind.title}.\nلا تنشئ جدولاً، ولا تخترع إحالة ليست في الشواهد.\n${instruction}`,
+        temperature: 0.2,
+        providers: savedKeys,
+        agent_group: null
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'تعذر البحث');
+    let reply = String(data.reply || '').trim();
+    if (!reply.includes(kind.title)) reply = `### ${kind.title}\n\n${reply}`;
+    session.messages.push({
+      role: 'assistant',
+      content: reply || 'لم تُستخرج نتيجة.',
+      model: data.model || selectedModel,
+      provider: data.provider || activeProvider,
+      selection_research: kind.id
+    });
+    saveChatSessions();
+    renderSessionMessages(activeSessionId);
+  } catch (err) {
+    if (typeof showToast === 'function') showToast(err.message || 'تعذر البحث');
+  } finally {
+    const note = document.getElementById('selectionTypingIndicator');
+    if (note) note.remove();
+    chatGraphBusy = false;
+    selectionResearch.running = false;
+    setChatSendLocked(false);
+  }
+}
+
+document.addEventListener('mouseup', (event) => {
+  if (event.target.closest && event.target.closest('#chatSelectPanel, #searchScopeModal')) return;
+  setTimeout(openChatSelectionPanel, 0);
+});
+
+document.addEventListener('mousedown', (event) => {
+  const panel = document.getElementById('chatSelectPanel');
+  if (!panel || panel.hidden) return;
+  if (panel.contains(event.target)) return;
+  if (event.target.closest && event.target.closest('#searchScopeModal')) return;
+  panel.hidden = true;
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  const panel = document.getElementById('chatSelectPanel');
+  if (panel) panel.hidden = true;
+});
+
 // تهيئة نمط الشات عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {

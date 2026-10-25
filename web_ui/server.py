@@ -1511,6 +1511,9 @@ class ChatRequest(BaseModel):
     context_only: Optional[bool] = False # تجهيز شواهد الشاملة دون استدعاء نموذج المقارنة
     graph_only: Optional[bool] = False # تشجير النتيجة السابقة بلا بحث جديد
     table_only: Optional[bool] = False # جدولة النتيجة السابقة بلا بحث جديد وبلا جدول تلقائي
+    library_only: Optional[bool] = False # بحث مباشر في الشاملة من نص محدد، بلا وكلاء
+    selected_books: Optional[List[str]] = None
+    library_query: Optional[str] = None
 
 
 class BookResolveRequest(BaseModel):
@@ -5164,6 +5167,18 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             if not search_query:
                 search_query = last_user_msg
 
+    if req.library_only:
+        target_books = [str(b).strip() for b in (req.selected_books or []) if str(b).strip()]
+        passage_count = int(req.extraction_capacity or 150)
+        passage_count = min(max(passage_count, 1), 300)
+        agent_top_k = passage_count
+        agent_pool_size = max(passage_count * 4, 40)
+        library_query = (req.library_query or "").strip()
+        if library_query:
+            search_query = library_query[:800]
+        is_greeting = False
+        is_study_discussion = False
+
     retrieved_citations = []
     subagents_dossiers = []
     
@@ -5172,7 +5187,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     page_reading_instruction = ""
     is_direct_page_reading = False
 
-    if page_req and (page_req.get("book_title") or target_books):
+    if page_req and not req.library_only and (page_req.get("book_title") or target_books):
         target_b = page_req.get("book_title") or (target_books[0] if target_books else "")
         try:
             p_res = shamela_local_mcp.get_page_range(
@@ -5253,6 +5268,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     is_parallel_dispatch = (
         not req.graph_only and
         not req.table_only and
+        not req.library_only and
         not is_direct_page_reading and
         req.agent_dispatch_mode != "direct" and
         len(active_agents) >= 1 and
@@ -5510,8 +5526,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     elif retrieved_citations:
         agent_routing_instruction += (
             f"\n\n═══════════════════════════════════════════════════════════\n"
-            f"📚 [المقاطع والنصوص التراثية المستخرجة فعلياً من الشاملة عبر الوكلاء]:\n"
-            f"لقد قام وكيلك المساعد بالمسح والاستخراج الفعلي من كتب الشاملة واستخرج لك {len(retrieved_citations)} مقطعاً موثقاً لمطابقتها مع طلب المستخدم:\n\n"
+            f"📚 [المقاطع والنصوص التراثية المستخرجة فعلياً {'من المكتبة الشاملة مباشرة' if req.library_only else 'من الشاملة عبر الوكلاء'}]:\n"
+            f"{'مسحت المنظومة المكتبة مباشرة بلا وكلاء واستخرجت' if req.library_only else 'لقد قام وكيلك المساعد بالمسح والاستخراج الفعلي من كتب الشاملة واستخرج'} لك {len(retrieved_citations)} مقطعاً موثقاً لمطابقتها مع طلب المستخدم:\n\n"
             f"{citations_text}\n"
             f"🔴 [تعليمات معالجة الشواهد للنموذج الأساسي]:\n"
             f"1. أنت النموذج الأساسي المحلل والمحقق؛ مهمتك معالجة الشواهد والإجابة بأسلوب تحريري علمي رصين في فقرات، بلا جداول ماركداون.\n"
@@ -5530,7 +5546,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     elif any(phrase in last_user_msg for phrase in ["انكسفت الشمس", "انخسف القمر", "كسوف الشمس", "خسوف القمر", "محاق فلكي", "حساب الكسوف"]):
         is_astronomy_enabled = True
 
-    if is_astronomy_enabled and not req.graph_only and not req.table_only:
+    if is_astronomy_enabled and not req.graph_only and not req.table_only and not req.library_only:
         try:
             combined_corpus = f"{last_user_msg}\n" + "\n".join([c.get('snippet', '') for c in retrieved_citations[:20]])
             astro_report = astronomy_engine.verify_historical_astronomical_event(combined_corpus)

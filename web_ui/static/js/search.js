@@ -496,6 +496,9 @@ async function openSearchScopeModal(target = 'search') {
   } else if (target === 'project_subagent') {
     selectedBooksScope = [...(window._activeProjectSubagentBooks || [])];
     modal.style.zIndex = '350';
+  } else if (target === 'selection_research') {
+    selectedBooksScope = [...(window._selectionResearchBooks || [])];
+    modal.style.zIndex = '420';
   } else {
     selectedBooksScope = [...(window._searchTabBooks || selectedBooksScope || [])];
     modal.style.zIndex = '250';
@@ -732,6 +735,15 @@ function applySearchScopeSelection() {
     }
     closeSearchScopeModal();
     showToast(`تم تحديد نطاق كتب الوكيل: ${selectedBooksScope.length > 0 ? selectedBooksScope.length + ' كتب' : 'جميع كتب الشاملة'}`);
+    return;
+  }
+
+  if (scopeModalTarget === 'selection_research') {
+    window._selectionResearchBooks = [...selectedBooksScope];
+    if (typeof window.onSelectionResearchBooks === 'function') {
+      window.onSelectionResearchBooks([...selectedBooksScope]);
+    }
+    closeSearchScopeModal();
     return;
   }
 
