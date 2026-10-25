@@ -164,8 +164,35 @@ function force3dFlattenNodes(list, parentId, bucket) {
   });
 }
 
+function force3dJsonSlice(text) {
+  const start = String(text || '').indexOf('{');
+  if (start < 0) return String(text || '');
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === '\\') escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return text.slice(start);
+}
+
 function parseForce3dBlock(raw) {
-  let text = String(raw || '').trim();
+  let text = force3dJsonSlice(String(raw || '').trim());
   text = text.replace(/,\s*([}\]])/g, '$1');
   const data = JSON.parse(text);
   const seed = Array.isArray(data.nodes) ? data.nodes : (Array.isArray(data.children) ? data.children : []);
