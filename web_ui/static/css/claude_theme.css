@@ -8593,14 +8593,16 @@ select {
   text-decoration: none;
 }
 
-a.chat-fn-ref {
+a.chat-fn-ref,
+a.chat-fn-back {
   cursor: pointer;
   color: var(--accent-clay, #b45309);
   font-weight: 700;
   text-decoration: none;
 }
 
-a.chat-fn-ref:hover {
+a.chat-fn-ref:hover,
+a.chat-fn-back:hover {
   text-decoration: underline;
 }
 

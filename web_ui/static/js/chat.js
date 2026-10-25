@@ -460,16 +460,34 @@ function renderSessionMessages(sessionId) {
 
 if (!window._chatFnJumpBound) {
   window._chatFnJumpBound = true;
+  let clearChatNoteMark = () => {
+    document.querySelectorAll('.chat-fn-target').forEach((node) => node.classList.remove('chat-fn-target'));
+    document.removeEventListener('mousemove', clearChatNoteMark);
+  };
   document.addEventListener('click', (event) => {
-    const link = event.target.closest && event.target.closest('a.chat-fn-ref');
+    const link = event.target.closest && event.target.closest('a.chat-fn-ref, a.chat-fn-back');
     if (!link) return;
     const id = decodeURIComponent((link.getAttribute('href') || '').replace(/^#/, ''));
     const target = id && document.getElementById(id);
     if (!target) return;
     event.preventDefault();
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (link.classList.contains('chat-fn-ref') && link.id) {
+      const note = document.getElementById(id);
+      const back = note && note.querySelector('a.chat-fn-back');
+      if (back) back.setAttribute('href', `#${link.id}`);
+    }
+    document.removeEventListener('mousemove', clearChatNoteMark);
+    document.querySelectorAll('.chat-fn-target').forEach((node) => node.classList.remove('chat-fn-target'));
     target.classList.add('chat-fn-target');
-    window.setTimeout(() => target.classList.remove('chat-fn-target'), 1400);
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const originX = event.clientX;
+    const originY = event.clientY;
+    clearChatNoteMark = (move) => {
+      if (Math.abs(move.clientX - originX) < 4 && Math.abs(move.clientY - originY) < 4) return;
+      document.querySelectorAll('.chat-fn-target').forEach((node) => node.classList.remove('chat-fn-target'));
+      document.removeEventListener('mousemove', clearChatNoteMark);
+    };
+    document.addEventListener('mousemove', clearChatNoteMark);
   });
 }
 
@@ -1379,11 +1397,16 @@ function chatDisplayText(text, scope) {
   if (!/<p[\s>]|<sup[\s>]/i.test(source)) return source;
   const prefix = scope ? `${scope}-` : '';
   let next = source.replace(/\bid=(["'])fn(\d+)\1/gi, (match, quote, number) => `id=${quote}${prefix}fn${number}${quote}`);
-  next = next.replace(/(<li\s+id="[^"]*fn\d+"[^>]*>)\s*<sup>\s*<small>\s*(\([^<]{1,12}\))\s*<\/small>\s*<\/sup>/gi, '$1<span class="chat-fn-mark">$2</span>');
+  next = next.replace(/(<li\s+id="[^"]*fn(\d+)"[^>]*>)\s*<sup>\s*<small>\s*(\([^<]{1,12}\))\s*<\/small>\s*<\/sup>/gi, (match, open, number, label) => {
+    return `${open}<a class="chat-fn-back" href="#${prefix}ref${number}-1">${label}</a>`;
+  });
+  const seen = {};
   next = next.replace(/<sup>\s*<small>\s*\(([^)<]{1,8})\)\s*<\/small>\s*<\/sup>/gi, (match, number) => {
     const western = chatIndicToWestern(number).replace(/\D/g, '');
     if (!western) return `(${number})`;
-    return `<a class="chat-fn-ref" href="#${prefix}fn${western}">(${number})</a>`;
+    seen[western] = (seen[western] || 0) + 1;
+    const refId = `${prefix}ref${western}-${seen[western]}`;
+    return `<a class="chat-fn-ref" id="${refId}" href="#${prefix}fn${western}">(${number})</a>`;
   });
   return next
     .replace(/<p[^>]*>/gi, '')
