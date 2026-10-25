@@ -1623,9 +1623,17 @@ body:has(#paneChat.active) .main-content {
   margin-top: 22px;
 }
 
-/* محاذاة سجل المحادثات لإظهار آخر 5 محادثات مع شريط تمرير للباقي */
+.chat-sidebar .history-item {
+  height: 36px;
+  min-height: 36px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+/* ثلاث محادثات ظاهرة، والباقي ينزلق داخل السجل */
 .chat-history-scrollable {
-  max-height: 195px;
+  max-height: calc(36px * 3 + 4px * 2);
   overflow-y: auto;
   flex: none;
   scrollbar-width: thin;
@@ -1668,6 +1676,9 @@ body:has(#paneChat.active) .main-content {
 }
 
 .chat-assistant-tools-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   scrollbar-width: thin;
   padding-left: 2px;
 }
