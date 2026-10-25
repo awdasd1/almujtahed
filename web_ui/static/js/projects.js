@@ -2161,6 +2161,7 @@ function toggleStudioBooksDrawer() {
     chips.style.display = 'flex';
     bar.style.display = 'flex';
     if (toggleBtnText) toggleBtnText.textContent = 'إخفاء';
+    if (!chips.children.length) fetchAndRenderBooks('', document.getElementById('studioBookCategoryFilter')?.value || '');
   } else {
     chips.style.display = 'none';
     bar.style.display = 'none';
@@ -2170,9 +2171,11 @@ function toggleStudioBooksDrawer() {
 
 async function initStudioBooks() {
   const chipsContainer = document.getElementById('studioBooksChips');
-  if (chipsContainer && chipsContainer.children.length === 0) {
-    await fetchAndRenderBooks('', '');
-  }
+  const searchBar = document.getElementById('studioBooksSearchBar');
+  const toggleBtnText = document.getElementById('toggleBooksDrawerText');
+  if (chipsContainer) chipsContainer.style.display = 'none';
+  if (searchBar) searchBar.style.display = 'none';
+  if (toggleBtnText) toggleBtnText.textContent = 'إظهار الفهرس';
 
   // تحميل كافة التصنيفات الـ 41 المعتمدة ديناميكياً من قاعدة البيانات
   const catSelect = document.getElementById('studioBookCategoryFilter');

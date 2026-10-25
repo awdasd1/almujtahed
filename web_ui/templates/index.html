@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 4.5 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 4.6 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -3367,13 +3367,13 @@
                                 </a>
                                 <button type="button" class="btn-ghost-sm" id="btnToggleBooksDrawer"
                                     onclick="toggleStudioBooksDrawer()" style="font-size: 11px; padding: 2px 6px;">
-                                    <span id="toggleBooksDrawerText">إخفاء</span>
+                                    <span id="toggleBooksDrawerText">إظهار الفهرس</span>
                                 </button>
                             </div>
                         </div>
 
                         <!-- شريط البحث اللحظي في كتب الشاملة برقم #ID أو العنوان أو المؤلف -->
-                        <div class="studio-books-search-bar" id="studioBooksSearchBar">
+                        <div class="studio-books-search-bar" id="studioBooksSearchBar" style="display: none;">
                             <div style="position: relative; flex: 1;">
                                 <input type="text" id="studioBookSearchInput" class="studio-books-search-input"
                                     placeholder="🔍 ابحث برقم الكتاب المعياري (#1852) أو اسم الكتاب (المبسوط، المغني، الطبري) أو اسم المؤلف..."
@@ -3397,7 +3397,7 @@
                             </select>
                         </div>
 
-                        <div class="studio-books-chips" id="studioBooksChips">
+                        <div class="studio-books-chips" id="studioBooksChips" style="display: none;">
                             <!-- يتم تعبئة الكتب المستكشفة والمرقمة بـ #ID هنا -->
                         </div>
                     </div>
@@ -4722,7 +4722,7 @@
     <script src="/static/js/agents.js?v=1792899000"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
     <script src="/static/js/tools.js?v=1792896000"></script>
-    <script src="/static/js/projects.js?v=1792901000"></script>
+    <script src="/static/js/projects.js?v=1792902000"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792899000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
