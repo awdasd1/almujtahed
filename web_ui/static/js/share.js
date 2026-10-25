@@ -13,7 +13,8 @@ function openSharePicker(kind, itemId, label, options) {
     itemId: String(itemId || ''),
     label: label || '',
     device: options && options.device || '',
-    unsaved: !!(options && options.unsaved)
+    unsaved: !!(options && options.unsaved),
+    messageIndex: options && Number.isInteger(options.messageIndex) ? options.messageIndex : null
   };
   const modal = document.getElementById('shareModal');
   const title = document.getElementById('shareModalTitle');
@@ -134,7 +135,7 @@ function saveShareToDevice() {
   const kind = shareDraft.kind;
   const itemId = shareDraft.itemId;
   if (kind === 'chat' && typeof exportChatSessionFile === 'function') {
-    return exportChatSessionFile(itemId);
+    return exportChatSessionFile(itemId, shareDraft.messageIndex);
   }
   if (kind === 'project' && typeof exportSingleProject === 'function') {
     exportSingleProject(itemId);
@@ -172,6 +173,7 @@ async function submitShare(event) {
     everyone,
     usernames
   };
+  if (Number.isInteger(shareDraft.messageIndex)) payload.message_index = shareDraft.messageIndex;
   if (shareDraft.kind === 'key') {
     payload.key_mode = document.querySelector('input[name="shareKeyMode"]:checked')?.value || 'mine';
     if (payload.key_mode === 'new') {

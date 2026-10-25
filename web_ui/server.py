@@ -6484,6 +6484,7 @@ class ShareRequest(BaseModel):
     usernames: List[str] = []
     key_mode: str = "mine"
     key: str = ""
+    message_index: Optional[int] = None
 
 def _person_display_name(username: str) -> str:
     """اسم العضو المكتوب في الدعوة، لا اسم الدخول."""
@@ -6594,6 +6595,27 @@ def _share_clone(item: Dict[str, Any], sender: str) -> Dict[str, Any]:
     }
     clone["id"] = "share_" + secrets.token_hex(8)
     return clone
+
+def _single_answer_chat(session: Dict[str, Any], index: int) -> Dict[str, Any]:
+    messages = session.get("messages") or []
+    if index < 0 or index >= len(messages) or not isinstance(messages[index], dict):
+        raise HTTPException(status_code=400, detail="الإجابة المحددة غير موجودة")
+    message = messages[index]
+    content = str(message.get("content") or "")
+    heading = re.match(r"^#{1,3}\s+(.+)", content)
+    if heading:
+        title = heading.group(1).strip()
+    else:
+        plain = re.sub(r"<[^>]+>", " ", content)
+        plain = re.sub(r"\s+", " ", plain).strip()
+        title = plain[:60] or "إجابة مشاركة"
+    return {
+        "id": session.get("id"),
+        "title": title[:180],
+        "createdAt": datetime.now().isoformat(),
+        "messages": [message],
+        "shared_answer": True,
+    }
 
 def _load_share_item(kind: str, item_id: str, owner_id: str) -> Optional[Dict[str, Any]]:
     if kind == "chat":
@@ -6726,6 +6748,8 @@ async def create_share(req: ShareRequest, request: Request):
             source = _load_share_item(kind, item_id, owner_id)
             if not source:
                 raise HTTPException(status_code=404, detail="العنصر غير موجود في حسابك")
+            if kind == "chat" and req.message_index is not None:
+                source = _single_answer_chat(source, int(req.message_index))
             title = _share_item_title(kind, source)
         sent = []
         now = datetime.now().isoformat(timespec="seconds")

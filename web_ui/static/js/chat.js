@@ -267,28 +267,39 @@ async function revealSharedChat(itemId) {
   selectChatSession(itemId);
 }
 
-function exportChatSessionFile(sessionId) {
+function exportChatSessionFile(sessionId, messageIndex) {
   const session = chatSessions.find(item => item.id === sessionId);
   if (!session) {
     showToast('المحادثة غير موجودة لحفظها', true);
     return false;
   }
+  let chat = session;
+  if (Number.isInteger(messageIndex) && session.messages[messageIndex]) {
+    const message = session.messages[messageIndex];
+    chat = {
+      id: session.id,
+      title: chatMessagePaperTitle(message, session),
+      createdAt: new Date().toISOString(),
+      messages: [message],
+      shared_answer: true
+    };
+  }
   const payload = {
     export_version: '1.0',
     exported_at: new Date().toISOString(),
     type: 'almojtahed_chat',
-    chat: session
+    chat: chat
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
   const safeId = String(session.id || 'chat').replace(/[^a-zA-Z0-9_-]/g, '_');
   link.href = URL.createObjectURL(blob);
-  link.download = `chat_${safeId}.json`;
+  link.download = `${chat.shared_answer ? 'answer' : 'chat'}_${safeId}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(link.href);
-  showToast('تم حفظ المحادثة في جهازك');
+  showToast(chat.shared_answer ? 'تم حفظ الإجابة في جهازك' : 'تم حفظ المحادثة في جهازك');
   return true;
 }
 
@@ -512,7 +523,7 @@ function shareChatMessage(idx) {
   const session = chatSessions.find(item => item.id === activeSessionId);
   if (!session || !session.messages[idx]) return;
   if (typeof openSharePicker !== 'function') return;
-  openSharePicker('chat', session.id, chatMessagePaperTitle(session.messages[idx], session));
+  openSharePicker('chat', session.id, chatMessagePaperTitle(session.messages[idx], session), { messageIndex: idx });
 }
 
 function toggleChatMessageTashkeel(idx) {
