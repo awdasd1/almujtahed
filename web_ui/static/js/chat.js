@@ -511,8 +511,8 @@ async function exportChatMessagePdf(idx) {
     }]
   };
 
-  const htmlContent = (typeof window.buildStandaloneProjectHtml === 'function')
-    ? window.buildStandaloneProjectHtml(runData)
+  const htmlContent = (typeof window.buildAcademicPaperHtml === 'function')
+    ? window.buildAcademicPaperHtml(runData, { toolbar: false, forPdf: true })
     : msg.content;
 
   showToast('جارٍ إعداد وتوليد ملف PDF الأكاديمي عالي الدقة... ⏳');

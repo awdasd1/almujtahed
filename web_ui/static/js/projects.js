@@ -5820,7 +5820,7 @@ async function downloadProjectReportPdf() {
     return;
   }
   const title = currentProjectRunData.projectTitle || 'تقرير_المشروع';
-  const htmlContent = buildStandaloneProjectHtml(currentProjectRunData);
+  const htmlContent = buildAcademicPaperHtml(currentProjectRunData, { toolbar: false, forPdf: true });
 
   showToast('جارٍ إعداد وتوليد ملف PDF الأكاديمي عالي الدقة... ⏳');
 
@@ -5876,78 +5876,66 @@ function toArabicIndicDigits(str) {
 
 function formatAcademicBody(rawMarkdown) {
   if (!rawMarkdown) return '';
-  
-  let text = rawMarkdown;
-
-  // تحويل أرقام الإحالات مثل [1] أو [١] أو (1) أو [^1] إلى الوسم الأكاديمي المعتمد
-  text = text.replace(/\[\^?(\d+|[٠-٩]+)\]|\((\d+)\)/g, (match, p1, p2) => {
-    const num = p1 || p2;
-    const arabicNum = toArabicIndicDigits(num);
-    return `<sup><small>(${arabicNum})</small></sup>`;
+  let text = String(rawMarkdown).replace(/\n{3,}/g, '\n\n');
+  text = text.replace(/([^\n])[ \t]*(أولًا:|أولاً:|ثانيًا:|ثانياً:|ثالثًا:|ثالثاً:|رابعًا:|رابعاً:|خامسًا:|خامساً:|سادسًا:|سابعًا:|ثامنًا:|تاسعًا:|عاشرًا:)/g, '$1\n$2');
+  text = text.replace(/\[\^?(\d+|[٠-٩]+)\]|\(([\d٠-٩]+)\)/g, (match, first, second) => {
+    const num = first || second;
+    return `<sup><small>(${toArabicIndicDigits(num)})</small></sup>`;
   });
-
-  // تحويل الترقيم الهندي مع الشرطة: ١- ٢- ٣-
-  text = text.replace(/(^|\n)(\d+)[.-]\s+/g, (match, p1, num) => {
-    return `${p1}${toArabicIndicDigits(num)}- `;
-  });
-
-  // تمييز العناوين الفرعية والأقوال بالخط العريض
+  text = text.replace(/(^|\n)(\d+)[.-]\s+/g, (match, lead, num) => `${lead}${toArabicIndicDigits(num)}- `);
   text = text.replace(/(القول الأول:|القول الثاني:|القول الثالث:|الدليل الأول:|الدليل الثاني:|الدليل الثالث:|المطلب الأول:|المطلب الثاني:|المسألة الأولى:|المسألة الثانية:)/g, '<b>$1</b>');
 
   let html = typeof marked !== 'undefined' ? marked.parse(text) : text.replace(/\n/g, '<br>');
-
-  // تطبيق إزاحة الفقرات 30px على فقرات المتن واستثناء الحواشي
-  html = html.replace(/<p>(.*?)<\/p>/gs, (match, content) => {
-    const trimmed = content.trim();
-    if (trimmed.startsWith('<sup>') || trimmed.startsWith('(') || trimmed.startsWith('ينظر:') || trimmed.includes('academic-footnote')) {
-      return `<p class="footnote-line" style="text-indent: 0 !important; margin: 4px 0; font-size: 13.5pt; line-height: 1.8;">${content}</p>`;
+  let inBibliography = false;
+  html = html.replace(/<(p|h[1-6])([^>]*)>([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
+    const plain = content.replace(/<[^>]+>/g, '').trim();
+    if (/المصادر والمراجع|ثبت المصادر/.test(plain)) {
+      inBibliography = true;
+      return `<h2 class="biblio-title">${content}</h2>`;
     }
-    return `<p style="text-indent: 30px; margin: 0 0 6px 0; line-height: 2.1; font-size: 17pt; text-align: justify;">${content}</p>`;
+    if (tag !== 'p') return match;
+    const isFootnote = inBibliography
+      || /^(<sup>|ينظر:|يُنظر:|أخرجه|رواه)/.test(plain)
+      || /^\([\d٠-٩]+\)/.test(plain);
+    if (isFootnote) {
+      return `<p class="footnote-line">${content}</p>`;
+    }
+    if (/text-indent/.test(attrs)) return match;
+    return `<p class="academic-paragraph">${content}</p>`;
   });
-
   return html;
 }
 
-function printAcademicPaper() {
-  if (!currentProjectRunData) {
-    showToast('لا توجد نتائج تشغيل متاحة للطباعة الأكاديمية');
-    return;
-  }
-
-  const title = currentProjectRunData.projectTitle || 'بحث تحقيقي محكم';
-  const rounds = (currentProjectRunData.rounds && currentProjectRunData.rounds.length > 0)
-    ? currentProjectRunData.rounds
-    : [{ round: 1, name: 'المرحلة التحريرية الكاملة', output: currentProjectRunData.rawOutput }];
-
+function buildAcademicPaperHtml(runData, options) {
+  const settings = options || {};
+  if (!runData) return '';
+  const title = runData.projectTitle || 'بحث تحقيقي محكم';
+  const rounds = (runData.rounds && runData.rounds.length > 0)
+    ? runData.rounds
+    : [{ round: 1, name: 'المرحلة التحريرية الكاملة', output: runData.rawOutput }];
   const roundsBodyHtml = rounds.map(r => `
-    <section class="academic-round-section" style="margin-bottom: 30px;">
-      <h2 style="font-family: 'Amiri', serif; font-size: 21pt; color: #111; border-bottom: 2px solid #333; padding-bottom: 6px; margin: 24px 0 16px 0;">
-        ${escapeHtml(r.name || `الجولة رقم ${toArabicIndicDigits(r.round)}`)}
-      </h2>
-      <div class="academic-text-content">
-        ${formatAcademicBody(r.output || '')}
-      </div>
+    <section class="academic-round-section">
+      <h2 class="academic-round-title">${escapeHtml(r.name || `الجولة رقم ${toArabicIndicDigits(r.round)}`)}</h2>
+      <div class="academic-text-content">${formatAcademicBody(r.output || '')}</div>
     </section>
   `).join('');
+  const toolbar = settings.toolbar === false ? '' : `
+  <div class="no-print-toolbar">
+    <div class="toolbar-label">إخراج البحث الأكاديمي المحكم</div>
+    <button class="btn-do-print" onclick="window.print()">بدء الطباعة أو الحفظ كـ PDF</button>
+  </div>`;
+  const pageMargin = settings.forPdf ? '0' : '25mm 20mm 25mm 20mm';
 
-  const fullPrintHtml = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <title>${escapeHtml(title)} - البحث الأكاديمي المحكم</title>
+  <title>${escapeHtml(title)}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Tajawal:wght@500;700&display=swap" rel="stylesheet">
   <style>
-    @page {
-      size: A4 portrait;
-      margin: 25mm 20mm 25mm 20mm;
-      @bottom-center {
-        content: counter(page);
-        font-family: 'Amiri', serif;
-        font-size: 13pt;
-      }
-    }
+    @page { size: A4 portrait; margin: ${pageMargin}; }
     * { box-sizing: border-box; }
     body {
       background: #FFFFFF;
@@ -5957,140 +5945,60 @@ function printAcademicPaper() {
       line-height: 2.1;
       direction: rtl;
       text-align: right;
-      padding: 30px 40px;
-      max-width: 900px;
       margin: 0 auto;
+      max-width: 900px;
     }
-    .print-cover-header {
-      text-align: center;
-      margin-bottom: 40px;
-      padding-bottom: 25px;
-      border-bottom: 3px double #222;
-    }
-    .paper-bismillah {
-      font-size: 24pt;
-      font-weight: 700;
-      margin-bottom: 25px;
-      letter-spacing: 1px;
-    }
-    .paper-main-title {
-      font-size: 25pt;
-      font-weight: 700;
-      line-height: 1.6;
-      margin-bottom: 18px;
-      color: #0F172A;
-    }
-    .paper-sub-meta {
-      font-family: 'Tajawal', sans-serif;
-      font-size: 12pt;
-      color: #475569;
-      margin-top: 10px;
-    }
-    .academic-text-content {
-      text-align: justify;
-      text-justify: inter-word;
-    }
-    p {
-      text-indent: 30px;
-      margin: 0 0 6px 0;
-      line-height: 2.1;
-    }
-    .footnote-line {
-      text-indent: 0 !important;
-      margin: 4px 0 !important;
-      font-size: 13.5pt !important;
-      line-height: 1.8 !important;
-    }
-    sup small {
-      font-size: 11pt;
-      font-weight: 700;
-      color: #0F172A;
-      vertical-align: super;
-      padding: 0 2px;
-    }
-    b, strong {
-      font-weight: 700;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 20px 0;
-      font-size: 13pt;
-      page-break-inside: avoid;
-    }
-    th, td {
-      border: 1px solid #444;
-      padding: 8px 12px;
-      text-align: right;
-    }
-    th {
-      background: #F1F5F9;
-      font-weight: 700;
-    }
-    .no-print-toolbar {
-      position: sticky;
-      top: 0;
-      background: #FFFFFF;
-      padding: 12px;
-      border-bottom: 1px solid #CBD5E1;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 25px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-    .btn-do-print {
-      background: #B45309;
-      color: #FFFFFF;
-      border: none;
-      padding: 8px 18px;
-      font-size: 14pt;
-      font-family: 'Tajawal', sans-serif;
-      font-weight: 700;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-    @media print {
-      .no-print-toolbar { display: none !important; }
-      body { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
-    }
+    .print-cover-header { text-align: center; margin-bottom: 28px; padding-bottom: 18px; border-bottom: 3px double #222; }
+    .paper-bismillah { font-size: 24pt; font-weight: 700; margin-bottom: 18px; }
+    .paper-main-title { font-size: 25pt; font-weight: 700; line-height: 1.6; margin: 0 0 12px; }
+    .paper-sub-meta { font-family: 'Tajawal', sans-serif; font-size: 12pt; color: #475569; }
+    .academic-round-title { font-size: 21pt; border-bottom: 2px solid #333; padding-bottom: 6px; margin: 24px 0 12px; text-indent: 0; }
+    .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: 17pt; text-align: justify; }
+    .footnote-line, .biblio-title { text-indent: 0 !important; margin: 0; }
+    .footnote-line { font-size: 13.5pt; line-height: 1.8; }
+    .biblio-title { font-size: 20pt; margin-top: 22px; }
+    h1, h2, h3, h4 { text-indent: 0; }
+    sup small { font-size: 11pt; font-weight: 700; vertical-align: super; }
+    b, strong { font-weight: 700; }
+    p { margin: 0; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13pt; }
+    th, td { border: 1px solid #444; padding: 8px 12px; text-align: right; text-indent: 0; }
+    .no-print-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .toolbar-label, .btn-do-print { font-family: 'Tajawal', sans-serif; }
+    .btn-do-print { background: #B45309; color: #fff; border: none; padding: 8px 16px; font-weight: 700; cursor: pointer; }
+    @media print { .no-print-toolbar { display: none !important; } body { max-width: 100%; } }
   </style>
 </head>
 <body>
-  <div class="no-print-toolbar">
-    <div style="font-family: 'Tajawal', sans-serif; font-size: 13pt; font-weight: 700; color: #B45309;">
-      📑 إخراج البحث الأكاديمي المحكم (منظومة المجتهد)
-    </div>
-    <button class="btn-do-print" onclick="window.print()">🖨️ بدء الطباعة الآن أو الحفظ كـ PDF</button>
-  </div>
-
+  ${toolbar}
   <header class="print-cover-header">
     <div class="paper-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
     <h1 class="paper-main-title">${escapeHtml(title)}</h1>
-    <div class="paper-sub-meta">
-      دراسة علمية محققة مستخرجة من أمهات مصادر التراث الإسلامي عبر منظومة «المجتهد»
-    </div>
+    <div class="paper-sub-meta">بحث علمي محكم مستخرج عبر منظومة المجتهد</div>
   </header>
-
-  <main>
-    ${roundsBodyHtml}
-  </main>
+  <main>${roundsBodyHtml}</main>
 </body>
 </html>`;
+}
 
+function printAcademicPaper() {
+  if (!currentProjectRunData) {
+    showToast('لا توجد نتائج تشغيل متاحة للطباعة الأكاديمية');
+    return;
+  }
+  const fullPrintHtml = buildAcademicPaperHtml(currentProjectRunData, { toolbar: true });
   const printWin = window.open('', '_blank');
   if (printWin) {
     printWin.document.open();
     printWin.document.write(fullPrintHtml);
     printWin.document.close();
-    showToast('تم فتح صفحة البحث الأكاديمي بتنسيق الطباعة المحكم 🖨️');
-    setTimeout(() => {
-      printWin.focus();
-    }, 400);
+    showToast('تم فتح صفحة البحث الأكاديمي بتنسيق الطباعة المحكم');
+    setTimeout(() => { printWin.focus(); }, 400);
   }
 }
 
 window.printAcademicPaper = printAcademicPaper;
+window.buildAcademicPaperHtml = buildAcademicPaperHtml;
 
 function exportCurrentProjectResultsModal() {
   downloadProjectResultsCsv('results');
