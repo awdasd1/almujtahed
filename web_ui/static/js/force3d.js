@@ -140,26 +140,73 @@ function ensureCytoscape() {
   return force3dLoader;
 }
 
+function force3dResolveId(token, nodes) {
+  const text = String(token ?? '').trim();
+  if (!text) return '';
+  if (nodes.some((node) => node.id === text)) return text;
+  const byName = nodes.find((node) => node.name === text);
+  return byName ? byName.id : '';
+}
+
+function force3dFlattenNodes(list, parentId, bucket) {
+  (Array.isArray(list) ? list : []).forEach((node) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+    const id = String(node.id ?? node.name ?? bucket.length + 1).trim();
+    const parent = node.parent ?? node.parentId ?? node.parent_id ?? parentId ?? '';
+    bucket.push({
+      id,
+      name: node.name || node.label || node.text || id,
+      role: node.role || node.group || '',
+      detail: node.detail || node.info || '',
+      parent: parent ? String(parent).trim() : ''
+    });
+    if (Array.isArray(node.children)) force3dFlattenNodes(node.children, id, bucket);
+  });
+}
+
 function parseForce3dBlock(raw) {
   let text = String(raw || '').trim();
   text = text.replace(/,\s*([}\]])/g, '$1');
   const data = JSON.parse(text);
-  const sourceNodes = Array.isArray(data.nodes) ? data.nodes : [];
-  const sourceLinks = Array.isArray(data.links) ? data.links : (Array.isArray(data.edges) ? data.edges : []);
-  const nodes = sourceNodes.map((node, index) => ({
-    id: String(node.id ?? index + 1),
-    name: String(node.name || node.label || node.id || '').trim(),
-    role: String(node.role || node.group || '').trim(),
-    detail: String(node.detail || node.title || node.info || '').trim()
+  const seed = Array.isArray(data.nodes) ? data.nodes : (Array.isArray(data.children) ? data.children : []);
+  const flat = [];
+  force3dFlattenNodes(seed, '', flat);
+  const nodes = flat.map((node) => ({
+    id: node.id,
+    name: String(node.name || '').trim(),
+    role: String(node.role || '').trim(),
+    detail: String(node.detail || '').trim(),
+    parent: node.parent
   })).filter((node) => node.id && node.name);
-  const ids = new Set(nodes.map((node) => node.id));
-  const links = sourceLinks.map((link) => ({
-    source: String(link.source ?? link.from ?? ''),
-    target: String(link.target ?? link.to ?? ''),
-    label: String(link.label || link.title || 'عن').trim() || 'عن'
-  })).filter((link) => ids.has(link.source) && ids.has(link.target) && link.source !== link.target);
-  if (nodes.length < 2 || !links.length) return null;
-  return { title: String(data.title || 'مشجر الإسناد').trim(), nodes, links };
+  const seen = new Set();
+  const unique = nodes.filter((node) => {
+    if (seen.has(node.id)) return false;
+    seen.add(node.id);
+    return true;
+  });
+  const sourceLinks = Array.isArray(data.links) ? data.links : (Array.isArray(data.edges) ? data.edges : []);
+  const parentLinks = unique
+    .filter((node) => node.parent)
+    .map((node) => ({ source: node.parent, target: node.id, label: '' }));
+  const links = sourceLinks.concat(parentLinks).map((link) => ({
+    source: force3dResolveId(link.source ?? link.from, unique),
+    target: force3dResolveId(link.target ?? link.to, unique),
+    label: String(link.label || link.title || '').trim()
+  })).filter((link) => link.source && link.target && link.source !== link.target);
+  const deduped = [];
+  const linkSeen = new Set();
+  links.forEach((link) => {
+    const key = `${link.source}>${link.target}`;
+    if (linkSeen.has(key)) return;
+    linkSeen.add(key);
+    deduped.push(link);
+  });
+  if (unique.length < 2 || !deduped.length) return null;
+  return {
+    title: String(data.title || 'مشجر').trim(),
+    nodes: unique.map(({ id, name, role, detail }) => ({ id, name, role, detail })),
+    links: deduped
+  };
 }
 
 function isForce3dCode(codeEl) {
@@ -453,6 +500,13 @@ function cytoscapeStyles() {
         'text-background-opacity': 1,
         'text-background-padding': '3px',
         'text-background-shape': 'roundrectangle'
+      }
+    },
+    {
+      selector: 'edge[label = ""]',
+      style: {
+        label: '',
+        'text-background-opacity': 0
       }
     },
     {
