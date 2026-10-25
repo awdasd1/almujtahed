@@ -1716,29 +1716,38 @@ const CHAT_OUTPUT_TEMPLATES = {
 
 // الاسم المترادف لأداة Markmap
 CHAT_OUTPUT_TEMPLATES.markmap_mindmap = CHAT_OUTPUT_TEMPLATES.markmap;
-CHAT_OUTPUT_TEMPLATES.graph_isnad = `نوع الشجرة: إسناد فقط.
+CHAT_OUTPUT_TEMPLATES.graph_isnad = `نوع الشجرة: تشجير إسناد فقط.
 كل راوٍ ورد في النتيجة عقدة بمعرّف ثابت لا يتكرر، والمدار عقدة واحدة تلتقي عندها الطرق.
 role: صحابي أو تابعي أو مدار أو طريق أو ضعيف أو كتاب.
 source الشيخ و target التلميذ، و label صيغة الأداء كما في النتيجة.
 لا تكرر المدار في كل طريق.`;
 
-CHAT_OUTPUT_TEMPLATES.graph_fiqh = `نوع الشجرة: خلاف فقهي فقط.
-الجذر role مسألة من النتيجة. تحته role قول، وينتسب إليه role مذهب، ويتصل به role دليل. على الدليل role مناقشة، وعلى المناقشة role جواب، وعلى القول المختار role ترجيح. إن ذُكر سبب الخلاف فاجعله role سبب الخلاف.
-source الأعلى و target الفرع. الدليل المشترك عقدة واحدة.`;
+CHAT_OUTPUT_TEMPLATES.graph_ilmi = `نوع الشجرة: تشجير خلاف علمي فقط، من أي علم ورد في النتيجة، بلا حصر في الفقه أو العقيدة.
+الجذر role مسألة. تحته role قول لكل وجه. إن ذُكر قائل أو مذهب فاربطه role قائل. ثم role دليل على القول.
+source الأعلى و target الفرع. الدليل المشترك عقدة واحدة.
+لا تدرج رواة إلا إذا كان الراوي جزءاً من الدليل المذكور في النتيجة.`;
 
-CHAT_OUTPUT_TEMPLATES.graph_aqeedah = `نوع الشجرة: خلاف عقدي فقط.
-الجذر role مسألة. مذهب أهل السنة role مذهب، ومقالة المخالف role مقالة، ودليل السلف role دليل، وشبهة المخالف role شبهة، والرد role جواب.
-source الأعلى و target الفرع. خذ الأسماء من النتيجة فقط.`;
-
-CHAT_OUTPUT_TEMPLATES.graph_istidlal = `نوع الشجرة: استدلال فقط، من الحكم إلى دليله ووجه دلالته وما ورد عليه.
+CHAT_OUTPUT_TEMPLATES.graph_istidlal = `نوع الشجرة: تشجير استدلال فقط، من الحكم إلى دليله ووجه دلالته وما ورد عليه.
 role: مسألة أو دليل أو وجه الدلالة أو مناقشة أو جواب.
 لا تدرج رواة إلا إذا كان الراوي نفسه مذكوراً في النتيجة كجزء من الدليل.`;
 
-CHAT_OUTPUT_TEMPLATES.graph_munaqasha = `نوع الشجرة: مناقشة فقط بين طرفي الخلاف المذكورين في النتيجة.
+CHAT_OUTPUT_TEMPLATES.graph_munaqasha = `نوع الشجرة: تشجير مناقشة فقط بين طرفي الخلاف المذكورين في النتيجة.
 الجذر role محل النزاع، ثم role دعوى لكل طرف، ثم دليله role دليل، ثم role مناقشة، ثم role جواب.
 source الأعلى و target الفرع.`;
 
-CHAT_OUTPUT_TEMPLATES.force3d = CHAT_OUTPUT_TEMPLATES.graph_fiqh;
+CHAT_OUTPUT_TEMPLATES.graph_aam = `نوع الشجرة: تشجير خلاف عام. يجمع الخلاف العلمي والأدلة والمناقشات والردود والإشكالات والأجوبة، من أي علم ورد في النتيجة، بلا حصر في الفقه أو العقيدة.
+الجذر role مسألة.
+ثم role قول لكل طرف.
+ثم role دليل.
+ثم role مناقشة على الدليل.
+ثم role إشكال إن ورد إشكال.
+ثم role جواب أو role رد.
+ثم role ترجيح إن رُجّح قول في النتيجة.
+source الأعلى و target الفرع. خذ الألفاظ من النتيجة فقط، ولا تُسقط دليلاً أو مناقشة أو رداً أو إشكالاً أو جواباً ذُكر فيها.`;
+
+CHAT_OUTPUT_TEMPLATES.graph_fiqh = CHAT_OUTPUT_TEMPLATES.graph_ilmi;
+CHAT_OUTPUT_TEMPLATES.graph_aqeedah = CHAT_OUTPUT_TEMPLATES.graph_ilmi;
+CHAT_OUTPUT_TEMPLATES.force3d = CHAT_OUTPUT_TEMPLATES.graph_aam;
 
 window.P2C_OUTPUT_TEMPLATES = window.P2C_OUTPUT_TEMPLATES || CHAT_OUTPUT_TEMPLATES;
 
@@ -1771,11 +1780,13 @@ function applyChatOutputTemplate(type, inputId) {
     markmap: 'أداة التشجير والخرائط الذهنية (Markmap)',
     markmap_mindmap: 'أداة التشجير والخرائط الذهنية (Markmap)',
     force3d: 'مشجر الأقوال',
-    graph_isnad: 'شجرة إسناد',
-    graph_fiqh: 'شجرة خلاف فقهي',
-    graph_aqeedah: 'شجرة خلاف عقدي',
-    graph_istidlal: 'شجرة استدلال',
-    graph_munaqasha: 'شجرة مناقشة',
+    graph_isnad: 'تشجير إسناد',
+    graph_ilmi: 'تشجير خلاف علمي',
+    graph_fiqh: 'تشجير خلاف علمي',
+    graph_aqeedah: 'تشجير خلاف علمي',
+    graph_istidlal: 'تشجير استدلال',
+    graph_munaqasha: 'تشجير مناقشة',
+    graph_aam: 'تشجير خلاف عام',
     aqeedah: 'قالب العقيدة ومقالات الفرق'
   };
 
@@ -1984,11 +1995,13 @@ function setChatSendLocked(locked) {
 
 function graphKindInstruction(type) {
   const labels = {
-    graph_isnad: 'شجرة إسناد',
-    graph_fiqh: 'شجرة خلاف فقهي',
-    graph_aqeedah: 'شجرة خلاف عقدي',
-    graph_istidlal: 'شجرة استدلال',
-    graph_munaqasha: 'شجرة مناقشة'
+    graph_isnad: 'تشجير إسناد',
+    graph_ilmi: 'تشجير خلاف علمي',
+    graph_fiqh: 'تشجير خلاف علمي',
+    graph_aqeedah: 'تشجير خلاف علمي',
+    graph_istidlal: 'تشجير استدلال',
+    graph_munaqasha: 'تشجير مناقشة',
+    graph_aam: 'تشجير خلاف عام'
   };
   const templates = window.P2C_OUTPUT_TEMPLATES || CHAT_OUTPUT_TEMPLATES;
   const shape = String(templates[type] || '').replace(/```[\s\S]*?```/g, '').trim();
@@ -2007,7 +2020,7 @@ ${shape}`;
 function stripGraphFences(text) {
   return String(text || '')
     .replace(/```(?:force3d|markmap)[\s\S]*?```/g, '')
-    .replace(/^(شجرة إسناد|شجرة خلاف فقهي|شجرة خلاف عقدي|شجرة استدلال|شجرة مناقشة)\s*$/gm, '')
+    .replace(/^(تشجير إسناد|تشجير خلاف علمي|تشجير استدلال|تشجير مناقشة|تشجير خلاف عام|شجرة إسناد|شجرة خلاف فقهي|شجرة خلاف عقدي|شجرة استدلال|شجرة مناقشة)\s*$/gm, '')
     .trim();
 }
 

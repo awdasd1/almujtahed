@@ -87,9 +87,9 @@ function force3dRoleKey(role) {
   if (/ضعيف|معلول|متروك|منكر|كذاب/.test(text)) return 'weak';
   if (/مسألة|محل النزاع|دعوى/.test(text)) return 'issue';
   if (/ترجيح/.test(text)) return 'tarjih';
-  if (/اعتراض|مناقشة|شبهة/.test(text)) return 'objection';
-  if (/جواب|ردّ/.test(text)) return 'reply';
-  if (/مذهب|فرقة|مقالة/.test(text)) return 'madhhab';
+  if (/اعتراض|مناقشة|شبهة|إشكال/.test(text)) return 'objection';
+  if (/جواب|إجابة|رد/.test(text)) return 'reply';
+  if (/مذهب|فرقة|مقالة|قائل/.test(text)) return 'madhhab';
   if (/دليل|وجه الدلالة/.test(text)) return 'evidence';
   if (/قول/.test(text)) return 'opinion';
   if (/أصل|قاعدة|سبب الخلاف/.test(text)) return 'usul';
