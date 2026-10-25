@@ -4763,7 +4763,8 @@ def extract_text_from_file(file_path: Path, filename: str, mime_type: str) -> Tu
                 else:
                     extracted_text = "[ملف PDF فارغ أو صفحاته ممسوحة ضوئياً كصور]"
             except Exception as e:
-                extracted_text = f"[تعذر استخراج نص PDF: {e}]"
+                print(f"PDF extract failed for {filename}: {e}")
+                extracted_text = "[تعذر استخراج نص هذا الملف]"
 
         # 2. مستندات Word DOCX
         elif ext == ".docx" or "wordprocessingml" in mime_type:
@@ -4802,6 +4803,28 @@ def extract_text_from_file(file_path: Path, filename: str, mime_type: str) -> Tu
         extracted_text = f"[خطأ أثناء معالجة الملف: {ex}]"
 
     return extracted_text, is_image, base64_data
+
+
+def _attachment_body(att: Dict[str, Any], owner_id: str) -> str:
+    """نص المرفق الجاهز للنموذج. إن فشل الاستخراج سابقاً يُعاد من الملف المحفوظ."""
+    text = str(att.get("extracted_text") or att.get("extractedText") or "").strip()
+    broken = (not text) or text.startswith("[تعذر") or text.startswith("[خطأ") or "pypdf" in text or "No module named" in text
+    raw_path = str(att.get("file_path") or att.get("path") or "").strip()
+    if not broken or not raw_path:
+        return text
+    try:
+        path = Path(raw_path).resolve()
+        root = (UPLOADS_BUCKET_DIR / owner_id).resolve()
+        if root not in path.parents or not path.is_file():
+            return text
+        filename = str(att.get("filename") or att.get("name") or path.name)
+        mime = str(att.get("file_type") or att.get("type") or "")
+        recovered, _, _ = extract_text_from_file(path, filename, mime)
+        if recovered and not recovered.startswith("[تعذر") and not recovered.startswith("[خطأ"):
+            return recovered
+    except Exception as err:
+        print(f"Attachment reread failed: {err}")
+    return text
 
 
 @app.post("/api/chat/upload")
@@ -5604,24 +5627,20 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 ]
                 for idx_a, att in enumerate(req.attachments):
                     f_name = att.get("filename") or att.get("name") or f"ملف_{idx_a+1}"
-                    f_path = att.get("file_path") or att.get("path") or ""
-                    f_url = att.get("file_url") or att.get("url") or ""
                     f_type = att.get("file_type") or att.get("type") or ""
-                    f_text = (att.get("extracted_text") or att.get("extractedText") or "").strip()
+                    f_text = _attachment_body(att, current_owner_id(request))
                     
                     att_lines.append(f"• اسم الملف: {f_name}")
-                    if f_path:
-                        att_lines.append(f"  مسار الملف على القرص (Local Bucket Path): {f_path}")
-                    if f_url:
-                        att_lines.append(f"  رابط المعاينة: {f_url}")
                     if f_type:
                         att_lines.append(f"  نوع الملف: {f_type}")
-                    if f_text:
-                        att_lines.append(f"  نصوص ومحتوى الملف المستخرج من المجلد:\n```text\n{f_text[:25000]}\n```")
+                    if f_text and not f_text.startswith("[تعذر") and not f_text.startswith("[خطأ"):
+                        att_lines.append(f"  نص الملف مستخرج وجاهز، وأجب منه مباشرة:\n```text\n{f_text[:25000]}\n```")
                     elif att.get("has_image"):
                         att_lines.append("  ملاحظة: هذا الملف صورة تم تمريرها بصرياً إلى نموذج الرؤية لتحليلها واستخراج نصوصها.")
+                    else:
+                        att_lines.append("  تعذر استخراج نص هذا الملف.")
                 att_lines.append("═══════════════════════════════════════════════════════════")
-                att_lines.append("توجيه إلزامي ومباشر: يرجى التفاعل مع هذا الملف المرفق واستخراج نصوصه أو مناقشته والإجابة عن استفسار المستخدم بالاستناد إلى محتواه ومساره المذكور أعلاه.")
+                att_lines.append("أجب من نص الملف المستخرج أعلاه. لا تقل إن الملف غير مقروء إذا كان نصه موجوداً.")
                 
                 system_instruction += "\n" + "\n".join(att_lines)
 
