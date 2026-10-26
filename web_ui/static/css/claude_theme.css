@@ -1814,6 +1814,8 @@ body:has(#paneChat.active) .main-content {
 }
 
 .chat-top-control {
+  position: relative;
+  z-index: 100060;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border-subtle);
   padding: 8px 24px;
@@ -5027,7 +5029,7 @@ input:checked+.slider-toggle:before {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   box-shadow: none;
-  z-index: 1200;
+  z-index: 100060;
   overflow: hidden;
   animation: modelDropFadeIn 0.15s ease-out;
 }
