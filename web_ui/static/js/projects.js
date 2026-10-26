@@ -3388,6 +3388,51 @@ async function handleProjectFileImport(event) {
 // محرك تشغيل المشروع البحثي (Live Execution Engine)
 // =============================================================================
 
+function readProjectOutputFormats(project) {
+  if (document.getElementById('pOutCsvResults')) {
+    return {
+      csv_results: !!document.getElementById('pOutCsvResults').checked,
+      csv_benchmark: !!document.getElementById('pOutCsvBenchmark').checked,
+      formatted_txt: document.getElementById('pOutFormattedTxt') ? !!document.getElementById('pOutFormattedTxt').checked : true,
+      interactive_html: document.getElementById('pOutHtml') ? !!document.getElementById('pOutHtml').checked : true,
+      academic_pdf: document.getElementById('pOutPdf') ? !!document.getElementById('pOutPdf').checked : true
+    };
+  }
+  return project?.output_formats || {
+    csv_results: true,
+    csv_benchmark: true,
+    formatted_txt: true,
+    interactive_html: true,
+    academic_pdf: true
+  };
+}
+
+function projectOutputDirective(formats) {
+  const tables = !!(formats.csv_results || formats.csv_benchmark);
+  const academic = !!(formats.academic_pdf || formats.formatted_txt);
+  const lines = ['صيغة المخرجات المختارة في بطاقة المشروع تُقدَّم على أي طلب جداول في التوجيه:'];
+  if (academic) {
+    lines.push('أخرج المتن بحثاً شرعياً بوسوم HTML: كل فقرة في <p style="text-indent:30px">، ورقم الإحالة في المتن وحده <sup><small>(١)</small></sup>، ويُمنع ذكر اسم الكتاب أو الجزء أو الصفحة في المتن.');
+    lines.push('بعد المتن <hr> ثم الحواشي: <ol><li id="fn1"><sup><small>(١)</small></sup> ينظر: مجموع الفتاوى (2-368).</li></ol> والمرجع كامل في الحاشية فقط. اختم بقائمة «المصادر والمراجع» لا بجدول.');
+  }
+  if (tables) {
+    lines.push('الجداول مسموحة ملحقاً بعد الحواشي فقط، وبصيغة ماركداون، للنتائج والمقارنة وثبت المصادر إن كان خيارها مفعلاً.');
+  } else {
+    lines.push('الجداول معطلة. يُمنع أي جدول ماركداون أو HTML، ويُمنع ثبت المصادر المجدول. لا تُفرغ الشواهد في جدول.');
+  }
+  if (!formats.interactive_html) {
+    lines.push('لا تُخرج كتل chart ولا force3d ولا Markmap.');
+  }
+  return lines.join('\n');
+}
+
+function omitDisabledProjectTables(text, formats) {
+  if (formats.csv_results || formats.csv_benchmark) return text || '';
+  return String(text || '')
+    .replace(/(^|\n)\|.*\|\s*(?:\n\|[-:| ]+\|\s*)(?:\n\|.*\|\s*)+/g, '\n')
+    .replace(/<table[\s\S]*?<\/table>/gi, '');
+}
+
 async function runCurrentProjectExecution() {
   if (!activeProjectId) return;
   saveCurrentProjectWorkspaceState();
@@ -3552,6 +3597,7 @@ ${webBenchmarkResults.map((r, i) => `${i + 1}. المصدر: ${r.title}\n   ال
       toolDirectives = `- [التحقيق العلمي الدقيق]: تفريغ المسائل وأقوال المصنفين ومذاهبهم وأدلتهم مع التوثيق الحرفي بالأجزاء والصفحات من أمهات المصادر، وبيان الراجح والجامع للمسألة.`;
     }
 
+    const outputFormats = readProjectOutputFormats(project);
     const execUserPrompt = `
 مشروع بحثي: ${project.title}
 وصف المشروع: ${project.desc}
@@ -3560,14 +3606,9 @@ ${webBenchmarkResults.map((r, i) => `${i + 1}. المصدر: ${r.title}\n   ال
 
 ${webEvidenceSection}
 
-توجيهات التحقيق والجدولة الشاملة:
-- لقد تم استخراج المقاطع التوثيقية من أمهات المصادر المستهدفة في الشاملة.
-- مهمتك كمدير للمشروع: استيعاب كـافـة الشواهد المستخرجة وتفريغ نصوص المسألة كاملة في جدول مفصل وشامل مرتب بالسياق الزمني أو المذهبي أو الموضوعي.
-- اعتمد حصراً على أمهات المصادر التراثية. كل إحالة تُكتب بالصيغة القياسية وحدها: اسم الكتاب (الجزء-الصفحة) بأرقام لاتينية. الصحيح: مجموع الفتاوى (2-368). وللكتاب ذي الجزء الواحد: زاد المستقنع ص(50). تُمنع الشرطة المائلة، والأرقام العربية، وتقديم الصفحة على الجزء، ووضع اسم الكتاب داخل القوس.
-- أتبعه بجدول مقارنة أو تحرير فقهي/علمي وخاتمة علمية محررة بالنتائج والاستدراكات.
-- 🔴 إلـزامـي وحـتـمـي في ختام التقرير: يجب إفراد جدول توثيقي شامل بعنوان «📚 ثبت المصادر والمراجع المعتمدة في المشروع» يستوعب كافة الكتب والمصادر التي استُخرجت منها نصوص المسألة أو عُزيت إليها الأقوال، متضمناً الأعمدة الببليوغرافية الكاملة:
-| م | اسم الكتاب المعتمد | المصنف وسنة وفاته الهجرية | المحقق أو الشارح | رقم الطبعة وسنتها | دار النشر والناشر وبياناته | بلد النشر | رقم الكتاب بالشاملة (#BookID) |
-يُمنع إغفال أي كتاب نُقلت منه معلومة، مع استيفاء كافة بيانات التوثيق الأكاديمي.
+${projectOutputDirective(outputFormats)}
+${toolDirectives}
+- اعتمد حصراً على أمهات المصادر التراثية. الإحالة القياسية في الحاشية وحدها: مجموع الفتاوى (2-368)، أو زاد المستقنع ص(50) للكتاب ذي الجزء الواحد.
 `;
 
     const chatRes = await fetch('/api/chat', {
@@ -3581,7 +3622,7 @@ ${webEvidenceSection}
         messages: [
           { role: 'user', content: execUserPrompt }
         ],
-        system_prompt: directorPrompt,
+        system_prompt: directorPrompt + '\n\n' + projectOutputDirective(outputFormats),
         temperature: 0.2,
         top_k: project.extraction_capacity || 150,
         extraction_capacity: project.extraction_capacity || 150,
@@ -3628,7 +3669,8 @@ ${webEvidenceSection}
         { role: 'assistant', content: executionOutputText }
       ],
       rawOutput: executionOutputText,
-      webBenchmark: webBenchmarkResults
+      webBenchmark: webBenchmarkResults,
+      outputFormats: outputFormats
     };
 
     // حفظ دائم في كائن المشروع وعلى الخادم
@@ -3663,6 +3705,17 @@ ${webEvidenceSection}
 // =============================================================================
 // عرض وإدارة جولات تنفيذ المشروع التراكمية (Rounds View & Execution)
 // =============================================================================
+
+function activeRunOutputFormats() {
+  if (document.getElementById('pOutCsvResults')) return readProjectOutputFormats();
+  if (currentProjectRunData?.outputFormats) return currentProjectRunData.outputFormats;
+  const project = (projectsList || []).find(p => p.id === (currentProjectRunData?.projectId || activeProjectId));
+  return readProjectOutputFormats(project);
+}
+
+function syncProjectOutputView() {
+  if (currentProjectRunData) renderProjectExecutionView();
+}
 
 function renderProjectExecutionView() {
   if (!currentProjectRunData) return;
@@ -3706,6 +3759,7 @@ function renderProjectExecutionView() {
       continueBtnTitle = `تم إنجاز الجولات الثلاث؛ انقر لإضافة جولة استدراكية جديدة`;
     }
 
+    const formats = activeRunOutputFormats();
     actionBtns.innerHTML = `
       <button type="button" class="btn-primary-gradient" onclick="continueProjectExecutionRound()" id="btnContinueRound" title="${continueBtnTitle}">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
@@ -3719,25 +3773,16 @@ function renderProjectExecutionView() {
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
         <span>إعادة البدء من جديد</span>
       </button>
-      <button type="button" class="btn-primary-action btn-academic-print" onclick="printAcademicPaper()" style="background: linear-gradient(135deg, #B45309, #D97706); color: #fff; font-weight: 700; box-shadow: 0 2px 6px rgba(180, 83, 9, 0.3);" title="طباعة وإخراج البحث الأكاديمي المحكم وفق المعايير الشرعية الفاخرة">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-        <span>🖨️ طباعة البحث المحكم (PDF)</span>
+      ${formats.academic_pdf ? `<button type="button" class="btn-primary-action btn-academic-print" onclick="printAcademicPaper()" style="background: linear-gradient(135deg, #B45309, #D97706); color: #fff; font-weight: 700; box-shadow: 0 2px 6px rgba(180, 83, 9, 0.3);" title="طباعة البحث الشرعي: متن وحاشية">
+        <span>🖨️ طباعة البحث المحكم</span>
       </button>
-      <button type="button" class="btn-secondary-action" onclick="downloadProjectReportHtml()" title="تصدير تقرير كامل بصيغة HTML تفاعلي">
-        <span>تصدير HTML</span>
-      </button>
-      <button type="button" class="btn-secondary-action" onclick="downloadProjectReportPdf()" title="تصدير تقرير PDF أكاديمي">
+      <button type="button" class="btn-secondary-action" onclick="downloadProjectReportPdf()" title="تصدير PDF بالتنسيق الشرعي">
         <span>تصدير PDF</span>
-      </button>
-      <button type="button" class="btn-secondary-action" onclick="downloadProjectRunReportTxt()" title="تحميل التقرير بنص ماركداون">
-        <span>تقرير Markdown</span>
-      </button>
-      <button type="button" class="btn-secondary-action" onclick="downloadProjectResultsCsv('results')">
-        <span>جدول النتائج CSV</span>
-      </button>
-      <button type="button" class="btn-secondary-action" onclick="downloadProjectResultsCsv('benchmark')">
-        <span>جدول المقارنات CSV</span>
-      </button>
+      </button>` : ''}
+      ${formats.interactive_html ? `<button type="button" class="btn-secondary-action" onclick="downloadProjectReportHtml()"><span>تصدير HTML</span></button>` : ''}
+      ${formats.formatted_txt ? `<button type="button" class="btn-secondary-action" onclick="downloadProjectRunReportTxt()"><span>تقرير Markdown</span></button>` : ''}
+      ${formats.csv_results ? `<button type="button" class="btn-secondary-action" onclick="downloadProjectResultsCsv('results')"><span>جدول النتائج CSV</span></button>` : ''}
+      ${formats.csv_benchmark ? `<button type="button" class="btn-secondary-action" onclick="downloadProjectResultsCsv('benchmark')"><span>جدول المقارنات CSV</span></button>` : ''}
     `;
   }
 
@@ -3768,7 +3813,7 @@ function renderProjectExecutionView() {
           </span>
         </div>
         <div class="markdown-body" style="padding: 20px; font-size: 14.5px; line-height: 1.8; direction: rtl; text-align: right;">
-          ${(typeof formatMarkdown === 'function') ? formatMarkdown(r.output || '') : (typeof marked !== 'undefined' ? marked.parse(r.output || '') : (r.output || '').replace(/\n/g, '<br>'))}
+          ${(typeof formatMarkdown === 'function') ? formatMarkdown(omitDisabledProjectTables(r.output || '', activeRunOutputFormats())) : (typeof marked !== 'undefined' ? marked.parse(r.output || '') : (r.output || '').replace(/\n/g, '<br>'))}
         </div>
       </div>
     `;
@@ -4262,17 +4307,15 @@ async function continueProjectExecutionRound() {
       ];
     }
 
+    const outputFormats = readProjectOutputFormats(project);
     const continueUserPrompt = `
 طلب استكمال جولة البحث والتحقيق العلمي [الجولة رقم ${nextRoundNum}]:
 
+${projectOutputDirective(outputFormats)}
 أيها المدير التخصصي للمشروع («${project.director?.name || 'مدير المشروع'}»):
-استناداً إلى تقريرك ومخرجاتك وتكليفاتك في الجولة السابقة (الجولة ${currentRoundNum})، والمسائل التي أشرت إلى وجوب استكمالها أو التحقق منها والتدقيق فيها فقهياً أو حديثياً أو تاريخياً وفلكياً:
-
-1. باشر فوراً تنفيذ [الجولة التحريرية والتحقيقية رقم ${nextRoundNum}]:
-   - وجّه الوكلاء لسد الفجوات التوثيقية، وتخريج الأحاديث وبيان عللها ورجالها، والتثبت من نسبة الأقوال والآثار إلى أصحابها في أمهات المصادر.
-   - حقق في التواريخ والوقائع والمطابقات، واستخرج الشواهد الإضافية لتأكيد ما هو متردد أو محتمل.
-2. أضف النتائج والاستدراكات الجديدة إلى الجداول المعتمدة مع إبراز ما تم إثباته وحسمه في هذه الجولة.
-3. قدّم تقرير الجولة رقم ${nextRoundNum} بصياغة علمية محررة رصينة، واذكر صراحة ما إذا كانت هذه الجولة قد حسمت أهداف المشروع تماماً. كل إحالة في هذه الجولة بالصيغة القياسية وحدها: اسم الكتاب (الجزء-الصفحة) مثل مجموع الفتاوى (2-368)، أو اسم الكتاب ص(50) إن كان جزءاً واحداً. واحرص في الجولة الختامية على استيفاء «📚 ثبت المصادر والمراجع المعتمدة في المشروع» بكافة بيانات الطبعات والمحققين ودور النشر وأرقام الشاملة.
+استناداً إلى تقريرك في الجولة ${currentRoundNum}:
+1. سد الفجوات التوثيقية، وخرّج الأحاديث، وتثبت من نسبة الأقوال.
+2. قدّم تقرير الجولة بصياغة علمية. الإحالة القياسية في الحاشية وحدها: مجموع الفتاوى (2-368).
 `;
 
     messages.push({ role: 'user', content: continueUserPrompt });
@@ -4286,7 +4329,7 @@ async function continueProjectExecutionRound() {
         api_key: apiKey,
         thinking_level: project.director?.thinking || 'medium',
         messages: messages,
-        system_prompt: directorPrompt,
+        system_prompt: directorPrompt + '\n\n' + projectOutputDirective(outputFormats),
         temperature: 0.2,
         top_k: project.extraction_capacity || 150,
         extraction_capacity: project.extraction_capacity || 150,
@@ -4328,6 +4371,7 @@ async function continueProjectExecutionRound() {
       executedAt: new Date().toLocaleString('ar-SA')
     });
     currentProjectRunData.rounds = currentRounds;
+    currentProjectRunData.outputFormats = outputFormats;
 
     // تحديث النص الخام التراكمي
     currentProjectRunData.rawOutput = currentRounds.map(r => `## 📌 تقرير الجولة رقم ${r.round} (${r.executedAt})\n\n${r.output}`).join('\n\n---\n\n');
@@ -5971,6 +6015,10 @@ function toArabicIndicDigits(str) {
 }
 
 function formatAcademicBody(rawMarkdown) {
+  const formats = typeof activeRunOutputFormats === 'function' ? activeRunOutputFormats() : null;
+  if (formats && !formats.csv_results && !formats.csv_benchmark) {
+    rawMarkdown = omitDisabledProjectTables(rawMarkdown, formats);
+  }
   rawMarkdown = (typeof enforceStandardCitations === 'function') ? enforceStandardCitations(rawMarkdown || '') : (rawMarkdown || '');
   if (!rawMarkdown) return '';
   let text = String(rawMarkdown).replace(/\n{3,}/g, '\n\n');
@@ -6017,6 +6065,20 @@ function formatAcademicBody(rawMarkdown) {
     }
     if (/text-indent/.test(attrs)) return match;
     return `<p class="academic-paragraph">${content}</p>`;
+  });
+  const refCounts = {};
+  html = html.replace(/<sup>\s*<small>\s*\(([^)<]{1,8})\)\s*<\/small>\s*<\/sup>/gi, (match, number) => {
+    const western = String(number).replace(/[٠-٩]/g, (digit) => '٠١٢٣٤٥٦٧٨٩'.indexOf(digit)).replace(/\D/g, '');
+    if (!western) return match;
+    refCounts[western] = (refCounts[western] || 0) + 1;
+    return `<a class="chat-fn-ref" id="paper-ref${western}-${refCounts[western]}" href="#paper-fn${western}">(${number})</a>`;
+  });
+  html = html.replace(/(<li\b[^>]*)>([\s\S]*?)<\/li>/gi, (match, open, inner) => {
+    const idMatch = open.match(/id="([^"]*fn)(\d+)"/i);
+    if (!idMatch) return match;
+    const linked = inner.replace(/^\s*\(([^)<]{1,8})\)/, (all, number) => `<a class="chat-fn-back" href="#paper-ref${idMatch[2]}-1">(${number})</a>`);
+    const withId = /id=/.test(open) ? open.replace(/id="[^"]*"/, `id="paper-fn${idMatch[2]}"`) : `${open} id="paper-fn${idMatch[2]}"`;
+    return `${withId}>${linked}</li>`;
   });
   return html;
 }
@@ -6084,6 +6146,9 @@ function buildAcademicPaperHtml(runData, options) {
     .biblio-title { font-size: 20pt; margin-top: 22px; }
     h1, h2, h3, h4 { text-indent: 0; }
     sup small { font-size: 11pt; font-weight: 700; vertical-align: super; }
+    a.chat-fn-ref, a.chat-fn-back { color: #1d4ed8; text-decoration: none; }
+    a.chat-fn-ref { font-size: 11pt; vertical-align: super; font-weight: 700; }
+    a.chat-fn-back { font-size: inherit; vertical-align: baseline; }
     b, strong { font-weight: 700; }
     p { margin: 0; }
     table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13pt; }

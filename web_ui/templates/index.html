@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 5.3 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 5.4 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1297,29 +1297,29 @@
                                     المطلوبة عند تشغيل المشروع:</label>
                                 <div class="p-outputs-checkboxes">
                                     <label class="p-output-item">
-                                        <input type="checkbox" id="pOutCsvResults" checked>
+                                        <input type="checkbox" id="pOutCsvResults" checked onchange="syncProjectOutputView()">
                                         <span>📊 <strong>جدول النتائج (CSV):</strong> تفريغ كافة الحوادث المستخرجة من
                                             الشاملة بمصادرها</span>
                                     </label>
                                     <label class="p-output-item">
-                                        <input type="checkbox" id="pOutCsvBenchmark" checked>
+                                        <input type="checkbox" id="pOutCsvBenchmark" checked onchange="syncProjectOutputView()">
                                         <span>⚖️ <strong>جدول المقارنات المرجعية (CSV):</strong> مصفوفة المضاهاة مع
                                             المرجع والدراسات الخارجية</span>
                                     </label>
                                     <label class="p-output-item">
-                                        <input type="checkbox" id="pOutFormattedTxt" checked>
+                                        <input type="checkbox" id="pOutFormattedTxt" checked onchange="syncProjectOutputView()">
                                         <span>📝 <strong>ملف نصي منسق (Markdown / TXT):</strong> دراسة محققة بمقدمة
                                             وتخريج وهوامش</span>
                                     </label>
                                     <label class="p-output-item">
-                                        <input type="checkbox" id="pOutHtml" checked>
+                                        <input type="checkbox" id="pOutHtml" checked onchange="syncProjectOutputView()">
                                         <span>🌐 <strong>ملف تفاعلي مستقل (HTML + CSS + JS):</strong> يضم الشارتات الحية
                                             وشجرة الأسانيد وطباعة A4</span>
                                     </label>
                                     <label class="p-output-item">
-                                        <input type="checkbox" id="pOutPdf" checked>
-                                        <span>📄 <strong>تقرير أكاديمي منسق (PDF):</strong> وثيقة مصممة ومحررة مستخرجة
-                                            من HTML مع الرسوم البيانية</span>
+                                        <input type="checkbox" id="pOutPdf" checked onchange="syncProjectOutputView()">
+                                        <span>📄 <strong>تقرير أكاديمي منسق (PDF):</strong> متن وحاشية وروابط إحالة،
+                                            كإخراج الشات الشرعي</span>
                                     </label>
                                 </div>
                             </div>
@@ -4764,7 +4764,7 @@
     <script src="/static/js/agents.js?v=1792911000"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
     <script src="/static/js/tools.js?v=1792896000"></script>
-    <script src="/static/js/projects.js?v=1792910000"></script>
+    <script src="/static/js/projects.js?v=1792920000"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
