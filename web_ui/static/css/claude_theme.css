@@ -2683,8 +2683,15 @@ select.graph-kind-select {
   font-size: 10px;
 }
 
+.chat-subagent-checklist-dropdown.is-portaled {
+  position: fixed;
+  right: auto;
+}
+
 .chat-checklist-items {
-  max-height: 240px;
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 6px 8px;
   display: flex;
@@ -2735,9 +2742,15 @@ select.graph-kind-select {
   font-weight: 700;
   color: var(--text-main);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 6px;
+}
+
+.chat-agent-item-name span:first-child {
+  white-space: normal;
+  line-height: 1.45;
+  text-align: right;
 }
 
 .chat-agent-scope-badge {

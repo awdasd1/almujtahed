@@ -1570,7 +1570,26 @@ function selectAllChatSubAgents(selectAll) {
   updateSubAgentsSelectionUI(currentGroup, selectedIds);
 }
 
-// فتح وإغلاق القائمة المنسدلة للوكلاء
+function placeChatSubAgentsMenu() {
+  const menu = document.getElementById('chatSubAgentChecklistMenu');
+  const btn = document.getElementById('chatSubAgentDropdownBtn');
+  if (!menu || !btn || menu.style.display === 'none') return;
+  const rect = btn.getBoundingClientRect();
+  const width = Math.min(420, window.innerWidth - 16);
+  let left = rect.right - width;
+  if (left < 8) left = 8;
+  if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+  const spaceAbove = Math.max(160, rect.top - 12);
+  menu.style.position = 'fixed';
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.right = 'auto';
+  menu.style.top = 'auto';
+  menu.style.bottom = `${Math.round(window.innerHeight - rect.top + 8)}px`;
+  menu.style.width = `${Math.round(width)}px`;
+  menu.style.maxHeight = `${Math.round(spaceAbove)}px`;
+  menu.style.zIndex = '100050';
+}
+
 function toggleSubAgentsDropdown(event) {
   if (event) {
     event.preventDefault();
@@ -1582,19 +1601,32 @@ function toggleSubAgentsDropdown(event) {
 
   const isOpen = menu.style.display !== 'none';
   if (isOpen) {
-    menu.style.display = 'none';
-    if (btn) btn.classList.remove('is-open');
+    closeSubAgentsDropdown();
   } else {
+    if (menu.parentElement !== document.body) document.body.appendChild(menu);
     menu.style.display = 'flex';
+    menu.classList.add('is-portaled');
     if (btn) btn.classList.add('is-open');
+    placeChatSubAgentsMenu();
   }
 }
 
 function closeSubAgentsDropdown() {
   const menu = document.getElementById('chatSubAgentChecklistMenu');
   const btn = document.getElementById('chatSubAgentDropdownBtn');
-  if (menu) menu.style.display = 'none';
+  const wrap = document.getElementById('chatSubAgentSelectWrap');
+  if (menu) {
+    menu.style.display = 'none';
+    menu.classList.remove('is-portaled');
+    if (wrap && menu.parentElement !== wrap) wrap.appendChild(menu);
+  }
   if (btn) btn.classList.remove('is-open');
+}
+
+if (!window._chatSubAgentMenuBound) {
+  window._chatSubAgentMenuBound = true;
+  window.addEventListener('resize', placeChatSubAgentsMenu);
+  document.addEventListener('scroll', placeChatSubAgentsMenu, true);
 }
 
 // إغلاق القائمة عند النقر في أي مكان خارجها
@@ -1602,9 +1634,8 @@ document.addEventListener('click', (e) => {
   const wrap = document.getElementById('chatSubAgentSelectWrap');
   const menu = document.getElementById('chatSubAgentChecklistMenu');
   if (menu && menu.style.display !== 'none') {
-    if (!wrap || !wrap.contains(e.target)) {
-      closeSubAgentsDropdown();
-    }
+    const inside = (wrap && wrap.contains(e.target)) || menu.contains(e.target);
+    if (!inside) closeSubAgentsDropdown();
   }
 });
 
