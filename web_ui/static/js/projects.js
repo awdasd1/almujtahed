@@ -6162,10 +6162,34 @@ function buildAcademicPaperHtml(runData, options) {
     </section>
   `).join('');
   const toolbar = settings.toolbar === false ? '' : `
-  <div class="no-print-toolbar">
-    <div class="toolbar-label">إخراج البحث الأكاديمي المحكم</div>
-    <button class="btn-do-print" onclick="window.print()">بدء الطباعة أو الحفظ كـ PDF</button>
-  </div>`;
+  <header class="top-action-bar no-print-toolbar">
+    <div class="bar-actions">
+      <button class="btn-act btn-primary" type="button" onclick="window.print()">
+        <span>🖨️ طباعة / حفظ كـ PDF</span>
+      </button>
+      <button class="btn-act" type="button" onclick="toggleReportTheme()">
+        <span>🌓 تبديل النمط</span>
+      </button>
+      <button class="btn-act" type="button" onclick="adjustReportFontSize(1)">
+        <span>A+ تكبير</span>
+      </button>
+      <button class="btn-act" type="button" onclick="adjustReportFontSize(-1)">
+        <span>A- تصغير</span>
+      </button>
+    </div>
+  </header>`;
+  const toolbarScript = settings.toolbar === false ? '' : `
+  <script>
+    function toggleReportTheme() {
+      const cur = document.documentElement.getAttribute('data-theme') || 'light';
+      document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+    }
+    let curFontSize = 18;
+    function adjustReportFontSize(delta) {
+      curFontSize = Math.max(14, Math.min(28, curFontSize + delta));
+      document.documentElement.style.setProperty('--paper-size', curFontSize + 'pt');
+    }
+  </script>`;
   const pageMargin = settings.forPdf ? '0' : '25mm 20mm 25mm 20mm';
 
   return `<!DOCTYPE html>
@@ -6178,24 +6202,43 @@ function buildAcademicPaperHtml(runData, options) {
   <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Tajawal:wght@500;700&display=swap" rel="stylesheet">
   <style>
     @page { size: A4 portrait; margin: ${pageMargin}; }
+    :root {
+      --paper-size: 18pt;
+      --bg-canvas: #FAF8F5;
+      --bg-surface: #FFFFFF;
+      --text-main: #111111;
+      --text-muted: #475569;
+      --accent-gold: #B45309;
+      --border-subtle: #E5E0D8;
+      --link: #1d4ed8;
+    }
+    [data-theme="dark"] {
+      --bg-canvas: #121417;
+      --bg-surface: #1A1D23;
+      --text-main: #F3F4F6;
+      --text-muted: #9CA3AF;
+      --accent-gold: #F59E0B;
+      --border-subtle: #2D333D;
+      --link: #93C5FD;
+    }
     * { box-sizing: border-box; }
     body {
-      background: #FFFFFF;
-      color: #111111;
+      background: var(--bg-canvas);
+      color: var(--text-main);
       font-family: 'Amiri', serif;
-      font-size: 18pt;
+      font-size: var(--paper-size);
       line-height: 2.1;
       direction: rtl;
       text-align: right;
-      margin: 0 auto;
-      max-width: 900px;
+      margin: 0;
     }
-    .print-cover-header { text-align: center; margin-bottom: 28px; padding-bottom: 18px; border-bottom: 3px double #222; }
+    .paper-sheet { max-width: 900px; margin: 0 auto; padding: 28px 32px 48px; }
+    .print-cover-header { text-align: center; margin-bottom: 28px; padding-bottom: 18px; border-bottom: 3px double var(--text-main); }
     .paper-bismillah { font-size: 24pt; font-weight: 700; margin-bottom: 18px; }
     .paper-main-title { font-size: 25pt; font-weight: 700; line-height: 1.6; margin: 0 0 12px; }
-    .paper-sub-meta { font-family: 'Tajawal', sans-serif; font-size: 12pt; color: #475569; }
-    .academic-round-title { font-size: 21pt; border-bottom: 2px solid #333; padding-bottom: 6px; margin: 24px 0 12px; text-indent: 0; }
-    .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: 18pt; text-align: justify; }
+    .paper-sub-meta { font-family: 'Tajawal', sans-serif; font-size: 12pt; color: var(--text-muted); }
+    .academic-round-title { font-size: 21pt; border-bottom: 2px solid var(--text-main); padding-bottom: 6px; margin: 24px 0 12px; text-indent: 0; }
+    .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: var(--paper-size); text-align: justify; }
     .footnote-line, .biblio-title { text-indent: 0 !important; margin: 0; }
     .footnote-line { font-size: 14pt; line-height: 1.7; }
     .footnote-list { margin: 16px 0 0; padding: 8px 0 0; }
@@ -6203,7 +6246,7 @@ function buildAcademicPaperHtml(runData, options) {
       content: "";
       display: block;
       width: 25%;
-      border-top: 1px solid #000;
+      border-top: 1px solid var(--text-main);
       margin: 0 0 8px;
     }
     .footnote-list .footnote-item { margin: 0; padding: 0; font-size: 14pt; line-height: 1.7; text-indent: 0; }
@@ -6211,27 +6254,62 @@ function buildAcademicPaperHtml(runData, options) {
     .biblio-title { font-size: 20pt; margin-top: 22px; }
     h1, h2, h3, h4 { text-indent: 0; }
     sup small { font-size: 11pt; font-weight: 700; vertical-align: super; }
-    a.chat-fn-ref, a.chat-fn-back { color: #1d4ed8; text-decoration: none; }
+    a.chat-fn-ref, a.chat-fn-back { color: var(--link); text-decoration: none; }
     a.chat-fn-ref { font-size: 11pt; vertical-align: super; font-weight: 700; }
     a.chat-fn-back { font-size: inherit; vertical-align: baseline; }
     b, strong { font-weight: 700; }
     p { margin: 0; }
     table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13pt; }
-    th, td { border: 1px solid #444; padding: 8px 12px; text-align: right; text-indent: 0; }
-    .no-print-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
-    .toolbar-label, .btn-do-print { font-family: 'Tajawal', sans-serif; }
-    .btn-do-print { background: #B45309; color: #fff; border: none; padding: 8px 16px; font-weight: 700; cursor: pointer; }
-    @media print { .no-print-toolbar { display: none !important; } body { max-width: 100%; } }
+    th, td { border: 1px solid var(--text-main); padding: 8px 12px; text-align: right; text-indent: 0; }
+    .top-action-bar {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .bar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .btn-act {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      border: 1px solid var(--border-subtle);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-family: 'Tajawal', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-act:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+    .btn-primary { background: linear-gradient(135deg, #B45309, #D97706); color: #FFFFFF !important; border: none; }
+    .btn-primary:hover { opacity: 0.92; }
+    @media print {
+      .no-print-toolbar { display: none !important; }
+      body, .paper-sheet { background: #FFFFFF !important; color: #111111 !important; }
+      a.chat-fn-ref, a.chat-fn-back { color: #1d4ed8 !important; }
+    }
   </style>
 </head>
 <body>
   ${toolbar}
+  <div class="paper-sheet">
   <header class="print-cover-header">
     <div class="paper-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
     <h1 class="paper-main-title">${escapeHtml(title)}</h1>
     <div class="paper-sub-meta">بحث علمي محكم مستخرج عبر منظومة المجتهد</div>
   </header>
   <main>${roundsBodyHtml}</main>
+  </div>
+  ${toolbarScript}
 </body>
 </html>`;
 }
