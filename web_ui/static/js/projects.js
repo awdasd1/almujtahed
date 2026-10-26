@@ -5314,6 +5314,8 @@ function buildStandaloneProjectHtml(runData, options) {
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-padding-top: 72px; }
+    a[id], li[id], p[id] { scroll-margin-top: 72px; }
     
     body {
       background-color: var(--bg-canvas);
@@ -5397,6 +5399,9 @@ function buildStandaloneProjectHtml(runData, options) {
       opacity: 0.92;
       transform: translateY(-1px);
     }
+
+    .btn-act svg { display: block; }
+    .btn-act svg[hidden] { display: none; }
 
     .btn-act.is-on {
       border-color: var(--accent-gold);
@@ -5539,9 +5544,13 @@ function buildStandaloneProjectHtml(runData, options) {
       color: var(--text-main);
     }
 
-    .markdown-body p {
+    .markdown-body p,
+    .markdown-body li,
+    .markdown-body blockquote {
       margin-bottom: 16px;
       text-align: justify;
+      text-align-last: right;
+      text-justify: inter-word;
     }
 
     .markdown-body blockquote {
@@ -5718,13 +5727,14 @@ function buildStandaloneProjectHtml(runData, options) {
       <button class="btn-act" onclick="adjustReportFontSize(-1)">
         <span>A- تصغير</span>
       </button>
-      <button class="btn-act" id="btnAutoScroll" type="button" onclick="toggleAutoScroll()" title="تمرير آلي">
-        <span>تشغيل</span>
+      <button class="btn-act" id="btnAutoScroll" type="button" onclick="toggleAutoScroll()" title="تمرير آلي" aria-label="تشغيل التمرير">
+        <svg class="icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        <svg class="icon-stop" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
       </button>
       <button class="btn-act" type="button" onclick="changeAutoScrollSpeed(1)" title="زيادة سرعة التمرير">
         <span>+</span>
       </button>
-      <span class="auto-scroll-speed" id="autoScrollSpeed">٢</span>
+      <span class="auto-scroll-speed" id="autoScrollSpeed">١</span>
       <button class="btn-act" type="button" onclick="changeAutoScrollSpeed(-1)" title="إنقاص سرعة التمرير">
         <span>-</span>
       </button>
@@ -5801,43 +5811,65 @@ function buildStandaloneProjectHtml(runData, options) {
     }
 
     let autoScrollOn = false;
-    let autoScrollLevel = 2;
+    let autoScrollLevel = 1;
     let autoScrollFrame = 0;
     let autoScrollLast = 0;
+    let autoScrollCarry = 0;
 
     function arabicScrollLevel(n) {
       return String(n).replace(/[0-9]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[d]; });
+    }
+
+    function autoScrollPixelsPerSecond(level) {
+      if (level < 2) return 0;
+      return 5 * Math.pow(1.45, level - 2);
     }
 
     function paintAutoScroll() {
       const btn = document.getElementById('btnAutoScroll');
       const speed = document.getElementById('autoScrollSpeed');
       if (btn) {
-        const label = btn.querySelector('span');
-        if (label) label.textContent = autoScrollOn ? 'إيقاف' : 'تشغيل';
+        const play = btn.querySelector('.icon-play');
+        const stop = btn.querySelector('.icon-stop');
+        if (play) play.hidden = autoScrollOn;
+        if (stop) stop.hidden = !autoScrollOn;
         btn.classList.toggle('is-on', autoScrollOn);
+        btn.setAttribute('aria-label', autoScrollOn ? 'إيقاف التمرير' : 'تشغيل التمرير');
       }
       if (speed) speed.textContent = arabicScrollLevel(autoScrollLevel);
     }
 
-    function toggleAutoScroll() {
-      autoScrollOn = !autoScrollOn;
+    function stopAutoScroll() {
+      autoScrollOn = false;
+      autoScrollCarry = 0;
+      cancelAnimationFrame(autoScrollFrame);
       paintAutoScroll();
-      if (!autoScrollOn) {
-        cancelAnimationFrame(autoScrollFrame);
+    }
+
+    function toggleAutoScroll() {
+      if (!autoScrollOn && autoScrollLevel < 2) return;
+      if (autoScrollOn) {
+        stopAutoScroll();
         return;
       }
+      autoScrollOn = true;
+      paintAutoScroll();
       autoScrollLast = 0;
       const step = (now) => {
         if (!autoScrollOn) return;
         if (!autoScrollLast) autoScrollLast = now;
         const dt = Math.min(50, now - autoScrollLast);
         autoScrollLast = now;
-        window.scrollBy(0, (autoScrollLevel * 22 * dt) / 1000);
+        const px = (autoScrollPixelsPerSecond(autoScrollLevel) * dt) / 1000;
+        autoScrollCarry += px;
+        if (autoScrollCarry >= 1) {
+          const whole = Math.floor(autoScrollCarry);
+          autoScrollCarry -= whole;
+          window.scrollBy(0, whole);
+        }
         const doc = document.documentElement;
-        if (window.scrollY + window.innerHeight >= doc.scrollHeight - 2) {
-          autoScrollOn = false;
-          paintAutoScroll();
+        if (autoScrollPixelsPerSecond(autoScrollLevel) > 0 && window.scrollY + window.innerHeight >= doc.scrollHeight - 2) {
+          stopAutoScroll();
           return;
         }
         autoScrollFrame = requestAnimationFrame(step);
@@ -5847,12 +5879,39 @@ function buildStandaloneProjectHtml(runData, options) {
 
     function changeAutoScrollSpeed(delta) {
       autoScrollLevel = Math.max(1, Math.min(10, autoScrollLevel + delta));
-      paintAutoScroll();
+      if (autoScrollOn && autoScrollLevel < 2) stopAutoScroll();
+      else paintAutoScroll();
     }
+
+    function toolbarClearance() {
+      const bar = document.querySelector('.top-action-bar');
+      return (bar ? bar.offsetHeight : 64) + 8;
+    }
+
+    function applyToolbarClearance() {
+      document.documentElement.style.scrollPaddingTop = toolbarClearance() + 'px';
+    }
+
+    document.addEventListener('click', function (event) {
+      const link = event.target.closest && event.target.closest('a[href^="#"]');
+      if (!link) return;
+      const id = decodeURIComponent((link.getAttribute('href') || '').slice(1));
+      if (!id) return;
+      const target = document.getElementById(id);
+      if (!target) return;
+      event.preventDefault();
+      const top = target.getBoundingClientRect().top + window.scrollY - toolbarClearance();
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    });
+
+    window.addEventListener('load', applyToolbarClearance);
+    window.addEventListener('resize', applyToolbarClearance);
+    applyToolbarClearance();
 
     window.addEventListener('wheel', function () {
       if (!autoScrollOn) return;
       autoScrollOn = false;
+      autoScrollCarry = 0;
       cancelAnimationFrame(autoScrollFrame);
       paintAutoScroll();
     }, { passive: true });
@@ -5860,6 +5919,7 @@ function buildStandaloneProjectHtml(runData, options) {
     window.addEventListener('beforeprint', function () {
       if (!autoScrollOn) return;
       autoScrollOn = false;
+      autoScrollCarry = 0;
       cancelAnimationFrame(autoScrollFrame);
       paintAutoScroll();
     });
@@ -6263,13 +6323,14 @@ function buildAcademicPaperHtml(runData, options) {
       <button class="btn-act" type="button" onclick="adjustReportFontSize(-1)">
         <span>A- تصغير</span>
       </button>
-      <button class="btn-act" id="btnAutoScroll" type="button" onclick="toggleAutoScroll()" title="تمرير آلي">
-        <span>تشغيل</span>
+      <button class="btn-act" id="btnAutoScroll" type="button" onclick="toggleAutoScroll()" title="تمرير آلي" aria-label="تشغيل التمرير">
+        <svg class="icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        <svg class="icon-stop" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
       </button>
       <button class="btn-act" type="button" onclick="changeAutoScrollSpeed(1)" title="زيادة سرعة التمرير">
         <span>+</span>
       </button>
-      <span class="auto-scroll-speed" id="autoScrollSpeed">٢</span>
+      <span class="auto-scroll-speed" id="autoScrollSpeed">١</span>
       <button class="btn-act" type="button" onclick="changeAutoScrollSpeed(-1)" title="إنقاص سرعة التمرير">
         <span>-</span>
       </button>
@@ -6287,40 +6348,60 @@ function buildAcademicPaperHtml(runData, options) {
       document.documentElement.style.setProperty('--paper-size', curFontSize + 'pt');
     }
     let autoScrollOn = false;
-    let autoScrollLevel = 2;
+    let autoScrollLevel = 1;
     let autoScrollFrame = 0;
     let autoScrollLast = 0;
+    let autoScrollCarry = 0;
     function arabicScrollLevel(n) {
       return String(n).replace(/[0-9]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[d]; });
+    }
+    function autoScrollPixelsPerSecond(level) {
+      if (level < 2) return 0;
+      return 5 * Math.pow(1.45, level - 2);
     }
     function paintAutoScroll() {
       const btn = document.getElementById('btnAutoScroll');
       const speed = document.getElementById('autoScrollSpeed');
       if (btn) {
-        const label = btn.querySelector('span');
-        if (label) label.textContent = autoScrollOn ? 'إيقاف' : 'تشغيل';
+        const play = btn.querySelector('.icon-play');
+        const stop = btn.querySelector('.icon-stop');
+        if (play) play.hidden = autoScrollOn;
+        if (stop) stop.hidden = !autoScrollOn;
         btn.classList.toggle('is-on', autoScrollOn);
+        btn.setAttribute('aria-label', autoScrollOn ? 'إيقاف التمرير' : 'تشغيل التمرير');
       }
       if (speed) speed.textContent = arabicScrollLevel(autoScrollLevel);
     }
-    function toggleAutoScroll() {
-      autoScrollOn = !autoScrollOn;
+    function stopAutoScroll() {
+      autoScrollOn = false;
+      autoScrollCarry = 0;
+      cancelAnimationFrame(autoScrollFrame);
       paintAutoScroll();
-      if (!autoScrollOn) {
-        cancelAnimationFrame(autoScrollFrame);
+    }
+    function toggleAutoScroll() {
+      if (!autoScrollOn && autoScrollLevel < 2) return;
+      if (autoScrollOn) {
+        stopAutoScroll();
         return;
       }
+      autoScrollOn = true;
+      paintAutoScroll();
       autoScrollLast = 0;
       const step = (now) => {
         if (!autoScrollOn) return;
         if (!autoScrollLast) autoScrollLast = now;
         const dt = Math.min(50, now - autoScrollLast);
         autoScrollLast = now;
-        window.scrollBy(0, (autoScrollLevel * 22 * dt) / 1000);
+        const px = (autoScrollPixelsPerSecond(autoScrollLevel) * dt) / 1000;
+        autoScrollCarry += px;
+        if (autoScrollCarry >= 1) {
+          const whole = Math.floor(autoScrollCarry);
+          autoScrollCarry -= whole;
+          window.scrollBy(0, whole);
+        }
         const doc = document.documentElement;
-        if (window.scrollY + window.innerHeight >= doc.scrollHeight - 2) {
-          autoScrollOn = false;
-          paintAutoScroll();
+        if (autoScrollPixelsPerSecond(autoScrollLevel) > 0 && window.scrollY + window.innerHeight >= doc.scrollHeight - 2) {
+          stopAutoScroll();
           return;
         }
         autoScrollFrame = requestAnimationFrame(step);
@@ -6329,17 +6410,41 @@ function buildAcademicPaperHtml(runData, options) {
     }
     function changeAutoScrollSpeed(delta) {
       autoScrollLevel = Math.max(1, Math.min(10, autoScrollLevel + delta));
-      paintAutoScroll();
+      if (autoScrollOn && autoScrollLevel < 2) stopAutoScroll();
+      else paintAutoScroll();
     }
+    function toolbarClearance() {
+      const bar = document.querySelector('.top-action-bar');
+      return (bar ? bar.offsetHeight : 64) + 8;
+    }
+    function applyToolbarClearance() {
+      document.documentElement.style.scrollPaddingTop = toolbarClearance() + 'px';
+    }
+    document.addEventListener('click', function (event) {
+      const link = event.target.closest && event.target.closest('a[href^="#"]');
+      if (!link) return;
+      const id = decodeURIComponent((link.getAttribute('href') || '').slice(1));
+      if (!id) return;
+      const target = document.getElementById(id);
+      if (!target) return;
+      event.preventDefault();
+      const top = target.getBoundingClientRect().top + window.scrollY - toolbarClearance();
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    });
+    window.addEventListener('load', applyToolbarClearance);
+    window.addEventListener('resize', applyToolbarClearance);
+    applyToolbarClearance();
     window.addEventListener('wheel', function () {
       if (!autoScrollOn) return;
       autoScrollOn = false;
+      autoScrollCarry = 0;
       cancelAnimationFrame(autoScrollFrame);
       paintAutoScroll();
     }, { passive: true });
     window.addEventListener('beforeprint', function () {
       if (!autoScrollOn) return;
       autoScrollOn = false;
+      autoScrollCarry = 0;
       cancelAnimationFrame(autoScrollFrame);
       paintAutoScroll();
     });
@@ -6376,6 +6481,8 @@ function buildAcademicPaperHtml(runData, options) {
       --link: #93C5FD;
     }
     * { box-sizing: border-box; }
+    html { scroll-padding-top: 72px; }
+    a[id], li[id], p[id], .footnote-item, .footnote-line { scroll-margin-top: 72px; }
     body {
       background: var(--bg-canvas);
       color: var(--text-main);
@@ -6392,7 +6499,14 @@ function buildAcademicPaperHtml(runData, options) {
     .paper-main-title { font-size: 25pt; font-weight: 700; line-height: 1.6; margin: 0 0 12px; }
     .paper-sub-meta { font-family: 'Tajawal', sans-serif; font-size: 12pt; color: var(--text-muted); }
     .academic-round-title { font-size: 21pt; border-bottom: 2px solid var(--text-main); padding-bottom: 6px; margin: 24px 0 12px; text-indent: 0; }
-    .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: var(--paper-size); text-align: justify; }
+    .academic-paragraph,
+    .footnote-line,
+    .footnote-item {
+      text-align: justify;
+      text-align-last: right;
+      text-justify: inter-word;
+    }
+    .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: var(--paper-size); }
     .footnote-line, .biblio-title { text-indent: 0 !important; margin: 0; }
     .footnote-line { font-size: 14pt; line-height: 1.7; }
     .footnote-list { margin: 16px 0 0; padding: 8px 0 0; }
@@ -6447,6 +6561,8 @@ function buildAcademicPaperHtml(runData, options) {
     .btn-primary { background: linear-gradient(135deg, #B45309, #D97706); color: #FFFFFF !important; border: none; }
     .btn-primary:hover { opacity: 0.92; }
     .btn-act.is-on { border-color: var(--accent-gold); color: var(--accent-gold); }
+    .btn-act svg { display: block; }
+    .btn-act svg[hidden] { display: none; }
     .auto-scroll-speed { min-width: 1.2em; text-align: center; font-family: 'Tajawal', sans-serif; font-size: 13px; font-weight: 700; color: var(--accent-gold); }
     @media print {
       .no-print-toolbar { display: none !important; }
