@@ -5398,6 +5398,19 @@ function buildStandaloneProjectHtml(runData, options) {
       transform: translateY(-1px);
     }
 
+    .btn-act.is-on {
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    .auto-scroll-speed {
+      min-width: 1.2em;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent-gold);
+    }
+
     /* الحاوية الرئيسية للتقرير الأكاديمي */
     .report-container {
       max-width: 1100px;
@@ -5705,6 +5718,16 @@ function buildStandaloneProjectHtml(runData, options) {
       <button class="btn-act" onclick="adjustReportFontSize(-1)">
         <span>A- تصغير</span>
       </button>
+      <button class="btn-act" id="btnAutoScroll" type="button" onclick="toggleAutoScroll()" title="تمرير آلي">
+        <span>تشغيل</span>
+      </button>
+      <button class="btn-act" type="button" onclick="changeAutoScrollSpeed(1)" title="زيادة سرعة التمرير">
+        <span>+</span>
+      </button>
+      <span class="auto-scroll-speed" id="autoScrollSpeed">٢</span>
+      <button class="btn-act" type="button" onclick="changeAutoScrollSpeed(-1)" title="إنقاص سرعة التمرير">
+        <span>-</span>
+      </button>
       <button class="btn-act" onclick="saveReportHtml()">
         <span>حفظ HTML</span>
       </button>
@@ -5776,6 +5799,70 @@ function buildStandaloneProjectHtml(runData, options) {
         el.style.fontSize = curFontSize + 'px';
       });
     }
+
+    let autoScrollOn = false;
+    let autoScrollLevel = 2;
+    let autoScrollFrame = 0;
+    let autoScrollLast = 0;
+
+    function arabicScrollLevel(n) {
+      return String(n).replace(/[0-9]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[d]; });
+    }
+
+    function paintAutoScroll() {
+      const btn = document.getElementById('btnAutoScroll');
+      const speed = document.getElementById('autoScrollSpeed');
+      if (btn) {
+        const label = btn.querySelector('span');
+        if (label) label.textContent = autoScrollOn ? 'إيقاف' : 'تشغيل';
+        btn.classList.toggle('is-on', autoScrollOn);
+      }
+      if (speed) speed.textContent = arabicScrollLevel(autoScrollLevel);
+    }
+
+    function toggleAutoScroll() {
+      autoScrollOn = !autoScrollOn;
+      paintAutoScroll();
+      if (!autoScrollOn) {
+        cancelAnimationFrame(autoScrollFrame);
+        return;
+      }
+      autoScrollLast = 0;
+      const step = (now) => {
+        if (!autoScrollOn) return;
+        if (!autoScrollLast) autoScrollLast = now;
+        const dt = Math.min(50, now - autoScrollLast);
+        autoScrollLast = now;
+        window.scrollBy(0, (autoScrollLevel * 22 * dt) / 1000);
+        const doc = document.documentElement;
+        if (window.scrollY + window.innerHeight >= doc.scrollHeight - 2) {
+          autoScrollOn = false;
+          paintAutoScroll();
+          return;
+        }
+        autoScrollFrame = requestAnimationFrame(step);
+      };
+      autoScrollFrame = requestAnimationFrame(step);
+    }
+
+    function changeAutoScrollSpeed(delta) {
+      autoScrollLevel = Math.max(1, Math.min(10, autoScrollLevel + delta));
+      paintAutoScroll();
+    }
+
+    window.addEventListener('wheel', function () {
+      if (!autoScrollOn) return;
+      autoScrollOn = false;
+      cancelAnimationFrame(autoScrollFrame);
+      paintAutoScroll();
+    }, { passive: true });
+
+    window.addEventListener('beforeprint', function () {
+      if (!autoScrollOn) return;
+      autoScrollOn = false;
+      cancelAnimationFrame(autoScrollFrame);
+      paintAutoScroll();
+    });
 
     // دالة استخراج الأرقام بمرونة مع دعم الأرقام المشرقية
     function extractNumericValue(text) {
@@ -6176,6 +6263,16 @@ function buildAcademicPaperHtml(runData, options) {
       <button class="btn-act" type="button" onclick="adjustReportFontSize(-1)">
         <span>A- تصغير</span>
       </button>
+      <button class="btn-act" id="btnAutoScroll" type="button" onclick="toggleAutoScroll()" title="تمرير آلي">
+        <span>تشغيل</span>
+      </button>
+      <button class="btn-act" type="button" onclick="changeAutoScrollSpeed(1)" title="زيادة سرعة التمرير">
+        <span>+</span>
+      </button>
+      <span class="auto-scroll-speed" id="autoScrollSpeed">٢</span>
+      <button class="btn-act" type="button" onclick="changeAutoScrollSpeed(-1)" title="إنقاص سرعة التمرير">
+        <span>-</span>
+      </button>
     </div>
   </header>`;
   const toolbarScript = settings.toolbar === false ? '' : `
@@ -6189,6 +6286,63 @@ function buildAcademicPaperHtml(runData, options) {
       curFontSize = Math.max(14, Math.min(28, curFontSize + delta));
       document.documentElement.style.setProperty('--paper-size', curFontSize + 'pt');
     }
+    let autoScrollOn = false;
+    let autoScrollLevel = 2;
+    let autoScrollFrame = 0;
+    let autoScrollLast = 0;
+    function arabicScrollLevel(n) {
+      return String(n).replace(/[0-9]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[d]; });
+    }
+    function paintAutoScroll() {
+      const btn = document.getElementById('btnAutoScroll');
+      const speed = document.getElementById('autoScrollSpeed');
+      if (btn) {
+        const label = btn.querySelector('span');
+        if (label) label.textContent = autoScrollOn ? 'إيقاف' : 'تشغيل';
+        btn.classList.toggle('is-on', autoScrollOn);
+      }
+      if (speed) speed.textContent = arabicScrollLevel(autoScrollLevel);
+    }
+    function toggleAutoScroll() {
+      autoScrollOn = !autoScrollOn;
+      paintAutoScroll();
+      if (!autoScrollOn) {
+        cancelAnimationFrame(autoScrollFrame);
+        return;
+      }
+      autoScrollLast = 0;
+      const step = (now) => {
+        if (!autoScrollOn) return;
+        if (!autoScrollLast) autoScrollLast = now;
+        const dt = Math.min(50, now - autoScrollLast);
+        autoScrollLast = now;
+        window.scrollBy(0, (autoScrollLevel * 22 * dt) / 1000);
+        const doc = document.documentElement;
+        if (window.scrollY + window.innerHeight >= doc.scrollHeight - 2) {
+          autoScrollOn = false;
+          paintAutoScroll();
+          return;
+        }
+        autoScrollFrame = requestAnimationFrame(step);
+      };
+      autoScrollFrame = requestAnimationFrame(step);
+    }
+    function changeAutoScrollSpeed(delta) {
+      autoScrollLevel = Math.max(1, Math.min(10, autoScrollLevel + delta));
+      paintAutoScroll();
+    }
+    window.addEventListener('wheel', function () {
+      if (!autoScrollOn) return;
+      autoScrollOn = false;
+      cancelAnimationFrame(autoScrollFrame);
+      paintAutoScroll();
+    }, { passive: true });
+    window.addEventListener('beforeprint', function () {
+      if (!autoScrollOn) return;
+      autoScrollOn = false;
+      cancelAnimationFrame(autoScrollFrame);
+      paintAutoScroll();
+    });
   </script>`;
   const pageMargin = settings.forPdf ? '0' : '25mm 20mm 25mm 20mm';
 
@@ -6292,6 +6446,8 @@ function buildAcademicPaperHtml(runData, options) {
     .btn-act:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
     .btn-primary { background: linear-gradient(135deg, #B45309, #D97706); color: #FFFFFF !important; border: none; }
     .btn-primary:hover { opacity: 0.92; }
+    .btn-act.is-on { border-color: var(--accent-gold); color: var(--accent-gold); }
+    .auto-scroll-speed { min-width: 1.2em; text-align: center; font-family: 'Tajawal', sans-serif; font-size: 13px; font-weight: 700; color: var(--accent-gold); }
     @media print {
       .no-print-toolbar { display: none !important; }
       body, .paper-sheet { background: #FFFFFF !important; color: #111111 !important; }
