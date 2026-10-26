@@ -665,7 +665,7 @@ function renderAgentsGrid() {
     const scopeLabel = scopeCount > 0 ? `نطاق: ${scopeCount} كتب` : 'نطاق: جميع كتب الشاملة';
     const isEnabled = agent.enabled !== false && agent.active !== false;
     const promptText = agent.systemPrompt || agent.system_prompt || '';
-    const maxTokensVal = agent.maxTokens || agent.max_tokens || 65536;
+    const contextVal = agent.context_tokens || agent.contextTokens || 1048576;
 
     return `
       <div class="agent-card" id="card_${agent.id}">
@@ -695,7 +695,7 @@ function renderAgentsGrid() {
           </span>
           <span class="param-badge">حرارة: ${agent.temp ?? 0.2}</span>
           <span class="param-badge">Top-K: ${agent.topK ?? agent.top_k ?? 40}</span>
-          <span class="param-badge">توكن: ${Number(maxTokensVal).toLocaleString()}</span>
+          <span class="param-badge">سياق: ${Number(contextVal).toLocaleString()}</span>
           <span class="param-badge" style="color: var(--accent-clay); border-color: var(--accent-clay);">
             استرجاع دلالي مباشر (${agent.topK ?? agent.top_k ?? 40} نص)
           </span>
@@ -1032,7 +1032,7 @@ function editAgent(id) {
   document.getElementById('agentTempInput').value = agent.temp ?? 0.2;
   document.getElementById('agentTopKInput').value = agent.topK ?? agent.top_k ?? 40;
   document.getElementById('agentRepInput').value = agent.repPenalty ?? 1.1;
-  document.getElementById('agentTokensInput').value = agent.maxTokens || agent.max_tokens || 65536;
+  document.getElementById('agentTokensInput').value = agent.context_tokens || agent.contextTokens || 1048576;
   document.getElementById('agentPoolInput').value = agent.poolSize || agent.pool_size || 250;
   document.getElementById('agentTopRerankInput').value = agent.topK || agent.top_k || agent.topRerank || agent.top_rerank || 40;
 
@@ -1118,8 +1118,9 @@ function saveAgentFromModal() {
     topK: parseInt(document.getElementById('agentTopKInput').value || 40),
     top_k: parseInt(document.getElementById('agentTopKInput').value || 40),
     repPenalty: parseFloat(document.getElementById('agentRepInput').value || 1.1),
-    maxTokens: parseInt(document.getElementById('agentTokensInput').value || 65536),
-    max_tokens: parseInt(document.getElementById('agentTokensInput').value || 65536),
+    context_tokens: parseInt(document.getElementById('agentTokensInput').value || 1048576),
+    maxTokens: 65536,
+    max_tokens: 65536,
     poolSize: parseInt(document.getElementById('agentPoolInput').value || 250),
     pool_size: parseInt(document.getElementById('agentPoolInput').value || 250),
     topK: parseInt(document.getElementById('agentTopRerankInput').value || document.getElementById('agentTopKInput').value || 40),

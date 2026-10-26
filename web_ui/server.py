@@ -1594,6 +1594,7 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = 0.2
     top_k: Optional[int] = 40
     max_tokens: Optional[int] = 65536
+    context_tokens: Optional[int] = 1048576
     providers: Optional[Dict[str, str]] = None
     agent_group: Optional[Dict[str, Any]] = None
     retrieval_anchors: Optional[List[str]] = None
@@ -1707,6 +1708,14 @@ ACADEMIC_ANSWER_RULE = """
 - كل حاشية سطر مستقل بلا إزاحة. العناوين والآيات والأحاديث بخط عريض <b>. التعداد بأرقام عربية ثم شرطة.
 - اختم بعنوان «المصادر والمراجع» ثم قائمة لا جدولاً. لا تخترع طبعة أو دار نشر.
 """
+
+def resolve_context_tokens(value: Any) -> int:
+    """سياق استيعاب الشواهد الذي يختاره المستخدم. الافتراضي مليون رمز."""
+    try:
+        tokens = int(value or 1048576)
+    except (TypeError, ValueError):
+        tokens = 1048576
+    return max(8192, min(tokens, 2097152))
 
 def _plain_locator_number(value: Any) -> str:
     raw = str(value or "").strip()
@@ -5581,7 +5590,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             ag_freq_pen = float(ag.get("frequency_penalty")) if (ag.get("frequency_penalty") is not None and str(ag.get("frequency_penalty")).strip() != "") else None
             ag_pres_pen = float(ag.get("presence_penalty")) if (ag.get("presence_penalty") is not None and str(ag.get("presence_penalty")).strip() != "") else None
             ag_rep_pen = float(ag.get("repetition_penalty")) if (ag.get("repetition_penalty") is not None and str(ag.get("repetition_penalty")).strip() != "") else None
-            ag_max_tokens = int(ag.get("max_tokens") or 3500)
+            raw_output_tokens = int(ag.get("max_tokens") or 65536)
+            ag_max_tokens = 65536 if raw_output_tokens > 131072 else max(1024, raw_output_tokens)
 
             # استدعاء OpenRouter بنموذج الوكيل المخصص والمعلمات الكاملة
             print(f"🤖 [Subagent Dispatch] Calling OpenRouter model '{ag_model}' for agent '{ag_name}' with temp={ag_temp}, top_p={ag_top_p}, freq_pen={ag_freq_pen}...")
@@ -5669,7 +5679,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         return 60000
 
     target_model_name = req.model or "google/gemini-2.5-flash"
-    max_context_tokens = _calc_model_context_limit(target_model_name)
+    max_context_tokens = resolve_context_tokens(req.context_tokens)
     max_allowed_citation_chars = int(max(max_context_tokens - 10000, 10000) * 2.5)
 
     citations_text = ""
@@ -10038,6 +10048,7 @@ class ArchitectDialogRequest(BaseModel):
     messages: List[Dict[str, Any]]
     planning_model: Optional[str] = "google/gemini-2.5-flash"
     thinking_level: Optional[str] = "medium"
+    context_tokens: Optional[int] = 1048576
     tavily_key: Optional[str] = ""
     api_key: Optional[str] = ""
 
@@ -10281,7 +10292,8 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '    "thinking": "high",\n'
         '    "search_mode": "hybrid",\n'
         '    "extract_count": 120,\n'
-        '    "max_tokens": 262144,\n'
+        '    "context_tokens": 1048576,\n'
+        '    "max_tokens": 65536,\n'
         '    "system_prompt": "التوجيه الحرفي الصارم لمدير المشروع قيادة وتنسيقاً وتفريغاً للجداول، مع الصلاحية العلمية الكاملة لإعادة البحث حتى 3 مرات، وإلزاماً حتمياً بإفراد جدول ثبت المصادر والمراجع الببليوغرافي الشامل (الكتاب، المؤلف وسنة وفاته، المحقق، الطبعة، دار النشر، بلد النشر، رقم الشاملة) في خاتمة التقرير النهائي للمشروع"\n'
         '  },\n'
         '  "subagents_group": {\n'
@@ -10332,6 +10344,10 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         + books_catalog_section
     )
 
+    architect_system_prompt += (
+        f"\nسياق الاستيعاب المعتمد لهذا المشروع: {resolve_context_tokens(req.context_tokens)} رمز. "
+        "اجعل context_tokens في بطاقة المدير وكل وكيل بهذه القيمة إلا إذا طلب الباحث تغييرها، ولا تضع هذا الرقم في max_tokens لأن ذلك حد الإخراج لا حد الشواهد.\n"
+    )
     conv_messages = [{"role": "system", "content": architect_system_prompt}]
     for m in req.messages:
         role = m.get("role", "user")

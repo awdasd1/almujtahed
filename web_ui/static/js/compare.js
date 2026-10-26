@@ -332,6 +332,7 @@ async function submitCompareQuestion(event) {
         messages: historyForCompareModel(compareSlots[0].id),
         use_hybrid: true,
         context_only: true,
+        context_tokens: (typeof currentContextTokens === 'function') ? currentContextTokens() : parseInt(document.getElementById('compareContextSelect')?.value || '1048576', 10),
         agent_group: agentPayload,
         agent_dispatch_mode: window.chatAgentDispatchMode || 'parallel'
       })

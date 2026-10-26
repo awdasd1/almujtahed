@@ -281,7 +281,7 @@ function openProjectWorkspace(projectId) {
   setValue('pDirectorModel', dModel);
   populateOpenRouterModelDropdown(document.getElementById('pDirectorModel'), dModel);
   setValue('pDirectorThinking', project.director?.thinking || 'medium');
-  setValue('pDirectorMaxTokens', project.director?.max_tokens || 262144);
+  setValue('pDirectorMaxTokens', project.director?.context_tokens || 1048576);
   setValue('pDirectorPrompt', project.director?.system_prompt || '');
 
   // 2. بطاقة الوكلاء المساعدين وسعة الاستخراج والمراسي
@@ -378,7 +378,8 @@ function saveCurrentProjectWorkspaceState() {
     name: getValue('pDirectorName'),
     model: getValue('pDirectorModel'),
     thinking: getValue('pDirectorThinking'),
-    max_tokens: parseInt(getValue('pDirectorMaxTokens') || '262144', 10),
+    context_tokens: parseInt(getValue('pDirectorMaxTokens') || '1048576', 10),
+    max_tokens: 65536,
     system_prompt: getValue('pDirectorPrompt')
   };
 
@@ -664,7 +665,7 @@ function renderSubagentsPreviewList(agents) {
           <span style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); padding: 1px 6px; border-radius: 4px;">🌡️ حرارة: <strong>${temp}</strong></span>
           <span style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); padding: 1px 6px; border-radius: 4px;">🎯 Top-P: <strong>${a.top_p ?? 0.9}</strong></span>
           <span style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); padding: 1px 6px; border-radius: 4px;">🚫 عقوبة: <strong>${freqPen}</strong></span>
-          <span style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); padding: 1px 6px; border-radius: 4px;">📏 Max Tokens: <strong>${a.max_tokens || 4096}</strong></span>
+          <span style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); padding: 1px 6px; border-radius: 4px;">سياق: <strong>${Number(a.context_tokens || 1048576).toLocaleString()}</strong></span>
         </div>
 
         <!-- نطاق الكتب المحققة والمحددة من المهندس -->
@@ -827,7 +828,7 @@ async function openProjectSubagentConfigModal(agentIdx, focusTest = false) {
     const topKEl = document.getElementById('pSubagentModelTopKInput');
     if (topKEl) topKEl.value = agent.model_top_k || agent.modelTopK || '';
     const maxTokensEl = document.getElementById('pSubagentMaxTokensInput');
-    if (maxTokensEl) maxTokensEl.value = agent.max_tokens || agent.maxTokens || 4096;
+    if (maxTokensEl) maxTokensEl.value = agent.context_tokens || agent.contextTokens || 1048576;
 
     // نطاق كتب الشاملة
     const books = (agent.booksScope && Array.isArray(agent.booksScope)) ? agent.booksScope : (agent.books && Array.isArray(agent.books)) ? agent.books : [];
@@ -1279,7 +1280,7 @@ async function saveProjectSubagentConfig() {
   const freqPen = parseFloat(document.getElementById('pSubagentFreqPenInput')?.value) || 0.0;
   const presPen = parseFloat(document.getElementById('pSubagentPresPenInput')?.value) || 0.0;
   const modelTopK = document.getElementById('pSubagentModelTopKInput')?.value ? parseInt(document.getElementById('pSubagentModelTopKInput').value) : null;
-  const maxTokens = parseInt(document.getElementById('pSubagentMaxTokensInput')?.value) || 4096;
+  const contextTokens = parseInt(document.getElementById('pSubagentMaxTokensInput')?.value) || 1048576;
 
   const books = window._activeProjectSubagentBooks || [];
 
@@ -1300,7 +1301,8 @@ async function saveProjectSubagentConfig() {
   agent.frequency_penalty = freqPen;
   agent.presence_penalty = presPen;
   agent.model_top_k = modelTopK;
-  agent.max_tokens = maxTokens;
+  agent.context_tokens = contextTokens;
+  agent.max_tokens = 65536;
   agent.booksScope = [...books];
   agent.books = [...books];
   agent.scope_summary = books.length > 0 ? books.join('، ') : 'أمهات كتب التراث';
@@ -1378,7 +1380,7 @@ async function runProjectSubagentTestLive() {
   const freqPen = parseFloat(document.getElementById('pSubagentFreqPenInput')?.value) || 0.0;
   const presPen = parseFloat(document.getElementById('pSubagentPresPenInput')?.value) || 0.0;
   const modelTopK = document.getElementById('pSubagentModelTopKInput')?.value ? parseInt(document.getElementById('pSubagentModelTopKInput').value) : null;
-  const maxTokens = parseInt(document.getElementById('pSubagentMaxTokensInput')?.value) || 1500;
+  const maxTokens = 65536;
 
   let savedKeys = {};
   try { savedKeys = readProviderKeys(); } catch (e) { }
@@ -1982,6 +1984,7 @@ async function sendArchitectMessage() {
         messages: architectHistory,
         planning_model: chosenModel,
         thinking_level: thinkingLevel,
+        context_tokens: parseInt(document.getElementById('architectContextSelect')?.value || '1048576', 10),
         tavily_key: (typeof readTavilyKey === 'function' ? readTavilyKey() : '') || (savedKeys.tavily || ''),
         api_key: apiKey
       })
@@ -2477,7 +2480,8 @@ function generateFallbackBlueprintFromContext(ctx) {
       name: `مدير مشروع: ${extractedTitle.slice(0, 24)}`,
       model: 'google/gemini-2.5-flash',
       thinking: 'high',
-      max_tokens: 262144,
+      context_tokens: 1048576,
+      max_tokens: 65536,
       system_prompt: `أنت مدير هذا المشروع البحثي «${extractedTitle}». تشرف على قيادة الوكلاء، وتخريج الأدلة، وتفريغ النتائج في جداول قياسية محررة، مع الصلاحية العلمية الكاملة لتوجيه إعادة البحث والتحقق حتى 3 مرات قبل اعتماد النتائج.`
     },
     subagents_group: {
@@ -2558,6 +2562,7 @@ async function applyStudioBlueprint() {
             messages: finalizationMessages,
             planning_model: chosenModel,
             thinking_level: document.getElementById('architectThinkingSelect')?.value || 'medium',
+            context_tokens: parseInt(document.getElementById('architectContextSelect')?.value || '1048576', 10),
             tavily_key: (typeof readTavilyKey === 'function' ? readTavilyKey() : '') || (savedKeys.tavily || ''),
             api_key: apiKey
           })
@@ -2650,6 +2655,7 @@ async function applyStudioBlueprint() {
           temp: 0.2,
           max_tokens: 65536,
           maxTokens: 65536,
+          context_tokens: ag.context_tokens || ag.contextTokens || bp.director?.context_tokens || 1048576,
           system_prompt: prompt,
           systemPrompt: prompt
         };
@@ -2694,7 +2700,8 @@ async function applyStudioBlueprint() {
         thinking: bp.director?.thinking || targetProject.director?.thinking || 'high',
         search_mode: bp.director?.search_mode || targetProject.director?.search_mode || 'hybrid',
         extract_count: bp.director?.extract_count || targetProject.director?.extract_count || bp.extraction_capacity || 120,
-        max_tokens: bp.director?.max_tokens || targetProject.director?.max_tokens || 262144,
+        context_tokens: bp.director?.context_tokens || targetProject.director?.context_tokens || 1048576,
+        max_tokens: 65536,
         system_prompt: directorPrompt
       };
       targetProject.use_hybrid = (targetProject.director.search_mode || 'hybrid') !== 'semantic';
@@ -2729,7 +2736,8 @@ async function applyStudioBlueprint() {
           thinking: bp.director?.thinking || 'high',
           search_mode: bp.director?.search_mode || 'hybrid',
           extract_count: bp.director?.extract_count || bp.extraction_capacity || 120,
-          max_tokens: bp.director?.max_tokens || 262144,
+          context_tokens: bp.director?.context_tokens || 1048576,
+          max_tokens: 65536,
           system_prompt: directorPrompt
         },
         use_hybrid: (bp.director?.search_mode || 'hybrid') !== 'semantic',
@@ -2793,7 +2801,8 @@ async function updateActiveProjectCardsFromBlueprint() {
     project.director = {
       ...project.director,
       ...bp.director,
-      max_tokens: bp.director.max_tokens || project.director?.max_tokens || 262144
+      context_tokens: bp.director.context_tokens || project.director?.context_tokens || 1048576,
+      max_tokens: 65536
     };
   }
   if (bp.extraction_capacity) project.extraction_capacity = bp.extraction_capacity;
@@ -2855,6 +2864,7 @@ async function updateActiveProjectCardsFromBlueprint() {
         temp: 0.2,
         max_tokens: 65536,
         maxTokens: 65536,
+        context_tokens: ag.context_tokens || ag.contextTokens || 1048576,
         system_prompt: prompt,
         systemPrompt: prompt
       };
@@ -3576,7 +3586,8 @@ ${webEvidenceSection}
         top_k: project.extraction_capacity || 150,
         extraction_capacity: project.extraction_capacity || 150,
         retrieval_anchors: (project.retrieval_anchors && Array.isArray(project.retrieval_anchors)) ? project.retrieval_anchors : [],
-        max_tokens: project.director?.max_tokens || 65536,
+        max_tokens: project.director?.max_tokens && project.director.max_tokens <= 131072 ? project.director.max_tokens : 65536,
+        context_tokens: project.director?.context_tokens || parseInt(document.getElementById('pDirectorMaxTokens')?.value || '1048576', 10),
         providers: savedKeys,
         agent_group: linkedGroupPayload,
         agent_dispatch_mode: project.agent_dispatch_mode || 'parallel',
@@ -4280,7 +4291,8 @@ async function continueProjectExecutionRound() {
         top_k: project.extraction_capacity || 150,
         extraction_capacity: project.extraction_capacity || 150,
         retrieval_anchors: (project.retrieval_anchors && Array.isArray(project.retrieval_anchors)) ? project.retrieval_anchors : [],
-        max_tokens: project.director?.max_tokens || 65536,
+        max_tokens: project.director?.max_tokens && project.director.max_tokens <= 131072 ? project.director.max_tokens : 65536,
+        context_tokens: project.director?.context_tokens || parseInt(document.getElementById('pDirectorMaxTokens')?.value || '1048576', 10),
         providers: savedKeys,
         agent_group: linkedGroupPayload,
         agent_dispatch_mode: project.agent_dispatch_mode || 'parallel',
@@ -4762,11 +4774,11 @@ function openProjectToChatModal(project, runData) {
   // 7. عدد التوكن
   const tokensSelect = document.getElementById('p2cTokensSelect');
   if (tokensSelect) {
-    const prefTokens = p2cActiveProject?.director?.max_tokens ? String(p2cActiveProject.director.max_tokens) : '262144';
+    const prefTokens = String(p2cActiveProject?.director?.context_tokens || 1048576);
     if (tokensSelect.querySelector(`option[value="${prefTokens}"]`)) {
       tokensSelect.value = prefTokens;
     } else {
-      tokensSelect.value = '262144';
+      tokensSelect.value = '1048576';
     }
   }
 
@@ -4989,7 +5001,7 @@ function saveProjectToChatSettingsAndApply() {
 
   const model = document.getElementById('p2cModelSelect')?.value || 'google/gemini-2.5-flash';
   const thinking = document.getElementById('p2cThinkingSelect')?.value || 'medium';
-  const maxTokens = parseInt(document.getElementById('p2cTokensSelect')?.value) || 262144;
+  const contextTokens = parseInt(document.getElementById('p2cTokensSelect')?.value) || 1048576;
 
   const temp = parseFloat(document.getElementById('p2cTemperature')?.value || 0.2);
   const repPenalty = parseFloat(document.getElementById('p2cRepPenalty')?.value || 1.1);
@@ -5011,7 +5023,8 @@ function saveProjectToChatSettingsAndApply() {
     currentSettings.modelParams.temperature = temp;
     currentSettings.modelParams.topK = topK;
     currentSettings.modelParams.repPenalty = repPenalty;
-    currentSettings.modelParams.maxTokens = maxTokens;
+    currentSettings.modelParams.contextTokens = contextTokens;
+    if (typeof setContextTokens === 'function') setContextTokens(contextTokens);
 
     try {
       localStorage.setItem('almojtahed_settings', JSON.stringify(currentSettings));
@@ -5045,12 +5058,8 @@ function saveProjectToChatSettingsAndApply() {
     if (badge) badge.textContent = repPenalty;
   }
 
-  const mainMaxTokensInput = document.getElementById('paramMaxTokens');
-  if (mainMaxTokensInput) {
-    mainMaxTokensInput.value = Math.min(maxTokens, 131072);
-    const badge = document.getElementById('valMaxTokens');
-    if (badge) badge.textContent = Number(maxTokens).toLocaleString() + ' توكن';
-  }
+  const mainContext = document.getElementById('paramContextTokens');
+  if (mainContext) mainContext.value = String(contextTokens);
 
   // 4. تطبيق التحديدات على واجهة الشات الذكي الحية
   // أ. النموذج

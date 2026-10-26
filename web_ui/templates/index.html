@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 5.0 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 5.1 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -438,6 +438,16 @@
                                     <option value="medium" selected>متوسط · متزن · متوسط التكلفة</option>
                                     <option value="high">عالي · أعمق · أعلى تكلفة</option>
                                     <option value="max">أقصى · أبطأ · التكلفة القصوى</option>
+                                </select>
+                            </div>
+                            <div class="thinking-control">
+                                <span style="color: var(--text-muted); font-size: 12px; font-weight: 600;">السياق:</span>
+                                <select id="chatContextSelect" class="filter-select thinking-dropdown" onchange="setContextTokens(this.value)" title="سياق استيعاب الشواهد">
+                                    <option value="131072">128K</option>
+                                    <option value="262144">264K</option>
+                                    <option value="524288">500K</option>
+                                    <option value="1048576" selected>1M</option>
+                                    <option value="2097152">2M</option>
                                 </select>
                             </div>
                         </div>
@@ -964,14 +974,13 @@
                                         </select>
                                     </div>
                                     <div class="form-group" style="flex: 1.2; min-width: 170px;">
-                                        <label>سعة التوكن (Context & Output):</label>
+                                        <label>سياق النموذج:</label>
                                         <select id="pDirectorMaxTokens" class="form-select">
-                                            <option value="131072">128K توكن (سياق موسع)</option>
-                                            <option value="262144" selected>264K توكن (سياق أبحاث عميقة - افتراضي)
-                                            </option>
-                                            <option value="524288">500K توكن (أبحاث مطولة ومقارنات)</option>
-                                            <option value="1048576">1M توكن (سياق ضخم واستيعاب كامل)</option>
-                                            <option value="2097152">2M توكن (أقصى سياق للنماذج العملاقة)</option>
+                                            <option value="131072">128K</option>
+                                            <option value="262144">264K</option>
+                                            <option value="524288">500K</option>
+                                            <option value="1048576" selected>1M</option>
+                                            <option value="2097152">2M</option>
                                         </select>
                                     </div>
                                 </div>
@@ -2004,6 +2013,14 @@
                         </button>
                     </div>
                     <div class="compare-template-row">
+                        <label for="compareContextSelect" style="font-size: 12px; font-weight: 700; color: var(--text-muted);">سياق الشواهد:</label>
+                        <select id="compareContextSelect" class="chat-template-chip" title="سياق استيعاب الشواهد في المقارنة" onchange="setContextTokens(this.value)">
+                            <option value="131072">128K</option>
+                            <option value="262144">264K</option>
+                            <option value="524288">500K</option>
+                            <option value="1048576" selected>1M</option>
+                            <option value="2097152">2M</option>
+                        </select>
                         <select class="chat-template-chip highlight-chip graph-kind-select" data-graph-target="compareInput" onchange="insertGraphKind(this)" title="اختر نوع المشجر في المقارنة">
                             <option value="">🌳 نوع المشجر</option>
                             <option value="graph_isnad">تشجير إسناد</option>
@@ -2689,11 +2706,18 @@
                                     oninput="document.getElementById('valMaxTokens').textContent = Number(this.value).toLocaleString() + ' توكن'">
                                 <span class="slider-value" id="valMaxTokens" style="width: 100px;">65,536 توكن</span>
                             </div>
-                            <small
-                                style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 5px;">
-                                💡 <strong>توضيح هام:</strong> تم ضبط الإجابة حتى 65K توكن، بينما <strong>سياق استيعاب
-                                    المدخلات والكتب والتحليل مفتوح تلقائياً لـ 264K وحتى 1M توكن</strong> لاستيعاب كافة
-                                المقاطع والمجلدات وأمهات الكتب دفعة واحدة دون أي بتر.
+                            <label>سياق استيعاب الشواهد (الافتراضي 1M):</label>
+                            <div class="slider-container">
+                                <select id="paramContextTokens" class="form-select" onchange="setContextTokens(this.value)">
+                                    <option value="131072">128K</option>
+                                    <option value="262144">264K</option>
+                                    <option value="524288">500K</option>
+                                    <option value="1048576" selected>1M</option>
+                                    <option value="2097152">2M</option>
+                                </select>
+                            </div>
+                            <small style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 5px;">
+                                هذا حد الشواهد المرسلة إلى النموذج. حد طول الإجابة يبقى في الشريط أعلاه. إن رفض المزود الطلب فاختر سياقاً يحتمله النموذج.
                             </small>
                         </div>
                     </div>
@@ -2894,9 +2918,9 @@
                         <input type="number" id="agentTopKInput" class="form-input" min="1" max="100" value="40">
                     </div>
                     <div class="form-group">
-                        <label>عدد التوكن (حتى مليون):</label>
-                        <input type="number" id="agentTokensInput" class="form-input" min="1024" max="1000000"
-                            step="1024" value="65536">
+                        <label>سياق النموذج (حتى مليونين):</label>
+                        <input type="number" id="agentTokensInput" class="form-input" min="8192" max="2097152"
+                            step="1024" value="1048576">
                     </div>
                 </div>
 
@@ -3325,6 +3349,14 @@
                             <option value="medium" selected>متوسط · متزن · متوسط التكلفة</option>
                             <option value="high">عالي · أعمق · أعلى تكلفة</option>
                             <option value="max">أقصى · أبطأ · التكلفة القصوى</option>
+                        </select>
+                        <label for="architectContextSelect">السياق:</label>
+                        <select id="architectContextSelect" class="form-select-sm thinking-dropdown" title="سياق استيعاب الشواهد في المشروع" onchange="setContextTokens(this.value)">
+                            <option value="131072">128K</option>
+                            <option value="262144">264K</option>
+                            <option value="524288">500K</option>
+                            <option value="1048576" selected>1M</option>
+                            <option value="2097152">2M</option>
                         </select>
                     </div>
                     <button type="button" class="btn-close-modal" onclick="closeProjectPlanningModal()">&times;</button>
@@ -3767,8 +3799,14 @@
 
                         <!-- الحد الأقصى للرموز Max Tokens -->
                         <div>
-                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">📏 الحد الأقصى للرموز (Max Tokens):</label>
-                            <input type="number" id="pSubagentMaxTokensInput" class="form-input" min="500" max="65536" step="500" value="4096" style="font-size: 12.5px;">
+                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">سياق النموذج:</label>
+                            <select id="pSubagentMaxTokensInput" class="form-select" style="font-size: 12.5px;">
+                                <option value="131072">128K</option>
+                                <option value="262144">264K</option>
+                                <option value="524288">500K</option>
+                                <option value="1048576" selected>1M</option>
+                                <option value="2097152">2M</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -4630,16 +4668,15 @@
                     <div>
                         <label for="p2cTokensSelect"
                             style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px;">
-                            الحد الأقصى للتوكن (Max Tokens):
+                            سياق استيعاب الشواهد:
                         </label>
                         <select id="p2cTokensSelect" class="form-select"
                             style="width: 100%; font-size: 12.5px; padding: 7px 10px; font-weight: 600;">
-                            <option value="65536">٦٤ ألف توكن (64K) - إجابات قياسية موسعة</option>
-                            <option value="131072">١٢٨ ألف توكن (128K) - بحوث متكاملة</option>
-                            <option value="262144" selected>٢٦٤ ألف توكن (264K) - موسوعي موصى به للمشاريع</option>
-                            <option value="524288">٥١٢ ألف توكن (512K) - استيعاب مجلدات كبرى</option>
-                            <option value="1048576">مليون توكن (1M Tokens) - فائق الضخامة</option>
-                            <option value="2097152">مليونين توكن (2M Tokens) - الحد الأقصى لجيميني</option>
+                            <option value="131072">128K</option>
+                            <option value="262144">264K</option>
+                            <option value="524288">500K</option>
+                            <option value="1048576" selected>1M</option>
+                            <option value="2097152">2M</option>
                         </select>
                     </div>
 
@@ -4713,18 +4750,18 @@
     <script src="/static/js/markmap-view.min.js"></script>
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/members.js?v=1792835200"></script>
-    <script src="/static/js/app.js?v=1792895000"></script>
+    <script src="/static/js/app.js?v=1792910000"></script>
     <script src="/static/js/search.js?v=1792887000"></script>
     <script src="/static/js/reader.js?v=1792832400"></script>
     <script src="/static/js/force3d.js?v=1792878800"></script>
     <script src="/static/js/share.js?v=1792892000"></script>
-    <script src="/static/js/chat.js?v=1792906000"></script>
-    <script src="/static/js/agents.js?v=1792899000"></script>
+    <script src="/static/js/chat.js?v=1792910000"></script>
+    <script src="/static/js/agents.js?v=1792910000"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
     <script src="/static/js/tools.js?v=1792896000"></script>
-    <script src="/static/js/projects.js?v=1792906000"></script>
+    <script src="/static/js/projects.js?v=1792910000"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
-    <script src="/static/js/compare.js?v=1792899000"></script>
+    <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
     <script src="/static/js/changelog.js?v=1792863100"></script>
 

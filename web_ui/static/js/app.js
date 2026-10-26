@@ -65,7 +65,8 @@ const DEFAULT_SETTINGS = {
     temperature: 0.2,
     topK: 40,
     repPenalty: 1.1,
-    maxTokens: 65536
+    maxTokens: 65536,
+    contextTokens: 1048576
   }
 };
 
@@ -879,6 +880,25 @@ function switchSettingsTab(tabKey) {
 }
 
 // قراءة الإعدادات من التخزين وحقنها في الحقول
+function setContextTokens(value) {
+  const allowed = [131072, 262144, 524288, 1048576, 2097152];
+  const parsed = parseInt(value, 10);
+  const next = allowed.includes(parsed) ? parsed : 1048576;
+  localStorage.setItem('almojtahed_context_tokens', String(next));
+  if (!currentSettings.modelParams) currentSettings.modelParams = {};
+  currentSettings.modelParams.contextTokens = next;
+  ['chatContextSelect', 'paramContextTokens', 'compareContextSelect', 'architectContextSelect'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = String(next);
+  });
+}
+function currentContextTokens() {
+  const parsed = parseInt(localStorage.getItem('almojtahed_context_tokens') || document.getElementById('chatContextSelect')?.value || '1048576', 10);
+  return Number.isFinite(parsed) ? parsed : 1048576;
+}
+window.setContextTokens = setContextTokens;
+window.currentContextTokens = currentContextTokens;
+
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
@@ -922,6 +942,7 @@ function syncSettingsToUI() {
     document.getElementById('paramMaxTokens').value = m.maxTokens ?? 65536;
     document.getElementById('valMaxTokens').textContent = Number(m.maxTokens ?? 65536).toLocaleString() + ' توكن';
   }
+  if (typeof setContextTokens === 'function') setContextTokens(m.contextTokens || 1048576);
 }
 
 // حفظ كافة الإعدادات
@@ -953,6 +974,7 @@ function saveAllSettings() {
     topK: parseInt(document.getElementById('paramTopK')?.value || 40),
     repPenalty: parseFloat(document.getElementById('paramRepPenalty')?.value || 1.1),
     maxTokens: parseInt(document.getElementById('paramMaxTokens')?.value || 65536),
+    contextTokens: (typeof currentContextTokens === 'function') ? currentContextTokens() : 1048576,
   };
 
   localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(currentSettings));

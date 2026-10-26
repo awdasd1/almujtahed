@@ -1257,6 +1257,7 @@ async function triggerChatCompletion(session, attachments = []) {
         temperature: executionTemp,
         top_k: executionTopK,
         max_tokens: currentSettings.modelParams?.maxTokens,
+        context_tokens: (typeof currentContextTokens === 'function') ? currentContextTokens() : 1048576,
         providers: readProviderKeys(),
         agent_group: assignedGroupPayload,
         agent_dispatch_mode: window.chatAgentDispatchMode || 'parallel',
