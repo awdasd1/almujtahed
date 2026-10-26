@@ -6108,6 +6108,10 @@ function formatAcademicBody(rawMarkdown) {
     const withId = /id=/.test(open) ? open.replace(/id="[^"]*"/, `id="paper-fn${idMatch[2]}"`) : `${open} id="paper-fn${idMatch[2]}"`;
     return `${withId}>${linked}</li>`;
   });
+  html = html.replace(/<ol class="footnote-list">([\s\S]*?)<\/ol>/gi, (_, inner) => {
+    const items = inner.replace(/<li\b/gi, '<p class="footnote-item"').replace(/<\/li>/gi, '</p>');
+    return `<div class="footnote-list">${items}</div>`;
+  });
   return html;
 }
 
@@ -6161,16 +6165,16 @@ function buildAcademicPaperHtml(runData, options) {
     .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: 18pt; text-align: justify; }
     .footnote-line, .biblio-title { text-indent: 0 !important; margin: 0; }
     .footnote-line { font-size: 14pt; line-height: 1.7; }
-    ol.footnote-list { list-style: none; margin: 16px 0 0; padding: 8px 0 0; }
-    ol.footnote-list::before {
+    .footnote-list { margin: 16px 0 0; padding: 8px 0 0; }
+    .footnote-list::before {
       content: "";
       display: block;
       width: 25%;
       border-top: 1px solid #000;
       margin: 0 0 8px;
     }
-    ol.footnote-list li { list-style: none; margin: 0; padding: 0; font-size: 14pt; line-height: 1.7; }
-    ol.footnote-list sup, ol.footnote-list small { vertical-align: baseline; font-size: inherit; font-weight: 400; }
+    .footnote-list .footnote-item { margin: 0; padding: 0; font-size: 14pt; line-height: 1.7; text-indent: 0; }
+    .footnote-list sup, .footnote-list small { vertical-align: baseline; font-size: inherit; font-weight: 400; }
     .biblio-title { font-size: 20pt; margin-top: 22px; }
     h1, h2, h3, h4 { text-indent: 0; }
     sup small { font-size: 11pt; font-weight: 700; vertical-align: super; }
