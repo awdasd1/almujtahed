@@ -6485,12 +6485,50 @@ function buildAcademicPaperHtml(runData, options) {
         const sheet = document.querySelector('.paper-sheet');
         if (!sheet || !window.html2pdf) throw new Error('share-source');
         const clone = sheet.cloneNode(true);
+        clone.setAttribute('dir', 'rtl');
+        clone.style.direction = 'rtl';
+        clone.style.width = '714px';
+        clone.style.maxWidth = '714px';
+        clone.style.margin = '0';
+        clone.style.position = 'relative';
+        clone.style.left = '0';
+        clone.style.right = 'auto';
+        clone.style.transform = 'none';
+        clone.style.background = '#ffffff';
+        clone.style.color = '#111111';
         stage.appendChild(clone);
         document.body.appendChild(stage);
         const blob = await window.html2pdf().set({
           margin: 12,
-          image: { type: 'jpeg', quality: 0.92 },
-          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 794 },
+          image: { type: 'jpeg', quality: 0.95 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            scrollX: 0,
+            scrollY: 0,
+            foreignObjectRendering: true,
+            windowWidth: 794,
+            onclone: function (clonedDoc) {
+              clonedDoc.documentElement.setAttribute('dir', 'ltr');
+              clonedDoc.body.setAttribute('dir', 'ltr');
+              clonedDoc.body.style.direction = 'ltr';
+              clonedDoc.body.style.margin = '0';
+              const copied = clonedDoc.querySelector('.paper-sheet');
+              if (!copied) return;
+              copied.setAttribute('dir', 'rtl');
+              copied.style.direction = 'rtl';
+              copied.style.width = '714px';
+              copied.style.maxWidth = '714px';
+              copied.style.margin = '0';
+              copied.style.position = 'relative';
+              copied.style.left = '0';
+              copied.style.right = 'auto';
+              copied.style.transform = 'none';
+              copied.style.background = '#ffffff';
+              copied.style.color = '#111111';
+            }
+          },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
           pagebreak: { mode: ['css', 'legacy'] }
         }).from(clone).outputPdf('blob');
@@ -6651,7 +6689,7 @@ function buildAcademicPaperHtml(runData, options) {
     .btn-act svg { display: block; }
     .btn-act svg[hidden] { display: none; }
     .btn-act:disabled { opacity: 0.45; cursor: progress; }
-    .share-pdf-stage { position: fixed; left: -12000px; top: 0; width: 794px; background: #fff; color: #111; }
+    .share-pdf-stage { position: fixed; left: 0; top: 0; width: 794px; z-index: -1; pointer-events: none; background: #fff; color: #111; }
     .auto-scroll-speed { min-width: 1.2em; text-align: center; font-family: 'Tajawal', sans-serif; font-size: 13px; font-weight: 700; color: var(--accent-gold); }
     @media print {
       .no-print-toolbar, .share-pdf-stage { display: none !important; }
