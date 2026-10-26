@@ -503,6 +503,7 @@ body[data-theme="dark"] {
 .changelog-window {
   width: min(720px, 94vw);
   height: min(78vh, 720px);
+  max-height: 78vh;
 }
 
 .changelog-body {
@@ -1674,9 +1675,15 @@ body:has(#paneChat.active) .main-content {
 .chat-assistant-tools-section {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+
+.chat-assistant-tools-section > .chat-tools-header-row,
+.chat-assistant-tools-section > .chat-graph-kind-fixed,
+.chat-assistant-tools-section > .chat-table-request-btn {
+  flex-shrink: 0;
 }
 
 .chat-graph-kind-fixed {
@@ -1723,11 +1730,16 @@ body:has(#paneChat.active) .main-content {
 }
 
 .chat-assistant-tools-list {
-  flex: 1;
+  flex: 1 1 auto;
+  height: 0;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   padding-left: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .chat-assistant-tools-list::-webkit-scrollbar {
@@ -3061,6 +3073,15 @@ input:checked+.slider-toggle:before {
   display: flex;
   flex: 1;
   overflow: hidden;
+}
+
+.modal-body.changelog-body {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .modal-tabs-sidebar {
