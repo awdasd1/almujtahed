@@ -833,20 +833,70 @@ function exportChatMessageHtml(idx) {
     }]
   };
 
+  const filename = readingHtmlFilename(title);
   const htmlContent = (typeof window.buildStandaloneProjectHtml === 'function')
-    ? window.buildStandaloneProjectHtml(runData)
+    ? window.buildStandaloneProjectHtml(runData, { portrait: true, downloadName: filename })
     : msg.content;
 
-  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.setAttribute('href', url);
-  a.setAttribute('download', `research_result_${Date.now()}.html`);
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast('🎉 تم تصدير النتيجة البحثية كـ HTML تفاعلي بنجاح!');
+  openChatReadingWindow(htmlContent);
+}
+
+function readingHtmlFilename(title) {
+  const base = String(title || 'قراءة')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || 'قراءة';
+  return `${base}.html`;
+}
+
+function openChatReadingWindow(htmlContent) {
+  const width = Math.min(860, Math.max(680, (window.screen.availWidth || 1200) - 80));
+  const height = Math.max(720, (window.screen.availHeight || 900) - 40);
+  const left = Math.max(0, Math.round(((window.screen.availWidth || width) - width) / 2));
+  const win = window.open('', '_blank', `popup=yes,width=${width},height=${height},left=${left},top=16,resizable=yes,scrollbars=yes`);
+  if (win) {
+    writeChatReadingDocument(win, htmlContent);
+    showToast('تم فتح نافذة القراءة');
+    setTimeout(() => { try { win.focus(); } catch (e) {} }, 200);
+    return;
+  }
+  openChatReadingOverlay(htmlContent);
+  showToast('تم فتح نافذة القراءة');
+}
+
+function writeChatReadingDocument(win, htmlContent) {
+  win.document.open();
+  win.document.write(htmlContent);
+  win.document.close();
+  win.__readingSource = htmlContent;
+}
+
+function openChatReadingOverlay(htmlContent) {
+  let overlay = document.getElementById('chatReadingOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'chatReadingOverlay';
+    overlay.className = 'chat-reading-overlay';
+    overlay.innerHTML = `
+      <div class="chat-reading-window" role="dialog" aria-label="قراءة">
+        <button type="button" class="chat-reading-close" aria-label="إغلاق">إغلاق</button>
+        <iframe id="chatReadingFrame" title="قراءة"></iframe>
+      </div>`;
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) overlay.hidden = true;
+    });
+    overlay.querySelector('.chat-reading-close').addEventListener('click', () => {
+      overlay.hidden = true;
+    });
+    document.body.appendChild(overlay);
+  }
+  const frame = overlay.querySelector('#chatReadingFrame');
+  overlay.hidden = false;
+  frame.onload = () => {
+    try { frame.contentWindow.__readingSource = htmlContent; } catch (e) {}
+  };
+  frame.srcdoc = htmlContent;
 }
 
 async function exportChatMessagePdf(idx) {

@@ -5234,8 +5234,11 @@ ${currentProjectRunData.rawOutput}
 // =============================================================================
 // بناء وثيقة HTML الأكاديمية المستقلة التفاعلية (مع الشارتات والأسانيد و CSS و JS)
 // =============================================================================
-function buildStandaloneProjectHtml(runData) {
+function buildStandaloneProjectHtml(runData, options) {
   if (!runData) return '';
+  const settings = options || {};
+  const portrait = settings.portrait === true;
+  const downloadName = settings.downloadName || 'research_result.html';
   const title = runData.projectTitle || 'تقرير تحقيق وبحث علمي';
   const executedAt = runData.executedAt || new Date().toLocaleString('ar-SA');
   const directorModel = runData.directorModel || 'الذكاء الاصطناعي الأكاديمي';
@@ -5334,6 +5337,8 @@ function buildStandaloneProjectHtml(runData) {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
       box-shadow: var(--shadow-sm);
     }
 
@@ -5349,7 +5354,16 @@ function buildStandaloneProjectHtml(runData) {
     .bar-actions {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 8px;
+    }
+
+    body.is-reading {
+      overflow-y: auto;
+    }
+
+    body.is-reading .report-container {
+      max-width: 740px;
     }
 
     .btn-act {
@@ -5670,7 +5684,7 @@ function buildStandaloneProjectHtml(runData) {
     }
   </style>
 </head>
-<body>
+<body class="${portrait ? 'is-reading' : ''}">
 
   <!-- شريط الإجراءات التفاعلي العلوي -->
   <header class="top-action-bar">
@@ -5690,6 +5704,9 @@ function buildStandaloneProjectHtml(runData) {
       </button>
       <button class="btn-act" onclick="adjustReportFontSize(-1)">
         <span>A- تصغير</span>
+      </button>
+      <button class="btn-act" onclick="saveReportHtml()">
+        <span>حفظ HTML</span>
       </button>
     </div>
   </header>
@@ -5730,6 +5747,22 @@ function buildStandaloneProjectHtml(runData) {
   </main>
 
   <script>
+    function saveReportHtml() {
+      const name = ${JSON.stringify(downloadName)};
+      const source = (typeof window.__readingSource === 'string' && window.__readingSource)
+        ? window.__readingSource
+        : '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
+      const blob = new Blob([source], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
     function toggleReportTheme() {
       const cur = document.documentElement.getAttribute('data-theme') || 'light';
       const nxt = cur === 'dark' ? 'light' : 'dark';

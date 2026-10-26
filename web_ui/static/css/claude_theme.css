@@ -7707,6 +7707,56 @@ table tr:hover td,
   border-color: #b91c1c;
 }
 
+.chat-reading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100080;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  padding: 16px 12px;
+  background: rgba(17, 17, 17, 0.46);
+}
+
+.chat-reading-overlay[hidden] {
+  display: none;
+}
+
+.chat-reading-window {
+  position: relative;
+  width: min(820px, 100%);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.chat-reading-window iframe {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+.chat-reading-close {
+  align-self: flex-start;
+  margin: 8px 12px;
+  z-index: 2;
+  border: 1px solid #e5e0d8;
+  background: #fff;
+  color: #1f2937;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 /* أزرار تبديل نوع الشارت التفاعلي */
 .chart-type-buttons {
   display: flex;
