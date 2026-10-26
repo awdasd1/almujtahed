@@ -6271,7 +6271,10 @@ function formatAcademicBody(rawMarkdown) {
     if (isFootnote) {
       return `<p class="footnote-line">${content}</p>`;
     }
-    if (/text-indent/.test(attrs)) return match;
+    if (/text-indent/.test(attrs)) {
+      if (/class\s*=/.test(attrs)) return `<p${attrs.replace(/class=(["'])/, 'class=$1academic-paragraph ')}>${content}</p>`;
+      return `<p class="academic-paragraph"${attrs}>${content}</p>`;
+    }
     return `<p class="academic-paragraph">${content}</p>`;
   });
   const refCounts = {};
@@ -6499,6 +6502,7 @@ function buildAcademicPaperHtml(runData, options) {
     .paper-main-title { font-size: 25pt; font-weight: 700; line-height: 1.6; margin: 0 0 12px; }
     .paper-sub-meta { font-family: 'Tajawal', sans-serif; font-size: 12pt; color: var(--text-muted); }
     .academic-round-title { font-size: 21pt; border-bottom: 2px solid var(--text-main); padding-bottom: 6px; margin: 24px 0 12px; text-indent: 0; }
+    .academic-text-content p,
     .academic-paragraph,
     .footnote-line,
     .footnote-item {
@@ -6568,6 +6572,14 @@ function buildAcademicPaperHtml(runData, options) {
       .no-print-toolbar { display: none !important; }
       body, .paper-sheet { background: #FFFFFF !important; color: #111111 !important; }
       a.chat-fn-ref, a.chat-fn-back { color: #1d4ed8 !important; }
+      .academic-text-content p,
+      .academic-paragraph,
+      .footnote-line,
+      .footnote-item {
+        text-align: justify !important;
+        text-align-last: right !important;
+        text-justify: inter-word !important;
+      }
     }
   </style>
 </head>
