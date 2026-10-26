@@ -1677,12 +1677,17 @@ body:has(#paneChat.active) .main-content {
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
-.chat-assistant-tools-section > .chat-tools-header-row,
-.chat-assistant-tools-section > .chat-graph-kind-fixed,
-.chat-assistant-tools-section > .chat-table-request-btn {
+.chat-assistant-tools-section > .chat-tools-header-row {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-surface);
   flex-shrink: 0;
 }
 
@@ -1730,12 +1735,10 @@ body:has(#paneChat.active) .main-content {
 }
 
 .chat-assistant-tools-list {
-  flex: 1 1 auto;
-  height: 0;
+  flex: none;
+  height: auto;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
+  overflow: visible;
   padding-left: 2px;
   display: flex;
   flex-direction: column;
