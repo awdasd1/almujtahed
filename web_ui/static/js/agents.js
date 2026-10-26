@@ -665,7 +665,7 @@ function renderAgentsGrid() {
     const scopeLabel = scopeCount > 0 ? `نطاق: ${scopeCount} كتب` : 'نطاق: جميع كتب الشاملة';
     const isEnabled = agent.enabled !== false && agent.active !== false;
     const promptText = agent.systemPrompt || agent.system_prompt || '';
-    const contextVal = agent.context_tokens || agent.contextTokens || 1048576;
+    const contextVal = agentContextTokens(agent);
 
     return `
       <div class="agent-card" id="card_${agent.id}">
@@ -983,6 +983,11 @@ document.addEventListener('click', function(e) {
 // فتح نافذة إضافة / تعديل وكيل
 // =============================================================================
 
+function agentContextTokens(agent) {
+  const explicit = parseInt(agent?.context_tokens || agent?.contextTokens || 0, 10);
+  return explicit >= 131072 ? explicit : 1048576;
+}
+
 function openAddAgentModal() {
   document.getElementById('editAgentId').value = '';
   document.getElementById('agentModalTitle').textContent = 'إضافة وكيل مساعد جديد';
@@ -992,7 +997,7 @@ function openAddAgentModal() {
   document.getElementById('agentTempInput').value = '0.2';
   document.getElementById('agentTopKInput').value = '40';
   document.getElementById('agentRepInput').value = '1.1';
-  document.getElementById('agentTokensInput').value = '16384';
+  document.getElementById('agentTokensInput').value = '1048576';
   document.getElementById('agentPoolInput').value = '250';
   document.getElementById('agentTopRerankInput').value = '40';
 
@@ -1032,7 +1037,7 @@ function editAgent(id) {
   document.getElementById('agentTempInput').value = agent.temp ?? 0.2;
   document.getElementById('agentTopKInput').value = agent.topK ?? agent.top_k ?? 40;
   document.getElementById('agentRepInput').value = agent.repPenalty ?? 1.1;
-  document.getElementById('agentTokensInput').value = agent.context_tokens || agent.contextTokens || 1048576;
+  document.getElementById('agentTokensInput').value = agentContextTokens(agent);
   document.getElementById('agentPoolInput').value = agent.poolSize || agent.pool_size || 250;
   document.getElementById('agentTopRerankInput').value = agent.topK || agent.top_k || agent.topRerank || agent.top_rerank || 40;
 
