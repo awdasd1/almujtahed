@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 5.4 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 5.5 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -3093,7 +3093,7 @@
                 <div style="display: flex; gap: 10px;">
                     <button type="button" class="btn-flat-secondary" onclick="closeSearchScopeModal()">إلغاء</button>
                     <button type="button" class="btn-flat-primary" onclick="applySearchScopeSelection()">
-                        <span>تطبيق النطاق</span>
+                        <span id="scopeApplyLabel">تطبيق النطاق</span>
                         <span id="scopeApplyBadge"
                             style="background: rgba(255,255,255,0.25); border-radius: 10px; padding: 1px 7px; font-size: 11px; margin-right: 4px;">0</span>
                     </button>
@@ -3376,67 +3376,11 @@
                         <!-- يتم تعبئة رسائل الحوار التفاعلي هنا -->
                     </div>
 
-                    <!-- درج استكشاف والبحث في كتب الشاملة المرقمة معيارياً (8,589 كتاباً) -->
                     <div class="studio-books-drawer" id="studioBooksDrawer">
-                        <div class="studio-books-header">
-                            <span class="studio-books-title">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                                </svg>
-                                <span>فهرس أمهات كتب الشاملة المرقمة معيارياً (8,589 كتاباً مفهرسة في المخزن بـ 8.15M
-                                    نقطة):</span>
-                            </span>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span class="p-status-pill" id="studioBooksCount" style="font-size: 11px;">8,589
-                                    كتاباً</span>
-                                <a href="/api/books/csv" download="shamela_books_catalog_8589.csv" class="btn-ghost-sm"
-                                    style="font-size: 11px; padding: 2px 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; color: var(--accent-clay);"
-                                    title="تحميل جدول كافة كتب الشاملة 8,589 كتاباً مع أرقامها وتواريخ وفياتها بصيغة CSV">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2.2">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                        <polyline points="7 10 12 15 17 10" />
-                                        <line x1="12" y1="15" x2="12" y2="3" />
-                                    </svg>
-                                    <span>تحميل books.csv</span>
-                                </a>
-                                <button type="button" class="btn-ghost-sm" id="btnToggleBooksDrawer"
-                                    onclick="toggleStudioBooksDrawer()" style="font-size: 11px; padding: 2px 6px;">
-                                    <span id="toggleBooksDrawerText">إظهار الفهرس</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- شريط البحث اللحظي في كتب الشاملة برقم #ID أو العنوان أو المؤلف -->
-                        <div class="studio-books-search-bar" id="studioBooksSearchBar" style="display: none;">
-                            <div style="position: relative; flex: 1;">
-                                <input type="text" id="studioBookSearchInput" class="studio-books-search-input"
-                                    placeholder="🔍 ابحث برقم الكتاب المعياري (#1852) أو اسم الكتاب (المبسوط، المغني، الطبري) أو اسم المؤلف..."
-                                    oninput="handleStudioBookSearch(this.value)">
-                                <button type="button" class="studio-books-clear-btn" id="studioBookClearBtn"
-                                    onclick="clearStudioBookSearch()" style="display: none;">✕</button>
-                            </div>
-                            <select id="studioBookCategoryFilter" class="studio-books-cat-select"
-                                onchange="handleStudioBookCatFilter(this.value)">
-                                <option value="">كل التصنيفات (41 تصنيفاً)</option>
-                                <option value="14">الفقه الحنفي</option>
-                                <option value="15">الفقه المالكي</option>
-                                <option value="16">الفقه الشافعي</option>
-                                <option value="17">الفقه الحنبلي</option>
-                                <option value="18">الفقه العام والمقارن</option>
-                                <option value="19">أصول الفقه والقواعد</option>
-                                <option value="25">التاريخ والبلدان</option>
-                                <option value="26">التراجم والطبقات</option>
-                                <option value="6">الحديث وعلومه</option>
-                                <option value="8">شروح الحديث</option>
-                            </select>
-                        </div>
-
-                        <div class="studio-books-chips" id="studioBooksChips" style="display: none;">
-                            <!-- يتم تعبئة الكتب المستكشفة والمرقمة بـ #ID هنا -->
-                        </div>
+                        <button type="button" class="btn-scope-selector" onclick="openArchitectExtraBooks()"
+                            title="فتح نافذة تحديد الكتب من المخزن التراثي لإضافتها إلى الوكيل المناسب">
+                            اختيار كتب اضافية
+                        </button>
                     </div>
 
                     <!-- اقتراحات سريعة لنطاق البحث -->
@@ -4756,7 +4700,7 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/members.js?v=1792835200"></script>
     <script src="/static/js/app.js?v=1792910000"></script>
-    <script src="/static/js/search.js?v=1792887000"></script>
+    <script src="/static/js/search.js?v=1792930000"></script>
     <script src="/static/js/reader.js?v=1792832400"></script>
     <script src="/static/js/force3d.js?v=1792878800"></script>
     <script src="/static/js/share.js?v=1792892000"></script>
@@ -4764,7 +4708,7 @@
     <script src="/static/js/agents.js?v=1792911000"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
     <script src="/static/js/tools.js?v=1792896000"></script>
-    <script src="/static/js/projects.js?v=1792920000"></script>
+    <script src="/static/js/projects.js?v=1792930000"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>

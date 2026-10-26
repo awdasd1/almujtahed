@@ -493,6 +493,15 @@ async function openSearchScopeModal(target = 'search') {
   if (target === 'agent') {
     selectedBooksScope = [...(window._currentAgentBooks || [])];
     modal.style.zIndex = '250';
+  } else if (target === 'architect_books') {
+    selectedBooksScope = [];
+    currentScopeCategory = '';
+    currentScopeSearchQuery = '';
+    const scopeCatSelect = document.getElementById('scopeCategorySelect');
+    if (scopeCatSelect) scopeCatSelect.value = '';
+    const scopeFilterInp = document.getElementById('scopeFilterQuery');
+    if (scopeFilterInp) scopeFilterInp.value = '';
+    modal.style.zIndex = '800';
   } else if (target === 'project_subagent') {
     selectedBooksScope = [...(window._activeProjectSubagentBooks || [])];
     modal.style.zIndex = '350';
@@ -506,6 +515,8 @@ async function openSearchScopeModal(target = 'search') {
 
   modal.style.display = 'flex';
   modal.classList.add('open');
+  const applyLabel = document.getElementById('scopeApplyLabel');
+  if (applyLabel) applyLabel.textContent = target === 'architect_books' ? 'اعتماد' : 'تطبيق النطاق';
 
   if (catalogBooksCache.length === 0) {
     const listContainer = document.getElementById('scopeBooksList');
@@ -542,6 +553,8 @@ function closeSearchScopeModal() {
     modal.classList.remove('open');
     modal.style.zIndex = '250';
   }
+  const applyLabel = document.getElementById('scopeApplyLabel');
+  if (applyLabel) applyLabel.textContent = 'تطبيق النطاق';
 }
 
 // إغلاق عند النقر على الخلفية ومزامنة فلاتر البحث
@@ -619,7 +632,7 @@ function renderScopeBooks() {
         <div style="flex: 1; min-width: 0;">
           <div class="scope-book-title">${encodedTitle}</div>
           <div class="scope-book-meta">
-            <span>${escapeHtml(b.author)} ${death}</span>
+            <span>#${b.id} · ${escapeHtml(b.author)} ${death}</span>
             <span class="scope-cat-tag">${escapeHtml(b.category_name || 'عام')}</span>
           </div>
         </div>
@@ -728,6 +741,20 @@ function scopeDeselectAll() {
 
 // تطبيق النطاق على البحث أو على الوكيل
 function applySearchScopeSelection() {
+  if (scopeModalTarget === 'architect_books') {
+    if (!selectedBooksScope.length) {
+      showToast('حدد كتاباً واحداً على الأقل ثم اعتمد');
+      return;
+    }
+    const books = selectedBooksScope.map(title => {
+      const found = (catalogBooksCache || []).find(b => b.title === title);
+      return { id: found && found.id != null ? found.id : '', title };
+    });
+    closeSearchScopeModal();
+    if (typeof window.onArchitectExtraBooks === 'function') window.onArchitectExtraBooks(books);
+    return;
+  }
+
   if (scopeModalTarget === 'project_subagent') {
     window._activeProjectSubagentBooks = [...selectedBooksScope];
     if (typeof window.onProjectSubagentScopeApplied === 'function') {
@@ -844,6 +871,12 @@ function resetAgentSearchScope(event) {
 
 // إلغاء النطاق والعودة لجميع الكتب في البحث الدلالي
 function scopeResetToAllBooks() {
+  if (scopeModalTarget === 'architect_books') {
+    selectedBooksScope = [];
+    renderScopeBooks();
+    closeSearchScopeModal();
+    return;
+  }
   selectedBooksScope = [];
   window._searchTabBooks = [];
   currentScopeCategory = '';

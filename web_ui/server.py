@@ -10347,6 +10347,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
     architect_system_prompt += (
         f"\nسياق الاستيعاب المعتمد لهذا المشروع: {resolve_context_tokens(req.context_tokens)} رمز. "
         "اجعل context_tokens في بطاقة المدير وكل وكيل بهذه القيمة إلا إذا طلب الباحث تغييرها، ولا تضع هذا الرقم في max_tokens لأن ذلك حد الإخراج لا حد الشواهد.\n"
+        "إذا أرسل الباحث رسالة تبدأ بـ «أضف هذه الكتب لدى الوكيل المناسب»، فأضف كل كتاب كما ورد برقمه المعياري وعنوانه إلى حقل books لدى الوكيل الأنسب لفن الكتاب، ولا تستبدل الرقم ولا تُسقط الكتاب.\n"
     )
     conv_messages = [{"role": "system", "content": architect_system_prompt}]
     for m in req.messages:

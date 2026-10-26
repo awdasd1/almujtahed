@@ -2160,6 +2160,34 @@ function renderStudioBooksDrawer(books) {
   }).join('');
 }
 
+function openArchitectExtraBooks() {
+  if (typeof openSearchScopeModal === 'function') openSearchScopeModal('architect_books');
+}
+
+function onArchitectExtraBooks(books) {
+  const lines = (books || []).filter(book => book && book.title).map((book, index) => {
+    const number = toArabicIndicDigits(String(index + 1));
+    const bookId = book.id ? `#${book.id}` : '';
+    return `${number}- كتاب ${bookId} «${book.title}»`.replace('  ', ' ');
+  });
+  if (!lines.length) {
+    if (typeof showToast === 'function') showToast('حدد كتاباً واحداً على الأقل ثم اعتمد');
+    return;
+  }
+  const text = `أضف هذه الكتب لدى الوكيل المناسب\n${lines.join('\n')}`;
+  const input = document.getElementById('architectUserInput');
+  if (!input) return;
+  const current = input.value.trim();
+  input.value = current ? `${current}\n${text}` : text;
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, 220)}px`;
+  input.focus();
+  if (typeof showToast === 'function') showToast('ظهرت الكتب في مربع الإرسال، اضغط إرسال لاعتمادها');
+}
+
+window.openArchitectExtraBooks = openArchitectExtraBooks;
+window.onArchitectExtraBooks = onArchitectExtraBooks;
+
 function insertBookIntoArchitectChat(bookId, bookTitle) {
   const inputEl = document.getElementById('architectUserInput');
   if (!inputEl) return;
