@@ -6317,6 +6317,9 @@ function buildAcademicPaperHtml(runData, options) {
       <button class="btn-act btn-primary" type="button" onclick="window.print()">
         <span>🖨️ طباعة / حفظ كـ PDF</span>
       </button>
+      <button class="btn-act" id="btnShareReport" type="button" onclick="shareReportPdf()" title="مشاركة" aria-label="مشاركة" disabled>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+      </button>
       <button class="btn-act" type="button" onclick="toggleReportTheme()">
         <span>🌓 تبديل النمط</span>
       </button>
@@ -6434,7 +6437,6 @@ function buildAcademicPaperHtml(runData, options) {
       const top = target.getBoundingClientRect().top + window.scrollY - toolbarClearance();
       window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
     });
-    window.addEventListener('load', applyToolbarClearance);
     window.addEventListener('resize', applyToolbarClearance);
     applyToolbarClearance();
     window.addEventListener('wheel', function () {
@@ -6451,6 +6453,87 @@ function buildAcademicPaperHtml(runData, options) {
       cancelAnimationFrame(autoScrollFrame);
       paintAutoScroll();
     });
+    if (document.readyState === 'complete') prepareSharePdf();
+    else window.addEventListener('load', function () { prepareSharePdf(); });
+    let sharePdfFile = null;
+    let sharePdfError = null;
+    function sharePdfName() {
+      const base = String(document.title || 'قراءة').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'قراءة';
+      return base + '.pdf';
+    }
+    function loadHtml2Pdf() {
+      if (window.html2pdf) return Promise.resolve();
+      return new Promise(function (resolve, reject) {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+        script.onload = function () { resolve(); };
+        script.onerror = function () { reject(new Error('share-script')); };
+        document.head.appendChild(script);
+      });
+    }
+    async function prepareSharePdf() {
+      const btn = document.getElementById('btnShareReport');
+      if (btn) {
+        btn.disabled = true;
+        btn.title = 'جارٍ تجهيز ملف PDF';
+      }
+      const stage = document.createElement('div');
+      stage.className = 'share-pdf-stage';
+      stage.setAttribute('aria-hidden', 'true');
+      try {
+        await loadHtml2Pdf();
+        const sheet = document.querySelector('.paper-sheet');
+        if (!sheet || !window.html2pdf) throw new Error('share-source');
+        const clone = sheet.cloneNode(true);
+        stage.appendChild(clone);
+        document.body.appendChild(stage);
+        const blob = await window.html2pdf().set({
+          margin: 12,
+          image: { type: 'jpeg', quality: 0.92 },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 794 },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] }
+        }).from(clone).outputPdf('blob');
+        sharePdfFile = new File([blob], sharePdfName(), { type: 'application/pdf' });
+        sharePdfError = null;
+        if (btn) {
+          btn.disabled = false;
+          btn.title = 'مشاركة';
+        }
+      } catch (err) {
+        sharePdfFile = null;
+        sharePdfError = err;
+        if (btn) {
+          btn.disabled = false;
+          btn.title = 'مشاركة';
+        }
+      } finally {
+        stage.remove();
+      }
+    }
+    async function shareReportPdf() {
+      const btn = document.getElementById('btnShareReport');
+      if (!sharePdfFile) {
+        if (btn && btn.disabled) return;
+        window.alert(sharePdfError ? 'تعذر تجهيز ملف PDF للمشاركة' : 'جارٍ تجهيز ملف PDF، ثم أعد الضغط');
+        if (!sharePdfError) prepareSharePdf();
+        return;
+      }
+      if (typeof navigator.share !== 'function') {
+        window.alert('هذا المتصفح لا يفتح قائمة المشاركة في النظام');
+        return;
+      }
+      const payload = { files: [sharePdfFile], title: document.title || 'قراءة' };
+      if (typeof navigator.canShare === 'function' && !navigator.canShare(payload)) {
+        window.alert('هذا المتصفح لا يتيح مشاركة ملف PDF عبر قائمة النظام. يمكن حفظ الملف من زر الطباعة');
+        return;
+      }
+      try {
+        await navigator.share(payload);
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+      }
+    }
   </script>`;
   const pageMargin = settings.forPdf ? '0' : '25mm 20mm 25mm 20mm';
 
@@ -6567,9 +6650,11 @@ function buildAcademicPaperHtml(runData, options) {
     .btn-act.is-on { border-color: var(--accent-gold); color: var(--accent-gold); }
     .btn-act svg { display: block; }
     .btn-act svg[hidden] { display: none; }
+    .btn-act:disabled { opacity: 0.45; cursor: progress; }
+    .share-pdf-stage { position: fixed; left: -12000px; top: 0; width: 794px; background: #fff; color: #111; }
     .auto-scroll-speed { min-width: 1.2em; text-align: center; font-family: 'Tajawal', sans-serif; font-size: 13px; font-weight: 700; color: var(--accent-gold); }
     @media print {
-      .no-print-toolbar { display: none !important; }
+      .no-print-toolbar, .share-pdf-stage { display: none !important; }
       body, .paper-sheet { background: #FFFFFF !important; color: #111111 !important; }
       a.chat-fn-ref, a.chat-fn-back { color: #1d4ed8 !important; }
       .academic-text-content p,
