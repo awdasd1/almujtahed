@@ -710,12 +710,8 @@ function renderSessionMessages(sessionId, options) {
 
     const actionsBar = !isUser ? `
       <div class="chat-msg-actions-bar" style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px dashed var(--border-subtle); padding-top: 8px; flex-wrap: wrap;">
-        <button type="button" class="btn-msg-export" onclick="exportChatMessageHtml(${idx})" title="قراءة هذه النتيجة">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="14" r="4"/><circle cx="18" cy="14" r="4"/><path d="M10 14h4"/><path d="M2.5 14.5 5 8"/><path d="M21.5 14.5 19 8"/></svg>
-          قراءة
-        </button>
-        <button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="تصدير هذه النتيجة كملف PDF أكاديمي منسق">
-          📄 تصدير PDF
+        <button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="قراءة هذه النتيجة">
+          📄 قراءة
         </button>
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
