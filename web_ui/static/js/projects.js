@@ -6099,12 +6099,12 @@ function formatAcademicBody(rawMarkdown) {
     const western = String(number).replace(/[٠-٩]/g, (digit) => '٠١٢٣٤٥٦٧٨٩'.indexOf(digit)).replace(/\D/g, '');
     if (!western) return match;
     refCounts[western] = (refCounts[western] || 0) + 1;
-    return `<a class="chat-fn-ref" id="paper-ref${western}-${refCounts[western]}" href="#paper-fn${western}">(${number})</a>`;
+    return `<a class="chat-fn-ref" id="paper-ref${western}-${refCounts[western]}" name="paper-ref${western}-${refCounts[western]}" href="#paper-fn${western}">(${number})</a>`;
   });
   html = html.replace(/(<li\b[^>]*)>([\s\S]*?)<\/li>/gi, (match, open, inner) => {
     const idMatch = open.match(/id="([^"]*fn)(\d+)"/i);
     if (!idMatch) return match;
-    const linked = inner.replace(/^\s*\(([^)<]{1,8})\)/, (all, number) => `<a class="chat-fn-back" href="#paper-ref${idMatch[2]}-1">(${number})</a>`);
+    const linked = inner.replace(/^\s*\(([^)<]{1,8})\)/, (all, number) => `<a class="chat-fn-back" id="paper-fn-back${idMatch[2]}" name="paper-fn-back${idMatch[2]}" href="#paper-ref${idMatch[2]}-1">(${number})</a>`);
     const withId = /id=/.test(open) ? open.replace(/id="[^"]*"/, `id="paper-fn${idMatch[2]}"`) : `${open} id="paper-fn${idMatch[2]}"`;
     return `${withId}>${linked}</li>`;
   });
@@ -6199,23 +6199,30 @@ function buildAcademicPaperHtml(runData, options) {
 </html>`;
 }
 
+function openAcademicPaperWindow(runData) {
+  const fullPrintHtml = buildAcademicPaperHtml(runData, { toolbar: true });
+  const printWin = window.open('', '_blank');
+  if (!printWin) {
+    showToast('تعذر فتح صفحة البحث. اسمح بالنوافذ المنبثقة ثم أعد التصدير');
+    return;
+  }
+  printWin.document.open();
+  printWin.document.write(fullPrintHtml);
+  printWin.document.close();
+  showToast('تم فتح البحث. احفظه كـ PDF من زر الطباعة، وروابط المتن والحاشية تبقى في الملف');
+  setTimeout(() => { printWin.focus(); }, 400);
+}
+
 function printAcademicPaper() {
   if (!currentProjectRunData) {
     showToast('لا توجد نتائج تشغيل متاحة للطباعة الأكاديمية');
     return;
   }
-  const fullPrintHtml = buildAcademicPaperHtml(currentProjectRunData, { toolbar: true });
-  const printWin = window.open('', '_blank');
-  if (printWin) {
-    printWin.document.open();
-    printWin.document.write(fullPrintHtml);
-    printWin.document.close();
-    showToast('تم فتح صفحة البحث الأكاديمي بتنسيق الطباعة المحكم');
-    setTimeout(() => { printWin.focus(); }, 400);
-  }
+  openAcademicPaperWindow(currentProjectRunData);
 }
 
 window.printAcademicPaper = printAcademicPaper;
+window.openAcademicPaperWindow = openAcademicPaperWindow;
 window.buildAcademicPaperHtml = buildAcademicPaperHtml;
 
 function exportCurrentProjectResultsModal() {

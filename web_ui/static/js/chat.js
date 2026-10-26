@@ -868,38 +868,11 @@ async function exportChatMessagePdf(idx) {
     }]
   };
 
-  const htmlContent = (typeof window.buildAcademicPaperHtml === 'function')
-    ? window.buildAcademicPaperHtml(runData, { toolbar: false, forPdf: true })
-    : msg.content;
-
-  showToast('جارٍ إعداد وتوليد ملف PDF الأكاديمي عالي الدقة... ⏳');
-  try {
-    const res = await fetch('/api/projects/export-pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html: htmlContent, title: title })
-    });
-    if (!res.ok) throw new Error('فشل التوليد');
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.setAttribute('href', url);
-    a.setAttribute('download', `research_result_${Date.now()}.pdf`);
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('🎉 تم تحميل ملف PDF الأكاديمي بنجاح!');
-  } catch (err) {
-    console.warn('PDF export server fallback to print:', err);
-    const printWin = window.open('', '_blank');
-    if (printWin) {
-      printWin.document.open();
-      printWin.document.write(htmlContent);
-      printWin.document.close();
-      setTimeout(() => { printWin.focus(); printWin.print(); }, 500);
-    }
+  if (typeof window.openAcademicPaperWindow === 'function') {
+    window.openAcademicPaperWindow(runData);
+    return;
   }
+  showToast('تعذر تجهيز صفحة البحث للطباعة');
 }
 
 function copyChatMessageText(idx) {
