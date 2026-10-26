@@ -27,6 +27,7 @@ import secrets
 import textwrap
 import subprocess
 import shutil
+import tempfile
 import concurrent.futures
 import threading
 from dotenv import load_dotenv
@@ -10560,45 +10561,125 @@ class ExportPdfRequest(BaseModel):
     html: str
     title: Optional[str] = "almojtahed_report"
 
+def find_chrome_binary() -> Optional[str]:
+    env_path = os.environ.get("CHROME_PATH") or os.environ.get("CHROMIUM_PATH")
+    candidates = [
+        env_path,
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+AMIRI_FONT_DIR = Path(__file__).resolve().parent / "static" / "fonts"
+_REMOTE_FONT_LINK_RE = re.compile(
+    r"<link\b[^>]*(?:fonts\.googleapis\.com|fonts\.gstatic\.com)[^>]*>",
+    re.IGNORECASE,
+)
+
+def html_with_local_amiri(html: str) -> str:
+    """الخط يُحمَّل من الملفات المحلية حتى لا ينتظر التوليد شبكة خطوط جوجل."""
+    face = (
+        "<style id=\"local-amiri\">"
+        "@font-face{font-family:'Amiri';src:url('Amiri-Regular.ttf') format('truetype');font-weight:400;font-style:normal;}"
+        "@font-face{font-family:'Amiri';src:url('Amiri-Bold.ttf') format('truetype');font-weight:700;font-style:normal;}"
+        "</style>"
+    )
+    html = _REMOTE_FONT_LINK_RE.sub("", html)
+    marker = "</head>"
+    idx = html.lower().rfind(marker)
+    if idx >= 0:
+        return html[:idx] + face + html[idx:]
+    return face + html
+
+def render_html_to_pdf_with_chrome(html: str) -> bytes:
+    chrome = find_chrome_binary()
+    if not chrome:
+        raise RuntimeError("لم يُعثر على متصفح لتوليد PDF بنفس جودة الطباعة")
+    with tempfile.TemporaryDirectory(prefix="almojtahed-pdf-") as folder:
+        folder_path = Path(folder)
+        for name in ("Amiri-Regular.ttf", "Amiri-Bold.ttf"):
+            src = AMIRI_FONT_DIR / name
+            if src.is_file():
+                shutil.copyfile(src, folder_path / name)
+        html_path = folder_path / "paper.html"
+        pdf_path = folder_path / "paper.pdf"
+        profile = folder_path / "profile"
+        html_path.write_text(html_with_local_amiri(html), encoding="utf-8")
+        cmd = [
+            chrome,
+            "--headless=new",
+            "--disable-gpu",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-sync",
+            "--no-pdf-header-footer",
+            "--virtual-time-budget=1500",
+            "--timeout=20000",
+            f"--user-data-dir={profile}",
+            f"--print-to-pdf={pdf_path}",
+            html_path.as_uri(),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, timeout=25, check=False)
+        if not pdf_path.is_file() or pdf_path.stat().st_size < 800:
+            detail = (proc.stderr or b"").decode("utf-8", "ignore")[-400:].strip()
+            raise RuntimeError(detail or "تعذر إنشاء ملف PDF")
+        return pdf_path.read_bytes()
+
 @app.post("/api/projects/export-pdf")
 async def export_project_pdf_endpoint(req: ExportPdfRequest):
     """توليد وتصدير ملف PDF أكاديمي عالي الدقة مستخرج من HTML مع الشارتات والرسوم التفاعلية"""
+    safe_title = re.sub(r'[\s/\\:*?"<>|]', '_', (req.title or "almojtahed_report").strip())
+    filename = f"{safe_title}.pdf"
+    pdf_bytes = None
     try:
         from playwright.async_api import async_playwright
     except ImportError:
-        raise HTTPException(status_code=500, detail="مكتبة playwright غير مثبتة على الخادم")
-
-    safe_title = re.sub(r'[\s/\\:*?"<>|]', '_', (req.title or "almojtahed_report").strip())
-    filename = f"{safe_title}.pdf"
+        async_playwright = None
 
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.set_content(req.html, wait_until="networkidle")
-            await page.wait_for_timeout(1200)
-            pdf_bytes = await page.pdf(
-                format="A4",
-                print_background=True,
-                margin={"top": "25mm", "bottom": "25mm", "left": "20mm", "right": "20mm"},
-                display_header_footer=True,
-                header_template='<div style="font-size:9px; width:100%; text-align:center; color:#888; font-family:sans-serif;">منظومة المجتهد للبحث التراثي والأكاديمي</div>',
-                footer_template='<div style="font-size:9px; width:100%; text-align:center; color:#888; font-family:sans-serif;">صفحة <span class="pageNumber"></span> من <span class="totalPages"></span></div>'
-            )
-            await browser.close()
-
-        encoded_filename = urllib.parse.quote(filename)
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
-                "Content-Type": "application/pdf"
-            }
-        )
+        if async_playwright is not None:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+                await page.set_content(req.html, wait_until="networkidle")
+                await page.wait_for_timeout(1200)
+                pdf_bytes = await page.pdf(
+                    format="A4",
+                    print_background=True,
+                    prefer_css_page_size=True,
+                    margin={"top": "0", "bottom": "0", "left": "0", "right": "0"},
+                    display_header_footer=False,
+                )
+                await browser.close()
+        else:
+            pdf_bytes = await asyncio.to_thread(render_html_to_pdf_with_chrome, req.html)
     except Exception as e:
-        print(f"Error generating PDF with Playwright: {e}")
-        raise HTTPException(status_code=500, detail=f"فشل توليد ملف PDF: {str(e)}")
+        print(f"Error generating PDF: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail="فشل توليد ملف PDF بنفس تنسيق الطباعة")
+
+    encoded_filename = urllib.parse.quote(filename)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Content-Type": "application/pdf"
+        }
+    )
 
 if __name__ == "__main__":
     import uvicorn

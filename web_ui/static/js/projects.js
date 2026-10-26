@@ -6461,15 +6461,10 @@ function buildAcademicPaperHtml(runData, options) {
       const base = String(document.title || 'قراءة').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'قراءة';
       return base + '.pdf';
     }
-    function loadHtml2Pdf() {
-      if (window.html2pdf) return Promise.resolve();
-      return new Promise(function (resolve, reject) {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-        script.onload = function () { resolve(); };
-        script.onerror = function () { reject(new Error('share-script')); };
-        document.head.appendChild(script);
-      });
+    function readingHtmlForPdf() {
+      const clone = document.documentElement.cloneNode(true);
+      clone.querySelectorAll('script, .no-print-toolbar, .share-pdf-stage').forEach(function (node) { node.remove(); });
+      return '<!DOCTYPE html>\\n' + clone.outerHTML;
     }
     async function prepareSharePdf() {
       const btn = document.getElementById('btnShareReport');
@@ -6477,76 +6472,27 @@ function buildAcademicPaperHtml(runData, options) {
         btn.disabled = true;
         btn.title = 'جارٍ تجهيز ملف PDF';
       }
-      const stage = document.createElement('div');
-      stage.className = 'share-pdf-stage';
-      stage.setAttribute('aria-hidden', 'true');
       try {
-        await loadHtml2Pdf();
-        const sheet = document.querySelector('.paper-sheet');
-        if (!sheet || !window.html2pdf) throw new Error('share-source');
-        const clone = sheet.cloneNode(true);
-        clone.setAttribute('dir', 'rtl');
-        clone.style.direction = 'rtl';
-        clone.style.width = '714px';
-        clone.style.maxWidth = '714px';
-        clone.style.margin = '0';
-        clone.style.position = 'relative';
-        clone.style.left = '0';
-        clone.style.right = 'auto';
-        clone.style.transform = 'none';
-        clone.style.background = '#ffffff';
-        clone.style.color = '#111111';
-        stage.appendChild(clone);
-        document.body.appendChild(stage);
-        const blob = await window.html2pdf().set({
-          margin: 12,
-          image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            scrollX: 0,
-            scrollY: 0,
-            foreignObjectRendering: true,
-            windowWidth: 794,
-            onclone: function (clonedDoc) {
-              clonedDoc.documentElement.setAttribute('dir', 'ltr');
-              clonedDoc.body.setAttribute('dir', 'ltr');
-              clonedDoc.body.style.direction = 'ltr';
-              clonedDoc.body.style.margin = '0';
-              const copied = clonedDoc.querySelector('.paper-sheet');
-              if (!copied) return;
-              copied.setAttribute('dir', 'rtl');
-              copied.style.direction = 'rtl';
-              copied.style.width = '714px';
-              copied.style.maxWidth = '714px';
-              copied.style.margin = '0';
-              copied.style.position = 'relative';
-              copied.style.left = '0';
-              copied.style.right = 'auto';
-              copied.style.transform = 'none';
-              copied.style.background = '#ffffff';
-              copied.style.color = '#111111';
-            }
-          },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] }
-        }).from(clone).outputPdf('blob');
+        const res = await fetch('/api/projects/export-pdf', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ html: readingHtmlForPdf(), title: document.title || 'قراءة' }),
+          signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(20000) : undefined
+        });
+        if (!res.ok) throw new Error('pdf');
+        const blob = await res.blob();
+        if (!blob || blob.size < 800) throw new Error('pdf-empty');
         sharePdfFile = new File([blob], sharePdfName(), { type: 'application/pdf' });
         sharePdfError = null;
-        if (btn) {
-          btn.disabled = false;
-          btn.title = 'مشاركة';
-        }
       } catch (err) {
         sharePdfFile = null;
         sharePdfError = err;
+      } finally {
         if (btn) {
           btn.disabled = false;
           btn.title = 'مشاركة';
         }
-      } finally {
-        stage.remove();
       }
     }
     async function shareReportPdf() {
@@ -6688,7 +6634,7 @@ function buildAcademicPaperHtml(runData, options) {
     .btn-act.is-on { border-color: var(--accent-gold); color: var(--accent-gold); }
     .btn-act svg { display: block; }
     .btn-act svg[hidden] { display: none; }
-    .btn-act:disabled { opacity: 0.45; cursor: progress; }
+    .btn-act:disabled { opacity: 0.45; cursor: default; }
     .share-pdf-stage { position: fixed; left: 0; top: 0; width: 794px; z-index: -1; pointer-events: none; background: #fff; color: #111; }
     .auto-scroll-speed { min-width: 1.2em; text-align: center; font-family: 'Tajawal', sans-serif; font-size: 13px; font-weight: 700; color: var(--accent-gold); }
     @media print {
