@@ -4727,7 +4727,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.276"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.277"},
         },
     })
     if opened.get("error"):
@@ -9527,8 +9527,11 @@ def _consult_research_advisors(
                 model_id=normalize_model_id(ag.get("model") or "google/gemini-2.5-pro"),
                 messages=[{"role": "system", "content": _sys},
                           {"role": "user", "content": f"المسألة المعروضة على الفريق: {query}"}],
-                api_key=api_key, temperature=0.2, max_tokens=64000, timeout=300,
-                thinking_level=str(ag.get("thinking") or "max"),
+                api_key=api_key, temperature=0.2, max_tokens=20000, timeout=300,
+                # مخرَج المستشار قائمة JSON قصيرة: تفكير max كان يحرق دقائق
+                # في توليد مخفي لا يظهر في الترشيحات؛ high يكفي ويُسرّع المجلس.
+                thinking_level={"max": "high"}.get(str(ag.get("thinking") or "").lower(),
+                                                   str(ag.get("thinking") or "high")),
             ) or ""
             parsed = _parse_advisor_json(raw)
             parsed["advisor"] = str(ag.get("name") or "")
@@ -9755,7 +9758,7 @@ def _consult_research_advisors(
                 model_id=normalize_model_id(director_model),
                 messages=[{"role": "system", "content": _dsys},
                           {"role": "user", "content": f"المسألة: {query}\n\nفريقك وكتبهم:\n" + "\n".join(spec_lines) + "\n\nالترشيحات ومرشحوها من الشاملة:\n" + "\n".join(prop_lines)}],
-                api_key=api_key, temperature=0.1, max_tokens=64000, timeout=300,
+                api_key=api_key, temperature=0.1, max_tokens=20000, timeout=300,
                 thinking_level="high",
             ) or ""
             spec_by_name = {str(a.get("name") or "").strip(): a for a in specialists}
@@ -11934,7 +11937,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     meta_tags.append("🔤 [قناة الاكتشاف: لفظية]")
                 tag_line = (" " + " ".join(meta_tags)) if meta_tags else ""
                 snippets_items.append(
-                    f"- الإحالة المعتمدة: {loc_str} | المصنف: {c['author']}{tag_line}:\n  {_full_page_snippet(c)}"
+                    f"- الإحالة المعتمدة: {loc_str} | المصنف: {c['author']}{tag_line}:\n  {_full_page_snippet(c, cap=4200 if (c.get('targeted') or c.get('rebalance')) else 2600)}"
                 )
             snippets_txt = "\n\n".join(snippets_items)
 
@@ -11955,6 +11958,17 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 f"{snippets_txt}\n\n"
                 f"المطلوب منك كوكيل متخصص: هذه المقاطع أُحضرت بمراسي دلالية من لغة المصنفين، وقد لا يرد فيها لفظ السؤال بحروفه. استخلص ما يتناول جوهر المسألة، وانسخ كل إحالة من سطر «الإحالة المعتمدة» بلا تغيير، وابدأ تقريرك ببطاقات الأدلة المرقمة ثم التحرير المبني عليها حصرًا. لا تُكمل من الذاكرة ما لم يرد في المقاطع، ولا تنسب لمذهب من بطاقة كتاب مذهب آخر."
             )
+            if "الحَكَم" in str(ag_name):
+                # الحَكَم فرّغ ردّه أربع جولات متتالية بنماذج مختلفة على مهمة
+                # مسبح كامل بلا بنية. دواؤه بنية حكم صارمة ومادة مركزة:
+                # بطاقات مقتضبة، ثم أحكام دعوىً دعوى، ثم تحرير حاسم قصير.
+                sub_sys += (
+                    "\nبنية حكمك إلزامية بهذا الترتيب: (١) «بطاقات الأدلة» المقتضبة كإخوانك، "
+                    "(٢) «جدول الأحكام»: كل دعوى كبرى في المسألة | حكمك (تثبت/تنتفي/تتوقف) | رقم بطاقة مستندها — "
+                    "ودعوى بلا بطاقة حكمها «تتوقف» صراحة، "
+                    "(٣) «تحرير الحَكَم»: خلاصة حاسمة مركزة لا تتجاوز ثلث تقرير متخصص، ترجّح بقواعد الترجيح "
+                    "وتفصل في التعارض، ولا تعيد سرد النصوص الطويلة ولا تكرر بطاقة في موضعين."
+                )
 
             # استخراج معلمات الضبط الدقيقة للنموذج
             ag_temp = float(ag.get("temperature") if ag.get("temperature") is not None else ag.get("temp", 0.2))
@@ -12051,7 +12065,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "fail_reason": ag_fail_reason if ag_failed else ""
             }
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(active_agents), 10)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(active_agents), 12)) as executor:
             future_to_agent = {executor.submit(_worker_subagent, pair): pair for pair in enumerate(active_agents)}
             for fut in concurrent.futures.as_completed(future_to_agent):
                 try:
