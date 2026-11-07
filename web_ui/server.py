@@ -2313,34 +2313,45 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
         key = (candidate or "").strip()
         if key in _cache:
             return _cache[key]
+        # المرشح يصل ملصوقًا به المؤلف غالبًا («الموافقات، الشاطبي»): والمؤلف
+        # يضلّل المطابقة الضبابية فتُرجع كتابًا آخر يضم اللفظين في عنوانه.
+        # تُجرَّب الصورة الكاملة أولًا، ثم بفصل آخر مقطع (المؤلف) تباعًا.
+        attempts = [key]
+        trimmed = key
+        while re.search(r"[،,]", trimmed) and len(attempts) < 4:
+            trimmed = re.sub(r"[،,][^،,]*$", "", trimmed).strip(" ،,")
+            if trimmed and trimmed not in attempts:
+                attempts.append(trimmed)
         row = None
-        try:
-            r = shamela_local_mcp.resolve_book(key)
-            if r and r.get("status") == "ok" and r.get("book_id"):
-                if key.startswith("#"):
-                    # الرقم الصريح أقوى من أي تشابه عنواني: هو هوية الكتاب نفسه.
-                    row = r
-                    _cache[key] = row
-                    return row
-                cand_key = _stamp_title_key(key)
-                res_key = _stamp_title_key(r.get("title") or "")
-                variants = [cand_key]
-                if cand_key.startswith("و") and len(cand_key) > 3:
-                    variants.append(cand_key[1:].lstrip())
-                score = 0
-                for variant in variants:
-                    if variant == res_key:
-                        score = max(score, 1000)
-                    elif f" {res_key} " in f" {variant} " or f" {variant} " in f" {res_key} ":
-                        score = max(score, 900)
-                    elif res_key.startswith(variant + " ") and len(_stamp_content_words(variant)) >= 2:
-                        score = max(score, 700)
-                    elif variant.startswith(res_key + " ") and len(_stamp_content_words(res_key)) >= 2:
-                        score = max(score, 700)
-                if score >= 900 or (score >= 700 and not r.get("ambiguous")):
-                    row = r
-        except Exception:
-            row = None
+        for attempt in attempts:
+            try:
+                r = shamela_local_mcp.resolve_book(attempt)
+            except Exception:
+                r = None
+            if not (r and r.get("status") == "ok" and r.get("book_id")):
+                continue
+            if attempt.startswith("#"):
+                # الرقم الصريح أقوى من أي تشابه عنواني: هو هوية الكتاب نفسه.
+                row = r
+                break
+            cand_key = _stamp_title_key(attempt)
+            res_key = _stamp_title_key(r.get("title") or "")
+            variants = [cand_key]
+            if cand_key.startswith("و") and len(cand_key) > 3:
+                variants.append(cand_key[1:].lstrip())
+            score = 0
+            for variant in variants:
+                if variant == res_key:
+                    score = max(score, 1000)
+                elif f" {res_key} " in f" {variant} " or f" {variant} " in f" {res_key} ":
+                    score = max(score, 900)
+                elif res_key.startswith(variant + " ") and len(_stamp_content_words(variant)) >= 2:
+                    score = max(score, 700)
+                elif variant.startswith(res_key + " ") and len(_stamp_content_words(res_key)) >= 2:
+                    score = max(score, 700)
+            if score >= 900 or (score >= 700 and not r.get("ambiguous")):
+                row = r
+                break
         _cache[key] = row
         return row
 
@@ -2820,6 +2831,71 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         bid = _book_id_value(row.get("book_id"))
         if bid and str(bid) not in witness_ids:
             witness_ids.append(str(bid))
+
+    def _parse_unresolved(raw):
+        """«الموافقات، الشاطبي، 2، 413» → كتابها وموضعها: يُفصل المؤلف عن
+        العنوان تباعًا (فهو ما أضلّ المطابقة)، ويُقبل حلٌّ يطابق عنوانه."""
+        txt = re.sub(r"<[^>]+>", " ", raw or "").replace("⚠", " ")
+        txt = re.sub(r"\s+", " ", txt).strip()
+        m = _STAMP_LOCATOR.search(txt)
+        if not m:
+            return None
+        part = _plain_locator_number(m.group("part") or m.group("comma_part") or "")
+        page = _plain_locator_number(m.group("only_page") or m.group("page") or m.group("comma_page") or "")
+        attempts = [txt[:m.start()].strip(" ،,؛:")]
+        trimmed = attempts[0]
+        while re.search(r"[،,]", trimmed) and len(attempts) < 4:
+            trimmed = re.sub(r"[،,][^،,]*$", "", trimmed).strip(" ،,")
+            if trimmed and trimmed not in attempts:
+                attempts.append(trimmed)
+        for att in attempts:
+            if not att:
+                continue
+            try:
+                row = shamela_local_mcp.resolve_book(att)
+            except Exception:
+                row = None
+            if row and row.get("status") == "ok" and row.get("book_id"):
+                ak, rk = _stamp_title_key(att), _stamp_title_key(row.get("title") or "")
+                if ak and rk and (ak == rk or f" {rk} " in f" {ak} " or f" {ak} " in f" {rk} "):
+                    return {"bid": str(row["book_id"]), "part": part, "page": page,
+                            "title": row.get("title") or "", "author": row.get("author") or "",
+                            "rel_path": row.get("rel_path") or ""}
+        return None
+
+    _span_books_cache: Dict[Any, list] = {}
+
+    def footnote_span_books(num):
+        """كتب الحاشية واحدًا واحدًا بمواضعها: مختومة بأرقامها، ومُعلَّمة ⚠
+        بحلّ عنوانها — فالحاشية قد تجمع كتابين والشاهد في ثانيهما."""
+        if num in _span_books_cache:
+            return _span_books_cache[num]
+        out = []
+        d = next((x for x in defs if x["num"] == num), None)
+        if d:
+            for tm in re.finditer(r'<span class="cit-src"[^>]*>', d["body"]):
+                tag = tm.group(0)
+                mb = re.search(r'data-book-id="(\d+)"', tag)
+                if mb:
+                    mp = re.search(r'data-part="([^"]*)"', tag)
+                    mg = re.search(r'data-page="(\d*)"', tag)
+                    out.append({"bid": mb.group(1), "kind": "src",
+                                "part": mp.group(1) if mp else "",
+                                "page": mg.group(1) if mg else ""})
+            for um in re.finditer(r'<span class="cit-unresolved"[^>]*>(.*?)</span>', d["body"], re.S):
+                info = _parse_unresolved(um.group(1))
+                if info:
+                    info["kind"] = "unres"
+                    out.append(info)
+        _span_books_cache[num] = out
+        return out
+
+    # كتب الحواشي المعلَّمة تُحلّ الآن فتدخل الشواهد: يبلغها بحث المواضع.
+    for d in defs:
+        if "cit-unresolved" in d["body"]:
+            for sp in footnote_span_books(d["num"]):
+                if sp["bid"] not in witness_ids:
+                    witness_ids.append(sp["bid"])
     def_spans = [(d["start"], d["end"]) for d in defs]
 
     def in_def(pos: int) -> bool:
@@ -3028,6 +3104,15 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         return False
 
     def _phase_a(job):
+        # كل كتاب في الحاشية بموضعه مرشح للشاهد: الخلط بين كتابين في حاشية
+        # واحدة ليس خطأ إحالة، والاكتفاء بأولهما كان يُسقط شواهد الثاني.
+        if job.get("num"):
+            for sp in footnote_span_books(job["num"]):
+                if _match_variants(sp["bid"], job["quote"], sp["part"] or None, sp["page"] or None):
+                    job["bid"] = sp["bid"]
+                    if sp["kind"] == "unres":
+                        job["heal"] = sp
+                    return job, "MATCH"
         bid = job.get("bid") or cited_bid(job["num"])
         job["bid"] = bid
         if not bid:
@@ -3036,11 +3121,14 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         return job, ("MATCH" if _match_variants(bid, job["quote"], part, page) else "NOT_FOUND")
 
     failed = []
+    _heals = []
     if pending:
         with ThreadPoolExecutor(max_workers=8) as ex:
             for i, (job, status) in enumerate(ex.map(_phase_a, pending)):
                 if status == "MATCH":
                     stats["verified"] += 1
+                    if job.get("heal"):
+                        _heals.append(job)
                 else:
                     failed.append(job)
                 if (i + 1) % 15 == 0:
@@ -3189,6 +3277,57 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         stats["repaired"] = len(_edits)
         if _edits:
             print(f"🚧 [Documentation Audit] أُصلح موضع {len(_edits)} إحالة إلى موضعها المثبت في فهرس المكتبة", flush=True)
+    # شفاء الحواشي المعلَّمة ⚠: علامتها معناها «لم يُحلّ كتابها في المكتبة»،
+    # فمتى حُلّ الكتاب بموضعه المذكور ارتفع سببها: تُختم ختمًا كاملًا فتظهر
+    # أيقونة التصفح وتدخل كتبَ التحقق، وشاهدُ متنها يُفحص بمهامه كالمعتاد.
+    _heal_quotes = {j["num"]: j["quote"] for j in _heals}
+    _defs_now = _footnote_defs(text)
+    _edits = []
+    _healed_n = 0
+    for d in _defs_now:
+        if "cit-unresolved" not in d["body"]:
+            continue
+        body = d["body"]
+        pieces, pos, changed = [], 0, False
+        for um in re.finditer(r'<span class="cit-unresolved"[^>]*>(.*?)</span>', body, re.S):
+            info = _parse_unresolved(um.group(1))
+            if not info:
+                continue
+            inner = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1)).replace("⚠", " ")).strip()
+            q = " ".join(str(_heal_quotes.get(d["num"]) or "").split())[:120]
+            if not q:
+                try:
+                    pg = shamela_local_mcp.get_page(int(info["bid"]), int(info["page"] or 0),
+                                                     info["part"] or None)
+                    if pg.get("status") == "ok":
+                        q = " ".join(str((pg.get("page") or {}).get("body") or "").split())[:120]
+                except Exception:
+                    q = ""
+            pieces.append(body[pos:um.start()])
+            pieces.append(
+                '<span class="cit-src" '
+                f'data-book="{html.escape(info["title"], quote=True)}" '
+                f'data-rel-path="{html.escape(info["rel_path"], quote=True)}" '
+                f'data-book-id="{info["bid"]}" '
+                f'data-part="{html.escape(info["part"], quote=True)}" '
+                f'data-page="{info["page"]}" '
+                f'data-quote="{html.escape(q, quote=True)}">'
+                f'{html.escape(inner)}</span>')
+            pos = um.end()
+            changed = True
+            _healed_n += 1
+        if not changed:
+            continue
+        pieces.append(body[pos:])
+        _slice = text[d["start"]:d["end"]]
+        if body in _slice:
+            _edits.append((d["start"], d["end"], _slice.replace(body, "".join(pieces), 1)))
+    for s, e, new in sorted(_edits, key=lambda x: x[0], reverse=True):
+        text = text[:s] + new + text[e:]
+    if _healed_n:
+        stats["repaired"] = stats.get("repaired", 0) + _healed_n
+        stats["healed"] = _healed_n
+        print(f"🚧 [Documentation Audit] شُفيت {_healed_n} إحالة معلَّمة: حُلّ كتابها في المكتبة فخُتمت كاملة", flush=True)
     _no_bid = sum(1 for j in failed if not j.get("bid"))
     if failed:
         print(f"🚧 [Documentation Audit] تشخيص: بلا كتاب إحالة={_no_bid}/{len(failed)}", flush=True)
@@ -4500,7 +4639,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.272"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.273"},
         },
     })
     if opened.get("error"):
