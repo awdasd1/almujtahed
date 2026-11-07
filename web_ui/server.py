@@ -1778,10 +1778,10 @@ CITATION_FORMAT_RULE = """
 ═══════════════════════════════════════════════════════════
 ⛔ إلزام تام للإحالة القياسية. لا تُقبل صيغة سواها، ويُعاد ضبط كل إحالة إليها:
 1. اسم الكتاب يُنسخ حرفياً كما هو في قاعدة الشاملة، ومن سطر «الإحالة المعتمدة». يُمنع اختصاره أو إضافة اسم المؤلف أو تغيير حرف.
-1ب. سطر «الإحالة المعتمدة» يبدأ برقم الشاملة الفريد على صورة #ID. في الحاشية وحدها انسخ #ID قبل اسم الكتاب كما هو تماماً، مثل: #1220 سنن الترمذي - ط الرسالة (2-123). هذا الرقم علامة ربط آلية بقاعدة الكتب وسيُحذف من العرض، فلا تحذفه ولا تغيّره ولا تستبدله، ولا تضعه في المتن ولا في قائمة المصادر والمراجع.
+1ب. سطر «الإحالة المعتمدة» يبدأ برقم الشاملة الفريد على صورة #ID. في الحاشية وحدها انسخ #ID قبل اسم الكتاب كما هو تماماً، مثل: #1220 سنن الترمذي - ط الرسالة للترمذي (2-123). هذا الرقم علامة ربط آلية بقاعدة الكتب وسيُحذف من العرض، فلا تحذفه ولا تغيّره ولا تستبدله، ولا تضعه في المتن ولا في قائمة المصادر والمراجع.
 1ج. الحاشية شهادة نقل: لا تكتب حاشية ولا إحالة إلا لكتاب ورد نصه في الشواهد المعطاة ونقلتَ منه في الفقرة المرتبطة بها نصاً أو معنى فعلاً. ما لم تنقل منه لا تذكره في حاشية ولو كنت تعرفه أو كان مشهوراً في الباب، ولا تجمع مراجع للزينة أو للاستكثار.
-2. الحاشية الظاهرة تتبع الإخراج القياسي الآتي لا غير: (اسم الكتاب، مؤلفه، الجزء، الصفحة). ويُصدَّر النقل الحرفي بـ«انظر:» والنقل بالمعنى بـ«ينظر:»، ولا يوضع أحدهما مكان الآخر. مثال الحرفي: انظر: مجموع الفتاوى، ابن تيمية، 2، 368. ومثال المعنوي: ينظر: مجموع الفتاوى، ابن تيمية، 2، 368.
-3. قبل اسم الكتاب في الحاشية وحدها ضع #ID من سطر الإحالة المعتمدة، مثل: #1220 مجموع الفتاوى، ابن تيمية، 2، 368. الرقم علامة ربط ويُحذف من العرض.
+2. الحاشية الظاهرة تتبع الإخراج القياسي الآتي لا غير: اسم الكتاب للمؤلف (جزء-صفحة) بأرقام لاتينية بين قوسين إنجليزيين، مثل: مجموع الفتاوى لابن تيمية (2-368). فإن كان الكتاب جزءًا واحدًا لا أجزاء له: اسم الكتاب للمؤلف ص (صفحة)، مثل: التدمرية لابن تيمية ص (217). ويُصدَّر النقل الحرفي بـ«انظر:» والنقل بالمعنى بـ«ينظر:»، ولا يوضع أحدهما مكان الآخر. مثال الحرفي: انظر: مجموع الفتاوى لابن تيمية (2-368). ومثال المعنوي: ينظر: مجموع الفتاوى لابن تيمية (2-368).
+3. قبل اسم الكتاب في الحاشية وحدها ضع #ID من سطر الإحالة المعتمدة، مثل: #1220 مجموع الفتاوى لابن تيمية (2-368). الرقم علامة ربط ويُحذف من العرض.
 4. تخريج الأحاديث والآثار يتبع قواعد التخريج في الإخراج القياسي، لا هذه الصيغة المختصرة.
 5. في المتن الرقم المرتفع وحده. يُمنع ذكر اسم الكتاب أو المؤلف أو الجزء أو الصفحة في المتن. تقارير الاستخراج تُبقي سطر الإحالة المعتمدة كما هو.
 ═══════════════════════════════════════════════════════════
@@ -1824,7 +1824,7 @@ ACADEMIC_ANSWER_RULE = """
 ## [6] منهجية الحاشية والإحالات ##
 أولًا: لا يمر في المتن شيء بلا رقم حاشية يقابله الرقم نفسه في الحاشية: آية وتفسيرها، وحديث وأثر وتخريجه وحكمه، ونص عالم أو قوله أو رأيه، وسبب خلاف، واعتراض ومناقشة وجواب، وتعريف لغوي أو اصطلاحي، وواقعة تاريخية أو رواية لها، ودليل تستند إليه فقرة. كل نقل أو دليل أو رأي أو سبب أو معارضة تذكره يثبت برقم في المتن ورقم مطابق في الحاشية، والانتقال الآلي بينهما قائم على هذا التطابق فحافظ عليه تماماً.
 ثانيًا: خرّج الأحاديث تخريجًا كاملاً وفق قواعد التخريج المذكورة أعلاه، وضعها في الحاشية.
-ثالثًا: اذكر مصدر كل قول أو نص أو واقعة في الحاشية بذكر: اسم الكتاب، مؤلفه، الجزء، الصفحة.
+ثالثًا: اذكر مصدر كل قول أو نص أو واقعة في الحاشية بالإخراج القياسي وحده: اسم الكتاب للمؤلف (جزء-صفحة)، ولذي الجزء الواحد: اسم الكتاب للمؤلف ص (صفحة).
 رابعًا: اجعل كل مرجع أو تخريج في سطر مستقل كاملًا. لا تفرّق المرجع الواحد في أسطر متعددة، ولا تحشو المراجع جميعها في سطر واحد دون تفريق.
 خامسًا: استخدم الإحالة الصحيحة بدقة لفظية:
 إذا نقلت نصًا حرفيًا: اكتب "انظر:" ثم (الكتاب، صاحبه، الجزء، الصفحة).
@@ -1878,7 +1878,7 @@ def _plain_locator_number(value: Any) -> str:
     return match.group(0) if match else ""
 
 def canonical_locator(part: Any, page: Any, volume_count: Any = None) -> str:
-    """صيغة الموضع الوحيدة: (جزء-صفحة) للكتاب المتعدد، وص(صفحة) للكتاب ذي الجزء الواحد."""
+    """صيغة الموضع الوحيدة: (جزء-صفحة) للكتاب المتعدد، وص (صفحة) للكتاب ذي الجزء الواحد."""
     page_s = _plain_locator_number(page)
     part_s = _plain_locator_number(part)
     try:
@@ -1886,12 +1886,22 @@ def canonical_locator(part: Any, page: Any, volume_count: Any = None) -> str:
     except (TypeError, ValueError):
         single_volume = False
     if page_s and (single_volume or not part_s):
-        return f"ص({page_s})"
+        return f"ص ({page_s})"
     if part_s and page_s:
         return f"({part_s}-{page_s})"
     if page_s:
-        return f"ص({page_s})"
+        return f"ص ({page_s})"
     return ""
+
+
+def _author_possessive(author: Any) -> str:
+    """صيغة نسبة الكتاب لمؤلفه في الإحالة القياسية: «المجموع للنووي»."""
+    a = re.split(r"[،,]", str(author or "").strip().strip("«»\""))[0].strip()
+    if not a:
+        return ""
+    if a.startswith("ال"):
+        return "لل" + a[2:]
+    return "ل" + a
 
 def _payload_book_id(payload: dict) -> Optional[int]:
     """رقم الشاملة المخزّن مع المتجه، لا الرقم المستنتج من عنوان قد يتغير."""
@@ -1901,10 +1911,17 @@ def _payload_book_id(payload: dict) -> Optional[int]:
         return None
     return number if 1 <= number <= 20000 else None
 
-def canonical_citation_label(title: str, part: Any, page: Any, volume_count: Any = None, book_id: Any = None) -> str:
+def canonical_citation_label(title: str, part: Any, page: Any, volume_count: Any = None, book_id: Any = None, author: Any = None) -> str:
+    """الإحالة القياسية الوحيدة: اسم الكتاب للمؤلف (جزء-صفحة)، وذي الجزء
+    الواحد: اسم الكتاب للمؤلف ص (صفحة) — وهي صيغة عرض التصفح الأصلي."""
     loc = canonical_locator(part, page, volume_count)
     name = (title or "").strip().strip("«»\"")
-    return f"{name} {loc}".strip()
+    poss = _author_possessive(author)
+    _a_core = re.split(r"[،,]", str(author or "").strip())[0].strip()
+    if poss and _a_core and _fold_ar(_a_core) in _fold_ar(name):
+        # المؤلف في العنوان نفسه («المغني لابن قدامة»): لا نسبة ثانية.
+        poss = ""
+    return " ".join(x for x in (name, poss, loc) if x).strip()
 
 def _approved_citation_label(citation: dict) -> str:
     """إحالة معتمدة للنموذج تتصدرها علامة رقم الشاملة الفريد إن وُجدت."""
@@ -1914,6 +1931,7 @@ def _approved_citation_label(citation: dict) -> str:
         (citation or {}).get("page"),
         (citation or {}).get("volume_count"),
         (citation or {}).get("book_id"),
+        (citation or {}).get("author"),
     )
     book_id = _book_id_value((citation or {}).get("book_id"))
     return f"#{book_id} {label}".strip() if book_id else label
@@ -2116,6 +2134,9 @@ def _stamp_title_key(value: str) -> str:
     """مفتاح عنوان مطبّع: الشرطة والطبعة جزء من العنوان، لا عنوان مستقل."""
     key = _fold_book_text(value or "")
     key = re.sub(r"[-–—=()\[\]{}«»\"'،,;:：.]", " ", key)
+    # نسبة القياسي «الكتاب للمؤلف» ليست من العنوان: تُجرّد لامها في المفتاح
+    # فلا تُضلّل مطابقة «المجموع للنووي» بعنوان «المجموع شرح المهذب».
+    key = re.sub(r"\s+لل", " ", key)
     key = re.sub(r"\s+", " ", key).strip()
     while True:
         nxt = _STAMP_LEAD.sub("", key, count=1).strip()
@@ -2123,6 +2144,14 @@ def _stamp_title_key(value: str) -> str:
             break
         key = nxt
     return key
+
+
+def _possessive_detached(text: str) -> str:
+    """فصل نسبة القياسي عن العنوان للبحث: «المجموع للنووي» ← «المجموع
+    النووي»، و«التدمرية لابن تيمية» ← «التدمرية ابن تيمية»."""
+    d = re.sub(r"\s+لل(\S+)", r" ال\1", text or "")
+    d = re.sub(r"\s+ل(\S+)", r" \1", d)
+    return d
 
 
 def _stamp_content_words(key: str) -> List[str]:
@@ -2262,7 +2291,11 @@ def stamp_citation_sources(text: str, rows: List[dict]) -> str:
                 f'data-quote="{html.escape(str(row.get("text") or "")[:120], quote=True)}"'
             )
             out.append(chunk[pos:prefix_end])
-            out.append(f'<span class="cit-src" {attrs}>{display_text or chunk[title_start:match.end()]}</span>')
+            # عرض الإحالة لا يتبع صياغة النموذج: يُعاد بناؤه بالقياسي وحده
+            # (الكتاب للمؤلف (جزء-صفحة)) فتتطابق كل حاشية وقارؤها.
+            _disp = (canonical_citation_label(row.get("title"), part, page, author=row.get("author"))
+                     or display_text or chunk[title_start:match.end()])
+            out.append(f'<span class="cit-src" {attrs}>{html.escape(_disp)}</span>')
             pos = match.end()
         out.append(chunk[pos:])
         return "".join(out)
@@ -2322,6 +2355,10 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             trimmed = re.sub(r"[،,][^،,]*$", "", trimmed).strip(" ،,")
             if trimmed and trimmed not in attempts:
                 attempts.append(trimmed)
+        for _a in list(attempts):
+            _d = _possessive_detached(_a)
+            if _d != _a and _d not in attempts:
+                attempts.append(_d)
         row = None
         for attempt in attempts:
             try:
@@ -2349,6 +2386,15 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
                     score = max(score, 700)
                 elif variant.startswith(res_key + " ") and len(_stamp_content_words(res_key)) >= 2:
                     score = max(score, 700)
+            if score < 900:
+                # العنوان القصير المشهور بمؤلفه («المجموع للنووي» وكتابه في
+                # القاعدة «المجموع شرح المهذب» للنووي): أول العنوان مشترك
+                # وآخر المرشح هو المؤلف بعينه في بيانات الكتاب — قبول بثقته.
+                _hw = [w for w in cand_key.split() if len(w) >= 4]
+                _rak = _stamp_title_key(r.get("author") or "").split()
+                if (len(_hw) >= 2 and res_key.split()[:1] == cand_key.split()[:1]
+                        and _hw[-1] in _rak):
+                    score = 900
             if score >= 900 or (score >= 700 and not r.get("ambiguous")):
                 row = r
                 break
@@ -2437,7 +2483,9 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
                 f'data-quote="{html.escape(_page_quote(row, part, page), quote=True)}"'
             )
             out.append(chunk[pos:(prefix_end if prefix_end is not None else title_start)])
-            out.append(f'<span class="cit-src" {attrs}>{chunk[title_start:match.end()]}</span>')
+            _disp = (canonical_citation_label(row.get("title"), part, page, author=row.get("author"))
+                     or chunk[title_start:match.end()])
+            out.append(f'<span class="cit-src" {attrs}>{html.escape(_disp)}</span>')
             pos = match.end()
         out.append(chunk[pos:])
         return "".join(out)
@@ -3418,7 +3466,7 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                 f'data-part="{html.escape(loc["part"], quote=True)}" '
                 f'data-page="{loc["page"]}" '
                 f'data-quote="{html.escape(" ".join(job["quote"].split())[:120], quote=True)}">'
-                f'{html.escape(loc["title"])}، {html.escape(loc["author"])}، {loc["part"]}، {loc["page"]}</span>')
+                f'{html.escape(canonical_citation_label(loc["title"], loc["part"], loc["page"], author=loc["author"]))}</span>')
             new_body = body[:mspan.start()] + new_span + body[mspan.end():]
             _slice = text[d["start"]:d["end"]]
             if body in _slice:
@@ -3473,7 +3521,7 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                 f'data-part="{html.escape(info["part"], quote=True)}" '
                 f'data-page="{info["page"]}" '
                 f'data-quote="{html.escape(q, quote=True)}">'
-                f'{html.escape(inner)}</span>')
+                f'{html.escape(canonical_citation_label(info["title"], info["part"], info["page"], author=info["author"]) or inner)}</span>')
             pos = um.end()
             changed = True
             _healed_n += 1
@@ -4818,7 +4866,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.279"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.280"},
         },
     })
     if opened.get("error"):
@@ -8019,7 +8067,7 @@ def _map_lexical_hits(hits, cursor, top_k: int) -> List[Dict[str, Any]]:
             "page": f"ص {page_num}" if page_num is not None else "",
             "volume_count": vol_count,
             "book_id": int(bid) if bid.isdigit() else bid,
-            "citation_label": canonical_citation_label(title, part, page_num, vol_count, bid),
+            "citation_label": canonical_citation_label(title, part, page_num, vol_count, bid, author),
             "part_raw": str(part or ""),
             "page_num_raw": page_num,
             "rel_path": rel_path,
@@ -8669,7 +8717,7 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
                 "page": f"ص {page_num}" if page_num is not None else "",
                 "volume_count": volume_count,
                 "book_id": book_id,
-                "citation_label": canonical_citation_label(title, part, page_num, volume_count, book_id),
+                "citation_label": canonical_citation_label(title, part, page_num, volume_count, book_id, author),
                 "part_raw": str(part or ""),
                 "page_num_raw": page_num,
                 "rel_path": rel_path,
@@ -8715,7 +8763,7 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
                 "page": f"ص {page_num}" if page_num is not None else "",
                 "volume_count": lex.get("volume_count"),
                 "book_id": lex.get("book_id"),
-                "citation_label": canonical_citation_label(title, part, page_num, lex.get("volume_count"), lex.get("book_id")),
+                "citation_label": canonical_citation_label(title, part, page_num, lex.get("volume_count"), lex.get("book_id"), lex.get("author")),
                 "part_raw": str(part or ""),
                 "page_num_raw": page_num,
                 "rel_path": lex.get("rel_path") or "",
@@ -12542,7 +12590,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             f"🔴 [تعليمات معالجة الشواهد للنموذج الأساسي]:\n"
             f"1. أنت النموذج الأساسي المحلل والمحقق؛ مهمتك معالجة الشواهد والإجابة بأسلوب تحريري علمي رصين في فقرات، بلا جداول ماركداون.\n"
             f"2. استوعب كـافـة الشواهد والمقاطع المستخرجة أعلاه (جميع الشواهد من 1 إلى {len(retrieved_citations)}) دون استبعاد أي شاهد وثيق الصلة.\n"
-            f"3. في المتن رقم الإحالة المرتفع وحده: <sup><small>(١)</small></sup>. يُمنع ذكر اسم الكتاب أو المؤلف أو الجزء أو الصفحة في المتن. كل نقل في حاشية بسطر مستقل بعد المتن، وهي التوثيق الوحيد: اسم الكتاب، مؤلفه، الجزء، الصفحة. لا تُنشئ بعد الحواشي قائمة مصادر ومراجع.\n"
+            f"3. في المتن رقم الإحالة المرتفع وحده: <sup><small>(١)</small></sup>. يُمنع ذكر اسم الكتاب أو المؤلف أو الجزء أو الصفحة في المتن. كل نقل في حاشية بسطر مستقل بعد المتن، وهي التوثيق الوحيد بالإخراج القياسي: اسم الكتاب للمؤلف (جزء-صفحة)، ولذي الجزء الواحد: اسم الكتاب للمؤلف ص (صفحة). لا تُنشئ بعد الحواشي قائمة مصادر ومراجع.\n"
             f"4. كُتب التاريخ الإسلامي مؤلفة بنظام الحوليات؛ إذا كانت المسألة تاريخية فرقم السنة يُذكر في مطلع الحولية وقد استخرجته لك المنظومة آلياً في [رأس الحولية الحاكمة] فأثبته صراحة في متن الجواب.\n"
             f"5. هذه المقاطع أعلاه موثقة ومستخرجة فعلياً من أمهات المصادر، فاعتمدها في إجابتك.\n"
             f"6. لا تشترط ظهور لفظ السؤال في المقطع. إن تناول الشاهد جوهر المسألة بمصطلح المصنفين فهو المطلوب. لا تُفتِ ولا تخرّج من الذاكرة بما لم يرد في الشواهد.\n"
@@ -19998,7 +20046,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "── (5) وكيل الطباعة والإخراج الأكاديمي [ف-12]: وكيل متخصص يُعيّنه المهندس لاستخلاص البحث كاملاً وتجهيزه للطباعة الأكاديمية الفاخرة وملف PDF محكم، ويُوجّه لزاماً بتطبيق الوسوم والقواعد التالية بدقة متناهية:\n"
         "    ## [6] منهجية الحاشية والإحالات ##\n"
         "    أولًا: خرّج الأحاديث تخريجًا كاملاً وفق قواعد التخريج المذكورة أعلاه، وضعها في الحاشية.\n"
-        "    ثانيًا: اذكر مصدر كل قول في الحاشية بذكر: اسم الكتاب، مؤلفه، الجزء، الصفحة.\n"
+        "    ثانيًا: اذكر مصدر كل قول في الحاشية بالإخراج القياسي وحده: اسم الكتاب للمؤلف (جزء-صفحة)، ولذي الجزء الواحد: اسم الكتاب للمؤلف ص (صفحة).\n"
         "    ثالثًا: اجعل كل مرجع أو تخريج في سطر مستقل كاملًا. لا تفرّق المرجع الواحد في أسطر متعددة، ولا تحشو المراجع جميعها في سطر واحد دون تفريق.\n"
         "    رابعًا: استخدم الإحالة الصحيحة:\n"
         "    إذا نقلت نصًا حرفيًا: اكتب \"انظر:\" ثم (الكتاب، صاحبه، الجزء، الصفحة). ولا تستعمل انظر مكان ينظر ولا العكس.\n"
