@@ -1607,6 +1607,17 @@ function downloadResearchReport(idx) {
     L.push('--------------------------------------------------');
     L.push(it.audit_record.replace(/\*\*/g, ''));
   }
+  if (it.risk_memo) {
+    L.push('');
+    L.push('سادسًا: 🏛 مذكرة إدارة المخاطر إلى صاحب البحث (مسؤول المخاطر: ' + (it.risk_officer || '—') + (it.risk_verdict ? ' · الحكم: ' + it.risk_verdict : '') + ')');
+    L.push('--------------------------------------------------');
+    L.push(it.risk_memo.replace(/\*\*/g, ''));
+    if ((it.excluded_items || []).length) {
+      L.push('');
+      L.push('النقول المستبعدة لخارجها عن المكتبة (قاعدة: لا نقل من خارجها):');
+      it.excluded_items.slice(0, 26).forEach(x => L.push('- «' + (x.quote || '').slice(0, 110) + '»'));
+    }
+  }
   L.push('');
   L.push('تنبيه: هذا التقرير بوصلة تنبيه من مؤشرات آلية، لا بديل عن قراءة متن البحث.');
   const blob = new Blob(['\ufeff' + L.join('\n')], { type: 'text/plain;charset=utf-8' });

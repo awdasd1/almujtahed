@@ -3523,6 +3523,15 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                 elif _outside_library(job):
                     # قاعدة المكتبة: مصدر خارجها يُستبعد ولا يُنقل منه.
                     _excluded.append(job)
+                    # يُسجَّل المستبعد باسمه ونصه لسجل المخاطر: فعددٌ أصم
+                    # لا يكفي محاسبةً، والباحث يرى ما حُذف ولماذا.
+                    try:
+                        _ebid = str(cited_bid(job.get("num")) or "")
+                    except Exception:
+                        _ebid = ""
+                    stats.setdefault("excluded_items", []).append(
+                        {"quote": job["quote"][:120], "book_id": _ebid,
+                         "num": job.get("num")})
                 else:
                     stats["unverified"] = stats.get("unverified", 0) + 1
                     stats["failures"].append({"quote": job["quote"][:120], "reason": "لم يثبت آليًا في كتاب إحالته ولا في كتب الشواهد: أُبقي للمراجعة"})
@@ -4960,7 +4969,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.283"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.284"},
         },
     })
     if opened.get("error"):
@@ -10280,6 +10289,281 @@ def _build_evidence_ledger(
     return raw
 
 
+# ════════════════════════════════════════════════════════════════════
+# 🏛 إدارة المخاطر في حوكمة البحوث (المرحلة الأولى)
+# ميثاق: أنظمة المجتهد المكتوبة (قاعدة المكتبة، ربط النقول، صيغ الحواشي
+# والتخريج، اكتمال الفريق، العتبات) يُراقَب الانحراف عنها عند كل بحث:
+# حصاد حتمي من طبقات القياس الثلاث (قياسات مدمجة، أحداث الجولة، تشريح
+# الجواب)، ثم مسؤول مخاطر مستقل — نموذج لا يكون مدير الجولة ولا منفّذ
+# توليفتها — يحكم على الحصاد ويكتب مذكرة لصاحب البحث تُسلَّم في
+# «تقرير البحث»، ويُحفظ سجل المخاطر وحزمة البحث (التقارير وسجل الأدلة)
+# مع البحث نفسه للمحاسبة وإعادة التوليف والمقارنة عبر الإصدارات.
+# ════════════════════════════════════════════════════════════════════
+_RISK_OFFICER_MODELS = ["meta/muse-wonder", "~anthropic/claude-sonnet-latest"]
+_RISK_CLS_ORDER = {"عالية": 0, "متوسطة": 1, "منخفضة": 2}
+_RISK_ICONS = {"عالية": "🔴", "متوسطة": "🟡", "منخفضة": "⚪"}
+# حدود الانحراف المعتمدة (شهية المخاطرة الافتراضية للباحث):
+_RISK_MIN_VERIFIED_RATIO = 0.80   # نسبة ثبوت النقول في كتب إحالتها
+_RISK_SHORT_REPORT_CHARS = 7000   # تقرير وكيل دون هذا قصير بذاته
+_RISK_SHORT_REPORT_RATIO = 0.35   # أو دون هذه النسبة من وسيط التقارير
+_RISK_DOMINANCE_SHARE = 0.18      # حصة كتاب واحد من أوسمة الجواب
+_RISK_TARGETED_MIN = 3            # صفحات موجّهة دنيا لنطاق المذهب
+_RISK_DURATION_S = 32 * 60        # سقف مدة البحث المعتاد
+
+
+def _risk_event(kind, cls, title, evidence, status, action):
+    return {"kind": kind, "cls": cls, "title": title, "evidence": evidence,
+            "status": status, "action": action}
+
+
+def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
+                         disabled_agents, synthesis_rescue, reply_text,
+                         duration_s, targeted_map, unresolved_citations):
+    """الحصاد الحتمي: أحداث مخاطر مرشحة بأدلتها الرقمية من الطبقات الثلاث."""
+    from collections import Counter as _Counter
+    ev = []
+    gs = gate_stats or {}
+    # — انهيار التوليف (من بوابة التوليف المنقذة)
+    if synthesis_rescue and synthesis_rescue.get("orig_chars"):
+        if synthesis_rescue.get("by"):
+            ev.append(_risk_event(
+                "synthesis_collapse", "عالية", "انهيار توليفة مدير البحث",
+                f"خرجت التوليفة الأولى {synthesis_rescue.get('orig_chars')} حرفًا لا تستوعب مادة الفريق وسجل الأدلة",
+                "عولج آليًا: أُعيدت صياغة البحث بنموذج توليف احتياطي",
+                "تكرار الانهيار من النموذج نفسه مديرًا يرفعه خطرًا نظاميًا يُراجع في نماذج المديرين"))
+        else:
+            ev.append(_risk_event(
+                "synthesis_collapse", "عالية", "انهيار توليفة مدير البحث بلا إنقاذ",
+                f"خرجت التوليفة {synthesis_rescue.get('orig_chars')} حرفًا وبقيت بعد تعذر الإنقاذ أو قصره",
+                "مفتوح", "أعد التوليف بمدير آخر من حزمة البحث المحفوظة، ولا تعتمد هذه الصياغة"))
+    # — اكتمال الفريق
+    for d in (failed_agents or []):
+        ev.append(_risk_event(
+            "agent_failed", "عالية", f"سقوط تقرير «{d.get('name', '')}» نهائيًا",
+            f"تعذر تقريره رغم سلم الإنقاذ كاملًا ({str(d.get('fail_reason') or '')[:80]})",
+            "مفتوح: بُني قسمه على بطاقات شواهده وبطاقات الخلاف والمقارنة",
+            "راجع نموذج الوكيل ونطاقه في بطاقته؛ وتكرار سقوطه يجعله خطرًا نظاميًا"))
+    for d in (dossiers or []):
+        if d.get("rescued_by"):
+            ev.append(_risk_event(
+                "agent_rescued", "منخفضة", f"إنقاذ وكيل: «{d.get('name', '')}»",
+                f"أكمل بعد درجة إنقاذ: {d.get('rescued_by')}",
+                "عولج آليًا بسلم الإنقاذ", "لا إجراء؛ يُرصد للتكرار"))
+    reps = [(str(d.get("name") or ""), len(d.get("report") or ""))
+            for d in (dossiers or []) if not d.get("failed")]
+    if len(reps) >= 3:
+        _lens = sorted(n for _, n in reps)
+        _med = _lens[len(_lens) // 2] or 1
+        for _nm, _n in reps:
+            if _n < _RISK_SHORT_REPORT_CHARS and _n < _RISK_SHORT_REPORT_RATIO * _med:
+                ev.append(_risk_event(
+                    "agent_short_report", "متوسطة", f"تقرير قصير: «{_nm}»",
+                    f"{_n} حرفًا مقابل وسيط تقارير {_med} حرفًا",
+                    "مفتوح: دخل البحث ناقص التحرير من هذا الفن",
+                    "راجع نطاق الوكيل وشواهده وتفكيره؛ وإن تكرر فقصور بطاقة أو نطاق"))
+    # — الاسترجاع الموجه للمذاهب
+    for _md, _info in (targeted_map or {}).items():
+        if int(_info.get("count") or 0) < _RISK_TARGETED_MIN:
+            ev.append(_risk_event(
+                "targeted_weak", "متوسطة", f"ضعف الاسترجاع الموجه: {_md}",
+                f"{_info.get('count')} صفحة طبقات فقط من {len(_info.get('books') or [])} كتابًا لوكيل «{_info.get('agent', '')}»",
+                "مفتوح: تغطية المذهب من الاسترجاع العام أكثر منها من كتب طبقاته",
+                "راجع مراسي المسألة وكتب طبقات المذهب في madhhab_authority"))
+    # — نقول خارج المكتبة (قاعدة المكتبة الحاكمة)
+    _ex = int(gs.get("excluded_outside") or 0)
+    if _ex:
+        ev.append(_risk_event(
+            "outside_library", "عالية", "نقول من خارج مكتبة الشاملة",
+            f"استُبعد {_ex} نقلًا لا كتاب له في المكتبة البتة (قائمتها في ذيل المذكرة)",
+            "عولج آليًا: قُطعت من المتن بحواشيها فورًا",
+            "راجع القائمة: خارجية حقًا أم كتب مكتبة بصياغة اسم لا تطابق الكتالوج (عيب فهرسة يُصلح)"))
+    # — ثبوت النقول وربطها
+    _checked = int(gs.get("checked") or 0)
+    _ver = int(gs.get("verified") or 0) + int(gs.get("relocated") or 0)
+    if _checked >= 5:
+        _r = _ver / _checked
+        if _r < 0.50:
+            ev.append(_risk_event(
+                "verified_ratio", "عالية", "نسبة ثبوت النقول دون نصف المفحوص",
+                f"ثبت في كتب إحالتها {_ver} من {_checked} ({round(_r * 100)}٪) وحد الاعتماد {_RISK_MIN_VERIFIED_RATIO * 100:.0f}٪",
+                "مفتوح", "لا يُعتمد البحث قبل مراجعة النقول غير الثابتة المؤثرة"))
+        elif _r < _RISK_MIN_VERIFIED_RATIO:
+            ev.append(_risk_event(
+                "verified_ratio", "متوسطة", "نسبة ثبوت النقول دون حد الاعتماد",
+                f"ثبت في كتب إحالتها {_ver} من {_checked} ({round(_r * 100)}٪) وحد الاعتماد {_RISK_MIN_VERIFIED_RATIO * 100:.0f}٪",
+                "مفتوح", "راجع المنبهات في سجل التدقيق قبل الاعتماد الأكاديمي"))
+    if int(gs.get("unverified") or 0):
+        ev.append(_risk_event(
+            "unverified_kept", "متوسطة", "نقول بقيت في المتن بلا ثبوت آلي",
+            f"{gs.get('unverified')} نقل لم يثبت في كتاب إحالته ولا في كتب الشواهد وأُبقي للمراجعة",
+            "مفتوح", "مراجعة بشرية لهذه المواضع بعينها"))
+    if unresolved_citations:
+        ev.append(_risk_event(
+            "unresolved_citations", "متوسطة", "إحالات بقيت موسومة ⚠",
+            f"{unresolved_citations} إحالة بموضع لم تُحل في قاعدة المكتبة",
+            "مفتوح", "مراجع على ذمة النموذج؛ تحقق منها يدويًا أو احذفها"))
+    # — هيمنة كتاب وصيغ العرض (من تشريح الجواب)
+    text = reply_text or ""
+    _span_ids = re.findall(r'data-book-id="(\d+)"', text)
+    if len(_span_ids) >= 20:
+        _top_id, _top_n = _Counter(_span_ids).most_common(1)[0]
+        if _top_n >= 12 and _top_n / len(_span_ids) >= _RISK_DOMINANCE_SHARE:
+            ev.append(_risk_event(
+                "book_dominance", "متوسطة", "هيمنة كتاب واحد على حواشي الجواب",
+                f"الكتاب #{_top_id} في {_top_n} من {len(_span_ids)} وسمًا ({round(_top_n / len(_span_ids) * 100)}٪)",
+                "مفتوح", "وازِن النقل بين كتب الفن؛ فالهيمنة تحيّز تغطية وإن صحت نقولها"))
+    _disp = re.findall(r'<span class="cit-src"[^>]*>(.*?)</span>', text, re.S)
+    _leak = [d for d in _disp if re.search(r"\s-\s(ط|ت)\s", d)]
+    if _leak:
+        ev.append(_risk_event(
+            "display_edition_leak", "متوسطة", "تسرب وصف طبعة إلى عرض الحواشي",
+            f"{len(_leak)} وسمًا يعرض طبعة خلافًا لقاعدة العرض المحكمة",
+            "مفتوح", "خلل آلي في بناء العرض يجب إصلاحه في المنظومة"))
+    _tk = len(re.findall(r"أخرجه", text))
+    _tk_num = len(re.findall(r"حديث رقم \(\d+\)", text))
+    if _tk >= 3 and _tk_num == 0:
+        ev.append(_risk_event(
+            "takhrij_no_numbers", "منخفضة", "تخريجات بلا أرقام أحاديث",
+            f"{_tk} تخريجًا ولا واحد منها برقم حديث",
+            "مفتوح", "إن حضرت الأرقام في صفحات الشواهد وجب نسخها في القالب"))
+    # — دعاوى الاتفاق والتغطية
+    if int(gs.get("ijma_unattributed") or 0):
+        ev.append(_risk_event(
+            "ijma_unattributed", "متوسطة", "دعوى اتفاق بلا نسبة لقائل",
+            f"{gs.get('ijma_unattributed')} دعوى إجماع/اتفاق مطلقة بلا قائل موثق",
+            "مفتوح", "انسبها لقائلها من كتب الإجماع أو خففها إلى «الجمهور»"))
+    if int(gs.get("tier_warnings") or 0):
+        ev.append(_risk_event(
+            "single_tier_source", "منخفضة", "نقول على مصدر وسيط وحيد",
+            f"{gs.get('tier_warnings')} نقل قام على موسوعة مقارنة سندًا وحيدًا",
+            "مفتوح", "يُطلب أصل كل منها من كتب مذهبه قبل الاعتماد النهائي"))
+    _mt = gs.get("missing_terms") or []
+    if _mt:
+        ev.append(_risk_event(
+            "missing_terms", "منخفضة", "ألفاظ متقدمين موثقة غابت عن المتن",
+            "لم يظهر لها أثر في الجواب: " + "، ".join(f"«{t}»" for t in _mt[:8]),
+            "مفتوح", "يُراجع ما وراءها من نصوص صريحة وإن لم تدخل الصياغة"))
+    # — نطاق ومدة
+    if disabled_agents:
+        ev.append(_risk_event(
+            "scope_reduced", "منخفضة", "نطاق بحث مقلّص بقرار الباحث",
+            "عُطّل قصدًا: " + "، ".join(str(d.get("name") or "") for d in disabled_agents),
+            "موثق بقرار الباحث", "لا إجراء؛ يُقرأ البحث على نطاقه المعلن"))
+    if duration_s and duration_s > _RISK_DURATION_S:
+        ev.append(_risk_event(
+            "duration_long", "منخفضة", "مدة بحث فوق المعتاد",
+            f"{round(duration_s / 60, 1)} دقيقة مقابل سقف معتاد {round(_RISK_DURATION_S / 60)} دقيقة",
+            "مفتوح", "راجع مراحل التوقيت في سجل القياس عند تكرارها"))
+    ev.sort(key=lambda e: _RISK_CLS_ORDER.get(e["cls"], 3))
+    return ev
+
+
+def _risk_verdict(events) -> str:
+    if any(e["cls"] == "عالية" and e["status"].startswith("مفتوح") for e in events):
+        return "لا يُعتمد قبل معالجة المخاطر العالية المفتوحة"
+    if any(e["cls"] in ("عالية", "متوسطة") for e in events):
+        return "صالح للاعتماد بتنبيهات مسجلة"
+    return "صالح للاعتماد"
+
+
+def _risk_memo_fallback(events, officer_model: str) -> str:
+    """مذكرة آلية عند تعذر مسؤول المخاطر: نفس البنية بلا حكم نموذجي."""
+    lines = ["# مذكرة إدارة المخاطر — تنبيه لصاحب البحث",
+             f"الحكم العام: **{_risk_verdict(events)}** (مذكرة آلية؛ تعذر مسؤول المخاطر النموذجي)",
+             ""]
+    if not events:
+        lines.append("لم يرصد الحصاد الآلي حدث مخاطرة في هذا البحث ضمن الحدود المعتمدة.")
+    for cls in ("عالية", "متوسطة", "منخفضة"):
+        grp = [e for e in events if e["cls"] == cls]
+        if not grp:
+            continue
+        lines.append(f"## {_RISK_ICONS[cls]} مخاطر {cls} ({len(grp)})")
+        for e in grp:
+            lines.append(f"- **{e['title']}** — الدليل: {e['evidence']} · الحالة: {e['status']} · الإجراء: {e['action']}")
+        lines.append("")
+    lines.append(f"مسؤول المخاطر المعيّن: {officer_model} (تعذرت دعوته — مذكرة احتياطية من الحصاد الحتمي)")
+    return "\n".join(lines)
+
+
+def _risk_officer_memo(events, *, question, group, manager_model, ledger,
+                       dossiers, gate_stats, api_key):
+    """مسؤول المخاطر المستقل: يحكم على الحصاد الحتمي ويكتب مذكرة صاحب
+    البحث. لا يكون مدير الجولة أبدًا. يعيد (المذكرة، اسم المسؤول)."""
+    officer = next((m for m in _RISK_OFFICER_MODELS if m != manager_model),
+                   _RISK_OFFICER_MODELS[-1])
+    if not events:
+        return _risk_memo_fallback(events, officer), officer
+    gs = gate_stats or {}
+    ev_lines = []
+    for i, e in enumerate(events, 1):
+        ev_lines.append(
+            f"{i}. [{e['cls']}] {e['title']} | الدليل الرقمي: {e['evidence']} "
+            f"| حالته الآلية: {e['status']} | إجراء مقترح آليًا: {e['action']}")
+    agents_lines = [
+        f"- «{d.get('name', '')}» ({d.get('model', '')}): تقرير {len(d.get('report') or '')} حرفًا، "
+        f"شواهد {len(d.get('citations') or [])}" + ("، ساقط نهائيًا" if d.get("failed") else "")
+        + (f"، أُنقذ ({d.get('rescued_by')})" if d.get("rescued_by") else "")
+        for d in (dossiers or [])]
+    fails = [f"- «{str(f.get('quote') or '')[:90]}» — {f.get('reason', '')}"
+             for f in (gs.get("failures") or [])[:12]]
+    excl = [f"- «{str(x.get('quote') or '')[:90]}»"
+            for x in (gs.get("excluded_items") or [])[:15]]
+    dossier_text = (
+        f"المسألة: {question}\nالفريق: {group}\nمدير البحث (المدير التنفيذي): {manager_model}\n\n"
+        "أحداث المخاطر المرصودة آليًا من طبقات القياس الثلاث (قياسات مدمجة، أحداث الجولة، تشريح الجواب):\n"
+        + "\n".join(ev_lines)
+        + "\n\nجدول الفريق:\n" + "\n".join(agents_lines)
+        + ("\n\nمواضع منبهة من بوابة التوثيق:\n" + "\n".join(fails) if fails else "")
+        + ("\n\nالنقول المستبعدة (خارج المكتبة — عينات):\n" + "\n".join(excl) if excl else "")
+        + "\n\nسجل الأدلة المنظم الذي بُني عليه البحث (للحكم النوعي على التغطية والترجيحات العارية):\n"
+        + (ledger or "— لم يُبنَ سجل أدلة —")
+    )[:60000]
+    _sys = (
+        "أنت مسؤول إدارة المخاطر في حوكمة منظومة «المجتهد» البحثية، مستقل تمامًا عن مدير البحث وفريقه: لا تجامل ولا تهوّل. "
+        "يصلك حصاد آلي من طبقات قياس المنظومة (أحداث مرشحة بأدلتها الرقمية، جدول الفريق، منبهات التوثيق، سجل الأدلة)، ومهمتك:\n"
+        "١) أكّد كل حدث مرشح أو ارفضه إن كان دليله لا يقوم، ولك إعادة تصنيفه (عالية/متوسطة/منخفضة) مع تعليل من سطر.\n"
+        "٢) أضف من سجل الأدلة مخاطر نوعية لا تلتقطها العدّادات إن وجدت: ترجيح بلا بطاقة، تغطية مذهبية ناقصة، تناقض بين وكيلين مرّ صامتًا، دعوى بلا سند — بحد أقصى أربع، وبتصنيفها ودليلها من السجل.\n"
+        "٣) اكتب مذكرة رسمية إلى «صاحب البحث» بصيغة إدارة مخاطر تنبّه المسؤول الأول: تبدأ بسطر «الحكم العام» (صالح للاعتماد / صالح بتنبيهات / لا يُعتمد قبل معالجة العالية المفتوحة) ثم المخاطر العالية فالمتوسطة فالمنخفضة (أمام كل ملاحظة أيقونتها 🔴/🟡/⚪ وخطورتها ودليلها وحالتها: عولجت آليًا أم مفتوحة)، ثم قسم «قرارات مطلوبة من صاحب البحث» بما لا يعالج إلا بقراره.\n"
+        "التزم الأرقام الواردة حرفيًا ولا تخترع عددًا ولا اسمًا، واختم بسطر: مسؤول المخاطر: " + officer + "."
+    )
+    try:
+        memo = call_openrouter_raw(
+            model_id=officer,
+            messages=[{"role": "system", "content": _sys},
+                      {"role": "user", "content": dossier_text}],
+            api_key=api_key, temperature=0.2, max_tokens=12000,
+            timeout=300, thinking_level="high") or ""
+        memo = memo.strip()
+        if len(memo) < 200:
+            raise ValueError("مذكرة قصيرة")
+        print(f"🏛 [Risk Office] كتب مسؤول المخاطر ({officer}) مذكرة {len(memo)} حرفًا على {len(events)} حدثًا", flush=True)
+        return memo, officer
+    except Exception as _oerr:
+        print(f"🏛 [Risk Office] تعذر مسؤول المخاطر {officer}: {_oerr}", flush=True)
+        return _risk_memo_fallback(events, officer), officer
+
+
+def _save_research_package(owner_id: str, chat_id: str, package: dict) -> None:
+    """حزمة البحث المحفوظة: تقارير الوكلاء وسجل الأدلة وسجل المخاطر مع
+    البحث نفسه — للمحاسبة في المناقشة وإعادة التوليف بمدير آخر بلا بحث
+    جديد، وللمقارنة الحوكمية عبر البحوث."""
+    if not chat_id:
+        return
+    try:
+        key = f"research_package:{owner_id}:{chat_id}"
+        conn = _ensure_app_memory()
+        try:
+            conn.execute(
+                "INSERT INTO kv_documents (key, payload, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
+                (key, json.dumps(package, ensure_ascii=False), datetime.now().isoformat()))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as _perr:
+        print(f"🏛 [Risk Office] تعذر حفظ حزمة البحث: {_perr}", flush=True)
+
+
 def expand_query_with_anchor_rounds(
     query: str,
     scopes: List[Dict[str, Any]],
@@ -13576,6 +13860,45 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     # والصياغة النهائية بعد إقفال مناقشة تُقاس أيضًا لتوثق أثر الاستكمال)
     if req.agent_group and live_reply and (subagents_dossiers or _discussion == "finalize") and _discussion != "open":
         _gs = _gate_stats or {}
+        # 🏛 إدارة المخاطر: حصاد حتمي من الطبقات الثلاث، ومسؤول مخاطر
+        # مستقل يكتب مذكرة صاحب البحث، وحفظ حزمة البحث كاملة مع سجلها.
+        _risk_events: list = []
+        _risk_memo = ""
+        _risk_officer = ""
+        try:
+            _risk_events = _compile_risk_events(
+                gate_stats=_gate_stats, dossiers=subagents_dossiers,
+                failed_agents=_failed_agents, disabled_agents=_disabled_agents,
+                synthesis_rescue=_synthesis_rescue, reply_text=reply_text,
+                duration_s=time.time() - _chat_t0,
+                targeted_map=locals().get("_targeted_map") or {},
+                unresolved_citations=_unresolved_citations)
+            _risk_memo, _risk_officer = _risk_officer_memo(
+                _risk_events, question=(last_user_msg or "")[:200],
+                group=group_name or "", manager_model=call_model,
+                ledger=locals().get("_evidence_ledger") or "",
+                dossiers=subagents_dossiers, gate_stats=_gate_stats,
+                api_key=owner_openrouter_key(request, req.api_key))
+            _save_research_package(current_owner_id(request), req.chat_id or "", {
+                "chat_id": req.chat_id or "", "ts": datetime.now().isoformat(),
+                "question": (last_user_msg or "")[:200], "group": group_name or "",
+                "manager_model": call_model, "risk_officer": _risk_officer,
+                "risk_verdict": _risk_verdict(_risk_events),
+                "risk_events": _risk_events, "risk_memo": _risk_memo,
+                "ledger": locals().get("_evidence_ledger") or "",
+                "dossiers": [
+                    {"name": d.get("name", ""), "model": d.get("model", ""),
+                     "report": d.get("report") or "",
+                     "citations": len(d.get("citations") or []),
+                     "failed": bool(d.get("failed")),
+                     "fail_reason": d.get("fail_reason", ""),
+                     "rescued_by": d.get("rescued_by", "")}
+                    for d in subagents_dossiers],
+            })
+            print(f"🏛 [Risk Office] {_risk_officer}: {len(_risk_events)} حدث مخاطرة "
+                  f"({sum(1 for e in _risk_events if e['cls'] == 'عالية')} عالية) — الحكم: {_risk_verdict(_risk_events)}", flush=True)
+        except Exception as _risk_err:
+            print(f"🏛 [Risk Office] تعذرت دورة المخاطر: {_risk_err}", flush=True)
         _record_research_metrics(current_owner_id(request), {
             "ts": datetime.now().isoformat(),
             "chat_id": req.chat_id or "",
@@ -13583,6 +13906,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             "group": group_name or "",
             "manager_model": call_model,
             "synthesis_rescue": _synthesis_rescue or None,
+            "risk_officer": _risk_officer,
+            "risk_verdict": _risk_verdict(_risk_events) if _risk_events else "",
+            "risk_events": _risk_events,
+            "risk_memo": _risk_memo,
+            "excluded_items": (_gs.get("excluded_items") or [])[:26],
             "duration_s": round(time.time() - _chat_t0),
             "answer_chars": len(reply_text or ""),
             "witnesses": len(witness_rows or []),
@@ -13628,6 +13956,27 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         "agent_group": group_name if req.agent_group else None,
         "witnesses": witness_rows
     }
+
+
+@app.get("/api/research-package/{chat_id}")
+async def research_package_endpoint(chat_id: str, request: Request):
+    """حزمة البحث المحفوظة (تقارير الوكلاء وسجل الأدلة وسجل مخاطرها) —
+    مادة محاسبة المدير في المناقشة وإعادة التوليف بمدير آخر."""
+    owner = current_owner_id(request)
+    conn = _ensure_app_memory()
+    try:
+        row = conn.execute("SELECT payload FROM kv_documents WHERE key=?",
+                           (f"research_package:{owner}:{chat_id}",)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return {"found": False}
+    try:
+        pkg = json.loads(row["payload"]) or {}
+    except Exception:
+        return {"found": False}
+    pkg["found"] = True
+    return pkg
 
 
 @app.get("/api/research-metrics")

@@ -2351,9 +2351,20 @@ async function downloadChatResearchReport(idx) {
       L.push('مواضع منبّهة من التدقيق (للمراجعة البشرية):');
       entry.audit_failures.slice(0, 12).forEach(f => L.push(`- «${(f.quote || '').slice(0, 90)}» — ${f.reason || ''}`));
     }
+    if (entry.risk_memo) {
+      L.push('');
+      L.push('ثالثًا: 🏛 مذكرة إدارة المخاطر إلى صاحب البحث (مسؤول المخاطر: ' + (entry.risk_officer || '—') + (entry.risk_verdict ? ' · الحكم: ' + entry.risk_verdict : '') + ')');
+      L.push('--------------------------------------------------');
+      L.push(entry.risk_memo.replace(/\*\*/g, ''));
+      if ((entry.excluded_items || []).length) {
+        L.push('');
+        L.push('النقول المستبعدة لخارجها عن المكتبة (قاعدة: لا نقل من خارجها):');
+        entry.excluded_items.slice(0, 26).forEach(x => L.push('- «' + (x.quote || '').slice(0, 110) + '»'));
+      }
+    }
     if (entry.audit_record) {
       L.push('');
-      L.push('ثالثًا: سجل التدقيق الآلي الكامل (كما خرج من المنظومة)');
+      L.push((entry.risk_memo ? 'رابعًا' : 'ثالثًا') + ': سجل التدقيق الآلي الكامل (كما خرج من المنظومة)');
       L.push('--------------------------------------------------');
       L.push(entry.audit_record.replace(/\*\*/g, ''));
     }
