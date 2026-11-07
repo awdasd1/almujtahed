@@ -177,7 +177,7 @@ def resolve_book_files(book_id_or_title: Any) -> Optional[Path]:
     return None
 
 
-_LAZY_TRIED = set()
+_LAZY_FAILED = set()
 _LAZY_LOCK = __import__("threading").Lock()
 
 
@@ -204,26 +204,33 @@ def _lazy_extract_and_resolve(book_id_or_title) -> Optional[Path]:
     if our_id is None:
         return None
     with _LAZY_LOCK:
-        if our_id in _LAZY_TRIED:
+        if our_id in _LAZY_FAILED:
             return None
-        _LAZY_TRIED.add(our_id)
     import shamela_link as SL
     their_id = SL.ensure_id_map().get(str(our_id))
     if not their_id:
+        with _LAZY_LOCK:
+            _LAZY_FAILED.add(our_id)
         return None
+    # قفل الكتاب نفسه داخل convert يجعل اللمسات المتزامنة تنتظر الاستخراج
+    # الجاري ثم تجد الملفات جاهزة، بدل إقلاع فوري بصفحات ناقصة (1.10.270).
     print(f"📥 [Lazy] استخراج كتاب {our_id} (شاملة {their_id}) عند أول لمس…", flush=True)
     SL.extract_book(int(their_id))
     # بعد الاستخراج: حلّ جديد عبر الكتالوج
+    found = None
     if DB_PATH.exists():
         try:
             conn = sqlite3.connect(str(DB_PATH), timeout=5)
             row = conn.execute("SELECT rel_path FROM books WHERE book_id = ? LIMIT 1", (our_id,)).fetchone()
             conn.close()
             if row and row[0]:
-                return _dir_for_rel(row[0])
+                found = _dir_for_rel(row[0])
         except Exception:
             pass
-    return None
+    if found is None:
+        with _LAZY_LOCK:
+            _LAZY_FAILED.add(our_id)
+    return found
 
 
 def get_book_index(book_dir: Path) -> Dict[str, Any]:

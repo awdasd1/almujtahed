@@ -24,9 +24,33 @@ import glob
 import json
 import os
 import re
+import shutil
 import sqlite3
 import sys
+import threading
+import time
 from pathlib import Path
+
+# أقفال لكل كتاب على حدة (1.10.270): استخراجان متزامنان للكتاب نفسه (مُسخِّن
+# المجلس + لمس كسول من وكيل) كانا يكتبان الملفات نفسها معًا فيفسدانها،
+# وقارئ أثناء الكتابة يرى صفحات ناقصة فيُسقط الشواهد.
+_BOOK_LOCKS: dict = {}
+_BOOK_LOCKS_GUARD = threading.Lock()
+
+
+def _book_lock(tid: int) -> threading.Lock:
+    with _BOOK_LOCKS_GUARD:
+        lk = _BOOK_LOCKS.get(int(tid))
+        if lk is None:
+            lk = threading.Lock()
+            _BOOK_LOCKS[int(tid)] = lk
+        return lk
+
+
+def _atomic_write(path: Path, text: str):
+    tmp = path.with_name(f"{path.name}.tmp{threading.get_ident()}")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
@@ -68,6 +92,100 @@ def import_dir() -> Path:
     if os.getenv("APPDATA"):
         return Path(os.getenv("APPDATA")) / "Al-Mujtahed" / "runtime" / "shamela_imported"
     return home / ".almujtahed" / "shamela_imported"
+
+
+def mirror_dir() -> Path:
+    """مرآة قاعدة الشاملة داخل تطبيقنا (الخطة الثانية، 1.10.270): نسخة من
+    مجلد database وحده (الفهرس + قواعد الكتب) تُزامَن تفاضليًا، فيقرأ الجسر
+    والاستخراج منها لا من تثبيت الشاملة — استقلال عن موضعه وتغيّراته."""
+    env = os.getenv("ALMUJTAHED_SHAMELA_MIRROR_DIR", "").strip()
+    if env:
+        return Path(env).expanduser()
+    return import_dir().parent / "shamela_mirror"
+
+
+def mirror_ready() -> bool:
+    if os.getenv("ALMUJTAHED_MIRROR", "").strip().lower() == "off":
+        return False
+    md = mirror_dir()
+    return (md / ".mirror_ok").exists() and (md / "database" / "store" / "page").exists()
+
+
+def data_database_dir():
+    """مجلد قاعدة بيانات الشاملة الحاكم للقراءة: مرآتنا إن اكتملت، وإلا الأصل."""
+    if mirror_ready():
+        return mirror_dir() / "database"
+    root = find_shamela_root()
+    return (root / "database") if root else None
+
+
+_MIRROR_SYNC_LOCK = threading.Lock()
+
+
+def sync_mirror(progress=lambda m: None) -> dict:
+    """مزامنة تفاضلية لقاعدة الشاملة إلى مرآتنا: الجديد والمتغير فقط،
+    وملفات segments_* أخيرًا حتى لا يشير فهرس المرآة إلى مقاطع لم تصل.
+    اكتمالها يرفع علم .mirror_ok فتتحول القراءة إليها من أول بحث تالٍ."""
+    root = find_shamela_root()
+    if not root:
+        return {"ok": False, "message": "لم يُعثر على الشاملة"}
+    if not _MIRROR_SYNC_LOCK.acquire(blocking=False):
+        return {"ok": False, "message": "مزامنة جارية"}
+    try:
+        src = root / "database"
+        dst = mirror_dir() / "database"
+        dst.mkdir(parents=True, exist_ok=True)
+        copied = deleted = scanned = 0
+        segments = []
+
+        def _stale(s: Path, d: Path) -> bool:
+            try:
+                if not d.exists():
+                    return True
+                ss, dd = s.stat(), d.stat()
+                return ss.st_size != dd.st_size or int(ss.st_mtime) != int(dd.st_mtime)
+            except Exception:
+                return True
+
+        for dirpath, _dirs, files in os.walk(src):
+            rel_dir = Path(dirpath).relative_to(src)
+            for name in files:
+                scanned += 1
+                s, d = Path(dirpath) / name, dst / rel_dir / name
+                if name.startswith("segments"):
+                    segments.append((s, d))
+                    continue
+                if _stale(s, d):
+                    try:
+                        d.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(s, d)
+                        copied += 1
+                    except Exception:
+                        pass
+        for s, d in segments:
+            if _stale(s, d):
+                try:
+                    d.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(s, d)
+                    copied += 1
+                except Exception:
+                    pass
+        store_src, store_dst = src / "store" / "page", dst / "store" / "page"
+        if store_src.exists() and store_dst.exists():
+            src_names = set(os.listdir(store_src))
+            for name in os.listdir(store_dst):
+                if name not in src_names:
+                    try:
+                        (store_dst / name).unlink()
+                        deleted += 1
+                    except Exception:
+                        pass
+        (mirror_dir() / ".mirror_ok").write_text(str(int(time.time())), encoding="utf-8")
+        msg = f"🪞 [Mirror] مزامنة قاعدة الشاملة: فُحص {scanned} ملفًا، نُسخ {copied}، حُذف {deleted}"
+        progress(msg)
+        return {"ok": True, "copied": copied, "deleted": deleted, "scanned": scanned}
+    finally:
+        _MIRROR_SYNC_LOCK.release()
 
 
 def _catalog_path() -> Path:
@@ -245,10 +363,11 @@ def ensure_id_map() -> dict:
     if not root:
         return load_id_map()
     m = load_id_map()
-    downloaded = _downloaded_ids(root / "database")
+    _dbd = data_database_dir() or (root / "database")
+    downloaded = _downloaded_ids(_dbd)
     if len(m) >= int(len(downloaded) * 0.9) and m:
         return m
-    theirs = _their_catalog(root / "database")
+    theirs = _their_catalog(_dbd)
     ours = _our_catalog()
     tidx = _our_title_index(ours)
     for tid in downloaded:
@@ -268,7 +387,7 @@ def census() -> dict:
     if not root:
         st["message"] = "لم يُعثر على تطبيق المكتبة الشاملة الجديد على هذا الجهاز."
         return st
-    db_dir = root / "database"
+    db_dir = data_database_dir() or (root / "database")
     st.update({"found": True, "shamela_root": str(root)})
     try:
         theirs = _their_catalog(db_dir)
@@ -382,10 +501,11 @@ def register_new_books() -> int:
     root = find_shamela_root()
     if not root:
         return 0
-    theirs = _their_catalog(root / "database")
+    _dbd = data_database_dir() or (root / "database")
+    theirs = _their_catalog(_dbd)
     ours = _our_catalog()
     title_index = _our_title_index(ours)
-    downloaded = _downloaded_ids(root / "database")
+    downloaded = _downloaded_ids(_dbd)
     id_map = ensure_id_map()
     known_theirs = set(id_map.values()) | set(_imported_pairs(import_dir()))
     used_ours = set(ours) | {int(k) for k in id_map}
@@ -435,7 +555,7 @@ def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=p
     root = find_shamela_root()
     if not root:
         return {"ok": False, "message": "لم يُعثر على تطبيق الشاملة."}
-    db_dir = root / "database"
+    db_dir = data_database_dir() or (root / "database")
     store = db_dir / "store" / "page"
     if not store.exists():
         return {"ok": False, "message": "لم يُعثر على مخزن نصوص الشاملة (لا كتب منزّلة؟)."}
@@ -575,6 +695,8 @@ def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=p
 
     report = {"ok": True, "converted": [], "pages": 0, "failed": []}
     for n, tid in enumerate(targets, 1):
+        _lk = _book_lock(tid)
+        _lk.acquire()
         try:
             meta = theirs.get(tid, {"title": str(tid), "author": "", "category": "كتب عامة", "category_id": 0})
             our_id = id_map[tid]
@@ -600,7 +722,7 @@ def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=p
             toc_found = {}
             part_counter = {}
             npages = 0
-            with open(bdir / "pages.jsonl", "w", encoding="utf-8") as fh:
+            with open(bdir / f"pages.jsonl.tmp{threading.get_ident()}", "w", encoding="utf-8") as fh:
                 for seq, doc_i in rows:
                     doc = sf.document(doc_i)
                     body = str(doc.get("body") or "")
@@ -622,8 +744,9 @@ def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=p
                     npages += 1
                     for m in _TITLE_SPAN.finditer(body):
                         toc_found[int(m.group(1))] = (_clean_title(m.group(2)), seq)
+            os.replace(bdir / f"pages.jsonl.tmp{threading.get_ident()}", bdir / "pages.jsonl")
             our_tid = {}
-            with open(bdir / "toc.jsonl", "w", encoding="utf-8") as fh:
+            with open(bdir / f"toc.jsonl.tmp{threading.get_ident()}", "w", encoding="utf-8") as fh:
                 for i, (their_tid, (text, seq)) in enumerate(
                         sorted(toc_found.items(), key=lambda kv: kv[1][1]), 1):
                     our_tid[their_tid] = i
@@ -633,6 +756,7 @@ def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=p
                         "parent_id": our_tid.get(parent_theirs),
                         "shamela_title_id": their_tid, "title_text": text,
                     }, ensure_ascii=False) + "\n")
+            os.replace(bdir / f"toc.jsonl.tmp{threading.get_ident()}", bdir / "toc.jsonl")
             meta_out = {
                 "book_id": our_id, "shamela_id": tid, "title_ar": meta.get("title") or str(tid),
                 "book_type": meta.get("book_type", 1), "book_type_label": "كتاب",
@@ -641,10 +765,10 @@ def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=p
                 "main_author_death_hijri": meta.get("death"), "main_author_death_hijri_text": meta.get("death_text") or "",
                 "source": "shamela-app-import",
             }
-            (bdir / "book_metadata.json").write_text(json.dumps(meta_out, ensure_ascii=False, indent=1), encoding="utf-8")
-            (bdir / "manifest.json").write_text(json.dumps(
+            _atomic_write(bdir / "book_metadata.json", json.dumps(meta_out, ensure_ascii=False, indent=1))
+            _atomic_write(bdir / "manifest.json", json.dumps(
                 {**meta_out, "page_count": npages, "toc_count": len(toc_found)},
-                ensure_ascii=False, indent=1), encoding="utf-8")
+                ensure_ascii=False, indent=1))
             report["converted"].append(tid)
             report["pages"] += npages
             progress(json.dumps({"stage": "book", "i": n, "of": len(targets), "book_id": tid,
@@ -652,6 +776,8 @@ def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=p
         except Exception as exc:  # كتاب فاسد لا يوقف البقية
             report["failed"].append({"book_id": tid, "error": str(exc)[:200]})
             progress(json.dumps({"stage": "fail", "book_id": tid, "error": str(exc)[:200]}, ensure_ascii=False))
+        finally:
+            _lk.release()
     try:
         reader.close()
     except Exception:

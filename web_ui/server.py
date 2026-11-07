@@ -1204,6 +1204,11 @@ def on_startup():
     except Exception:
         pass
     threading.Thread(target=_shamela_autostart, daemon=True, name="shamela-autostart").start()
+    try:  # تسخين جسر الشاملة (JVM + القارئ + الخرائط) فلا يولد ازدحامه الأول مع أول بحث
+        import shamela_search as _ss_warm
+        threading.Thread(target=_ss_warm.warm, daemon=True, name="shamela-bridge-warm").start()
+    except Exception:
+        pass
     if _bundled_qdrant_path() and not QDRANT_DISABLED:
         threading.Thread(target=_qdrant_watchdog, name="qdrant-watchdog", daemon=True).start()
 
@@ -4290,7 +4295,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.269"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.270"},
         },
     })
     if opened.get("error"):
@@ -6894,11 +6899,24 @@ async def shamela_complete():
 
 
 def _shamela_autostart():
-    """عند إقلاع التطبيق: استيراد ما جدّ تنزيله في الشاملة منذ آخر تشغيل."""
+    """عند إقلاع التطبيق: مزامنة مرآة الشاملة الداخلية ثم استيراد ما جدّ."""
     try:
         import time as _t
         _t.sleep(25)  # بعد استقرار الإقلاع تمامًا — لا منافسة على أول ثوانٍ
         import shamela_link
+        # الخطة الثانية: مرآة قاعدة الشاملة داخل التطبيق تُزامَن أولًا
+        # (أول مرة: نسخ كامل؛ بعدها: تفاضلي سريع)، فتعمل القراءة منها.
+        try:
+            _mr = shamela_link.sync_mirror(progress=lambda m: print(m, flush=True))
+            if _mr.get("ok"):
+                try:
+                    _added = shamela_link.register_new_books()
+                    if _added:
+                        print(f"📥 [Mirror] سُجّل {_added} كتابًا جديدًا من المرآة", flush=True)
+                except Exception:
+                    pass
+        except Exception as _mexc:
+            print(f"⚠️ [Mirror] تعذّرت المزامنة (نبقى على الأصل): {_mexc}", flush=True)
         st = shamela_link.census()
         if st.get("found") and st.get("importable_new", 0) > 0:
             print(f"📥 [ShamelaLink] {st['importable_new']} كتاب جديد في الشاملة — يُستورد تلقائيًا…", flush=True)
