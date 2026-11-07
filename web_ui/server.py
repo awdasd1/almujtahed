@@ -4727,7 +4727,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.274"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.275"},
         },
     })
     if opened.get("error"):
@@ -9714,17 +9714,28 @@ def _consult_research_advisors(
         "presented": len(props_v), "anchors_merged": len(_anchor_map),
     }
 
-    # 2) مطابقة المدير وإسناده: يختار الكتاب بعينه من مرشحي الشاملة ويضعه عند وكيله
+    # 2) الإسناد: المتفق عليه (صوتان فأكثر) بمرشح شاملة وحيد يُسند آليًا من
+    # تلميحات المستشارين المهيكلة بلا نداء مدير؛ والمدير لا يقضي إلا في
+    # المتنازع ومتعدد المرشحين والفريد — تخفيفًا لعبئه وتركيزًا لحكمه حيث
+    # يلزم، فلا يعيد قراءة ما حسمه اتفاق المجلس وشاملة وحيدة المرشح.
     decisions: Dict[int, Dict[str, Any]] = {}
-    out["director_assignment"] = "unavailable"
-    if props_v and director_model:
+    for v in props_v:
+        if v["band"] == "consensus" and len(v["candidates"]) == 1:
+            _ag_auto = _match_specialist_for_book(v.get("assign_hint") or "", v["title"], specialists)
+            if _ag_auto is not None:
+                decisions[v["n"]] = {"book_id": v["candidates"][0]["book_id"], "agent": _ag_auto,
+                                     "reason": f"اتفاق {v['votes']} من المجلس ومرشح شاملة وحيد: إسناد آلي",
+                                     "by": "consensus"}
+    out["director_assignment"] = "auto" if decisions else "unavailable"
+    _pile = [v for v in props_v if v["n"] not in decisions]
+    if _pile and director_model:
         try:
             spec_lines = []
             for _ag1 in specialists:
                 _bk = list(_ag1.get("books") or _ag1.get("booksScope") or [])
                 spec_lines.append(f"- {_ag1.get('name')}: {str(_ag1.get('desc') or '')[:90]} | كتبه الحالية {len(_bk)}: " + "؛ ".join(str(x) for x in _bk[:5]))
             prop_lines = []
-            for v in props_v:
+            for v in _pile:
                 cand_txt = " / ".join(f"#{c['book_id']} {c['title']} (مؤلفه: {c['author'] or '؟'})" for c in v["candidates"])
                 if v.get("band") == "consensus":
                     band_txt = f"ترشيح مشترك اتفق عليه {v.get('votes')} من أعضاء المجلس ({'، '.join(v.get('supporters') or [])})"
@@ -9784,7 +9795,7 @@ def _consult_research_advisors(
         dec = decisions.get(v["n"])
         if dec:
             bid = dec["book_id"]
-            ag, by = dec["agent"], "director"
+            ag, by = dec["agent"], dec.get("by", "director")
             reason = dec.get("reason") or ""
             chosen = next(c for c in v["candidates"] if c["book_id"] == bid)
         elif len(v["candidates"]) == 1:
@@ -9821,7 +9832,7 @@ def _consult_research_advisors(
                                "why": v["why"], "advisor": v["advisor"],
                                "votes": v.get("votes", 0), "band": v.get("band", ""),
                                "assigned_by": by, "reason": reason})
-        if len(out["grafted"]) >= 10:
+        if len(out["grafted"]) >= 12:
             break
     if isinstance(out.get("council"), dict):
         out["council"]["accepted_unique"] = sum(1 for g in out["grafted"] if g.get("band") == "unique")
@@ -11930,23 +11941,37 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             if agent_mcp_tools:
                 sub_sys += "\nلديك أدوات MCP متاحة أثناء عملك: استخدمها لقراءة صفحات كتبك ومطابقة الاقتباسات والبحث داخل نطاقك عند الحاجة، والتزم كتبك المخصصة لك ولا تخرج عنها."
 
-            # استدعاء OpenRouter بنموذج الوكيل المخصص والمعلمات الكاملة، مع
-            # إعادة محاولة واحدة عند السقوط أو الرد الفارغ؛ فالوكيل الساقط
-            # بصمت يُبنى قسمه من غير بطاقاته دون أن يشعر أحد.
+            # سُلّم إنقاذ الوكيل الساقط (قرار المنتج): إعادة الجولة بنفس
+            # النموذج، ثم نموذج احتياطي، ثم نموذج مختص يعيد كتابة التقرير،
+            # ثم مدير المشروع باحثًا بنفسه — كل درجة على مقاطع الوكيل ونطاق
+            # كتبه نفسهما؛ فلا يضيع فنٌّ كامل لعطل نموذج، ولا يسقط وكيل بصمت
+            # فيُبنى قسمه من غير بطاقاته دون أن يشعر أحد.
             print(f"🤖 [Subagent Dispatch] Calling OpenRouter model '{ag_model}' for agent '{ag_name}' with temp={ag_temp}, top_p={ag_top_p}, freq_pen={ag_freq_pen}, thinking={ag_thinking or 'default'}, witnesses={min(len(cits), ag_top_k)}...")
             rep = ""
             ag_failed = False
             ag_fail_reason = ""
-            # نموذج بديل مناظر لإعادة المحاولة: عطل ثابت في نموذج بعينه (ردود
-            # فارغة متكررة، مهلات مزمنة) لا يعالجه استدعاء النموذج نفسه ثانية.
+            _rescued_by = ""
             _fallback_model = ("~anthropic/claude-sonnet-latest" if ag_model == "google/gemini-3.8-flash"
                                else "google/gemini-3.8-flash")
             _retry_thinking = {"max": "high", "high": "medium", "medium": "low"}.get(str(ag_thinking or "").lower(), ag_thinking)
-            for _attempt in (1, 2):
-                _try_model = ag_model if _attempt == 1 else _fallback_model
-                _try_thinking = ag_thinking if _attempt == 1 else _retry_thinking
-                if _attempt == 2:
-                    print(f"🔁 [Subagent Dispatch] إعادة محاولة للوكيل '{ag_name}' بالنموذج البديل '{_try_model}' وتفكير {_try_thinking or 'default'}...")
+            _specialist_model = ("google/gemini-3.8-flash" if "sonnet" in str(ag_model or "")
+                                 else "~anthropic/claude-sonnet-latest")
+            _ladder = [
+                (ag_model, ag_thinking, "الأصلي", 120),
+                (ag_model, _retry_thinking, "إعادة الجولة", 120),
+                (_fallback_model, _retry_thinking, "النموذج الاحتياطي", 150),
+                (_specialist_model, "high", "النموذج المختص", 180),
+                (str(req.model or ""), "high", "المدير باحثًا بنفسه في كتب الوكيل", 180),
+            ]
+            _seen_try = set()
+            _try_model, _try_thinking = ag_model, ag_thinking
+            for _li, (_m, _th, _label, _timeout) in enumerate(_ladder):
+                if not _m or (_m, _th) in _seen_try:
+                    continue
+                _seen_try.add((_m, _th))
+                _try_model, _try_thinking = _m, _th
+                if _li:
+                    print(f"🔁 [Subagent Dispatch] إنقاذ '{ag_name}' — درجة «{_label}» بالنموذج '{_m}' وتفكير {_th or 'default'}...")
                 try:
                     if agent_mcp_tools:
                         rep = _subagent_reply_with_tools(_try_model, sub_sys, sub_user, ag_temp, ag_max_tokens, _try_thinking) or ""
@@ -11965,21 +11990,22 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                             frequency_penalty=ag_freq_pen,
                             presence_penalty=ag_pres_pen,
                             repetition_penalty=ag_rep_pen,
-                            timeout=120 if _attempt == 1 else 150,
+                            timeout=_timeout,
                             thinking_level=_try_thinking
                         ) or ""
                     if len(rep.strip()) < 40:
                         raise RuntimeError(f"أرجع الوكيل ردًا فارغًا أو شبه فارغ ({len(rep.strip())} حرفًا)")
-                    print(f"✅ [Subagent Dispatch] Agent '{ag_name}' completed using '{_try_model}' ({len(rep)} chars)" + (f" [بعد إعادة محاولة بالنموذج البديل]" if _attempt == 2 else ""))
+                    print(f"✅ [Subagent Dispatch] Agent '{ag_name}' completed using '{_try_model}' ({len(rep)} chars)" + (f" [بدرجة إنقاذ: {_label}]" if _li else ""))
                     ag_failed = False
+                    _rescued_by = _label if _li else ""
                     break
                 except Exception as err:
                     ag_fail_reason = f"{type(err).__name__}: {err}"
-                    print(f"⚠️ [Subagent Dispatch] OpenRouter call for agent '{ag_name}' failed (محاولة {_attempt}/2): {err}")
+                    print(f"⚠️ [Subagent Dispatch] OpenRouter call for agent '{ag_name}' failed (درجة {_label}): {err}")
                     rep = ""
                     ag_failed = True
             if ag_failed:
-                print(f"🚨 [Subagent Dispatch] Agent '{ag_name}' سقط نهائيًا بعد إعادة المحاولة: {ag_fail_reason}")
+                print(f"🚨 [Subagent Dispatch] Agent '{ag_name}' سقط نهائيًا بعد سُلّم الإنقاذ كاملًا: {ag_fail_reason}")
                 rep = (f"(تنبيه سقوط وكيل: تعذر استدعاء النموذج {ag_model} لهذا الوكيل رغم إعادة المحاولة ({ag_fail_reason}). "
                        f"لا تقرير تحريريًا منه؛ الشواهد المستخرجة من نطاقه مرفقة نثرًا ليبني المدير عليها ببطاقاتها أو يصرّح بغياب تقريره):\n\n" + snippets_txt[:2500])
 
@@ -11993,6 +12019,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "citations": cits,
                 "report": rep,
                 "failed": ag_failed,
+                "rescued_by": _rescued_by,
                 "fail_reason": ag_fail_reason if ag_failed else ""
             }
 
@@ -12181,7 +12208,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         )
         _ac = locals().get("_advisor_consult") or {}
         if _ac.get("grafted") or _ac.get("missing") or _ac.get("anchors") or _ac.get("tavily"):
-            _glines = [f"• أُضيف إلى بطاقة «{g['agent']}»: {g['entry']}" + (f" — {g['why']}" if g.get("why") else "") + (f" ({'ترشيح مشترك اتفق عليه ' + str(g.get('votes')) + ' من المجلس' if g.get('band') == 'consensus' else 'لقطة فريدة قبِلها المدير' if g.get('band') == 'unique' else 'ترشيح قناة الشبكة'})" if g.get("band") else "") + (f" (إسناد {'المدير' if g.get('assigned_by') == 'director' else 'احتياطي معلن'}: {g['reason']})" if g.get("reason") else "") for g in (_ac.get("grafted") or [])]
+            _glines = [f"• أُضيف إلى بطاقة «{g['agent']}»: {g['entry']}" + (f" — {g['why']}" if g.get("why") else "") + (f" ({'ترشيح مشترك اتفق عليه ' + str(g.get('votes')) + ' من المجلس' if g.get('band') == 'consensus' else 'لقطة فريدة قبِلها المدير' if g.get('band') == 'unique' else 'ترشيح قناة الشبكة'})" if g.get("band") else "") + (f" (إسناد {'المدير' if g.get('assigned_by') == 'director' else 'اتفاق المجلس آليًا' if g.get('assigned_by') == 'consensus' else 'احتياطي معلن'}: {g['reason']})" if g.get("reason") else "") for g in (_ac.get("grafted") or [])]
             _council = _ac.get("council") or {}
             _council_line = ""
             if _council:
@@ -13053,6 +13080,15 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 cited_rows = [row for row in witness_rows if row.get("book_id") in cited_ids]
                 if cited_rows:
                     witness_rows = cited_rows
+            if _failed_agents:
+                # إعلان السقوط الباقي في صدر الجواب: فنٌّ بلا تقرير بعد سُلّم
+                # الإنقاذ كاملًا يُصرَّح به للقارئ، لا يُدفن في سجل القياسات.
+                _failed_names = "، ".join(str(d.get("name") or "") for d in _failed_agents)
+                reply_text = (
+                    f"> ⚠ **تنبيه منهجي:** تعذّر تقرير {_failed_names} رغم سُلّم الإنقاذ كاملًا "
+                    "(إعادة جولة، ونموذج احتياطي، ونموذج مختص، ومدير المشروع باحثًا بنفسه في كتبهم)؛ "
+                    "فما يأتي في فنّهم مبنيّ على شواهد نطاقهم المرفقة بلا تقرير محرَّر منهم.\n\n"
+                ) + reply_text
             if req.agent_group and not req.graph_only and not req.table_only and _discussion != "open":
                 # تدقيق توثيق غير مدمّر: مطابقة النقول على صفحات كتبها وسجل
                 # تنبيه ختامي ظاهر، بلا حذف ولا جولة إصلاح تستبدل البحث.
