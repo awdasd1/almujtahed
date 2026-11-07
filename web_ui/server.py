@@ -2381,8 +2381,42 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
                     row = _resolve(candidate)
                     offset = raw_title.find(candidate)
                     title_start = pos + cut + (offset if offset >= 0 else 0)
+                if not row:
+                    # العنوان بين قوسي اقتباس في متن خبري («وقع النقل في
+                    # «المجموع» للنووي (9-256)»): المقتبس هو العنوان حتمًا،
+                    # والمؤلف بعده فاصل الطبعات — فالعارية وحدها تنحرف
+                    # («المجموع» وحده لمجموع الفتاوى لا لشرح المهذب).
+                    _qm = list(re.finditer(r"«([^»]{3,60})»", raw_title))
+                    if _qm:
+                        _q = _qm[-1]
+                        _qt = _q.group(1).strip()
+                        _after = raw_title[_q.end():].strip(" ،,؛:")
+                        _hint = re.sub(r"^(?:لل|ل)\s*", "", _after).split()[0] if _after else ""
+                        for _cand in (f"{_qt} {_hint}".strip(), _qt):
+                            if not _cand:
+                                continue
+                            _r = _resolve(_cand)
+                            if not _r:
+                                continue
+                            if _hint and len(_hint) >= 4:
+                                _hf = _fold_book_text(_hint)
+                                if (_hf not in _fold_book_text(_r.get("author") or "")
+                                        and _hf not in _fold_book_text(_r.get("title") or "")):
+                                    continue
+                            row = _r
+                            title_start = pos + cut + _q.start()
+                            break
             if not row:
                 _cand_txt = chunk[title_start:match.end()]
+                # إشارة نثرية خبرية («وقع في...»، «بينما ثبت في...») ليست
+                # إحالة توثيق قائمة بنفسها: لا تُوسم ⚠ ولو تعذر ختمها،
+                # فالوسم للإحالات القاصدة لا لحديث المتن عن مواضع النقول.
+                _narrative = any(h in segment for h in
+                                 ("وقع", "ثبت", "حكاه", "حكى", "بينما", "أطلق", "قيّد", "قيدت", "جاء في", "نقل في"))
+                if _narrative and not id_match:
+                    out.append(chunk[pos:match.end()])
+                    pos = match.end()
+                    continue
                 if id_match or len((_cand_txt or "").strip()) >= 6:
                     _unresolved[0] += 1
                     out.append(chunk[pos:title_start])
@@ -4784,7 +4818,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.278"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.279"},
         },
     })
     if opened.get("error"):
