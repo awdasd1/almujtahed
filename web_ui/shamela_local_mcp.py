@@ -2097,6 +2097,20 @@ def get_page(book: Any, page_num: int, part: Optional[str] = None) -> Dict[str, 
             if e["part"] == ""
             and e.get("page_num") is not None and int(e["page_num"]) == int(page_num)
         ]
+    if not matches and p_str:
+        # الصفحة موجودة في جزء واحد آخر فقط (رسالة داخل مجموع كُتبت إحالتها
+        # بجزء غير جزئها): تُفتح منه؛ فلا غموض ما دامت وحيدة الموضع.
+        _parts = {
+            e["part"] for e in idx["entries"]
+            if e.get("page_num") is not None and int(e["page_num"]) == int(page_num)
+        }
+        if len(_parts) == 1:
+            _only = next(iter(_parts))
+            matches = [
+                e for e in idx["entries"]
+                if e["part"] == _only
+                and e.get("page_num") is not None and int(e["page_num"]) == int(page_num)
+            ]
     if not matches:
         return _error("PAGE_NOT_FOUND", f"الصفحة {page_num} غير موجودة في هذا الكتاب/الجزء.")
     if not p_str:
