@@ -2089,6 +2089,14 @@ def get_page(book: Any, page_num: int, part: Optional[str] = None) -> Dict[str, 
         if (not p_str or e["part"] == p_str)
         and e.get("page_num") is not None and int(e["page_num"]) == int(page_num)
     ]
+    if not matches and p_str == "1":
+        # الكتب أحادية الجزء تُحفظ بجزء فارغ في ملفاتها، بينما تُكتب إحالتها
+        # «ج1» في الحواشي: مطابقة بديلة عند فشل الحرفية فقط (1.10.268).
+        matches = [
+            e for e in idx["entries"]
+            if e["part"] == ""
+            and e.get("page_num") is not None and int(e["page_num"]) == int(page_num)
+        ]
     if not matches:
         return _error("PAGE_NOT_FOUND", f"الصفحة {page_num} غير موجودة في هذا الكتاب/الجزء.")
     if not p_str:
