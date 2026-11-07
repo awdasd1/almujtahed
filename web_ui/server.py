@@ -679,7 +679,7 @@ async def delete_custom_font(filename: str):
 app.mount("/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
 # الحالة العامة للنظام والنموذج
-# قرار المنتج (1.10.265): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
+# قرار المنتج (1.10.266): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
 # الدلالة، والبحث اللفظي المضبوط هو الأساس. لا يُشغَّل المحرك ولا يُحمَّل
 # نموذج التضمين ولا يُنتظر أيٌّ منهما عند الإقلاع. إعادة التفعيل عند
 # الحاجة بمتغير بيئة ALMUJTAHED_QDRANT=on دون تغيير كود.
@@ -4270,7 +4270,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.265"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.266"},
         },
     })
     if opened.get("error"):
@@ -7742,10 +7742,14 @@ def _shamela_bridge_candidates(query, dynamic_anchors, selected_books, top_k, de
             if key in seen:
                 continue
             seen.add(key)
+            # لا استخراج كتب في بناء المرشحين: مقطع الجسر شاهد كافٍ، وقراءة
+            # الصفحة الكاملة للوكلاء وحدهم. نص كامل فقط إن كان الكتاب
+            # مستخرجًا سلفًا (فحص ملفات بلا لمس للشاملة).
             body = ""
             try:
-                pg = shamela_local_mcp.get_page(book=h["book_id"], page_num=int(h["page_num"]), part=h.get("part"))
-                body = ((pg.get("page") or {}).get("body") or "") if pg.get("status") == "ok" else ""
+                if h.get("rel_path") and shamela_local_mcp._dir_for_rel(h["rel_path"]):
+                    pg = shamela_local_mcp.get_page(book=h["book_id"], page_num=int(h["page_num"]), part=h.get("part"))
+                    body = ((pg.get("page") or {}).get("body") or "") if pg.get("status") == "ok" else ""
             except Exception:
                 body = ""
             hits.append({"book_id": str(h.get("book_id")), "title": h.get("title") or "",
@@ -8630,6 +8634,29 @@ def _targeted_madhhab_passages(madhhab: str, anchors: List[str],
     queries = [a for a in dict.fromkeys(anchors or []) if a and len(a) >= 4][:6]
     if not queries:
         return []
+    # مصدر الشاملة الكسول: البحث في فهرسها داخل كتب الطبقات حصرًا (الجسر
+    # يقبل نطاق أرقامنا)، وجلب الصفحة كاملة بعدها يستخرج كتابها عند اللمس.
+    try:
+        import shamela_link as _SLT
+        if _SLT.library_source() == "shamela":
+            import shamela_search
+            scored_l: Dict[Tuple[int, str, str], Dict[str, Any]] = {}
+            for q in queries:
+                for mode in ("words", "phrase"):
+                    try:
+                        r = shamela_search.search(q, mode=mode, book_ids=book_ids, limit=40)
+                    except Exception:
+                        continue
+                    for rank, hit in enumerate(r.get("results") or []):
+                        key = (int(hit.get("book_id") or 0), str(hit.get("part") or ""), str(hit.get("page_num") or ""))
+                        slot = scored_l.setdefault(key, {"hit": hit, "anchors": set(), "score": 0.0})
+                        slot["anchors"].add(q)
+                        slot["score"] += (8 - min(rank, 7)) + (6 if mode == "phrase" else 0)
+            ranked = sorted(scored_l.values(),
+                            key=lambda s: (len(s["anchors"]), s["score"]), reverse=True)
+            return _finish_targeted(ranked, meta, madhhab, limit)
+    except Exception:
+        pass
     try:
         li = library_search.get_index()
     except Exception:
@@ -8653,6 +8680,10 @@ def _targeted_madhhab_passages(madhhab: str, anchors: List[str],
                     slot["score"] += (8 - min(rank, 7)) + (6 if mode == "phrase" else 0)
     ranked = sorted(scored.values(),
                     key=lambda s: (len(s["anchors"]), s["score"]), reverse=True)
+    return _finish_targeted(ranked, meta, madhhab, limit)
+
+
+def _finish_targeted(ranked, meta, madhhab: str, limit: int) -> List[Dict[str, Any]]:
     # مفاضلة على مرحلتين: أفضل صفحة من كل كتاب أولًا (تغطية الطبقات)، ثم
     # إكمال الحد ببقية المرشحين بسقف ثلاث صفحات للكتاب الواحد.
     ordered: List[Dict[str, Any]] = []
@@ -9630,7 +9661,17 @@ def expand_query_with_anchor_rounds(
             _ranked = list(adopted) + [c["phrase"] for c in (panel_res.get("candidates") or []) if c["phrase"] not in adopted]
 
             def _hits(ph: str) -> bool:
-                # تحقق فوري عبر فهرس المكتبة إن وُجد (أجزاء ثانية)، وإلا المسح اللفظي داخل النطاق
+                # مصدر الشاملة الكسول: التحقق عباريًا في فهرسها مباشرة (دقيق
+                # وسريع)، وإلا فهرس المكتبة المحلي إن وُجد، وإلا المسح اللفظي
+                try:
+                    import shamela_link as _SLG
+                    if _SLG.library_source() == "shamela":
+                        import shamela_search
+                        _ids = [int(b) for b in (_vids or []) if str(b).isdigit()] or None
+                        r = shamela_search.search(ph, mode="phrase", book_ids=_ids, death_max=death_max, limit=1)
+                        return bool(r.get("results"))
+                except Exception:
+                    pass
                 try:
                     import library_search
                     if library_search.index_status().get("available"):
@@ -11040,6 +11081,33 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     if not _advisor_books:
                         _advisor_books = [str(g.get("entry") or "") for g in (_advisor_consult.get("grafted") or [])]
                         _advisor_books += [str(x or "") for x in (_advisor_consult.get("already_present") or [])]
+                    # تسخين متوازٍ: كتب المجلس تُستخرج الآن في الخلفية (٦ خيوط)
+                    # بينما تجري جولات الاسترجاع، فلا يدفع الذهبي/الفضي ولا
+                    # المتخصصون كلفة الاستخراج الأول عند لمسها.
+                    try:
+                        if _advisor_books:
+                            import shamela_link as _SLW
+                            _warm_ids = []
+                            _idmap = _SLW.load_id_map()
+                            for _e in _advisor_books:
+                                _m = re.search(r"#(\d+)", str(_e))
+                                if _m:
+                                    _warm_ids.append(int(_m.group(1)))
+                            def _warm(_oids):
+                                def _one(_oid):
+                                    try:
+                                        _tid = _idmap.get(str(int(_oid)))
+                                        if _tid:
+                                            _SLW.extract_book(int(_tid))
+                                    except Exception:
+                                        pass
+                                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as _exw:
+                                    list(_exw.map(_one, _oids[:16]))
+                            threading.Thread(target=_warm, args=(_warm_ids,), daemon=True,
+                                             name="advisor-books-warm").start()
+                            print(f"🔥 [Warm] تسخين {_warm_ids[:16]} كتابًا من كتب المجلس في الخلفية", flush=True)
+                    except Exception as _warm_err:
+                        print(f"🔥 [Warm] تعذر التسخين: {_warm_err}", flush=True)
                     _core_agents = _build_core_agents(
                         query=search_query,
                         director_model=str(req.model or ""),

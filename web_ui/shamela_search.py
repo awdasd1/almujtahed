@@ -242,12 +242,19 @@ def search(query, mode="phrase", death_max=None, death_min=None, categories=None
                 continue
         seen.add((our_id, seq))
         part, pnum = _part_page(tid, seq)
-        body = str(doc.get("body") or "")
-        snippet = " ".join(re.sub(r"<[^>]+>", " ", body).split())[:400]
+        body = " ".join(re.sub(r"<[^>]+>", " ", str(doc.get("body") or "")).split())
+        # مقطع متمركز حول أول لفظ من ألفاظ البحث لا من مطلع الصفحة
+        _at = -1
+        for _tok in tokens:
+            _i = body.find(_tok)
+            if _i >= 0 and (_at < 0 or _i < _at):
+                _at = _i
+        snippet = body[max(0, _at - 120):(_at + 560)] if _at >= 0 else body[:480]
         out.append({
             "book_id": int(our_id), "shamela_id": tid,
             "title": meta.get("title") or "", "author": meta.get("author") or "",
             "author_death_hijri": death, "category": meta.get("category") or "",
+            "rel_path": meta.get("rel_path") or "",
             "part": part, "page_num": pnum,
             "page_id": int(our_id) * 1000000 + seq,
             "snippet": snippet, "score": round(float(sd.score), 3),
