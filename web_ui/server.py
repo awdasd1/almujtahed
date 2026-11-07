@@ -4727,7 +4727,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.275"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.276"},
         },
     })
     if opened.get("error"):
@@ -11674,7 +11674,16 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 _madhhab_agents[_md] = _idx
         if _madhhab_agents and _anchors_for_target:
             def _fetch_target(_md):
-                return _md, _targeted_madhhab_passages(_md, _anchors_for_target)
+                _ps = _targeted_madhhab_passages(_md, _anchors_for_target)
+                if not _ps:
+                    # حد أدنى مذهبي مضمون: صفر الموجّه بالمراسي لا يعني صفر
+                    # المذهب؛ جولة ثانية بمفردات المسألة القوية وأزواجها داخل
+                    # كتب الطبقات (عبارة المسألة كاملة بصيغة AND لا تمسك شيئًا).
+                    _toks = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", search_query or "")]
+                    _gen = ([" ".join(_toks[i:i + 2]) for i in range(max(0, len(_toks) - 1))]
+                            + sorted(set(_toks), key=len, reverse=True)[:2])
+                    _ps = _targeted_madhhab_passages(_md, _anchors_for_target + _gen)
+                return _md, _ps
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(_madhhab_agents), 5)) as _tex:
                 for _md, _passages in _tex.map(_fetch_target, list(_madhhab_agents)):
                     _idx = _madhhab_agents[_md]
@@ -11875,6 +11884,23 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             ag_top_k = int(ag.get("top_k") or ag.get("topK") or ag.get("scanned_texts") or ag.get("extract_count") or ag.get("extractCount") or 150)
             ag_thinking = str(ag.get("thinking") or ag.get("thinking_level") or "").strip() or None
             cits = (anchor_prefetch or {}).get(str(idx), [])
+            if cits:
+                # حصص متكافئة: لا يبتلع كتاب واحد قائمة شواهد الوكيل ما دامت
+                # في نطاقه بدائل — سقف لكل كتاب بحصته العادلة من سقف الوكيل،
+                # ثم إكمال القائمة بترتيب الاستخراج الأصلي حتى لا ينقص العدد.
+                _distinct = {str(c.get("book_id")) for c in cits if c.get("book_id")}
+                if len(_distinct) >= 3:
+                    _cap = max(4, -(-min(len(cits), ag_top_k) // len(_distinct)))
+                    _per: Dict[str, int] = {}
+                    _first_pass, _rest = [], []
+                    for _c in cits:
+                        _b = str(_c.get("book_id"))
+                        if _per.get(_b, 0) < _cap:
+                            _per[_b] = _per.get(_b, 0) + 1
+                            _first_pass.append(_c)
+                        else:
+                            _rest.append(_c)
+                    cits = _first_pass + _rest
 
             if not cits:
                 scope_label = f"{len(ag_books)} كتاباً محدداً" if ag_books else "كتبه المحددة"
@@ -11900,6 +11926,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     meta_tags.append(f"⚖️ [رأس المسألة الفقهية الحاكمة: {c['fiqh_header']}]")
                 if c.get('targeted'):
                     meta_tags.append(f"🎯 [صفحة كاملة مسترجعة استرجاعًا موجّهًا من كتب طبقات مذهبك — طبقة: {c.get('authority_layer') or 'طبقات الاعتماد'} — وهي مادة بطاقاتك الأولى]")
+                if c.get('rebalance'):
+                    meta_tags.append("⚖️ [جولة ضبط الهيمنة: شاهد مُستدرك من كتبك باستثناء الكتب التي سيطرت على جولة البحث — وهي مادة بطاقاتك الأولى]")
                 if c.get('channel') == 'semantic':
                     meta_tags.append("🧠 [قناة الاكتشاف: دلالية من مخزن المتجهات — مرشح بقرب المعنى، لا يُعتمد حتى يُقرأ في صفحته ويُوثق كغيره]")
                 elif c.get('channel') == 'lexical':
@@ -12036,6 +12064,92 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         subagents_dossiers.sort(key=lambda d: (d.get("core_rank", 99), d.get("agent_index", 999)))
         _mark("workers")
         print("⏱ [Stage Times] " + " | ".join(f"{k}:{v}s" for k, v in _stage_marks), flush=True)
+        # ⚖️ جولة ضبط الهيمنة: تُقاس سيطرة الكتب على شواهد الجولة كلها، ومن
+        # جُوّع من الوكلاء (شواهده دون ثلث الوسيط ونطاقه واسع) يُعاد إرساله
+        # بشواهد جديدة من كتبه تستثني الكتب المهيمنة — اكتفاءً بما سيطرت
+        # به تلك الكتب، وإنصافًا لبقية النطاقات أن تأخذ حصتها من الجولة.
+        try:
+            _all_cits = [c for d in subagents_dossiers for c in (d.get("citations") or [])]
+            _book_counts: Dict[str, int] = {}
+            for _c in _all_cits:
+                if _c.get("book_id"):
+                    _bk = str(_c["book_id"])
+                    _book_counts[_bk] = _book_counts.get(_bk, 0) + 1
+            _total_c = max(1, len(_all_cits))
+            _dominators = {b for b, n in _book_counts.items() if n >= 30 and n / _total_c >= 0.18}
+            _cit_counts = sorted(len(d.get("citations") or []) for d in subagents_dossiers)
+            _median_c = _cit_counts[len(_cit_counts) // 2] if _cit_counts else 0
+            _starved = [d for d in subagents_dossiers
+                        if not d.get("failed") and len(d.get("books") or []) >= 5
+                        and len(d.get("citations") or []) < max(6, int(_median_c * 0.35))]
+            if _dominators and _starved and anchor_prefetch is not None:
+                print(f"⚖️ [Balance] كتب مهيمنة {sorted(_dominators)} على {_total_c} شاهدًا؛ "
+                      f"جولة ضبط لـ{len(_starved[:3])} وكيلًا مُجوَّعًا باستثناء المهيمنين", flush=True)
+                _rb_anchors = (list(locals().get("_anchors_for_target") or [])
+                               or list(locals().get("_used_anchors") or [])
+                               or list(req.retrieval_anchors or []))
+
+                def _rebalance_one(d):
+                    _idx = d.get("agent_index")
+                    if _idx is None or _idx >= len(active_agents):
+                        return None
+                    _ag = active_agents[_idx]
+                    _scope_ids = []
+                    for _b in (d.get("books") or []):
+                        _mm = re.search(r"#(\d{1,7})", str(_b))
+                        if _mm:
+                            _scope_ids.append(int(_mm.group(1)))
+                    _scope_ids = [b for b in dict.fromkeys(_scope_ids) if str(b) not in _dominators]
+                    if not _scope_ids:
+                        return None
+                    _fresh = []
+                    try:
+                        import shamela_search as _ssx
+                        _seen_rb = {_citation_identity(x) for x in (anchor_prefetch.get(str(_idx)) or [])}
+                        for _q in (_rb_anchors[:5] or [search_query]):
+                            _r = _ssx.search(str(_q), mode="words", book_ids=_scope_ids[:60], limit=25)
+                            for _hit in (_r.get("results") or []):
+                                _bid = int(_hit.get("book_id") or 0)
+                                if not _bid:
+                                    continue
+                                _pg = shamela_local_mcp.get_page(_bid, int(_hit.get("page_num") or 0),
+                                                                 _hit.get("part") or None)
+                                if _pg.get("status") != "ok":
+                                    continue
+                                _body = str((_pg.get("page") or {}).get("body") or "").strip()
+                                if len(_body) < 120:
+                                    continue
+                                _row = {"title": _hit.get("title") or "", "author": _hit.get("author") or "",
+                                        "book_id": _bid, "part_raw": _hit.get("part"),
+                                        "page_num_raw": _hit.get("page_num"),
+                                        "snippet": re.sub(r"\s+", " ", _body)[:4200],
+                                        "rebalance": True, "anchor_round": 98}
+                                if _citation_identity(_row) in _seen_rb:
+                                    continue
+                                _seen_rb.add(_citation_identity(_row))
+                                _fresh.append(_row)
+                                if len(_fresh) >= 24:
+                                    break
+                            if len(_fresh) >= 24:
+                                break
+                    except Exception:
+                        _fresh = []
+                    if not _fresh:
+                        return None
+                    anchor_prefetch[str(_idx)] = _fresh + list(anchor_prefetch.get(str(_idx)) or [])
+                    return _worker_subagent((_idx, _ag))
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(_starved[:3]), 3)) as _rex:
+                    for _new_d in _rex.map(_rebalance_one, _starved[:3]):
+                        if _new_d:
+                            for _i2, _old in enumerate(subagents_dossiers):
+                                if _old.get("agent_index") == _new_d.get("agent_index"):
+                                    subagents_dossiers[_i2] = _new_d
+                                    print(f"⚖️ [Balance] أُعيد إرسال «{_new_d.get('name')}» "
+                                          f"بشواهد متوازنة ({len(_new_d.get('citations') or [])} شاهدًا)", flush=True)
+                                    break
+        except Exception as _bal_err:
+            print(f"⚖️ [Balance] تعذرت جولة الضبط: {_bal_err}", flush=True)
         # 📒 محرّر سجل الأدلة: طبقة تنظيمية واحدة قبل التوليف (لا مدير ثانٍ):
         # يحوّل بطاقات التقارير إلى سجل منظم يبني عليه المدير الواحد ترجيحه
         # وصياغته، فلا نسبة ولا درجة خارج سطر في السجل.
