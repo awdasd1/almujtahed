@@ -52,8 +52,6 @@ if (SYSTEM_ROOT / "shamela_index.db").exists():
     DB_PATH = SYSTEM_ROOT / "shamela_index.db"
 elif (Path(__file__).resolve().parent / "shamela_index.db").exists():
     DB_PATH = Path(__file__).resolve().parent / "shamela_index.db"
-elif Path("/Users/maa/Shamela Snapshot/shamela_index.db").exists():
-    DB_PATH = Path("/Users/maa/Shamela Snapshot/shamela_index.db")
 else:
     DB_PATH = SYSTEM_ROOT / "shamela_index.db"
 
@@ -82,10 +80,6 @@ def _data_roots() -> List[Path]:
         roots.append(_imp_path)  # الجديد المستورد وحده هناك يُقرأ، والتوائم من المدمجة
     for candidate in (
         home / "Library" / "Application Support" / "Al-Mujtahed" / "runtime" / "shamela4_data",
-        home / "Shamela Snapshot" / "shamela4_data",
-        home / "embedd traning" / "shamela4_data",
-        Path("/Users/maa/embedd traning/shamela4_data"),
-        Path("/Users/maa/Shamela Snapshot/shamela4_data"),
         SYSTEM_ROOT / "shamela4_data",
     ):
         if candidate not in roots:

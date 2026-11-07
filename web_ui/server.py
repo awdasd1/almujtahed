@@ -67,17 +67,10 @@ if (PACKAGE_ROOT / "shamela_index.db").exists():
     DB_INDEX_PATH = PACKAGE_ROOT / "shamela_index.db"
 elif (BASE_DIR / "shamela_index.db").exists():
     DB_INDEX_PATH = BASE_DIR / "shamela_index.db"
-elif Path("/Users/maa/Shamela Snapshot/shamela_index.db").exists():
-    DB_INDEX_PATH = Path("/Users/maa/Shamela Snapshot/shamela_index.db")
 else:
     DB_INDEX_PATH = PACKAGE_ROOT / "shamela_index.db"
 
-if (PACKAGE_ROOT / "shamela4_data").exists():
-    SHAMELA_DATA_PATH = PACKAGE_ROOT / "shamela4_data"
-elif Path("/Users/maa/embedd traning/shamela4_data").exists():
-    SHAMELA_DATA_PATH = Path("/Users/maa/embedd traning/shamela4_data")
-else:
-    SHAMELA_DATA_PATH = PACKAGE_ROOT / "shamela4_data"
+SHAMELA_DATA_PATH = PACKAGE_ROOT / "shamela4_data"
 
 # خريطة التصنيفات الرسمية الأربعين للمكتبة الشاملة
 CATEGORY_MAP = {
@@ -686,7 +679,7 @@ async def delete_custom_font(filename: str):
 app.mount("/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
 # الحالة العامة للنظام والنموذج
-# قرار المنتج (1.10.259): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
+# قرار المنتج (1.10.263): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
 # الدلالة، والبحث اللفظي المضبوط هو الأساس. لا يُشغَّل المحرك ولا يُحمَّل
 # نموذج التضمين ولا يُنتظر أيٌّ منهما عند الإقلاع. إعادة التفعيل عند
 # الحاجة بمتغير بيئة ALMUJTAHED_QDRANT=on دون تغيير كود.
@@ -3264,11 +3257,6 @@ def _shamela_roots() -> List[Path]:
         add(Path(data_dir) / "shamela4_data")
     add(PACKAGE_ROOT / "shamela4_data")
     add(SYSTEM_ROOT / "shamela4_data")
-    add(Path.home() / "almujtahed-v2" / "shamela4_data")
-    add(Path("/Users/maa/embedd traning/shamela4_data"))
-    add(Path("/Users/maa/almujtahed-v2/shamela4_data"))
-    add(Path(r"C:\Mac\Home\almujtahed-v2\shamela4_data"))
-    add(Path(r"\\Mac\Home\almujtahed-v2\shamela4_data"))
     add(getattr(shamela_local_mcp, "SHAMELA_DATA_DIR", None))
     return roots
 
@@ -4282,7 +4270,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.259"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.263"},
         },
     })
     if opened.get("error"):

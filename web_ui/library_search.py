@@ -113,8 +113,24 @@ def warm_index_async() -> None:
 
 
 def ensure_index_async() -> None:
-    """عند غياب الفهرس يُبنى مرة واحدة في خيط خلفي (لا يعطّل إقلاع التطبيق)."""
+    """عند غياب الفهرس يُبنى مرة واحدة في خيط خلفي (لا يعطّل إقلاع التطبيق).
+    مصدر الشاملة الكسول لا يحتاج فهرسنا أصلًا: البحث في فهرسها مباشرة."""
     global _BUILD_STARTED
+    try:
+        from shamela_local_mcp import _library_source
+        if _library_source() == "shamela":
+            print("📚 [FTS] المصدر: الشاملة المحلية — لا بناء لفهرس محلي.", flush=True)
+            return
+        # دفاع سباق: خادم بدأ قبل ضبط علم المصدر — إن وُجدت شاملة منزّلة
+        # فلا بناء، وابحث في فهرسها (الجسر يقرأ العلم عند كل طلب).
+        import shamela_link
+        cen = shamela_link.census()
+        if cen.get("found") and (cen.get("downloaded") or 0) > 0:
+            shamela_link.set_library_source("shamela")
+            print("📚 [FTS] وُجدت شاملة محلية منزّلة — ضُبط المصدر عليها، لا بناء.", flush=True)
+            return
+    except Exception:
+        pass
     st = index_status()
     if st["available"]:
         _ensure_ayah_async()

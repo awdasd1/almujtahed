@@ -482,8 +482,24 @@ def main():
     if QDRANT_OFF:
         log("Qdrant موقوف بقرار المنتج — لا محرك دلالة ولا سنابشوتات؛ البحث اللفظي هو الأساس.")
         if not shamela_ready():
-            log("نصوص الشاملة غير موجودة — يُسحب النص فقط في الخلفية (أو استوردها من تطبيق الشاملة عندك).")
-            spawn_remaining_downloads(texts_only=True)
+            # سياسة المنتج: لا سحب بيانات من أي مصدر خارجي إطلاقًا.
+            # المكتبة = تطبيق الشاملة عند المستخدم: بحث في فهرسها مباشرة
+            # واستخراج عند اللمس. لا شاملة → إرشاد، لا تنزيل صامت.
+            lazy = False
+            try:
+                sys.path.insert(0, str(ROOT / "web_ui"))
+                import shamela_link
+                cen = shamela_link.census()
+                if cen.get("found") and (cen.get("downloaded") or 0) > 0:
+                    shamela_link.set_library_source("shamela")
+                    lazy = True
+                    log(f"وُجد تطبيق الشاملة ({cen.get('downloaded')} كتابًا منزّلًا) — "
+                        "المصدر: الشاملة المحلية مباشرة (بحث فوري واستخراج عند اللمس، بلا تنزيلات).")
+            except Exception as ex:
+                log(f"تعذر فحص الشاملة المحلية: {ex}")
+            if not lazy:
+                log("لا مكتبة شاملة منزّلة على هذا الجهاز — ثبّت تطبيق «المكتبة الشاملة» "
+                    "ونزّل كتبك فيه، وسيقرأها المجتهد مباشرة. لن يُنزَّل شيء من الإنترنت.")
         log("الواجهة: http://localhost:8085")
         start_web()
         return
