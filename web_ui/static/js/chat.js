@@ -1780,6 +1780,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
         intent_genres: (typeof currentIntentGenres === 'function') ? currentIntentGenres() : null,
         research_command: (options && options.researchCommand) || null,
         discussion_mode: (options && options.discussionMode) || (discussionState(session.id) === 'open' ? 'open' : null),
+        risk_control: (options && options.riskControl && options.riskControl.length) ? { items: options.riskControl } : null,
         semantic_enhanced: isSemanticEnhancedEnabled,
         providers: readProviderKeys(),
         agent_group: window.chatRawMcp ? null : assignedGroupPayload,
@@ -2096,6 +2097,64 @@ async function sendAuditGapsToDirector() {
   renderSessionMessages(activeSessionId);
   if (typeof saveChatSessions === 'function') saveChatSessions();
   await triggerChatCompletion(session, [], { discussionMode: 'open' });
+}
+
+// 🏛 زر الضبط في المناقشة: سجل مخاطر هذا البحث من حزمته المحفوظة مقطعًا
+// تشيك ليست (عالية 🔴 في الأعلى، متوسطة 🟡، منخفضة ⚪)؛ يعلّم الباحث ما
+// يشاء فيصل مديرَ المشروع بتوجيه محاسبة رقابي يُبنى خادميًا ولا يرى
+// الباحث صياغته، ثم يتحقق مسؤول المخاطر من إغلاق البنود في السجل.
+async function toggleRiskControlPanel() {
+  const panel = document.getElementById('riskControlPanel');
+  if (!panel) return;
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  panel.innerHTML = '<div style="padding:4px;">جارٍ جلب سجل المخاطر من حزمة البحث المحفوظة…</div>';
+  let pkg = null;
+  try {
+    const res = await fetch('/api/research-package/' + encodeURIComponent(activeSessionId));
+    if (res.ok) pkg = await res.json();
+  } catch (e) { }
+  if (!pkg || !pkg.found) {
+    panel.innerHTML = '<div style="padding:4px;">لا حزمة مخاطر محفوظة لهذه المحادثة — سجلات المخاطر تُحفظ للبحوث المنفذة من إصدار 1.10.284 فصاعدًا.</div>';
+    return;
+  }
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const events = pkg.risk_events || [];
+  const dots = { 'عالية': '#dc2626', 'متوسطة': '#d9a400', 'منخفضة': '#9ca3af' };
+  let h = '<div style="font-weight:700;">🏛 سجل مخاطر هذا البحث — علّم ما تريد معالجته فورًا'
+    + (pkg.risk_verdict ? ' · الحكم العام: ' + esc(pkg.risk_verdict) : '')
+    + (pkg.risk_officer ? ' · مسؤول المخاطر: ' + esc(pkg.risk_officer) : '') + '</div>';
+  h += '<div style="font-size:11.5px; opacity:.85;">المذكرة الكاملة في زر «📏 تقرير البحث» أسفل الجواب. البنود المعلّمة تصل مدير المشروع بتوجيه إدارة المخاطر: يعالجها من حزمة البحث المحفوظة أو يطلب الوكيل المعني بسدّها مع إشعاره أن الخطر لُوحظ عليه، ويُحاسَب المتسبب، ثم يتحقق مسؤول المخاطر من الإغلاق في هذا السجل.</div>';
+  if (!events.length) h += '<div style="padding:4px;">لا أحداث مخاطر مسجلة في هذا البحث ضمن الحدود المعتمدة.</div>';
+  ['عالية', 'متوسطة', 'منخفضة'].forEach(cls => {
+    const rows = events.map((e, i) => [e, i]).filter(([e]) => e.cls === cls);
+    if (!rows.length) return;
+    h += `<div style="margin:9px 0 4px; font-weight:700;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${dots[cls]}; margin-left:5px;"></span>${cls === 'عالية' ? '⚠️ ' : ''}مخاطر ${cls} (${rows.length})</div>`;
+    rows.forEach(([e, i]) => {
+      const st = e.status || '';
+      const done = st.startsWith('مُغلق') || st.startsWith('عولج آليًا') || st.startsWith('موثق بقرار');
+      h += `<label style="display:flex; gap:8px; align-items:flex-start; padding:6px 8px; border:1px solid rgba(150,130,90,.3); border-radius:8px; margin-bottom:5px; ${done ? 'opacity:.6;' : ''}">
+        <input type="checkbox" class="risk-item-check" value="${i}" ${done ? 'disabled' : ''} style="margin-top:5px;">
+        <span style="flex:1;"><b>${esc(e.title)}</b><br><small>${esc(e.evidence)}</small><br><small>الحالة: ${esc(st || 'مفتوح')}${done ? ' — لا معالجة مطلوبة' : ''}</small></span></label>`;
+    });
+  });
+  if (events.length) h += '<div style="margin-top:8px;"><button type="button" class="btn-msg-export" onclick="sendRiskControlItems()">📨 إرسال البنود المعلّمة إلى مدير المشروع للمعالجة الفورية</button></div>';
+  panel.innerHTML = h;
+}
+
+async function sendRiskControlItems() {
+  const checks = Array.from(document.querySelectorAll('.risk-item-check:checked')).map(c => parseInt(c.value, 10));
+  if (!checks.length) { if (typeof showToast === 'function') showToast('علّم بندًا واحدًا على الأقل من سجل المخاطر أولًا', 3000); return; }
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  if (!session) return;
+  if (discussionState(activeSessionId) !== 'open') setDiscussionState(activeSessionId, 'open');
+  session.messages.push({ role: 'user', content: '🏛 أرسلتُ ' + checks.length + ' بندًا من بنود سجل مخاطر هذا البحث إلى مدير المشروع للمعالجة الفورية ومحاسبة المتسبب فيها، على أن يعالجها من حزمة البحث المحفوظة أو يطلب الوكيل المعني بسدّ ما قصّر فيه.' });
+  const panel = document.getElementById('riskControlPanel');
+  if (panel) panel.style.display = 'none';
+  renderSessionMessages(activeSessionId);
+  if (typeof saveChatSessions === 'function') saveChatSessions();
+  await triggerChatCompletion(session, [], { discussionMode: 'open', riskControl: checks });
+  if (typeof showToast === 'function') showToast('أُرسلت بنود الضبط؛ بعد رد المدير يتحقق مسؤول المخاطر من إغلاقها — أعد فتح «الضبط» لترى حالتها', 4500);
 }
 
 async function finalizeDiscussion() {

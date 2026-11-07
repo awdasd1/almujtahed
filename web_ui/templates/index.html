@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.284">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.285">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.284 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.285 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -556,9 +556,11 @@
                         <span id="discussionBarText">🗣️ <strong>جلسة مناقشة مفتوحة مع مدير المشروع</strong> حول هذا البحث: اكتب سؤالك أو النقص الذي تريد استكماله — يحاورك المدير، وله أن يطلب وكيلًا بعينه للتحقق أو الاستكمال. وعند الاتفاق والانتهاء أقفلا الجلسة ليعيد الصياغة النهائية من هذه المحادثة المحفوظة.</span>
                         <div style="display: flex; gap: 8px; margin-top: 7px; flex-wrap: wrap;">
                             <button type="button" class="btn-msg-export" onclick="sendAuditGapsToDirector()">📋 جلب ثغرات التقرير ومناقشتها دفعة واحدة</button>
+                            <button type="button" class="btn-msg-export" onclick="toggleRiskControlPanel()">🏛 الضبط — سجل مخاطر إدارة المخاطر</button>
                             <button type="button" class="btn-msg-export" onclick="finalizeDiscussion()">🔒 إقفال المناقشة وإعادة الصياغة النهائية</button>
                             <button type="button" class="btn-msg-export" onclick="closeDiscussion()">إنهاء المناقشة بلا إعادة صياغة (تبقى محفوظة وتُستأنف لاحقًا)</button>
                         </div>
+                        <div id="riskControlPanel" style="display: none; margin-top: 9px; border: 1px solid var(--accent-gold); border-radius: 10px; padding: 10px 12px; background: rgba(255, 252, 245, 0.65); max-height: 360px; overflow: auto; font-size: 12.5px; line-height: 1.75;"></div>
                     </div>
 
                     <!-- منطقة إدخال الرسالة ورفع الملفات -->
@@ -5020,17 +5022,17 @@
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
     <script src="/static/js/members.js?v=1792835200"></script>
-    <script src="/static/js/app.js?v=1.10.284"></script>
+    <script src="/static/js/app.js?v=1.10.285"></script>
     <script src="/static/js/search.js?v=1793188000"></script>
     <script src="/static/js/reader.js?v=1793225300"></script>
-    <script src="/static/js/force3d.js?v=1.10.284"></script>
+    <script src="/static/js/force3d.js?v=1.10.285"></script>
     <script src="/static/js/share.js?v=1793225500"></script>
-    <script src="/static/js/chat.js?v=1.10.284"></script>
-    <script src="/static/js/agents.js?v=1.10.284"></script>
+    <script src="/static/js/chat.js?v=1.10.285"></script>
+    <script src="/static/js/agents.js?v=1.10.285"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1.10.284"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.284"></script>
-    <script src="/static/js/projects.js?v=1.10.284"></script>
+    <script src="/static/js/tools.js?v=1.10.285"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.285"></script>
+    <script src="/static/js/projects.js?v=1.10.285"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
