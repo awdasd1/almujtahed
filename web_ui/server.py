@@ -4960,7 +4960,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.282"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.283"},
         },
     })
     if opened.get("error"):
@@ -10203,6 +10203,25 @@ def _build_core_agents(
     return [golden]
 
 
+_SYNTHESIS_RESCUE_MODEL = "~anthropic/claude-sonnet-latest"
+
+
+def _synthesis_degenerate(reply: str, dossiers: list) -> bool:
+    """توليفة منهارة: صياغة قصيرة لا تستوعب مادة تقارير الفريق (نموذج
+    ضعيف التوليف يكتب «بطاقات» معدودة ويزعم خلوّ الحزمة وهي ممتلئة).
+    الفراغ الكامل تعالجه مسارات أخرى؛ هنا انهيار الاستيعاب فقط."""
+    text = (reply or "").strip()
+    if not text:
+        return False
+    reports_chars = sum(len(d.get("report") or "") for d in (dossiers or []))
+    if reports_chars < 20000:
+        return False
+    if len(text) < 10000:
+        return True
+    notes = len(re.findall(r"<sup|\[\d+\]", text))
+    return len(text) < reports_chars * 0.10 and notes < 10
+
+
 def _build_evidence_ledger(
     dossiers: List[Dict[str, Any]],
     query: str,
@@ -13419,6 +13438,37 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             except Exception as _purge_err:
                 print(f"🔒 [Finalize Purge] تعذرت التنقية: {_purge_err}", flush=True)
 
+    # 🛟 بوابة التوليف المنقذة: توليفة منهارة لا تستوعب تقارير الفريق
+    # وسجل أدلته لا تُسلَّم للمستخدم كما هي؛ تُعاد صياغة البحث كاملًا
+    # بنموذج توليف احتياطي قوي من الحزمة نفسها، ويُعلن ذلك في صدره.
+    _synthesis_rescue: Dict[str, Any] = {}
+    if (live_reply and req.agent_group and len(subagents_dossiers) >= 2
+            and _discussion != "open" and not req.custom_generation
+            and _synthesis_degenerate(live_reply, subagents_dossiers)):
+        _orig_len = len(live_reply)
+        _reports_len = sum(len(d.get("report") or "") for d in subagents_dossiers)
+        print(f"🛟 [Synthesis Rescue] توليفة منهارة ({_orig_len} حرفًا مقابل {_reports_len} "
+              f"حرف تقارير) — إعادة توليف احتياطية بـ {_SYNTHESIS_RESCUE_MODEL}", flush=True)
+        try:
+            _rescued = call_openrouter_raw(
+                model_id=_SYNTHESIS_RESCUE_MODEL,
+                messages=messages_payload,
+                api_key=owner_openrouter_key(request, req.api_key),
+                temperature=0.2, max_tokens=65536, timeout=600,
+                thinking_level="high") or ""
+            if len(_rescued.strip()) >= 10000 and len(_rescued) > _orig_len * 1.5:
+                live_reply = _rescued
+                _synthesis_rescue = {"from_model": call_model, "by": _SYNTHESIS_RESCUE_MODEL,
+                                     "orig_chars": _orig_len, "new_chars": len(_rescued)}
+                print(f"🛟 [Synthesis Rescue] نجح الإنقاذ: {len(_rescued)} حرفًا", flush=True)
+            else:
+                _synthesis_rescue = {"from_model": call_model, "by": "",
+                                     "orig_chars": _orig_len, "new_chars": len(_rescued)}
+                print(f"🛟 [Synthesis Rescue] بقي الأصل لقصر الإنقاذ ({len(_rescued)} حرفًا)", flush=True)
+        except Exception as _sr_err:
+            _synthesis_rescue = {"from_model": call_model, "by": "", "orig_chars": _orig_len}
+            print(f"🛟 [Synthesis Rescue] تعذر الإنقاذ: {_sr_err}", flush=True)
+
     witness_pool = list(included_citations)
     for dossier in subagents_dossiers:
         witness_pool.extend(dossier.get("citations") or [])
@@ -13452,6 +13502,12 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     f"> ⚠ **تنبيه منهجي:** تعذّر تقرير {_failed_names} رغم سُلّم الإنقاذ كاملًا "
                     "(إعادة جولة، ونموذج احتياطي، ونموذج مختص، ومدير المشروع باحثًا بنفسه في كتبهم)؛ "
                     "فما يأتي في فنّهم مبنيّ على شواهد نطاقهم المرفقة بلا تقرير محرَّر منهم.\n\n"
+                ) + reply_text
+            if _synthesis_rescue.get("by"):
+                reply_text = (
+                    f"> 🛟 **تنبيه منهجي:** خرجت التوليفة الأولى لنموذج التوليف منهارةً "
+                    f"({_synthesis_rescue.get('orig_chars', 0)} حرفًا) لا تستوعب تقارير الفريق وسجلّ أدلّته، "
+                    "فأُعيدت صياغة هذا البحث كاملةً بنموذج توليف احتياطي من المادة نفسها.\n\n"
                 ) + reply_text
             if req.agent_group and not req.graph_only and not req.table_only and _discussion != "open":
                 # تدقيق توثيق غير مدمّر: مطابقة النقول على صفحات كتبها وسجل
@@ -13526,6 +13582,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             "question": (last_user_msg or "")[:140],
             "group": group_name or "",
             "manager_model": call_model,
+            "synthesis_rescue": _synthesis_rescue or None,
             "duration_s": round(time.time() - _chat_t0),
             "answer_chars": len(reply_text or ""),
             "witnesses": len(witness_rows or []),
