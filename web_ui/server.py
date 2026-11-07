@@ -3274,6 +3274,14 @@ def _shamela_roots() -> List[Path]:
         seen.add(key)
         roots.append(path)
 
+    # جذور طبقة المكتبة الحاكمة (المستوردة أولًا عند مصدر الشاملة) — مصدر
+    # الحقيقة الواحد؛ إغفالها كسر متصفح الكتاب كليًا بعد الهجرة الكسولة
+    # إذ صارت الكتب تعيش في shamela_imported لا في shamela4_data.
+    try:
+        for _r in shamela_local_mcp._data_roots():
+            add(_r)
+    except Exception:
+        pass
     add(SHAMELA_DATA_PATH)
     add(os.getenv("SHAMELA4_DATA_DIR"))
     add(os.getenv("SHAMELA_DATA_DIR"))
@@ -3377,7 +3385,18 @@ def _pages_for_book_id(book_id: int) -> Tuple[Optional[str], Optional[Path]]:
                     return found_rel, pages_file
         except Exception:
             pass
-    return _pages_file_for_rel(str(int(book_id)))
+    found_rel, pages_file = _pages_file_for_rel(str(int(book_id)))
+    if pages_file:
+        return found_rel, pages_file
+    # كتاب معروف غير مستخرج بعد: استخراج كسول عند اللمس (كما في طبقة MCP)
+    # حتى لا تصطدم أي حاشية بجدار «تعذر العثور على ملفات الكتاب».
+    try:
+        bdir = shamela_local_mcp.resolve_book_files(int(book_id))
+        if bdir and (bdir / "pages.jsonl").exists():
+            return f"{bdir.parent.name}/{bdir.name}", bdir / "pages.jsonl"
+    except Exception:
+        pass
+    return None, None
 
 
 def _page_nums_equal(left: Any, right: Any) -> bool:
@@ -4295,7 +4314,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.270"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.271"},
         },
     })
     if opened.get("error"):
