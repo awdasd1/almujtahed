@@ -679,7 +679,7 @@ async def delete_custom_font(filename: str):
 app.mount("/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
 # الحالة العامة للنظام والنموذج
-# قرار المنتج (1.10.266): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
+# قرار المنتج (1.10.267): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
 # الدلالة، والبحث اللفظي المضبوط هو الأساس. لا يُشغَّل المحرك ولا يُحمَّل
 # نموذج التضمين ولا يُنتظر أيٌّ منهما عند الإقلاع. إعادة التفعيل عند
 # الحاجة بمتغير بيئة ALMUJTAHED_QDRANT=on دون تغيير كود.
@@ -4270,7 +4270,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.266"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.267"},
         },
     })
     if opened.get("error"):
@@ -11050,77 +11050,27 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         and not req.table_only
     ):
         retrieval_scopes = []
+        _council_future = None
         if is_parallel_dispatch:
-            # مستشارو التفكير أولًا: مظانّ المسألة ومراسيها، ثم تطعيم بطاقات المتخصصين
-            # قبل بناء نطاق الاسترجاع — حتى لا تغيب أمهات المسألة عن المشهد.
+            # المجلس في خيط موازٍ للاسترجاع: المستشارون لا يغذّون إلا الذهبي
+            # والفضي والتطعيم، فلا ينتظرهم المتخصصون بمهامهم الأصلية. ينطلق
+            # المجلس الآن، ويُستلم قبل الإرسال: الذهبي/الفضي يُبنيان منه،
+            # والتطعيم يُستدرك بمرور تكملي سريع في نطاقات أصحابه.
             if _advisor_agents and not _reuse_package:
-                try:
-                    _advisor_consult = _consult_research_advisors(
-                        query=search_query,
-                        advisors=_advisor_agents,
-                        specialists=active_agents,
-                        api_key=owner_openrouter_key(request, req.api_key),
-                        tavily_key=(load_provider_keys(current_owner_id(request)).get("tavily") or ""),
-                        director_model=str(req.model or ""),
-                        owner_id=current_owner_id(request),
-                        group_id=str((req.agent_group or {}).get("id") or ""),
-                    )
-                except Exception as _adv_err:
-                    print(f"🧭 [Advisors] تعذر مجلس المستشارين: {_adv_err}", flush=True)
-                    _advisor_consult = {}
-            # 🥇🥈 فور قرار المدير في استشاراته: وكيلان مؤقتان (الذهبي والفضي)
-            # بتوجيه نوعي يصوغه المدير لهذه المسألة، يبحثان بحثًا نوعيًّا في
-            # الكتب التي حدّدها المستشارون وطابقها المدير حصرًا — وتتقدّم
-            # نتائجهما على تقارير المتخصصين صلبًا يُقاس عليه غيره. لا يُحفظان
-            # في الفريق.
-            if req.agent_group:
-                try:
-                    # نطاق الذهبي والفضي: كل كتب المجلس المطابقة ولو تكررت عند
-                    # الوكلاء الرسميين — قائمة مستقلة لا يحكمها سقف التطعيم.
-                    _advisor_books = [str(x or "") for x in (_advisor_consult.get("advisor_books") or [])]
-                    if not _advisor_books:
-                        _advisor_books = [str(g.get("entry") or "") for g in (_advisor_consult.get("grafted") or [])]
-                        _advisor_books += [str(x or "") for x in (_advisor_consult.get("already_present") or [])]
-                    # تسخين متوازٍ: كتب المجلس تُستخرج الآن في الخلفية (٦ خيوط)
-                    # بينما تجري جولات الاسترجاع، فلا يدفع الذهبي/الفضي ولا
-                    # المتخصصون كلفة الاستخراج الأول عند لمسها.
-                    try:
-                        if _advisor_books:
-                            import shamela_link as _SLW
-                            _warm_ids = []
-                            _idmap = _SLW.load_id_map()
-                            for _e in _advisor_books:
-                                _m = re.search(r"#(\d+)", str(_e))
-                                if _m:
-                                    _warm_ids.append(int(_m.group(1)))
-                            def _warm(_oids):
-                                def _one(_oid):
-                                    try:
-                                        _tid = _idmap.get(str(int(_oid)))
-                                        if _tid:
-                                            _SLW.extract_book(int(_tid))
-                                    except Exception:
-                                        pass
-                                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as _exw:
-                                    list(_exw.map(_one, _oids[:16]))
-                            threading.Thread(target=_warm, args=(_warm_ids,), daemon=True,
-                                             name="advisor-books-warm").start()
-                            print(f"🔥 [Warm] تسخين {_warm_ids[:16]} كتابًا من كتب المجلس في الخلفية", flush=True)
-                    except Exception as _warm_err:
-                        print(f"🔥 [Warm] تعذر التسخين: {_warm_err}", flush=True)
-                    _core_agents = _build_core_agents(
-                        query=search_query,
-                        director_model=str(req.model or ""),
-                        api_key=owner_openrouter_key(request, req.api_key),
-                        advisor_consult=_advisor_consult,
-                        specialists=active_agents,
-                        advisor_books=_advisor_books,
-                    )
-                    if _core_agents:
-                        active_agents = _core_agents + active_agents
-                except Exception as _core_err:
-                    print(f"🥇 [Core Agents] تعذر إنشاء الوكيلين المؤقتين: {_core_err}", flush=True)
-            _mark("council_core")
+                _council_future = concurrent.futures.ThreadPoolExecutor(max_workers=1).submit(
+                    _consult_research_advisors,
+                    query=search_query,
+                    advisors=_advisor_agents,
+                    specialists=active_agents,
+                    api_key=owner_openrouter_key(request, req.api_key),
+                    tavily_key=(load_provider_keys(current_owner_id(request)).get("tavily") or ""),
+                    director_model=str(req.model or ""),
+                    owner_id=current_owner_id(request),
+                    group_id=str((req.agent_group or {}).get("id") or ""),
+                )
+                print("🧭 [Advisors] انطلق مجلس المستشارين موازيًا للاسترجاع — لا انتظار عليه", flush=True)
+            # نطاقات المتخصصين تُبنى الآن من بطاقاتهم الأصلية (قبل أي تطعيم):
+            # الاسترجاع ينطلق بهم فورًا، والتطعيم يُستدرك لاحقًا.
             # عدد الشواهد الذي اختاره المستخدم ميزانية موزعة على الوكلاء: لا تقل حصة
             # الوكيل عما في بطاقته، وترتفع بتوزيع اختيار المستخدم عليهم. نطاق الكتب لا يتغير.
             per_agent_share = 0
@@ -11175,6 +11125,12 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     search_query, owner_openrouter_key(request, req.api_key))
             except Exception as _sem_err:
                 print(f"⚓ [Semantic Anchors] تعذر وكيل الألفاظ: {_sem_err}", flush=True)
+            # مراسي المجلس إن كان قد فرغ أصلًا (بلا انتظار): تُضم لجولات البحث
+            if _council_future is not None and _council_future.done() and not _advisor_consult:
+                try:
+                    _advisor_consult = _council_future.result() or {}
+                except Exception:
+                    _advisor_consult = {}
             for _anc in (_advisor_consult.get("anchors") or []):
                 if _anc and _anc not in _semantic_terms:
                     _semantic_terms.append(_anc)
@@ -11229,6 +11185,85 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                           f"({len(_targeted_map[_md]['books'])} كتابًا) لوكيل «{_targeted_map[_md]['agent']}»", flush=True)
 
     _mark("targeted")
+    # استلام المجلس الموازي قبل الإرسال: بناء الذهبي/الفضي، تسخين كتبهما،
+    # واستدراك التطعيم بمرور تكملي في نطاقات أصحابه — بلا أن يكون شيء من
+    # ذلك قد عطّل انطلاق المتخصصين بمهامهم الأصلية.
+    if is_parallel_dispatch and _council_future is not None:
+        try:
+            if not _advisor_consult:
+                _advisor_consult = _council_future.result(timeout=1500) or {}
+        except Exception as _adv_err:
+            print(f"🧭 [Advisors] تعذر استلام مجلس المستشارين: {_adv_err}", flush=True)
+            _advisor_consult = _advisor_consult or {}
+        try:
+            _advisor_books = [str(x or "") for x in (_advisor_consult.get("advisor_books") or [])]
+            if not _advisor_books:
+                _advisor_books = [str(g.get("entry") or "") for g in (_advisor_consult.get("grafted") or [])]
+                _advisor_books += [str(x or "") for x in (_advisor_consult.get("already_present") or [])]
+            if _advisor_books:
+                try:
+                    import shamela_link as _SLW
+                    _idmap = _SLW.load_id_map()
+                    _warm_ids = []
+                    for _e in _advisor_books:
+                        _m = re.search(r"#(\d+)", str(_e))
+                        if _m:
+                            _warm_ids.append(int(_m.group(1)))
+
+                    def _warm(_oids):
+                        def _one(_oid):
+                            try:
+                                _tid = _idmap.get(str(int(_oid)))
+                                if _tid:
+                                    _SLW.extract_book(int(_tid))
+                            except Exception:
+                                pass
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as _exw:
+                            list(_exw.map(_one, _oids[:16]))
+
+                    threading.Thread(target=_warm, args=(_warm_ids,), daemon=True,
+                                     name="advisor-books-warm").start()
+                except Exception:
+                    pass
+            if req.agent_group:
+                _core_agents = _build_core_agents(
+                    query=search_query,
+                    director_model=str(req.model or ""),
+                    api_key=owner_openrouter_key(request, req.api_key),
+                    advisor_consult=_advisor_consult,
+                    specialists=active_agents,
+                    advisor_books=_advisor_books,
+                )
+                if _core_agents and anchor_prefetch is not None:
+                    _core_passages = _fts_candidates(search_query, list(locals().get("_used_anchors") or []),
+                                                     _advisor_books, 40, None, None)
+                    _base_idx = len(active_agents)
+                    active_agents = list(active_agents) + list(_core_agents)
+                    anchor_prefetch[str(_base_idx)] = _core_passages
+                    anchor_prefetch[str(_base_idx + 1)] = _core_passages
+                    print(f"🥇 [Core Agents] أُلحق الذهبي والفضي بعد الاسترجاع ({len(_core_passages)} شاهدًا في نطاقهما)", flush=True)
+            # استدراك التطعيم: شواهد الكتب المطعّمة تُجلب لأصحابها الآن
+            if anchor_prefetch is not None:
+                _name2idx = {str(a.get("name") or ""): i for i, a in enumerate(active_agents)}
+                for _g in (_advisor_consult.get("grafted") or []):
+                    _gi = _name2idx.get(str(_g.get("agent") or ""))
+                    _entry = str(_g.get("entry") or "")
+                    if _gi is None or not _entry:
+                        continue
+                    try:
+                        _extra = _fts_candidates(search_query, list(locals().get("_used_anchors") or []),
+                                                 [_entry], 24, None, None)
+                    except Exception:
+                        _extra = []
+                    if _extra:
+                        _key = str(_gi)
+                        _exist = anchor_prefetch.get(_key) or []
+                        _seen = {_citation_identity(x) for x in _exist}
+                        anchor_prefetch[_key] = [x for x in _extra if _citation_identity(x) not in _seen] + _exist
+                        print(f"🧭 [Graft Late] استُدرك تطعيم «{_entry}» عند {_g.get('agent')} ({len(_extra)} شاهدًا)", flush=True)
+        except Exception as _core_err:
+            print(f"🥇 [Core Agents] تعذر الإلحاق الموازي: {_core_err}", flush=True)
+        _mark("council_core")
     if is_direct_page_reading:
         print(f"📖 [Chat Direct Page Reading Active] Bypass RAG search, serving {len(retrieved_citations)} verbatim pages from Shamela.")
     elif is_parallel_dispatch:
