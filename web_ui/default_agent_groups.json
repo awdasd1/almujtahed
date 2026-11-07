@@ -274,7 +274,7 @@
     "id": "ag_1794035361739_4",
     "name": "وكيل الفقه الظاهري",
     "desc": "تحرير قول الظاهرية في المسألة من كتبهم وفي مقدمتها المحلى",
-    "model": "google/gemini-3.8-flash",
+    "model": "~anthropic/claude-sonnet-latest",
     "enabled": true,
     "active": true,
     "books": [
