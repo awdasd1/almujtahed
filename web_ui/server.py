@@ -3229,6 +3229,52 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
             return None
         return None
 
+    def _relocate_library(job):
+        """موضع النقل الأعمى (ورد بلا حاشية مربوطة) في فهرس المكتبة كله:
+        يُشخَّص موضعه الحقيقي ليُحصى «موثّقًا بلا إحالة» على حدة — تشخيص
+        صادق لخلل ربط في التوليف، لا توثيق مكتمل يُغني عن حاشيته."""
+        try:
+            import shamela_link as _SLL
+            if _SLL.library_source() != "shamela":
+                return None
+            import shamela_search
+            words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", _fold_ar(job["quote"]))]
+            if len(words) < 5:
+                return None
+
+            def _loc(h):
+                bid2 = int(h.get("book_id") or 0)
+                if not bid2:
+                    return None
+                pg = shamela_local_mcp.get_page(bid2, int(h.get("page_num") or 0),
+                                                 h.get("part") or None)
+                if pg.get("status") != "ok":
+                    return None
+                if not _contains_fold(_fold_ar((pg.get("page") or {}).get("body") or ""),
+                                      job["quote"]):
+                    return None
+                meta = shamela_local_mcp.resolve_book(bid2) or {}
+                return {"book_id": bid2, "part": str(h.get("part") or ""),
+                        "page": int(h.get("page_num") or 0),
+                        "title": meta.get("title") or h.get("title") or ""}
+
+            r = shamela_search.search(" ".join(words[:7]), mode="phrase",
+                                      book_ids=None, limit=6)
+            for h in (r.get("results") or []):
+                x = _loc(h)
+                if x:
+                    return x
+            distinct = sorted(set(words), key=len, reverse=True)[:6]
+            r2 = shamela_search.search(" ".join(distinct), mode="words",
+                                       book_ids=None, limit=8)
+            for h in (r2.get("results") or []):
+                x = _loc(h)
+                if x:
+                    return x
+        except Exception:
+            return None
+        return None
+
     def _bridge_locate(bid2, quote):
         """صفحة النقل وجزؤها في كتاب بعينه من فهرس المكتبة، أو None."""
         try:
@@ -3276,6 +3322,10 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         loc = _relocate_via_bridge(job)
         if loc:
             return job, "REPAIRABLE", loc
+        if not job.get("num"):
+            loc2 = _relocate_library(job)
+            if loc2:
+                return job, "UNBOUND_FOUND", loc2
         return job, "NOT_FOUND", None
 
     _repairs = []
@@ -3288,6 +3338,13 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                     stats["failures"].append({"quote": job["quote"][:120], "reason": "ثابت في غير كتاب إحالته أو موضعه: تنبيه ربط، أُبقي بلا حذف"})
                 elif status == "REPAIRABLE" and loc:
                     _repairs.append((job, loc))
+                elif status == "UNBOUND_FOUND" and loc:
+                    stats["verified_unbound"] = stats.get("verified_unbound", 0) + 1
+                    stats.setdefault("unbound_found", []).append(
+                        {"quote": job["quote"][:100], "book": loc["title"],
+                         "part": loc["part"], "page": loc["page"]})
+                    stats["failures"].append({"quote": job["quote"][:120],
+                                               "reason": f"ثابت في «{loc['title']}» {loc['part']}/{loc['page']} بفهرس المكتبة لكنه ورد في المتن بلا إحالة مربوطة"})
                 elif _outside_library(job):
                     # قاعدة المكتبة: مصدر خارجها يُستبعد ولا يُنقل منه.
                     _excluded.append(job)
@@ -3421,7 +3478,7 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         print(f"🚧 [Documentation Audit] تشخيص: بلا كتاب إحالة={_no_bid}/{len(failed)}", flush=True)
         for j in failed[:6]:
             print(f"🚧   تنبيه: حاشية={j.get('num')} كتاب={j.get('bid')} | «{j['quote'][:70]}»", flush=True)
-    print(f"🚧 [Documentation Audit] اكتمل التدقيق غير المدمّر: {stats['checked']} نقلًا في {round(_time.time() - _t0)}s — ثبت {stats['verified']}، لم يثبت آليًا {stats.get('unverified', 0) + stats.get('relocated', 0)} (أُبقي بلا حذف)", flush=True)
+    print(f"🚧 [Documentation Audit] اكتمل التدقيق: {stats['checked']} نقلًا في {round(_time.time() - _t0)}s — ثبت {stats['verified']}، لم يثبت آليًا {stats.get('unverified', 0) + stats.get('relocated', 0)} (أُبقي بلا حذف)" + (f"، و{stats['verified_unbound']} ثابتًا في المكتبة بلا إحالة مربوطة" if stats.get('verified_unbound') else ""), flush=True)
     if stats["checked"] >= 8 and stats["verified"] * 10 < stats["checked"]:
         # انخفاض جماعي في الثبوت قد يكون علّة ربط أو صياغة آلية؛ يُصرَّح به
         # تنبيهًا على موثوقية التدقيق نفسه، لا حكمًا بحذف البحث.
@@ -4727,7 +4784,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.277"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.278"},
         },
     })
     if opened.get("error"):
@@ -12333,6 +12390,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         agent_routing_instruction += (
             "\n🚫 [قاعدة المكتبة الحاكمة]: النقل والاستشهاد من كتب مكتبة الشاملة وحدها؛ ما كان خارجها يُستبعد فورًا ولا يُنقل منه ولا يُحال إليه ولو صحّ في نفسه. "
             "إن لم تجد نقلًا إلا خارج الشواهد فاحذفه من بحثك ولا تسدّه من ذاكرتك، ويكفيك ما ثبت في كتب المكتبة.\n"
+            "🔗 [ربط النقول إلزامي]: كل نقل تضعه بين علامتي تنصيص في متنك يحمل رقم حاشيته ملاصقًا له فورًا "
+            "(<sup><small>(ن)</small></sup>) بلا جملة فاصلة ولا تأخير إلى آخر الفقرة؛ فالنقل الأعمى بلا علامة لا يبلغه تحقق المنظومة ويُعدّ خللًا في بحثك. "
+            "وإن لم تجد للنقل حاشية من بطاقاتك فاحذفه أو ادمجه في كلامك بلا تنصيص.\n"
         )
         _ac = locals().get("_advisor_consult") or {}
         if _ac.get("grafted") or _ac.get("missing") or _ac.get("anchors") or _ac.get("tavily"):
@@ -13314,6 +13374,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "checked": _gs.get("checked", 0), "linked": _gs.get("linked"),
                 "verified": _gs.get("verified", 0), "unverified": _gs.get("unverified", 0),
                 "relocated": _gs.get("relocated", 0), "repaired": _gs.get("repaired", 0),
+                "verified_unbound": _gs.get("verified_unbound", 0),
                 "excluded_outside": _gs.get("excluded_outside", 0), "tier_warnings": _gs.get("tier_warnings", 0),
                 "ijma_flags": _gs.get("ijma_flags", 0),
                 "ijma_unattributed": len(_gs.get("ijma_unattributed") or []),
