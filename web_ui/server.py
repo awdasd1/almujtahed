@@ -4970,7 +4970,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.285"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.286"},
         },
     })
     if opened.get("error"):
@@ -10427,11 +10427,14 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
             "takhrij_no_numbers", "منخفضة", "تخريجات بلا أرقام أحاديث",
             f"{_tk} تخريجًا ولا واحد منها برقم حديث",
             "مفتوح", "إن حضرت الأرقام في صفحات الشواهد وجب نسخها في القالب"))
-    # — دعاوى الاتفاق والتغطية
-    if int(gs.get("ijma_unattributed") or 0):
+    # — دعاوى الاتفاق والتغطية (قد تأتي من البوابة قائمةً لا عددًا)
+    _ijma_un = gs.get("ijma_unattributed") or 0
+    if isinstance(_ijma_un, (list, tuple)):
+        _ijma_un = len(_ijma_un)
+    if int(_ijma_un or 0):
         ev.append(_risk_event(
             "ijma_unattributed", "متوسطة", "دعوى اتفاق بلا نسبة لقائل",
-            f"{gs.get('ijma_unattributed')} دعوى إجماع/اتفاق مطلقة بلا قائل موثق",
+            f"{_ijma_un} دعوى إجماع/اتفاق مطلقة بلا قائل موثق",
             "مفتوح", "انسبها لقائلها من كتب الإجماع أو خففها إلى «الجمهور»"))
     if int(gs.get("tier_warnings") or 0):
         ev.append(_risk_event(
