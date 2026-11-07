@@ -1969,6 +1969,13 @@ def _book_row(book: Any) -> Optional[Dict[str, Any]]:
         if row is None and text:
             cur.execute("SELECT * FROM books WHERE title_ar = ? LIMIT 1", (text,))
             row = cur.fetchone()
+        if row is None and text and " " not in text.strip() and len(text.strip()) >= 4:
+            # اسم شهرة من كلمة واحدة («المحلى»، «المغني»): الكتاب الذي يبدأ
+            # عنوانه به أولى من كتاب يضم في عنوانه لفظًا مشابهًا لمؤلف آخر
+            # («المحلى» لابن حزم لا «شرح الورقات للمحلي» الجلال).
+            _q = text.strip().replace("%", "").replace("_", "")
+            cur.execute("SELECT * FROM books WHERE title_ar LIKE ? || '%' ORDER BY volume_count_observed DESC, LENGTH(title_ar) ASC LIMIT 1", (_q,))
+            row = cur.fetchone()
         if row is None and text:
             best = _best_book_row(cur, text)
             if best:

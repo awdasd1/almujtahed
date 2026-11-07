@@ -1950,6 +1950,23 @@ _TAKHRIJ_BOOKS = [
 ]
 
 
+def _part_plausible(row: Any, part: Any) -> bool:
+    """موضع يستحيل في الكتاب لا يُختم: مدى صفحات كتبه النموذج (186-187)
+    قد يُقرأ جزءًا وصفحة، فيختم كتابًا من مجلد أو مجلدين بختم كاذب أخطر
+    من وسم ⚠؛ فالجزء لا يتجاوز مجلدات الكتاب المعروفة إلا بواحد."""
+    if not row or part is None or not str(part).strip().isdigit():
+        return True
+    if int(part) > 100:
+        return False
+    vols = None
+    if isinstance(row, dict):
+        vols = row.get("volumes") or row.get("volume_count")
+    try:
+        return not vols or int(part) <= int(vols) + 1
+    except Exception:
+        return True
+
+
 def _is_takhrij_context(text: str) -> bool:
     """سياق تخريج حديث: عرضه قالبه الخاص («أخرجه البخاري، كتاب...، حديث
     رقم...، (ج-ص)») فلا يُستبدل بذيله تسمية كتاب قياسية مكررة."""
@@ -2341,6 +2358,8 @@ def stamp_citation_sources(text: str, rows: List[dict]) -> str:
                 offset = raw_title.find(candidate) if candidate else 0
                 title_start = pos + cut + (offset if offset >= 0 else 0)
                 prefix_end = title_start
+            if row and not _part_plausible(row, part):
+                row = None
             if not row:
                 if id_match:
                     out.append(chunk[pos:prefix_end])
@@ -2428,6 +2447,12 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             _d = _possessive_detached(_a)
             if _d != _a and _d not in attempts:
                 attempts.append(_d)
+        # صيغة «قال ابن حزم في المحلى»: العنوان بعد آخر «في» مرشح قائم
+        # بنفسه، وإلا غلبت رموز المؤلف فحلّت كتابًا آخر له («الإحكام»).
+        if " في " in key:
+            _tail = key.rsplit(" في ", 1)[-1].strip(" «»\"'")
+            if _tail and _tail not in attempts:
+                attempts.append(_tail)
         row = None
         for attempt in attempts:
             try:
@@ -2545,6 +2570,8 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
                             row = _r
                             title_start = pos + cut + _q.start()
                             break
+            if row and not _part_plausible(row, part):
+                row = None
             if not row:
                 _cand_txt = chunk[title_start:match.end()]
                 # إشارة نثرية خبرية («وقع في...»، «بينما ثبت في...») ليست
@@ -4970,7 +4997,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.286"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.287"},
         },
     })
     if opened.get("error"):
@@ -8129,6 +8156,34 @@ def _selected_book_ids(selected_books, cursor) -> List[str]:
         if row and str(row["book_id"]) not in ids:
             ids.append(str(row["book_id"]))
     return ids
+
+
+def _scope_book_ids(scope_books) -> set:
+    """أرقام كتب نطاق وكيل من صيغ بطاقته («#738 العنوان» أو عنوان مجرد)."""
+    ids = set()
+    for b in scope_books or []:
+        m = re.match(r"\s*#\s*(\d{1,7})\b", str(b))
+        if m:
+            ids.add(m.group(1))
+            continue
+        try:
+            r = shamela_local_mcp.resolve_book(str(b))
+            if r.get("status") == "ok":
+                ids.add(str(r.get("book_id")))
+        except Exception:
+            pass
+    return ids
+
+
+def _filter_citations_to_scope(citations, scope_books):
+    """حارس نطاق حتمي: لا شاهد خارج كتب نطاق الوكيل مهما اتسع الاسترجاع.
+    يعيد (المبقاة، عدد المحجوبة). نطاق فارغ لا يحجب شيئًا."""
+    ids = _scope_book_ids(scope_books)
+    cits = list(citations or [])
+    if not ids:
+        return cits, 0
+    kept = [c for c in cits if str(c.get("book_id")) in ids]
+    return kept, len(cits) - len(kept)
 
 
 def _map_lexical_hits(hits, cursor, top_k: int) -> List[Dict[str, Any]]:
@@ -13191,7 +13246,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                             "بصفتك مدير المشروع والمسؤول الأول عن الفريق، فقد وصلك تقرير إدارة المخاطر لهذا البحث، "
                             "واختار صاحب البحث بنفسه معالجة البنود الآتية فورًا:\n" + _items_txt + "\n"
                             "التزم بما يأتي حرفيًا:\n"
-                            "١) عالج أولًا من حزمة البحث المحفوظة المرفقة بعد هذا التوجيه (سجل الأدلة وتقارير الوكلاء بنصوصها وبطاقاتها) بلا بحث جديد؛ فهي قاعدة الشواهد المحفوظة لهذا البحث.\n"
+                            "١) عالج أولًا من حزمة البحث المحفوظة المرفقة بعد هذا التوجيه (سجل الأدلة وتقارير الوكلاء بنصوصها وبطاقاتها) بلا بحث جديد؛ فهي قاعدة الشواهد المحفوظة لهذا البحث. ولا تُدخل في ردك كتابًا من ذاكرتك خارج الحزمة والتقارير المرفقة، ولا سيما كتبًا معاصرة في غير فنّ المسألة.\n"
                             "٢) فإن كان بندٌ قصورًا في مادة البحث نفسها لا يُسدّ من الحزمة، فأصدر للوكيل المعني طلبًا بصيغة ⟦طلب-وكيل: اسم الوكيل | المهمة⟧ واذكر صراحة في صلب مهمته: «هذا قد لُوحظ عليك من إدارة المخاطر».\n"
                             "٣) حاسِب المتسبب: بيّن لكل بند سبب وقوعه ومن يتحمله (نموذج توليف، أو وكيل بعينه، أو نطاق كتب، أو بوابة من بوابات المنظومة).\n"
                             "٤) لا تُصدر الصياغة النهائية في هذا الرد؛ هذه جولة معالجة ومحاسبة. واختم بسطر لكل بند: «البند: ... | ما فُعل: ... | يحتاج قرار الباحث: نعم/لا»."
@@ -13696,6 +13751,26 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                                            use_hybrid=str(_ag.get("search_mode") or _ag.get("searchMode") or "hybrid").strip().lower() != "semantic",
                                            semantic_channel=locals().get("_sem_pass", True),
                                            honor_agent_limit=bool(_ag_books))
+                    if not _ag_books:
+                        # بطاقة الوكيل من العميل قد تصل بلا نطاق في جولات
+                        # المناقشة: النطاق الرسمي من بطاقته المحفوظة في
+                        # قاعدة التطبيق، لا فراغ يُطلق البحث في المكتبة كلها.
+                        try:
+                            for _grp in (_load_owned_list(current_owner_id(request), "agents") or []):
+                                for _ga in ((_grp or {}).get("agents") or []):
+                                    if str(_ga.get("name") or "").strip() == str(_ag.get("name") or "").strip():
+                                        _ag_books = [str(b).strip() for b in (_ga.get("booksScope") or _ga.get("books") or []) if str(b).strip()]
+                                        break
+                                if _ag_books:
+                                    break
+                        except Exception:
+                            pass
+                    if _ag_books:
+                        # حارس النطاق الحتمي: لا شاهد خارج نطاق الوكيل في
+                        # تقرير استكمال مهما اتسع الاسترجاع أو ضلّت قناته.
+                        _cits, _dropped_scope = _filter_citations_to_scope(_cits, _ag_books)
+                        if _dropped_scope:
+                            print(f"🗣️ [Discussion Dispatch] حُجب {_dropped_scope} شاهدًا خارج نطاق «{_ag.get('name')}»", flush=True)
                     _snips = "\n\n".join(
                         f"- الإحالة المعتمدة: {_approved_citation_label(c)} | المصنف: {c.get('author') or ''}:\n  {_full_page_snippet(c, cap=4200, with_next=True)}"
                         for c in _cits[:min(_ag_topk, 30)])
