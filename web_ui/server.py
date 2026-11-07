@@ -1782,7 +1782,10 @@ CITATION_FORMAT_RULE = """
 1ج. الحاشية شهادة نقل: لا تكتب حاشية ولا إحالة إلا لكتاب ورد نصه في الشواهد المعطاة ونقلتَ منه في الفقرة المرتبطة بها نصاً أو معنى فعلاً. ما لم تنقل منه لا تذكره في حاشية ولو كنت تعرفه أو كان مشهوراً في الباب، ولا تجمع مراجع للزينة أو للاستكثار.
 2. الحاشية الظاهرة تتبع الإخراج القياسي الآتي لا غير: اسم الكتاب للمؤلف (جزء-صفحة) بأرقام لاتينية بين قوسين إنجليزيين، مثل: مجموع الفتاوى لابن تيمية (2-368). فإن كان الكتاب جزءًا واحدًا لا أجزاء له: اسم الكتاب للمؤلف ص (صفحة)، مثل: التدمرية لابن تيمية ص (217). ويُصدَّر النقل الحرفي بـ«انظر:» والنقل بالمعنى بـ«ينظر:»، ولا يوضع أحدهما مكان الآخر. مثال الحرفي: انظر: مجموع الفتاوى لابن تيمية (2-368). ومثال المعنوي: ينظر: مجموع الفتاوى لابن تيمية (2-368).
 3. قبل اسم الكتاب في الحاشية وحدها ضع #ID من سطر الإحالة المعتمدة، مثل: #1220 مجموع الفتاوى لابن تيمية (2-368). الرقم علامة ربط ويُحذف من العرض.
-4. تخريج الأحاديث والآثار يتبع قواعد التخريج في الإخراج القياسي، لا هذه الصيغة المختصرة.
+4. تخريج الأحاديث والآثار له قالباه لا ثالث لهما، وبعدهما درجة الحديث إن كان في غير الصحيحين:
+   أ. في الصحاح والسنن والمصنفات المبوبة: «أخرجه البخاري، كتاب الصلاة، باب الأذان، حديث رقم (367)، (3-405)» — المخرِّج باسمه المشهور، ثم الكتاب والباب ورقم الحديث منسوخة من متن الصفحة المرفقة وعناوينها لا من الذاكرة، ثم (جزء-صفحة) بصيغة الموضع القياسية.
+   ب. في المسانيد: «أخرجه أحمد في المسند حديث رقم (11356)، (15-127)» — بلا كتاب ولا باب فالمسند على الرواة.
+   وإن لم يظهر رقم الحديث أو الكتاب والباب في الشاهد المرفق فاختصر القالب بحذف الغائب ولا تخترعه، والموضع (جزء-صفحة) لا يسقط بحال لأنه مفتاح التصفح.
 5. في المتن الرقم المرتفع وحده. يُمنع ذكر اسم الكتاب أو المؤلف أو الجزء أو الصفحة في المتن. تقارير الاستخراج تُبقي سطر الإحالة المعتمدة كما هو.
 ═══════════════════════════════════════════════════════════
 """
@@ -1807,7 +1810,7 @@ ACADEMIC_ANSWER_RULE = """
 ## [4] قواعد تخريج الأحاديث والآثار (إلزامية) ##
 أولًا: إذا كان الحديث في صحيح البخاري أو صحيح مسلم أو فيهما معًا: يُكتفى بعزوه إليهما (اسم الكتاب، رقم الحديث، الكتاب والباب إن وجد)، ولا تبحث عن درجته ولا تذكر تصحيحًا له من أحد؛ لأن نسبته إليهما كافية في الحكم بصحته.
 ثانيًا: إذا كان الحديث في غير الصحيحين: يجب وجوبًا بيان درجته (صحيح، حسن، ضعيف...) مع ذكر من حكم عليه من أهل العلم، اعتمادًا على كتب التخريج المتخصصة حصرًا ومما ورد في الشواهد.
-ثالثًا: يكون التخريج كاملًا: اسم المصدر، مؤلفه، الكتاب والباب، رقم الحديث، الجزء والصفحة، ثم درجة الحديث إن كان في غير الصحيحين.
+ثالثًا: يكون التخريج كاملًا بقالب الحواشي المحكّمة: في الصحاح والسنن «أخرجه البخاري، كتاب الصلاة، باب الأذان، حديث رقم (367)، (3-405)»، وفي المسانيد «أخرجه أحمد في المسند حديث رقم (11356)، (15-127)»، ثم درجة الحديث إن كان في غير الصحيحين.
 رابعًا: الآثار الموقوفة والمقطوعة تُعزى إلى مصادرها مع بيان درجتها إن توفرت في كتب التخريج الواردة.
 
 ## [5] هيكل إخراج البحث العام ##
@@ -1930,6 +1933,27 @@ def _display_title(title: Any) -> str:
     if m and not re.search(r"(في|شرح|على|كتاب|ابن|بن)", m.group(1)):
         t = t[:m.start()].strip()
     return t
+
+
+_TAKHRIJ_BOOKS = [
+    ("البخاري", "صحيح البخاري"), ("مسلم", "صحيح مسلم"),
+    ("أحمد", "مسند أحمد - ط الرسالة"), ("أبي داود", "سنن أبي داود"),
+    ("أبو داود", "سنن أبي داود"), ("الترمذي", "سنن الترمذي"),
+    ("النسائي", "سنن النسائي"), ("ابن ماجه", "سنن ابن ماجه"),
+    ("مالك", "موطأ مالك"), ("الدارمي", "مسند الدارمي - ت الزهراني"),
+    ("ابن حبان", "صحيح ابن حبان"), ("الحاكم", "المستدرك على الصحيحين"),
+    ("البيهقي", "السنن الكبرى للبيهقي"), ("الطبراني", "المعجم الكبير للطبراني"),
+    ("عبد الرزاق", "مصنف عبد الرزاق"), ("ابن أبي شيبة", "مصنف ابن أبي شيبة"),
+    ("أبي يعلى", "مسند أبي يعلى"), ("البزار", "مسند البزار"),
+    ("ابن خزيمة", "صحيح ابن خزيمة"), ("الطحاوي", "شرح مشكل الآثار"),
+]
+
+
+def _is_takhrij_context(text: str) -> bool:
+    """سياق تخريج حديث: عرضه قالبه الخاص («أخرجه البخاري، كتاب...، حديث
+    رقم...، (ج-ص)») فلا يُستبدل بذيله تسمية كتاب قياسية مكررة."""
+    t = text or ""
+    return ("أخرجه" in t or "أخرجها" in t or "حديث رقم" in t or "رواه" in t)
 
 
 def _author_possessive(author: Any) -> str:
@@ -2334,9 +2358,11 @@ def stamp_citation_sources(text: str, rows: List[dict]) -> str:
             )
             out.append(chunk[pos:prefix_end])
             # عرض الإحالة لا يتبع صياغة النموذج: يُعاد بناؤه بالقياسي وحده
-            # (الكتاب للمؤلف (جزء-صفحة)) فتتطابق كل حاشية وقارؤها.
-            _disp = (canonical_citation_label(row.get("title"), part, page, author=row.get("author"))
-                     or display_text or chunk[title_start:match.end()])
+            # (الكتاب للمؤلف (جزء-صفحة)) فتتطابق كل حاشية وقارؤها — إلا في
+            # سياق تخريج فقالبه سطحه هو («أخرجه... حديث رقم...، (ج-ص)»).
+            _disp = (chunk[title_start:match.end()] if _is_takhrij_context(segment)
+                     else (canonical_citation_label(row.get("title"), part, page, author=row.get("author"))
+                           or display_text or chunk[title_start:match.end()]))
             out.append(f'<span class="cit-src" {attrs}>{html.escape(_disp)}</span>')
             pos = match.end()
         out.append(chunk[pos:])
@@ -2455,6 +2481,30 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             # الرقم الصريح يُبحث في كامل المقطع السابق للموضع: فالأقواس التوضيحية
             # «(شرح صحيح البخاري)» تقطع استخراج العنوان وتُسقط الرقم منه.
             id_match = re.search(r"#\s*(\d{1,5})\b", segment)
+            if not id_match and _is_takhrij_context(segment):
+                # قالب التخريج سطحُه هو: يُحلّ المخرِّج باسمه المشهور إلى
+                # كتابه، ويُختم الموضع وحده فيبقى القالب كما كُتب وعلى ذيله
+                # أيقونة التصفح في الأصل.
+                _trow = None
+                for _cn, _cb in _TAKHRIJ_BOOKS:
+                    if _cn in segment:
+                        _trow = _resolve(_cb)
+                        if _trow:
+                            break
+                if _trow:
+                    _attrs = (
+                        f'data-book="{html.escape(str(_trow.get("title") or ""), quote=True)}" '
+                        f'data-rel-path="{html.escape(str(_trow.get("rel_path") or ""), quote=True)}" '
+                        f'data-book-id="{html.escape(str(_trow.get("book_id") or ""), quote=True)}" '
+                        f'data-part="{html.escape(part, quote=True)}" '
+                        f'data-page="{html.escape(str(page or ""), quote=True)}" '
+                        f'data-quote="{html.escape(_page_quote(_trow, part, page), quote=True)}"'
+                    )
+                    _sep = "، " if match.group(0).startswith("،") else ""
+                    out.append(chunk[pos:match.start()])
+                    out.append(f'<span class="cit-src" {_attrs}>{html.escape(_sep + canonical_locator(part, page))}</span>')
+                    pos = match.end()
+                    continue
             row = None
             title_start = pos + cut
             prefix_end = None
@@ -2525,8 +2575,9 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
                 f'data-quote="{html.escape(_page_quote(row, part, page), quote=True)}"'
             )
             out.append(chunk[pos:(prefix_end if prefix_end is not None else title_start)])
-            _disp = (canonical_citation_label(row.get("title"), part, page, author=row.get("author"))
-                     or chunk[title_start:match.end()])
+            _disp = (chunk[title_start:match.end()] if _is_takhrij_context(segment)
+                     else (canonical_citation_label(row.get("title"), part, page, author=row.get("author"))
+                           or chunk[title_start:match.end()]))
             out.append(f'<span class="cit-src" {attrs}>{html.escape(_disp)}</span>')
             pos = match.end()
         out.append(chunk[pos:])
@@ -3497,9 +3548,10 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
             if not d:
                 continue
             body = d["body"]
-            mspan = re.search(r'<span class="cit-src"[^>]*>.*?</span>', body, re.S)
+            mspan = re.search(r'<span class="cit-src"[^>]*>(.*?)</span>', body, re.S)
             if not mspan:
                 continue
+            _orig_inner = mspan.group(1)
             new_span = (
                 '<span class="cit-src" '
                 f'data-book="{html.escape(loc["title"], quote=True)}" '
@@ -3508,7 +3560,7 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                 f'data-part="{html.escape(loc["part"], quote=True)}" '
                 f'data-page="{loc["page"]}" '
                 f'data-quote="{html.escape(" ".join(job["quote"].split())[:120], quote=True)}">'
-                f'{html.escape(canonical_citation_label(loc["title"], loc["part"], loc["page"], author=loc["author"]))}</span>')
+                f'{html.escape(_orig_inner if _is_takhrij_context(body) else canonical_citation_label(loc["title"], loc["part"], loc["page"], author=loc["author"]))}</span>')
             new_body = body[:mspan.start()] + new_span + body[mspan.end():]
             _slice = text[d["start"]:d["end"]]
             if body in _slice:
@@ -3563,7 +3615,7 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                 f'data-part="{html.escape(info["part"], quote=True)}" '
                 f'data-page="{info["page"]}" '
                 f'data-quote="{html.escape(q, quote=True)}">'
-                f'{html.escape(canonical_citation_label(info["title"], info["part"], info["page"], author=info["author"]) or inner)}</span>')
+                f'{html.escape(inner if _is_takhrij_context(body) else (canonical_citation_label(info["title"], info["part"], info["page"], author=info["author"]) or inner))}</span>')
             pos = um.end()
             changed = True
             _healed_n += 1
@@ -4908,7 +4960,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.281"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.282"},
         },
     })
     if opened.get("error"):
