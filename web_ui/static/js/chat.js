@@ -1919,12 +1919,18 @@ function readSelectedChatGroupIds(groups) {
   if (raw !== null) {
     try {
       const ids = JSON.parse(raw);
-      if (Array.isArray(ids)) return ids.filter(id => valid.has(id));
+      // اختيار محفوظ فارغ أو باطل = لا اختيار: يسقط للافتراضي القياسي
+      if (Array.isArray(ids)) {
+        const kept = ids.filter(id => valid.has(id));
+        if (kept.length) return kept;
+      }
     } catch (e) {}
   }
   const one = localStorage.getItem('almojtahed_chat_selected_group_id');
   if (one && valid.has(one)) return [one];
-  return groups && groups[0] ? [groups[0].id] : [];
+  if (!groups || !groups.length) return [];
+  const def = groups.find(g => g && g.is_default) || groups[0];
+  return def ? [def.id] : [];
 }
 
 function agentsChosenInGroup(group) {

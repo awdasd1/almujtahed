@@ -679,7 +679,7 @@ async def delete_custom_font(filename: str):
 app.mount("/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
 # الحالة العامة للنظام والنموذج
-# قرار المنتج (1.10.264): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
+# قرار المنتج (1.10.265): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
 # الدلالة، والبحث اللفظي المضبوط هو الأساس. لا يُشغَّل المحرك ولا يُحمَّل
 # نموذج التضمين ولا يُنتظر أيٌّ منهما عند الإقلاع. إعادة التفعيل عند
 # الحاجة بمتغير بيئة ALMUJTAHED_QDRANT=on دون تغيير كود.
@@ -4270,7 +4270,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.264"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.265"},
         },
     })
     if opened.get("error"):
