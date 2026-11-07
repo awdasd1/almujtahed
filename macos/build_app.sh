@@ -22,6 +22,7 @@ cp -p "$ROOT/web_ui/shamela_local_mcp.py" "$ROOT/web_ui/almujtahed_mcp_server.py
   "$ROOT/web_ui/library_search.py" "$ROOT/web_ui/build_library_index.py" \
   "$ROOT/web_ui/build_ayah_index.py" "$ROOT/web_ui/build_hadith_gradings.py" "$ROOT/web_ui/quran_uthmani.json" \
   "$STAGE/source/web_ui/"
+cp -p "$ROOT/web_ui/default_agent_groups.json" "$STAGE/source/web_ui/default_agent_groups.json"
 cp -p "$ROOT/web_ui/anchor_table.json" "$STAGE/source/web_ui/anchor_table.json"
 cp -p "$ROOT/web_ui/madhhab_authority.json" "$STAGE/source/web_ui/madhhab_authority.json"
 cp -p "$ROOT/web_ui/discipline_books.json" "$STAGE/source/web_ui/discipline_books.json"

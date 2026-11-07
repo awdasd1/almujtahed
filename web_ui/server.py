@@ -679,7 +679,7 @@ async def delete_custom_font(filename: str):
 app.mount("/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
 # الحالة العامة للنظام والنموذج
-# قرار المنتج (1.10.263): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
+# قرار المنتج (1.10.264): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
 # الدلالة، والبحث اللفظي المضبوط هو الأساس. لا يُشغَّل المحرك ولا يُحمَّل
 # نموذج التضمين ولا يُنتظر أيٌّ منهما عند الإقلاع. إعادة التفعيل عند
 # الحاجة بمتغير بيئة ALMUJTAHED_QDRANT=on دون تغيير كود.
@@ -4270,7 +4270,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.263"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.264"},
         },
     })
     if opened.get("error"):
@@ -13310,10 +13310,33 @@ def save_stored_projects(projects, owner_id: str):
         except Exception as exc:
             print(f"Error saving projects snapshot: {exc}")
 
+def _standard_agent_groups():
+    """الفريقان القياسيان المشحونان مع التطبيق (فقه مضبوط + محدّث، بمجلسيهما)."""
+    seed_file = os.path.join(os.path.dirname(__file__), "default_agent_groups.json")
+    try:
+        with open(seed_file, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, list) and data else []
+    except Exception:
+        return []
+
+
 def load_stored_agent_groups(owner_id: str):
-    """قراءة مجموعات وكلاء هذا العضو فقط."""
+    """قراءة مجموعات وكلاء هذا العضو فقط. من لا مخزون له بعد (تثبيت أو حساب
+    جديد) تُزرع له المجموعات القياسية المشحونة؛ ومن حفظ قائمة فارغة بيده
+    (حذف الكل) يُحترم حذفه ولا تُبعث له من جديد."""
     data = _load_owned_list(owner_id, "agents")
-    return data if isinstance(data, list) else []
+    if isinstance(data, list):
+        return data
+    seeds = _standard_agent_groups()
+    if seeds:
+        seeded = json.loads(json.dumps(seeds, ensure_ascii=False))
+        try:
+            _save_owned_list(owner_id, "agents", seeded)
+        except Exception:
+            pass
+        return seeded
+    return []
 
 def save_stored_agent_groups(groups, owner_id: str):
     _save_owned_list(owner_id, "agents", groups)
