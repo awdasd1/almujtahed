@@ -11,6 +11,9 @@ __pycache__/
 .venv/
 env/
 venv/
+windows/bin/
+windows/obj/
+windows/payload.zip
 *.egg-info/
 dist/
 build/
@@ -26,7 +29,10 @@ web_ui/notices.json
 qdrant_service/storage/
 qdrant_service/snapshots/
 qdrant_service/qdrant
+qdrant_service/qdrant.exe
+qdrant_service/_qdrant_extract/
 qdrant_service/*.log
+web_ui/bootstrap_status.json
 qdrant_store/
 *.snapshot
 shamela4_data/

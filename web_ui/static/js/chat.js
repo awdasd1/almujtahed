@@ -10,6 +10,47 @@ let activeSessionId = null;
 let currentThinkingLevel = 'medium'; // 'low' | 'medium' | 'high'
 let currentAttachments = [];
 let isChatHybridSearchEnabled = true;
+let isSemanticEnhancedEnabled = false;
+
+// =============================================================================
+// خيار معزّز: قناة البحث الدلالي في مخزن المتجهات — قرار الباحث، تُعلن حالته
+// في تقرير كل بحث (مفعّلة وباحثة / معطّلة بقراره / مفعّلة وغير متوفرة)
+// =============================================================================
+function initSemanticEnhancedState() {
+  const saved = localStorage.getItem('almojtahed_semantic_enhanced_v2');
+  if (saved !== null) isSemanticEnhancedEnabled = saved === 'true';
+  updateSemanticEnhancedUI();
+  // مؤشر التوفر الحي: مخزن متصل ونموذج تضمين محمّل؟
+  fetch('/api/system/resources').then(r => r.ok ? r.json() : null).then(d => {
+    if (!d) return;
+    const avail = !!(d.qdrant && d.qdrant.connected && d.model && d.model.loaded);
+    const btn = document.getElementById('btnToggleSemanticEnhanced');
+    if (btn) btn.title = avail
+      ? `الخيار المعزّز متاح الآن: مخزن «${(d.qdrant && d.qdrant.collection_name) || ''}» متصل ونموذج التضمين محمّل. سياسة معتمدة: يُفعَّل للمسائل النحيلة لفظيًا التي تعجز عنها المراسي، ويُترك مغلقًا في المسائل غنية اللفظ. انقر للتبديل.`
+      : 'تنبيه: مخزن المتجهات أو نموذج التضمين غير متوفر حاليًا على هذا الجهاز؛ تفعيل الخيار لن يضيف قناة دلالية وسيُعلن ذلك في تقرير البحث. انقر للتبديل.';
+    const lbl = document.getElementById('labelSemanticEnhanced');
+    if (lbl && isSemanticEnhancedEnabled) lbl.textContent = avail ? '🧠 دلالي معزّز' : '🧠 دلالي (غير متوفر)';
+  }).catch(() => {});
+}
+
+function toggleSemanticEnhanced() {
+  isSemanticEnhancedEnabled = !isSemanticEnhancedEnabled;
+  localStorage.setItem('almojtahed_semantic_enhanced_v2', isSemanticEnhancedEnabled);
+  updateSemanticEnhancedUI();
+  if (typeof showToast === 'function') {
+    showToast(isSemanticEnhancedEnabled
+      ? 'تم تفعيل الخيار المعزّز: قناة البحث الدلالي في مخزن المتجهات (إن توفرت) 🧠'
+      : 'تم تعطيل القناة الدلالية بقرارك: بحث لفظي فقط في فهرس المكتبة');
+  }
+}
+
+function updateSemanticEnhancedUI() {
+  const btn = document.getElementById('btnToggleSemanticEnhanced');
+  if (!btn) return;
+  btn.classList.toggle('is-active', isSemanticEnhancedEnabled);
+  btn.classList.toggle('is-disabled', !isSemanticEnhancedEnabled);
+  btn.setAttribute('aria-pressed', isSemanticEnhancedEnabled ? 'true' : 'false');
+}
 
 // =============================================================================
 // إدارة وتفعيل / تعطيل نمط استرجاع نصوص الشات (البحث الهجين: Dense + BM25)
@@ -33,7 +74,7 @@ function toggleChatHybridSearchMode() {
   updateChatHybridToggleUI();
   if (typeof showToast === 'function') {
     if (isChatHybridSearchEnabled) {
-      showToast('الشات الذكي: تم تفعيل استرجاع النصوص بالبحث الهجين (Dense + BM25) ⚡');
+      showToast('الشات الذكي: تم تفعيل استرجاع النصوص بالبحث الهجين (دلالي + لفظي) ⚡');
     } else {
       showToast('الشات الذكي: تم تفعيل استرجاع النصوص بالبحث الدلالي الصرف (Dense Only) 🧠');
     }
@@ -63,7 +104,9 @@ function updateChatHybridToggleUI() {
 document.addEventListener('DOMContentLoaded', () => {
   initChatHistory();
   initChatHybridToggleState();
+  initSemanticEnhancedState();
   populateChatAgentGroupsDropdown();
+  renderChatMcpList();
   setTimeout(() => {
     if (typeof syncChatModelDropdown === 'function') {
       syncChatModelDropdown();
@@ -141,12 +184,7 @@ function createNewChatSession(save = true, customTitle = null) {
     id: 'chat_' + Date.now(),
     title: customTitle || 'محادثة تراثية جديدة',
     createdAt: new Date().toISOString(),
-    messages: [
-      {
-        role: 'assistant',
-        content: `مرحباً بك في منظومة **المجتهد** الذكية.\n\nأنا متصل مباشرة بمخزن الشاملة التراثي الضخم (أكثر من 8 ملايين مقطع) ومزود بوكلاء مساعدين في الفقه، والتفسير، والحديث، والتاريخ. كيف يمكنني إعانتك في بحثك أو استنباطك اليوم؟`
-      }
-    ]
+    messages: []
   };
 
   chatSessions.unshift(newSession);
@@ -413,7 +451,7 @@ function exportChatSessionFile(sessionId, messageIndex) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(link.href);
+  setTimeout(() => URL.revokeObjectURL(link.href), 120000);
   showToast(chat.shared_answer ? 'تم حفظ الإجابة في جهازك' : 'تم حفظ المحادثة في جهازك');
   return true;
 }
@@ -665,17 +703,375 @@ function toggleChatMessageTashkeel(idx) {
 window.scrollChatMessageTop = scrollChatMessageTop;
 window.deleteChatMessage = deleteChatMessage;
 window.shareChatMessage = shareChatMessage;
+
+const CHAT_REWRITE_LANGUAGES = [
+  ['الإنجليزية', 'english'],
+  ['الفرنسية', 'french'],
+  ['الألمانية', 'german'],
+  ['الإسبانية', 'spanish'],
+  ['الإيطالية', 'italian'],
+  ['البرتغالية', 'portuguese'],
+  ['الروسية', 'russian'],
+  ['التركية', 'turkish'],
+  ['الفارسية', 'persian'],
+  ['الأردية', 'urdu'],
+  ['الهندية', 'hindi'],
+  ['البنغالية', 'bengali'],
+  ['الصينية', 'chinese'],
+  ['اليابانية', 'japanese'],
+  ['الكورية', 'korean'],
+  ['الإندونيسية', 'indonesian'],
+  ['الملايو', 'malay'],
+  ['الهولندية', 'dutch'],
+  ['السويدية', 'swedish'],
+  ['النرويجية', 'norwegian'],
+  ['الدنماركية', 'danish'],
+  ['الفنلندية', 'finnish'],
+  ['البولندية', 'polish'],
+  ['التشيكية', 'czech'],
+  ['المجرية', 'hungarian'],
+  ['الرومانية', 'romanian'],
+  ['اليونانية', 'greek'],
+  ['اللاتينية', 'latin'],
+  ['العبرية', 'hebrew'],
+  ['الكردية', 'kurdish'],
+  ['الأذربيجانية', 'azerbaijani'],
+  ['الأوزبكية', 'uzbek'],
+  ['البشتوية', 'pashto'],
+  ['السواحيلية', 'swahili'],
+  ['الهوسا', 'hausa'],
+  ['الأمازيغية', 'tamazight'],
+  ['التاميلية', 'tamil'],
+  ['التايلندية', 'thai'],
+  ['الفيتنامية', 'vietnamese'],
+  ['الأوكرانية', 'ukrainian'],
+  ['الصربية', 'serbian'],
+  ['البوسنية', 'bosnian'],
+  ['الألبانية', 'albanian']
+];
+
+let chatRewriteBusy = false;
+
+function chatAnswerSourceText(msg) {
+  if (!msg) return '';
+  if (msg.tashkeel_hidden && msg.vocalized_content) return msg.vocalized_content;
+  return msg.content || '';
+}
+
+async function rewriteChatAnswer(idx, mode, language) {
+  if (chatRewriteBusy) {
+    showToast('جارٍ معالجة إجابة حالياً');
+    return;
+  }
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const msg = session && session.messages[idx];
+  if (!msg || msg.role === 'user') return;
+  const source = chatAnswerSourceText(msg).trim();
+  if (!source) {
+    showToast('لا يوجد نص لاختصاره');
+    return;
+  }
+  let keys = {};
+  try { keys = readProviderKeys(); } catch (e) {}
+  chatRewriteBusy = true;
+  msg.rewriting = mode === 'translate' ? 'الترجمة' : 'الاختصار';
+  renderSessionMessages(activeSessionId, { keepPosition: true });
+  try {
+    const res = await fetch('/api/chat/rewrite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: source,
+        mode,
+        language: language || '',
+        api_key: keys.openrouter || ''
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'تعذر الاختصار');
+    msg.content = data.content;
+    msg.vocalized_content = '';
+    msg.tashkeel_hidden = false;
+    if (data.model) msg.model = data.model;
+    delete msg.rewriting;
+    saveChatSessions();
+    showToast(mode === 'translate' ? 'تمت الترجمة' : 'تم الاختصار');
+  } catch (err) {
+    showToast(err.message || 'تعذر الاختصار');
+  } finally {
+    chatRewriteBusy = false;
+    delete msg.rewriting;
+    renderSessionMessages(activeSessionId, { keepPosition: true });
+  }
+}
+
+function abbreviateChatMessage(idx) {
+  rewriteChatAnswer(idx, 'abbreviate', '');
+}
+
+function fillChatTranslateLanguages(query) {
+  const select = document.getElementById('chatTranslateLanguage');
+  if (!select) return;
+  const q = String(query || '').trim().toLowerCase();
+  const current = select.value;
+  const rows = CHAT_REWRITE_LANGUAGES.filter(([ar, en]) => !q || ar.includes(q) || en.includes(q));
+  select.innerHTML = rows.map(([ar]) => `<option value="${ar}">${ar}</option>`).join('');
+  if (rows.some(([ar]) => ar === current)) select.value = current;
+  else if (rows.length) select.selectedIndex = 0;
+}
+
+function openChatTranslatePicker(idx) {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  if (!session || !session.messages[idx] || session.messages[idx].role === 'user') return;
+  let overlay = document.getElementById('chatTranslateOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'chatTranslateOverlay';
+    overlay.className = 'chat-delete-overlay';
+    overlay.hidden = true;
+    overlay.innerHTML = `
+      <div class="chat-delete-panel chat-translate-panel" role="dialog" aria-modal="true" aria-labelledby="chatTranslateTitle">
+        <h3 id="chatTranslateTitle">ترجمة الإجابة</h3>
+        <p>يُختصر النص ثم يُترجم إلى اللغة التي تختارها، من النص ومراجعه فقط.</p>
+        <label class="chat-translate-label" for="chatTranslateFilter">تصفية اللغات</label>
+        <input id="chatTranslateFilter" class="chat-translate-filter" type="text" placeholder="اكتب اسم اللغة" autocomplete="off">
+        <label class="chat-translate-label" for="chatTranslateLanguage">اللغة</label>
+        <select id="chatTranslateLanguage" class="chat-translate-select"></select>
+        <div class="chat-delete-actions">
+          <button type="button" class="chat-delete-cancel" id="chatTranslateCancel">إلغاء</button>
+          <button type="button" class="chat-translate-confirm" id="chatTranslateConfirm">ترجمة</button>
+        </div>
+      </div>`;
+    overlay.addEventListener('click', (event) => {
+      if (event.target.id === 'chatTranslateOverlay' || event.target.id === 'chatTranslateCancel') {
+        overlay.hidden = true;
+      }
+    });
+    overlay.querySelector('#chatTranslateFilter').addEventListener('input', (event) => {
+      fillChatTranslateLanguages(event.target.value);
+    });
+    overlay.querySelector('#chatTranslateConfirm').addEventListener('click', () => {
+      const target = Number(overlay.dataset.idx);
+      const language = overlay.querySelector('#chatTranslateLanguage').value;
+      overlay.hidden = true;
+      if (!language) {
+        showToast('اختر لغة الترجمة');
+        return;
+      }
+      rewriteChatAnswer(target, 'translate', language);
+    });
+    document.body.appendChild(overlay);
+  }
+  overlay.dataset.idx = String(idx);
+  const filter = overlay.querySelector('#chatTranslateFilter');
+  if (filter) filter.value = '';
+  fillChatTranslateLanguages('');
+  const select = overlay.querySelector('#chatTranslateLanguage');
+  if (select && select.options.length) select.value = 'الإنجليزية';
+  overlay.hidden = false;
+  if (filter) filter.focus();
+}
+
+window.abbreviateChatMessage = abbreviateChatMessage;
+window.openChatTranslatePicker = openChatTranslatePicker;
 window.toggleChatMessageTashkeel = toggleChatMessageTashkeel;
 
 // عرض رسائل الجلسة الحالية
+function chatSourceBibliography(row, places) {
+  const bits = [];
+  if (row.title) bits.push(row.title);
+  if (row.author) bits.push(row.death_year ? `${row.author} (ت: ${row.death_year} هـ)` : row.author);
+  if (row.editor) bits.push(`المحقق: ${row.editor}`);
+  if (row.edition) bits.push(`الطبعة: ${row.edition}`);
+  if (row.publisher) bits.push(`الناشر: ${row.publisher}`);
+  if (row.city) bits.push(`مدينة النشر: ${row.city}`);
+  if (row.print_year) bits.push(`سنة الطبع: ${row.print_year}`);
+  if (places && places.length) bits.push(places.join('؛ '));
+  return bits.join('، ');
+}
+
+function chatWitnessesHtml(msg, idx) {
+  const rows = Array.isArray(msg.witnesses) ? msg.witnesses : [];
+  if (!rows.length || msg.role === 'user') return '';
+  const groups = [];
+  const index = new Map();
+  rows.forEach((row, n) => {
+    const key = String(row.book_id || row.rel_path || row.title || n);
+    if (!index.has(key)) {
+      index.set(key, groups.length);
+      groups.push({ row, n, places: [] });
+    }
+    const place = [row.part ? `جـ ${row.part}` : '', row.page ? `ص ${row.page}` : ''].filter(Boolean).join(' ');
+    const group = groups[index.get(key)];
+    if (place && !group.places.includes(place)) group.places.push(place);
+  });
+  const bookIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+  const items = groups.map(({ row, n, places }) => `
+      <li class="chat-source-item">
+        <div class="chat-source-row">
+          <span class="chat-source-text">${escapeHtml(chatSourceBibliography(row, places))}</span>
+          <button type="button" class="chat-source-book" onclick="openChatWitness(${idx}, ${n})" title="فتح النص في نافذة تصفح الكتاب" aria-label="فتح الكتاب">${bookIcon}</button>
+        </div>
+      </li>`).join('');
+  return `
+    <section class="chat-source-list">
+      <h3 class="chat-source-heading">قائمة المصادر والمراجع</h3>
+      <ol>${items}</ol>
+    </section>`;
+}
+
+function openChatWitness(msgIdx, rowIdx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const row = session && session.messages[msgIdx] && session.messages[msgIdx].witnesses
+    ? session.messages[msgIdx].witnesses[rowIdx]
+    : null;
+  if (!row || typeof openBookReader !== 'function') return;
+  openBookReader({
+    rel_path: row.rel_path || '',
+    book_id: row.book_id || '',
+    book_title: row.title || '',
+    part: row.part || '',
+    page_num: parseInt(row.page, 10) || null,
+    highlight: row.text || ''
+  });
+}
+
+function verifyChatWitness(msgIdx, rowIdx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const row = session && session.messages[msgIdx] && session.messages[msgIdx].witnesses
+    ? session.messages[msgIdx].witnesses[rowIdx]
+    : null;
+  if (!row || typeof openMcpLiteralVerify !== 'function') return;
+  openMcpLiteralVerify({
+    book: row.book_id ? `#${row.book_id}` : (row.title || ''),
+    rel_path: row.rel_path || '',
+    part: row.part || '',
+    page: row.page || '',
+    quote: row.text || ''
+  });
+}
+window.verifyChatWitness = verifyChatWitness;
+
+function citationNameWords(value) {
+  return String(value || '')
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
+    .split(/[^\u0600-\u06FF]+/)
+    .filter(word => word.length >= 4 && !['ينظر', 'انظر', 'راجع', 'كتاب', 'المصدر', 'المرجع'].includes(word));
+}
+
+function attachStoredWitnesses(container) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  if (!session || !container) return;
+  const western = (value) => String(value || '')
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+  const bindButton = (button, rows) => {
+    const page = parseInt(western(button.getAttribute('data-page')), 10);
+    const part = western(button.getAttribute('data-part') || '');
+    const stampedId = button.getAttribute('data-book-id') || '';
+    const stampedRel = button.getAttribute('data-rel-path') || '';
+    if (stampedId || stampedRel) {
+      // ختم قديم لا يطابق قائمة التوثيق الموثوقة يُلغى ويُعاد ربطه من نص الحاشية نفسه.
+      const trusted = rows.some((item) => {
+        const sameBook = (stampedId && String(item.book_id || '') === stampedId)
+          || (stampedRel && String(item.rel_path || '') === stampedRel);
+        if (!sameBook) return false;
+        if (page && parseInt(item.page, 10) !== page) return false;
+        if (part && item.part && String(parseInt(part, 10) || part) !== String(item.part)) return false;
+        return true;
+      });
+      if (trusted) return;
+      button.removeAttribute('data-book-id');
+      button.removeAttribute('data-rel-path');
+    }
+    const stampedSpan = button.previousElementSibling && button.previousElementSibling.classList.contains('cit-src')
+      ? button.previousElementSibling.textContent
+      : '';
+    // ربط يقيني فقط: العنوان كاملاً، أو بدايته المميزة. كلمة واحدة مشتركة
+    // مثل «الرسالة» لا تربط، وما لم يُربط يقيناً يُزال زرّه فلا يفتح كتاباً مخمّناً.
+    const generic = new Set(['التفسير', 'الحديث', 'الفقه', 'الشرح', 'الكتاب', 'الصحيح', 'السنن', 'التاريخ', 'الرساله', 'رساله', 'طبعه', 'الطبعه', 'ط', 'ت', 'تحقيق']);
+    const buttonKey = citationNameWords(stampedSpan || button.getAttribute('data-book')).join(' ');
+    const contentWords = buttonKey.split(' ').filter(word => word.length >= 3 && !generic.has(word));
+    let best = null;
+    let bestScore = 0;
+    let tied = false;
+    rows.forEach((item) => {
+      if (page && parseInt(item.page, 10) !== page) return;
+      if (part && item.part && String(parseInt(part, 10) || part) !== String(item.part)) return;
+      const rowKey = citationNameWords(item.title).join(' ');
+      if (!buttonKey || !rowKey) return;
+      let score = 0;
+      if (buttonKey === rowKey) score = 1000 + rowKey.length;
+      else if (` ${buttonKey} `.includes(` ${rowKey} `)) score = 900 + rowKey.length;
+      else if (rowKey.startsWith(buttonKey + ' ') && contentWords.length >= 2) score = 700 + buttonKey.length;
+      else if (buttonKey.startsWith(rowKey + ' ')) score = 650 + rowKey.length;
+      if (!score) return;
+      if (score > bestScore) {
+        best = item;
+        bestScore = score;
+        tied = false;
+      } else if (score === bestScore && best && best !== item) {
+        tied = true;
+      }
+    });
+    if (tied || !best || !best.rel_path) {
+      button.remove();
+      return;
+    }
+    button.setAttribute('data-rel-path', best.rel_path);
+    button.setAttribute('data-book-id', best.book_id || '');
+    if (best.title) button.setAttribute('data-book', best.title);
+    if (best.text && !button.getAttribute('data-quote')) {
+      button.setAttribute('data-quote', String(best.text).slice(0, 180));
+    }
+  };
+  container.querySelectorAll('.message-bubble.assistant').forEach((bubble) => {
+    const idx = parseInt(String(bubble.id || '').replace('chatMsg', ''), 10);
+    const rows = session.messages[idx] && session.messages[idx].witnesses;
+    if (!Array.isArray(rows) || !rows.length) return;
+    bubble.querySelectorAll('.btn-verify-citation, .btn-mcp-verify').forEach((button) => bindButton(button, rows));
+  });
+}
+window.openChatWitness = openChatWitness;
+
+function chatOpeningHtml() {
+  return '<div class="chat-opening"><p>مرحبا بك ...</p><p>كيف يمكنني خدمتك؟</p></div>';
+}
+
+function sessionIsOpening(session) {
+  return !session.messages || !session.messages.some(m => m.role === 'user');
+}
+
+function isStoredOpening(msg) {
+  if (!msg || msg.role !== 'assistant') return false;
+  if (msg.model || msg.tool_html || msg.tool_figure || msg.tool_web) return false;
+  const text = String(msg.content || '');
+  return text.includes('مرحباً بك في منظومة') || text.startsWith('مرحبا بك ...');
+}
+
 function renderSessionMessages(sessionId, options) {
   const session = chatSessions.find(s => s.id === sessionId);
   const container = document.getElementById('chatMessagesContainer');
   if (!session || !container) return;
+  if (typeof refreshDiscussionBar === 'function') refreshDiscussionBar();
   const keepPosition = options && options.keepPosition;
   const previousScroll = keepPosition ? container.scrollTop : 0;
 
+  if (sessionIsOpening(session)) {
+    const placeholderOnly = !(session.messages || []).some(m => m.role !== 'assistant' || m.model || m.tool_html || m.tool_figure || m.tool_web);
+    if (placeholderOnly && session.messages && session.messages.length) {
+      session.messages = [];
+      saveChatSessions();
+    }
+    if (placeholderOnly) {
+      container.innerHTML = chatOpeningHtml();
+      return;
+    }
+  }
+
   container.innerHTML = session.messages.map((msg, idx) => {
+    if (idx === 0 && isStoredOpening(msg)) return '';
     const isUser = msg.role === 'user';
     const avatar = isUser ? 'أنت' : 'مج';
     const parsedText = formatMarkdown(msg.content, `c${idx}`);
@@ -710,6 +1106,7 @@ function renderSessionMessages(sessionId, options) {
 
     const actionsBar = !isUser ? `
       <div class="chat-msg-actions-bar" style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px dashed var(--border-subtle); padding-top: 8px; flex-wrap: wrap;">
+        ${msg.rewriting ? `<span class="chat-rewrite-status">جارٍ ${escapeHtml(msg.rewriting)}...</span>` : ''}
         <button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="قراءة هذه النتيجة">
           📄 قراءة
         </button>
@@ -725,15 +1122,35 @@ function renderSessionMessages(sessionId, options) {
         <button type="button" class="btn-msg-export" onclick="toggleChatMessageTashkeel(${idx})" title="إزالة التشكيل أو إعادته">
           ${msg.tashkeel_hidden ? 'إعادة التشكيل' : 'إزالة التشكيل'}
         </button>
+        <button type="button" class="btn-msg-export" onclick="abbreviateChatMessage(${idx})" title="اختصار هذه الإجابة بنموذج Gemini 3.8 Flash" ${msg.rewriting ? 'disabled' : ''}>
+          اختصار
+        </button>
+        <button type="button" class="btn-msg-export" onclick="openChatTranslatePicker(${idx})" title="ترجمة هذه الإجابة بعد اختصارها" ${msg.rewriting ? 'disabled' : ''}>
+          ترجمة
+        </button>
+        <button type="button" class="btn-msg-export" onclick="openDiscussion(${idx})" title="فتح جلسة مناقشة مع مدير المشروع حول هذا البحث: حوار واستكمال للنواقص بلا بحث جديد، وله أن يطلب وكيلًا بعينه للتحقق، ثم يقفل الجلسة ويعيد الصياغة النهائية">
+          🗣️ مناقشة المدير
+        </button>
+        <button type="button" class="btn-msg-export" onclick="openAnswerSearch(${idx})" title="بحث مفلتر داخل نص هذه الإجابة نفسها: عدّادات وتظليل تلقائي للمواضع وتنقل بينها">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px;"><circle cx="7" cy="15" r="4"/><circle cx="17" cy="15" r="4"/><path d="M7 11V5h3v6M17 11V5h-3v6M11 8h2"/></svg>
+          بحث في الإجابة
+        </button>
+        <button type="button" class="btn-msg-export" onclick="downloadChatResearchReport(${idx})" title="تقرير هذا البحث كاملًا في ملف منفصل: مؤشراته وملحوظاته وبدائله وسجل تدقيقه الآلي">
+          📏 تقرير البحث
+        </button>
         <button type="button" class="btn-msg-export btn-msg-delete" onclick="deleteChatMessage(${idx})" title="حذف هذه الإجابة" aria-label="حذف هذه الإجابة">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
         </button>
       </div>
     ` : `
       <div class="chat-user-msg-actions-bar" style="display: flex; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(204, 120, 92, 0.25); justify-content: flex-start; flex-wrap: wrap;">
-        <button type="button" class="btn-user-msg-action" onclick="regenerateAnswerForUserMessage(${idx})" title="إعادة توليد الإجابة مرة أخرى بناءً على هذا السؤال">
+        <button type="button" class="btn-user-msg-action" onclick="regenerateAnswerForUserMessage(${idx})" title="مسح الإجابة الحالية ثم توليد إجابة جديدة">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
-          <span>إعادة التوليد</span>
+          <span>مسح وإعادة توليد</span>
+        </button>
+        <button type="button" class="btn-user-msg-action" onclick="regenerateAnswerKeepingCurrent(${idx})" title="توليد إجابة إضافية مع الإبقاء على الإجابة الحالية">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+          <span>إعادة توليد</span>
         </button>
         <button type="button" class="btn-user-msg-action" onclick="copyUserMessageText(${idx})" title="نسخ نص السؤال">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -746,7 +1163,17 @@ function renderSessionMessages(sessionId, options) {
       <div class="message-bubble ${isUser ? 'user' : 'assistant'}" id="chatMsg${idx}">
         <div class="message-avatar">${avatar}</div>
         <div class="message-content">
+          ${(!isUser && msg.regenerated) ? `
+            <div class="chat-regenerated-badge" title="إجابة أُعيد توليدها مع الإبقاء على الإجابة السابقة">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+              <span>إجابة معاد توليدها</span>
+            </div>
+          ` : ''}
           ${parsedText}
+          ${msg.tool_figure ? `<div class="applied-tool-mount" data-tool-figure="1" data-tool-index="${idx}" style="min-height:780px;"></div>` : ''}
+          ${msg.tool_html && !msg.tool_figure ? `<div class="applied-tool-mount" data-tool-html="1" data-tool-index="${idx}"></div>` : ''}
+          ${msg.tool_web ? `<div class="applied-tool-mount" data-tool-web="1" data-tool-index="${idx}"></div>` : ''}
+          ${chatWitnessesHtml(msg, idx)}
           ${tagsHtml}
           ${actionsBar}
         </div>
@@ -762,11 +1189,14 @@ function renderSessionMessages(sessionId, options) {
       console.warn('Interactive widgets render error:', e);
     }
   }
+  mountChatAppliedWebTools(container, session);
+  mountChatToolFigures(container, session);
 
   // تفعيل التحقق من صحة المنقول وتصفح الكتاب الأصلي للإحالات
   if (typeof window.enhanceProjectCitationsWithBookReader === 'function') {
     try {
       window.enhanceProjectCitationsWithBookReader(container);
+      attachStoredWitnesses(container);
     } catch (e) {
       console.warn('Citation reader enhance error:', e);
     }
@@ -851,7 +1281,7 @@ function openChatReadingWindow(htmlContent) {
   const height = Math.max(720, (window.screen.availHeight || 900) - 40);
   const left = Math.max(0, Math.round(((window.screen.availWidth || width) - width) / 2));
   const win = window.open('', '_blank', `popup=yes,width=${width},height=${height},left=${left},top=16,resizable=yes,scrollbars=yes`);
-  if (win) {
+  if (win && win !== window) {
     writeChatReadingDocument(win, htmlContent);
     showToast('تم فتح نافذة القراءة');
     setTimeout(() => { try { win.focus(); } catch (e) {} }, 200);
@@ -895,28 +1325,52 @@ function openChatReadingOverlay(htmlContent) {
   frame.srcdoc = htmlContent;
 }
 
-async function exportChatMessagePdf(idx) {
+function chatAnswerPaper(idx) {
   const session = chatSessions.find(s => s.id === activeSessionId);
-  if (!session || !session.messages[idx]) return;
+  if (!session || !session.messages[idx]) return null;
   const msg = session.messages[idx];
   const title = chatMessagePaperTitle(msg, session);
   const output = msg.selection_research
     ? String(msg.content || '').replace(/^#{1,3}\s+[^\n]+\n+/, '')
     : msg.content;
-  const runData = {
-    projectTitle: title,
-    executedAt: new Date().toLocaleString('ar-SA'),
-    directorModel: cleanModelDisplayName(msg.model || 'الذكاء الاصطناعي الأكاديمي'),
-    rounds: [{
-      round: 1,
-      name: msg.selection_research ? title : 'النتيجة والدراسة التحريرية المعتمدة',
-      output: output,
-      executedAt: new Date().toLocaleString('ar-SA')
-    }]
+  return {
+    title,
+    runData: {
+      projectTitle: title,
+      executedAt: new Date().toLocaleString('ar-SA'),
+      directorModel: cleanModelDisplayName(msg.model || 'الذكاء الاصطناعي الأكاديمي'),
+      rounds: [{
+        round: 1,
+        name: msg.selection_research ? title : 'النتيجة والدراسة التحريرية المعتمدة',
+        output,
+        executedAt: new Date().toLocaleString('ar-SA')
+      }]
+    }
   };
+}
 
+async function prepareChatAnswerShareFile(idx) {
+  const paper = chatAnswerPaper(idx);
+  if (!paper || typeof buildAcademicPaperHtml !== 'function') throw new Error('paper');
+  const html = buildAcademicPaperHtml(paper.runData, { toolbar: false, forPdf: true });
+  const res = await fetch('/api/projects/export-pdf', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html, title: paper.title || 'قراءة' })
+  });
+  if (!res.ok) throw new Error('pdf');
+  const blob = await res.blob();
+  if (!blob || blob.size < 800) throw new Error('pdf-empty');
+  const name = readingHtmlFilename(paper.title).replace(/\.html$/i, '') + '.pdf';
+  return new File([blob], name, { type: 'application/pdf' });
+}
+
+async function exportChatMessagePdf(idx) {
+  const paper = chatAnswerPaper(idx);
+  if (!paper) return;
   if (typeof window.openAcademicPaperWindow === 'function') {
-    window.openAcademicPaperWindow(runData);
+    window.openAcademicPaperWindow(paper.runData);
     return;
   }
   showToast('تعذر تجهيز صفحة البحث للطباعة');
@@ -937,7 +1391,116 @@ function cleanModelDisplayName(modelId) {
 }
 
 // معالجة الضغط على Enter في مربع الكتابة
+// ================= أوامر البحث الجاهزة (قائمة السلاش) =================
+const RESEARCH_COMMANDS = [
+  { id: 'plan', label: 'خطة بحث', desc: 'يبني معك تقسيم البحث وجولاته قبل التنفيذ', soon: true },
+  { id: 'general', label: 'بحث عام', desc: 'توزيع متوازن بين الفنون بلا طغيان فن' },
+  { id: 'fiqh-long', label: 'بحث فقهي مطول', desc: 'تصوير وسبب خلاف وتخريج وأقوال ومناقشة وترجيح' },
+  { id: 'fiqh-mid', label: 'بحث فقهي متوسط', desc: 'هيكل فقهي كامل بإطالة متوسطة' },
+  { id: 'fiqh-short', label: 'بحث فقهي مختصر', desc: 'الأقوال معينة والراجح ودليله' },
+  { id: 'hadith-long', label: 'بحث حديثي مطول', desc: 'طرق وتخريج وعلل وحكم وشرح' },
+  { id: 'hadith-mid', label: 'بحث حديثي متوسط', desc: 'تخريج وحكم بهيكل متوسط' },
+  { id: 'hadith-short', label: 'بحث حديثي مختصر', desc: 'المصادر الأصلية وخلاصة الحكم' },
+  { id: 'tafsir-long', label: 'بحث تفسيري مطول', desc: 'أقوال السلف والمفسرون طبقة طبقة' },
+  { id: 'tafsir-mid', label: 'بحث تفسيري متوسط', desc: 'أقوال المفسرين والترجيح متوسطاً' },
+  { id: 'tafsir-short', label: 'بحث تفسيري مختصر', desc: 'المعنى وأمهات الأقوال والراجح' },
+  { id: 'aqidah-long', label: 'بحث عقدي مطول', desc: 'مقالات المدارس من كتبها ومناقشة محايدة' },
+  { id: 'aqidah-mid', label: 'بحث عقدي متوسط', desc: 'المقالات والأدلة باختصار متوسط' },
+  { id: 'aqidah-short', label: 'بحث عقدي مختصر', desc: 'تحرير النزاع والراجح ودليله' },
+  { id: 'lugha-long', label: 'بحث لغوي مطول', desc: 'المعاجم طبقة طبقة والشواهد والفروق' },
+  { id: 'lugha-mid', label: 'بحث لغوي متوسط', desc: 'المعنى والاشتقاق والشواهد متوسطاً' },
+  { id: 'lugha-short', label: 'بحث لغوي مختصر', desc: 'المعنى عند أمهات المعاجم وشاهد' },
+  { id: 'tarikh-long', label: 'بحث تاريخي مطول', desc: 'الروايات بطبقات المصادر ونقدها' },
+  { id: 'tarikh-mid', label: 'بحث تاريخي متوسط', desc: 'الروايات واختلافها والترجيح' },
+  { id: 'tarikh-short', label: 'بحث تاريخي مختصر', desc: 'أرجح الروايات وسببه' },
+  { id: 'fiqh-hadith-long', label: 'بحث فقهي حديثي مطول', desc: 'أحاديث الباب أولاً ثم الأقوال والترجيح' },
+  { id: 'fiqh-hadith-mid', label: 'بحث فقهي حديثي متوسط', desc: 'تخريج ثم أقوال معينة وترجيح' },
+  { id: 'fiqh-hadith-short', label: 'بحث فقهي حديثي مختصر', desc: 'حكم الأحاديث والأقوال والراجح' },
+];
+window.selectedResearchCommand = null;
+let _slashItems = [], _slashIdx = 0;
+
+function _slashMenuEl() {
+  let el = document.getElementById('slashCommandMenu');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'slashCommandMenu';
+    el.className = 'slash-menu';
+    el.hidden = true;
+    const area = document.querySelector('.chat-input-area');
+    if (area) area.insertBefore(el, area.firstChild);
+  }
+  return el;
+}
+function closeSlashMenu() { const el = document.getElementById('slashCommandMenu'); if (el) el.hidden = true; _slashItems = []; }
+function renderSlashMenu(filter) {
+  const el = _slashMenuEl();
+  const f = (filter || '').trim();
+  _slashItems = RESEARCH_COMMANDS.filter(c => !f || c.label.includes(f) || c.desc.includes(f));
+  _slashIdx = Math.min(_slashIdx, Math.max(0, _slashItems.length - 1));
+  if (!_slashItems.length) { el.hidden = true; return; }
+  el.innerHTML = _slashItems.map((c, i) =>
+    `<button type="button" class="slash-item${i === _slashIdx ? ' active' : ''}${c.soon ? ' soon' : ''}" data-i="${i}">
+       <span class="slash-item-label">/${c.label}</span>
+       <span class="slash-item-desc">${c.desc}${c.soon ? ' — قريباً' : ''}</span>
+     </button>`).join('');
+  el.querySelectorAll('.slash-item').forEach(btn => {
+    btn.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSlashCommand(_slashItems[parseInt(btn.dataset.i, 10)]); });
+  });
+  el.hidden = false;
+}
+function pickSlashCommand(cmd) {
+  const input = document.getElementById('chatInputText');
+  if (!cmd || cmd.soon) { closeSlashMenu(); if (input) input.focus(); return; }
+  window.selectedResearchCommand = cmd.id;
+  if (input) {
+    input.value = input.value.replace(/^\s*\/\S*\s*/, '');
+    input.focus();
+  }
+  showResearchCmdChip(cmd);
+  closeSlashMenu();
+}
+function showResearchCmdChip(cmd) {
+  const old = document.getElementById('researchCmdChip');
+  if (old) old.remove();  // إزالة الشريحة القديمة فقط — دون تصفير الاختيار الحالي
+  const area = document.querySelector('.chat-input-area');
+  if (!area) return;
+  const chip = document.createElement('div');
+  chip.id = 'researchCmdChip';
+  chip.className = 'research-cmd-chip';
+  chip.innerHTML = `<span>الأمر البحثي: <b>${cmd.label}</b></span>
+    <button type="button" title="إلغاء الأمر" onclick="clearResearchCmdChip(true)">✕</button>`;
+  const box = area.querySelector('.chat-input-box');
+  area.insertBefore(chip, box || null);
+}
+function clearResearchCmdChip(focusBack) {
+  const chip = document.getElementById('researchCmdChip');
+  if (chip) chip.remove();
+  window.selectedResearchCommand = null;
+  if (focusBack) { const i = document.getElementById('chatInputText'); if (i) i.focus(); }
+}
+window.clearResearchCmdChip = clearResearchCmdChip;
+function initSlashCommands() {
+  const input = document.getElementById('chatInputText');
+  if (!input || input._slashReady) return;
+  input._slashReady = true;
+  input.addEventListener('input', () => {
+    const v = input.value;
+    const m = v.match(/^\s*\/(\S*)$/);
+    if (m) renderSlashMenu(m[1]); else closeSlashMenu();
+  });
+  input.addEventListener('blur', () => setTimeout(closeSlashMenu, 180));
+}
+document.addEventListener('DOMContentLoaded', initSlashCommands);
+
 function handleChatInputKey(e) {
+  const menu = document.getElementById('slashCommandMenu');
+  if (menu && !menu.hidden && _slashItems.length) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); _slashIdx = (_slashIdx + 1) % _slashItems.length; renderSlashMenu(document.getElementById('chatInputText').value.replace(/^\s*\//, '')); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); _slashIdx = (_slashIdx - 1 + _slashItems.length) % _slashItems.length; renderSlashMenu(document.getElementById('chatInputText').value.replace(/^\s*\//, '')); return; }
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickSlashCommand(_slashItems[_slashIdx]); return; }
+    if (e.key === 'Escape') { closeSlashMenu(); return; }
+  }
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendChatMessage();
@@ -1057,6 +1620,7 @@ function removeAttachment(idx) {
 async function sendChatMessage() {
   const input = document.getElementById('chatInputText');
   const text = input.value.trim();
+  const outgoingResearchCommand = window.selectedResearchCommand || null;
 
   if (currentAttachments.some(a => a.uploading)) {
     if (typeof showToast === 'function') {
@@ -1097,6 +1661,7 @@ async function sendChatMessage() {
   });
 
   input.value = '';
+  if (typeof clearResearchCmdChip === 'function') clearResearchCmdChip(false);
   // حفظ نسخة من المرفقات لتمريرها في الطلب البرمجي ثم تفريغ الواجهة
   const outgoingAttachments = validAttachments.slice();
   currentAttachments = [];
@@ -1105,14 +1670,24 @@ async function sendChatMessage() {
 
 
   // إرسال الطلب للنموذج واستقبال الرد
-  await triggerChatCompletion(session, outgoingAttachments);
+  await triggerChatCompletion(session, outgoingAttachments, { researchCommand: outgoingResearchCommand });
 }
 
 // =============================================================================
 // دورة توليد الإجابة وإرسال الطلب للنموذج أو الوكلاء (مشتركة مع إعادة التوليد)
 // =============================================================================
-async function triggerChatCompletion(session, attachments = []) {
+function placeChatReply(session, message, options) {
+  if (options && Number.isInteger(options.insertAt)) {
+    const at = Math.max(0, Math.min(options.insertAt, session.messages.length));
+    session.messages.splice(at, 0, message);
+  } else {
+    session.messages.push(message);
+  }
+}
+
+async function triggerChatCompletion(session, attachments = [], options = {}) {
   if (!session) return;
+  const promptMessages = (options && options.contextMessages) || session.messages;
 
   const selectedModel = document.getElementById('chatModelSelect')?.value || 
                         localStorage.getItem('almojtahed_active_chat_model') || 
@@ -1128,108 +1703,24 @@ async function triggerChatCompletion(session, attachments = []) {
   const modelDisplayName = document.getElementById('chatModelSelect')?.selectedOptions[0]?.text || cleanModelDisplayName(selectedModel);
 
   // فحص ما إذا كان المستخدم قد فعّل إسناد الطلب لمجموعة الوكلاء المساعدين
-  const useAgentGroup = document.getElementById('chatUseAgentGroupCheckbox')?.checked;
-  const selectedGroupId = document.getElementById('chatAgentGroupSelect')?.value;
-  let assignedGroupPayload = null;
-  let activeAgent = null;
-
-  if (useAgentGroup && selectedGroupId) {
-    let groups = [];
-    try {
-      const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
-      if (raw) groups = JSON.parse(raw);
-    } catch (e) {}
-    if (!groups.length && window.agentGroups) groups = window.agentGroups;
-
-    const grp = groups.find(g => g.id === selectedGroupId);
-    if (grp && grp.agents && grp.agents.length > 0) {
-      // فحص الوكلاء المحددين بالمربعات (محددة 1 أو 2 أو 3 أو الجميع)
-      let selectedSubAgentIds = [];
-      try {
-        const rawSel = localStorage.getItem('almojtahed_chat_selected_agents_' + selectedGroupId)
-                    || localStorage.getItem('almojtahed_selected_chat_subagents');
-        if (rawSel) selectedSubAgentIds = JSON.parse(rawSel);
-      } catch (e) {}
-
-      let candidateAgents = grp.agents;
-      if (Array.isArray(selectedSubAgentIds) && selectedSubAgentIds.length > 0) {
-        const filtered = grp.agents.filter(a => selectedSubAgentIds.includes(a.id));
-        if (filtered.length > 0) candidateAgents = filtered;
-      }
-
-      // إذا اختار المستخدم وكيلاً واحداً صراحة أو فريقاً محدداً
-      const isMultiAgents = candidateAgents.length > 1;
-      const agentsNames = candidateAgents.map(a => a.name).join(' + ');
-      activeAgent = candidateAgents[0];
-
-      // تجميع نطاق كتب الوكلاء المختارين (دمج نطاق جميع الوكلاء المحددين دون تكرار)
-      const booksSet = new Set();
-      candidateAgents.forEach(a => {
-        const bList = (a.booksScope && Array.isArray(a.booksScope)) ? a.booksScope : (a.scopeBooks || a.books || []);
-        bList.forEach(b => {
-          if (b && String(b).trim()) booksSet.add(String(b).trim());
-        });
-      });
-      const agentBooks = Array.from(booksSet);
-
-      const poolVal = parseInt(activeAgent.poolSize) || 250;
-      const topVal = parseInt(activeAgent.topK || activeAgent.top_k || activeAgent.topRerank) || 40;
-
-      // تجميع اختصاصات وتوجيهات الوكلاء المحددين
-      let unifiedSystemPrompt = activeAgent.systemPrompt || '';
-      if (isMultiAgents) {
-        unifiedSystemPrompt = candidateAgents.map(a => `### اختصاص وتوجيه الوكيل المساعد «${a.name}»:\n${a.systemPrompt || a.desc || ''}`).join('\n\n');
-      }
-
-      assignedGroupPayload = {
-        id: grp.id,
-        name: grp.name,
-        desc: grp.desc || '',
-        active_agent: {
-          id: activeAgent.id,
-          name: isMultiAgents ? `فريق الوكلاء المختارين (${candidateAgents.length}): ${agentsNames}` : activeAgent.name,
-          desc: isMultiAgents ? candidateAgents.map(a => `[${a.name}]: ${a.desc || ''}`).join(' | ') : (activeAgent.desc || ''),
-          model: activeAgent.model || 'google/gemini-2.5-flash',
-          thinking: activeAgent.thinking || 'medium',
-          system_prompt: unifiedSystemPrompt,
-          books: agentBooks,
-          pool_size: poolVal,
-          top_k: topVal,
-          temp: activeAgent.temp !== undefined ? activeAgent.temp : 0.2
-        },
-        agents: candidateAgents.map(a => {
-          let booksList = (a.booksScope && Array.isArray(a.booksScope)) ? a.booksScope : (a.scopeBooks || a.books || []);
-          return {
-            id: a.id,
-            name: a.name,
-            desc: a.desc || '',
-            system_prompt: a.systemPrompt || '',
-            model: a.model || 'google/gemini-2.5-flash',
-            thinking: a.thinking || 'medium',
-            books: booksList,
-            pool_size: parseInt(a.poolSize) || 250,
-            top_k: parseInt(a.topK || a.top_k || a.topRerank) || 40,
-            temp: a.temp !== undefined ? a.temp : 0.2,
-            scope_summary: booksList.length > 0 ? `${booksList.length} كتاب محدد` : 'شامل المخزن التراثي'
-          };
-        })
-      };
-    }
-  }
+  const builtGroup = buildChatAgentGroupPayload();
+  const assignedGroupPayload = builtGroup ? builtGroup.payload : null;
+  const activeAgent = builtGroup ? builtGroup.activeAgent : null;
+  const mcpPayload = buildChatMcpPayload();
 
   // اعتماد النموذج المختار صراحة من قبل المستخدم في ترويسة الشات الذكي
+  const customOn = !!currentSettings.modelParams?.customGeneration;
+  const savedParams = currentSettings.modelParams || {};
   let executionModel = selectedModel;
   let executionThinking = currentThinkingLevel;
-  let executionPrompt = currentSettings.modelParams?.systemPrompt;
-  let executionTemp = currentSettings.modelParams?.temperature;
-  let executionTopK = currentSettings.modelParams?.topK;
+  let executionPrompt = customOn ? (document.getElementById('systemPromptInput')?.value.trim() || savedParams.systemPrompt || '') : '';
+  let executionTemp = parseFloat(document.getElementById('paramTemperature')?.value ?? savedParams.temperature ?? 0.2);
+  let executionTopK = parseInt(document.getElementById('paramTopK')?.value ?? savedParams.topK ?? 40, 10);
+  let executionMaxTokens = customOn ? parseInt(document.getElementById('paramMaxTokens')?.value ?? savedParams.maxTokens ?? 65536, 10) : undefined;
+  let executionRepPenalty = customOn ? parseFloat(document.getElementById('paramRepPenalty')?.value ?? savedParams.repPenalty ?? 1.1) : undefined;
 
-  if (activeAgent) {
-    if (activeAgent.thinking && !executionThinking) executionThinking = activeAgent.thinking;
-    if (activeAgent.systemPrompt) executionPrompt = activeAgent.systemPrompt;
-    if (activeAgent.temp !== undefined && executionTemp === undefined) executionTemp = activeAgent.temp;
-    if (activeAgent.topK !== undefined && executionTopK === undefined) executionTopK = activeAgent.topK;
-  }
+  if (activeAgent && activeAgent.thinking && !executionThinking) executionThinking = activeAgent.thinking;
+  if (!customOn && activeAgent && activeAgent.systemPrompt) executionPrompt = activeAgent.systemPrompt;
 
   // إظهار فقاعة مؤشر الكتابة للنموذج
   const container = document.getElementById('chatMessagesContainer');
@@ -1246,6 +1737,8 @@ async function triggerChatCompletion(session, attachments = []) {
     typingMessage = `جارٍ تشغيل وكيل «<strong>${escapeHtml(activeAgent.name)}</strong>» عبر نموذج «<strong>${escapeHtml(cleanModelDisplayName(executionModel))}</strong>» والبحث في نطاق كتبه المحدد (${hybridModeName})...`;
   } else if (assignedGroupPayload) {
     typingMessage = `جارٍ إرسال وتوجيه الطلب حصراً إلى وكلاء «<strong>${escapeHtml(assignedGroupPayload.name)}</strong>» لاستخراج البيانات التراثية ومعالجتها (${hybridModeName})...`;
+  } else if (mcpPayload.length) {
+    typingMessage = `جارٍ ربط خوادم MCP: «<strong>${escapeHtml(mcpPayload.map(item => item.name).join('، '))}</strong>» مع «<strong>${escapeHtml(modelDisplayName)}</strong>»...`;
   }
 
   typingBubble.innerHTML = `
@@ -1267,19 +1760,32 @@ async function triggerChatCompletion(session, attachments = []) {
       headers: { 'Content-Type': 'application/json' },
       signal: control.signal,
       body: JSON.stringify({
+        chat_id: (typeof activeSessionId !== 'undefined' ? activeSessionId : null),
         model: executionModel,
         provider: activeProvider,
         api_key: apiKey,
         thinking_level: executionThinking,
         use_hybrid: isChatHybridSearchEnabled,
-        messages: session.messages,
-        system_prompt: executionPrompt,
+        semantic_enhanced: isSemanticEnhancedEnabled,
+        messages: promptMessages,
+        system_prompt: executionPrompt || null,
         temperature: executionTemp,
         top_k: executionTopK,
-        max_tokens: currentSettings.modelParams?.maxTokens,
+        max_tokens: executionMaxTokens,
+        repetition_penalty: executionRepPenalty,
+        custom_generation: customOn,
         context_tokens: (typeof currentContextTokens === 'function') ? currentContextTokens() : 1048576,
+        witness_limit: (typeof currentWitnessCount === 'function') ? currentWitnessCount() : 50,
+        death_max: (typeof currentDeathMax === 'function') ? currentDeathMax() : null,
+        intent_genres: (typeof currentIntentGenres === 'function') ? currentIntentGenres() : null,
+        research_command: (options && options.researchCommand) || null,
+        discussion_mode: (options && options.discussionMode) || (discussionState(session.id) === 'open' ? 'open' : null),
+        semantic_enhanced: isSemanticEnhancedEnabled,
         providers: readProviderKeys(),
-        agent_group: assignedGroupPayload,
+        agent_group: window.chatRawMcp ? null : assignedGroupPayload,
+        mcp_servers: window.chatRawMcp ? [] : mcpPayload,
+        raw_mcp: !!window.chatRawMcp,
+        mcp_for_agents: localStorage.getItem('almojtahed_mcp_for_agents') === '1',
         agent_dispatch_mode: window.chatAgentDispatchMode || 'parallel',
         attachments: (attachments || []).map(a => ({
           filename: a.name,
@@ -1299,16 +1805,18 @@ async function triggerChatCompletion(session, attachments = []) {
     const durationMs = stopAnswerClock();
     typingBubble.remove();
 
-    session.messages.push({
+    placeChatReply(session, {
       role: 'assistant',
       content: data.reply || 'عذراً، لم أتلقَّ استجابة واضحة من الخادم.',
       model: data.model || selectedModel,
       provider: data.provider || activeProvider,
-      agent_group: data.agent_group || (assignedGroupPayload ? assignedGroupPayload.name : null),
+      agent_group: data.raw_mcp ? 'MCP خام مباشر' : (data.agent_group || [assignedGroupPayload ? assignedGroupPayload.name : '', mcpPayload.map(item => item.name).join(' + ')].filter(Boolean).join(' + ') || null),
       duration_ms: durationMs,
       thinking_effort: data.thinking_effort || '',
-      thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : ''
-    });
+      thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : '',
+      witnesses: Array.isArray(data.witnesses) ? data.witnesses : [],
+      regenerated: !!options.regenerated
+    }, options);
 
     saveChatSessions();
     renderSessionMessages(activeSessionId);
@@ -1320,11 +1828,12 @@ async function triggerChatCompletion(session, attachments = []) {
       if (typeof showToast === 'function') showToast('تم الإيقاف');
       return;
     }
-    session.messages.push({
+    placeChatReply(session, {
       role: 'assistant',
       content: `⚠️ تعذر استكمال المحادثة: ${err.message}`,
-      duration_ms: durationMs
-    });
+      duration_ms: durationMs,
+      regenerated: !!options.regenerated
+    }, options);
     saveChatSessions();
     renderSessionMessages(activeSessionId);
   } finally {
@@ -1351,10 +1860,32 @@ async function regenerateAnswerForUserMessage(idx) {
   saveChatSessions();
   renderSessionMessages(activeSessionId);
 
-  showToast('جارٍ إعادة توليد الإجابة... 🔄');
+  showToast('جارٍ مسح الإجابة وإعادة توليدها... 🔄');
   await triggerChatCompletion(session, []);
 }
 window.regenerateAnswerForUserMessage = regenerateAnswerForUserMessage;
+
+async function regenerateAnswerKeepingCurrent(idx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  if (!session || !session.messages || !session.messages[idx]) return;
+  if (session.messages[idx].role !== 'user') return;
+  if (document.getElementById('typingBubbleIndicator')) {
+    showToast('جارٍ معالجة إجابة حالياً، يرجى الانتظار...');
+    return;
+  }
+
+  let insertAt = idx + 1;
+  while (insertAt < session.messages.length && session.messages[insertAt].role !== 'user') {
+    insertAt += 1;
+  }
+  showToast('جارٍ توليد إجابة إضافية مع الإبقاء على الحالية... 🔄');
+  await triggerChatCompletion(session, [], {
+    contextMessages: session.messages.slice(0, idx + 1),
+    insertAt,
+    regenerated: true
+  });
+}
+window.regenerateAnswerKeepingCurrent = regenerateAnswerKeepingCurrent;
 
 // نسخ نص سؤال المستخدم إلى الحافظة
 function copyUserMessageText(idx) {
@@ -1370,130 +1901,963 @@ window.copyUserMessageText = copyUserMessageText;
 // إدارة ربط الشات بمجموعات الوكلاء المساعدين
 // =============================================================================
 
-// تعبئة القائمة المنسدلة لمجموعات الوكلاء في الشات
-function populateChatAgentGroupsDropdown() {
-  const select = document.getElementById('chatAgentGroupSelect');
-  const checkbox = document.getElementById('chatUseAgentGroupCheckbox');
-  const container = document.getElementById('chatAgentGroupPicker');
-  if (!select) return;
-
+function readChatAgentGroups() {
   let groups = [];
   try {
     const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
     if (raw) groups = JSON.parse(raw);
   } catch (e) {}
-
   if ((!groups || !groups.length) && window.agentGroups && window.agentGroups.length) {
     groups = window.agentGroups;
   }
+  return Array.isArray(groups) ? groups.filter(g => g && g.id && g.name) : [];
+}
 
-  // إذا لم تكن هناك مجموعات بعد، ننشئ المجموعة الأساسية الافتراضية التراثية المليئة بالوكلاء
-  if (!groups || !groups.length) {
-    groups = [
-      {
-        id: 'group_heritage_default',
-        name: 'مجموعة العلوم التراثية الأساسية',
-        desc: 'وكلاء الفقه وأصوله، والحديث ورجاله، والتفسير والتاريخ لتحضير مسائل المخزن والربط مع الشاملة',
-        agents: [
-          { id: 'agent_fiqh', name: 'وكيل الفقه وأصوله', desc: 'تحرير الفروع الفقهية على المذاهب الأربعة وتخريج المسائل', model: 'google/gemini-2.5-flash', thinking: 'high' },
-          { id: 'agent_hadith', name: 'وكيل الحديث والرجال', desc: 'تخريج الأحاديث وبيان علل الرواة وتوثيق الأسانيد', model: 'anthropic/claude-3.7-sonnet', thinking: 'medium' },
-          { id: 'agent_tafsir', name: 'وكيل التفسير وعلوم القرآن', desc: 'أقوال المفسرين بالمأثور والدراية وأسباب النزول', model: 'google/gemini-2.5-flash', thinking: 'medium' }
-        ]
-      }
-    ];
+function readSelectedChatGroupIds(groups) {
+  const valid = new Set((groups || []).map(g => g.id));
+  const raw = localStorage.getItem('almojtahed_chat_selected_group_ids');
+  if (raw !== null) {
     try {
-      localStorage.setItem(ownerStorageKey('almojtahed_agent_groups'), JSON.stringify(groups));
+      const ids = JSON.parse(raw);
+      if (Array.isArray(ids)) return ids.filter(id => valid.has(id));
     } catch (e) {}
   }
+  const one = localStorage.getItem('almojtahed_chat_selected_group_id');
+  if (one && valid.has(one)) return [one];
+  return groups && groups[0] ? [groups[0].id] : [];
+}
 
-  const savedGroupId = localStorage.getItem('almojtahed_chat_selected_group_id') || (groups[0] ? groups[0].id : '');
+function agentsChosenInGroup(group) {
+  const agents = (Array.isArray(group?.agents) ? group.agents : []).filter(agent => agent.kind !== 'mcp');
+  const raw = localStorage.getItem('almojtahed_chat_selected_agents_' + group.id);
+  if (raw === null) return agents.slice();
+  let selectedIds = [];
+  try { selectedIds = JSON.parse(raw); } catch (e) { return agents.slice(); }
+  if (!Array.isArray(selectedIds)) return agents.slice();
+  return agents.filter(a => selectedIds.includes(a.id));
+}
+
+function groupSelectionLabel(groups, ids) {
+  if (!groups.length) return 'لا توجد مجموعات';
+  if (!ids.length) return 'لم تُحدد أي مجموعة';
+  if (ids.length === groups.length) return `كل المجموعات (${groups.length})`;
+  const names = groups.filter(g => ids.includes(g.id)).map(g => g.name);
+  if (names.length === 1) return names[0];
+  return `${names.length} مجموعات: ${names.slice(0, 2).join('، ')}${names.length > 2 ? '...' : ''}`;
+}
+
+function writeSelectedChatGroupIds(ids) {
+  const groups = readChatAgentGroups();
+  const valid = new Set(groups.map(g => g.id));
+  ids = (Array.isArray(ids) ? ids : []).filter(id => valid.has(id));
+  localStorage.setItem('almojtahed_chat_selected_group_ids', JSON.stringify(ids));
+  localStorage.setItem('almojtahed_chat_selected_group_id', ids[0] || '');
+  const select = document.getElementById('chatAgentGroupSelect');
+  if (select) {
+    select.innerHTML = groups.map(g => `<option value="${escapeHtml(g.id)}" ${g.id === ids[0] ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')
+      || '<option value="">لا توجد مجموعات</option>';
+    select.value = ids[0] || '';
+  }
+  const label = document.getElementById('chatGroupBtnLabel');
+  if (label) updateChatSourceLabels();
+  const badge = document.getElementById('chatGroupCountBadge');
+  if (badge) updateChatSourceLabels();
+  const items = document.getElementById('chatGroupChecklistItems');
+  if (items) {
+    items.querySelectorAll('input[data-group-id]').forEach(cb => {
+      const on = ids.includes(cb.getAttribute('data-group-id'));
+      cb.checked = on;
+      const row = cb.closest('.chat-checklist-item');
+      if (row) row.classList.toggle('is-selected', on);
+    });
+  }
+  return ids;
+}
+
+function chatGroupDirector() {
+  if (!document.getElementById('chatUseAgentGroupCheckbox')?.checked) return null;
+  const groups = readChatAgentGroups();
+  const chosen = groups.filter(g => readSelectedChatGroupIds(groups).includes(g.id));
+  for (const g of chosen) {
+    const dir = (g.agents || []).find(a => a && (a.is_director || a.role === 'director' || a.kind === 'director'));
+    if (dir && agentsChosenInGroup(g).some(a => a.id === dir.id)) return { group: g, director: dir };
+  }
+  return null;
+}
+
+// سلطة واحدة معلنة: ما دام للمجموعة مدير قائد معيّن فيها، تتعطل أدوات
+// نموذج المحادثة (نموذجه وتفكيره وسياقه وشواهده وسقف وفاته ونوع بحثه)
+// لئلا تتنازع قيادتان؛ وتعطيل المدير من قائمة الوكلاء يعيدها فورًا.
+function refreshDirectorAuthorityUI() {
+  const found = chatGroupDirector();
+  ['chatModelSelect', 'chatThinkingSelect', 'chatContextSelect', 'intentSelect', 'deathMaxSelect', 'witnessDdBtn', 'btnToggleChatHybridSearch', 'chatCustomModelTrigger'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = !!found;
+    el.style.opacity = found ? '0.45' : '';
+    if (found) el.title = 'معطّل: القيادة لمدير المشروع داخل المجموعة';
+  });
+  const badge = document.getElementById('directorAuthorityBadge');
+  if (badge) {
+    badge.style.display = found ? 'block' : 'none';
+    if (found) badge.textContent = `👑 القيادة لمدير المشروع «${found.director.name}» داخل المجموعة — عُطّلت أدوات نموذج المحادثة حتى لا تتنازع السلطة، والمدير يقود بنموذجه وتفكيره وتوجيهه. إن عطّلت المدير من قائمة الوكلاء عادت القيادة لنموذج المحادثة وتوجيهك.`;
+  }
+}
+
+function editAgentFromChat(groupId, agentId) {
+  // نافذة واحدة مضبوطة لتعديل الوكيل أينما ضُغط «تعديل»: نافذة تبويب
+  // الوكلاء الأساسية بمنتقي نماذجها ونطاق كتبها، لا نافذة موازية للمحادثة.
+  if (typeof window.openAgentEditorForGroup === 'function') {
+    window.openAgentEditorForGroup(groupId, agentId);
+  } else if (typeof showToast === 'function') {
+    showToast('تعذر فتح محرر الوكيل');
+  }
+}
+
+// =============================================================================
+// 🗣️ جلسة مناقشة الباحث مع مدير المشروع حول بحث مغلق: حوار واستكمال للنواقص
+// بلا بحث جديد من الصفر؛ المدير يطلب وكلاء بعينهم عند الحاجة، وعند الإقفال
+// يعيد الصياغة النهائية من المحادثة المحفوظة، وتُستأنف الجلسة متى شاء الباحث.
+// =============================================================================
+function discussionState(sid) {
+  try { return localStorage.getItem('almojtahed_discussion_' + sid) || ''; } catch (e) { return ''; }
+}
+function setDiscussionState(sid, v) {
+  try {
+    if (v) localStorage.setItem('almojtahed_discussion_' + sid, v);
+    else localStorage.removeItem('almojtahed_discussion_' + sid);
+  } catch (e) { }
+  refreshDiscussionBar();
+}
+function refreshDiscussionBar() {
+  const bar = document.getElementById('discussionBar');
+  if (!bar) return;
+  const open = (typeof activeSessionId !== 'undefined') && discussionState(activeSessionId) === 'open';
+  bar.style.display = open ? 'block' : 'none';
+}
+function openDiscussion(idx) {
+  if (typeof activeSessionId === 'undefined' || !activeSessionId) return;
+  setDiscussionState(activeSessionId, 'open');
+  if (typeof notifyDownload === 'function') { /* لا تنبيه تنزيل هنا */ }
+  if (typeof showToast === 'function') showToast('🗣️ فُتحت جلسة المناقشة مع مدير المشروع: اكتب سؤالك أو النقص المطلوب استكماله في صندوق الرسائل', 3500);
+  const input = document.getElementById('chatInputText');
+  if (input) { input.focus(); input.placeholder = 'ناقش مدير المشروع: ما النقص؟ ما الذي تريد التحقق منه أو استكماله؟'; }
+  if (typeof scrollToBottom === 'function') scrollToBottom();
+}
+function closeDiscussion() {
+  if (typeof activeSessionId === 'undefined' || !activeSessionId) return;
+  setDiscussionState(activeSessionId, '');
+  const input = document.getElementById('chatInputText');
+  if (input) input.placeholder = 'اسأل المجتهد في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
+  if (typeof showToast === 'function') showToast('أُنهيت المناقشة مؤقتًا؛ محادثتها محفوظة وتستطيع استئنافها بزر «مناقشة المدير» متى شئت', 3000);
+}
+// 📋 زر الباحث المختصر: يجلب ثغرات تقرير البحث وفجواته من سجل القياس
+// مرقمةً واحدة تلو الأخرى، ويرفعها إلى مدير المشروع دفعة واحدة في رسالة
+// واحدة ليعالجها معه في جلسة المناقشة بندًا بندًا.
+async function sendAuditGapsToDirector() {
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  if (!session) return;
+  let entry = null;
+  try {
+    const res = await fetch('/api/research-metrics');
+    if (res.ok) {
+      const data = await res.json();
+      const mine = (data.items || []).filter(it => it.chat_id === activeSessionId);
+      entry = mine.length ? mine[mine.length - 1] : null;
+    }
+  } catch (e) { }
+  if (!entry) {
+    if (typeof showToast === 'function') showToast('لا يوجد تقرير بحث آلي محفوظ لهذه المحادثة بعد — الثغرات تُجلب من تقارير البحوث المنفذة بالوكلاء', 3500);
+    return;
+  }
+  if (discussionState(activeSessionId) !== 'open') setDiscussionState(activeSessionId, 'open');
+  const a = entry.audit || {};
+  const items = [];
+  (entry.agents_failed || []).forEach(n => items.push(`وكيل سقط في البحث الأصلي: «${n}» — ما أثر سقوطه في مادته وكيف يُستكمل؟`));
+  (entry.audit_failures || []).forEach(f => items.push(`نقل لم يثبت آليًا في كتاب إحالته: «${(f.quote || '').slice(0, 140)}» — تحقق منه بتقليب صفحته أو استبدل به ثابتًا موثقًا.`));
+  if (a.ijma_unattributed) items.push(`دعاوى اتفاق/إجماع مطلقة بلا نسبة: ${a.ijma_unattributed} — انسبها إلى قائلها أو كتاب إجماعها أو خففها إلى «الجمهور».`);
+  if (a.unverified) items.push(`نقول فُحصت ولم تثبت آليًا: ${a.unverified} من ${a.checked || 0} مفحوصًا — راجع مواضعها قبل الاعتماد.`);
+  if (a.relocated) items.push(`نقول ثابتة في غير موضع إحالتها: ${a.relocated} — صحح إحالاتها إلى مواضعها الصحيحة.`);
+  if (a.tier_warnings) items.push(`تنبيهات طبقة اعتماد (وسيط أو ناقل وحيد): ${a.tier_warnings} — لا يبقى متن حديث أو قول مذهب أو إجماع معلقًا بوسيط أو شرح معاصر أو شرح ناقل (كمغلطاي عن أبي داود وسعيد بن منصور) وحده؛ ائتِ بأصله التراثي مباشرة أو صرّح بالواسطة.`);
+  if ((a.missing_terms || []).length) items.push(`ألفاظ متقدمين موثقة في المكتبة غابت عن متن الإجابة: ${a.missing_terms.map(t => '«' + t + '»').join('، ')} — ابحث عما وراءها من نصوص صريحة في كتب الطبقات (فقد يكون وراء اللفظ نص في عين المسألة كنص المرداوي في تقبيل الفرج) وائتِ بها أو صرّح بخلوّها بعد الفحص.`);
+  const zeroLines = (entry.audit_record || '').split('\n').filter(l => l.includes('صفرية'));
+  zeroLines.forEach(l => items.push(`خلية صفرية موثقة في تغطية الطبقات: ${l.replace(/^.*?—/, '').trim().slice(0, 220)}`));
+  if (!items.length) items.push('لا ثغرات مسجلة في التقرير الآلي؛ راجع معي مع ذلك مواضع العزو بالواسطة من الشروح المعاصرة والموسوعات، وأي نقل تشك في طبقة سنده.');
+  items.push('قاعدة طبقات صارمة لهذه الجلسة: لا تعتمد عزوًا بالواسطة من شرح معاصر أو موسوعة أو تفريغ دروس (كالعباد والهرري والهيميد والبسام) سندًا لمتن حديث أو حكم مذهب أو دعوى إجماع؛ ائتِ بالنص من أصله التراثي مباشرة بتقليب صفحته أو بطلب وكيله، وإلا صرّح بخلوّه.');
+  const body = 'هذه ملحوظات تقرير البحث الآلي وثغراته، أرفعها إليك دفعة واحدة. عالجها معي واحدة تلو الأخرى بالترتيب، ولكل بند: ما ستفعله، وهل تحتاج طلب وكيل أو تقليب صفحة، وما سيتغير في الصياغة النهائية بسببه:\n\n'
+    + items.map((t, i) => `${i + 1}- ${t}`).join('\n');
+  session.messages.push({ role: 'user', content: body });
+  renderSessionMessages(activeSessionId);
+  if (typeof saveChatSessions === 'function') saveChatSessions();
+  await triggerChatCompletion(session, [], { discussionMode: 'open' });
+}
+
+async function finalizeDiscussion() {
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  if (!session) return;
+  if (discussionState(activeSessionId) !== 'open') return;
+  session.messages.push({
+    role: 'user',
+    content: '🔒 أقفل جلسة المناقشة باتفاقنا: أعد صياغة البحث كاملًا صياغة نهائية معتمدة مستوعبًا ما اتفقنا عليه في هذه المناقشة وتقارير الوكلاء المستكملة، ومعالجًا نواقص سجل التدقيق، ورقةً علمية محكمة بلا أي لغة من لغات عملية البحث والمناقشة.'
+  });
+  setDiscussionState(activeSessionId, 'closed');
+  const input = document.getElementById('chatInputText');
+  if (input) input.placeholder = 'اسأل المجتهد في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
+  renderSessionMessages(activeSessionId);
+  if (typeof saveChatSessions === 'function') saveChatSessions();
+  await triggerChatCompletion(session, [], { discussionMode: 'finalize' });
+  if (typeof showToast === 'function') showToast('🔒 أُقفلت المناقشة وصيغت الصياغة النهائية؛ وتستطيع فتح مناقشة جديدة عليها بزر «مناقشة المدير»', 3500);
+}
+
+// =============================================================================
+// 🔭 بحث مفلتر داخل نص الإجابة نفسها: عدّادات (مرات الورود، كلمات العبارة،
+// الجمل الحاوية)، وتظليل تلقائي لكل موضع، وقائمة جمل مفلترة يقفز منها
+// الباحث إلى الموضع بعينه، مع تنقل سابق/تالٍ بين المواضع.
+// =============================================================================
+let _answerSearch = { idx: null, marks: [], current: -1 };
+
+function _ansNormChar(ch) {
+  if (/[\u064B-\u0652\u0670\u0640]/.test(ch)) return '';
+  if ('إأآٱ'.includes(ch)) return 'ا';
+  if (ch === 'ى') return 'ي';
+  if (ch === 'ة') return 'ه';
+  if (ch === 'ؤ') return 'و';
+  if (ch === 'ئ') return 'ي';
+  return ch;
+}
+function _ansNormalize(s) { return (s || '').split('').map(_ansNormChar).join(''); }
+
+function _ensureAnswerSearchModal() {
+  if (document.getElementById('answerSearchModal')) return;
+  const st = document.createElement('style');
+  st.textContent = 'mark.ans-hit{background:#ffe58a;color:inherit;padding:0 1px;border-radius:3px;} mark.ans-hit.ans-current{background:#ff9d45;outline:2px solid #e07b1f;}';
+  document.head.appendChild(st);
+  const d = document.createElement('div');
+  d.id = 'answerSearchModal';
+  d.style.cssText = 'display:none;position:fixed;inset:0;z-index:9999;background:transparent;direction:rtl;pointer-events:none;';
+  d.innerHTML = `
+    <div id="answerSearchPanel" style="pointer-events:auto;position:absolute;top:7vh;left:50%;transform:translateX(-50%);width:min(640px,94vw);background:var(--bg-surface,#fff);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,0.35);padding:16px 18px;max-height:84vh;display:flex;flex-direction:column;">
+      <div id="answerSearchDragHandle" title="اسحب من هذا الشريط لتحريك النافذة ومشاهدة التظليل في الإجابة" style="display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:move;touch-action:none;user-select:none;-webkit-user-select:none;">
+        <strong style="font-size:15px;">🔭 بحث في نص الإجابة <span style="font-size:11px;opacity:0.65;font-weight:400;">(قابلة للسحب ⠿)</span></strong>
+        <button type="button" class="btn-msg-export" onclick="closeAnswerSearch()">إغلاق ✕</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        <input id="answerSearchInput" type="text" placeholder="اكتب حرفًا أو كلمة أو جملة للبحث داخل هذه الإجابة..." style="flex:1;min-width:220px;padding:9px 12px;border:1px solid var(--border-subtle,#ccc);border-radius:9px;font-size:14px;" oninput="runAnswerSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();stepAnswerSearch(1);}">
+        <button type="button" class="btn-msg-export" onclick="stepAnswerSearch(-1)">▲ السابق</button>
+        <button type="button" class="btn-msg-export" onclick="stepAnswerSearch(1)">▼ التالي</button>
+      </div>
+      <label style="margin-top:8px;font-size:12.5px;display:flex;gap:6px;align-items:center;cursor:pointer;">
+        <input id="answerSearchFlex" type="checkbox" checked onchange="runAnswerSearch()">
+        بحث مرن: تجاهل التشكيل والهمزات والألف المقصورة والتاء المربوطة
+      </label>
+      <div id="answerSearchStats" style="margin-top:9px;font-size:13px;line-height:1.9;color:var(--accent-gold,#9a6b1f);background:rgba(184,115,51,0.07);border:1px solid var(--border-subtle,#e2d8c3);border-radius:9px;padding:7px 11px;">اكتب عبارة البحث وستُظلَّل مواضعها في الإجابة تلقائيًا مع عدّاداتها هنا.</div>
+      <div id="answerSearchResults" style="margin-top:10px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+    </div>`;
+  document.body.appendChild(d);
+  // سحب النافذة من شريط رأسها (ماوس ولمس) لتبقى الإجابة وتظليلاتها مرئية
+  const panel = d.querySelector('#answerSearchPanel');
+  const handle = d.querySelector('#answerSearchDragHandle');
+  if (panel && handle) {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      const rect = panel.getBoundingClientRect();
+      panel.style.left = rect.left + 'px';
+      panel.style.top = rect.top + 'px';
+      panel.style.transform = 'none';
+      const offX = e.clientX - rect.left, offY = e.clientY - rect.top;
+      handle.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const w = panel.offsetWidth, h = panel.offsetHeight;
+        let x = ev.clientX - offX, y = ev.clientY - offY;
+        x = Math.max(-w + 90, Math.min(x, window.innerWidth - 90));
+        y = Math.max(0, Math.min(y, window.innerHeight - 44));
+        panel.style.left = x + 'px';
+        panel.style.top = y + 'px';
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+  }
+}
+
+function openAnswerSearch(idx) {
+  _ensureAnswerSearchModal();
+  _clearAnswerHighlights();
+  _answerSearch = { idx: idx, marks: [], current: -1 };
+  const m = document.getElementById('answerSearchModal');
+  m.style.display = 'block';
+  const inp = document.getElementById('answerSearchInput');
+  if (inp) { inp.focus(); if (inp.value.trim().length >= 2) runAnswerSearch(); }
+}
+function closeAnswerSearch() {
+  _clearAnswerHighlights();
+  const m = document.getElementById('answerSearchModal');
+  if (m) m.style.display = 'none';
+  _answerSearch = { idx: null, marks: [], current: -1 };
+}
+function _clearAnswerHighlights() {
+  document.querySelectorAll('mark.ans-hit').forEach(mk => {
+    const parent = mk.parentNode;
+    if (parent) { parent.replaceChild(document.createTextNode(mk.textContent), mk); parent.normalize(); }
+  });
+  _answerSearch.marks = []; _answerSearch.current = -1;
+}
+function _answerContentEl() {
+  const bubble = document.getElementById('chatMsg' + _answerSearch.idx);
+  return bubble ? bubble.querySelector('.message-content') : null;
+}
+function runAnswerSearch() {
+  _clearAnswerHighlights();
+  const stats = document.getElementById('answerSearchStats');
+  const results = document.getElementById('answerSearchResults');
+  const q = (document.getElementById('answerSearchInput')?.value || '').trim();
+  const flex = !!document.getElementById('answerSearchFlex')?.checked;
+  if (results) results.innerHTML = '';
+  if (!q || q.length < 2) { if (stats) stats.textContent = 'اكتب حرفين على الأقل للبحث داخل هذه الإجابة.'; return; }
+  const content = _answerContentEl();
+  if (!content) { if (stats) stats.textContent = 'تعذر العثور على نص الإجابة.'; return; }
+
+  // جمع العقد النصية (عدا أزرار الإجراءات) ثم تظليل كل مواضع العبارة فيها
+  const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      if (node.parentElement && node.parentElement.closest('.chat-msg-actions-bar, .chat-user-msg-actions-bar, button')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  const nq = flex ? _ansNormalize(q) : q;
+  let total = 0;
+  for (const node of nodes) {
+    const text = node.nodeValue;
+    let hay = text, map = null;
+    if (flex) {
+      hay = ''; map = [];
+      for (let i = 0; i < text.length; i++) { const nc = _ansNormChar(text[i]); if (nc) { hay += nc; map.push(i); } }
+    }
+    const spans = [];
+    let pos = 0;
+    while (true) {
+      const hit = hay.indexOf(nq, pos);
+      if (hit < 0) break;
+      const s = flex ? map[hit] : hit;
+      const e = flex ? (map[hit + nq.length - 1] + 1) : (hit + nq.length);
+      spans.push([s, e]); total++;
+      pos = hit + Math.max(nq.length, 1);
+    }
+    if (!spans.length) continue;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    for (const [s, e] of spans) {
+      if (s > last) frag.appendChild(document.createTextNode(text.slice(last, s)));
+      const mk = document.createElement('mark');
+      mk.className = 'ans-hit'; mk.textContent = text.slice(s, e);
+      frag.appendChild(mk);
+      last = e;
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+  }
+  _answerSearch.marks = Array.from(content.querySelectorAll('mark.ans-hit'));
+
+  // عدّادات: مرات الورود، حروف العبارة وكلماتها، والجمل الحاوية لها
+  const plain = content.textContent || '';
+  const np = flex ? _ansNormalize(plain) : plain;
+  const sentences = plain.split(/(?<=[.!؟؛:])\s+|\n+/).map(s => s.trim()).filter(Boolean);
+  let sentHits = [], markCursor = 0;
+  for (const s of sentences) {
+    const ns = flex ? _ansNormalize(s) : s;
+    let c = 0, p = 0;
+    while (true) { const h = ns.indexOf(nq, p); if (h < 0) break; c++; p = h + Math.max(nq.length, 1); }
+    if (c) { sentHits.push({ sentence: s, count: c, firstMark: markCursor }); markCursor += c; }
+  }
+  const wordsCount = q.split(/\s+/).filter(Boolean).length;
+  if (stats) {
+    stats.innerHTML = total
+      ? `وُجدت العبارة <strong>${total}</strong> مرة في هذه الإجابة | عبارة البحث: ${q.length} حرفًا و${wordsCount} ${wordsCount === 1 ? 'كلمة' : 'كلمات'} | وردت في <strong>${sentHits.length}</strong> جملة | تنقّل بالسابق/التالي أو اضغط أي جملة للقفز إلى موضعها.`
+      : 'لا مواضع لهذه العبارة في نص الإجابة. جرّب البحث المرن أو عبارة أقصر.';
+  }
+  if (results && sentHits.length) {
+    results.innerHTML = sentHits.slice(0, 40).map((h, i) =>
+      `<button type="button" onclick="jumpToAnswerMark(${h.firstMark})" style="text-align:right;padding:8px 11px;border:1px solid var(--border-subtle,#ddd);border-radius:9px;background:transparent;cursor:pointer;font-size:12.5px;line-height:1.8;">
+         <span style="color:var(--accent-gold,#9a6b1f);font-weight:700;">${i + 1}.</span> ${escapeHtml(h.sentence.slice(0, 220))}${h.sentence.length > 220 ? '…' : ''} <span style="opacity:0.7;">(${h.count}×)</span>
+       </button>`).join('');
+  }
+  if (_answerSearch.marks.length) jumpToAnswerMark(0);
+}
+function jumpToAnswerMark(i) {
+  const marks = _answerSearch.marks;
+  if (!marks.length) return;
+  _answerSearch.current = ((i % marks.length) + marks.length) % marks.length;
+  marks.forEach((mk, j) => mk.classList.toggle('ans-current', j === _answerSearch.current));
+  marks[_answerSearch.current].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const stats = document.getElementById('answerSearchStats');
+  if (stats && marks.length) stats.innerHTML = stats.innerHTML.replace(/\| الموضع الحالي:.*$/, '') + ` | الموضع الحالي: ${_answerSearch.current + 1} من ${marks.length}`;
+}
+function stepAnswerSearch(dir) { jumpToAnswerMark((_answerSearch.current < 0 ? 0 : _answerSearch.current) + dir); }
+
+async function downloadChatResearchReport(idx) {
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  const msg = session && session.messages ? session.messages[idx] : null;
+  let entry = null;
+  try {
+    const res = await fetch('/api/research-metrics');
+    if (res.ok) {
+      const data = await res.json();
+      const mine = (data.items || []).filter(it => it.chat_id === activeSessionId);
+      entry = mine.length ? mine[mine.length - 1] : null;
+    }
+  } catch (e) { }
+  const L = [];
+  L.push('تقرير بحث — المجتهد');
+  L.push('====================');
+  L.push('');
+  if (entry) {
+    const a = entry.audit || {};
+    const ratio = a.checked ? Math.round(100 * ((a.verified || 0) + (a.relocated || 0)) / a.checked) : null;
+    const failed = entry.agents_failed || [];
+    const disabled = entry.agents_disabled || [];
+    let verdict = 'قوي';
+    if (failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
+    else if (failed.length === 2 || (ratio !== null && ratio < 65) || (a.ijma_unattributed || 0) > 0) verdict = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
+    L.push(`البحث: ${entry.question || '—'}`);
+    L.push(`التاريخ: ${entry.ts || '—'} · المجموعة: ${entry.group || '—'} · نموذج المدير: ${entry.manager_model || '—'}`);
+    L.push(`المدة: ${entry.duration_s ? Math.round(entry.duration_s / 60 * 10) / 10 + ' دقيقة' : '—'} · حروف الجواب: ${entry.answer_chars ?? '—'} · الشواهد: ${entry.witnesses ?? '—'}`);
+    L.push('');
+    L.push('الحكم العام: ' + verdict);
+    L.push('');
+    L.push('أولًا: اكتمال الفريق');
+    L.push(`الوكلاء المرسلون: ${entry.agents_total ?? '—'} · الساقطون تقنيًا: ${failed.length}${failed.length ? ' (' + failed.join('، ') + ')' : ''} · المعطّلون بقرار المستخدم: ${disabled.length}${disabled.length ? ' (' + disabled.join('، ') + ')' : ''}`);
+    if (failed.length) L.push('الساقطون بُنيت أقسامهم على بطاقات شواهدهم وبطاقات الخلاف والمقارنة، والبديل العملي لكل منهم في تقرير هذا البحث من سجل القياس بإحصائيات المجتهد.');
+    if (disabled.length) L.push('المعطّلون قرارك أنت: لم يُطلب منهم شيء ولم يُعوّض دورهم، والبحث مبني على النطاق المقلّص بقرارك.');
+    L.push('');
+    L.push('ثانيًا: مؤشرات التدقيق التوثيقي');
+    L.push(`مفحوص: ${a.checked ?? '—'} · مربوط بحواشيه: ${a.linked ?? '—'} · ثابت: ${a.verified ?? '—'} · في غير موضعه: ${a.relocated ?? '—'} · غير ثابت آليًا: ${a.unverified ?? '—'} · نسبة الثبوت: ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪) · تنبيهات وسيط وحيد: ${a.tier_warnings ?? 0} · دعاوى إجماع: ${a.ijma_flags ?? 0} · اتفاق مطلق بلا نسبة: ${a.ijma_unattributed ?? 0}`);
+    if ((entry.audit_failures || []).length) {
+      L.push('');
+      L.push('مواضع منبّهة من التدقيق (للمراجعة البشرية):');
+      entry.audit_failures.slice(0, 12).forEach(f => L.push(`- «${(f.quote || '').slice(0, 90)}» — ${f.reason || ''}`));
+    }
+    if (entry.audit_record) {
+      L.push('');
+      L.push('ثالثًا: سجل التدقيق الآلي الكامل (كما خرج من المنظومة)');
+      L.push('--------------------------------------------------');
+      L.push(entry.audit_record.replace(/\*\*/g, ''));
+    }
+  } else {
+    L.push('لا سجل قياس محفوظ لهذه الإجابة: إما أنها أُنجزت قبل نظام التقرير المنفصل، أو أنها ليست بحث وكلاء موثقًا.');
+    if (msg) {
+      L.push(`النموذج: ${msg.model || '—'} · المجموعة: ${msg.agent_group || '—'} · زمن الإجابة: ${msg.duration_ms ? Math.round(msg.duration_ms / 1000) + ' ثانية' : '—'} · الشواهد: ${(msg.witnesses || []).length}`);
+    }
+    L.push('لبحوثك القادمة: يخرج هذا الزر تقريرًا كاملًا بمؤشرات التدقيق وتنبيهات الفريق والنطاق.');
+  }
+  L.push('');
+  L.push('تنبيه: التقرير بوصلة تنبيه من مؤشرات آلية، لا بديل عن قراءة متن البحث.');
+  const blob = new Blob(['\ufeff' + L.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const dl = document.createElement('a');
+  dl.href = URL.createObjectURL(blob);
+  dl.download = 'تقرير-بحث-' + (activeSessionId || 'chat') + '.txt';
+  dl.click();
+  URL.revokeObjectURL(dl.href);
+}
+
+function buildChatAgentGroupPayload() {
+  const useAgentGroup = document.getElementById('chatUseAgentGroupCheckbox')?.checked;
+  if (!useAgentGroup) return null;
+  const groups = readChatAgentGroups();
+  const chosen = groups.filter(g => readSelectedChatGroupIds(groups).includes(g.id));
+  const bundles = [];
+  chosen.forEach(grp => {
+    agentsChosenInGroup(grp).forEach(agent => bundles.push({ group: grp, agent }));
+  });
+  if (!bundles.length) return null;
+  const activeAgent = bundles[0].agent;
+  const isMulti = bundles.length > 1;
+  const names = bundles.map(b => b.agent.name).join(' + ');
+  const booksSet = new Set();
+  bundles.forEach(({ agent }) => {
+    const bList = (agent.booksScope && Array.isArray(agent.booksScope)) ? agent.booksScope : (agent.scopeBooks || agent.books || []);
+    bList.forEach(b => { if (b && String(b).trim()) booksSet.add(String(b).trim()); });
+  });
+  const agentBooks = Array.from(booksSet);
+  const groupName = chosen.length === 1 ? chosen[0].name : chosen.map(g => g.name).join(' + ');
+  const unifiedSystemPrompt = isMulti
+    ? bundles.map(b => `### اختصاص وتوجيه الوكيل «${b.agent.name}» من مجموعة «${b.group.name}»:\n${b.agent.systemPrompt || b.agent.desc || ''}`).join('\n\n')
+    : (activeAgent.systemPrompt || '');
+  return {
+    activeAgent,
+    payload: {
+      id: chosen.map(g => g.id).join(','),
+      name: groupName,
+      desc: chosen.map(g => g.desc || '').filter(Boolean).join(' \n'),
+      active_agent: {
+        id: activeAgent.id,
+        name: isMulti ? `فريق الوكلاء المختارين (${bundles.length}): ${names}` : activeAgent.name,
+        desc: isMulti ? bundles.map(b => `[${b.group.name} / ${b.agent.name}]: ${b.agent.desc || ''}`).join(' | ') : (activeAgent.desc || ''),
+        model: activeAgent.model || 'google/gemini-2.5-flash',
+        thinking: activeAgent.thinking || 'medium',
+        system_prompt: unifiedSystemPrompt,
+        books: agentBooks,
+        pool_size: parseInt(activeAgent.poolSize) || 250,
+        top_k: parseInt(activeAgent.topK || activeAgent.top_k || activeAgent.topRerank) || 40,
+        temp: activeAgent.temp !== undefined ? activeAgent.temp : 0.2
+      },
+      disabled_agents: chosen.flatMap(grp => {
+        const chosenIds = new Set(agentsChosenInGroup(grp).map(a => a.id));
+        return (grp.agents || [])
+          .filter(a => a && a.kind !== 'mcp' && !chosenIds.has(a.id))
+          .map(a => ({ name: a.name, desc: a.desc || '' }));
+      }),
+      agents: bundles.map(({ group, agent }) => {
+        const booksList = (agent.booksScope && Array.isArray(agent.booksScope)) ? agent.booksScope : (agent.scopeBooks || agent.books || []);
+        return {
+          id: agent.id,
+          name: agent.name,
+          desc: chosen.length > 1 ? `[${group.name}] ${agent.desc || ''}` : (agent.desc || ''),
+          system_prompt: agent.systemPrompt || agent.system_prompt || '',
+          systemPrompt: agent.systemPrompt || agent.system_prompt || '',
+          model: agent.model || 'google/gemini-2.5-flash',
+          thinking: agent.thinking || 'medium',
+          books: booksList,
+          booksScope: booksList,
+          is_director: !!(agent.is_director || agent.role === 'director' || agent.kind === 'director'),
+          role: agent.role || '',
+          kind: agent.kind || '',
+          search_mode: agent.search_mode || ((agent.use_hybrid === false) ? 'semantic' : 'hybrid'),
+          use_hybrid: agent.use_hybrid !== false,
+          context_tokens: agent.context_tokens || agent.contextTokens || 1048576,
+          extract_count: agent.extract_count || agent.topK || agent.top_k || 80,
+          pool_size: parseInt(agent.poolSize) || 250,
+          top_k: parseInt(agent.topK || agent.top_k || agent.topRerank) || 40,
+          temp: agent.temp !== undefined ? agent.temp : 0.2,
+          scope_summary: booksList.length > 0 ? `${booksList.length} كتاب محدد` : 'شامل المخزن التراثي'
+        };
+      })
+    }
+  };
+}
+
+function readChatMcps() {
+  try {
+    const raw = localStorage.getItem(ownerStorageKey('almojtahed_chat_mcps'));
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter(item => item && item.id && item.url) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function writeChatMcps(list) {
+  localStorage.setItem(ownerStorageKey('almojtahed_chat_mcps'), JSON.stringify(list || []));
+  renderChatMcpList();
+  populateChatAgentGroupsDropdown();
+}
+
+function readSelectedChatMcpIds() {
+  const valid = new Set(readChatMcps().map(item => item.id));
+  try {
+    const raw = localStorage.getItem('almojtahed_chat_selected_mcp_ids');
+    const ids = raw ? JSON.parse(raw) : [];
+    return Array.isArray(ids) ? ids.filter(id => valid.has(id)) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function writeSelectedChatMcpIds(ids) {
+  const valid = new Set(readChatMcps().map(item => item.id));
+  ids = (Array.isArray(ids) ? ids : []).filter(id => valid.has(id));
+  localStorage.setItem('almojtahed_chat_selected_mcp_ids', JSON.stringify(ids));
+  return ids;
+}
+
+function toolsChosenInMcp(mcp) {
+  const tools = Array.isArray(mcp?.tools) ? mcp.tools : [];
+  const raw = localStorage.getItem('almojtahed_chat_selected_mcp_tools_' + mcp.id);
+  if (raw === null) return tools.slice();
+  let names = [];
+  try { names = JSON.parse(raw); } catch (e) { return tools.slice(); }
+  if (!Array.isArray(names)) return tools.slice();
+  return tools.filter(tool => names.includes(tool.name));
+}
+
+function updateChatSourceLabels() {
+  const groups = readChatAgentGroups();
+  const ids = readSelectedChatGroupIds(groups);
+  const label = document.getElementById('chatGroupBtnLabel');
+  if (label) {
+    if (!groups.length) label.textContent = 'لا توجد مجموعات';
+    else if (!ids.length) label.textContent = 'لم تُحدد أي مجموعة';
+    else if (ids.length === 1) label.textContent = groups.find(group => group.id === ids[0])?.name || 'مجموعة';
+    else label.textContent = `${ids.length} مجموعات`;
+  }
+  const badge = document.getElementById('chatGroupCountBadge');
+  if (badge) badge.textContent = `تم تحديد ${ids.length} من أصل ${groups.length} مجموعات`;
+}
+
+function renderChatMcpList() {
+  const box = document.getElementById('chatMcpList');
+  if (!box) return;
+  const list = readChatMcps();
+  box.innerHTML = list.map(mcp => `
+    <div class="chat-mcp-row">
+      <span class="chat-mcp-row-name" title="${escapeHtml(mcp.url)}">${escapeHtml(mcp.name)} · ${(mcp.tools || []).length} فرع</span>
+      <span class="chat-mcp-row-actions">
+        <button type="button" data-mcp-refresh="${escapeHtml(mcp.id)}">تحديث</button>
+        <button type="button" data-mcp-delete="${escapeHtml(mcp.id)}">حذف</button>
+      </span>
+    </div>`).join('');
+}
+
+async function addChatMcp(event) {
+  event.preventDefault();
+  const nameInput = document.getElementById('chatMcpNameInput');
+  const urlInput = document.getElementById('chatMcpUrlInput');
+  const button = document.getElementById('chatMcpAddBtn');
+  const name = (nameInput?.value || '').trim();
+  const url = (urlInput?.value || '').trim();
+  if (!name || !url) {
+    if (typeof showToast === 'function') showToast('اكتب اسم الخادم ورابطه', 2200);
+    return;
+  }
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch('/api/mcp/inspect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await response.json();
+    if (!response.ok || data.status === 'error') {
+      if (typeof showToast === 'function') showToast(data.error || 'تعذر قراءة الخادم', 3500);
+      return;
+    }
+    const list = readChatMcps().filter(item => item.url !== url);
+    list.push({ id: 'mcp_' + Date.now(), name, url, tools: data.tools || [] });
+    writeChatMcps(list);
+    if (nameInput) nameInput.value = '';
+    if (urlInput) urlInput.value = '';
+    if (typeof showToast === 'function') showToast(`أضيف «${name}» وفيه ${(data.tools || []).length} فرع`, 2500);
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('تعذر الاتصال بالخادم', 2500);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function refreshChatMcp(id) {
+  const list = readChatMcps();
+  const mcp = list.find(item => item.id === id);
+  if (!mcp) return;
+  try {
+    const response = await fetch('/api/mcp/inspect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: mcp.url })
+    });
+    const data = await response.json();
+    if (data.status === 'error') {
+      if (typeof showToast === 'function') showToast(data.error || 'تعذر التحديث', 3000);
+      return;
+    }
+    mcp.tools = data.tools || [];
+    writeChatMcps(list);
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('تعذر تحديث الفروع', 2500);
+  }
+}
+
+function deleteChatMcp(id) {
+  const list = readChatMcps().filter(item => item.id !== id);
+  localStorage.setItem(ownerStorageKey('almojtahed_chat_mcps'), JSON.stringify(list));
+  writeSelectedChatMcpIds(readSelectedChatMcpIds().filter(item => item !== id));
+  renderChatMcpList();
+  populateChatAgentGroupsDropdown();
+}
+
+function toggleSingleChatMcp(mcpId, isChecked) {
+  let ids = readSelectedChatMcpIds();
+  if (isChecked) {
+    if (!ids.includes(mcpId)) ids.push(mcpId);
+  } else {
+    ids = ids.filter(id => id !== mcpId);
+  }
+  writeSelectedChatMcpIds(ids);
+  if (ids.length) {
+    const checkbox = document.getElementById('chatUseAgentGroupCheckbox');
+    const container = document.getElementById('chatAgentGroupPicker');
+    if (checkbox) checkbox.checked = true;
+    if (container) container.classList.add('active');
+    localStorage.setItem('almojtahed_chat_use_agent_group', 'true');
+  }
+  document.querySelectorAll('#chatGroupChecklistItems input[data-mcp-id]').forEach(box => {
+    const on = ids.includes(box.getAttribute('data-mcp-id'));
+    box.checked = on;
+    box.closest('.chat-checklist-item')?.classList.toggle('is-selected', on);
+  });
+  updateChatSourceLabels();
+  populateSubAgentsDropdown();
+}
+
+function setMcpForAgents(checked) {
+  localStorage.setItem('almojtahed_mcp_for_agents', checked ? '1' : '0');
+}
+window.setMcpForAgents = setMcpForAgents;
+
+function syncMcpForAgentsCheckbox() {
+  const box = document.getElementById('chatMcpForAgentsCheckbox');
+  if (box) box.checked = localStorage.getItem('almojtahed_mcp_for_agents') === '1';
+}
+window.syncMcpForAgentsCheckbox = syncMcpForAgentsCheckbox;
+
+function toggleChatMcpTool(el) {
+  const mcpId = el.getAttribute('data-mcp-id');
+  const toolName = el.getAttribute('data-tool-name');
+  const mcp = readChatMcps().find(item => item.id === mcpId);
+  if (!mcp) return;
+  let names = toolsChosenInMcp(mcp).map(tool => tool.name);
+  if (el.checked) {
+    if (!names.includes(toolName)) names.push(toolName);
+  } else {
+    names = names.filter(name => name !== toolName);
+  }
+  localStorage.setItem('almojtahed_chat_selected_mcp_tools_' + mcpId, JSON.stringify(names));
+  el.closest('.chat-checklist-item')?.classList.toggle('is-selected', el.checked);
+  updateCombinedSubAgentsUI();
+}
+
+function buildChatMcpPayload() {
+  const useSources = document.getElementById('chatUseAgentGroupCheckbox')?.checked;
+  if (!useSources) return [];
+  const groups = readChatAgentGroups();
+  const selected = new Set(readSelectedChatGroupIds(groups));
+  const servers = [];
+  groups.filter(group => selected.has(group.id)).forEach(group => {
+    (group.agents || []).filter(agent => agent.kind === 'mcp' && agent.enabled !== false && agent.url).forEach(agent => {
+      const tools = toolsChosenInMcp(agent).map(tool => tool.name);
+      if (tools.length) servers.push({ name: agent.name, url: agent.url, tools });
+    });
+  });
+  return servers;
+}
+
+// تعبئة قائمة مجموعات الوكلاء في الشات، مع اختيار أكثر من مجموعة
+function populateChatAgentGroupsDropdown() {
+  const select = document.getElementById('chatAgentGroupSelect');
+  const checkbox = document.getElementById('chatUseAgentGroupCheckbox');
+  const container = document.getElementById('chatAgentGroupPicker');
+  const items = document.getElementById('chatGroupChecklistItems');
+  const groupBtn = document.getElementById('chatGroupDropdownBtn');
+  if (!select) return;
+
+  const groups = readChatAgentGroups();
+  const wrap = document.getElementById('chatGroupSelectWrap');
+  if (!groups.length) {
+    select.innerHTML = '<option value="">لا توجد مجموعات</option>';
+    if (checkbox) checkbox.checked = false;
+    if (container) container.classList.remove('active');
+    if (wrap) wrap.dataset.empty = '1';
+    if (groupBtn) groupBtn.disabled = true;
+    const label = document.getElementById('chatGroupBtnLabel');
+    if (label) label.textContent = 'لا توجد مجموعات';
+    if (items) items.innerHTML = '';
+    populateSubAgentsDropdown();
+    if (typeof renderCompareAgents === 'function') renderCompareAgents();
+    return;
+  }
+
+  if (wrap) wrap.dataset.empty = '0';
+  if (groupBtn) groupBtn.disabled = false;
   const savedEnabled = localStorage.getItem('almojtahed_chat_use_agent_group');
   const isEnabled = savedEnabled === null ? true : (savedEnabled === 'true');
+  const ids = writeSelectedChatGroupIds(readSelectedChatGroupIds(groups));
 
-  select.innerHTML = groups.map(g => {
-    const agentCount = g.agents ? g.agents.length : 0;
-    const isSelected = g.id === savedGroupId;
-    return `<option value="${escapeHtml(g.id)}" ${isSelected ? 'selected' : ''}>${escapeHtml(g.name)} (${agentCount} وكلاء)</option>`;
-  }).join('');
-
-  if (checkbox) {
-    checkbox.checked = isEnabled;
+  if (items) {
+    items.innerHTML = groups.map(g => {
+      const on = ids.includes(g.id);
+      const agentCount = g.agents ? g.agents.length : 0;
+      return `
+        <div class="chat-checklist-item ${on ? 'is-selected' : ''}" onclick="handleChatGroupCheckItemClick(event, '${escapeHtml(g.id)}')">
+          <input type="checkbox" class="chat-agent-item-checkbox" data-group-id="${escapeHtml(g.id)}" ${on ? 'checked' : ''} onclick="event.stopPropagation()" onchange="toggleSingleChatGroup('${escapeHtml(g.id)}', this.checked)">
+          <div class="chat-agent-item-info">
+            <div class="chat-agent-item-name">
+              <span>${escapeHtml(g.name)}</span>
+              <span class="chat-agent-scope-badge">${agentCount} وكلاء</span>
+            </div>
+            <div class="chat-agent-item-desc" title="${escapeHtml(g.desc || '')}">${escapeHtml(g.desc || 'مجموعة وكلاء مساعدين')}</div>
+          </div>
+        </div>`;
+    }).join('');
   }
 
-  // القائمة المنسدلة تظل مفعلة دائماً ليتمكن المستخدم من النقر عليها واستعراض المجموعات بحرية
-  select.disabled = false;
-  select.removeAttribute('disabled');
-
-  if (container) {
-    container.classList.toggle('active', isEnabled);
-  }
-
-  // تعبئة القائمة الفرعية لوكلاء المجموعة المحددة
-  populateSubAgentsDropdown(savedGroupId);
+  if (checkbox) checkbox.checked = isEnabled && ids.length > 0;
+  if (container) container.classList.toggle('active', !!(checkbox && checkbox.checked));
+  populateSubAgentsDropdown();
   if (typeof renderCompareAgents === 'function') renderCompareAgents();
+}
+
+function handleChatGroupCheckItemClick(event, groupId) {
+  const items = document.getElementById('chatGroupChecklistItems');
+  const cb = items?.querySelector(`input[data-group-id="${groupId}"]`);
+  if (!cb) return;
+  toggleSingleChatGroup(groupId, !cb.checked);
+}
+
+function handleChatMcpCheckItemClick(event, mcpId) {
+  const box = document.querySelector(`#chatGroupChecklistItems input[data-mcp-id="${mcpId}"]`);
+  if (!box) return;
+  toggleSingleChatMcp(mcpId, !box.checked);
+}
+
+function toggleSingleChatGroup(groupId, isChecked) {
+  const groups = readChatAgentGroups();
+  let ids = readSelectedChatGroupIds(groups);
+  if (isChecked) {
+    if (!ids.includes(groupId)) ids.push(groupId);
+  } else {
+    ids = ids.filter(id => id !== groupId);
+  }
+  ids = writeSelectedChatGroupIds(ids);
+  const checkbox = document.getElementById('chatUseAgentGroupCheckbox');
+  const container = document.getElementById('chatAgentGroupPicker');
+  if (ids.length && checkbox) {
+    checkbox.checked = true;
+    if (container) container.classList.add('active');
+    localStorage.setItem('almojtahed_chat_use_agent_group', 'true');
+  }
+  populateSubAgentsDropdown();
+}
+
+function selectAllChatGroups(selectAll) {
+  const groups = readChatAgentGroups();
+  const ids = writeSelectedChatGroupIds(selectAll ? groups.map(g => g.id) : []);
+  const checkbox = document.getElementById('chatUseAgentGroupCheckbox');
+  const container = document.getElementById('chatAgentGroupPicker');
+  if (checkbox) {
+    checkbox.checked = ids.length > 0;
+    if (container) container.classList.toggle('active', checkbox.checked);
+    if (checkbox.checked) localStorage.setItem('almojtahed_chat_use_agent_group', 'true');
+  }
+  populateChatAgentGroupsDropdown();
 }
 
 // تعبئة وإدارة القائمة المنسدلة للوكلاء مع دعم التشيك ليست وتحديد أكثر من وكيل
 function populateSubAgentsDropdown(groupId) {
   const subWrap = document.getElementById('chatSubAgentSelectWrap');
-  const btnLabel = document.getElementById('chatSubAgentBtnLabel');
   const itemsContainer = document.getElementById('chatSubAgentChecklistItems');
   const subSelect = document.getElementById('chatSubAgentSelect');
   if (!subWrap) return;
+  syncMcpForAgentsCheckbox();
 
-  let groups = [];
-  try {
-    const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
-    if (raw) groups = JSON.parse(raw);
-  } catch (e) {}
-  if (!groups.length && window.agentGroups) groups = window.agentGroups;
-
-  const currentGroup = groups.find(g => g.id === groupId);
-  if (!currentGroup || !currentGroup.agents || currentGroup.agents.length === 0) {
+  const groups = readChatAgentGroups();
+  if (groupId && groups.some(g => g.id === groupId)) {
+    writeSelectedChatGroupIds([groupId]);
+  }
+  const chosen = groups.filter(g => readSelectedChatGroupIds(groups).includes(g.id) && g.agents && g.agents.length);
+  const mcpChosen = [];
+  chosen.forEach(group => {
+    (group.agents || []).filter(agent => agent.kind === 'mcp' && agent.enabled !== false && (agent.tools || []).length)
+      .forEach(agent => mcpChosen.push(agent));
+  });
+  if (!chosen.length && !mcpChosen.length) {
     subWrap.style.display = 'none';
     if (subSelect) subSelect.innerHTML = '<option value="">لا يوجد وكلاء</option>';
     return;
   }
 
   subWrap.style.display = 'inline-flex';
-
-  // قراءة الوكلاء المحددين سابقاً لهذه المجموعة من التخزين المحلي
-  let selectedIds = [];
-  try {
-    const rawSel = localStorage.getItem('almojtahed_chat_selected_agents_' + groupId);
-    if (rawSel) selectedIds = JSON.parse(rawSel);
-  } catch (e) {}
-
-  // إذا لم يسبق تخصيص، أو كانت القائمة فارغة، نجعل الافتراضي هو تحديد جميع وكلاء المجموعة
-  if (!Array.isArray(selectedIds) || selectedIds.length === 0) {
-    selectedIds = currentGroup.agents.map(a => a.id);
-  }
-
-  // بناء عناصر التشيك ليست داخل القائمة المنسدلة
   let itemsHtml = '';
-  currentGroup.agents.forEach(a => {
-    const isChecked = selectedIds.includes(a.id);
-    const scopeCount = (a.booksScope && a.booksScope.length) ? a.booksScope.length : ((a.books && a.books.length) ? a.books.length : 0);
-    const scopeText = scopeCount > 0 ? `${scopeCount} كتب` : 'شامل التراث';
-
-    itemsHtml += `
-      <div class="chat-checklist-item ${isChecked ? 'is-selected' : ''}" onclick="handleSubAgentCheckItemClick(event, '${escapeHtml(a.id)}')">
-        <input type="checkbox" class="chat-agent-item-checkbox" data-agent-id="${escapeHtml(a.id)}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation()" onchange="toggleSingleSubAgent('${escapeHtml(a.id)}', this.checked)">
-        <div class="chat-agent-item-info">
-          <div class="chat-agent-item-name">
-            <span>${escapeHtml(a.name)}</span>
-            <span class="chat-agent-scope-badge">${escapeHtml(scopeText)}</span>
+  chosen.forEach(group => {
+    const selectedIds = agentsChosenInGroup(group).map(a => a.id);
+    if (chosen.length > 1 || mcpChosen.length) {
+      itemsHtml += `<div class="chat-checklist-group-label">${escapeHtml(group.name)}</div>`;
+    }
+    group.agents.forEach(a => {
+      if (a.kind === 'mcp') return;
+      const isChecked = selectedIds.includes(a.id);
+      const scopeCount = (a.booksScope && a.booksScope.length) ? a.booksScope.length : ((a.books && a.books.length) ? a.books.length : 0);
+      const scopeText = scopeCount > 0 ? `${scopeCount} كتب` : 'شامل التراث';
+      itemsHtml += `
+        <div class="chat-checklist-item ${isChecked ? 'is-selected' : ''}" onclick="handleSubAgentCheckItemClick(event, '${escapeHtml(a.id)}', '${escapeHtml(group.id)}')">
+          <input type="checkbox" class="chat-agent-item-checkbox" data-agent-id="${escapeHtml(a.id)}" data-group-id="${escapeHtml(group.id)}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation()" onchange="toggleSingleSubAgent('${escapeHtml(a.id)}', this.checked, '${escapeHtml(group.id)}')">
+          <div class="chat-agent-item-info">
+            <div class="chat-agent-item-name">
+              <span>${escapeHtml(a.name)}</span>
+              <span class="chat-agent-scope-badge">${escapeHtml(scopeText)}</span>
+            </div>
+            <div class="chat-agent-item-desc" title="${escapeHtml(a.desc || '')}">${escapeHtml(a.desc || 'وكيل مساعد متخصص')}</div>
           </div>
-          <div class="chat-agent-item-desc" title="${escapeHtml(a.desc || '')}">${escapeHtml(a.desc || 'وكيل مساعد متخصص')}</div>
-        </div>
-      </div>
-    `;
+          <button type="button" class="btn-secondary-action" style="font-size: 11px; padding: 4px 10px; white-space: nowrap;" onclick="event.stopPropagation(); editAgentFromChat('${escapeHtml(group.id)}', '${escapeHtml(a.id)}')" title="تعديل بطاقة هذا الوكيل في نافذة الوكلاء الأساسية: النموذج والتفكير والشواهد والكتب والتوجيه والقيادة">تعديل</button>
+        </div>`;
+    });
   });
-
+  mcpChosen.forEach(mcp => {
+    const selectedNames = toolsChosenInMcp(mcp).map(tool => tool.name);
+    itemsHtml += `<div class="chat-checklist-group-label">${escapeHtml(mcp.name)}</div>`;
+    (mcp.tools || []).forEach(tool => {
+      const isChecked = selectedNames.includes(tool.name);
+      itemsHtml += `
+        <div class="chat-checklist-item ${isChecked ? 'is-selected' : ''}">
+          <input type="checkbox" class="chat-agent-item-checkbox" data-mcp-id="${escapeHtml(mcp.id)}" data-tool-name="${escapeHtml(tool.name)}" ${isChecked ? 'checked' : ''} onchange="toggleChatMcpTool(this)">
+          <div class="chat-agent-item-info">
+            <div class="chat-agent-item-name"><span>${escapeHtml(tool.name)}</span></div>
+            <div class="chat-agent-item-desc" title="${escapeHtml(tool.description || '')}">${escapeHtml(tool.description || 'فرع من خادم MCP')}</div>
+          </div>
+        </div>`;
+    });
+  });
   if (itemsContainer) itemsContainer.innerHTML = itemsHtml;
+  updateCombinedSubAgentsUI(chosen);
+}
 
-  // تحديث الزر والشارات والـ Select الخفي
-  updateSubAgentsSelectionUI(currentGroup, selectedIds);
+function updateCombinedSubAgentsUI(chosen) {
+  const groups = chosen || [];
+  let total = 0;
+  let count = 0;
+  groups.forEach(group => {
+    const agents = group.agents || [];
+    total += agents.length;
+    count += agentsChosenInGroup(group).length;
+  });
+  const mcpChosen = [];
+  groups.forEach(group => {
+    (group.agents || []).filter(agent => agent.kind === 'mcp' && agent.enabled !== false).forEach(agent => mcpChosen.push(agent));
+  });
+  let toolTotal = 0;
+  let toolCount = 0;
+  mcpChosen.forEach(mcp => {
+    const tools = mcp.tools || [];
+    toolTotal += tools.length;
+    toolCount += toolsChosenInMcp(mcp).length;
+  });
+  const btnLabel = document.getElementById('chatSubAgentBtnLabel');
+  const countBadge = document.getElementById('chatChecklistCountBadge');
+  const subSelect = document.getElementById('chatSubAgentSelect');
+  const parts = [];
+  if (total) {
+    if (count === 0) parts.push('لم يُحدد وكيل');
+    else if (count === total) parts.push(groups.length > 1 ? `كل الوكلاء (${total})` : `كل وكلاء المجموعة (${total})`);
+    else parts.push(`${count} وكلاء من ${total}`);
+  }
+  if (toolTotal) {
+    if (toolCount === toolTotal) parts.push(`كل فروع MCP (${toolTotal})`);
+    else parts.push(`${toolCount} فروع MCP من ${toolTotal}`);
+  }
+  const labelText = parts.length ? parts.join(' + ') : 'لا توجد فروع';
+  if (btnLabel) btnLabel.textContent = labelText;
+  if (countBadge) countBadge.textContent = `تم تحديد ${count} وكلاء و ${toolCount} فروع`;
+  if (subSelect) {
+    subSelect.innerHTML = `<option value="all" selected>${escapeHtml(labelText)}</option>`;
+    subSelect.value = 'all';
+  }
+  if (typeof refreshDirectorAuthorityUI === 'function') refreshDirectorAuthorityUI();
 }
 
 // تحديث الواجهة التفاعلية لاختيار الوكلاء (نص الزر، العداد، والحفظ)
@@ -1537,20 +2901,20 @@ function updateSubAgentsSelectionUI(currentGroup, selectedIds) {
 }
 
 // النقر على صف كامل داخل التشيك ليست لعكس حالة التحديد
-function handleSubAgentCheckItemClick(event, agentId) {
+function handleSubAgentCheckItemClick(event, agentId, groupId) {
   const itemsContainer = document.getElementById('chatSubAgentChecklistItems');
   if (!itemsContainer) return;
-  const cb = itemsContainer.querySelector(`input[data-agent-id="${agentId}"]`);
+  const cb = groupId
+    ? itemsContainer.querySelector(`input[data-agent-id="${agentId}"][data-group-id="${groupId}"]`)
+    : itemsContainer.querySelector(`input[data-agent-id="${agentId}"]`);
   if (!cb) return;
-
-  const newChecked = !cb.checked;
-  cb.checked = newChecked;
-  toggleSingleSubAgent(agentId, newChecked);
+  const ownerGroup = groupId || cb.getAttribute('data-group-id');
+  toggleSingleSubAgent(agentId, !cb.checked, ownerGroup);
 }
 
 // تبديل اختيار وكيل واحد
-function toggleSingleSubAgent(agentId, isChecked) {
-  const groupId = document.getElementById('chatAgentGroupSelect')?.value;
+function toggleSingleSubAgent(agentId, isChecked, groupId) {
+  groupId = groupId || document.getElementById('chatAgentGroupSelect')?.value;
   if (!groupId) return;
 
   let groups = [];
@@ -1563,11 +2927,13 @@ function toggleSingleSubAgent(agentId, isChecked) {
   if (!currentGroup) return;
 
   let selectedIds = [];
-  try {
-    const rawSel = localStorage.getItem('almojtahed_chat_selected_agents_' + groupId);
-    if (rawSel) selectedIds = JSON.parse(rawSel);
-  } catch (e) {}
-  if (!Array.isArray(selectedIds)) selectedIds = [];
+  const rawSel = localStorage.getItem('almojtahed_chat_selected_agents_' + groupId);
+  if (rawSel === null) {
+    selectedIds = (currentGroup.agents || []).map(a => a.id);
+  } else {
+    try { selectedIds = JSON.parse(rawSel); } catch (e) { selectedIds = []; }
+    if (!Array.isArray(selectedIds)) selectedIds = [];
+  }
 
   if (isChecked) {
     if (!selectedIds.includes(agentId)) selectedIds.push(agentId);
@@ -1578,7 +2944,8 @@ function toggleSingleSubAgent(agentId, isChecked) {
   // تحديث تمييز الصف بصرياً
   const itemsContainer = document.getElementById('chatSubAgentChecklistItems');
   if (itemsContainer) {
-    const cb = itemsContainer.querySelector(`input[data-agent-id="${agentId}"]`);
+    const cb = itemsContainer.querySelector(`input[data-agent-id="${agentId}"][data-group-id="${groupId}"]`)
+      || itemsContainer.querySelector(`input[data-agent-id="${agentId}"]`);
     if (cb) {
       cb.checked = isChecked;
       const row = cb.closest('.chat-checklist-item');
@@ -1587,24 +2954,24 @@ function toggleSingleSubAgent(agentId, isChecked) {
   }
 
   updateSubAgentsSelectionUI(currentGroup, selectedIds);
+  const chosen = readChatAgentGroups().filter(g => readSelectedChatGroupIds(readChatAgentGroups()).includes(g.id));
+  updateCombinedSubAgentsUI(chosen);
 }
 
 // تحديد أو إلغاء تحديد الكل
 function selectAllChatSubAgents(selectAll) {
-  const groupId = document.getElementById('chatAgentGroupSelect')?.value;
-  if (!groupId) return;
-
-  let groups = [];
-  try {
-    const raw = localStorage.getItem(ownerStorageKey('almojtahed_agent_groups'));
-    if (raw) groups = JSON.parse(raw);
-  } catch (e) {}
-  if (!groups.length && window.agentGroups) groups = window.agentGroups;
-  const currentGroup = groups.find(g => g.id === groupId);
-  if (!currentGroup) return;
-
-  const selectedIds = selectAll ? currentGroup.agents.map(a => a.id) : [];
-
+  const groups = readChatAgentGroups();
+  const chosen = groups.filter(g => readSelectedChatGroupIds(groups).includes(g.id));
+  chosen.forEach(group => {
+    const selectedIds = selectAll ? (group.agents || []).map(a => a.id) : [];
+    localStorage.setItem('almojtahed_chat_selected_agents_' + group.id, JSON.stringify(selectedIds));
+  });
+  readChatAgentGroups().filter(group => readSelectedChatGroupIds(readChatAgentGroups()).includes(group.id)).forEach(group => {
+    (group.agents || []).filter(agent => agent.kind === 'mcp').forEach(agent => {
+      const names = selectAll ? (agent.tools || []).map(tool => tool.name) : [];
+      localStorage.setItem('almojtahed_chat_selected_mcp_tools_' + agent.id, JSON.stringify(names));
+    });
+  });
   const itemsContainer = document.getElementById('chatSubAgentChecklistItems');
   if (itemsContainer) {
     itemsContainer.querySelectorAll('.chat-agent-item-checkbox').forEach(cb => {
@@ -1613,8 +2980,7 @@ function selectAllChatSubAgents(selectAll) {
       if (row) row.classList.toggle('is-selected', selectAll);
     });
   }
-
-  updateSubAgentsSelectionUI(currentGroup, selectedIds);
+  updateCombinedSubAgentsUI(chosen);
 }
 
 function placeChatSubAgentsMenu() {
@@ -1637,6 +3003,59 @@ function placeChatSubAgentsMenu() {
   menu.style.zIndex = '100050';
 }
 
+function placeChatGroupsMenu() {
+  const menu = document.getElementById('chatGroupChecklistMenu');
+  const btn = document.getElementById('chatGroupDropdownBtn');
+  if (!menu || !btn || menu.style.display === 'none') return;
+  const rect = btn.getBoundingClientRect();
+  const width = Math.min(420, window.innerWidth - 16);
+  let left = rect.right - width;
+  if (left < 8) left = 8;
+  if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+  const spaceAbove = Math.max(160, rect.top - 12);
+  menu.style.position = 'fixed';
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.right = 'auto';
+  menu.style.top = 'auto';
+  menu.style.bottom = `${Math.round(window.innerHeight - rect.top + 8)}px`;
+  menu.style.width = `${Math.round(width)}px`;
+  menu.style.maxHeight = `${Math.round(spaceAbove)}px`;
+  menu.style.zIndex = '100050';
+}
+
+function toggleChatGroupsDropdown(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const menu = document.getElementById('chatGroupChecklistMenu');
+  const btn = document.getElementById('chatGroupDropdownBtn');
+  if (!menu || btn?.disabled) return;
+  const isOpen = menu.style.display !== 'none';
+  if (isOpen) {
+    closeChatGroupsDropdown();
+    return;
+  }
+  closeSubAgentsDropdown();
+  if (menu.parentElement !== document.body) document.body.appendChild(menu);
+  menu.style.display = 'flex';
+  menu.classList.add('is-portaled');
+  if (btn) btn.classList.add('is-open');
+  placeChatGroupsMenu();
+}
+
+function closeChatGroupsDropdown() {
+  const menu = document.getElementById('chatGroupChecklistMenu');
+  const btn = document.getElementById('chatGroupDropdownBtn');
+  const wrap = document.getElementById('chatGroupSelectWrap');
+  if (menu) {
+    menu.style.display = 'none';
+    menu.classList.remove('is-portaled');
+    if (wrap && menu.parentElement !== wrap) wrap.appendChild(menu);
+  }
+  if (btn) btn.classList.remove('is-open');
+}
+
 function toggleSubAgentsDropdown(event) {
   if (event) {
     event.preventDefault();
@@ -1650,6 +3069,7 @@ function toggleSubAgentsDropdown(event) {
   if (isOpen) {
     closeSubAgentsDropdown();
   } else {
+    closeChatGroupsDropdown();
     if (menu.parentElement !== document.body) document.body.appendChild(menu);
     menu.style.display = 'flex';
     menu.classList.add('is-portaled');
@@ -1673,7 +3093,9 @@ function closeSubAgentsDropdown() {
 if (!window._chatSubAgentMenuBound) {
   window._chatSubAgentMenuBound = true;
   window.addEventListener('resize', placeChatSubAgentsMenu);
+  window.addEventListener('resize', placeChatGroupsMenu);
   document.addEventListener('scroll', placeChatSubAgentsMenu, true);
+  document.addEventListener('scroll', placeChatGroupsMenu, true);
 }
 
 // إغلاق القائمة عند النقر في أي مكان خارجها
@@ -1683,6 +3105,12 @@ document.addEventListener('click', (e) => {
   if (menu && menu.style.display !== 'none') {
     const inside = (wrap && wrap.contains(e.target)) || menu.contains(e.target);
     if (!inside) closeSubAgentsDropdown();
+  }
+  const groupWrap = document.getElementById('chatGroupSelectWrap');
+  const groupMenu = document.getElementById('chatGroupChecklistMenu');
+  if (groupMenu && groupMenu.style.display !== 'none') {
+    const insideGroup = (groupWrap && groupWrap.contains(e.target)) || groupMenu.contains(e.target);
+    if (!insideGroup) closeChatGroupsDropdown();
   }
 });
 
@@ -1707,6 +3135,15 @@ function handleAgentGroupCheckboxToggle() {
   if (!checkbox || !select) return;
 
   const isChecked = checkbox.checked;
+  if (isChecked && !select.value && !readSelectedChatMcpIds().length) {
+    checkbox.checked = false;
+    if (container) container.classList.remove('active');
+    const empty = document.getElementById('chatGroupSelectWrap')?.dataset.empty === '1';
+    if (typeof showToast === 'function') {
+      showToast(empty ? 'لا توجد مجموعات أو خوادم MCP' : 'حدد مجموعة أو خادم MCP', 2500);
+    }
+    return;
+  }
   select.disabled = false;
   select.removeAttribute('disabled');
 
@@ -1722,17 +3159,14 @@ function handleAgentGroupCheckboxToggle() {
   }
   if (!isChecked) {
     closeSubAgentsDropdown();
+    closeChatGroupsDropdown();
   }
 
   localStorage.setItem('almojtahed_chat_use_agent_group', isChecked ? 'true' : 'false');
 
   if (isChecked) {
-    if (!select.value && select.options.length > 0) {
-      select.selectedIndex = 0;
-    }
-    localStorage.setItem('almojtahed_chat_selected_group_id', select.value);
-    populateSubAgentsDropdown(select.value);
-    const selectedText = select.options[select.selectedIndex]?.text || '';
+    populateSubAgentsDropdown();
+    const selectedText = document.getElementById('chatGroupBtnLabel')?.textContent || '';
     if (typeof showToast === 'function') {
       showToast(`تم تفعيل إسناد ومعالجة البحث عبر «${selectedText}»`, 3000);
     }
@@ -1748,25 +3182,13 @@ function handleAgentGroupDropdownChange() {
   const select = document.getElementById('chatAgentGroupSelect');
   const checkbox = document.getElementById('chatUseAgentGroupCheckbox');
   const container = document.getElementById('chatAgentGroupPicker');
-  if (!select) return;
-
-  select.disabled = false;
-  select.removeAttribute('disabled');
-  localStorage.setItem('almojtahed_chat_selected_group_id', select.value);
-
-  // تحديث قائمة الوكلاء التابعة للمجموعة المختارة فوراً
-  populateSubAgentsDropdown(select.value);
-
-  // بمجرد اختيار مجموعة من القائمة، نقوم بتفعيل مربع الاختيار تلقائياً وتنشيط ربط البحث بها
+  if (!select || !select.value) return;
+  writeSelectedChatGroupIds([select.value]);
+  populateChatAgentGroupsDropdown();
   if (checkbox) {
     checkbox.checked = true;
     if (container) container.classList.add('active');
     localStorage.setItem('almojtahed_chat_use_agent_group', 'true');
-  }
-
-  const selectedText = select.options[select.selectedIndex]?.text || '';
-  if (typeof showToast === 'function') {
-    showToast(`تم ربط وتوجيه البحث عبر: ${selectedText}`, 3000);
   }
 }
 
@@ -1780,6 +3202,24 @@ window.closeSubAgentsDropdown = closeSubAgentsDropdown;
 window.selectAllChatSubAgents = selectAllChatSubAgents;
 window.handleSubAgentCheckItemClick = handleSubAgentCheckItemClick;
 window.toggleSingleSubAgent = toggleSingleSubAgent;
+window.toggleChatGroupsDropdown = toggleChatGroupsDropdown;
+window.closeChatGroupsDropdown = closeChatGroupsDropdown;
+window.selectAllChatGroups = selectAllChatGroups;
+window.handleChatGroupCheckItemClick = handleChatGroupCheckItemClick;
+window.toggleSingleChatGroup = toggleSingleChatGroup;
+if (!window._chatMcpListBound) {
+  window._chatMcpListBound = true;
+  document.addEventListener('click', (event) => {
+    const refresh = event.target?.closest?.('[data-mcp-refresh]');
+    const remove = event.target?.closest?.('[data-mcp-delete]');
+    if (refresh) refreshChatMcp(refresh.getAttribute('data-mcp-refresh'));
+    if (remove) deleteChatMcp(remove.getAttribute('data-mcp-delete'));
+  });
+}
+
+window.buildChatAgentGroupPayload = buildChatAgentGroupPayload;
+window.buildChatMcpPayload = buildChatMcpPayload;
+window.addChatMcp = addChatMcp;
 
 function scrollToBottom() {
   const container = document.getElementById('chatMessagesContainer');
@@ -1905,6 +3345,7 @@ function renderScholarlyAnswer(text, scope) {
     return `<a class="chat-fn-ref" id="${refId}" href="#${prefix}fn${western}">(${number})</a>`;
   });
   next = next.replace(/(?:<br\s*\/?>\s*)*<hr\b[^>]*>(?:\s*<br\s*\/?>)*(?=\s*<ol class="chat-fn-list">)/gi, '');
+  next = next.replace(/(^|[>\s])#(\d{2,6})(?=\s)/g, '$1');
   return `<div class="chat-academic">${next}</div>`;
 }
 
@@ -2022,7 +3463,7 @@ function downloadTableAsCSV(btn) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
 
     if (typeof showToast === 'function') {
       showToast('تم تحميل الجدول بصيغة CSV بنجاح');
@@ -2047,6 +3488,7 @@ window.exportChatSessionFile = exportChatSessionFile;
 window.importChatSessionFile = importChatSessionFile;
 window.exportChatMessageHtml = exportChatMessageHtml;
 window.exportChatMessagePdf = exportChatMessagePdf;
+window.prepareChatAnswerShareFile = prepareChatAnswerShareFile;
 window.copyChatMessageText = copyChatMessageText;
 
 // =============================================================================
@@ -2065,11 +3507,11 @@ const CHAT_OUTPUT_TEMPLATES = {
 ## [1] منهجية الحاشية والإحالات ##
 
 أولًا: خرّج الأحاديث تخريجًا كاملاً وفق قواعد التخريج المذكورة أعلاه، وضعها في الحاشية.
-ثانيًا: اذكر مصدر كل قول في الحاشية بذكر: الإحالة القياسية: اسم الكتاب (الجزء-الصفحة) مثل مجموع الفتاوى (2-368).
+ثانيًا: اذكر مصدر كل قول في الحاشية بذكر: اسم الكتاب، مؤلفه، الجزء، الصفحة.
 ثالثًا: اجعل كل مرجع أو تخريج في سطر مستقل كاملًا. لا تفرّق المرجع الواحد في أسطر متعددة، ولا تحشو المراجع جميعها في سطر واحد دون تفريق.
 رابعًا: استخدم الإحالة الصحيحة:
-إذا نقلت نصًا حرفيًا: اكتب الإحالة القياسية وحدها، مثل: مجموع الفتاوى (2-368).
-إذا نقلت بالمعنى: اكتب "ينظر:" ثم الإحالة القياسية، مثل: مجموع الفتاوى (2-368).
+إذا نقلت نصًا حرفيًا: اكتب "انظر:" ثم (الكتاب، صاحبه، الجزء، الصفحة).
+إذا نقلت بالمعنى: اكتب "ينظر:" ثم (الكتاب، صاحبه، الجزء، الصفحة).
 خامسًا: لا تستخدم مسافة الإزاحة (Indentation) في الحاشية إطلاقًا.
 ## [2] التنسيق الطباعي (استخدام وسوم HTML) ##
 أخرج البحث بتنسيق جاهز للطباعة كالبحوث العلمية الشرعية المحكمة باستخدام وسوم HTML التالية بدقة:
@@ -2080,8 +3522,7 @@ const CHAT_OUTPUT_TEMPLATES = {
 التعداد الكتابي: التعداد (أولًا: / ثانيًا:...) تكون كل فقرة منه في سطر مستقل.
 إزاحة الفقرات: استخدم إزاحة بادئة مقدارها 30px من بداية السطر الأول لكل فقرة مستقلة في المتن باستخدام: <p style="text-indent:30px">النص هنا</p>.
 الفقرات: كل فقرة في سطر مستقل، ولا تجعل سطرًا فارغًا بين الفقرات.
-## [3] سرد المصادر والمراجع ##
-اجعل في نهاية البحث قائمة بالمصادر والمراجع على الطريقة الأكاديمية، مرتبة هجائيًا، بذكر: اسم المصدر، مؤلفه، محققه، رقم الطبعة، الناشر، مدينة النشر، سنة الطبع.`,
+الحاشية هي التوثيق الوحيد لما نُقل في المتن. لا تُنشئ بعد الحواشي قائمة مصادر ومراجع.`,
 
   tafsir: `اذا طلب منك المستخدم إخراج البحث وترتيبه قم بالتالي:
 نص الآية الكريمة وسياقها: إيراد الآيات محل التفسير والبيان وضبط ألفاظها.
@@ -2095,11 +3536,11 @@ const CHAT_OUTPUT_TEMPLATES = {
 ## [1] منهجية الحاشية والإحالات ##
 
 أولًا: خرّج الأحاديث والآثار المروية عن السلف تخريجًا كاملاً مع بيان درجتها في الحاشية.
-ثانيًا: اذكر مصدر كل قول وتفسير في الحاشية بذكر: الإحالة القياسية: اسم الكتاب (الجزء-الصفحة) مثل مجموع الفتاوى (2-368).
+ثانيًا: اذكر مصدر كل قول وتفسير في الحاشية بذكر: اسم الكتاب، مؤلفه، الجزء، الصفحة.
 ثالثًا: اجعل كل مرجع أو تخريج في سطر مستقل كاملًا. لا تفرّق المرجع الواحد في أسطر متعددة، ولا تحشو المراجع جميعها في سطر واحد دون تفريق.
 رابعًا: استخدم الإحالة الصحيحة:
-إذا نقلت نصًا حرفيًا: اكتب الإحالة القياسية وحدها، مثل: مجموع الفتاوى (2-368).
-إذا نقلت بالمعنى: اكتب "ينظر:" ثم الإحالة القياسية، مثل: مجموع الفتاوى (2-368).
+إذا نقلت نصًا حرفيًا: اكتب "انظر:" ثم (الكتاب، صاحبه، الجزء، الصفحة).
+إذا نقلت بالمعنى: اكتب "ينظر:" ثم (الكتاب، صاحبه، الجزء، الصفحة).
 خامسًا: لا تستخدم مسافة الإزاحة (Indentation) في الحاشية إطلاقًا.
 ## [2] التنسيق الطباعي (استخدام وسوم HTML) ##
 أخرج البحث بتنسيق جاهز للطباعة كالبحوث العلمية الشرعية المحكمة باستخدام وسوم HTML التالية بدقة:
@@ -2110,8 +3551,7 @@ const CHAT_OUTPUT_TEMPLATES = {
 التعداد الكتابي: التعداد (أولًا: / ثانيًا:...) تكون كل فقرة منه في سطر مستقل.
 إزاحة الفقرات: استخدم إزاحة بادئة مقدارها 30px من بداية السطر الأول لكل فقرة مستقلة في المتن باستخدام: <p style="text-indent:30px">النص هنا</p>.
 الفقرات: كل فقرة في سطر مستقل، ولا تجعل سطرًا فارغًا بين الفقرات.
-## [3] سرد المصادر والمراجع ##
-اجعل في نهاية البحث قائمة بالمصادر والمراجع على الطريقة الأكاديمية، مرتبة هجائيًا، بذكر: اسم المصدر، مؤلفه، محققه، رقم الطبعة، الناشر، مدينة النشر، سنة الطبع.`,
+الحاشية هي التوثيق الوحيد لما نُقل في المتن. لا تُنشئ بعد الحواشي قائمة مصادر ومراجع.`,
 
   hadith: `اذا طلب منك المستخدم إخراج البحث وترتيبه قم بالتالي:
 نص الحديث وألفاظه ورواياته: إيراد متن الحديث مع رصد الفروق اللفظية والزيادات في الروايات.
@@ -2128,8 +3568,8 @@ const CHAT_OUTPUT_TEMPLATES = {
 ثانيًا: اذكر نقول أئمة الجرح والتعديل في الحاشية معزوّة إلى مصادرها الأصيلة.
 ثالثًا: اجعل كل مرجع أو تخريج في سطر مستقل كاملًا. لا تفرّق المرجع الواحد في أسطر متعددة، ولا تحشو المراجع جميعها في سطر واحد دون تفريق.
 رابعًا: استخدم الإحالة الصحيحة:
-إذا نقلت نصًا حرفيًا: اكتب الإحالة القياسية وحدها، مثل: مجموع الفتاوى (2-368).
-إذا نقلت بالمعنى: اكتب "ينظر:" ثم الإحالة القياسية، مثل: مجموع الفتاوى (2-368).
+إذا نقلت نصًا حرفيًا: اكتب "انظر:" ثم (الكتاب، صاحبه، الجزء، الصفحة).
+إذا نقلت بالمعنى: اكتب "ينظر:" ثم (الكتاب، صاحبه، الجزء، الصفحة).
 خامسًا: لا تستخدم مسافة الإزاحة (Indentation) في الحاشية إطلاقًا.
 ## [2] التنسيق الطباعي (استخدام وسوم HTML) ##
 أخرج البحث بتنسيق جاهز للطباعة كالبحوث العلمية الشرعية المحكمة باستخدام وسوم HTML التالية بدقة:
@@ -2140,8 +3580,7 @@ const CHAT_OUTPUT_TEMPLATES = {
 التعداد الكتابي: التعداد (أولًا: / ثانيًا:...) تكون كل فقرة منه في سطر مستقل.
 إزاحة الفقرات: استخدم إزاحة بادئة مقدارها 30px من بداية السطر الأول لكل فقرة مستقلة في المتن باستخدام: <p style="text-indent:30px">النص هنا</p>.
 الفقرات: كل فقرة في سطر مستقل، ولا تجعل سطرًا فارغًا بين الفقرات.
-## [3] سرد المصادر والمراجع ##
-اجعل في نهاية البحث قائمة بالمصادر والمراجع على الطريقة الأكاديمية، مرتبة هجائيًا، بذكر: اسم المصدر، مؤلفه، محققه، رقم الطبعة، الناشر، مدينة النشر، سنة الطبع.`,
+الحاشية هي التوثيق الوحيد لما نُقل في المتن. لا تُنشئ بعد الحواشي قائمة مصادر ومراجع.`,
 
   isnad_tree: `اذا طلب منك المستخدم دراسة الإسناد أو رسم شجرة الأسانيد وشبكات الرواة قم بالتالي:
 ## [1] التخريج الموسع وجمع الطرق ##
@@ -2195,7 +3634,7 @@ const CHAT_OUTPUT_TEMPLATES = {
 ## [5] الحكم النهائي والعلل الخفية ##
 بيان العلة القادحة إن وجدت، والحكم الجازم على ثبوت الحديث أو إعلاله، مع توثيق تراجم الرواة وأقوال النقاد في الحاشية.
 ## [6] منهجية الحاشية ##
-اذكر مصادر تراجم الرواة (تهذيب الكمال، سير أعلام النبلاء، التقريب) وكتب العلل في الحاشية بذكر: الإحالة القياسية: اسم الكتاب (الجزء-الصفحة) مثل مجموع الفتاوى (2-368).`,
+اذكر مصادر تراجم الرواة (تهذيب الكمال، سير أعلام النبلاء، التقريب) وكتب العلل في الحاشية بذكر: اسم الكتاب، مؤلفه، الجزء، الصفحة.`,
 
   markmap: `اذا طلب منك المستخدم تشجير المسألة أو عرض الأقوال والاختلافات في خريطة ذهنية (Markmap) قم بالتالي:
 ## [1] الخريطة الذهنية والشجرة التفاعلية (Markmap) ##
@@ -2242,7 +3681,7 @@ const CHAT_OUTPUT_TEMPLATES = {
 3. الترجيح المعتمد على القواعد الفقهية ومقاصد الشريعة.
 
 ## [3] منهجية الحاشية والمصادر ##
-توثيق كل قول ودليل في الحاشية بذكر: الإحالة القياسية: اسم الكتاب (الجزء-الصفحة) مثل مجموع الفتاوى (2-368) وفق القواعد الأكاديمية المعتمدة.`,
+توثيق كل قول ودليل في الحاشية بذكر: اسم الكتاب، مؤلفه، الجزء، الصفحة، وفق قواعد الإخراج القياسي.`,
 
   isnad: `اذا طلب منك المستخدم إخراج البحث وترتيبه قم بالتالي:
 توصيف الحديث ومصدره: إيراد الحديث المسند موضوع الدراسة مع ذكر مخرجه وصحابيه.
@@ -2256,7 +3695,7 @@ const CHAT_OUTPUT_TEMPLATES = {
 أولًا: اذكر مصادر تراجم الرواة في الحاشية من كتب الرجال المعتمدة (الجرح والتعديل لابن أبي حاتم، تهذيب الكمال للمزي، ميزان الاعتدال للذهبي، التقريب لابن حجر).
 ثانيًا: اذكر نصوص أقوال النقاد ومواضع الاختلاف من كتب العلل (علل الدارقطني، علل ابن أبي حاتم، العلل للترمذي وأحمد).
 ثالثًا: اجعل كل مرجع أو تخريج في سطر مستقل كاملًا.
-رابعًا: الإحالة القياسية وحدها: مجموع الفتاوى (2-368). تُمنع الشرطة المائلة والأرقام العربية وعكس الترتيب ووضع اسم الكتاب داخل القوس.
+رابعًا: إذا نقلت نصًا حرفيًا: اكتب "انظر:" ثم (الكتاب، صاحبه، الجزء، الصفحة). وإذا نقلت بالمعنى: اكتب "ينظر:" ثم (الكتاب، صاحبه، الجزء، الصفحة).
 ## [2] التنسيق الطباعي ##
 أخرج البحث بتنسيق جاهز للطباعة كالبحوث العلمية الشرعية المحكمة باستخدام وسوم HTML بدقة.`,
 
@@ -2271,7 +3710,7 @@ const CHAT_OUTPUT_TEMPLATES = {
 الخلاصة والتقرير: صياغة التقرير العقدي الصافي المحرر في المسألة.
 ## [1] منهجية الحاشية والإحالات ##
 أولًا: خرّج الأحاديث والآثار العقدية تخريجًا دقيقًا مع بيان حكم أئمة الشأن عليها في الحاشية.
-ثانيًا: اذكر مصدر كل قول ونقل في الحاشية من أمهات كتب السنة والاعتقاد (الرد على الجهمية، شرح أصول اعتقاد أهل السنة للالكائي، الإبانة، الحجة في بيان المحجة، مجموع الفتاوى) بذكر: الإحالة القياسية: اسم الكتاب (الجزء-الصفحة) مثل مجموع الفتاوى (2-368).
+ثانيًا: اذكر مصدر كل قول ونقل في الحاشية من أمهات كتب السنة والاعتقاد (الرد على الجهمية، شرح أصول اعتقاد أهل السنة للالكائي، الإبانة، الحجة في بيان المحجة، مجموع الفتاوى) بذكر: اسم الكتاب، مؤلفه، الجزء، الصفحة.
 ثالثًا: اجعل كل مرجع أو تخريج في سطر مستقل كاملًا.`
 };
 
@@ -2364,10 +3803,709 @@ function applyChatOutputTemplate(type, inputId) {
 // دوال تشغيل الأدوات التفاعلية (Markmap + Vis.js Network) داخل فقاعات الشات
 // =============================================================================
 window._chatMarkmaps = window._chatMarkmaps || {};
+window._chatMarkmapRoots = window._chatMarkmapRoots || {};
+window._chatG6 = window._chatG6 || {};
 window._chatIsnads = window._chatIsnads || {};
+
+const ECHART_FONTS = [
+  ['Amiri', 'أميري'],
+  ['Noto Naskh Arabic', 'نسخ نوتو'],
+  ['Noto Kufi Arabic', 'كوفي نوتو'],
+  ['Noto Sans Arabic', 'نوتو'],
+  ['Cairo', 'القاهرة'],
+  ['Tajawal', 'تجوال'],
+  ['IBM Plex Sans Arabic', 'بلكس عربي'],
+  ['Readex Pro', 'ريدكس'],
+  ['Scheherazade New', 'شهرزاد'],
+  ['Lateef', 'لطيف'],
+  ['Aref Ruqaa', 'عارف رقعة'],
+  ['El Messiri', 'المسيري'],
+  ['Almarai', 'المراعي'],
+  ['Markazi Text', 'مركزي'],
+  ['Reem Kufi', 'ريم كوفي'],
+  ['Changa', 'تشانغا'],
+  ['Lemonada', 'ليمونادة'],
+  ['Mirza', 'ميرزا'],
+  ['Harmattan', 'هرمتان']
+];
+
+const ISLAMAP_SEA_COLOR = '#1d4e89';
+
+const ECHART_BACKGROUNDS = [
+  ['#f7f3ec', 'رملي'],
+  ['#ffffff', 'أبيض'],
+  ['#fbf6ea', 'كريمي'],
+  ['#f3e6c8', 'عاجي'],
+  ['#efe2c9', 'ورقي'],
+  ['#f8efe9', 'زهري'],
+  ['#e7f0f6', 'سماوي'],
+  ['#2563eb', 'أزرق'],
+  [ISLAMAP_SEA_COLOR, 'أزرق بحري'],
+  ['#e7f3ec', 'نعناعي'],
+  ['#f3eef8', 'لافندر'],
+  ['#1c1917', 'ليلي'],
+  ['#292524', 'فحمي'],
+  ['#1e293b', 'كحلي'],
+  ['#1c2b24', 'زيتي'],
+  ['#3f2e22', 'بني']
+];
+
+const ECHART_KIND_LABELS = {
+  multi: 'عدة رسوم مناسبة',
+  bar: 'أعمدة',
+  line: 'خطي',
+  pie: 'دائري',
+  scatter: 'نقطي',
+  radar: 'رادار',
+  heatmap: 'حراري',
+  tree: 'شجرة',
+  treemap: 'تريماب',
+  sunburst: 'طبقات دائرية',
+  sankey: 'سانكي',
+  funnel: 'قمع',
+  gauge: 'مقياس',
+  graph: 'شبكة علاقات'
+};
+
+const ECHART_EXAMPLES = [
+  { id: 'original', group: 'هذا الرسم', label: 'الأصلي', note: 'الألوان كما رسمها النموذج، بلا استبدال.' },
+  { id: 'sand', group: 'ألوان الرسم', label: 'رملي', note: 'ألوان ترابية دافئة على الرسم نفسه.', colors: ['#8c6a43', '#c4a574', '#5c7a6e', '#a65d4e', '#6b7c93', '#b08968'] },
+  { id: 'ink', group: 'ألوان الرسم', label: 'حبري', note: 'درجات الحبر والرماد على الرسم نفسه.', colors: ['#1c1917', '#57534e', '#a8a29e', '#44403c', '#78716c', '#d6d3d1'] },
+  { id: 'sea', group: 'ألوان الرسم', label: 'بحري', note: 'أزرق وأخضر بحري على الرسم نفسه.', colors: ['#0f4c5c', '#1b6b7a', '#2a9d8f', '#5fa8d3', '#1d3557', '#457b9d'] },
+  { id: 'earth', group: 'ألوان الرسم', label: 'ترابي', note: 'بني وأخضر وذهبي على الرسم نفسه.', colors: ['#6b3e26', '#a65d3f', '#c4a35a', '#3f6b4a', '#8c5a3c', '#d4b483'] },
+  { id: 'night', group: 'ألوان الرسم', label: 'ليلي', note: 'ألوان فاتحة تُقرأ على الخلفية الداكنة.', colors: ['#f5d0a9', '#7eb6d6', '#e07a5f', '#81b29a', '#f2cc8f', '#e6e1d8'] }
+];
+
+function echartEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function echartExampleOptions() {
+  const groups = [];
+  ECHART_EXAMPLES.forEach((item) => {
+    let group = groups.find((entry) => entry.label === item.group);
+    if (!group) {
+      group = { label: item.group, items: [] };
+      groups.push(group);
+    }
+    group.items.push(item);
+  });
+  return groups.map((group) => `
+    <optgroup label="${echartEscape(group.label)}">
+      ${group.items.map((item) => `<option value="${item.id}"${item.id === 'original' ? ' selected' : ''}>${echartEscape(item.label)}</option>`).join('')}
+    </optgroup>
+  `).join('');
+}
+
+function echartExample(id) {
+  return ECHART_EXAMPLES.find((item) => item.id === id) || ECHART_EXAMPLES[0];
+}
+
+function echartInk(color) {
+  const hex = String(color || '').replace('#', '');
+  if (hex.length < 6) return '#44403c';
+  const red = parseInt(hex.slice(0, 2), 16);
+  const green = parseInt(hex.slice(2, 4), 16);
+  const blue = parseInt(hex.slice(4, 6), 16);
+  const light = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+  return light > 0.62 ? '#44403c' : '#f5f5f4';
+}
+
+function ensureEchartFont(name) {
+  const id = `echart-font-${String(name).replace(/\s+/g, '-')}`;
+  if (!document.getElementById(id)) {
+    const link = document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(name)}:wght@300;400;500;700;800&display=swap`;
+    document.head.appendChild(link);
+  }
+  const spec = `400 16px "${name}"`;
+  return (document.fonts && document.fonts.load) ? document.fonts.load(spec).catch(() => {}) : Promise.resolve();
+}
+
+function echartTextStyle(wrapper) {
+  const font = wrapper.querySelector('[data-echart-font]');
+  const sizeEl = wrapper.querySelector('[data-echart-size]');
+  const weightEl = wrapper.querySelector('[data-echart-weight]');
+  const family = font ? font.value : 'Amiri';
+  const size = Number(sizeEl && sizeEl.value) || 16;
+  const weight = (weightEl && weightEl.value) || '700';
+  return {
+    fontFamily: `"${family}", Amiri, Tajawal, sans-serif`,
+    fontSize: size,
+    fontWeight: weight
+  };
+}
+
+function applyEchartBackground(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!wrapper) return;
+  const select = wrapper.querySelector('[data-echart-bg]');
+  const color = (select && select.value) || '#f7f3ec';
+  const ink = echartInk(color);
+  wrapper._bg = color;
+  const host = wrapper.querySelector('.echart-host');
+  if (host) host.style.background = color;
+  if (select) {
+    select.style.background = color;
+    select.style.color = ink;
+    const trigger = select.closest('.theme-select') && select.closest('.theme-select').querySelector('.theme-select-trigger');
+    if (trigger) {
+      trigger.style.background = color;
+      trigger.style.color = ink;
+    }
+  }
+  if (chart) chart.setOption({ backgroundColor: color });
+}
+
+function applyEchartType(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart) return Promise.resolve();
+  const font = wrapper.querySelector('[data-echart-font]');
+  const family = font ? font.value : 'Amiri';
+  const text = echartTextStyle(wrapper);
+  const small = Object.assign({}, text, { fontSize: Math.max(11, text.fontSize - 2) });
+  return ensureEchartFont(family).then(() => {
+    if (!wrapper.isConnected || wrapper._echart !== chart) return;
+    const current = chart.getOption() || {};
+    const patch = { textStyle: text, tooltip: { textStyle: text } };
+    ['xAxis', 'yAxis', 'radiusAxis', 'angleAxis'].forEach((key) => {
+      if (!Array.isArray(current[key])) return;
+      patch[key] = current[key].map(() => ({ axisLabel: small, nameTextStyle: text }));
+    });
+    if (Array.isArray(current.title)) {
+      patch.title = current.title.map(() => ({
+        textStyle: Object.assign({}, text, { fontSize: text.fontSize + 2 }),
+        subtextStyle: small
+      }));
+    }
+    if (Array.isArray(current.legend)) patch.legend = current.legend.map(() => ({ textStyle: text }));
+    if (Array.isArray(current.radar)) patch.radar = current.radar.map(() => ({ axisName: small, name: small }));
+    if (Array.isArray(current.series)) patch.series = current.series.map(() => ({ label: small }));
+    chart.setOption(patch);
+    chart.resize();
+  });
+}
+
+function paintEchartSeries(series, palette, index) {
+  const color = palette[index % palette.length];
+  const next = { itemStyle: { color }, lineStyle: { color } };
+  if (series && series.areaStyle) next.areaStyle = { color };
+  const kind = series && series.type;
+  if (Array.isArray(series.data) && /pie|funnel/.test(kind || '')) {
+    next.data = series.data.map((item, itemIndex) => {
+      const slice = palette[itemIndex % palette.length];
+      if (item && typeof item === 'object' && !Array.isArray(item)) return { itemStyle: { color: slice } };
+      return item;
+    });
+    delete next.itemStyle;
+  }
+  return next;
+}
+
+function applyEchartExample(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart || !wrapper._option) return;
+  const select = wrapper.querySelector('[data-echart-example]');
+  const example = echartExample(select && select.value);
+  echartWriteDetail(wrapper);
+  if (!example.colors) {
+    chart.setOption(JSON.parse(JSON.stringify(wrapper._option)), { notMerge: true });
+    applyEchartBackground(wrapper);
+    applyEchartType(wrapper);
+    return;
+  }
+  const current = chart.getOption() || {};
+  const series = (current.series || []).map((item, index) => paintEchartSeries(item, example.colors, index));
+  chart.setOption({ color: example.colors, series });
+  chart.resize();
+}
+
+function resetEchartView(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart || !wrapper._option) return;
+  chart.setOption(JSON.parse(JSON.stringify(wrapper._option)), { notMerge: true });
+  applyEchartExample(wrapper);
+}
+
+function fitEchart(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart) return;
+  chart.resize();
+  const zoom = (chart.getOption() || {}).dataZoom || [];
+  zoom.forEach((_, index) => {
+    chart.dispatchAction({ type: 'dataZoom', dataZoomIndex: index, start: 0, end: 100 });
+  });
+}
+
+function echartVisualTitle(wrapper, fallback) {
+  const titleNode = wrapper && wrapper.querySelector('.chart-render-title span:last-child');
+  return ((titleNode && titleNode.textContent) || fallback).trim() || fallback;
+}
+
+async function shareEchartImage(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart || typeof window.shareCapturedImage !== 'function') return;
+  const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: wrapper._bg || '#f7f3ec' });
+  let blob = null;
+  try { blob = await (await fetch(url)).blob(); } catch (err) { blob = null; }
+  await window.shareCapturedImage(blob, echartVisualTitle(wrapper, 'رسم'), 'تعذر تجهيز صورة الرسم للمشاركة');
+}
+
+function downloadEchartShot(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart) return;
+  const title = echartVisualTitle(wrapper, 'رسم');
+  const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: wrapper._bg || '#f7f3ec' });
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${title}.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function echartWriteDetail(wrapper) {
+  const detail = wrapper && wrapper.querySelector('.echart-detail');
+  if (!detail) return;
+  const example = echartExample((wrapper.querySelector('[data-echart-example]') || {}).value);
+  const kind = ECHART_KIND_LABELS[wrapper._kind] || '';
+  detail.textContent = kind ? `النوع: ${kind}. ${example.note}` : example.note;
+}
+
+function echartCurrentKind(option) {
+  const series = [].concat((option && option.series) || []);
+  const kind = series[0] && series[0].type;
+  return ECHART_KIND_LABELS[kind] ? kind : 'bar';
+}
+
+function echartKindOptions(selected) {
+  return Object.keys(ECHART_KIND_LABELS)
+    .filter((id) => id !== 'multi')
+    .map((id) => `<option value="${id}"${id === selected ? ' selected' : ''}>${echartEscape(ECHART_KIND_LABELS[id])}</option>`)
+    .join('');
+}
+
+function echartTitleText(option) {
+  const title = option && option.title;
+  const item = Array.isArray(title) ? title[0] : title;
+  return (item && item.text) || 'رسم';
+}
+
+function echartRows(option) {
+  const opt = option || {};
+  const seriesList = [].concat(opt.series || []);
+  const xAxis = [].concat(opt.xAxis || [])[0] || {};
+  const yAxis = [].concat(opt.yAxis || [])[0] || {};
+  const categories = Array.isArray(xAxis.data) ? xAxis.data.map(String)
+    : (Array.isArray(yAxis.data) ? yAxis.data.map(String) : []);
+  const rows = [];
+  const push = (name, value, series) => {
+    const label = String(name || '').trim();
+    if (!label) return;
+    rows.push({ name: label, value: Number(value) || 0, series: series || '' });
+  };
+  seriesList.forEach((series) => {
+    const name = series.name || '';
+    const data = Array.isArray(series.data) ? series.data : [];
+    if (series.type === 'radar') {
+      const indicators = [].concat((opt.radar && opt.radar.indicator) || []);
+      data.forEach((item) => {
+        const values = (item && item.value) || [];
+        indicators.forEach((ind, index) => push((ind && ind.name) || ind, values[index], (item && item.name) || name));
+      });
+      return;
+    }
+    if (series.type === 'heatmap') {
+      data.forEach((item) => {
+        if (!Array.isArray(item)) return;
+        const x = categories[item[0]] || item[0];
+        push(`${x} / ${item[1]}`, item[2], name);
+      });
+      return;
+    }
+    if (series.type === 'tree' || series.type === 'treemap' || series.type === 'sunburst') {
+      const walk = (node) => {
+        if (!node || typeof node !== 'object') return;
+        if (node.name != null && node.value != null) push(node.name, node.value, name);
+        (node.children || []).forEach(walk);
+      };
+      data.forEach(walk);
+      return;
+    }
+    if (series.type === 'sankey') {
+      (series.links || []).forEach((link) => push(`${link.source} ← ${link.target}`, link.value, name));
+      return;
+    }
+    if (series.type === 'graph') {
+      const links = series.links || series.edges || [];
+      if (links.length) links.forEach((link) => push(`${link.source} — ${link.target}`, link.value || 1, name));
+      else data.forEach((node) => push(node.name || node.id, node.value || 1, name));
+      return;
+    }
+    data.forEach((item, index) => {
+      if (typeof item === 'number') push(categories[index] || name || index + 1, item, name);
+      else if (Array.isArray(item)) push(categories[index] || item[0], item[1], name);
+      else if (item && typeof item === 'object') push(item.name || categories[index] || index + 1, item.value, name);
+    });
+  });
+  return rows;
+}
+
+function buildEchartOption(source, type) {
+  const rows = echartRows(source);
+  if (!rows.length) return null;
+  const title = echartTitleText(source);
+  const names = [];
+  rows.forEach((row) => { if (!names.includes(row.name)) names.push(row.name); });
+  const groups = [];
+  rows.forEach((row) => {
+    let group = groups.find((item) => item.name === row.series);
+    if (!group) {
+      group = { name: row.series, rows: [] };
+      groups.push(group);
+    }
+    group.rows.push(row);
+  });
+  const split = groups.length > 1 && groups.every((group) => group.name);
+  const base = {
+    backgroundColor: source.backgroundColor || '#f7f3ec',
+    title: { text: title, right: 0 },
+    textStyle: { fontFamily: 'Amiri, Tajawal, sans-serif', fontSize: 16, fontWeight: '700' }
+  };
+  const valueOf = (group, name) => {
+    const found = group.rows.find((row) => row.name === name);
+    return found ? found.value : 0;
+  };
+  if (type === 'bar' || type === 'line' || type === 'scatter') {
+    const categories = split ? names : rows.map((row) => row.name);
+    const unique = [];
+    categories.forEach((name) => { if (!unique.includes(name)) unique.push(name); });
+    const packs = split ? groups : [{ name: '', rows }];
+    return Object.assign(base, {
+      tooltip: { trigger: 'axis' },
+      legend: split ? { bottom: 0 } : undefined,
+      xAxis: { type: 'category', data: unique },
+      yAxis: { type: 'value' },
+      series: packs.map((group) => ({
+        name: group.name || undefined,
+        type,
+        data: unique.map((name, index) => (type === 'scatter' ? [index, valueOf(group, name)] : valueOf(group, name)))
+      }))
+    });
+  }
+  if (type === 'pie' || type === 'funnel') {
+    const data = split
+      ? groups.map((group) => ({ name: group.name, value: group.rows.reduce((sum, row) => sum + row.value, 0) }))
+      : rows.map((row) => ({ name: row.name, value: row.value }));
+    return Object.assign(base, {
+      tooltip: { trigger: 'item' },
+      legend: { bottom: 0 },
+      series: [{
+        type,
+        data,
+        radius: type === 'pie' ? '62%' : undefined,
+        left: type === 'funnel' ? '12%' : undefined,
+        width: type === 'funnel' ? '76%' : undefined
+      }]
+    });
+  }
+  if (type === 'radar') {
+    const packs = split ? groups : [{ name: title, rows }];
+    const indicators = names.map((name) => ({
+      name,
+      max: Math.max(1, ...rows.filter((row) => row.name === name).map((row) => row.value)) * 1.15
+    }));
+    return Object.assign(base, {
+      tooltip: {},
+      legend: { bottom: 0 },
+      radar: { indicator: indicators },
+      series: [{
+        type: 'radar',
+        data: packs.map((group) => ({ name: group.name || title, value: names.map((name) => valueOf(group, name)) }))
+      }]
+    });
+  }
+  if (type === 'gauge') {
+    const top = rows.slice().sort((a, b) => b.value - a.value)[0];
+    return Object.assign(base, {
+      series: [{ type: 'gauge', min: 0, max: Math.max(top.value, 1), detail: { formatter: '{value}' }, data: [{ name: top.name, value: top.value }] }]
+    });
+  }
+  if (type === 'heatmap') {
+    const max = Math.max(1, ...rows.map((row) => row.value));
+    return Object.assign(base, {
+      tooltip: { position: 'top' },
+      xAxis: { type: 'category', data: names },
+      yAxis: { type: 'category', data: ['القيمة'] },
+      visualMap: { min: 0, max, calculable: true, orient: 'horizontal', left: 'center', bottom: 0 },
+      series: [{ type: 'heatmap', data: names.map((name, index) => [index, 0, valueOf({ rows }, name)]), label: { show: true } }]
+    });
+  }
+  if (type === 'tree') {
+    return Object.assign(base, {
+      series: [{
+        type: 'tree',
+        data: [{ name: title, children: rows.map((row) => ({ name: `${row.name}: ${row.value}` })) }],
+        top: '12%', bottom: '12%', left: '18%', right: '22%',
+        symbolSize: 9,
+        label: { position: 'right' }
+      }]
+    });
+  }
+  if (type === 'treemap' || type === 'sunburst') {
+    return Object.assign(base, {
+      series: [{
+        type,
+        data: rows.map((row) => ({ name: row.name, value: Math.abs(row.value) })),
+        radius: type === 'sunburst' ? ['12%', '78%'] : undefined
+      }]
+    });
+  }
+  if (type === 'sankey') {
+    const sink = names.includes(title) ? `${title} · المجموع` : title;
+    return Object.assign(base, {
+      series: [{
+        type: 'sankey',
+        data: [{ name: sink }].concat(names.map((name) => ({ name }))),
+        links: rows.map((row) => ({ source: row.name, target: sink, value: Math.max(Math.abs(row.value) || 0, 0.01) })),
+        emphasis: { focus: 'adjacency' },
+        lineStyle: { curveness: 0.5 }
+      }]
+    });
+  }
+  if (type === 'graph') {
+    return Object.assign(base, {
+      series: [{
+        type: 'graph',
+        layout: 'force',
+        roam: true,
+        label: { show: true },
+        force: { repulsion: 220 },
+        data: [{ name: title, id: 'center', symbolSize: 46 }].concat(rows.map((row, index) => ({
+          name: row.name, id: `n${index}`, value: row.value, symbolSize: 26
+        }))),
+        links: rows.map((row, index) => ({ source: 'center', target: `n${index}` }))
+      }]
+    });
+  }
+  return null;
+}
+
+function applyEchartKind(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  const select = wrapper && wrapper.querySelector('[data-echart-kind]');
+  const type = select && select.value;
+  if (!chart || !wrapper._sourceOption || !type || type === wrapper._kind) return;
+  const sourceKind = echartCurrentKind(wrapper._sourceOption);
+  const next = type === sourceKind
+    ? JSON.parse(JSON.stringify(wrapper._sourceOption))
+    : buildEchartOption(wrapper._sourceOption, type);
+  if (!next) {
+    if (select) {
+      select.value = wrapper._kind || sourceKind;
+      select.dispatchEvent(new CustomEvent('theme-select-sync'));
+    }
+    if (typeof showToast === 'function') showToast('تعذر تحويل هذا الرسم إلى النوع المختار');
+    return;
+  }
+  wrapper._kind = type;
+  wrapper._option = JSON.parse(JSON.stringify(next));
+  chart.setOption(next, { notMerge: true });
+  const code = wrapper.querySelector('.echart-code code');
+  if (code) code.textContent = JSON.stringify(next, null, 2);
+  applyEchartBackground(wrapper);
+  const example = wrapper.querySelector('[data-echart-example]');
+  if (example && example.value !== 'original') applyEchartExample(wrapper);
+  else applyEchartType(wrapper);
+  echartWriteDetail(wrapper);
+  requestAnimationFrame(() => { if (wrapper._echart) wrapper._echart.resize(); });
+}
+
+function renderEchartsBlocks(container) {
+  if (!container || !window.echarts) return;
+  container.querySelectorAll('pre code').forEach((codeEl, idx) => {
+    const cls = codeEl.className || '';
+    if (!/echarts/i.test(cls)) return;
+    const pre = codeEl.closest('pre');
+    if (!pre || pre.dataset.renderedEcharts === '1') return;
+    let option;
+    try {
+      option = JSON.parse(codeEl.innerText.trim().replace(/,\s*([}\]])/g, '$1'));
+    } catch (e) {
+      return;
+    }
+    if (!option || typeof option !== 'object') return;
+    if (option.option && typeof option.option === 'object') option = option.option;
+    pre.dataset.renderedEcharts = '1';
+    const hostId = `echart_${Date.now()}_${idx}`;
+    const title = (option.title && (option.title.text || option.title.subtext)) || 'رسم ECharts';
+    const box = document.createElement('div');
+    box.className = 'chart-render-wrapper echart-render-wrapper';
+    box.innerHTML = `
+      <div class="chart-render-header">
+        <div class="chart-render-title"><span>📈</span><span>${escapeHtml(String(title))}</span></div>
+        <div class="force3d-tools">
+          <label class="force3d-example-label">
+            <span>النوع</span>
+            <select data-echart-kind dir="rtl">${echartKindOptions(echartCurrentKind(option))}</select>
+          </label>
+          <label class="force3d-example-label">
+            <span>المثال</span>
+            <select data-echart-example dir="rtl">${echartExampleOptions()}</select>
+          </label>
+          <label class="force3d-example-label">
+            <span>الخط</span>
+            <select data-echart-font dir="rtl">
+              ${ECHART_FONTS.map(([name, label]) => `<option value="${echartEscape(name)}"${name === 'Amiri' ? ' selected' : ''}>${echartEscape(label)}</option>`).join('')}
+            </select>
+          </label>
+          <label class="force3d-example-label">
+            <span>الحجم</span>
+            <select data-echart-size dir="rtl">
+              ${[12, 14, 16, 18, 20, 24, 28, 32].map((size) => `<option value="${size}"${size === 16 ? ' selected' : ''}>${size}</option>`).join('')}
+            </select>
+          </label>
+          <label class="force3d-example-label">
+            <span>المقاس</span>
+            <select data-echart-weight dir="rtl">
+              <option value="300">نحيف</option>
+              <option value="400">عادي</option>
+              <option value="500">متوسط</option>
+              <option value="700" selected>عريض</option>
+              <option value="800">ثقيل</option>
+            </select>
+          </label>
+          <label class="force3d-example-label">
+            <span>الخلفية</span>
+            <select data-echart-bg dir="rtl">
+              ${ECHART_BACKGROUNDS.map(([color, label]) => `<option value="${color}"${color === '#f7f3ec' ? ' selected' : ''}>${echartEscape(label)}</option>`).join('')}
+            </select>
+          </label>
+          <button type="button" class="btn-chart-type" data-echart-share="1" title="مشاركة">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+            <span>مشاركة</span>
+          </button>
+          <button type="button" class="btn-chart-type" data-echart-fit="1">ملاءمة</button>
+          <button type="button" class="btn-chart-type" data-echart-reset="1">إعادة</button>
+          <button type="button" class="btn-chart-type force3d-shot" data-echart-shot="1" title="لقطة للرسم">
+            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M9.2 4.5 10.6 6h2.8l1.4-1.5H17a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2h2.2ZM12 8.2A3.8 3.8 0 1 0 15.8 12 3.8 3.8 0 0 0 12 8.2Zm0 1.6A2.2 2.2 0 1 1 9.8 12 2.2 2.2 0 0 1 12 9.8Z"/></svg>
+            <span>لقطة</span>
+          </button>
+          <button type="button" class="btn-chart-type" data-echart-expand="1">تكبير</button>
+          <button type="button" class="btn-chart-type echart-close" data-echart-close="1">إغلاق</button>
+          <button type="button" class="btn-chart-type" data-echart-code="1">الكود</button>
+        </div>
+      </div>
+      <div id="${hostId}" class="echart-host"></div>
+      <div class="echart-detail">${echartEscape(ECHART_EXAMPLES[0].note)}</div>
+      <div class="echart-code" hidden></div>
+    `;
+    pre.parentNode.insertBefore(box, pre);
+    pre.hidden = false;
+    box.querySelector('.echart-code').appendChild(pre);
+    try {
+      const chart = window.echarts.init(document.getElementById(hostId));
+      option.backgroundColor = option.backgroundColor || '#f7f3ec';
+      option.textStyle = Object.assign({ fontFamily: 'Amiri, Tajawal, sans-serif', fontSize: 16, fontWeight: '700' }, option.textStyle || {});
+      box._option = JSON.parse(JSON.stringify(option));
+      box._sourceOption = JSON.parse(JSON.stringify(option));
+      box._kind = echartCurrentKind(option);
+      chart.setOption(option);
+      box._echart = chart;
+      window._chatEcharts = window._chatEcharts || {};
+      window._chatEcharts[hostId] = chart;
+      applyEchartBackground(box);
+      applyEchartType(box);
+      echartWriteDetail(box);
+      setTimeout(() => chart.resize(), 80);
+    } catch (err) {
+      console.warn('ECharts render error:', err);
+    }
+  });
+}
+
+function setEchartExpanded(wrapper, expanded) {
+  const chart = wrapper && wrapper._echart;
+  if (!wrapper) return;
+  if (expanded) {
+    if (!wrapper.classList.contains('is-expanded')) {
+      wrapper._homeParent = wrapper.parentNode;
+      wrapper._homeNext = wrapper.nextSibling;
+      document.body.appendChild(wrapper);
+    }
+    wrapper.classList.add('is-expanded');
+  } else {
+    wrapper.classList.remove('is-expanded');
+    if (wrapper._homeParent) wrapper._homeParent.insertBefore(wrapper, wrapper._homeNext);
+  }
+  requestAnimationFrame(() => { if (chart) chart.resize(); });
+}
+
+if (!window._echartClicksBound) {
+  window._echartClicksBound = true;
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-echart-share], [data-echart-fit], [data-echart-reset], [data-echart-shot], [data-echart-expand], [data-echart-close], [data-echart-code]');
+    if (!button) return;
+    const wrapper = button.closest('.echart-render-wrapper');
+    if (!wrapper) return;
+    event.preventDefault();
+    if (button.dataset.echartFit) {
+      fitEchart(wrapper);
+      return;
+    }
+    if (button.dataset.echartReset) {
+      resetEchartView(wrapper);
+      return;
+    }
+    if (button.dataset.echartShare) {
+      shareEchartImage(wrapper);
+      return;
+    }
+    if (button.dataset.echartShot) {
+      downloadEchartShot(wrapper);
+      return;
+    }
+    if (button.dataset.echartCode) {
+      const code = wrapper.querySelector('.echart-code');
+      if (code) code.hidden = !code.hidden;
+      return;
+    }
+    setEchartExpanded(wrapper, button.dataset.echartClose ? false : !wrapper.classList.contains('is-expanded'));
+  });
+  document.addEventListener('change', (event) => {
+    const control = event.target.closest('[data-echart-kind], [data-echart-example], [data-echart-font], [data-echart-size], [data-echart-weight], [data-echart-bg]');
+    if (!control) return;
+    const wrapper = control.closest('.echart-render-wrapper');
+    if (!wrapper) return;
+    if (control.matches('[data-echart-kind]')) {
+      applyEchartKind(wrapper);
+      return;
+    }
+    if (control.matches('[data-echart-bg]')) {
+      applyEchartBackground(wrapper);
+      return;
+    }
+    if (control.matches('[data-echart-example]')) {
+      applyEchartExample(wrapper);
+      return;
+    }
+    applyEchartType(wrapper);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const open = document.querySelector('.echart-render-wrapper.is-expanded');
+    if (open) setEchartExpanded(open, false);
+  });
+}
 
 function autoRenderChatInteractiveWidgets(container) {
   if (!container) return;
+  renderEchartsBlocks(container);
+  renderIslamapBlocks(container);
 
   // 1. توليد وتشغيل خرائط التشجير والخرائط الذهنية Markmap التفاعلية
   if (window.markmap && window.markmap.Markmap) {
@@ -2390,7 +4528,9 @@ function autoRenderChatInteractiveWidgets(container) {
             <span>🧠</span>
             <span>أداة التشجير والخرائط الذهنية (Markmap) — عرض الأقوال والاختلافات</span>
           </div>
-          <div style="display: flex; gap: 6px; align-items: center;">
+          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="btn-msg-export" data-tree-switch="${mapId}" data-engine="markmap" style="font-size:11px; padding:3px 8px; background: var(--accent-clay); color: #fff;" onclick="showChatTreeEngine('${mapId}', 'markmap')">تشجير</button>
+            <button type="button" class="btn-msg-export" data-tree-switch="${mapId}" data-engine="g6" style="font-size:11px; padding:3px 8px;" onclick="showChatTreeEngine('${mapId}', 'g6')">تشجير مفرغ</button>
             <button type="button" class="btn-msg-export" style="font-size:11px; padding:3px 8px;" onclick="zoomChatMarkmap('${mapId}', 1.25)" title="تكبير الخريطة">🔍+ تكبير</button>
             <button type="button" class="btn-msg-export" style="font-size:11px; padding:3px 8px;" onclick="zoomChatMarkmap('${mapId}', 0.8)" title="تصغير الخريطة">🔍- تصغير</button>
             <button type="button" class="btn-msg-export" style="font-size:11px; padding:3px 8px;" onclick="fitChatMarkmap('${mapId}')" title="ملاءمة الشاشة">⛶ ملاءمة</button>
@@ -2399,6 +4539,7 @@ function autoRenderChatInteractiveWidgets(container) {
         </div>
         <div style="height: 380px; width: 100%; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-muted); overflow: hidden; position: relative;">
           <svg id="${mapId}" style="width: 100%; height: 100%; display: block;"></svg>
+          <div id="${mapId}_g6" style="display: none; width: 100%; height: 100%;"></div>
         </div>
         <div id="${mapId}_code" style="display: none; margin-top: 8px;"></div>
       `;
@@ -2417,6 +4558,7 @@ function autoRenderChatInteractiveWidgets(container) {
         if (svgEl) {
           const mm = Markmap.create(svgEl, { autoFit: true, duration: 300 }, root);
           window._chatMarkmaps[mapId] = mm;
+          window._chatMarkmapRoots[mapId] = root;
         }
       } catch (err) {
         console.warn('Markmap render error in chat:', err);
@@ -2519,18 +4661,104 @@ function autoRenderChatInteractiveWidgets(container) {
   }
 }
 
-function zoomChatMarkmap(mapId, factor) {
-  const mm = window._chatMarkmaps && window._chatMarkmaps[mapId];
-  if (mm && typeof mm.rescale === 'function') {
-    mm.rescale(factor);
+function g6TreeLabel(value) {
+  const clean = String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!clean) return '—';
+  return clean.length > 42 ? clean.slice(0, 40) + '…' : clean;
+}
+
+function markmapToG6(node, path) {
+  const label = g6TreeLabel(node && (node.content || (node.payload && node.payload.content)));
+  const children = Array.isArray(node && node.children) ? node.children : [];
+  const row = { id: path, label };
+  if (children.length) row.children = children.map((child, index) => markmapToG6(child, path + '-' + index));
+  return row;
+}
+
+function chatTreeEngine(mapId) {
+  const host = document.getElementById(mapId + '_g6');
+  return host && host.style.display !== 'none' ? 'g6' : 'markmap';
+}
+
+function renderChatG6(mapId) {
+  const existing = window._chatG6 && window._chatG6[mapId];
+  if (existing) {
+    const box = existing.getContainer();
+    existing.changeSize(box.clientWidth, box.clientHeight);
+    existing.fitView(24);
+    return;
   }
+  const root = window._chatMarkmapRoots && window._chatMarkmapRoots[mapId];
+  const host = document.getElementById(mapId + '_g6');
+  if (!root || !host || !window.G6 || typeof window.G6.TreeGraph !== 'function') return;
+  const data = markmapToG6(root, 'root');
+  const graph = new window.G6.TreeGraph({
+    container: host,
+    width: host.clientWidth || 640,
+    height: host.clientHeight || 380,
+    fitView: true,
+    fitViewPadding: 24,
+    animate: true,
+    modes: { default: ['drag-canvas', 'zoom-canvas', 'collapse-expand'] },
+    defaultNode: {
+      type: 'rect',
+      style: { fill: '#f4efe6', stroke: '#b7aa96', radius: 8, lineWidth: 1 },
+      labelCfg: {
+        position: 'center',
+        style: { fill: '#1c1917', fontSize: 13, fontFamily: 'Almarai, Amiri, sans-serif', textAlign: 'center' }
+      }
+    },
+    defaultEdge: { type: 'cubic-horizontal', style: { stroke: '#a8a29e' } },
+    layout: {
+      type: 'compactBox',
+      direction: 'RL',
+      getId: (node) => node.id,
+      getHeight: () => 32,
+      getWidth: (node) => Math.min(380, Math.max(104, String(node.label || '').length * 13 + 28)),
+      getVGap: () => 14,
+      getHGap: () => 48
+    }
+  });
+  graph.data(data);
+  graph.render();
+  graph.fitView(24);
+  window._chatG6[mapId] = graph;
+}
+
+function showChatTreeEngine(mapId, engine) {
+  const svg = document.getElementById(mapId);
+  const host = document.getElementById(mapId + '_g6');
+  if (svg) svg.style.display = engine === 'g6' ? 'none' : 'block';
+  if (host) host.style.display = engine === 'g6' ? 'block' : 'none';
+  document.querySelectorAll('[data-tree-switch="' + mapId + '"]').forEach((button) => {
+    const active = button.dataset.engine === engine;
+    button.style.background = active ? 'var(--accent-clay)' : '';
+    button.style.color = active ? '#fff' : '';
+  });
+  if (engine === 'g6') renderChatG6(mapId);
+  else fitChatMarkmap(mapId);
+}
+
+function zoomChatMarkmap(mapId, factor) {
+  if (chatTreeEngine(mapId) === 'g6') {
+    const graph = window._chatG6 && window._chatG6[mapId];
+    if (!graph) return;
+    const box = graph.getContainer().getBoundingClientRect();
+    graph.zoom(factor, { x: box.width / 2, y: box.height / 2 });
+    return;
+  }
+  const mm = window._chatMarkmaps && window._chatMarkmaps[mapId];
+  if (mm && typeof mm.rescale === 'function') mm.rescale(factor);
 }
 
 function fitChatMarkmap(mapId) {
-  const mm = window._chatMarkmaps && window._chatMarkmaps[mapId];
-  if (mm && typeof mm.fit === 'function') {
-    mm.fit();
+  if (chatTreeEngine(mapId) === 'g6') {
+    const graph = window._chatG6 && window._chatG6[mapId];
+    if (graph) graph.fitView(24);
+    return;
   }
+  const mm = window._chatMarkmaps && window._chatMarkmaps[mapId];
+  if (mm && typeof mm.fit === 'function') mm.fit();
 }
 
 function fitChatIsnad(treeId) {
@@ -2554,13 +4782,19 @@ function setChatSendLocked(locked) {
   const button = document.getElementById('btnSendChat');
   const stop = document.getElementById('btnStopChat');
   const select = document.querySelector('select.chat-graph-kind-fixed');
+  const chartSelect = document.querySelector('select.chat-echart-kind-fixed');
+  const mapSelect = document.querySelector('select.chat-islamap-kind-fixed');
   const tableButton = document.getElementById('btnChatTable');
   if (button) button.disabled = !!locked;
   if (stop) stop.disabled = !locked;
   if (tableButton) tableButton.disabled = !!locked;
   if (select) select.disabled = !!locked;
-  const trigger = select && select.closest('.theme-select') && select.closest('.theme-select').querySelector('.theme-select-trigger');
-  if (trigger) trigger.disabled = !!locked;
+  if (chartSelect) chartSelect.disabled = !!locked;
+  if (mapSelect) mapSelect.disabled = !!locked;
+  [select, chartSelect, mapSelect].forEach((node) => {
+    const trigger = node && node.closest('.theme-select') && node.closest('.theme-select').querySelector('.theme-select-trigger');
+    if (trigger) trigger.disabled = !!locked;
+  });
 }
 
 function startChatRun() {
@@ -2741,6 +4975,7 @@ async function requestChatTable() {
       headers: { 'Content-Type': 'application/json' },
       signal: control.signal,
       body: JSON.stringify({
+        chat_id: (typeof activeSessionId !== 'undefined' ? activeSessionId : null),
         model: selectedModel,
         provider: activeProvider,
         api_key: savedKeys[activeProvider] || '',
@@ -2778,6 +5013,1470 @@ async function requestChatTable() {
 }
 
 window.requestChatTable = requestChatTable;
+
+function stripChartFences(text) {
+  return String(text || '').replace(/```(?:echarts|islamap)[\s\S]*?```/gi, '').trim();
+}
+
+function echartInstruction(type) {
+  const label = ECHART_KIND_LABELS[type] || 'الرسم';
+  const fence = '```echarts';
+  const kindRule = type === 'multi'
+    ? 'أخرج من رسمين إلى ثلاثة إذا احتملت النتيجة أكثر من زاوية، كل رسم في كتلة ' + fence + ' مستقلة، وseries.type مختلف في كل كتلة من: bar, line, pie, scatter, radar, heatmap, tree, treemap, sunburst, sankey, funnel, gauge, graph.'
+    : 'أخرج رسماً واحداً فقط عنوانه «' + label + '» في كتلة ' + fence + ' واحدة، وseries.type يساوي ' + type + '.';
+  return `${kindRule}
+لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء.
+لا تضف رقماً ولا اسماً ليس في النتيجة، ولا تنسخ مثالاً جاهزاً.
+لا تكتب أي كلمة خارج كتل echarts.
+كل كتلة خيار Apache ECharts صالح فيه title.text بالعربية وseries.`;
+}
+
+async function requestChatEcharts(type) {
+  if (chatGraphBusy) return;
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const source = session && [...session.messages].reverse().find(item => item.role === 'assistant' && !item.chart_kind && !item.map_kind && stripChartFences(item.content).length > 40);
+  if (!source) {
+    if (typeof showToast === 'function') showToast('لا توجد نتيجة سابقة لرسمها');
+    return;
+  }
+  const control = startChatRun();
+  const container = document.getElementById('chatMessagesContainer');
+  const typingBubble = document.createElement('div');
+  typingBubble.className = 'message-bubble assistant';
+  typingBubble.innerHTML = `
+    <div class="message-avatar">مج</div>
+    <div class="message-content">
+      <span class="graph-wait-note">جارٍ الرسم، فضلاً انتظر</span>
+    </div>
+  `;
+  if (container) {
+    container.appendChild(typingBubble);
+    if (typeof scrollToBottom === 'function') scrollToBottom();
+  }
+  const material = stripChartFences(source.content).slice(0, 24000);
+  const selectedModel = document.getElementById('chatModelSelect')?.value
+    || localStorage.getItem('almojtahed_active_chat_model')
+    || 'anthropic/claude-3.7-sonnet';
+  const activeProvider = localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter';
+  let savedKeys = {};
+  try { savedKeys = readProviderKeys(); } catch (e) {}
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: control.signal,
+      body: JSON.stringify({
+        model: selectedModel,
+        provider: activeProvider,
+        api_key: savedKeys[activeProvider] || '',
+        thinking_level: currentThinkingLevel,
+        use_hybrid: false,
+        graph_only: true,
+        messages: [{ role: 'user', content: `النتيجة المراد رسمها:\n${material}` }],
+        system_prompt: echartInstruction(type),
+        temperature: 0.2,
+        providers: savedKeys,
+        agent_group: null
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'تعذر الرسم');
+    if (typingBubble.parentNode) typingBubble.remove();
+    session.messages.push({
+      role: 'assistant',
+      content: data.reply || 'تعذر إظهار الرسم.',
+      model: data.model || selectedModel,
+      provider: data.provider || activeProvider,
+      chart_kind: type
+    });
+    saveChatSessions();
+    renderSessionMessages(activeSessionId);
+  } catch (err) {
+    if (typingBubble.parentNode) typingBubble.remove();
+    if (chatStopped(err)) {
+      if (typeof showToast === 'function') showToast('تم الإيقاف');
+    } else if (typeof showToast === 'function') showToast(err.message || 'تعذر الرسم');
+  } finally {
+    endChatRun();
+  }
+}
+
+function insertEchartKind(select) {
+  const type = select.value;
+  select.value = '';
+  select.dispatchEvent(new CustomEvent('theme-select-sync'));
+  if (!type) return;
+  requestChatEcharts(type);
+}
+
+window.insertEchartKind = insertEchartKind;
+window.requestChatEcharts = requestChatEcharts;
+
+const ISLAMAP_KIND_LABELS = {
+  distribution: 'توزيع جغرافي',
+  madhhab: 'توزيع جغرافي',
+  cities: 'مدن ومراكز',
+  routes: 'غزوات وفتوحات ورحلات',
+  futuh: 'غزوات وفتوحات ورحلات',
+  ghazawat: 'غزوات وفتوحات ورحلات'
+};
+
+const ISLAMAP_CATEGORY_COLORS = ['#dc2626', '#16a34a', '#2563eb', '#f97316', '#eab308', '#7c3aed', '#0891b2', '#db2777'];
+
+const ISLAMAP_REGIONS = [
+  ['andalus', 'الأندلس', 'M40,190 L130,165 L155,210 L140,270 L50,255 Z', 90, 220],
+  ['maghreb', 'المغرب', 'M150,175 L250,160 L270,230 L240,285 L145,270 L155,215 Z', 200, 225],
+  ['ifriqiya', 'إفريقية', 'M250,165 L340,160 L355,240 L300,290 L245,270 L255,210 Z', 295, 225],
+  ['egypt', 'مصر', 'M340,175 L430,160 L455,230 L430,310 L350,300 L330,240 Z', 390, 240],
+  ['sham', 'الشام', 'M400,105 L510,90 L530,160 L455,185 L395,155 Z', 460, 140],
+  ['jazira', 'الجزيرة', 'M500,100 L590,90 L610,155 L530,170 L495,140 Z', 550, 130],
+  ['iraq', 'العراق', 'M520,175 L640,160 L660,245 L560,270 L500,220 Z', 590, 215],
+  ['hijaz', 'الحجاز', 'M430,250 L520,235 L545,320 L490,390 L430,360 L415,290 Z', 475, 310],
+  ['yemen', 'اليمن', 'M470,380 L575,365 L590,455 L490,470 L455,420 Z', 520, 420],
+  ['fars', 'فارس', 'M650,165 L770,150 L790,245 L670,265 L640,210 Z', 710, 205],
+  ['khurasan', 'خراسان', 'M740,115 L870,100 L890,190 L760,210 L730,160 Z', 810, 155],
+  ['transoxiana', 'ما وراء النهر', 'M800,45 L960,35 L970,120 L830,140 L790,90 Z', 880, 85],
+  ['sind', 'السند', 'M840,200 L970,185 L980,290 L860,305 L830,240 Z', 900, 245],
+  ['anatolia', 'آسيا الصغرى', '', 0, 0],
+  ['kurdistan', 'كردستان', '', 0, 0],
+  ['azerbaijan', 'أذربيجان', '', 0, 0],
+  ['khwarizm', 'خوارزم', '', 0, 0],
+  ['daylam', 'الديلم', '', 0, 0],
+  ['jibal', 'الجبال', '', 0, 0],
+  ['kirman', 'كرمان', '', 0, 0],
+  ['khuzistan', 'خوزستان', '', 0, 0],
+  ['oman', 'عمان', '', 0, 0],
+  ['hadramawt', 'حضرموت', '', 0, 0],
+  ['bahrayn', 'البحرين', '', 0, 0],
+  ['filastin', 'فلسطين', '', 0, 0],
+  ['urdunn', 'الأردن', '', 0, 0]
+];
+
+const ISLAMAP_CITIES = [
+  ['qurtuba', 'قرطبة', -4.78, 37.88],
+  ['fas', 'فاس', -5.0, 34.03],
+  ['qayrawan', 'القيروان', 10.1, 35.68],
+  ['fustat', 'الفسطاط', 31.23, 30.0],
+  ['cairo', 'القاهرة', 31.24, 30.05],
+  ['dimashq', 'دمشق', 36.29, 33.51],
+  ['quds', 'القدس', 35.23, 31.78],
+  ['makka', 'مكة', 39.83, 21.42],
+  ['madina', 'المدينة', 39.61, 24.47],
+  ['sanaa', 'صنعاء', 44.21, 15.35],
+  ['kufa', 'الكوفة', 44.4, 32.03],
+  ['basra', 'البصرة', 47.78, 30.51],
+  ['baghdad', 'بغداد', 44.37, 33.31],
+  ['mawsil', 'الموصل', 43.14, 36.34],
+  ['rayy', 'الري', 51.43, 35.59],
+  ['naysabur', 'نيسابور', 58.8, 36.21],
+  ['bukhara', 'بخارى', 64.42, 39.77],
+  ['samarqand', 'سمرقند', 66.97, 39.65],
+  ['mansura', 'المنصورة', 68.42, 25.92],
+  ['tarsus', 'طرسوس', 34.895, 36.917],
+  ['cilicia', 'درب كليكيا', 34.761, 37.268],
+  ['heraclea', 'هرقلة', 34.046, 37.513],
+  ['amorium', 'عمورية', 31.302, 39.025],
+  ['edirne', 'أدرنة', 26.556, 41.677],
+  ['constantinople', 'القسطنطينية', 28.979, 41.008],
+  ['landwalls', 'الأسوار البرية', 28.923, 41.029],
+  ['rumeli', 'روملي حصاري', 29.056, 41.085],
+  ['anadolu', 'أناضولو حصاري', 29.067, 41.082],
+  ['bosphorus', 'البوسفور', 29.062, 41.084],
+  ['tophane', 'طوب خانه', 28.988, 41.031],
+  ['galata', 'غلطة', 28.974, 41.026],
+  ['goldenhorn', 'الخليج الذهبي', 28.96, 41.032],
+  ['hornmouth', 'فم الخليج', 28.978, 41.023],
+  ['levantsea', 'بحر الشام', 34.6, 35.4, true],
+  ['aegean', 'بحر إيجه', 25.6, 37.8, true],
+  ['dardanelles', 'الدردنيل', 26.39, 40.2, true],
+  ['marmara', 'بحر مرمرة', 28.35, 40.88, true],
+  ['redsea', 'البحر الأحمر', 38.5, 20.2, true],
+  ['persian', 'بحر فارس', 51.8, 27.2, true],
+  ['indian', 'المحيط الهندي', 65.0, 15.0, true],
+  ['westmed', 'غرب المتوسط', 12.5, 36.5, true],
+  ['blacksea', 'البحر الأسود', 34.0, 43.0, true],
+  ['caspian', 'بحر الخزر', 50.5, 42.0, true],
+  ['atlantic', 'المحيط الأطلسي', -12.0, 33.0, true],
+  ['aden', 'خليج عدن', 46.5, 12.4, true],
+  ['wasit', 'واسط', 45.75, 32.51],
+  ['isfahan', 'أصفهان', 51.68, 32.65],
+  ['shiraz', 'شيراز', 52.54, 29.59],
+  ['hamadan', 'همذان', 48.51, 34.80],
+  ['tabriz', 'تبريز', 46.29, 38.08],
+  ['aleppo', 'حلب', 37.15, 36.20],
+  ['hama', 'حماة', 36.75, 35.13],
+  ['homs', 'حمص', 36.72, 34.73],
+  ['tripoli', 'طرابلس الشام', 35.85, 33.90],
+  ['baalbek', 'بعلبك', 36.20, 34.00],
+  ['sidon', 'صيدا', 35.37, 33.56],
+  ['acre', 'عكا', 35.08, 32.93],
+  ['tiberias', 'طبريا', 35.53, 32.79],
+  ['nablus', 'نابلس', 35.26, 32.22],
+  ['hebron', 'الخليل', 35.10, 31.53],
+  ['gaza', 'غزة', 34.45, 31.50],
+  ['ascalon', 'عسقلان', 34.55, 31.67],
+  ['ramla', 'الرملة', 34.87, 31.93],
+  ['alexandria', 'الإسكندرية', 29.92, 31.20],
+  ['damietta', 'دمياط', 31.42, 31.42],
+  ['asyut', 'أسيوط', 31.18, 27.18],
+  ['zabid', 'زبيد', 43.32, 14.20],
+  ['taiz', 'تعز', 44.02, 13.58],
+  ['aden', 'عدن', 45.04, 12.78],
+  ['herat', 'هراة', 62.20, 34.35],
+  ['merv', 'مرو', 62.18, 37.66],
+  ['balkh', 'بلخ', 66.90, 36.76],
+  ['tus', 'طوس', 59.48, 36.45],
+  ['sabzevar', 'بيهق', 57.68, 36.21],
+  ['jurjan', 'جرجان', 54.44, 36.84],
+  ['amol', 'آمل', 52.35, 36.47],
+  ['qazvin', 'قزوين', 50.00, 36.28],
+  ['ardabil', 'أردبيل', 48.29, 38.25],
+  ['maragha', 'مراغة', 46.24, 37.39],
+  ['irbil', 'أربيل', 44.01, 36.19],
+  ['tikrit', 'تكريت', 43.68, 34.60],
+  ['hilla', 'الحلة', 44.43, 32.47],
+  ['khiva', 'خيوة', 60.36, 41.38],
+  ['termez', 'ترمذ', 67.27, 37.22],
+  ['nasaf', 'نسف', 65.79, 38.86],
+  ['tashkent', 'الشاش', 69.24, 41.30],
+  ['fergana', 'فرغانة', 71.78, 40.39],
+  ['khujand', 'خجند', 69.62, 40.28],
+  ['multan', 'ملتان', 71.47, 30.16],
+  ['daybul', 'الديبل', 67.65, 24.57],
+  ['kerman', 'كرمان', 57.07, 30.29],
+  ['taif', 'الطائف', 40.42, 21.27],
+  ['jeddah', 'جدة', 39.17, 21.49],
+  ['sohar', 'صحار', 56.34, 24.34],
+  ['nizwa', 'نزوى', 57.53, 22.93],
+  ['seville', 'إشبيلية', -5.99, 37.39],
+  ['granada', 'غرناطة', -3.59, 37.18],
+  ['malaga', 'مالقة', -4.42, 36.72],
+  ['valencia', 'بلنسية', -0.38, 39.47],
+  ['murcia', 'مرسية', -1.13, 37.99],
+  ['mahdia', 'المهدية', 11.06, 35.50],
+  ['tunis', 'تونس', 10.18, 36.80],
+  ['bejaia', 'بجاية', 5.08, 36.75],
+  ['tlemcen', 'تلمسان', -1.31, 34.88],
+  ['marrakesh', 'مراكش', -7.99, 31.63]
+];
+
+const ISLAMAP_COUNTRIES = {
+  andalus: ['Spain', 'Portugal'],
+  maghreb: ['Morocco', 'Algeria', 'Mauritania'],
+  ifriqiya: ['Tunisia', 'Libya'],
+  egypt: ['Egypt'],
+  sham: ['Syria', 'Lebanon', 'Jordan', 'Palestine', 'Israel'],
+  iraq: ['Iraq'],
+  yemen: ['Yemen'],
+  fars: ['Iran'],
+  khurasan: ['Afghanistan', 'Turkmenistan'],
+  transoxiana: ['Uzbekistan', 'Tajikistan', 'Kyrgyzstan'],
+  sind: ['Pakistan'],
+  anatolia: ['Turkey'],
+  azerbaijan: ['Azerbaijan'],
+  khwarizm: ['Uzbekistan', 'Turkmenistan'],
+  daylam: ['Iran'],
+  jibal: ['Iran'],
+  kirman: ['Iran'],
+  khuzistan: ['Iran'],
+  oman: ['Oman'],
+  bahrayn: ['Bahrain'],
+  filastin: ['Palestine', 'Israel'],
+  urdunn: ['Jordan']
+};
+
+const ISLAMAP_MODERN_COUNTRY = {
+  Spain: 'إسبانيا', Portugal: 'البرتغال', Morocco: 'المغرب', Algeria: 'الجزائر', Mauritania: 'موريتانيا',
+  Tunisia: 'تونس', Libya: 'ليبيا', Egypt: 'مصر', Syria: 'سوريا', Lebanon: 'لبنان', Jordan: 'الأردن',
+  Palestine: 'فلسطين', Israel: 'إسرائيل', Iraq: 'العراق', Yemen: 'اليمن', Iran: 'إيران',
+  Afghanistan: 'أفغانستان', Turkmenistan: 'تركمانستان', Uzbekistan: 'أوزبكستان', Tajikistan: 'طاجيكستان',
+  Kyrgyzstan: 'قيرغيزستان', Pakistan: 'باكستان', Turkey: 'تركيا', Azerbaijan: 'أذربيجان',
+  Oman: 'عُمان', Bahrain: 'البحرين'
+};
+
+const ISLAMAP_VIEW = { center: [43, 28], zoom: 3.6 };
+
+const ISLAMAP_ALIAS = {
+  'الأندلس': 'andalus', 'الاندلس': 'andalus', 'المغرب': 'maghreb', 'إفريقية': 'ifriqiya', 'افريقية': 'ifriqiya',
+  'مصر': 'egypt', 'الشام': 'sham', 'الجزيرة': 'jazira', 'العراق': 'iraq', 'الحجاز': 'hijaz', 'اليمن': 'yemen',
+  'فارس': 'fars', 'خراسان': 'khurasan', 'ما وراء النهر': 'transoxiana', 'السند': 'sind',
+  'قرطبة': 'qurtuba', 'فاس': 'fas', 'القيروان': 'qayrawan', 'الفسطاط': 'fustat', 'القاهرة': 'cairo',
+  'دمشق': 'dimashq', 'القدس': 'quds', 'مكة': 'makka', 'المدينة': 'madina', 'المدينة المنورة': 'madina',
+  'صنعاء': 'sanaa', 'الكوفة': 'kufa', 'البصرة': 'basra', 'بغداد': 'baghdad', 'الموصل': 'mawsil',
+  'الري': 'rayy', 'نيسابور': 'naysabur', 'بخارى': 'bukhara', 'سمرقند': 'samarqand', 'المنصورة': 'mansura',
+  'طرسوس': 'tarsus', 'درب كليكيا': 'cilicia', 'كليكيا': 'cilicia', 'هرقلة': 'heraclea', 'عمورية': 'amorium',
+  'أدرنة': 'edirne', 'أدرنه': 'edirne', 'القسطنطينية': 'constantinople', 'إسطنبول': 'constantinople',
+  'الأسوار البرية': 'landwalls', 'روملي حصاري': 'rumeli', 'قلعة الروم': 'rumeli',
+  'أناضولو حصاري': 'anadolu', 'قلعة الأناضول': 'anadolu', 'غلطة': 'galata',
+  'الخليج الذهبي': 'goldenhorn', 'فم الخليج': 'hornmouth', 'طوب خانه': 'tophane',
+  'البوسفور': 'bosphorus', 'بحر إيجه': 'aegean', 'الدردنيل': 'dardanelles', 'بحر مرمرة': 'marmara',
+  'بحر الشام': 'levantsea', 'البحر المتوسط': 'levantsea', 'بحر الروم': 'levantsea',
+  'البحر الأحمر': 'redsea', 'الخليج الفارسي': 'persian', 'بحر فارس': 'persian',
+  'المحيط الهندي': 'indian', 'البحر الأسود': 'blacksea', 'بحر الخزر': 'caspian',
+  'بحر قزوين': 'caspian', 'المحيط الأطلسي': 'atlantic', 'خليج عدن': 'aden',
+  'آسيا الصغرى': 'anatolia', 'الأناضول': 'anatolia',
+  'constantinople': 'constantinople', 'edirne': 'edirne', 'tarsus': 'tarsus',
+  'amorium': 'amorium', 'heraclea': 'heraclea', 'galata': 'galata',
+  'golden horn': 'goldenhorn', 'bosphorus': 'bosphorus',
+  'كردستان': 'kurdistan', 'أذربيجان': 'azerbaijan', 'خوارزم': 'khwarizm', 'الديلم': 'daylam',
+  'الجبال': 'jibal', 'كرمان': 'kirman', 'خوزستان': 'khuzistan', 'عمان': 'oman',
+  'حضرموت': 'hadramawt', 'البحرين': 'bahrayn', 'فلسطين': 'filastin', 'الأردن': 'urdunn',
+  'واسط': 'wasit', 'أصفهان': 'isfahan', 'شيراز': 'shiraz', 'همذان': 'hamadan', 'تبريز': 'tabriz',
+  'حلب': 'aleppo', 'حماة': 'hama', 'حمص': 'homs', 'طرابلس الشام': 'tripoli', 'بعلبك': 'baalbek',
+  'صيدا': 'sidon', 'عكا': 'acre', 'طبريا': 'tiberias', 'نابلس': 'nablus', 'الخليل': 'hebron',
+  'غزة': 'gaza', 'عسقلان': 'ascalon', 'الرملة': 'ramla', 'الإسكندرية': 'alexandria',
+  'دمياط': 'damietta', 'أسيوط': 'asyut', 'زبيد': 'zabid', 'تعز': 'taiz', 'عدن': 'aden',
+  'هراة': 'herat', 'مرو': 'merv', 'بلخ': 'balkh', 'طوس': 'tus', 'بيهق': 'sabzevar',
+  'جرجان': 'jurjan', 'آمل': 'amol', 'قزوين': 'qazvin', 'أردبيل': 'ardabil', 'مراغة': 'maragha',
+  'أربيل': 'irbil', 'تكريت': 'tikrit', 'الحلة': 'hilla', 'خيوة': 'khiva', 'ترمذ': 'termez',
+  'نسف': 'nasaf', 'الشاش': 'tashkent', 'فرغانة': 'fergana', 'خجند': 'khujand', 'ملتان': 'multan',
+  'الديبل': 'daybul', 'الطائف': 'taif', 'جدة': 'jeddah', 'صحار': 'sohar', 'نزوى': 'nizwa',
+  'إشبيلية': 'seville', 'غرناطة': 'granada', 'مالقة': 'malaga', 'بلنسية': 'valencia',
+  'مرسية': 'murcia', 'المهدية': 'mahdia', 'تونس': 'tunis', 'بجاية': 'bejaia',
+  'تلمسان': 'tlemcen', 'مراكش': 'marrakesh'
+};
+
+const ISLAMAP_COLORS = [
+  ['حنفي', '#eab308'],
+  ['مالكي', '#16a34a'],
+  ['شافعي', '#2563eb'],
+  ['حنبلي', '#dc2626'],
+  ['ظاهري', '#f97316'],
+  ['إباضي', '#0891b2'],
+  ['زيدي', '#ca8a04'],
+  ['إمامي', '#7c3aed']
+];
+
+function islamapResolve(token) {
+  const text = String(token || '').trim();
+  if (!text) return '';
+  if (ISLAMAP_REGIONS.some((item) => item[0] === text) || ISLAMAP_CITIES.some((item) => item[0] === text)) return text;
+  return ISLAMAP_ALIAS[text] || ISLAMAP_ALIAS[text.toLowerCase()] || '';
+}
+
+function islamapColor(value) {
+  const text = String(value || '');
+  const found = ISLAMAP_COLORS.find(([name]) => text.includes(name));
+  return found ? found[1] : (text ? '#8d7355' : '#f3e6c8');
+}
+
+const ISLAMAP_CENTURY_COLORS = {
+  1: '#dc2626', 2: '#16a34a', 3: '#2563eb', 4: '#f97316', 5: '#eab308',
+  6: '#7c3aed', 7: '#0891b2', 8: '#db2777', 9: '#65a30d', 10: '#1d4ed8',
+  11: '#b91c1c', 12: '#15803d', 13: '#c2410c', 14: '#a16207', 15: '#6d28d9'
+};
+
+function islamapCenturyColor(century) {
+  return ISLAMAP_CENTURY_COLORS[Number(century)] || '#8d7355';
+}
+
+function islamapShade(hex, ratio) {
+  const raw = String(hex || '#2f6f8f').replace('#', '');
+  if (raw.length !== 6) return hex;
+  const mix = (part) => Math.round(parseInt(part, 16) + (255 - parseInt(part, 16)) * ratio);
+  return `rgb(${mix(raw.slice(0, 2))},${mix(raw.slice(2, 4))},${mix(raw.slice(4, 6))})`;
+}
+
+function islamapCountShade(base, count) {
+  if (!count) return '#f4efe6';
+  if (count <= 1) return islamapShade(base, 0.18);
+  if (count <= 3) return islamapShade(base, 0.08);
+  return base;
+}
+
+function islamapList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean);
+  if (!value) return [];
+  return String(value).split(/[،,؛;|\n]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function islamapPlaces(data) {
+  const places = [];
+  const add = (item, fromPlaces) => {
+    if (!item || typeof item !== 'object') return;
+    const located = islamapLocate(item.id || item.city || item.name || item.place, data);
+    if (!located || located.water) return;
+    const scholars = islamapList(item.scholars || item.names);
+    const books = islamapList(item.books || item.works);
+    const century = Number(item.century || item.era || item.period) || null;
+    places.push({
+      id: located.id,
+      name: located.name,
+      lng: located.lng,
+      lat: located.lat,
+      region: islamapResolve(item.region) || '',
+      century,
+      scholars,
+      books,
+      count: Number(item.count) || scholars.length,
+      value: String(item.value || '').trim(),
+      note: String(item.note || '').trim(),
+      fromPlaces: !!fromPlaces
+    });
+  };
+  (data.places || []).forEach((item) => add(item, true));
+  if (!places.length) (data.cities || []).forEach((item) => add(item, false));
+  return places;
+}
+
+function islamapRegionName(id) {
+  const found = ISLAMAP_REGIONS.find((region) => region[0] === id);
+  return found ? found[1] : '';
+}
+
+const ISLAMAP_CITY_REGION = {
+  qurtuba: 'andalus', seville: 'andalus', granada: 'andalus', malaga: 'andalus', valencia: 'andalus', murcia: 'andalus',
+  fas: 'maghreb', marrakesh: 'maghreb', tlemcen: 'maghreb', qayrawan: 'ifriqiya', mahdia: 'ifriqiya', tunis: 'ifriqiya', bejaia: 'ifriqiya',
+  fustat: 'egypt', cairo: 'egypt', alexandria: 'egypt', damietta: 'egypt', asyut: 'egypt',
+  dimashq: 'sham', aleppo: 'sham', hama: 'sham', homs: 'sham', tripoli: 'sham', baalbek: 'sham', sidon: 'sham',
+  acre: 'filastin', tiberias: 'filastin', nablus: 'filastin', hebron: 'filastin', gaza: 'filastin', ascalon: 'filastin', ramla: 'filastin', quds: 'filastin',
+  kufa: 'iraq', basra: 'iraq', baghdad: 'iraq', wasit: 'iraq', hilla: 'iraq', tikrit: 'iraq', mawsil: 'jazira', irbil: 'kurdistan',
+  makka: 'hijaz', madina: 'hijaz', taif: 'hijaz', jeddah: 'hijaz',
+  sanaa: 'yemen', zabid: 'yemen', taiz: 'yemen', aden: 'yemen',
+  rayy: 'jibal', isfahan: 'jibal', hamadan: 'jibal', qazvin: 'jibal', shiraz: 'fars', kerman: 'kirman',
+  naysabur: 'khurasan', herat: 'khurasan', merv: 'khurasan', balkh: 'khurasan', tus: 'khurasan', sabzevar: 'khurasan', jurjan: 'khurasan', amol: 'daylam',
+  tabriz: 'azerbaijan', ardabil: 'azerbaijan', maragha: 'azerbaijan',
+  bukhara: 'transoxiana', samarqand: 'transoxiana', termez: 'transoxiana', nasaf: 'transoxiana', tashkent: 'transoxiana', fergana: 'transoxiana', khujand: 'transoxiana',
+  khiva: 'khwarizm', mansura: 'sind', multan: 'sind', daybul: 'sind', sohar: 'oman', nizwa: 'oman'
+};
+
+function islamapLocate(token, data) {
+  const text = String(token || '').trim();
+  const resolved = islamapResolve(text);
+  const points = (data && data.points) || [];
+  const point = points.find((item) => item && (item.id === resolved || item.id === text || item.name === text));
+  const city = islamapCity(resolved || (point && point.id) || '');
+  let lng = point ? Number(point.lng) : NaN;
+  let lat = point ? Number(point.lat) : NaN;
+  const tavilyOk = Number.isFinite(lng) && Number.isFinite(lat);
+  if (tavilyOk && city) {
+    const far = Math.hypot(lng - city[2], lat - city[3]) > 3;
+    if (far) {
+      lng = city[2];
+      lat = city[3];
+    }
+  } else if (!tavilyOk && city) {
+    lng = city[2];
+    lat = city[3];
+  } else if (!tavilyOk) {
+    return null;
+  }
+  const historical = (point && point.name) || (city && city[1]) || text;
+  const modern = point && point.modern && point.modern !== historical ? String(point.modern) : '';
+  return {
+    id: (point && point.id) || resolved || text,
+    lng,
+    lat,
+    historical,
+    modern,
+    name: modern ? `${historical} (${modern})` : historical,
+    water: !!(point && point.water) || !!(city && city[4] === true)
+  };
+}
+
+function islamapCoordTip(lng, lat) {
+  if (!Number.isFinite(Number(lng)) || !Number.isFinite(Number(lat))) return '';
+  return `خط العرض ${Number(lat).toFixed(2)}° · خط الطول ${Number(lng).toFixed(2)}°`;
+}
+
+function islamapGraticule(points) {
+  const pool = points && points.length ? points : [[-12, 18], [62, 42]];
+  const lngs = pool.map((point) => point[0]);
+  const lats = pool.map((point) => point[1]);
+  const minLng = Math.min(...lngs) - 4;
+  const maxLng = Math.max(...lngs) + 4;
+  const minLat = Math.max(-55, Math.min(...lats) - 3);
+  const maxLat = Math.min(70, Math.max(...lats) + 3);
+  const step = (maxLng - minLng) > 36 ? 10 : 5;
+  const lines = [];
+  const labels = [];
+  for (let lng = Math.ceil(minLng / step) * step; lng <= maxLng; lng += step) {
+    lines.push({ coords: [[lng, minLat], [lng, maxLat]] });
+    labels.push({ value: [lng, minLat], labelText: `${lng}°ط` });
+  }
+  for (let lat = Math.ceil(minLat / step) * step; lat <= maxLat; lat += step) {
+    lines.push({ coords: [[minLng, lat], [maxLng, lat]] });
+    labels.push({ value: [minLng, lat], labelText: `${lat}°ع` });
+  }
+  return [
+    {
+      type: 'lines',
+      coordinateSystem: 'geo',
+      polyline: true,
+      silent: true,
+      data: lines,
+      lineStyle: { color: 'rgba(70, 90, 110, 0.28)', width: 0.7 },
+      z: 1
+    },
+    {
+      type: 'scatter',
+      coordinateSystem: 'geo',
+      silent: true,
+      symbolSize: 1,
+      data: labels,
+      label: {
+        show: true,
+        formatter: (params) => params.data.labelText,
+        color: '#5c6b7a',
+        fontSize: 10,
+        position: 'right'
+      },
+      z: 2
+    }
+  ];
+}
+
+function islamapCity(id) {
+  return ISLAMAP_CITIES.find((item) => item[0] === id);
+}
+
+function islamapRouteCoords(route, data) {
+  const stops = [route.from].concat(Array.isArray(route.via) ? route.via : [], route.to);
+  const located = [];
+  stops.forEach((token) => {
+    const place = islamapLocate(token, data);
+    if (!place) return;
+    const point = [place.lng, place.lat];
+    const last = located[located.length - 1];
+    if (last && last.lng === point[0] && last.lat === point[1]) return;
+    located.push({ lng: point[0], lat: point[1], water: place.water });
+  });
+  const kind = route.kind || route.type || 'land';
+  const usable = kind === 'land' ? located.filter((place) => !place.water) : located;
+  const shortSea = kind === 'sea' && usable.length >= 2 && usable.every((place, index) => {
+    if (!index) return true;
+    const previous = usable[index - 1];
+    const rad = Math.PI / 180;
+    const dLat = (place.lat - previous.lat) * rad;
+    const dLng = (place.lng - previous.lng) * rad;
+    const lat1 = previous.lat * rad;
+    const lat2 = place.lat * rad;
+    const hav = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav)) <= 150;
+  });
+  if (kind === 'sea' && !usable.some((place) => place.water) && !shortSea) return null;
+  if (usable.length < 2) return null;
+  return usable.map((place) => [place.lng, place.lat]);
+}
+
+function islamapFrame(points) {
+  if (!points.length) return ISLAMAP_VIEW;
+  const lngs = points.map((point) => point[0]);
+  const lats = points.map((point) => point[1]);
+  const midLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const span = Math.max(
+    Math.max(...lngs) - Math.min(...lngs),
+    (Math.max(...lats) - Math.min(...lats)) / Math.max(0.35, Math.cos(midLat * Math.PI / 180)),
+    1.1
+  );
+  return {
+    center: [(Math.min(...lngs) + Math.max(...lngs)) / 2, midLat],
+    zoom: Math.max(1.5, Math.min(11, 128 / span))
+  };
+}
+
+function islamapInstruction(type) {
+  const fence = '```islamap';
+  const focus = {
+    madhhab: 'ركّز على طبقات المذهب: عنصر places لكل مدينة في قرن، مع scholars وbooks وcount. لا تكتف بتلوين إقليم.',
+    futuh: 'ركّز على الفتوحات. كل مسار طريق متتابع في via، لا خطاً مستقيماً يقطع الجبال أو البحر. kind: land للبر، sea للبحر، portage لجر السفن على البر.',
+    ghazawat: 'ركّز على الغزوات والسرايا. كل مسار طريق متتابع في via. kind: land للبر، sea للبحر، portage لجر السفن على البر.',
+    cities: 'ركّز على المدن والمراكز، بلا طرق إلا إذا ورد انتقال صريح.',
+    full: 'اجمع من النتيجة ما يصح من مناطق ومدن وطرق، بلا حشو.'
+  }[type] || 'اجمع ما يصح من النتيجة.';
+  return `${focus}
+لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء.
+لا تضف مذهباً ولا فتحاً ولا غزوة ولا مدينة ليست في النتيجة، ولا تنسخ مثالاً جاهزاً.
+لا تخترع إحداثيات. المعرفات المسموحة فقط:
+المناطق: andalus maghreb ifriqiya egypt sham jazira iraq hijaz yemen fars khurasan transoxiana sind anatolia.
+المدن: qurtuba fas qayrawan fustat cairo dimashq quds makka madina sanaa kufa basra baghdad mawsil rayy naysabur bukhara samarqand mansura tarsus cilicia heraclea amorium edirne constantinople landwalls rumeli anadolu bosphorus tophane galata goldenhorn hornmouth levantsea aegean dardanelles marmara.
+رتّب via على الطريق نفسه: البر على المحطات البرية، والبحر على محطات البحر حتى لا يقطع الخط اليابسة، ونقل السفن kind=portage.
+أخرج كتلة ${fence} واحدة فقط، بلا أي كلمة خارجها:
+{"title":"","subject":"","places":[{"id":"","region":"","century":3,"scholars":[],"books":[],"count":0}],"regions":[{"id":"","value":"","note":""}],"cities":[],"routes":[{"from":"","to":"","via":[],"kind":"land","label":"","year":""}]}
+احذف الحقول الفارغة. value وصف قصير من النتيجة.`;
+}
+
+function parseIslamapBlock(raw) {
+  const text = String(raw || '').trim().replace(/,\s*([}\]])/g, '$1');
+  const data = JSON.parse(text);
+  const body = data && data.islamap && typeof data.islamap === 'object' ? data.islamap : data;
+  if (!body || typeof body !== 'object') return null;
+  return {
+    title: String(body.title || 'خارطة العالم الإسلامي').trim(),
+    mode: String(body.mode || body.kind || '').trim(),
+    subject: String(body.subject || body.madhhab || '').trim(),
+    eras: Array.isArray(body.eras) ? body.eras : [],
+    places: Array.isArray(body.places) ? body.places : [],
+    regions: Array.isArray(body.regions) ? body.regions : [],
+    cities: Array.isArray(body.cities) ? body.cities : [],
+    routes: Array.isArray(body.routes) ? body.routes : [],
+    points: Array.isArray(body.points) ? body.points : [],
+    option: body.option && typeof body.option === 'object' ? body.option : null,
+    example: String(body.example || '').trim(),
+    example_label: String(body.example_label || '').trim(),
+    example_url: String(body.example_url || '').trim()
+  };
+}
+
+function islamapLookup(list, id) {
+  return (list || []).find((item) => islamapResolve(item.id || item.name || item.region) === id);
+}
+
+function renderIslamapBlocks(container) {
+  if (!container) return;
+  container.querySelectorAll('pre code').forEach((codeEl, idx) => {
+    const pre = codeEl.closest('pre');
+    if (!pre || pre.dataset.renderedIslamap === '1') return;
+    const raw = codeEl.innerText.trim();
+    const tagged = /islamap/i.test(codeEl.className || '');
+    const looks = raw.startsWith('{') && /"(regions|routes|cities)"/.test(raw) && !/"nodes"/.test(raw);
+    if (!tagged && !looks) return;
+    let data = null;
+    try { data = parseIslamapBlock(raw); } catch (e) { data = null; }
+    if (!data) return;
+    pre.dataset.renderedIslamap = '1';
+    const eraCenturies = [...new Set(islamapPlaces(data).map((place) => place.century).filter(Boolean))].sort((a, b) => a - b);
+    const eraOptions = eraCenturies.length
+      ? `<label class="force3d-example-label"><span>الطبقة</span><select data-islamap-era dir="rtl"><option value="all" selected>كل القرون</option>${eraCenturies.map((century) => `<option value="${century}">ق${century}هـ</option>`).join('')}</select></label>`
+      : '';
+    const box = document.createElement('div');
+    box.className = 'chart-render-wrapper islamap-render-wrapper';
+    box._map = data;
+    box._scale = 1;
+    box._tx = 0;
+    box._ty = 0;
+    box.innerHTML = `
+      <div class="chart-render-header">
+        <div class="chart-render-title"><span>🗺️</span><span>${escapeHtml(data.title)}</span></div>
+        <div class="force3d-tools">
+          <label class="force3d-example-label">
+            <span>العرض</span>
+            <select data-islamap-layer dir="rtl">
+              <option value="all" selected>الكل</option>
+              <option value="regions">المذاهب والمناطق</option>
+              <option value="routes">الفتوحات والغزوات</option>
+              <option value="cities">المدن</option>
+            </select>
+          </label>
+          ${eraOptions}
+          <label class="force3d-example-label">
+            <span>الخط</span>
+            <select data-islamap-font dir="rtl">
+              ${ECHART_FONTS.map(([name, label]) => `<option value="${echartEscape(name)}"${name === 'Amiri' ? ' selected' : ''}>${echartEscape(label)}</option>`).join('')}
+            </select>
+          </label>
+          <label class="force3d-example-label">
+            <span>الحجم</span>
+            <select data-islamap-size dir="rtl">
+              ${[12, 14, 16, 18, 20, 24].map((size) => `<option value="${size}"${size === 14 ? ' selected' : ''}>${size}</option>`).join('')}
+            </select>
+          </label>
+          <label class="force3d-example-label">
+            <span>الخلفية</span>
+            <select data-islamap-bg dir="rtl">
+              ${ECHART_BACKGROUNDS.map(([color, label]) => `<option value="${color}"${color === '#e7f0f6' ? ' selected' : ''}>${echartEscape(label)}</option>`).join('')}
+            </select>
+          </label>
+          <button type="button" class="btn-chart-type" data-islamap-share="1" title="مشاركة">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+            <span>مشاركة</span>
+          </button>
+          <button type="button" class="btn-chart-type" data-islamap-fit="1">ملاءمة</button>
+          <button type="button" class="btn-chart-type" data-islamap-reset="1">إعادة</button>
+          <button type="button" class="btn-chart-type force3d-shot" data-islamap-shot="1" title="لقطة للخارطة"><span>لقطة</span></button>
+          <button type="button" class="btn-chart-type" data-islamap-expand="1">تكبير</button>
+          <button type="button" class="btn-chart-type islamap-close" data-islamap-close="1">إغلاق</button>
+          <button type="button" class="btn-chart-type" data-islamap-code="1">الكود</button>
+        </div>
+      </div>
+      <div class="islamap-stage"></div>
+      <div class="islamap-legend"></div>
+      <div class="islamap-details"></div>
+      <div class="echart-detail">${escapeHtml(data.example_label ? `الخريطة المختارة: ${data.example} — ${data.example_label}. ` : '')}خارطة جغرافية بحدود الدول، والمدن في مواضعها من خطوط الطول والعرض. الألوان والطرق من النتيجة فقط، والتجوال بالفأرة.</div>
+      <div class="echart-code" hidden></div>
+    `;
+    pre.parentNode.insertBefore(box, pre);
+    pre.hidden = false;
+    box.querySelector('.echart-code').appendChild(pre);
+    paintIslamap(box);
+  });
+}
+
+let islamapWorldPromise = null;
+
+function ensureIslamapWorld() {
+  if (window._islamapWorld) return Promise.resolve(window._islamapWorld);
+  if (!islamapWorldPromise) {
+    islamapWorldPromise = fetch('/static/geo/world.json')
+      .then((response) => {
+        if (!response.ok) throw new Error('world map');
+        return response.json();
+      })
+      .then((geo) => {
+        window._islamapWorld = geo;
+        if (window.echarts) window.echarts.registerMap('islamap-world', geo);
+        return geo;
+      })
+      .catch((err) => {
+        islamapWorldPromise = null;
+        throw err;
+      });
+  }
+  return islamapWorldPromise;
+}
+
+function islamapUsedIds(data) {
+  const used = new Set();
+  (data.places || []).forEach((item) => used.add(islamapResolve(item.id || item.city || item.name)));
+  (data.cities || []).forEach((item) => used.add(islamapResolve(item.id || item.name)));
+  (data.routes || []).forEach((route) => {
+    used.add(islamapResolve(route.from));
+    used.add(islamapResolve(route.to));
+    (Array.isArray(route.via) ? route.via : []).forEach((token) => used.add(islamapResolve(token)));
+  });
+  used.delete('');
+  return used;
+}
+
+function paintIslamap(wrapper) {
+  if (!window.echarts) return;
+  ensureIslamapWorld().then(() => {
+    if (!wrapper.isConnected) return;
+    drawIslamap(wrapper);
+  }).catch((err) => {
+    console.warn('islamap world map:', err);
+    const stage = wrapper.querySelector('.islamap-stage');
+    if (stage) stage.textContent = 'تعذر تحميل خارطة العالم.';
+  });
+}
+
+function islamapMovingArrows(option) {
+  const series = option.series || [];
+  const graph = series.find((item) => item && item.type === 'graph' && Array.isArray(item.edges) && item.edges.length);
+  if (!graph) return;
+  const places = new Map();
+  (graph.data || []).forEach((node) => {
+    const value = node && node.value;
+    if (!node || !node.name || !Array.isArray(value)) return;
+    const lng = Number(value[0]);
+    const lat = Number(value[1]);
+    if (Number.isFinite(lng) && Number.isFinite(lat)) places.set(node.name, [lng, lat]);
+  });
+  const data = [];
+  graph.edges.forEach((edge) => {
+    const from = places.get(edge.source);
+    const to = places.get(edge.target);
+    if (!from || !to) return;
+    const color = (edge.lineStyle && edge.lineStyle.color) || '#6b3e26';
+    edge.lineStyle = Object.assign({}, edge.lineStyle, { opacity: 0, width: 0 });
+    data.push({ coords: [from, to], lineStyle: { color, width: 2.2 } });
+  });
+  if (!data.length) return;
+  graph.edgeSymbol = ['none', 'none'];
+  graph.lineStyle = Object.assign({}, graph.lineStyle, { opacity: 0, width: 0 });
+  series.push({
+    type: 'lines',
+    coordinateSystem: 'geo',
+    polyline: false,
+    data,
+    z: 4,
+    effect: { show: true, symbol: 'arrow', symbolSize: 10, constantSpeed: 70, trailLength: 0 },
+    lineStyle: { width: 2.2, opacity: 0.95 }
+  });
+}
+
+function drawIslamapOption(wrapper, chart, option, family, sea) {
+  const next = JSON.parse(JSON.stringify(option));
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (Object.prototype.hasOwnProperty.call(node, 'map') && node.map && node.map !== 'islamap-world') node.map = 'islamap-world';
+    Object.values(node).forEach(walk);
+  };
+  walk(next);
+  if (next.geo && !Array.isArray(next.geo)) {
+    next.geo.map = 'islamap-world';
+    next.geo.roam = true;
+    next.geo.label = Object.assign({}, next.geo.label, { show: false });
+  }
+  next.backgroundColor = sea;
+  const points = [];
+  (next.series || []).forEach((series) => {
+    (series.data || []).forEach((row) => {
+      const value = row && row.value ? row.value : row;
+      if (Array.isArray(value) && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) {
+        points.push([Number(value[0]), Number(value[1])]);
+      }
+    });
+    if (series.label) series.label.fontFamily = `"${family}", Amiri, serif`;
+  });
+  const frame = islamapFrame(points);
+  wrapper._frame = frame;
+  if (next.geo && !Array.isArray(next.geo)) {
+    next.geo.center = frame.center;
+    next.geo.zoom = frame.zoom;
+  }
+  (next.series || []).forEach((series) => {
+    if (series.type === 'map') {
+      series.center = frame.center;
+      series.zoom = frame.zoom;
+      series.roam = true;
+    }
+  });
+  islamapMovingArrows(next);
+  chart.setOption(next, { notMerge: true });
+  const legendHost = wrapper.querySelector('.islamap-legend');
+  if (legendHost) legendHost.innerHTML = '';
+  const detailsHost = wrapper.querySelector('.islamap-details');
+  if (detailsHost) detailsHost.innerHTML = '';
+  requestAnimationFrame(() => chart.resize());
+}
+
+function islamapMode(data) {
+  const exampleMode = {
+    'map-HK': 'distribution',
+    'geo-choropleth-scatter': 'cities',
+    'geo-graph': 'routes',
+    'geo-svg-map': 'routes'
+  }[data && data.example];
+  if (exampleMode) return exampleMode;
+  const mode = String((data && (data.mode || data.kind)) || '');
+  if (mode === 'distribution' || mode === 'madhhab') return 'distribution';
+  if (mode === 'cities') return 'cities';
+  if (mode === 'routes' || mode === 'futuh' || mode === 'ghazawat') return 'routes';
+  if (data && (data.routes || []).length) return 'routes';
+  if (data && ((data.cities || []).length || (data.places || []).length)) return 'cities';
+  return 'distribution';
+}
+
+function islamapCategoryColors(labels) {
+  const assigned = new Map();
+  labels.forEach((label) => {
+    const text = String(label || '').trim();
+    if (!text || assigned.has(text)) return;
+    assigned.set(text, ISLAMAP_CATEGORY_COLORS[assigned.size % ISLAMAP_CATEGORY_COLORS.length]);
+  });
+  return assigned;
+}
+
+function drawIslamapDistribution(wrapper, chart, family, size, sea) {
+  const data = wrapper._map;
+  const labels = (data.regions || []).map((item) => item.value || item.madhhab || '').filter(Boolean);
+  const colors = islamapCategoryColors(labels);
+  const merged = new Map();
+  (data.regions || []).forEach((item) => {
+    const id = islamapResolve(item.id || item.name || item.region);
+    const value = String(item.value || item.madhhab || '').trim();
+    if (!id || !value) return;
+    const arabic = islamapRegionName(id) || id;
+    (ISLAMAP_COUNTRIES[id] || []).forEach((name) => {
+      const row = merged.get(name) || { name, values: [], arabic, regionId: id };
+      if (!row.values.includes(value)) row.values.push(value);
+      merged.set(name, row);
+    });
+  });
+  const legend = new Map();
+  const regions = [];
+  const anchor = [];
+  [...merged.values()].forEach((row) => {
+    const label = row.values.join(' · ');
+    const color = colors.get(row.values[0]) || ISLAMAP_CATEGORY_COLORS[0];
+    legend.set(label, color);
+    const modern = ISLAMAP_MODERN_COUNTRY[row.name] || row.name;
+    const located = (data.points || []).find((point) => point && (point.name === row.arabic || islamapResolve(point.id) === row.regionId));
+    if (located && Number.isFinite(Number(located.lng))) anchor.push([Number(located.lng), Number(located.lat)]);
+    regions.push({
+      name: row.name,
+      itemStyle: { areaColor: color },
+      label: { show: false },
+      tooltip: { formatter: `${modern}<br>${row.arabic}<br>${label}${located ? '<br>' + islamapCoordTip(located.lng, located.lat) : ''}` }
+    });
+  });
+  const loose = [];
+  const labeled = new Set();
+  (data.regions || []).forEach((item) => {
+    const id = islamapResolve(item.id || item.name || item.region);
+    const value = String(item.value || item.madhhab || '').trim();
+    if (!id || !value || labeled.has(id)) return;
+    const spots = ISLAMAP_CITIES.filter((city) => city[4] !== true && ISLAMAP_CITY_REGION[city[0]] === id);
+    if (!spots.length) return;
+    labeled.add(id);
+    const lng = spots.reduce((sum, city) => sum + city[2], 0) / spots.length;
+    const lat = spots.reduce((sum, city) => sum + city[3], 0) / spots.length;
+    const color = colors.get(value) || ISLAMAP_CATEGORY_COLORS[0];
+    legend.set(value, color);
+    anchor.push([lng, lat]);
+    loose.push({
+      name: id,
+      value: [lng, lat],
+      symbolSize: 12,
+      itemStyle: { color, borderColor: '#fff', borderWidth: 2 },
+      labelText: `${islamapRegionName(id) || id}\n${value}`,
+      tip: `${islamapRegionName(id) || id}<br>${value}`,
+      label: {
+        show: true,
+        formatter: (params) => params.data.labelText,
+        position: 'top',
+        color: '#1c1917',
+        fontFamily: `"${family}", Amiri, serif`,
+        fontSize: Math.max(12, size - 1),
+        textBorderColor: '#fff',
+        textBorderWidth: 2
+      }
+    });
+  });
+  const regionIds = (data.regions || []).map((item) => islamapResolve(item.id || item.name || item.region)).filter(Boolean);
+  const framePoints = ISLAMAP_CITIES.filter((city) => city[4] !== true && regionIds.includes(ISLAMAP_CITY_REGION[city[0]])).map((city) => [city[2], city[3]]);
+  anchor.forEach((point) => framePoints.push(point));
+  const framed = islamapFrame(framePoints);
+  wrapper._frame = framed;
+  const tips = {};
+  regions.forEach((region) => { tips[region.name] = region.tooltip.formatter; });
+  chart.setOption({
+    backgroundColor: sea,
+    tooltip: {
+      trigger: 'item',
+      formatter: (params) => {
+        if (params.componentType === 'geo') return tips[params.name] || '';
+        return (params.data && params.data.tip) || '';
+      }
+    },
+    geo: {
+      map: 'islamap-world',
+      roam: true,
+      aspectScale: Math.cos((28 * Math.PI) / 180),
+      center: framed.center,
+      zoom: framed.zoom,
+      scaleLimit: { min: 1, max: 16 },
+      itemStyle: { areaColor: '#f4efe6', borderColor: '#b7aa96', borderWidth: 0.6 },
+      emphasis: { label: { show: true }, itemStyle: { areaColor: '#e7dcc8' } },
+      label: { show: false },
+      tooltip: { show: false },
+      regions
+    },
+    series: islamapGraticule(anchor.length ? anchor : ISLAMAP_CITIES.filter((city) => regionIds.includes(ISLAMAP_CITY_REGION[city[0]])).map((city) => [city[2], city[3]])).concat(loose.length ? [{
+      type: 'scatter',
+      coordinateSystem: 'geo',
+      data: loose,
+      z: 5,
+      labelLayout: { hideOverlap: true }
+    }] : [])
+  }, { notMerge: true });
+  const legendHost = wrapper.querySelector('.islamap-legend');
+  if (legendHost) {
+    legendHost.innerHTML = [...legend.entries()].map(([name, color]) => `<span><i style="background:${color}"></i>${escapeHtml(name)}</span>`).join('');
+  }
+  const detailsHost = wrapper.querySelector('.islamap-details');
+  if (detailsHost) detailsHost.innerHTML = '';
+  requestAnimationFrame(() => chart.resize());
+}
+
+function islamapRegionFrame(regionIds) {
+  const points = ISLAMAP_CITIES.filter((city) => city[4] !== true && regionIds.includes(ISLAMAP_CITY_REGION[city[0]])).map((city) => [city[2], city[3]]);
+  return islamapFrame(points);
+}
+
+function drawIslamapCities(wrapper, chart, family, size, sea) {
+  const data = wrapper._map;
+  const places = islamapPlaces(data);
+  const colors = islamapCategoryColors(places.map((place) => place.value || data.subject || 'مدينة'));
+  const legend = new Map();
+  const byRegion = new Map();
+  places.forEach((place) => {
+    const regionId = place.region || ISLAMAP_CITY_REGION[place.id] || '';
+    if (!regionId) return;
+    const list = byRegion.get(regionId) || [];
+    list.push(place.value || data.subject || '');
+    byRegion.set(regionId, list);
+  });
+  const regions = [];
+  byRegion.forEach((values, regionId) => {
+    const unique = [...new Set(values.filter(Boolean))];
+    if (unique.length !== 1) return;
+    const color = islamapShade(colors.get(unique[0]) || '#2563eb', 0.55);
+    (ISLAMAP_COUNTRIES[regionId] || []).forEach((name) => {
+      regions.push({
+        name,
+        itemStyle: { areaColor: color },
+        label: { show: false },
+        tooltip: { formatter: `${islamapRegionName(regionId) || name} — ${unique[0]}` }
+      });
+    });
+  });
+  const nodes = [];
+  const seen = new Set();
+  places.forEach((place) => {
+    if (seen.has(place.id)) return;
+    seen.add(place.id);
+    const located = islamapLocate(place.id, data);
+    if (!located) return;
+    const category = place.value || data.subject || 'مدينة';
+    const color = colors.get(category) || '#2563eb';
+    legend.set(category, color);
+    nodes.push({
+      name: place.id,
+      value: [located.lng, located.lat],
+      symbolSize: 16,
+      itemStyle: { color, borderColor: '#fff', borderWidth: 2 },
+      labelText: located.name,
+      tip: `<strong>${escapeHtml(located.name)}</strong>${category ? '<br>' + escapeHtml(category) : ''}<br>${islamapCoordTip(located.lng, located.lat)}${place.note ? '<br>' + escapeHtml(place.note) : ''}`,
+      label: {
+        show: true,
+        formatter: (params) => params.data.labelText,
+        position: 'right',
+        color: '#1c1917',
+        fontFamily: `"${family}", Amiri, serif`,
+        fontSize: size,
+        textBorderColor: '#fff',
+        textBorderWidth: 2
+      }
+    });
+  });
+  const frame = islamapFrame(nodes.map((node) => node.value));
+  wrapper._frame = frame;
+  chart.setOption({
+    backgroundColor: sea,
+    tooltip: {
+      trigger: 'item',
+      formatter: (params) => (params.data && params.data.tip) || (params.data && params.data.tooltip && params.data.tooltip.formatter) || ''
+    },
+    geo: {
+      map: 'islamap-world',
+      roam: true,
+      aspectScale: Math.cos((28 * Math.PI) / 180),
+      center: frame.center,
+      zoom: frame.zoom,
+      scaleLimit: { min: 1, max: 16 },
+      itemStyle: { areaColor: '#f4efe6', borderColor: '#b7aa96', borderWidth: 0.6 },
+      emphasis: { label: { show: false }, itemStyle: { areaColor: '#e7dcc8' } },
+      label: { show: false },
+      tooltip: { show: false },
+      regions
+    },
+    series: islamapGraticule(nodes.map((node) => node.value)).concat([{
+      type: 'scatter',
+      coordinateSystem: 'geo',
+      data: nodes,
+      z: 5,
+      labelLayout: { hideOverlap: true }
+    }])
+  }, { notMerge: true });
+  const legendHost = wrapper.querySelector('.islamap-legend');
+  if (legendHost) {
+    legendHost.innerHTML = [...legend.entries()].map(([name, color]) => `<span><i style="background:${color}"></i>${escapeHtml(name)}</span>`).join('');
+  }
+  const detailsHost = wrapper.querySelector('.islamap-details');
+  if (detailsHost) {
+    detailsHost.innerHTML = places.length ? places.map((place) => `<div class="islamap-era"><strong>${escapeHtml(place.name)}</strong>${place.value ? ' — ' + escapeHtml(place.value) : ''}<br>${islamapCoordTip(place.lng, place.lat)}${place.note ? '<br>' + escapeHtml(place.note) : ''}</div>`).join('') : '';
+  }
+  requestAnimationFrame(() => chart.resize());
+}
+
+function drawIslamap(wrapper) {
+  const data = wrapper._map;
+  const stage = wrapper.querySelector('.islamap-stage');
+  if (!data || !stage || !window.echarts) return;
+  if (!wrapper._echart) wrapper._echart = window.echarts.init(stage);
+  const chart = wrapper._echart;
+  const layer = (wrapper.querySelector('[data-islamap-layer]') || {}).value || 'all';
+  const showRegions = layer === 'all' || layer === 'regions';
+  const showRoutes = layer === 'all' || layer === 'routes';
+  const showCities = layer !== 'regions';
+  const font = wrapper.querySelector('[data-islamap-font]');
+  const sizeEl = wrapper.querySelector('[data-islamap-size]');
+  const bg = wrapper.querySelector('[data-islamap-bg]');
+  const family = font ? font.value : 'Amiri';
+  const size = Number(sizeEl && sizeEl.value) || 14;
+  const sea = (bg && bg.value) || '#e7f0f6';
+  wrapper._bg = sea;
+  if (bg) {
+    bg.style.background = sea;
+    bg.style.color = echartInk(sea);
+  }
+  ensureEchartFont(family);
+  if (data.option) {
+    drawIslamapOption(wrapper, chart, data.option, family, sea);
+    return;
+  }
+  const mode = islamapMode(data);
+  if (mode === 'distribution') {
+    drawIslamapDistribution(wrapper, chart, family, size, sea);
+    return;
+  }
+  if (mode === 'cities') {
+    drawIslamapCities(wrapper, chart, family, size, sea);
+    return;
+  }
+  const legend = new Map();
+  const remember = (value) => {
+    const text = String(value || '').trim();
+    if (text && !legend.has(text)) legend.set(text, islamapColor(text));
+  };
+  const eraEl = wrapper.querySelector('[data-islamap-era]');
+  const selectedEra = eraEl && eraEl.value !== 'all' ? Number(eraEl.value) : null;
+  const allPlaces = islamapPlaces(data);
+  const visiblePlaces = selectedEra ? allPlaces.filter((place) => place.century === selectedEra) : allPlaces;
+  const subjectText = data.subject || (visiblePlaces.find((place) => place.value) || {}).value || '';
+  const baseColor = islamapColor(subjectText || 'مذهب');
+  const showPlaces = layer !== 'routes';
+  const regionStats = new Map();
+  visiblePlaces.forEach((place) => {
+    const regionId = place.region || ISLAMAP_CITY_REGION[place.id] || '';
+    if (!regionId) return;
+    const stat = regionStats.get(regionId) || { weight: 0, scholars: 0, books: 0, cities: new Set(), byCentury: new Map() };
+    const weight = place.count || 1;
+    stat.weight += weight;
+    stat.scholars += place.count || 0;
+    stat.books += place.books.length;
+    stat.cities.add(place.id);
+    if (place.century) stat.byCentury.set(place.century, (stat.byCentury.get(place.century) || 0) + weight);
+    regionStats.set(regionId, stat);
+  });
+  const centurySet = new Set(visiblePlaces.map((place) => place.century).filter(Boolean));
+  const countryStyles = new Map();
+  if (centurySet.size === 1 && showRegions) {
+    const onlyCentury = [...centurySet][0];
+    const hue = islamapCenturyColor(onlyCentury);
+    regionStats.forEach((stat, regionId) => {
+      const regionName = islamapRegionName(regionId) || regionId;
+      const tip = `${escapeHtml(regionName)}${subjectText ? ' — ' + escapeHtml(subjectText) : ''} — ق${onlyCentury}هـ<br>${stat.scholars} عالماً، ${stat.books} كتاباً، ${stat.cities.size} مدينة`;
+      (ISLAMAP_COUNTRIES[regionId] || []).forEach((name) => {
+        countryStyles.set(name, { color: hue, tip });
+      });
+    });
+  }
+  const regions = [...countryStyles.entries()].map(([name, style]) => ({
+    name,
+    itemStyle: { areaColor: style.color },
+    label: { show: false },
+    tooltip: { formatter: style.tip }
+  }));
+  const grouped = new Map();
+  visiblePlaces.forEach((place) => {
+    const group = grouped.get(place.id) || { ...place, parts: [], total: 0, centuries: new Set() };
+    group.parts.push(place);
+    group.total += place.count || 0;
+    if (place.century) group.centuries.add(place.century);
+    grouped.set(place.id, group);
+  });
+  const used = islamapUsedIds(data);
+  const placeIds = new Set(allPlaces.map((place) => place.id));
+  const nodes = [];
+  grouped.forEach((group) => {
+    const located = islamapLocate(group.id, data);
+    if (!located || located.water) return;
+    const parts = group.parts.slice().sort((a, b) => (a.century || 0) - (b.century || 0));
+    parts.forEach((part) => {
+      if (part.century) legend.set(`ق${part.century}هـ`, islamapCenturyColor(part.century));
+    });
+    const regionName = islamapRegionName(group.region || ISLAMAP_CITY_REGION[group.id]);
+    parts.forEach((part, index) => {
+      const color = part.century ? islamapCenturyColor(part.century) : baseColor;
+      const angle = parts.length <= 1 ? 0 : (index / parts.length) * Math.PI * 2;
+      const radius = parts.length <= 1 ? 0 : 0.55;
+      const scholars = part.scholars.length ? `<br>العلماء: ${part.scholars.map(escapeHtml).join('، ')}` : '';
+      const books = part.books.length ? `<br>الكتب: ${part.books.map(escapeHtml).join('، ')}` : '';
+      const note = part.note ? `<br>${escapeHtml(part.note)}` : '';
+      const head = `${part.century ? 'ق' + part.century + 'هـ' : 'بلا قرن'}${part.count ? ' — ' + part.count + ' علماء' : ''}`;
+      nodes.push({
+        name: `${group.id}-${part.century || 'x'}-${index}`,
+        value: [located.lng + Math.cos(angle) * radius, located.lat + Math.sin(angle) * radius, part.count || 0],
+        symbolSize: showPlaces ? 16 : 0,
+        itemStyle: { color, borderColor: color === '#eab308' ? '#713f12' : '#fff', borderWidth: 2 },
+        labelText: located.name,
+        tip: `<strong>${escapeHtml(located.name)}</strong>${regionName ? ' — ' + escapeHtml(regionName) : ''}<br>${islamapCoordTip(located.lng, located.lat)}<br>${head}${scholars}${books}${note}`,
+        label: {
+          show: showPlaces && index === 0,
+          formatter: (params) => params.data.labelText,
+          position: 'right',
+          color: '#292524',
+          fontFamily: `"${family}", Amiri, serif`,
+          fontSize: size,
+          textBorderColor: '#fff',
+          textBorderWidth: 2
+        }
+      });
+    });
+  });
+  ISLAMAP_CITIES.filter((city) => used.has(city[0]) && !placeIds.has(city[0])).forEach((city) => {
+    const located = islamapLocate(city[0], data) || { lng: city[2], lat: city[3], name: city[1], water: city[4] === true };
+    const item = islamapLookup(data.cities, city[0]);
+    const value = item && (item.value || '') || '';
+    remember(value);
+    const label = [located.name, value, item && item.note, islamapCoordTip(located.lng, located.lat)].filter(Boolean).join(' — ');
+    const waypoint = located.water;
+    nodes.push({
+      name: city[0],
+      value: [located.lng, located.lat, 0],
+      symbolSize: showCities ? (waypoint ? 7 : 11) : 0,
+      itemStyle: { color: value ? islamapColor(value) : (waypoint ? ISLAMAP_SEA_COLOR : '#44403c'), borderColor: '#fff', borderWidth: 1 },
+      labelText: located.name,
+      tip: escapeHtml(label || city[1]),
+      label: {
+        show: showCities,
+        formatter: (params) => params.data.labelText,
+        position: 'right',
+        color: '#292524',
+        fontFamily: `"${family}", Amiri, serif`,
+        fontSize: waypoint ? Math.max(11, size - 2) : size,
+        textBorderColor: '#fff',
+        textBorderWidth: 2
+      }
+    });
+  });
+  const lines = [];
+  const framePoints = nodes.map((node) => node.value.slice(0, 2));
+  (data.routes || []).forEach((route) => {
+    const coords = islamapRouteCoords(route, data);
+    if (!coords) return;
+    coords.forEach((point) => framePoints.push(point));
+    const kind = route.kind || route.type || 'land';
+    const color = kind === 'sea' ? ISLAMAP_SEA_COLOR : (kind === 'portage' ? '#8c6a43' : '#6b3e26');
+    const label = [route.label, route.year].filter(Boolean).join(' ');
+    if (showRoutes) legend.set(kind === 'sea' ? 'مسار بحري' : (kind === 'portage' ? 'نقل على البر' : 'مسار بري'), color);
+    lines.push({
+      coords,
+      lineStyle: { color, width: 2.2, type: kind === 'portage' ? 'dashed' : 'solid', opacity: showRoutes ? 1 : 0 },
+      label: {
+        show: showRoutes && !!label,
+        formatter: label,
+        position: 'middle',
+        color: '#292524',
+        fontFamily: `"${family}", Amiri, serif`,
+        fontSize: Math.max(11, size - 1)
+      },
+      tooltip: { formatter: label }
+    });
+  });
+  const frame = islamapFrame(framePoints);
+  wrapper._frame = frame;
+  const tips = {};
+  regions.forEach((region) => { tips[region.name] = region.tooltip.formatter; });
+  chart.setOption({
+    backgroundColor: sea,
+    tooltip: {
+      trigger: 'item',
+      formatter: (params) => {
+        if (params.componentType === 'geo') return tips[params.name] || '';
+        const tip = params.data && (params.data.tip || (params.data.tooltip && params.data.tooltip.formatter));
+        return tip || '';
+      }
+    },
+    geo: {
+      map: 'islamap-world',
+      roam: true,
+      aspectScale: Math.cos((28 * Math.PI) / 180),
+      center: frame.center,
+      zoom: frame.zoom,
+      scaleLimit: { min: 1, max: 16 },
+      itemStyle: { areaColor: '#f4efe6', borderColor: '#b7aa96', borderWidth: 0.6 },
+      emphasis: { label: { show: false }, itemStyle: { areaColor: '#e7dcc8' } },
+      label: { show: false },
+      tooltip: { show: false },
+      regions
+    },
+    series: islamapGraticule(framePoints).concat([{
+      type: 'scatter',
+      coordinateSystem: 'geo',
+      data: nodes,
+      z: 5,
+      labelLayout: { hideOverlap: true },
+      emphasis: { scale: 1.18 }
+    }, {
+      type: 'lines',
+      coordinateSystem: 'geo',
+      polyline: true,
+      data: lines,
+      effect: { show: showRoutes, symbol: 'arrow', symbolSize: 8, period: 7, trailLength: 0 },
+      lineStyle: { width: 2, opacity: showRoutes ? 1 : 0 }
+    }])
+  }, { notMerge: true });
+  const legendHost = wrapper.querySelector('.islamap-legend');
+  if (legendHost) {
+    legendHost.innerHTML = [...legend.entries()].map(([name, color]) => `<span><i style="background:${color}"></i>${escapeHtml(name)}</span>`).join('');
+  }
+  const detailsHost = wrapper.querySelector('.islamap-details');
+  if (detailsHost) {
+    if (!visiblePlaces.length) {
+      detailsHost.innerHTML = '';
+    } else {
+      const byCentury = new Map();
+      visiblePlaces.forEach((place) => {
+        const key = place.century || 0;
+        if (!byCentury.has(key)) byCentury.set(key, []);
+        byCentury.get(key).push(place);
+      });
+      detailsHost.innerHTML = [...byCentury.entries()].sort((a, b) => a[0] - b[0]).map(([century, places]) => {
+        const scholars = places.reduce((sum, place) => sum + (place.count || 0), 0);
+        const books = places.reduce((sum, place) => sum + place.books.length, 0);
+        const rows = places.map((place) => {
+          const names = place.scholars.length ? place.scholars.map(escapeHtml).join('، ') : 'لا أسماء في النص';
+          const works = place.books.length ? ` — الكتب: ${place.books.map(escapeHtml).join('، ')}` : '';
+          return `<span><strong>${escapeHtml(place.name)}</strong>${place.count ? ' ' + place.count : ''}: ${names}${works}</span>`;
+        }).join('<br>');
+        return `<div class="islamap-era"><strong>${century ? 'ق' + century + 'هـ' : 'بلا قرن'} — ${places.length} مدينة، ${scholars} عالماً، ${books} كتاباً</strong><br>${rows}</div>`;
+      }).join('');
+    }
+  }
+  requestAnimationFrame(() => chart.resize());
+}
+
+function fitIslamap(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart) return;
+  const frame = wrapper._frame || ISLAMAP_VIEW;
+  const series = (chart.getOption().series || [])[0];
+  if (series && series.type === 'map') {
+    chart.setOption({ series: [{ center: frame.center, zoom: frame.zoom }] });
+    return;
+  }
+  chart.setOption({ geo: { center: frame.center, zoom: frame.zoom } });
+}
+
+async function shareIslamapImage(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart || typeof window.shareCapturedImage !== 'function') return;
+  const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: wrapper._bg || '#e7f0f6' });
+  let blob = null;
+  try { blob = await (await fetch(url)).blob(); } catch (err) { blob = null; }
+  await window.shareCapturedImage(blob, echartVisualTitle(wrapper, 'خارطة'), 'تعذر تجهيز صورة الخارطة للمشاركة');
+}
+
+function downloadIslamapShot(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart) return;
+  const title = echartVisualTitle(wrapper, 'خارطة');
+  const link = document.createElement('a');
+  link.href = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: wrapper._bg || '#e7f0f6' });
+  link.download = `${title}.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function setIslamapExpanded(wrapper, expanded) {
+  if (!wrapper) return;
+  if (expanded) {
+    if (!wrapper.classList.contains('is-expanded')) {
+      wrapper._homeParent = wrapper.parentNode;
+      wrapper._homeNext = wrapper.nextSibling;
+      document.body.appendChild(wrapper);
+    }
+    wrapper.classList.add('is-expanded');
+  } else {
+    wrapper.classList.remove('is-expanded');
+    if (wrapper._homeParent) wrapper._homeParent.insertBefore(wrapper, wrapper._homeNext);
+  }
+  requestAnimationFrame(() => { if (wrapper._echart) wrapper._echart.resize(); });
+}
+
+if (!window._islamapClicksBound) {
+  window._islamapClicksBound = true;
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-islamap-share], [data-islamap-fit], [data-islamap-reset], [data-islamap-shot], [data-islamap-expand], [data-islamap-close], [data-islamap-code]');
+    if (!button) return;
+    const wrapper = button.closest('.islamap-render-wrapper');
+    if (!wrapper) return;
+    event.preventDefault();
+    if (button.dataset.islamapFit) { fitIslamap(wrapper); return; }
+    if (button.dataset.islamapReset) { fitIslamap(wrapper); paintIslamap(wrapper); return; }
+    if (button.dataset.islamapShare) { shareIslamapImage(wrapper); return; }
+    if (button.dataset.islamapShot) { downloadIslamapShot(wrapper); return; }
+    if (button.dataset.islamapCode) {
+      const code = wrapper.querySelector('.echart-code');
+      if (code) code.hidden = !code.hidden;
+      return;
+    }
+    setIslamapExpanded(wrapper, button.dataset.islamapClose ? false : !wrapper.classList.contains('is-expanded'));
+  });
+  document.addEventListener('change', (event) => {
+    const control = event.target.closest('[data-islamap-layer], [data-islamap-era], [data-islamap-font], [data-islamap-size], [data-islamap-bg]');
+    if (!control) return;
+    const wrapper = control.closest('.islamap-render-wrapper');
+    if (!wrapper) return;
+    drawIslamap(wrapper);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const open = document.querySelector('.islamap-render-wrapper.is-expanded');
+    if (open) setIslamapExpanded(open, false);
+  });
+}
+
+async function requestChatIslamap(type) {
+  if (chatGraphBusy) return;
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const source = session && [...session.messages].reverse().find(item => item.role === 'assistant' && !item.chart_kind && !item.map_kind && stripChartFences(item.content).length > 40);
+  if (!source) {
+    if (typeof showToast === 'function') showToast('لا توجد نتيجة سابقة لرسم خارطتها');
+    return;
+  }
+  const control = startChatRun();
+  const container = document.getElementById('chatMessagesContainer');
+  const typingBubble = document.createElement('div');
+  typingBubble.className = 'message-bubble assistant';
+  typingBubble.innerHTML = `<div class="message-avatar">مج</div><div class="message-content"><span class="graph-wait-note">جارٍ استخلاص البيانات ثم اختيار الخارطة والإحداثيات، فضلاً انتظر</span></div>`;
+  if (container) {
+    container.appendChild(typingBubble);
+    if (typeof scrollToBottom === 'function') scrollToBottom();
+  }
+  const material = stripChartFences(source.content).slice(0, 36000);
+  const selectedModel = document.getElementById('chatModelSelect')?.value
+    || localStorage.getItem('almojtahed_active_chat_model')
+    || '';
+  if (!selectedModel) {
+    if (typingBubble.parentNode) typingBubble.remove();
+    endChatRun();
+    if (typeof showToast === 'function') showToast('اختر النموذج من القائمة المنسدلة قبل الرسم');
+    return;
+  }
+  let savedKeys = {};
+  try { savedKeys = readProviderKeys(); } catch (e) {}
+  try {
+    const response = await fetch('/api/islamap/compose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: control.signal,
+      body: JSON.stringify({
+        text: material,
+        kind: type,
+        model: selectedModel,
+        api_key: savedKeys.openrouter || '',
+        tavily_key: (typeof readTavilyKey === 'function' ? readTavilyKey() : '') || savedKeys.tavily || ''
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'تعذر رسم الخارطة');
+    if (typingBubble.parentNode) typingBubble.remove();
+    session.messages.push({
+      role: 'assistant',
+      content: data.reply || 'تعذر إظهار الخارطة.',
+      model: data.model || selectedModel,
+      map_kind: type
+    });
+    saveChatSessions();
+    renderSessionMessages(activeSessionId);
+  } catch (err) {
+    if (typingBubble.parentNode) typingBubble.remove();
+    if (chatStopped(err)) {
+      if (typeof showToast === 'function') showToast('تم الإيقاف');
+    } else if (typeof showToast === 'function') showToast(err.message || 'تعذر رسم الخارطة');
+  } finally {
+    endChatRun();
+  }
+}
+
+function insertIslamapKind(select) {
+  const type = select.value;
+  select.value = '';
+  select.dispatchEvent(new CustomEvent('theme-select-sync'));
+  if (!type) return;
+  requestChatIslamap(type);
+}
+
+window.insertIslamapKind = insertIslamapKind;
+window.requestChatIslamap = requestChatIslamap;
+window.renderIslamapBlocks = renderIslamapBlocks;
+
 function insertGraphKind(select) {
   const type = select.value;
   const inputId = select.dataset.graphTarget || 'chatInputText';
@@ -2794,12 +6493,35 @@ function insertGraphKind(select) {
 window.insertGraphKind = insertGraphKind;
 window.applyChatOutputTemplate = applyChatOutputTemplate;
 window.autoRenderChatInteractiveWidgets = autoRenderChatInteractiveWidgets;
+window.renderEchartsBlocks = renderEchartsBlocks;
 window.zoomChatMarkmap = zoomChatMarkmap;
 window.fitChatMarkmap = fitChatMarkmap;
 window.fitChatIsnad = fitChatIsnad;
 window.toggleChatCodeBlock = toggleChatCodeBlock;
 
 // نمط توزيع واستدعاء الوكلاء المساعدين في الشات الذكي (متوازي vs مباشر - حفظ خط الرجعة)
+window.chatRawMcp = localStorage.getItem('almojtahed_chat_raw_mcp') === '1';
+
+window.toggleChatRawMcp = function() {
+  window.chatRawMcp = !window.chatRawMcp;
+  localStorage.setItem('almojtahed_chat_raw_mcp', window.chatRawMcp ? '1' : '0');
+  updateChatRawMcpUI();
+  if (typeof showToast === 'function') {
+    showToast(window.chatRawMcp
+      ? '🔌 وضع MCP الخام مفعّل: النموذج يقود أدوات المجتهد مباشرة، بلا وكلاء، مع ضبط إحالات فقط'
+      : '↩️ عودة إلى الوضع المعتاد (وكلاء وتوجيه واسترجاع)', 3000);
+  }
+};
+
+window.updateChatRawMcpUI = function() {
+  const btn = document.getElementById('chatRawMcpToggleBtn');
+  if (!btn) return;
+  btn.classList.toggle('mode-raw', !!window.chatRawMcp);
+  btn.title = window.chatRawMcp
+    ? 'وضع MCP الخام مفعّل الآن: النموذج مع أدوات المجتهد فقط وقاعدة إحالة واحدة تضبط النقل والعزو، بلا وكلاء ولا استرجاع مسبق (انقر للإيقاف)'
+    : 'MCP خام مباشر: النموذج المختار يقود أدوات خادم المجتهد بنفسه كما يفعل أي عميل MCP خارجي — بلا وكلاء ولا خط استرجاع، مع قاعدة إحالة واحدة تضبط النقل والعزو فقط (انقر للتفعيل)';
+};
+
 window.chatAgentDispatchMode = localStorage.getItem('almojtahed_chat_dispatch_mode') || 'parallel';
 
 window.toggleChatDispatchMode = function() {
@@ -2841,14 +6563,29 @@ const CHAT_ENABLED_TOOLS_KEY = 'almojtahed_chat_enabled_tools';
 let _cachedToolsForChat = [];
 
 function getChatEnabledToolIds() {
+  let ids = ['markmap_mindmap', 'charts_metrics', 'echarts_charts'];
   try {
     const saved = localStorage.getItem(CHAT_ENABLED_TOOLS_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) ids = JSON.parse(saved);
   } catch (e) {
     console.error('Error reading chat enabled tools:', e);
   }
-  // التفعيل الافتراضي: أداة التشجير والخرائط الذهنية Markmap والشارتات البيانية
-  return ['markmap_mindmap', 'charts_metrics'];
+  if (!Array.isArray(ids)) ids = ['markmap_mindmap', 'charts_metrics', 'echarts_charts'];
+  if (localStorage.getItem('almojtahed_echarts_chat_added') !== '1') {
+    if (!ids.includes('echarts_charts')) ids.push('echarts_charts');
+    try {
+      localStorage.setItem(CHAT_ENABLED_TOOLS_KEY, JSON.stringify(ids));
+      localStorage.setItem('almojtahed_echarts_chat_added', '1');
+    } catch (e) {}
+  }
+  if (localStorage.getItem('almojtahed_islamap_chat_added') !== '1') {
+    if (!ids.includes('islamap_map')) ids.push('islamap_map');
+    try {
+      localStorage.setItem(CHAT_ENABLED_TOOLS_KEY, JSON.stringify(ids));
+      localStorage.setItem('almojtahed_islamap_chat_added', '1');
+    } catch (e) {}
+  }
+  return ids;
 }
 
 async function fetchAllToolsForChat() {
@@ -2877,6 +6614,23 @@ async function fetchAllToolsForChat() {
 // بناء القالب التوجيهي والمثال المطلوب عند استدعاء الأداة في الشات
 function buildToolPromptTemplate(tool) {
   const toolName = tool.name || 'الأداة المساعدة';
+  if (tool.architect_spec || tool.application_instruction || tool.example_input) {
+    const spec = tool.architect_spec || {};
+    const exampleInput = tool.example_input || spec.example_input || tool.mock_data || tool.mock_test_data || {};
+    const exampleOutput = tool.example_output || spec.example_output || {};
+    return `طبق أداة «${toolName}» على ناتج البحث الجاهز السابق في هذه المحادثة.
+
+[عقد تطبيق الأداة]:
+- البيانات هي ناتج البحث الجاهز الذي أنتجته من مخزن الشاملة في هذه المحادثة أو المشروع؛ لا تسأل الباحث عن مصدرها ولا تطلب منه إدخالها.
+- استخرج الحقول من ناتج البحث وفق المثال، ثم أخرج النتيجة بالشكل الذي صممت له الأداة تلقائياً: ${spec.output_kind || spec.display || tool.description || tool.desc || ''}
+- تعليمات التطبيق: ${tool.application_instruction || spec.application_instruction || tool.description || tool.desc || ''}
+- مثال لمدخل من ناتج بحث جاهز:
+${typeof exampleInput === 'string' ? exampleInput : JSON.stringify(exampleInput, null, 2)}
+- مثال للمخرج المطلوب:
+${typeof exampleOutput === 'string' ? exampleOutput : JSON.stringify(exampleOutput, null, 2)}
+
+ما أريده من هذه الأداة تحديداً: (فضلا حدد هنا ما تريده من هذه الأداة)`;
+  }
   let exampleStr = '';
 
   // استخراج المثال من mock_data أو mock_test_data
@@ -2908,15 +6662,50 @@ function buildToolPromptTemplate(tool) {
   return `استخدم هذه الاداة (فضلا حدد هنا ما تريده من هذه الأداة)\n\n[تنبيه للنموذج بكيفية الإخراج واستخدام الأداة: ${toolName}]:\n${exampleStr}`;
 }
 
+const CHAT_PROMPT_ONLY_TOOLS = new Set(['markmap_mindmap', 'charts_metrics', 'echarts_charts', 'islamap_map', 'astronomy_hijri_sync', 'hadith_isnad_tree', 'web_nasa_catalog', 'coc_markmap']);
+
+function toolRunsInBackground(tool) {
+  if (!tool || CHAT_PROMPT_ONLY_TOOLS.has(tool.id)) return false;
+  return true;
+}
+
 // عند الضغط على زر الأداة في الشريط الجانبي للشات
 async function useToolInChatPrompt(toolId) {
-  let tools = _cachedToolsForChat;
-  if (!tools || tools.length === 0) {
-    tools = await fetchAllToolsForChat();
-  }
-  const tool = tools.find(t => t.id === toolId);
+  let tools = await fetchAllToolsForChat();
+  try {
+    const res = await fetch('/api/tools');
+    if (res.ok) {
+      const data = await res.json();
+      const list = data.tools || (Array.isArray(data) ? data : []);
+      if (list.length) {
+        tools = list.map(t => ({
+          ...t,
+          tool_type: t.tool_type || (t.type === 'python_script' ? 'python_code' : 'ready_web_lib'),
+          description: t.description || t.desc || '',
+          name: t.name || t.id
+        }));
+        _cachedToolsForChat = tools;
+        if (window.toolsState) window.toolsState.tools = tools;
+      }
+    }
+  } catch (e) {}
+  const tool = (tools || []).find(t => t.id === toolId);
   if (!tool) {
     showToast('تعذر العثور على بيانات الأداة', true);
+    return;
+  }
+
+  if (tool.id === 'echarts_charts') {
+    requestChatEcharts('multi');
+    return;
+  }
+  if (tool.id === 'islamap_map') {
+    requestChatIslamap('full');
+    return;
+  }
+
+  if (toolRunsInBackground(tool)) {
+    await applyAdoptedToolInChat(tool);
     return;
   }
 
@@ -2954,7 +6743,7 @@ async function renderChatAssistantTools() {
   const enabledIds = getChatEnabledToolIds();
   const tools = await fetchAllToolsForChat();
 
-  const activeTools = tools.filter(t => enabledIds.includes(t.id) && t.enabled !== false);
+  const activeTools = tools.filter(t => enabledIds.includes(t.id) && t.enabled !== false && t.id !== 'echarts_charts' && t.id !== 'islamap_map');
 
   if (activeTools.length === 0) {
     container.innerHTML = `
@@ -2971,16 +6760,260 @@ async function renderChatAssistantTools() {
 
   container.innerHTML = activeTools.map(t => {
     const isWeb = t.tool_type === 'ready_web_lib' || t.type === 'web_library';
-    const icon = t.id === 'markmap_mindmap' ? '🌳' : (isWeb ? '📊' : '⚙️');
+    const executable = toolRunsInBackground(t);
+    const icon = t.id === 'markmap_mindmap' ? '🌳' : (t.id === 'echarts_charts' ? '📈' : (isWeb ? '📊' : '⚙️'));
+    const badge = executable ? 'تطبيق ⚡' : 'إدراج ✍️';
+    const title = executable ? `تطبيق «${t.name}» بمكتباتها على ناتج البحث` : `إدراج قالب واستدعاء «${t.name}» في الشات`;
     return `
-      <button type="button" class="btn-chat-tool-action" onclick="useToolInChatPrompt('${escapeHtml(t.id)}')" title="إدراج قالب واستدعاء «${escapeHtml(t.name)}» في الشات">
+      <button type="button" class="btn-chat-tool-action" onclick="useToolInChatPrompt('${escapeHtml(t.id)}')" title="${escapeHtml(title)}">
         <span class="tool-btn-icon">${icon}</span>
         <span class="tool-btn-name">${escapeHtml(t.name)}</span>
-        <span class="tool-btn-badge">إدراج ✍️</span>
+        <span class="tool-btn-badge">${badge}</span>
       </button>
     `;
   }).join('');
 }
+
+function summarizeToolOutput(name, output) {
+  const title = `نتيجة تطبيق أداة «${name}» على ناتج البحث:`;
+  if (!output || typeof output !== 'object') return title;
+  const lines = [title];
+  if (output.issue) lines.push('', `**المسألة:** ${output.issue}`);
+  if (output.range && (output.range.from || output.range.to)) {
+    lines.push(`**المدى:** ${output.range.from ?? ''}–${output.range.to ?? ''} هـ`);
+  }
+  if (output.counts && typeof output.counts === 'object') {
+    lines.push('', '**عدد القائلين:**');
+    Object.entries(output.counts).forEach(([label, count]) => lines.push(`- ${label}: ${count}`));
+  }
+  if (Array.isArray(output.entries) && output.entries.length) {
+    lines.push('', '| الفقيه | السنة | القول |', '| --- | --- | --- |');
+    output.entries.forEach((entry) => {
+      lines.push(`| ${entry.name || ''} | ${entry.year ?? ''} | ${entry.position || entry.القول || ''} |`);
+    });
+  }
+  if (output.status === 'error' || output.message) {
+    lines.push('', String(output.message || 'لم تُنتج الأداة رسماً من هذا النص.'));
+  }
+  if (lines.length === 1) {
+    const preview = { ...output };
+    delete preview.html;
+    delete preview.figure_json;
+    delete preview.html_path;
+    lines.push('', '```json', JSON.stringify(preview, null, 2), '```');
+  }
+  return lines.join('\n');
+}
+
+function plotlyFigureFromOutput(output) {
+  const figure = output && output.figure_json;
+  if (!figure || !Array.isArray(figure.data) || !figure.data.length) return null;
+  return { data: figure.data, layout: figure.layout || {} };
+}
+
+function formatAppliedToolOutput(name, output) {
+  const title = `نتيجة تطبيق أداة «${name}» على ناتج البحث:`;
+  if (output == null) return { markdown: `${title}\n\nلم تُرجع الأداة نتيجة.`, html: '', figure: null };
+  if (typeof output === 'string') {
+    const trimmed = output.trim();
+    if (trimmed.startsWith('<')) return { markdown: title, html: trimmed, figure: null };
+    return { markdown: `${title}\n\n${trimmed}`, html: '', figure: null };
+  }
+  if (typeof output === 'object') {
+    const figure = plotlyFigureFromOutput(output);
+    const html = figure ? '' : (typeof output.html === 'string' ? output.html : '');
+    return { markdown: summarizeToolOutput(name, output), html, figure };
+  }
+  return { markdown: `${title}\n\n${String(output)}`, html: '', figure: null };
+}
+
+function placeToolResultHtml(node, html) {
+  if (!node || !html) return;
+  const frame = document.createElement('iframe');
+  frame.title = 'رسم الأداة';
+  frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+  frame.style.width = '100%';
+  frame.style.height = '800px';
+  frame.style.border = '1px solid var(--border-subtle)';
+  frame.style.borderRadius = '8px';
+  frame.style.background = '#fff';
+  frame.srcdoc = html;
+  node.replaceChildren(frame);
+}
+
+async function mountChatToolFigures(container, session) {
+  if (!container || !session) return;
+  const figures = [...container.querySelectorAll('[data-tool-figure="1"]')];
+  const htmlNodes = [...container.querySelectorAll('[data-tool-html="1"]')];
+  if (figures.length) {
+    try {
+      await loadAdoptedToolScript('https://cdn.plot.ly/plotly-2.35.2.min.js');
+    } catch (e) {}
+  }
+  figures.forEach((node) => {
+    if (node.dataset.mounted === '1') return;
+    node.dataset.mounted = '1';
+    const index = Number(node.getAttribute('data-tool-index'));
+    const figure = session.messages[index] && session.messages[index].tool_figure;
+    if (window.Plotly && figure) {
+      window.Plotly.newPlot(node, figure.data || [], figure.layout || {}, { responsive: true, displaylogo: false });
+    } else {
+      node.textContent = 'تعذر تحميل مكتبة الرسم، والجدول أعلاه هو نتيجة الأداة.';
+    }
+  });
+  htmlNodes.forEach((node) => {
+    if (node.dataset.mounted === '1') return;
+    node.dataset.mounted = '1';
+    const index = Number(node.getAttribute('data-tool-index'));
+    const html = session.messages[index] && session.messages[index].tool_html;
+    placeToolResultHtml(node, html);
+  });
+}
+
+async function loadAdoptedToolScript(url) {
+  if (!url || document.querySelector(`script[data-tool-src="${CSS.escape(url)}"]`)) return;
+  await new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = url;
+    script.async = false;
+    script.dataset.toolSrc = url;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`تعذر تحميل المكتبة: ${url}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function mountAdoptedWebTool(mount, spec, researchText) {
+  if (!mount || !spec) return;
+  const urls = Array.isArray(spec.cdn_urls) ? spec.cdn_urls.slice() : [];
+  if (spec.library_url && /^https:\/\/.+\.js(?:\?|$)/.test(spec.library_url) && !urls.includes(spec.library_url)) {
+    urls.push(spec.library_url);
+  }
+  mount.innerHTML = '<span class="tool-coder-spinner" aria-hidden="true"></span> جارٍ تحميل مكتبات الأداة في الصفحة. فضلاً الانتظار.';
+  try {
+    for (const url of urls) await loadAdoptedToolScript(url);
+    mount.innerHTML = '';
+    const data = { research_text: researchText, text: researchText, content: researchText, answer: researchText };
+    if (spec.init_script) {
+      const runner = new Function('input', 'mount', 'data', 'researchText', spec.init_script);
+      runner(researchText, mount, data, researchText);
+    }
+    if (!mount.childNodes.length) {
+      mount.textContent = urls.length
+        ? 'حُمّلت مكتبات الأداة، ولم ترسم نتيجة داخل اللوحة.'
+        : 'الأداة بلا سكربت عرض يمكن تشغيله في الصفحة.';
+    }
+  } catch (err) {
+    mount.textContent = `تعذر تشغيل مكتبة الأداة في الصفحة: ${err.message}`;
+  }
+}
+
+function mountChatAppliedWebTools(container, session) {
+  if (!container || !session) return;
+  container.querySelectorAll('[data-tool-web="1"]').forEach((mount) => {
+    if (mount.dataset.mounted === '1') return;
+    mount.dataset.mounted = '1';
+    const index = Number(mount.getAttribute('data-tool-index'));
+    const spec = session.messages[index] && session.messages[index].tool_web;
+    let researchText = '';
+    for (let i = index - 1; i >= 0; i -= 1) {
+      const message = session.messages[i];
+      if (message && message.role === 'assistant' && message.content && !message.tool_applied) {
+        researchText = message.content;
+        break;
+      }
+    }
+    mountAdoptedWebTool(mount, spec, researchText);
+  });
+}
+
+async function applyStoredResearchTool(tool, researchText) {
+  const res = await fetch('/api/tools/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tool_id: tool.id, research_text: researchText || '' })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) {
+    return { ok: false, error: data.detail || data.error || data.message || 'تعذر تطبيق الأداة' };
+  }
+  if (data.kind === 'web') {
+    return {
+      ok: true,
+      kind: 'web',
+      markdown: `نتيجة تطبيق أداة «${tool.name}» تُعرض بلوحتها بعد تحميل مكتباتها.`,
+      web: {
+        init_script: data.init_script || '',
+        cdn_urls: data.cdn_urls || [],
+        library_url: data.library_url || ''
+      }
+    };
+  }
+  const rendered = formatAppliedToolOutput(tool.name, data.output);
+  return { ok: true, kind: 'python', markdown: rendered.markdown, html: rendered.html || '', figure: rendered.figure || null };
+}
+
+let chatToolApplyBusy = false;
+
+async function applyAdoptedToolInChat(tool) {
+  if (chatToolApplyBusy) return;
+  const session = (typeof chatSessions !== 'undefined' ? chatSessions : []).find(s => s.id === activeSessionId);
+  if (!session) {
+    if (typeof showToast === 'function') showToast('افتح محادثة فيها نتيجة بحث أولاً', true);
+    return;
+  }
+  const source = [...session.messages].reverse().find(m => m.role === 'assistant' && m.content && !m.tool_applied);
+  if (!source || !String(source.content).trim()) {
+    if (typeof showToast === 'function') showToast('طبّق الأداة بعد ظهور نتيجة البحث في المحادثة', true);
+    return;
+  }
+  chatToolApplyBusy = true;
+  const container = document.getElementById('chatMessagesContainer');
+  const wait = document.createElement('div');
+  wait.className = 'message-bubble assistant';
+  wait.innerHTML = `
+    <div class="message-avatar">مج</div>
+    <div class="message-content">
+      <span class="tool-coder-spinner" aria-hidden="true"></span>
+      جارٍ تطبيق «${escapeHtml(tool.name || 'الأداة')}» بمكتباتها المنصّبة. فضلاً الانتظار.
+    </div>
+  `;
+  if (container) {
+    container.appendChild(wait);
+    if (typeof scrollToBottom === 'function') scrollToBottom();
+  }
+  try {
+    const applied = await applyStoredResearchTool(tool, source.content);
+    if (!applied.ok) throw new Error(applied.error || 'تعذر تطبيق الأداة');
+    session.messages.push({
+      role: 'assistant',
+      content: applied.markdown,
+      tool_html: applied.html || '',
+      tool_figure: applied.figure || null,
+      tool_web: applied.web || null,
+      tool_applied: true
+    });
+    if (typeof saveChatSessions === 'function') saveChatSessions();
+    renderSessionMessages(activeSessionId);
+  } catch (err) {
+    session.messages.push({
+      role: 'assistant',
+      content: `تعذر تطبيق أداة «${tool.name || 'الأداة'}»: ${err.message}`,
+      tool_applied: true
+    });
+    if (typeof saveChatSessions === 'function') saveChatSessions();
+    renderSessionMessages(activeSessionId);
+  } finally {
+    chatToolApplyBusy = false;
+    if (wait.parentNode) wait.remove();
+  }
+}
+
+window.formatAppliedToolOutput = formatAppliedToolOutput;
+window.applyStoredResearchTool = applyStoredResearchTool;
+window.mountAdoptedWebTool = mountAdoptedWebTool;
+window.placeToolResultHtml = placeToolResultHtml;
+window.mountChatToolFigures = mountChatToolFigures;
 
 const SELECTION_RESEARCH_KINDS = [
   {
@@ -3400,7 +7433,8 @@ async function runSelectionResearch() {
       selection_research: kind.id,
       duration_ms: durationMs,
       thinking_effort: data.thinking_effort || '',
-      thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : ''
+      thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : '',
+      witnesses: Array.isArray(data.witnesses) ? data.witnesses : []
     });
     saveChatSessions();
     renderSessionMessages(activeSessionId);
@@ -3440,6 +7474,7 @@ document.addEventListener('keydown', (event) => {
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     updateChatDispatchModeUI();
+    if (typeof updateChatRawMcpUI === 'function') updateChatRawMcpUI();
     updateChatHybridToggleUI();
     renderChatAssistantTools();
   }, 100);

@@ -1,4 +1,5 @@
 let shareDraft = null;
+let externalShareState = { token: 0, file: null, error: null, title: '' };
 
 const shareKindNames = {
   chat: 'المحادثة',
@@ -32,6 +33,11 @@ function openSharePicker(kind, itemId, label, options) {
   if (destination) destination.hidden = kind === 'key';
   const membersMode = document.querySelector('input[name="shareDestination"][value="members"]');
   if (membersMode) membersMode.checked = true;
+  const externalOption = document.getElementById('shareExternalOption');
+  const showExternal = kind === 'chat' && Number.isInteger(shareDraft.messageIndex);
+  if (externalOption) externalOption.hidden = !showExternal;
+  if (showExternal) prepareExternalShare();
+  else externalShareState.token += 1;
   const mine = document.querySelector('input[name="shareKeyMode"][value="mine"]');
   if (mine) mine.checked = true;
   if (newKey) newKey.value = '';
@@ -51,21 +57,96 @@ function shareDestinationMode() {
 }
 
 function toggleShareDestination() {
-  const device = shareDestinationMode() === 'device';
+  const mode = shareDestinationMode();
+  const device = mode === 'device';
+  const external = mode === 'external';
   const members = document.getElementById('shareMemberFields');
   const button = document.getElementById('shareSubmitBtn');
   const hint = document.getElementById('shareModalHint');
-  if (members) members.hidden = device;
-  if (button) button.textContent = device ? 'حفظ في الجهاز' : 'مشاركة';
+  const note = document.getElementById('shareFormNote');
+  if (members) members.hidden = device || external;
+  if (button) button.textContent = device ? 'حفظ في الجهاز' : (external ? 'مشاركة خارجية' : 'مشاركة');
+  if (note) {
+    note.textContent = external
+      ? (externalShareState.file ? '' : (externalShareState.error ? 'تعذر تجهيز ملف PDF للمشاركة' : 'جارٍ تجهيز ملف المشاركة...'))
+      : '';
+  }
   if (!hint || !shareDraft) return;
   if (shareDraft.kind === 'key') {
     hint.textContent = 'المفتاح الخاص يبقى لديك. المفتاح الجديد لا يُحفظ في حسابك، ويُضاف عند قبول الطرف الآخر فقط.';
     return;
   }
   const name = shareDraft.label ? `«${shareDraft.label}»` : (shareKindNames[shareDraft.kind] || 'العنصر');
+  if (external) {
+    hint.textContent = `${name} تُفتح في قائمة المشاركة في النظام، مثل نافذة القراءة.`;
+    return;
+  }
   hint.textContent = device
     ? `${name} يُحفظ ملفاً على جهازك، ولا يُرسل إلى أي عضو.`
     : `${name} يبقى لديك، وتُرسل نسخة إلى الأعضاء الذين تحددهم.`;
+}
+
+async function prepareExternalShare() {
+  const draft = shareDraft;
+  if (!draft || !Number.isInteger(draft.messageIndex) || typeof prepareChatAnswerShareFile !== 'function') return;
+  const token = ++externalShareState.token;
+  externalShareState.file = null;
+  externalShareState.error = null;
+  externalShareState.title = draft.label || 'قراءة';
+  try {
+    const file = await prepareChatAnswerShareFile(draft.messageIndex);
+    if (token !== externalShareState.token) return;
+    externalShareState.file = file;
+  } catch (err) {
+    if (token !== externalShareState.token) return;
+    externalShareState.error = err;
+  }
+  if (shareDestinationMode() === 'external') toggleShareDestination();
+}
+
+function selectShareDestination(mode) {
+  const input = document.querySelector(`input[name="shareDestination"][value="${mode}"]`);
+  if (!input) return;
+  if (!input.checked) {
+    input.checked = true;
+    toggleShareDestination();
+    if (mode === 'external') presentExternalShare();
+  }
+}
+
+function presentExternalShare() {
+  const note = document.getElementById('shareFormNote');
+  const file = externalShareState.file;
+  if (!file) {
+    if (note) {
+      note.textContent = externalShareState.error
+        ? 'تعذر تجهيز ملف PDF للمشاركة'
+        : 'جارٍ تجهيز ملف PDF، ثم أعد الضغط';
+    }
+    if (!externalShareState.error) prepareExternalShare();
+    return;
+  }
+  externalShareState.file = null;
+  const payload = { files: [file], title: externalShareState.title || 'قراءة' };
+  if (typeof navigator.share !== 'function') {
+    if (note) note.textContent = 'هذا النظام لا يفتح قائمة المشاركة';
+    return;
+  }
+  if (typeof navigator.canShare === 'function' && !navigator.canShare(payload)) {
+    if (note) note.textContent = 'هذا النظام لا يتيح مشاركة ملف PDF عبر قائمة المشاركة';
+    return;
+  }
+  let pending;
+  try {
+    pending = navigator.share(payload);
+  } catch (err) {
+    if (note) note.textContent = 'تعذر فتح قائمة المشاركة';
+    return;
+  }
+  closeSharePicker();
+  pending.catch((err) => {
+    if (err && err.name === 'AbortError') return;
+  });
 }
 
 function toggleShareKeyMode() {
@@ -87,6 +168,7 @@ function closeSharePicker() {
   modal.style.display = 'none';
   modal.classList.remove('active', 'open');
   shareDraft = null;
+  externalShareState.token += 1;
 }
 
 async function loadShareMembers() {
@@ -155,6 +237,10 @@ async function submitShare(event) {
   if (event) event.preventDefault();
   const note = document.getElementById('shareFormNote');
   if (!shareDraft) return;
+  if (shareDestinationMode() === 'external') {
+    presentExternalShare();
+    return;
+  }
   if (shareDestinationMode() === 'device') {
     const saved = saveShareToDevice();
     if (!saved && note) note.textContent = 'تعذر حفظ الملف في الجهاز';
@@ -231,6 +317,8 @@ window.filterShareMembers = filterShareMembers;
 window.toggleShareEveryone = toggleShareEveryone;
 window.toggleShareKeyMode = toggleShareKeyMode;
 window.toggleShareDestination = toggleShareDestination;
+window.presentExternalShare = presentExternalShare;
+window.selectShareDestination = selectShareDestination;
 
 async function revealSharedKey(uiName) {
   switchMainTab('providers');

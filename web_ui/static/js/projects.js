@@ -26,7 +26,7 @@ function toggleProjectHybridSearchMode() {
   updateProjectHybridToggleUI();
   if (typeof showToast === 'function') {
     if (isProjectHybridSearchEnabled) {
-      showToast('المشاريع البحثية: تم تفعيل استرجاع النصوص بالبحث الهجين (Dense + BM25) ⚡');
+      showToast('المشاريع البحثية: تم تفعيل استرجاع النصوص بالبحث الهجين (دلالي + لفظي) ⚡');
     } else {
       showToast('المشاريع البحثية: تم تفعيل استرجاع النصوص بالبحث الدلالي الصرف (Dense Only) 🧠');
     }
@@ -44,7 +44,7 @@ function updateProjectHybridToggleUI() {
     btn.classList.remove('is-disabled');
     btn.setAttribute('aria-pressed', 'true');
     btn.title = 'البحث الهجين في المشروع مفعّل: استرجاع الشواهد التراثية بالدمج بين التضمين الدلالي والتطابق اللفظي BM25. انقر للتعطيل.';
-    label.textContent = 'بحث هجين مفعّل (Dense + BM25)';
+    label.textContent = 'بحث هجين مفعّل (دلالي + لفظي)';
     if (icon) icon.setAttribute('data-lucide', 'layers');
   } else {
     btn.classList.remove('is-active');
@@ -132,6 +132,103 @@ function safeSaveProjectsLocalStorage() {
   } catch (e) {
     console.warn('localStorage quota reached, backend server handles full storage safely:', e);
   }
+}
+
+function currentProjectDraft() {
+  const history = Array.isArray(architectHistory) ? architectHistory : [];
+  const blueprint = currentStudioBlueprint || null;
+  if (!history.length && !blueprint && !currentPlanningProjectId && !activeProjectId) return null;
+  const id = currentPlanningProjectId || activeProjectId || ('proj_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+  if (!currentPlanningProjectId) currentPlanningProjectId = id;
+  const existing = (projectsList || []).find(item => item && item.id === id) || {};
+  const title = (blueprint && blueprint.title) || existing.title || 'مشروع محفوظ تلقائياً';
+  return {
+    ...existing,
+    id,
+    title,
+    desc: (blueprint && blueprint.desc) || existing.desc || '',
+    status: existing.status || 'مسودة محفوظة تلقائياً',
+    blueprint: blueprint || existing.blueprint || null,
+    architect_history: history.length ? history : (existing.architect_history || []),
+    architect_dialog: history.length ? history : (existing.architect_dialog || []),
+    architect_model: document.getElementById('architectModelSelect')?.value || existing.architect_model || '',
+    architect_thinking: document.getElementById('architectThinkingSelect')?.value || existing.architect_thinking || 'medium',
+    retrieval_anchors: (blueprint && blueprint.retrieval_anchors) || existing.retrieval_anchors || [],
+    research_profile: (blueprint && blueprint.research_profile) || existing.research_profile || null,
+    extraction_capacity: (blueprint && blueprint.extraction_capacity) || existing.extraction_capacity || 150,
+    director: (blueprint && blueprint.director) || existing.director || {},
+    subagents_group: (blueprint && blueprint.subagents_group) || existing.subagents_group || null,
+    internal_benchmark: (blueprint && blueprint.internal_benchmark) || existing.internal_benchmark || { enabled: false },
+    external_web_benchmark: (blueprint && blueprint.external_web_benchmark) || existing.external_web_benchmark || { enabled: false },
+    computational_tool: (blueprint && blueprint.computational_tool) || existing.computational_tool || { enabled: false },
+    output_formats: (blueprint && blueprint.output_formats) || existing.output_formats || { csv_results: true, formatted_txt: true },
+    autosaved: true
+  };
+}
+
+function queueProjectAutosave() {
+  clearTimeout(window._projectAutosaveTimer);
+  window._projectAutosaveTimer = setTimeout(() => { saveProjectDraftNow(); }, 800);
+}
+
+async function saveProjectDraftNow() {
+  const draft = currentProjectDraft();
+  if (!draft) return;
+  if (!(draft.architect_history || []).length && !draft.blueprint) return;
+  try {
+    const res = await fetch('/api/projects/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+      keepalive: true
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const saved = data.project || draft;
+      const idx = projectsList.findIndex(item => item && item.id === saved.id);
+      if (idx >= 0) projectsList[idx] = { ...projectsList[idx], ...saved };
+      else projectsList.unshift(saved);
+      safeSaveProjectsLocalStorage();
+    }
+  } catch (err) {
+    console.warn('Project autosave error:', err);
+  }
+}
+
+async function restoreLastProject() {
+  try {
+    const res = await fetch('/api/projects/draft');
+    if (!res.ok) throw new Error('تعذر قراءة آخر مشروع');
+    const data = await res.json();
+    const project = data && data.project;
+    if (!project || !project.id) {
+      if (typeof showToast === 'function') showToast('لا توجد مسودة محفوظة لاسترجاعها');
+      return;
+    }
+    const idx = projectsList.findIndex(item => item && item.id === project.id);
+    if (idx >= 0) projectsList[idx] = { ...projectsList[idx], ...project };
+    else projectsList.unshift(project);
+    safeSaveProjectsLocalStorage();
+    renderProjectsList();
+    if (typeof openProjectPlanningModal === 'function') openProjectPlanningModal(project.id);
+    if (typeof showToast === 'function') showToast('تم استرجاع آخر مشروع محفوظ');
+  } catch (err) {
+    if (typeof showToast === 'function') showToast(err.message || 'تعذر استرجاع المشروع');
+  }
+}
+window.restoreLastProject = restoreLastProject;
+window.saveProjectDraftNow = saveProjectDraftNow;
+
+if (!window._projectAutosaveBound) {
+  window._projectAutosaveBound = true;
+  window.addEventListener('pagehide', () => { saveProjectDraftNow(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveProjectDraftNow();
+  });
+  setInterval(() => {
+    const modal = document.getElementById('projectPlanningModal');
+    if (modal && modal.style.display !== 'none') saveProjectDraftNow();
+  }, 20000);
 }
 
 // حفظ مشروع أو تحديثه في الخادم والتخزين المحلي
@@ -519,6 +616,8 @@ function updateCardQuickSummaries(project) {
     const tType = project.computational_tool?.tool_type || 'none';
     let tLabel = 'أداة مساعدة';
     if (tType === 'charts_metrics') tLabel = '📊 المؤشرات والشارتات';
+    else if (tType === 'echarts_charts') tLabel = '📈 رسوم ECharts';
+    else if (tType === 'islamap_map') tLabel = '🗺️ خارطة العالم الإسلامي';
     else if (tType === 'astronomy_hijri_sync') tLabel = '📐 تدقيق فلكي وتقويمي';
     else if (tType === 'hadith_isnad_tree') tLabel = '🌳 شجرة الأسانيد';
     else if (tType === 'none') tLabel = 'بدون أداة مساعدة';
@@ -1340,7 +1439,7 @@ function syncSubagentTestContextUI() {
   const searchBadge = document.getElementById('pSubagentTestSearchModeBadge');
   if (searchBadge) {
     if (isProjectHybridSearchEnabled) {
-      searchBadge.textContent = '⚡ بحث هجين (Dense + BM25)';
+      searchBadge.textContent = '⚡ بحث هجين (دلالي + لفظي)';
       searchBadge.style.color = 'var(--accent-clay)';
     } else {
       searchBadge.textContent = '🧠 بحث دلالي صرف (Dense Only)';
@@ -1940,6 +2039,7 @@ async function sendArchitectMessage() {
   // إضافة رسالة المستخدم إلى سجل المحادثة
   architectHistory.push({ role: 'user', content: userText });
   renderArchitectChat();
+  saveProjectDraftNow();
 
   const sendBtn = document.getElementById('btnSendArchitect');
   const modelSelect = document.getElementById('architectModelSelect');
@@ -2012,7 +2112,6 @@ async function sendArchitectMessage() {
       architectHistory.push({ role: 'assistant', content: data.reply });
       renderArchitectChat();
 
-      // حفظ سجل المحادثة ونموذج المهندس فورياً في كائن المشروع المرتبط إذا كان مشروعاً قائماً محفوظاً
       const targetId = currentPlanningProjectId;
       if (targetId) {
         const curProj = projectsList.find(x => x.id === targetId);
@@ -2021,12 +2120,11 @@ async function sendArchitectMessage() {
           curProj.architect_history = [...architectHistory];
           curProj.architect_model = document.getElementById('architectModelSelect')?.value || curProj.architect_model || 'google/gemini-2.5-flash';
           curProj.architect_thinking = document.getElementById('architectThinkingSelect')?.value || curProj.architect_thinking || 'medium';
-          if (data.blueprint) {
-            curProj.blueprint = data.blueprint;
-          }
+          if (data.blueprint) curProj.blueprint = data.blueprint;
           saveProjectToStorage(curProj);
         }
       }
+      saveProjectDraftNow();
     }
 
     if (data.explored_books && data.explored_books.length > 0) {
@@ -2036,6 +2134,7 @@ async function sendArchitectMessage() {
     if (data.blueprint) {
       currentStudioBlueprint = data.blueprint;
       renderStudioCardsPreview(data.blueprint);
+      saveProjectDraftNow();
       const applyBtn = document.getElementById('btnApplyStudioBlueprint');
       const statusBadge = document.getElementById('blueprintLiveStatus');
       if (applyBtn) applyBtn.disabled = false;
@@ -2689,6 +2788,38 @@ async function applyStudioBlueprint() {
         };
       });
 
+      // مدير المشروع بطاقة قائد داخل مجموعة الوكلاء نفسها (لا سلطة موازية
+      // خارجها): يقود التوليف بنموذجه وتفكيره وتوجيهه، ولا يُرسل وكيلَ جمع،
+      // وتعطيله من قائمة الوكلاء يعيد القيادة لنموذج المحادثة.
+      if (bp.director) {
+        mappedAgents.unshift({
+          id: `director_${targetGroupId}`,
+          name: bp.director.name || 'مدير المشروع',
+          desc: 'قائد الفريق: يقود الوكلاء ويحرر البحث ويسلمه، بنموذجه وتفكيره وتوجيهه المعتمد في المخطط',
+          model: bp.director.model || 'google/gemini-2.5-flash',
+          enabled: true,
+          active: true,
+          is_director: true,
+          role: 'director',
+          books: [],
+          booksScope: [],
+          scope_summary: 'قيادة وتوليف — لا نطاق جمع',
+          pool_size: 0,
+          poolSize: 0,
+          top_k: bp.director.extract_count || 120,
+          topK: bp.director.extract_count || 120,
+          thinking: bp.director.thinking || 'high',
+          search_mode: bp.director.search_mode || 'hybrid',
+          use_hybrid: (bp.director.search_mode || 'hybrid') !== 'semantic',
+          temp: 0.2,
+          max_tokens: 65536,
+          maxTokens: 65536,
+          context_tokens: bp.director.context_tokens || 1048576,
+          system_prompt: bp.director.system_prompt || '',
+          systemPrompt: bp.director.system_prompt || ''
+        });
+      }
+
       const updatedGroup = {
         id: targetGroupId,
         name: bp.subagents_group.name || `فريق: ${(bp.title || 'المشروع').slice(0, 20)}`,
@@ -2710,7 +2841,14 @@ async function applyStudioBlueprint() {
     }
 
     // 2. بناء كائن المشروع أو تحديثه في مكانه دون تكرار
-    const directorPrompt = bp.director?.system_prompt || 'أنت مدير هذا المشروع البحثي، تشرف على قيادة الوكلاء وتفريغ النتائج في جداول قياسية. تمتلك الصلاحية العلمية الكاملة لتوجيه إعادة البحث والتحقق من صحة الحديث وتخريجه أو التأكد من نسبة قول أو أثر حتى 3 مرات قبل اعتماد النتائج وإصدار الحكم النهائي.';
+    let directorPrompt = bp.director?.system_prompt || 'أنت مدير هذا المشروع البحثي، تشرف على قيادة الوكلاء وتفريغ النتائج في جداول قياسية. تمتلك الصلاحية العلمية الكاملة لتوجيه إعادة البحث والتحقق من صحة الحديث وتخريجه أو التأكد من نسبة قول أو أثر حتى 3 مرات قبل اعتماد النتائج وإصدار الحكم النهائي.';
+    // ختم ملف تصنيف الطلب على توجيه المدير: الغرض والطول والجمهور وبنية
+    // المخرج المصنفة عند المهندس تسري على التنفيذ كله ولو نسيها المهندس.
+    const rp = bp.research_profile || null;
+    if (rp && !directorPrompt.includes('ملف الطلب:')) {
+      const rpLine = `ملف الطلب: الفن: ${rp.discipline || 'غير مصنف'}؛ الغرض: ${rp.purpose || 'بحث'}؛ العمق: ${rp.depth || 'متوسط'}؛ الطول المستهدف: ${rp.length || 'متوسط'}؛ الجمهور: ${rp.audience || 'متخصصون'}؛ المنهج: ${rp.method || 'تحليلي'}؛ المناظرة: ${rp.debate || 'mini'}؛ بنية المخرج: ${rp.output_structure || 'دراسة محررة بعناوين وحواشٍ وثبت مصادر'}. التزم بهذا الملف في بنية تقريرك وطوله ولغته التزامًا صارمًا: المختصر لا يُطال، والمطوّل لا يُختصر، والتدريسي يُبنى بأهداف وأمثلة وأسئلة، والأكاديمي يُبنى بإشكالية ومنهج وخاتمة بنتائج وثبت مصادر.`;
+      directorPrompt = rpLine + '\n\n' + directorPrompt;
+    }
     const chosenArchitectModel = document.getElementById('architectModelSelect')?.value || 'google/gemini-2.5-flash';
 
     let targetProject = existingProject;
@@ -2741,6 +2879,7 @@ async function applyStudioBlueprint() {
         agents: (bp.subagents_group?.agents && bp.subagents_group.agents.length > 0) ? (window.agentGroups?.find(g => g.id === targetGroupId)?.agents || []) : (targetProject.subagents_group?.agents || [])
       };
       if (bp.extraction_capacity) targetProject.extraction_capacity = bp.extraction_capacity;
+      if (bp.research_profile) targetProject.research_profile = bp.research_profile;
       if (bp.retrieval_anchors) targetProject.retrieval_anchors = bp.retrieval_anchors;
       if (bp.internal_benchmark) targetProject.internal_benchmark = bp.internal_benchmark;
       if (bp.external_web_benchmark) targetProject.external_web_benchmark = bp.external_web_benchmark;
@@ -2777,6 +2916,7 @@ async function applyStudioBlueprint() {
           agents: (bp.subagents_group?.agents && bp.subagents_group.agents.length > 0) ? (window.agentGroups?.find(g => g.id === targetGroupId)?.agents || []) : []
         },
         extraction_capacity: bp.extraction_capacity || 150,
+        research_profile: bp.research_profile || null,
         retrieval_anchors: bp.retrieval_anchors || [],
         internal_benchmark: bp.internal_benchmark || { enabled: false, title: '', author: '', methodology: '' },
         external_web_benchmark: bp.external_web_benchmark || { enabled: false, query: bp.title || '', domains: [], prompt: '' },
@@ -3284,7 +3424,7 @@ function exportSingleProject(projectId, event) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
 
   if (typeof showToast === 'function') {
     showToast(`تم حفظ مشروع «${(p.title || '').slice(0, 35)}» في جهازك`);
@@ -3461,6 +3601,76 @@ function omitDisabledProjectTables(text, formats) {
     .replace(/<table[\s\S]*?<\/table>/gi, '');
 }
 
+async function withArchitectToolResult(project, researchText, statusMsg) {
+  const plain = researchText || '';
+  if (!project?.computational_tool?.enabled || typeof applyStoredResearchTool !== 'function') {
+    return { text: plain, web: null, html: '', figure: null };
+  }
+  let tools = window.toolsState?.tools || [];
+  if (!tools.length) {
+    try {
+      const res = await fetch('/api/tools');
+      if (res.ok) {
+        const data = await res.json();
+        tools = Array.isArray(data) ? data : (data.tools || []);
+      }
+    } catch (e) {}
+  }
+  const tool = (tools || []).find(t => t.id === project.computational_tool.tool_type && (t.python_code || t.init_script || t.architect_spec || t.application_instruction || (t.cdn_urls || []).length));
+  if (!tool) return { text: plain, web: null, html: '', figure: null };
+  if (statusMsg) statusMsg.textContent = `جارٍ تطبيق «${tool.name}» بمكتباتها المنصّبة. فضلاً الانتظار.`;
+  try {
+    const applied = await applyStoredResearchTool(tool, plain);
+    if (!applied.ok) {
+      return { text: `${plain}\n\n---\n\n## نتيجة الأداة «${tool.name}»\n\nتعذر التطبيق: ${applied.error}`, web: null, html: '', figure: null };
+    }
+    return { text: `${plain}\n\n---\n\n${applied.markdown}`, web: applied.web || null, html: applied.html || '', figure: applied.figure || null };
+  } catch (err) {
+    return { text: `${plain}\n\n---\n\n## نتيجة الأداة «${tool.name}»\n\nتعذر التطبيق: ${err.message}`, web: null, html: '', figure: null };
+  }
+}
+
+async function composeProjectIslamap(project, researchText, statusMsg) {
+  if (!project?.computational_tool?.enabled || project.computational_tool?.tool_type !== 'islamap_map') {
+    return researchText;
+  }
+  const material = String(researchText || '').replace(/```islamap[\s\S]*?```/gi, '').trim().slice(0, 36000);
+  const mapKind = 'auto';
+  if (material.length < 40) return researchText;
+  if (statusMsg) statusMsg.textContent = 'جارٍ استخلاص البيانات ثم اختيار الخارطة والإحداثيات، فضلاً انتظر';
+  const selectedModel = project?.director?.model
+    || document.getElementById('chatModelSelect')?.value
+    || '';
+  if (!selectedModel) {
+    showToast('اختر النموذج من القائمة المنسدلة قبل الرسم');
+    return researchText;
+  }
+  let savedKeys = {};
+  try { savedKeys = readProviderKeys(); } catch (e) {}
+  try {
+    const response = await fetch('/api/islamap/compose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: material,
+        kind: mapKind,
+        model: selectedModel,
+        api_key: savedKeys.openrouter || '',
+        tavily_key: (typeof readTavilyKey === 'function' ? readTavilyKey() : '') || savedKeys.tavily || ''
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.reply) {
+      showToast(data.detail || 'تعذر رسم الخارطة');
+      return material;
+    }
+    return `${material}\n\n${data.reply}`;
+  } catch (err) {
+    showToast(err.message || 'تعذر رسم الخارطة');
+    return material;
+  }
+}
+
 async function runCurrentProjectExecution() {
   if (!activeProjectId) return;
   saveCurrentProjectWorkspaceState();
@@ -3484,6 +3694,7 @@ async function runCurrentProjectExecution() {
   }
 
   let elapsedSec = 0;
+  let pauseRunStatus = false;
   const isDirect = (project.agent_dispatch_mode === 'direct');
   if (statusMsg) {
     statusMsg.textContent = isDirect
@@ -3497,7 +3708,7 @@ async function runCurrentProjectExecution() {
     const secs = String(elapsedSec % 60).padStart(2, '0');
     if (timerEl) timerEl.textContent = `⏱️ ${mins}:${secs}`;
 
-    if (statusMsg) {
+    if (statusMsg && !pauseRunStatus) {
       if (isDirect) {
         if (elapsedSec >= 7 && elapsedSec < 18) {
           statusMsg.textContent = 'المرحلة 2: يقوم مدير المشروع بصياغة التقرير وتفريغ الجداول التراثية...';
@@ -3601,12 +3812,22 @@ ${webBenchmarkResults.map((r, i) => `${i + 1}. المصدر: ${r.title}\n   ال
 
     const isAstronomy = project.computational_tool?.enabled && (project.computational_tool?.tool_type === 'astronomy_hijri_sync' || project.computational_tool?.tool_type === 'web_nasa_catalog');
     const isCharts = project.computational_tool?.enabled && (project.computational_tool?.tool_type === 'charts_metrics');
+    const isEcharts = project.computational_tool?.enabled && (project.computational_tool?.tool_type === 'echarts_charts');
+    const isIslamap = project.computational_tool?.enabled && (project.computational_tool?.tool_type === 'islamap_map');
     const isIsnad = project.computational_tool?.enabled && (project.computational_tool?.tool_type === 'hadith_isnad_tree');
     const isMarkmap = project.computational_tool?.enabled && (project.computational_tool?.tool_type === 'markmap_mindmap' || project.computational_tool?.tool_type === 'coc_markmap' || project.computational_tool?.category === 'تشجير ومفاهيم');
 
+    const customArchitectTool = (window.toolsState?.tools || []).find(t => t.id === project.computational_tool?.tool_type && (t.architect_spec || t.application_instruction));
     let toolDirectives = '';
-    if (isAstronomy) {
+    if (customArchitectTool) {
+      const spec = customArchitectTool.architect_spec || {};
+      toolDirectives = `- [أداة مهندس الأدوات: ${customArchitectTool.name}]: طبّق هذه الأداة على ناتج البحث الجاهز المستخلص من الشاملة في هذا المشروع. لا تسأل عن مصدر البيانات. استخرج الحقول وفق عقد الأداة ثم أخرج ${spec.output_kind || spec.display || 'النتيجة المطلوبة'} تلقائياً. تعليمات التطبيق: ${customArchitectTool.application_instruction || spec.application_instruction || customArchitectTool.description || ''} مثال المدخل: ${JSON.stringify(customArchitectTool.example_input || spec.example_input || {}, null, 2)} مثال المخرج: ${JSON.stringify(customArchitectTool.example_output || spec.example_output || {}, null, 2)}`;
+    } else if (isAstronomy) {
       toolDirectives = `- [بوابة التحقق الفلكي]: الجدول المطلوب يشمل عمود التحقق الفلكي ومطابقة أطوار القمر وتواريخ ناسا وتفاصيل التصحيف النسخي. يُمنع كتابة عبارات تسويف بل انقل الحكم الحتمي.`;
+    } else if (isEcharts) {
+      toolDirectives = `- [بوابة رسوم ECharts]: أخرج أكثر من رسم إذا احتملت البيانات أكثر من زاوية. كل رسم كتلة \`\`\`echarts مستقلة، وخيار Apache ECharts صالح. الأنواع: bar, line, pie, scatter, radar, heatmap, tree, treemap, sunburst, sankey, funnel, gauge, graph. العناوين بالعربية، والأرقام من البحث فقط.`;
+    } else if (isIslamap) {
+      toolDirectives = `- [بوابة الخارطة]: لا تخرج كتلة islamap ولا ترسم بنفسك. اذكر الدول وعبارات التوزيع، والمدن وما تمثله، ومسارات الانطلاق والوصول مع فصل البحر عن البر. أداة لاحقة تختار مثال الخارطة وتجلب الإحداثيات، ثم تُرسم بمكتبة ECharts.`;
     } else if (isCharts) {
       toolDirectives = `- [بوابة المؤشرات والشارتات البيانية]: يجب إدراج جدول إحصائي مقارن ومستقل للنسب، يتضمن عموداً صريحاً بالنسب المئوية الرقمية (مثال: | المذهب أو القول | النسبة المئوية (%) | عدد الشواهد | الحكم |) بقيم رقمية واضحة (مثل: 60% أو 30% أو 10%) لتقوم أداة الشارتات بتمثيلها بيانياً وتفاعلياً فوراً، كما يمكنك تضمين كتلة رسم بياني بصيغة chart:
 \`\`\`chart
@@ -3666,9 +3887,18 @@ ${toolDirectives}
     });
 
     let executionOutputText = '';
+    let appliedToolWeb = null;
+    let appliedToolHtml = '';
+    let appliedToolFigure = null;
     if (chatRes.ok) {
       const chatData = await chatRes.json();
       executionOutputText = chatData.reply || '';
+      pauseRunStatus = true;
+      const appliedTool = await withArchitectToolResult(project, executionOutputText, statusMsg);
+      executionOutputText = await composeProjectIslamap(project, appliedTool.text, statusMsg);
+      appliedToolWeb = appliedTool.web;
+      appliedToolHtml = appliedTool.html || '';
+      appliedToolFigure = appliedTool.figure || null;
     } else {
       let errDetail = `HTTP ${chatRes.status}`;
       try {
@@ -3683,6 +3913,9 @@ ${toolDirectives}
       round: 1,
       name: 'المرحلة 1: المسح والتأسيس والجدولة المبدئية',
       output: executionOutputText,
+      tool_html: appliedToolHtml,
+      tool_figure: appliedToolFigure,
+      tool_web: appliedToolWeb,
       executedAt: new Date().toLocaleString('ar-SA')
     };
 
@@ -3842,12 +4075,43 @@ function renderProjectExecutionView() {
         </div>
         <div class="markdown-body" style="padding: 20px; font-size: 14.5px; line-height: 1.8; direction: rtl; text-align: right;">
           ${(typeof formatMarkdown === 'function') ? formatMarkdown(omitDisabledProjectTables(r.output || '', activeRunOutputFormats())) : (typeof marked !== 'undefined' ? marked.parse(r.output || '') : (r.output || '').replace(/\n/g, '<br>'))}
+          ${r.tool_figure ? `<div class="applied-tool-mount" data-project-tool-figure="${idx}" style="min-height:780px;"></div>` : ''}
+          ${r.tool_html && !r.tool_figure ? `<div class="applied-tool-mount" data-project-tool-html="${idx}"></div>` : ''}
+          ${r.tool_web ? `<div class="applied-tool-mount" data-project-tool-web="${idx}"></div>` : ''}
         </div>
       </div>
     `;
   });
 
   if (liveContent) liveContent.innerHTML = finalHtml;
+
+  if (liveContent) {
+    const figureNodes = [...liveContent.querySelectorAll('[data-project-tool-figure]')];
+    if (figureNodes.length && typeof loadAdoptedToolScript === 'function') {
+      loadAdoptedToolScript('https://cdn.plot.ly/plotly-2.35.2.min.js').then(() => {
+        figureNodes.forEach((mount) => {
+          const round = rounds[Number(mount.getAttribute('data-project-tool-figure'))];
+          if (round && round.tool_figure && window.Plotly) {
+            window.Plotly.newPlot(mount, round.tool_figure.data || [], round.tool_figure.layout || {}, { responsive: true, displaylogo: false });
+          }
+        });
+      }).catch(() => {});
+    }
+    liveContent.querySelectorAll('[data-project-tool-html]').forEach((mount) => {
+      const round = rounds[Number(mount.getAttribute('data-project-tool-html'))];
+      if (round && round.tool_html && typeof placeToolResultHtml === 'function') placeToolResultHtml(mount, round.tool_html);
+    });
+  }
+
+  if (liveContent && typeof mountAdoptedWebTool === 'function') {
+    liveContent.querySelectorAll('[data-project-tool-web]').forEach((mount) => {
+      const index = Number(mount.getAttribute('data-project-tool-web'));
+      const round = rounds[index];
+      if (!round || !round.tool_web) return;
+      const research = String(round.output || '').split('\n\n---\n\n')[0];
+      mountAdoptedWebTool(mount, round.tool_web, research);
+    });
+  }
 
   // تفعيل تصدير CSV وضبط اتجاه RTL لكافة جداول الماركداون
   if (liveContent) {
@@ -3858,6 +4122,12 @@ function renderProjectExecutionView() {
   // تفعيل استخراج المؤشرات والشارتات البيانية التلقائي من جداول المقارنات
   if (typeof autoRenderProjectResultCharts === 'function' && liveContent) {
     autoRenderProjectResultCharts(liveContent);
+  }
+  if (typeof window.renderEchartsBlocks === 'function' && liveContent) {
+    window.renderEchartsBlocks(liveContent);
+  }
+  if (typeof window.renderIslamapBlocks === 'function' && liveContent) {
+    window.renderIslamapBlocks(liveContent);
   }
 
   // تفعيل استخراج شجرة الأسانيد وشبكات الرواة التفاعلية
@@ -3949,6 +4219,8 @@ function openProjectCitationReader(btnEl) {
 
   if (typeof openBookReader === 'function') {
     openBookReader({
+      rel_path: (btnEl.getAttribute('data-rel-path') || '').trim(),
+      book_id: (btnEl.getAttribute('data-book-id') || '').trim(),
       book_title: book,
       part: cleanPart,
       page_num: cleanPage,
@@ -4160,12 +4432,31 @@ function citationMcpButton(span) {
 
 function enhanceProjectCitationsWithBookReader(container) {
   if (!container) return;
+  // الإحالات المختمة من الخادم تحمل مصدرها المضبوط: زرها منها مباشرة بلا تحليل ولا تخمين.
+  container.querySelectorAll('.cit-src').forEach((span) => {
+    if (span.dataset.readerBound === '1') return;
+    span.dataset.readerBound = '1';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn-verify-citation';
+    button.setAttribute('data-book', span.getAttribute('data-book') || '');
+    button.setAttribute('data-rel-path', span.getAttribute('data-rel-path') || '');
+    button.setAttribute('data-book-id', span.getAttribute('data-book-id') || '');
+    button.setAttribute('data-part', span.getAttribute('data-part') || '');
+    button.setAttribute('data-page', span.getAttribute('data-page') || '');
+    button.setAttribute('data-quote', span.getAttribute('data-quote') || '');
+    button.title = `تصفح في الكتاب الأصلي «${span.getAttribute('data-book') || ''}»`;
+    button.setAttribute('aria-label', 'تصفح في الكتاب الأصلي');
+    button.textContent = '📖';
+    button.addEventListener('click', () => openProjectCitationReader(button));
+    span.after(button);
+  });
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const value = node.nodeValue || '';
       if (!/[صججزءصفحةمجلد0-9٠-٩۰-۹]/.test(value)) return NodeFilter.FILTER_REJECT;
       const parent = node.parentElement;
-      if (!parent || parent.closest('button, a, script, style, code, pre, .btn-verify-citation, .btn-mcp-verify')) {
+      if (!parent || parent.closest('button, a, script, style, code, pre, .btn-verify-citation, .btn-mcp-verify, .cit-src, .cit-unresolved')) {
         return NodeFilter.FILTER_REJECT;
       }
       return NodeFilter.FILTER_ACCEPT;
@@ -4257,6 +4548,7 @@ async function continueProjectExecutionRound() {
   }
 
   let elapsedSec = 0;
+  let pauseRunStatus = false;
   const isDirect = (project.agent_dispatch_mode === 'direct');
   if (statusMsg) {
     statusMsg.textContent = isDirect
@@ -4270,7 +4562,7 @@ async function continueProjectExecutionRound() {
     const secs = String(elapsedSec % 60).padStart(2, '0');
     if (timerEl) timerEl.textContent = `⏱️ ${mins}:${secs}`;
 
-    if (statusMsg) {
+    if (statusMsg && !pauseRunStatus) {
       if (isDirect) {
         if (elapsedSec >= 7) {
           statusMsg.textContent = `المرحلة: مدير المشروع يحرر مخرجات الجولة رقم (${nextRoundNum}) بنمط مباشر سريع...`;
@@ -4385,7 +4677,10 @@ ${projectOutputDirective(outputFormats)}
     }
 
     const chatData = await chatRes.json();
-    const newRoundOutput = chatData.reply || '';
+    let newRoundOutput = chatData.reply || '';
+    pauseRunStatus = true;
+    const appliedTool = await withArchitectToolResult(project, newRoundOutput, statusMsg);
+    newRoundOutput = await composeProjectIslamap(project, appliedTool.text, statusMsg);
 
     // تحديث المحادثة
     messages.push({ role: 'assistant', content: newRoundOutput });
@@ -4396,6 +4691,9 @@ ${projectOutputDirective(outputFormats)}
       round: nextRoundNum,
       name: `المرحلة ${nextRoundNum}: استكمال التحقيق والتثبت التوثيقي والمطابقة`,
       output: newRoundOutput,
+      tool_html: appliedTool.html || '',
+      tool_figure: appliedTool.figure || null,
+      tool_web: appliedTool.web || null,
       executedAt: new Date().toLocaleString('ar-SA')
     });
     currentProjectRunData.rounds = currentRounds;
@@ -4489,7 +4787,7 @@ function triggerCsvDownload(csvString, filename) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
 
 // =============================================================================
@@ -4576,6 +4874,7 @@ ${webBenchText}${fullBody}
       groupSelect.value = projectGroupId;
       localStorage.setItem('almojtahed_selected_chat_agent_group', projectGroupId);
       localStorage.setItem('almojtahed_chat_selected_group_id', projectGroupId);
+      localStorage.setItem('almojtahed_chat_selected_group_ids', JSON.stringify([projectGroupId]));
 
       // تفعيل خيار مجموعة الوكلاء تلقائياً لتمكين الباحث من توجيه الاستفسارات والتحقق للوكلاء
       if (agentGroupCheckbox) {
@@ -5166,6 +5465,7 @@ function saveProjectToChatSettingsAndApply() {
     groupSelect.value = groupId;
     localStorage.setItem('almojtahed_selected_chat_agent_group', groupId);
     localStorage.setItem('almojtahed_chat_selected_group_id', groupId);
+    localStorage.setItem('almojtahed_chat_selected_group_ids', JSON.stringify([groupId]));
 
     if (agentGroupCheckbox) {
       agentGroupCheckbox.checked = true;
@@ -5227,7 +5527,7 @@ ${currentProjectRunData.rawOutput}
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
   showToast('تم تحميل التقرير العلمي بصيغة Markdown');
 }
 
@@ -5793,7 +6093,7 @@ function buildStandaloneProjectHtml(runData, options) {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
     }
 
     function toggleReportTheme() {
@@ -6155,7 +6455,7 @@ function downloadProjectReportHtml() {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
   showToast('🎉 تم تصدير تقرير HTML التفاعلي المستقل بنجاح!');
 }
 
@@ -6195,7 +6495,7 @@ async function downloadProjectReportPdf() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
     showToast('🎉 تم تحميل تقرير PDF الأكاديمي بنجاح!');
   } catch (err) {
     console.warn('Server PDF generation failed, falling back to browser print:', err);
@@ -6436,6 +6736,23 @@ function buildAcademicPaperHtml(runData, options) {
       event.preventDefault();
       const top = target.getBoundingClientRect().top + window.scrollY - toolbarClearance();
       window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      const isNote = link.classList.contains('chat-fn-ref') || link.classList.contains('chat-fn-back');
+      if (!isNote) return;
+      if (link.classList.contains('chat-fn-ref') && link.id) {
+        const back = target.querySelector('a.chat-fn-back');
+        if (back) back.setAttribute('href', '#' + link.id);
+      }
+      document.querySelectorAll('.chat-fn-target').forEach(function (node) { node.classList.remove('chat-fn-target'); });
+      target.classList.add('chat-fn-target');
+      if (window.clearReadingNoteMark) document.removeEventListener('mousemove', window.clearReadingNoteMark);
+      const originX = event.clientX;
+      const originY = event.clientY;
+      window.clearReadingNoteMark = function (move) {
+        if (Math.abs(move.clientX - originX) < 4 && Math.abs(move.clientY - originY) < 4) return;
+        document.querySelectorAll('.chat-fn-target').forEach(function (node) { node.classList.remove('chat-fn-target'); });
+        document.removeEventListener('mousemove', window.clearReadingNoteMark);
+      };
+      document.addEventListener('mousemove', window.clearReadingNoteMark);
     });
     window.addEventListener('resize', applyToolbarClearance);
     applyToolbarClearance();
@@ -6593,9 +6910,10 @@ function buildAcademicPaperHtml(runData, options) {
     .biblio-title { font-size: 20pt; margin-top: 22px; }
     h1, h2, h3, h4 { text-indent: 0; }
     sup small { font-size: 11pt; font-weight: 700; vertical-align: super; }
-    a.chat-fn-ref, a.chat-fn-back { color: var(--link); text-decoration: none; }
+    a.chat-fn-ref, a.chat-fn-back { color: var(--link); text-decoration: none; cursor: pointer; }
     a.chat-fn-ref { font-size: 11pt; vertical-align: super; font-weight: 700; }
     a.chat-fn-back { font-size: inherit; vertical-align: baseline; }
+    .chat-fn-target { background: rgba(180, 83, 9, 0.16); border-radius: 4px; }
     b, strong { font-weight: 700; }
     p { margin: 0; }
     table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13pt; }
@@ -6641,6 +6959,7 @@ function buildAcademicPaperHtml(runData, options) {
       .no-print-toolbar, .share-pdf-stage { display: none !important; }
       body, .paper-sheet { background: #FFFFFF !important; color: #111111 !important; }
       a.chat-fn-ref, a.chat-fn-back { color: #1d4ed8 !important; }
+      .chat-fn-target { background: transparent !important; }
       .academic-text-content p,
       .academic-paragraph,
       .footnote-line,
@@ -6670,7 +6989,12 @@ function buildAcademicPaperHtml(runData, options) {
 function openAcademicPaperWindow(runData) {
   const fullPrintHtml = buildAcademicPaperHtml(runData, { toolbar: true });
   const printWin = window.open('', '_blank');
-  if (!printWin) {
+  if (!printWin || printWin === window) {
+    if (typeof openChatReadingOverlay === 'function') {
+      openChatReadingOverlay(fullPrintHtml);
+      showToast('تم فتح نافذة القراءة');
+      return;
+    }
     showToast('تعذر فتح صفحة البحث. اسمح بالنوافذ المنبثقة ثم أعد التصدير');
     return;
   }
@@ -6678,7 +7002,7 @@ function openAcademicPaperWindow(runData) {
   printWin.document.write(fullPrintHtml);
   printWin.document.close();
   showToast('تم فتح البحث. احفظه كـ PDF من زر الطباعة، وروابط المتن والحاشية تبقى في الملف');
-  setTimeout(() => { printWin.focus(); }, 400);
+  setTimeout(() => { try { printWin.focus(); } catch (e) {} }, 400);
 }
 
 function printAcademicPaper() {

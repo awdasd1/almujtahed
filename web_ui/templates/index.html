@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1793011000">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.259">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,12 +27,15 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.7.3 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.259 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
 
             <div class="header-actions">
+                <button class="btn-icon" id="localBundleBtn" type="button" onclick="exportLocalBundle()" title="تصدير نموذج التضمين والمكتبة الشاملة وقاعدة البيانات إلى مجلد" aria-label="تصدير محلي">
+                    <i data-lucide="hard-drive" class="icon" aria-hidden="true"></i>
+                </button>
                 <button class="btn-icon" id="changelogBtn" type="button" onclick="openChangelogModal()" title="سجل التحديثات" aria-label="سجل التحديثات">
                     <i data-lucide="scroll-text" class="icon" aria-hidden="true"></i>
                 </button>
@@ -57,6 +60,9 @@
                 </button>
                 <button class="btn-icon" id="settingsOpenBtn" onclick="openSettingsModal()" title="إعدادات المنظومة">
                     <i data-lucide="settings" class="icon" aria-hidden="true"></i>
+                </button>
+                <button class="btn-icon" id="quitAppBtn" type="button" hidden onclick="quitDesktopApp()" title="إغلاق التطبيق" aria-label="إغلاق التطبيق" style="color: #9f3d32;">
+                    <i data-lucide="power" class="icon" aria-hidden="true"></i>
                 </button>
                 <button class="btn-icon" id="logoutBtn" onclick="logoutAlmujtahed()" title="تسجيل الخروج من المنظومة" style="color: #ef4444;">
                     <i data-lucide="log-out" class="icon" aria-hidden="true"></i>
@@ -248,10 +254,10 @@
 
                     <!-- نمط البحث الهجين المطور (تفعيل / تعطيل تفاعلي) -->
                     <div class="filter-item" style="display: flex; align-items: center;">
-                        <button type="button" id="btnToggleHybridSearch" class="btn-hybrid-toggle is-active" onclick="toggleHybridSearchMode()" title="انقر للتبديل بين البحث الهجين (Dense + BM25) والبحث الدلالي الصرف">
+                        <button type="button" id="btnToggleHybridSearch" class="btn-hybrid-toggle is-active" onclick="toggleHybridSearchMode()" title="انقر للتبديل بين البحث الهجين (دلالي + لفظي) والبحث الدلالي الصرف">
                             <span class="hybrid-indicator-dot"></span>
                             <i data-lucide="layers" id="iconHybridToggle" style="width: 14px; height: 14px;"></i>
-                            <span id="labelHybridToggle">بحث هجين مفعّل (Dense + BM25)</span>
+                            <span id="labelHybridToggle">بحث هجين مفعّل (دلالي + لفظي)</span>
                         </button>
                     </div>
 
@@ -317,12 +323,18 @@
                             <span class="hybrid-indicator-dot"></span>
                             <span id="labelChatHybridToggle">بحث هجين</span>
                         </button>
+                        <button type="button" id="btnToggleSemanticEnhanced" class="btn-hybrid-toggle is-active chat-sidebar-hybrid"
+                            onclick="toggleSemanticEnhanced()"
+                            title="خيار معزّز: قناة البحث الدلالي في مخزن المتجهات (172GB) إن توفرت لديك مع نموذج التضمين؛ تعطيلها بحث لفظي فقط في فهرس المكتبة. حالتها تُعلن في تقرير كل بحث.">
+                            <span class="hybrid-indicator-dot"></span>
+                            <span id="labelSemanticEnhanced">🧠 دلالي معزّز</span>
+                        </button>
                     </div>
-                    <button type="button" class="btn-import-chat" onclick="document.getElementById('chatImportFile').click()">
+                    <label class="btn-import-chat native-file-btn">
                         <span>استيراد محادثة</span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-                    </button>
-                    <input type="file" id="chatImportFile" accept="application/json,.json" hidden onchange="importChatSessionFile(this)">
+                        <input type="file" id="chatImportFile" class="native-file-input" accept="application/json,.json" onchange="importChatSessionFile(this)">
+                    </label>
 
                     <div class="chat-history-header-row" style="display: flex; align-items: center; justify-content: space-between; margin: 6px 4px 2px;">
                         <span style="font-size: 11.5px; font-weight: 700; color: var(--text-light);">سجل المحادثات</span>
@@ -352,6 +364,30 @@
                             <option value="graph_istidlal">تشجير استدلال</option>
                             <option value="graph_munaqasha">تشجير مناقشة</option>
                             <option value="graph_aam">تشجير خلاف عام</option>
+                        </select>
+                        <select class="btn-chat-tool-action chat-islamap-kind-fixed" onchange="insertIslamapKind(this)" title="اختر نوع الخارطة ليُرسم من النتيجة السابقة">
+                            <option value="">نوع الخارطة</option>
+                            <option value="auto">الأنسب تلقائياً</option>
+                            <option value="distribution">توزيع جغرافي</option>
+                            <option value="cities">مدن ومراكز</option>
+                            <option value="routes">غزوات وفتوحات ورحلات</option>
+                        </select>
+                        <select class="btn-chat-tool-action chat-echart-kind-fixed" onchange="insertEchartKind(this)" title="اختر نوع الرسم ليُرسم من النتيجة السابقة">
+                            <option value="">نوع الرسم</option>
+                            <option value="multi">عدة رسوم مناسبة</option>
+                            <option value="bar">أعمدة</option>
+                            <option value="line">خطي</option>
+                            <option value="pie">دائري</option>
+                            <option value="scatter">نقطي</option>
+                            <option value="radar">رادار</option>
+                            <option value="heatmap">حراري</option>
+                            <option value="tree">شجرة</option>
+                            <option value="treemap">تريماب</option>
+                            <option value="sunburst">طبقات دائرية</option>
+                            <option value="sankey">سانكي</option>
+                            <option value="funnel">قمع</option>
+                            <option value="gauge">مقياس</option>
+                            <option value="graph">شبكة علاقات</option>
                         </select>
                         <button type="button" class="chat-table-request-btn" id="btnChatTable" onclick="requestChatTable()">جدولة</button>
                         <!-- حاوية أزرار الأدوات المفعلة في المحادثة -->
@@ -425,6 +461,7 @@
                                         onchange="handleChatModelChange(this.value)">
                                         <option value="anthropic/claude-3.7-sonnet">جارٍ جلب النماذج...</option>
                                     </select>
+                                    <div id="directorAuthorityBadge" style="display: none; margin-top: 6px; font-size: 11.5px; line-height: 1.7; color: var(--accent-gold); background: rgba(184,115,51,0.08); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 6px 9px;"></div>
                                 </div>
                             </div>
 
@@ -450,20 +487,77 @@
                                     <option value="2097152">2M</option>
                                 </select>
                             </div>
+                            <div class="thinking-control">
+                                <span style="color: var(--text-muted); font-size: 12px; font-weight: 600;">نوع البحث:</span>
+                                <select id="intentSelect" title="الفنون المستهدفة في البحث. الافتراضي: عام متوازن لا يطغى فيه فن على فن؛ ومتى أعلنت قصدك (فقهي-حديثي مثلاً) صارت له الغلبة بنحو ثلاثة أرباع الشواهد وبقي ربع للعلوم الخادمة." onchange="localStorage.setItem('almojtahed_intent', this.value)" style="font-size: 12px; border-radius: 8px; padding: 3px 6px;">
+                                    <option value="">عام (متوازن)</option>
+                                    <option value="فقه">فقهي</option>
+                                    <option value="حديث">حديثي</option>
+                                    <option value="تفسير">تفسيري</option>
+                                    <option value="عقيدة">عقدي</option>
+                                    <option value="لغة">لغوي</option>
+                                    <option value="تاريخ">تاريخي</option>
+                                    <option value="فقه,حديث">فقهي - حديثي</option>
+                                    <option value="فقه,عقيدة">فقهي - عقدي</option>
+                                    <option value="عقيدة,حديث">عقدي - حديثي</option>
+                                    <option value="حديث,تاريخ">حديثي - تاريخي</option>
+                                    <option value="عقيدة,تاريخ">عقدي - تاريخي</option>
+                                    <option value="فقه,تفسير">فقهي - تفسيري</option>
+                                </select>
+                            </div>
+                            <div class="thinking-control">
+                                <span style="color: var(--text-muted); font-size: 12px; font-weight: 600;">سقف الوفاة:</span>
+                                <select id="deathMaxSelect" title="أقصى سنة وفاة هجرية لمؤلفي الكتب المستشهد بها. الافتراضي: بلا سقف — بحث مفتوح في المكتبة كلها؛ ومتى حددته التزم به البحث التزاماً صارماً." onchange="localStorage.setItem('almojtahed_death_max', this.value)" style="font-size: 12px; border-radius: 8px; padding: 3px 6px;">
+                                    <option value="">بلا سقف</option>
+                                    <option value="300">قبل ٣٠٠هـ</option>
+                                    <option value="500">قبل ٥٠٠هـ</option>
+                                    <option value="700">قبل ٧٠٠هـ</option>
+                                    <option value="1000">قبل ١٠٠٠هـ</option>
+                                    <option value="1300">قبل ١٣٠٠هـ</option>
+                                </select>
+                            </div>
+                            <div class="thinking-control">
+                                <span style="color: var(--text-muted); font-size: 12px; font-weight: 600;">الشواهد:</span>
+                                <div class="witness-dropdown" id="witnessDropdown">
+                                    <button type="button" id="witnessDdBtn" class="witness-dd-btn witness-safe" onclick="toggleWitnessDropdown(event)" aria-haspopup="listbox" aria-expanded="false" title="أقصى عدد من الشواهد يصل إلى النموذج وقائمة المصادر. الأخضر آمن، والبرتقالي يحتاج سياقاً واسعاً ونموذجاً قوياً، والأحمر قد يتجاوز استيعاب النموذج فيتوقف أو يتشتت جوابه.">
+                                        <span id="witnessDdValue">50</span>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                    </button>
+                                    <div class="witness-dd-menu" id="witnessDdMenu" role="listbox" aria-label="عدد الشواهد" hidden>
+                                        <button type="button" class="witness-dd-item witness-opt-safe" data-value="10" onclick="setWitnessCount(10)">10</button>
+                                        <button type="button" class="witness-dd-item witness-opt-safe" data-value="30" onclick="setWitnessCount(30)">30</button>
+                                        <button type="button" class="witness-dd-item witness-opt-safe" data-value="50" onclick="setWitnessCount(50)">50</button>
+                                        <button type="button" class="witness-dd-item witness-opt-safe" data-value="100" onclick="setWitnessCount(100)">100</button>
+                                        <button type="button" class="witness-dd-item witness-opt-warn" data-value="200" onclick="setWitnessCount(200)">200</button>
+                                        <button type="button" class="witness-dd-item witness-opt-warn" data-value="300" onclick="setWitnessCount(300)">300</button>
+                                        <button type="button" class="witness-dd-item witness-opt-warn" data-value="400" onclick="setWitnessCount(400)">400</button>
+                                        <button type="button" class="witness-dd-item witness-opt-danger" data-value="500" onclick="setWitnessCount(500)">500</button>
+                                        <button type="button" class="witness-dd-item witness-opt-danger" data-value="600" onclick="setWitnessCount(600)">600</button>
+                                        <button type="button" class="witness-dd-item witness-opt-danger" data-value="700" onclick="setWitnessCount(700)">700</button>
+                                        <button type="button" class="witness-dd-item witness-opt-danger" data-value="800" onclick="setWitnessCount(800)">800</button>
+                                        <button type="button" class="witness-dd-item witness-opt-danger" data-value="900" onclick="setWitnessCount(900)">900</button>
+                                        <button type="button" class="witness-dd-item witness-opt-danger" data-value="1000" onclick="setWitnessCount(1000)">1000</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- منطقة عرض الرسائل -->
                     <div class="chat-messages" id="chatMessagesContainer">
-                        <!-- رسالة ترحيبية من المجتهد -->
-                        <div class="message-bubble assistant">
-                            <div class="message-avatar">مج</div>
-                            <div class="message-content">
-                                <p>مرحباً بك في منظومة <strong>المجتهد</strong> الذكية.</p>
-                                <p>أنا متصل مباشرة بمخزن الشاملة التراثي الضخم (أكثر من 8 ملايين مقطع) ومزود بوكلاء
-                                    مساعدين في الفقه، والتفسير، والحديث، والتاريخ. كيف يمكنني إعانتك في بحثك أو استنباطك
-                                    اليوم؟</p>
-                            </div>
+                        <div class="chat-opening">
+                            <p>مرحبا بك ...</p>
+                            <p>كيف يمكنني خدمتك؟</p>
+                        </div>
+                    </div>
+
+                    <!-- شريط جلسة مناقشة مدير المشروع حول بحث مغلق -->
+                    <div id="discussionBar" style="display: none; margin: 0 14px 8px; padding: 9px 12px; border: 1px solid var(--accent-gold); border-radius: 10px; background: rgba(184,115,51,0.08); font-size: 12.5px; line-height: 1.8;">
+                        <span id="discussionBarText">🗣️ <strong>جلسة مناقشة مفتوحة مع مدير المشروع</strong> حول هذا البحث: اكتب سؤالك أو النقص الذي تريد استكماله — يحاورك المدير، وله أن يطلب وكيلًا بعينه للتحقق أو الاستكمال. وعند الاتفاق والانتهاء أقفلا الجلسة ليعيد الصياغة النهائية من هذه المحادثة المحفوظة.</span>
+                        <div style="display: flex; gap: 8px; margin-top: 7px; flex-wrap: wrap;">
+                            <button type="button" class="btn-msg-export" onclick="sendAuditGapsToDirector()">📋 جلب ثغرات التقرير ومناقشتها دفعة واحدة</button>
+                            <button type="button" class="btn-msg-export" onclick="finalizeDiscussion()">🔒 إقفال المناقشة وإعادة الصياغة النهائية</button>
+                            <button type="button" class="btn-msg-export" onclick="closeDiscussion()">إنهاء المناقشة بلا إعادة صياغة (تبقى محفوظة وتُستأنف لاحقًا)</button>
                         </div>
                     </div>
 
@@ -481,17 +575,14 @@
                             <div class="chat-input-actions">
                                 <div class="chat-input-left">
                                     <!-- زر رفع الملفات والصور -->
-                                    <input type="file" id="fileUploadInput" multiple accept="image/*,.pdf,.txt,.docx"
-                                        style="display: none;" onchange="handleFileSelected(event)">
-                                    <button type="button" class="btn-attachment"
-                                        onclick="document.getElementById('fileUploadInput').click()"
-                                        title="إرفاق صورة أو مستند">
+                                    <label class="btn-attachment native-file-btn" title="إرفاق صورة أو مستند">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
                                             stroke="currentColor" stroke-width="2">
                                             <path
                                                 d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                                         </svg>
-                                    </button>
+                                        <input type="file" id="fileUploadInput" class="native-file-input" multiple accept="image/*,.pdf,.txt,.docx" onchange="handleFileSelected(event)">
+                                    </label>
 
                                     <!-- فاصل عمودي أنيق -->
                                     <span class="chat-input-divider"></span>
@@ -503,13 +594,34 @@
                                             <input type="checkbox" id="chatUseAgentGroupCheckbox" checked
                                                 onchange="handleAgentGroupCheckboxToggle()">
                                             <span class="chat-custom-checkbox"></span>
-                                            <span class="chat-checkbox-title">المجموعة:</span>
+                                            <span class="chat-checkbox-title">المجموعات:</span>
                                         </label>
 
-                                        <div class="chat-agent-select-wrap">
-                                            <select id="chatAgentGroupSelect" class="chat-agent-dropdown"
-                                                onchange="handleAgentGroupDropdownChange()"
-                                                title="حدد مجموعة الوكلاء المساعدين لربط البحث بها واستخراج البيانات عبرها">
+                                        <div class="chat-agent-select-wrap chat-subagent-select-wrap" id="chatGroupSelectWrap" title="حدد مجموعة أو أكثر للبحث والاستخراج">
+                                            <button type="button" class="chat-agent-dropdown chat-subagent-trigger" id="chatGroupDropdownBtn" onclick="toggleChatGroupsDropdown(event)">
+                                                <span class="chat-subagent-btn-text" id="chatGroupBtnLabel">جارٍ تحميل المجموعات...</span>
+                                                <svg class="chat-subagent-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                                </svg>
+                                            </button>
+                                            <div class="chat-subagent-checklist-dropdown" id="chatGroupChecklistMenu" style="display: none;">
+                                                <div class="chat-checklist-header">
+                                                    <div class="chat-checklist-title">
+                                                        <span>تحديد المجموعات</span>
+                                                    </div>
+                                                    <div class="chat-checklist-actions">
+                                                        <button type="button" class="btn-checklist-action" onclick="selectAllChatGroups(true)">تحديد الكل</button>
+                                                        <span class="checklist-sep">•</span>
+                                                        <button type="button" class="btn-checklist-action" onclick="selectAllChatGroups(false)">إلغاء الكل</button>
+                                                    </div>
+                                                </div>
+                                                <div class="chat-checklist-items" id="chatGroupChecklistItems"></div>
+                                                <div class="chat-checklist-footer">
+                                                    <span id="chatGroupCountBadge" class="chat-checklist-count-badge">تم تحديد 0 مجموعات</span>
+                                                    <button type="button" class="btn-checklist-done" onclick="closeChatGroupsDropdown()">تم الاعتماد ✓</button>
+                                                </div>
+                                            </div>
+                                            <select id="chatAgentGroupSelect" style="display: none;">
                                                 <option value="">جارٍ تحميل المجموعات...</option>
                                             </select>
                                         </div>
@@ -533,7 +645,7 @@
                                                 <div class="chat-checklist-header">
                                                     <div class="chat-checklist-title">
                                                         <span>👥</span>
-                                                        <span>تحديد الوكلاء المساعدين</span>
+                                                        <span>تحديد الوكلاء وفروع MCP</span>
                                                     </div>
                                                     <div class="chat-checklist-actions">
                                                         <button type="button" class="btn-checklist-action" onclick="selectAllChatSubAgents(true)">تحديد الكل</button>
@@ -545,6 +657,11 @@
                                                 <div class="chat-checklist-items" id="chatSubAgentChecklistItems">
                                                     <!-- يتم التوليد البرمجي عبر populateSubAgentsDropdown -->
                                                 </div>
+
+                                                <label class="chat-checklist-mcp-toggle" title="حين تُفعَّل يستطيع كل وكيل مساعد استدعاء أدوات MCP المحددة (قراءة الصفحات، المطابقة، البحث المنغلق) أثناء عمله، بدل انفراد النموذج الرئيسي بها">
+                                                    <input type="checkbox" id="chatMcpForAgentsCheckbox" onchange="setMcpForAgents(this.checked)">
+                                                    <span>تمكين الوكلاء المساعدين من أدوات MCP المحددة أثناء عملهم</span>
+                                                </label>
 
                                                 <div class="chat-checklist-footer">
                                                     <span id="chatChecklistCountBadge" class="chat-checklist-count-badge">تم تحديد 0 وكيل</span>
@@ -564,6 +681,14 @@
                                             title="النمط التوكيلي الموزع: استدعاء نماذج الوكلاء المخصصة بالتوازي وضخ الخلاصات للنموذج الرئيسي (انقر للتبديل للمباشر الموحد)">
                                             <span id="chatDispatchModeIcon">⚡</span>
                                             <span id="chatDispatchModeText">توزيع متوازي</span>
+                                        </button>
+
+                                        <!-- زر وضع MCP الخام المباشر: بلا وكلاء ولا توجيه، النموذج يقود أدوات المجتهد بنفسه -->
+                                        <button type="button" class="chat-dispatch-mode-toggle chat-raw-mcp-toggle" id="chatRawMcpToggleBtn"
+                                            onclick="toggleChatRawMcp()"
+                                            title="MCP خام مباشر: النموذج المختار يقود أدوات خادم المجتهد بنفسه كما يفعل أي عميل MCP خارجي — بلا وكلاء ولا خط استرجاع، مع قاعدة إحالة واحدة تضبط النقل والعزو فقط (انقر للتفعيل)">
+                                            <span id="chatRawMcpIcon">🔌</span>
+                                            <span id="chatRawMcpText">MCP خام</span>
                                         </button>
                                     </div>
                                 </div>
@@ -612,8 +737,7 @@
                             </p>
                         </div>
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <button type="button" class="btn-flat-secondary" onclick="triggerImportAgentFile()"
-                                title="استيراد مجموعة وكلاء أو وكيل مفرد من ملف JSON">
+                            <label class="btn-flat-secondary native-file-btn" title="استيراد مجموعة وكلاء أو وكيل مفرد من ملف JSON">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -621,9 +745,8 @@
                                     <line x1="12" y1="15" x2="12" y2="3" />
                                 </svg>
                                 <span>استيراد 📥</span>
-                            </button>
-                            <input type="file" id="agentImportFileInput" accept=".json" style="display: none;"
-                                onchange="handleAgentFileImport(event)">
+                                <input type="file" id="agentImportFileInput" class="native-file-input" accept=".json,application/json" onchange="handleAgentFileImport(event)">
+                            </label>
                             <button type="button" class="btn-flat-primary" onclick="openCreateGroupModal()"
                                 id="btnCreateAgentGroup">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -689,6 +812,9 @@
                                 </svg>
                                 <span>تصدير المجموعة 📤</span>
                             </button>
+                            <button type="button" class="btn-flat-secondary" onclick="openAddMcpModal()">
+                                <span>إضافة MCP جديد</span>
+                            </button>
                             <button type="button" class="btn-flat-primary" onclick="openAddAgentModal()">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2">
@@ -753,7 +879,15 @@
                             </svg>
                             <span>تصدير المشاريع (JSON)</span>
                         </button>
-                        <button type="button" class="btn-secondary-action" onclick="triggerImportProjectFile()">
+                        <button type="button" class="btn-secondary-action" onclick="restoreLastProject()" title="استرجاع آخر مشروع حُفظ تلقائياً في قاعدة البيانات">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M3 12a9 9 0 1 0 3-6.7" />
+                                <path d="M3 4v5h5" />
+                            </svg>
+                            <span>استرجاع المشروع الأخير</span>
+                        </button>
+                        <label class="btn-secondary-action native-file-btn">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -761,9 +895,8 @@
                                 <line x1="12" y1="3" x2="12" y2="15" />
                             </svg>
                             <span>استيراد مشروع</span>
-                        </button>
-                        <input type="file" id="projectImportFileInput" accept=".json" style="display: none;"
-                            onchange="handleProjectFileImport(event)">
+                            <input type="file" id="projectImportFileInput" class="native-file-input" accept=".json,application/json" onchange="handleProjectFileImport(event)">
+                        </label>
                     </div>
                 </div>
 
@@ -860,10 +993,10 @@
                             <!-- زر تبديل البحث الهجين للمشروع -->
                             <button type="button" id="btnToggleProjectHybridSearch" class="btn-hybrid-toggle is-active"
                                 onclick="toggleProjectHybridSearchMode()"
-                                title="انقر للتبديل بين البحث الهجين (Dense + BM25) والبحث الدلالي الصرف لمشروع البحث">
+                                title="انقر للتبديل بين البحث الهجين (دلالي + لفظي) والبحث الدلالي الصرف لمشروع البحث">
                                 <span class="hybrid-indicator-dot"></span>
                                 <i data-lucide="layers" id="iconProjectHybridToggle" style="width: 14px; height: 14px;"></i>
-                                <span id="labelProjectHybridToggle">بحث هجين مفعّل (Dense + BM25)</span>
+                                <span id="labelProjectHybridToggle">بحث هجين مفعّل (دلالي + لفظي)</span>
                             </button>
                             <button type="button" class="btn-primary-gradient" onclick="runCurrentProjectExecution()"
                                 id="btnRunProject"
@@ -1253,6 +1386,8 @@
                                             تتطلب حسابات خارجية)</option>
                                         <option value="charts_metrics">أداة المؤشرات والشارتات البيانية (استخراج النسب
                                             والمقارنات)</option>
+                                        <option value="echarts_charts">أداة الرسوم البيانية ECharts (عدة أنواع)</option>
+                                        <option value="islamap_map">خارطة العالم الإسلامي</option>
                                         <option value="hadith_isnad_tree">أداة شجرة الأسانيد وشبكات الرواة</option>
                                         <option value="astronomy_hijri_sync">محرك التحقق الفلكي ومطابقة التقاويم
                                             الحسابية</option>
@@ -2169,14 +2304,13 @@
                         </p>
                     </div>
                     <div class="tools-header-actions" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                        <input type="file" id="importToolFileInput" accept=".json" style="display: none;" onchange="handleImportToolFile(event)">
-                        
-                        <button class="btn-secondary-action" onclick="document.getElementById('importToolFileInput').click()" title="استيراد أداة أو حزمة أدوات من ملف JSON">
+                        <label class="btn-secondary-action native-file-btn" title="استيراد أداة أو حزمة أدوات من ملف JSON">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
                             </svg>
                             <span>استيراد أداة 📥</span>
-                        </button>
+                            <input type="file" id="importToolFileInput" class="native-file-input" accept=".json,application/json" onchange="handleImportToolFile(event)">
+                        </label>
                         
                         <button class="btn-secondary-action" onclick="exportAllTools()" title="تصدير كافة الأدوات المعتمدة كحزمة JSON">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2193,6 +2327,10 @@
                             <span>تحديث 🔄</span>
                         </button>
 
+                        <button class="btn-primary-gradient" onclick="openToolArchitect()" title="حوار متخصص يجمع فكرة الأداة ويبحث عن حل جاهز أو يبنيها ببايثون" style="padding: 10px 18px; font-size: 14px;">
+                            <span>مهندس الأدوات 🧠</span>
+                        </button>
+
                         <button class="btn-primary-gradient" onclick="openAddToolModal()"
                             style="padding: 10px 20px; font-size: 14px;">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -2202,6 +2340,23 @@
                             <span>إضافة أداة جديدة ➕</span>
                         </button>
                     </div>
+                </div>
+
+                <!-- بطاقة ربط المكتبة الشاملة المحلية -->
+                <div id="shamelaLinkCard" style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 18px 20px; margin-bottom: 18px;">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-size: 20px;">🕌</span>
+                        <h3 style="margin: 0; font-size: 16.5px;">ربط المكتبة الشاملة على جهازك</h3>
+                        <span id="shamelaLinkBadge" style="font-size: 12px; padding: 3px 10px; border-radius: 20px; background: var(--bg-surface-elevated, #eee); color: var(--text-muted);">جارٍ الفحص…</span>
+                        <span style="flex: 1;"></span>
+                        <button type="button" class="btn-secondary-action" onclick="loadShamelaStatus()">إعادة الفحص 🔄</button>
+                        <button type="button" class="btn-primary-gradient" id="shamelaImportBtn" onclick="startShamelaImport()" style="padding: 9px 16px; font-size: 13.5px; display: none;">استيراد الكتب المنزّلة 📥</button>
+                        <button type="button" class="btn-primary-gradient" id="shamelaCompleteBtn" onclick="startShamelaComplete()" style="padding: 9px 16px; font-size: 13.5px; display: none; background: linear-gradient(135deg, #0e7a5f, #0a5c48);">إكمال المكتبة من الشاملة 📚</button>
+                    </div>
+                    <p id="shamelaLinkText" style="font-size: 13.5px; color: var(--text-muted); line-height: 1.8; margin: 10px 0 0;">
+                        إن كان عندك تطبيق المكتبة الشاملة، يستطيع المجتهد قراءة كتالوجه واستيراد الكتب المنزّلة فيه إلى مكتبته — بلا تنزيل المكتبة كاملة من جديد.
+                    </p>
+                    <div id="shamelaImportProgress" style="display: none; margin-top: 10px; font-size: 13px; color: var(--text-muted);"></div>
                 </div>
 
                 <!-- شريط التصفية والفلترة -->
@@ -2226,7 +2381,54 @@
 
     </main>
 
-    <!-- =======================================================================
+      <!-- نافذة مهندس الأدوات -->
+    <div class="modal-overlay" id="toolArchitectModal">
+        <div class="modal-window" style="max-width: 920px;">
+            <div class="modal-header">
+                <div class="modal-title">مهندس الأدوات 🧠 — من الفكرة إلى بطاقة جاهزة</div>
+                <button class="btn-icon" onclick="closeToolArchitect()" title="إغلاق">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                </button>
+            </div>
+            <div class="tool-modal-body" style="display:flex; flex-direction:column; gap:12px;">
+                <div style="font-size:12.5px; color:var(--text-secondary); line-height:1.8;">هذه الأدوات تُبنى لتحويل بحث جاهز أنتجه نموذج مرتبط بمخزن الشاملة إلى جدول أو رسم أو خط زمني أو تحرير معين. احكِ للمهندس ما تريد تحويله، وسيختار معك بخيارات قابلة للنقر، ثم يبحث بنفسه بـ Tavily ويرشح لك الحل، أو يبني الأداة ويختبرها ويصلحها حتى تعتمدها.</div>
+                <div style="display:grid; grid-template-columns:1fr auto; gap:8px; align-items:end;">
+                    <div>
+                        <label style="font-size:12px; font-weight:700;">نموذج مهندس الأدوات والبرمجة (OpenRouter):</label>
+                        <div style="position:relative; margin-top:4px;">
+                            <input type="text" id="toolArchitectModelFilter" class="form-input" placeholder="🔍 فلترة النماذج: claude, gpt, gemini, deepseek, qwen..." oninput="filterToolArchitectModels(this.value)" autocomplete="off" style="font-size:12.5px;">
+                        </div>
+                        <select id="toolArchitectModelSelect" class="form-select" style="margin-top:6px; font-size:12.5px;"></select>
+                    </div>
+                    <button type="button" class="btn-secondary-action" onclick="resetToolArchitect()"><span>محادثة جديدة</span></button>
+                </div>
+                <div id="toolArchitectChatLog" style="min-height:320px; max-height:560px; overflow:auto; border:1px solid var(--border-subtle); border-radius:8px; padding:12px; background:var(--bg-canvas); display:flex; flex-direction:column; gap:10px;"></div>
+                <div id="toolArchitectCoderWait" class="tool-coder-wait" hidden>
+                    <span class="tool-coder-spinner" aria-hidden="true"></span>
+                    <span id="toolArchitectCoderWaitText">وكيل البرمجة ينفذ المهمة. فضلاً الانتظار.</span>
+                </div>
+                <div style="display:flex; gap:8px; align-items:flex-end;">
+                    <textarea id="toolArchitectInput" class="form-textarea" rows="3" placeholder="مثال: أريد خطاً زمنياً للعلماء القائلين بجواز التورق، مرتبين بتواريخ وفاتهم، مع المذهب والقول والمصدر..." style="flex:1;"></textarea>
+                    <button type="button" class="btn-primary-gradient" id="toolArchitectSendBtn" onclick="sendToolArchitectMessage()"><span>إرسال</span></button>
+                </div>
+                <div id="toolArchitectSpecStatus" style="font-size:12.5px; color:var(--text-secondary);"></div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" class="btn-secondary-action" id="toolArchitectBuildBtn" onclick="buildToolArchitect(true)" disabled><span>بناء أداة من الصفر 🐍</span></button>
+                    <button type="button" class="btn-secondary-action" id="toolArchitectTestBtn" onclick="testToolArchitectDraft()" disabled><span>اختبار الأداة 🧪</span></button>
+                    <button type="button" class="btn-primary-gradient" id="toolArchitectSaveBtn" onclick="saveToolArchitect()" disabled style="background:#15803d;"><span>اعتماد وحفظ الأداة 💾</span></button>
+                </div>
+                <div id="toolArchitectResearchBox" style="display:none; border:1px solid var(--border-subtle); border-radius:8px; padding:10px; max-height:220px; overflow:auto; font-size:12.5px; line-height:1.8;"></div>
+                <div id="toolArchitectPlanBox" style="display:none; border:1px solid rgba(21,128,61,.35); border-radius:8px; padding:10px; font-size:12.5px; line-height:1.8;"></div>
+                <details id="toolArchitectCodeBox" style="display:none;">
+                    <summary style="cursor:pointer; font-weight:700; font-size:13px;">كود بايثون المولد ونتيجة الاختبار</summary>
+                    <pre id="toolArchitectCodePre" style="direction:ltr; text-align:left; white-space:pre-wrap; max-height:280px; overflow:auto; background:rgba(0,0,0,.25); padding:10px; border-radius:6px; font-size:11.5px;"></pre>
+                    <div id="toolArchitectTestResult" style="font-size:12.5px; line-height:1.8;"></div>
+                </details>
+            </div>
+        </div>
+    </div>
+
+  <!-- =======================================================================
        نافذة إضافة / تعديل أداة مساعدة (Tool Config Modal)
        ======================================================================= -->
     <div class="modal-overlay" id="toolConfigModal">
@@ -2448,10 +2650,10 @@
             <div class="modal-footer"
                 style="padding: 16px 20px; border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <div style="display: flex; gap: 8px;">
-                    <input type="file" id="importModalToolFileInput" accept=".json" style="display: none;" onchange="handleImportModalToolFile(event)">
-                    <button type="button" class="btn-secondary-action" onclick="document.getElementById('importModalToolFileInput').click()" title="استيراد كود وبيانات الأداة من ملف JSON إلى المحرر">
+                    <label class="btn-secondary-action native-file-btn" title="استيراد كود وبيانات الأداة من ملف JSON إلى المحرر">
                         <span>استيراد ملف أداة 📥</span>
-                    </button>
+                        <input type="file" id="importModalToolFileInput" class="native-file-input" accept=".json,application/json" onchange="handleImportModalToolFile(event)">
+                    </label>
                     <button type="button" class="btn-secondary-action" onclick="shareCurrentModalTool()" title="مشاركة الأداة مع الأعضاء أو حفظها في الجهاز">
                         <span>مشاركة</span>
                     </button>
@@ -2659,31 +2861,35 @@
                     </div>
 
                     <!-- 3. تبويب إعداد النموذج والمعلمات -->
-                    <div class="settings-pane" id="setPaneModelParams" style="display: none;">
-                        <div class="settings-section-title">موجه النظام والمعلمات التوليدية</div>
+                    <div class="settings-pane is-custom-off" id="setPaneModelParams" style="display: none;">
+                        <div class="settings-section-head">
+                            <div class="settings-section-title">موجه النظام والمعلمات التوليدية</div>
+                            <button type="button" class="btn-secondary-action" id="btnCustomGeneration" aria-pressed="false" onclick="toggleCustomGeneration()">تفعيل التخصيص</button>
+                        </div>
+                        <p class="form-help" id="customGenerationHint">التخصيص معطّل. الشات يعمل بالتوجيه والمعلمات القياسية داخل المنظومة.</p>
 
                         <div class="form-group">
                             <label for="systemPromptInput">موجه النظام العام (System Prompt):</label>
-                            <textarea id="systemPromptInput" class="form-textarea"
+                            <textarea id="systemPromptInput" class="form-textarea" disabled
                                 rows="4">أنت "المجتهد"، باحث تراثي وعالم فقهي رقمي دقيق متصل بالمكتبة الشاملة الكاملة. استند بدقة إلى النصوص الموثقة من كتب التراث، واذكر اسم الكتاب، والمؤلف، والجزء والصفحة بدقة مع الالتزام بالحياد العلمي والأمانة في النقل.</textarea>
-                            <span class="form-help">يتم تطبيقه على كافة المحادثات والاستفسارات.</span>
+                            <span class="form-help">يصل إلى النموذج الأساسي في الشات فقط بعد تفعيل التخصيص، ويحل عندها محل التوجيه القياسي.</span>
                         </div>
 
                         <div class="form-group">
                             <label>درجة الحرارة (Temperature):</label>
                             <div class="slider-container">
-                                <input type="range" id="paramTemperature" min="0" max="1" step="0.05" value="0.2"
+                                <input type="range" id="paramTemperature" min="0" max="1" step="0.05" value="0.2" disabled
                                     oninput="document.getElementById('valTemp').textContent = this.value">
                                 <span class="slider-value" id="valTemp">0.2</span>
                             </div>
-                            <span class="form-help">القيم المنخفضة (0.1 - 0.3) تضمن دقة فقهية تامة والتزاماً حرفياً
-                                بنصوص التراث.</span>
+                            <span class="form-help">تعمل دائماً على نموذج المحادثة الرئيسي، في التوجيه القياسي والتخصيص معاً. القيم المنخفضة (0.1 - 0.3) تضمن دقة فقهية تامة
+                                والتزاماً حرفياً بنصوص التراث.</span>
                         </div>
 
                         <div class="form-group">
                             <label>Top-K:</label>
                             <div class="slider-container">
-                                <input type="range" id="paramTopK" min="1" max="100" step="1" value="40"
+                                <input type="range" id="paramTopK" min="1" max="100" step="1" value="40" disabled
                                     oninput="document.getElementById('valTopK').textContent = this.value">
                                 <span class="slider-value" id="valTopK">40</span>
                             </div>
@@ -2692,7 +2898,7 @@
                         <div class="form-group">
                             <label>عقوبة التكرار (Repetition Penalty):</label>
                             <div class="slider-container">
-                                <input type="range" id="paramRepPenalty" min="1.0" max="2.0" step="0.05" value="1.1"
+                                <input type="range" id="paramRepPenalty" min="1.0" max="2.0" step="0.05" value="1.1" disabled
                                     oninput="document.getElementById('valRepPenalty').textContent = this.value">
                                 <span class="slider-value" id="valRepPenalty">1.1</span>
                             </div>
@@ -2701,14 +2907,14 @@
                         <div class="form-group">
                             <label>الحد الأقصى لطول الإجابة المولدة (Max Output Tokens):</label>
                             <div class="slider-container">
-                                <input type="range" id="paramMaxTokens" min="4096" max="131072" step="4096"
+                                <input type="range" id="paramMaxTokens" min="4096" max="1048576" step="4096" disabled
                                     value="65536"
                                     oninput="document.getElementById('valMaxTokens').textContent = Number(this.value).toLocaleString() + ' توكن'">
                                 <span class="slider-value" id="valMaxTokens" style="width: 100px;">65,536 توكن</span>
                             </div>
                             <label>سياق استيعاب الشواهد (الافتراضي 1M):</label>
                             <div class="slider-container">
-                                <select id="paramContextTokens" class="form-select" onchange="setContextTokens(this.value)">
+                                <select id="paramContextTokens" class="form-select" disabled onchange="setContextTokens(this.value)">
                                     <option value="131072">128K</option>
                                     <option value="262144">264K</option>
                                     <option value="524288">500K</option>
@@ -2717,7 +2923,7 @@
                                 </select>
                             </div>
                             <small style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 5px;">
-                                هذا حد الشواهد المرسلة إلى النموذج. حد طول الإجابة يبقى في الشريط أعلاه. إن رفض المزود الطلب فاختر سياقاً يحتمله النموذج.
+                                هذا حد الشواهد المرسلة إلى النموذج. حد طول الإجابة في الشريط أعلاه ويصل إلى 1,048,576 توكن. إن رفض المزود الطلب يُعاد بسعة أصغر.
                             </small>
                         </div>
                     </div>
@@ -2783,6 +2989,44 @@
                 <button type="button" class="btn-flat-secondary" onclick="closeGroupModal()">إلغاء</button>
                 <button type="button" class="btn-flat-primary" onclick="saveGroupFromModal()"
                     id="groupModalSubmitBtn">إنشاء</button>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+    <div class="modal-overlay" id="mcpModalOverlay" onclick="if (event.target.id === 'mcpModalOverlay') closeMcpModal()">
+        <div class="modal-window" style="height: auto; max-height: 85vh;">
+            <div class="modal-header">
+                <div class="modal-title" id="mcpModalTitle">إضافة MCP جديد</div>
+                <button class="btn-icon" type="button" onclick="closeMcpModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-tab-content" style="padding: 20px 24px;">
+                <input type="hidden" id="editMcpId" value="">
+                <div class="form-group">
+                    <label for="mcpUrlInput">عنوان MCP</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="url" id="mcpUrlInput" class="form-input" placeholder="https://example.com/mcp" autocomplete="off">
+                        <button type="button" class="btn-flat-secondary" id="mcpVerifyBtn" onclick="verifyMcpUrl()">تحقق</button>
+                    </div>
+                    <button type="button" class="btn-flat-secondary" style="margin-top: 8px;" onclick="useInternalMcp()">استخدام خادم المجتهد الداخلي</button>
+                </div>
+                <div id="mcpVerifyStatus" style="font-size: 12px; color: var(--text-muted); min-height: 18px;"></div>
+                <div id="mcpAdoptBlock" style="display: none;">
+                    <div class="form-group">
+                        <label>فروع MCP</label>
+                        <div id="mcpToolList" style="max-height: 240px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px;"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="mcpNameInput">تسمية الفروع المحددة</label>
+                        <input type="text" id="mcpNameInput" class="form-input" placeholder="مثال: وكيل كتب السنة">
+                    </div>
+                    <button type="button" class="btn-flat-primary" onclick="adoptMcpBranches()">اعتماد</button>
+                </div>
             </div>
         </div>
     </div>
@@ -2938,6 +3182,20 @@
                         <label id="agentTopRerankLabel">أعلى نتائج الاستخراج المعتمدة للوكيل (Top-K):</label>
                         <input type="number" id="agentTopRerankInput" class="form-input" min="1" max="500" value="50">
                     </div>
+                    <div class="form-group">
+                        <label for="agentSearchModeSelect">نمط البحث:</label>
+                        <select id="agentSearchModeSelect" class="form-select">
+                            <option value="hybrid">هجين (لفظي + دلالي)</option>
+                            <option value="semantic">دلالي فقط</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>قيادة الفريق:</label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-weight: 400; margin-top: 8px;">
+                            <input type="checkbox" id="agentDirectorInput">
+                            <span>هذا الوكيل <b>مدير المشروع قائد الفريق</b> (قائد واحد في المجموعة، وتتعطل لأجله أدوات نموذج المحادثة)</span>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -3042,6 +3300,13 @@
                                 style="display: none; position: absolute; left: 8px; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted); font-size: 13px;"
                                 title="مسح">✕</span>
                         </div>
+                    </div>
+
+                    <div class="scope-control-group" style="flex: 0.7; min-width: 160px;">
+                        <label for="scopeDeathMax">سنة وفاة المؤلف إلى (هـ):</label>
+                        <input type="text" id="scopeDeathMax" class="filter-input" inputmode="numeric"
+                            style="width: 100%;" placeholder="مثال: 1000"
+                            oninput="onScopeDeathInput(this.value)">
                     </div>
                 </div>
 
@@ -3233,6 +3498,10 @@
                     <input type="number" id="readerBeforePages" class="filter-input reader-page-input" value="3" min="0" max="100" aria-label="عدد الصفحات السابقة" onchange="onReaderSurroundingSpanChange()">
                     <label for="readerAfterPages">لاحقة</label>
                     <input type="number" id="readerAfterPages" class="filter-input reader-page-input" value="3" min="0" max="100" aria-label="عدد الصفحات اللاحقة" onchange="onReaderSurroundingSpanChange()">
+                    <button class="btn-flat-secondary reader-tool-btn" id="btnShowReaderText" onclick="showReaderPageText()"
+                        title="عرض متن الصفحة المستهدفة">
+                        عرض النص
+                    </button>
                     <button class="btn-flat-secondary reader-tool-btn" id="btnToggleSurrounding" onclick="toggleSurroundingPagesView()"
                         title="استيفاء السياق بعدد الصفحات السابقة واللاحقة الذي تختاره">
                         استيفاء السياق 🔄
@@ -3818,7 +4087,7 @@
                             </div>
                         </div>
                         <div style="display: flex; gap: 12px; align-items: center; color: var(--text-muted); font-size: 11px; border-top: 1px dotted var(--border-subtle); padding-top: 4px; margin-top: 2px;">
-                            <span>🔍 نمط البحث: <strong id="pSubagentTestSearchModeBadge" style="color: var(--accent-clay);">⚡ بحث هجين (Dense + BM25)</strong></span>
+                            <span>🔍 نمط البحث: <strong id="pSubagentTestSearchModeBadge" style="color: var(--accent-clay);">⚡ بحث هجين (دلالي + لفظي)</strong></span>
                             <span>📚 نطاق الكتب: <strong id="pSubagentTestBooksBadge" style="color: #2563eb;">كامل الشاملة</strong></span>
                         </div>
                     </div>
@@ -3856,6 +4125,23 @@
                 </div>
             </div>
 
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="localExportModal" role="dialog" aria-modal="true" aria-labelledby="localExportTitle">
+        <div class="modal-window local-export-window">
+            <div class="modal-header">
+                <div class="modal-title" id="localExportTitle">تصدير النسخة المحلية</div>
+            </div>
+            <div class="modal-body local-export-body">
+                <p id="localExportMessage">جاري تصدير النسخة المحلية</p>
+                <div class="local-export-track" id="localExportTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="نسبة التصدير">
+                    <div class="local-export-fill" id="localExportFill"></div>
+                </div>
+                <div class="local-export-percent" id="localExportPercent">0%</div>
+                <p class="local-export-detail" id="localExportDetail"></p>
+                <button type="button" class="btn-primary-gradient" id="localExportClose" hidden onclick="closeLocalExportModal()">إغلاق</button>
+            </div>
         </div>
     </div>
 
@@ -3928,6 +4214,10 @@
                             <input type="radio" name="shareDestination" value="device" onchange="toggleShareDestination()">
                             <span>في الجهاز فقط</span>
                         </label>
+                        <label class="share-key-option" id="shareExternalOption" hidden onclick="selectShareDestination('external')">
+                            <input type="radio" name="shareDestination" value="external" onchange="toggleShareDestination(); presentExternalShare()">
+                            <span>مشاركة خارجية</span>
+                        </label>
                     </div>
                 </div>
                 <div id="shareKeyOptions" class="share-key-options" hidden>
@@ -3982,6 +4272,10 @@
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" class="btn-secondary-action" onclick="toggleResearchMetrics()" style="font-size: 12px; padding: 6px 12px; display: flex; align-items: center; gap: 5px;">
+                        <i data-lucide="ruler" class="icon" style="width: 14px; height: 14px;"></i>
+                        <span>سجل قياس البحوث</span>
+                    </button>
                     <button type="button" class="btn-secondary-action" onclick="loadLibraryStats()" style="font-size: 12px; padding: 6px 12px; display: flex; align-items: center; gap: 5px;">
                         <i data-lucide="refresh-cw" class="icon" id="statsRefreshIcon" style="width: 14px; height: 14px;"></i>
                         <span>تحديث</span>
@@ -4067,6 +4361,27 @@
                         </div>
                     </div>
                 </div>
+                <div id="researchMetricsSection" style="display: none; margin-top: 22px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div style="font-size: 14.5px; font-weight: 700; color: var(--text-main);">📏 سجل قياس البحوث — مؤشرات جودة المنظومة</div>
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="btn-secondary-action" onclick="downloadResearchMetricsGuide()" style="font-size: 12px; padding: 6px 12px;">شرح قراءة السجل</button>
+                            <button type="button" class="btn-secondary-action" onclick="exportResearchMetrics()" style="font-size: 12px; padding: 6px 12px;">تصدير CSV</button>
+                        </div>
+                    </div>
+                    <div id="researchMetricsSummary" style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 10px;">جارٍ الجلب…</div>
+                    <div id="researchMetricsAdvice" style="display: none; background: rgba(184, 115, 51, 0.07); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; font-size: 12.5px; line-height: 1.9;"></div>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid var(--border-subtle); text-align: right;">
+                                    <th style="padding: 6px;">البحث</th><th style="padding: 6px;">المدة</th><th style="padding: 6px;">الحروف</th><th style="padding: 6px;">الشواهد</th><th style="padding: 6px;">الوكلاء</th><th style="padding: 6px;">الساقطون</th><th style="padding: 6px;">مفحوص</th><th style="padding: 6px;">مربوط</th><th style="padding: 6px;">الثبوت</th><th style="padding: 6px;">اتفاق مطلق</th><th style="padding: 6px;">التقرير</th>
+                                </tr>
+                            </thead>
+                            <tbody id="researchMetricsRows"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -4149,7 +4464,7 @@
                             <div class="telemetry-icon-box" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">
                                 <i data-lucide="database" class="icon"></i>
                             </div>
-                            <span class="telemetry-title">مخزن المتجهات (Qdrant)</span>
+                            <span class="telemetry-title">مخزن البيانات</span>
                             <span class="telemetry-badge" id="badgeQdrantStatus" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">متصل</span>
                         </div>
                         <div class="telemetry-big-stat" id="statQdrantPoints">8,148,092</div>
@@ -4162,9 +4477,12 @@
                             </div>
                         </div>
                         <div id="qdrantPersistWarn" style="display:none; margin-top: 8px; color: #b45309; font-size: 0.82rem;"></div>
-                        <div style="margin-top: 10px;">
-                            <button type="button" id="btnRestartQdrant" class="admin-only-tab" onclick="restartQdrantStore()" style="align-items: center; gap: 6px; padding: 7px 12px; font-size: 12.5px;">
+                        <div class="telemetry-store-actions">
+                            <button type="button" id="btnRestartQdrant" class="btn-secondary-action admin-only-tab" onclick="restartQdrantStore()">
                                 إعادة تشغيل المخزن
+                            </button>
+                            <button type="button" id="btnStopQdrant" class="btn-secondary-action admin-only-tab" onclick="stopQdrantStore()">
+                                إيقاف المخزن
                             </button>
                         </div>
                         <div class="telemetry-subinfo">
@@ -4205,8 +4523,8 @@
                             </div>
                         </div>
                         <div id="statModelDownload" style="display:none; margin-top: 8px; color: #b45309; font-size: 0.82rem;"></div>
-                        <div style="margin-top: 10px;">
-                            <button type="button" id="btnDownloadEmbedding" class="admin-only-tab" onclick="downloadEmbeddingModel()" style="align-items: center; gap: 6px; padding: 7px 12px; font-size: 12.5px;">
+                        <div class="telemetry-store-actions">
+                            <button type="button" id="btnDownloadEmbedding" class="btn-secondary-action admin-only-tab" onclick="downloadEmbeddingModel()">
                                 إعادة سحب نموذج التضمين
                             </button>
                         </div>
@@ -4267,7 +4585,7 @@
                             </div>
                         </div>
                         <div class="telemetry-actions-buttons">
-                            <button type="button" class="btn-primary" id="btnOptimizeServer" onclick="optimizeServerMemory()">
+                            <button type="button" class="btn-secondary-action" id="btnOptimizeServer" onclick="optimizeServerMemory()">
                                 <i data-lucide="sparkles" class="icon"></i>
                                 <span>تنظيف الكاش وتحسين الذاكرة</span>
                             </button>
@@ -4694,21 +5012,25 @@
     <!-- مكتبات الجافاسكريبت التفاعلية -->
     <script src="/static/js/marked.min.js"></script>
     <script src="/static/js/chart.min.js"></script>
+    <script src="/static/js/echarts.min.js"></script>
     <script src="/static/js/vis-network.min.js"></script>
     <script src="/static/js/d3.min.js"></script>
     <script src="/static/js/markmap-view.min.js"></script>
     <script src="/static/js/markmap-lib.min.js"></script>
+    <script src="/static/js/g6.min.js"></script>
+    <script src="/static/js/g2.min.js"></script>
     <script src="/static/js/members.js?v=1792835200"></script>
-    <script src="/static/js/app.js?v=1792910000"></script>
-    <script src="/static/js/search.js?v=1792930000"></script>
-    <script src="/static/js/reader.js?v=1792832400"></script>
-    <script src="/static/js/force3d.js?v=1792878800"></script>
-    <script src="/static/js/share.js?v=1792892000"></script>
-    <script src="/static/js/chat.js?v=1793060000"></script>
-    <script src="/static/js/agents.js?v=1792911000"></script>
+    <script src="/static/js/app.js?v=1.10.259"></script>
+    <script src="/static/js/search.js?v=1793188000"></script>
+    <script src="/static/js/reader.js?v=1793225300"></script>
+    <script src="/static/js/force3d.js?v=1.10.259"></script>
+    <script src="/static/js/share.js?v=1793225500"></script>
+    <script src="/static/js/chat.js?v=1.10.259"></script>
+    <script src="/static/js/agents.js?v=1.10.259"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1792896000"></script>
-    <script src="/static/js/projects.js?v=1793092000"></script>
+    <script src="/static/js/tools.js?v=1.10.259"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.259"></script>
+    <script src="/static/js/projects.js?v=1.10.259"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
@@ -4722,9 +5044,19 @@
         };
         document.addEventListener('DOMContentLoaded', function () {
             window.refreshLucideIcons();
+            const quitBtn = document.getElementById('quitAppBtn');
+            if (quitBtn && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed) {
+                quitBtn.hidden = false;
+                window.refreshLucideIcons();
+            }
             const theme = document.documentElement.getAttribute('data-theme') || 'light';
             if (typeof updateThemeIcon === 'function') updateThemeIcon(theme);
         });
+        window.quitDesktopApp = function () {
+            if (!confirm('سيتم إغلاق التطبيق.')) return;
+            const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+            if (handler) handler.postMessage('quit');
+        };
     </script>
 </body>
 

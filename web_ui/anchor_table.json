@@ -1,0 +1,2577 @@
+{
+ "version": 1,
+ "scope": "وفاة المؤلف <= 1000هـ",
+ "rule": "لا مدخل بلا شاهد حي: كل عبارة معتمدة لها كتاب وجزء وصفحة تم التحقق منها فعليا في النص",
+ "stats": {
+  "entries": 109,
+  "anchors": 160
+ },
+ "entries": [
+  {
+   "term": "حبوب منع الحمل",
+   "aliases": [
+    "منع الحمل",
+    "تنظيم النسل",
+    "تحديد النسل"
+   ],
+   "cat": "طب وأسرة",
+   "anchors": [
+    {
+     "phrase": "الموءودة الصغرى",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "10",
+     "page_num": 229,
+     "level": "exact"
+    },
+    {
+     "phrase": "العزل عن الحرة",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "9",
+     "page_num": 308,
+     "level": "exact"
+    },
+    {
+     "phrase": "يعزل عن امرأته",
+     "book_id": "2874",
+     "title": "بدائع الصنائع في ترتيب الشرائع",
+     "author_death": 587,
+     "part": "2",
+     "page_num": 334,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الباروكة",
+   "aliases": [
+    "الشعر المستعار",
+    "لبس الباروكة"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "لعن الله الواصلة",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "3",
+     "page_num": 141,
+     "level": "exact"
+    },
+    {
+     "phrase": "تصل شعرها بغيره",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 130,
+     "level": "exact"
+    },
+    {
+     "phrase": "الواصلة والمستوصلة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 129,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "المكياج",
+   "aliases": [
+    "أدوات التجميل",
+    "وضع المكياج"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "تتزين لزوجها",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 128,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "زراعة الشعر",
+   "aliases": [
+    "زرع الشعر"
+   ],
+   "cat": "زينة وطب",
+   "anchors": [
+    {
+     "phrase": "تصل شعرها بغيره",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 130,
+     "level": "exact"
+    },
+    {
+     "phrase": "الواصلة والمستوصلة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 129,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الرموش الصناعية",
+   "aliases": [
+    "تركيب الرموش"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "الواصلة والمستوصلة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 129,
+     "level": "exact"
+    },
+    {
+     "phrase": "تصل شعرها بغيره",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 130,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "عمليات التجميل",
+   "aliases": [
+    "جراحة التجميل",
+    "تجميل الأنف"
+   ],
+   "cat": "طب وزينة",
+   "anchors": [
+    {
+     "phrase": "فلَيُغَيِّرُنَّ خَلْقَ اللَّهِ",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "6",
+     "page_num": 177,
+     "level": "exact"
+    },
+    {
+     "phrase": "المتفلجات للحسن",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "3",
+     "page_num": 141,
+     "level": "exact"
+    },
+    {
+     "phrase": "المغيرات خلق الله",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "3",
+     "page_num": 141,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الوشم",
+   "aliases": [
+    "التاتو",
+    "الوشم الدائم"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "الواشمة والمستوشمة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 131,
+     "level": "exact"
+    },
+    {
+     "phrase": "لعن الله الواشمات",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "3",
+     "page_num": 141,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "النمص",
+   "aliases": [
+    "نتف الحواجب",
+    "إزالة شعر الوجه"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "والمتنمصات والمتفلجات",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "8",
+     "page_num": 630,
+     "level": "exact"
+    },
+    {
+     "phrase": "لعن الله المتنمصات",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "10",
+     "page_num": 372,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "تقويم الأسنان وتجميلها",
+   "aliases": [
+    "تفليج الأسنان",
+    "تبييض الأسنان"
+   ],
+   "cat": "زينة وطب",
+   "anchors": [
+    {
+     "phrase": "المتفلجات للحسن",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "3",
+     "page_num": 141,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "صبغ الشعر بالأسود",
+   "aliases": [
+    "الصبغة السوداء"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "واجتنبوا السواد",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "1",
+     "page_num": 294,
+     "level": "exact"
+    },
+    {
+     "phrase": "الخضاب بالسواد",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 127,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "إطالة الأظافر والأظافر الصناعية",
+   "aliases": [
+    "تركيب الأظافر"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "قص الأظفار",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 114,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "حلق اللحية",
+   "aliases": [
+    "إعفاء اللحية"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "أحفوا الشوارب وأعفوا اللحى",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "1",
+     "page_num": 287,
+     "level": "proximity"
+    },
+    {
+     "phrase": "خالفوا المشركين",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "10",
+     "page_num": 349,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "القزع",
+   "aliases": [
+    "قصات شعر القزع"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "نهى عن القزع",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 123,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التدخين",
+   "aliases": [
+    "السجائر",
+    "الشيشة",
+    "الأرجيلة"
+   ],
+   "cat": "أطعمة وصحة",
+   "anchors": [
+    {
+     "phrase": "لا ضرر ولا ضرار",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "4",
+     "page_num": 140,
+     "level": "exact"
+    },
+    {
+     "phrase": "ويحرم عليهم الخبائث",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "13",
+     "page_num": 316,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "السجائر الإلكترونية",
+   "aliases": [
+    "الفيب"
+   ],
+   "cat": "أطعمة وصحة",
+   "anchors": [
+    {
+     "phrase": "لا ضرر ولا ضرار",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "4",
+     "page_num": 140,
+     "level": "exact"
+    },
+    {
+     "phrase": "ويحرم عليهم الخبائث",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "13",
+     "page_num": 316,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "المخدرات",
+   "aliases": [
+    "الحشيش",
+    "المسكرات الحديثة"
+   ],
+   "cat": "أطعمة وصحة",
+   "anchors": [
+    {
+     "phrase": "كل مسكر خمر وكل خمر حرام",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "12",
+     "page_num": 496,
+     "level": "proximity"
+    },
+    {
+     "phrase": "في الحشيشة",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "3",
+     "page_num": 8,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "مشروبات الطاقة والمفترات",
+   "aliases": [
+    "المفترات"
+   ],
+   "cat": "أطعمة",
+   "anchors": [
+    {
+     "phrase": "عن كل مسكر ومفتر",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "10",
+     "page_num": 45,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الموسيقى والغناء",
+   "aliases": [
+    "سماع المعازف",
+    "الأغاني"
+   ],
+   "cat": "لهو",
+   "anchors": [
+    {
+     "phrase": "يستحلون الحر والحرير والخمر والمعازف",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "10",
+     "page_num": 51,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التصوير الفوتوغرافي",
+   "aliases": [
+    "صور الأشخاص",
+    "الفيديو"
+   ],
+   "cat": "تقنية وزينة",
+   "anchors": [
+    {
+     "phrase": "أشد الناس عذابا يوم القيامة المصورون",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "10",
+     "page_num": 202,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التشبه بالجنس الآخر في اللباس",
+   "aliases": [
+    "لبس البنطلون للمرأة",
+    "التشبه بالرجال"
+   ],
+   "cat": "لباس",
+   "anchors": [
+    {
+     "phrase": "المتشبهات من النساء بالرجال",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "4",
+     "page_num": 445,
+     "level": "exact"
+    },
+    {
+     "phrase": "من تشبه بقوم فهو منهم",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 125,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الاحتفال بأعياد غير المسلمين",
+   "aliases": [
+    "عيد الميلاد",
+    "رأس السنة",
+    "الهالوين"
+   ],
+   "cat": "مجتمع",
+   "anchors": [
+    {
+     "phrase": "من تشبه بقوم فهو منهم",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 125,
+     "level": "exact"
+    },
+    {
+     "phrase": "إن لكل قوم عيدا وهذا عيدنا",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "2",
+     "page_num": 445,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "لبس الذهب والحرير للرجال",
+   "aliases": [
+    "ساعة ذهب للرجل",
+    "خاتم الذهب"
+   ],
+   "cat": "لباس",
+   "anchors": [
+    {
+     "phrase": "وحرم على ذكورها",
+     "book_id": "738",
+     "title": "المحلى بالآثار",
+     "author_death": 456,
+     "part": "2",
+     "page_num": 356,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "العطور الكحولية",
+   "aliases": [
+    "عطر فيه كحول"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "إن الله لم يجعل شفاءكم فيما حرم عليكم",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "9",
+     "page_num": 51,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "أدوية ومستحضرات فيها محرمات",
+   "aliases": [
+    "الجيلاتين",
+    "التداوي بالمحرمات"
+   ],
+   "cat": "طب",
+   "anchors": [
+    {
+     "phrase": "إن الله لم يجعل شفاءكم فيما حرم عليكم",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "9",
+     "page_num": 51,
+     "level": "exact"
+    },
+    {
+     "phrase": "التداوي بالخمر",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "10",
+     "page_num": 80,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "اللقاحات والتداوي الوقائي",
+   "aliases": [
+    "التطعيم"
+   ],
+   "cat": "طب",
+   "anchors": [
+    {
+     "phrase": "تداووا فإن الله لم يضع داء",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "5",
+     "page_num": 107,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "نقل الأعضاء والتبرع بها",
+   "aliases": [
+    "زراعة الأعضاء",
+    "التبرع بالأعضاء"
+   ],
+   "cat": "طب",
+   "anchors": [
+    {
+     "phrase": "كسر عظم المؤمن ميتا",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "9",
+     "page_num": 113,
+     "level": "exact"
+    },
+    {
+     "phrase": "لا ضرر ولا ضرار",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "4",
+     "page_num": 140,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "تشريح الجثث",
+   "aliases": [
+    "تشريح الميت للتعليم"
+   ],
+   "cat": "طب",
+   "anchors": [
+    {
+     "phrase": "كسر عظم المؤمن ميتا",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "9",
+     "page_num": 113,
+     "level": "exact"
+    },
+    {
+     "phrase": "نهى عن المثلة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "3",
+     "page_num": 498,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التبرع بالدم ونقله",
+   "aliases": [
+    "نقل الدم"
+   ],
+   "cat": "طب",
+   "anchors": [
+    {
+     "phrase": "من أحياها فكأنما أحيا الناس جميعا",
+     "book_id": "738",
+     "title": "المحلى بالآثار",
+     "author_death": 456,
+     "part": "3",
+     "page_num": 395,
+     "level": "exact"
+    },
+    {
+     "phrase": "لا ضرر ولا ضرار",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "4",
+     "page_num": 140,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الحقن والإبر أثناء الصيام",
+   "aliases": [
+    "إبرة مغذية",
+    "بخاخ الربو",
+    "التحاميل"
+   ],
+   "cat": "طب وعبادات",
+   "anchors": [
+    {
+     "phrase": "الحقنة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 231,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "سحب الدم والحجامة للصائم",
+   "aliases": [
+    "التبرع بالدم للصائم",
+    "التحليل أثناء الصيام"
+   ],
+   "cat": "طب وعبادات",
+   "anchors": [
+    {
+     "phrase": "أفطر الحاجم والمحجوم",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "4",
+     "page_num": 351,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "أطفال الأنابيب والتلقيح الصناعي",
+   "aliases": [
+    "الحقن المجهري",
+    "طفل الأنبوب"
+   ],
+   "cat": "طب وأسرة",
+   "anchors": [
+    {
+     "phrase": "الولد للفراش",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "8",
+     "page_num": 373,
+     "level": "exact"
+    },
+    {
+     "phrase": "استدخلت مني",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "11",
+     "page_num": 169,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التلقيح بمني أجنبي وبنوك المني",
+   "aliases": [
+    "التبرع بالحيوانات المنوية"
+   ],
+   "cat": "طب وأسرة",
+   "anchors": [
+    {
+     "phrase": "الولد للفراش",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "8",
+     "page_num": 373,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "تأجير الأرحام",
+   "aliases": [
+    "الأم البديلة"
+   ],
+   "cat": "طب وأسرة",
+   "anchors": [
+    {
+     "phrase": "الولد للفراش",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "8",
+     "page_num": 373,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "بنوك حليب الرضاعة",
+   "aliases": [
+    "حليب المتبرعات"
+   ],
+   "cat": "طب وأسرة",
+   "anchors": [
+    {
+     "phrase": "يحرم من الرضاع ما يحرم من النسب",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "9",
+     "page_num": 519,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الإجهاض",
+   "aliases": [
+    "إسقاط الجنين"
+   ],
+   "cat": "طب وأسرة",
+   "anchors": [
+    {
+     "phrase": "في الجنين غرة",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "8",
+     "page_num": 404,
+     "level": "proximity"
+    },
+    {
+     "phrase": "بعد نفخ الروح",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "3",
+     "page_num": 460,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التعقيم وقطع النسل الدائم",
+   "aliases": [
+    "ربط القنوات",
+    "قطع النسل"
+   ],
+   "cat": "طب وأسرة",
+   "anchors": [
+    {
+     "phrase": "قطع النسل",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "10",
+     "page_num": 228,
+     "level": "proximity"
+    },
+    {
+     "phrase": "نهى عن الخصاء",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "9",
+     "page_num": 120,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الختان للإناث",
+   "aliases": [
+    "ختان البنات"
+   ],
+   "cat": "طب",
+   "anchors": [
+    {
+     "phrase": "أشمي ولا تنهكي",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 117,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "تغيير الجنس",
+   "aliases": [
+    "التحول الجنسي"
+   ],
+   "cat": "طب ومجتمع",
+   "anchors": [
+    {
+     "phrase": "الخنثى المشكل",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 245,
+     "level": "exact"
+    },
+    {
+     "phrase": "فلَيُغَيِّرُنَّ خَلْقَ اللَّهِ",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "6",
+     "page_num": 177,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الاستنساخ والهندسة الوراثية",
+   "aliases": [
+    "استنساخ البشر"
+   ],
+   "cat": "طب",
+   "anchors": [
+    {
+     "phrase": "فلَيُغَيِّرُنَّ خَلْقَ اللَّهِ",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "6",
+     "page_num": 177,
+     "level": "exact"
+    },
+    {
+     "phrase": "الولد للفراش",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "8",
+     "page_num": 373,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "فوائد البنوك والقروض الربوية",
+   "aliases": [
+    "الربح البنكي",
+    "فائدة القرض"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "لعن الله آكل الربا ومؤكله",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "9",
+     "page_num": 60,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "غرامة التأخير في الأقساط",
+   "aliases": [
+    "فوائد التأخير"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "إما أن تقضي وإما أن تربي",
+     "book_id": "2561",
+     "title": "مجموع الفتاوى",
+     "author_death": 728,
+     "part": "29",
+     "page_num": 435,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "العمل في البنوك الربوية",
+   "aliases": [
+    "كتابة عقود الربا"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "وكاتبه وشاهديه",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 51,
+     "level": "proximity"
+    },
+    {
+     "phrase": "ولا تعاونوا على الإثم والعدوان",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "3",
+     "page_num": 164,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التأمين التجاري والصحي",
+   "aliases": [
+    "التأمين على الحياة",
+    "تأمين السيارات"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "نهى عن بيع الغرر",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 31,
+     "level": "exact"
+    },
+    {
+     "phrase": "عن بيع الحصاة وعن بيع الغرر",
+     "book_id": "188",
+     "title": "زاد المعاد في هدي خير العباد - ط عطاءات العلم",
+     "author_death": 751,
+     "part": "6",
+     "page_num": 508,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "شراء الذهب والعملات عبر الإنترنت",
+   "aliases": [
+    "تداول الذهب إلكترونيا"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "مثلا بمثل يدا بيد",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "9",
+     "page_num": 403,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "العملات الرقمية",
+   "aliases": [
+    "البيتكوين",
+    "الكريبتو"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "نهى عن بيع الغرر",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 31,
+     "level": "exact"
+    },
+    {
+     "phrase": "مثلا بمثل يدا بيد",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "9",
+     "page_num": 403,
+     "level": "exact"
+    },
+    {
+     "phrase": "لا تأكلوا أموالكم بينكم بالباطل",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "7",
+     "page_num": 360,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الفوركس وتداول العملات",
+   "aliases": [
+    "المضاربة بالعملات"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "ربا النسيئة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 52,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "بيع ما لا يملك والدروبشيبنغ",
+   "aliases": [
+    "البيع قبل التملك",
+    "NFT"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "لا تبع ما ليس عندك",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 295,
+     "level": "exact"
+    },
+    {
+     "phrase": "بيع المعدوم",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "9",
+     "page_num": 257,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "العقود الآجلة والمشتقات",
+   "aliases": [
+    "الفيوتشر",
+    "الأوبشن"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "نهى عن بيع الكالئ بالكالئ",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "9",
+     "page_num": 399,
+     "level": "exact"
+    },
+    {
+     "phrase": "بيع الدين بالدين",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 55,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الإيجار المنتهي بالتمليك",
+   "aliases": [
+    "التأجير التمويلي"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "بيعتان في بيعة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 332,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "خطابات الضمان والاعتماد المستندي",
+   "aliases": [
+    "الكفالة المصرفية"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "الزعيم غارم",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "7",
+     "page_num": 71,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التحويلات والشيكات المصرفية",
+   "aliases": [
+    "الحوالة البنكية"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "الحوالة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "تقديم",
+     "page_num": 48,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "صناديق الاستثمار والمضاربة",
+   "aliases": [
+    "إدارة المحافظ"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "القراض",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "7",
+     "page_num": 133,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التسويق الهرمي والشبكي",
+   "aliases": [
+    "التسويق متعدد المستويات"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "نهى عن بيع الغرر",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 31,
+     "level": "exact"
+    },
+    {
+     "phrase": "لا تأكلوا أموالكم بينكم بالباطل",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "7",
+     "page_num": 360,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "المراهنات ومسابقات اليانصيب",
+   "aliases": [
+    "القمار الرياضي"
+   ],
+   "cat": "اقتصاد ولهو",
+   "anchors": [
+    {
+     "phrase": "تعال أقامرك",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "2",
+     "page_num": 62,
+     "level": "exact"
+    },
+    {
+     "phrase": "إنما الخمر والميسر والأنصاب",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "12",
+     "page_num": 493,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الاحتكار ورفع الأسعار",
+   "aliases": [
+    "احتكار السلع"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "لا يحتكر إلا خاطئ",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "4",
+     "page_num": 348,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التسعير وتدخل الدولة في الأسعار",
+   "aliases": [
+    "تحديد الأسعار"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "إن الله هو المسعر",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 311,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "أجور العمال وحقوقهم",
+   "aliases": [
+    "تأخير الرواتب"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "أعطوا الأجير أجره قبل أن يجف عرقه",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "8",
+     "page_num": 17,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الرشوة",
+   "aliases": [
+    "هدايا الموظفين"
+   ],
+   "cat": "مجتمع",
+   "anchors": [
+    {
+     "phrase": "لعن الله الراشي والمرتشي",
+     "book_id": "738",
+     "title": "المحلى بالآثار",
+     "author_death": 456,
+     "part": "8",
+     "page_num": 118,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الغش في الامتحانات والشهادات المزورة",
+   "aliases": [
+    "الغش الدراسي"
+   ],
+   "cat": "مجتمع",
+   "anchors": [
+    {
+     "phrase": "من غشنا فليس منا",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 111,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "قرصنة البرامج وانتهاك حقوق النشر",
+   "aliases": [
+    "نسخ البرامج",
+    "سرقة المحتوى"
+   ],
+   "cat": "تقنية",
+   "anchors": [
+    {
+     "phrase": "لا يحل مال امرئ مسلم",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 606,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "زكاة الرواتب والأموال المستحدثة",
+   "aliases": [
+    "زكاة الراتب الشهري"
+   ],
+   "cat": "عبادات واقتصاد",
+   "anchors": [
+    {
+     "phrase": "حتى يحول عليه الحول",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "4",
+     "page_num": 46,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "زكاة الفطر نقدا",
+   "aliases": [
+    "إخراج القيمة في زكاة الفطر"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "صاعا من تمر أو صاعا من شعير",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "4",
+     "page_num": 282,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "وقف النقود والأسهم",
+   "aliases": [
+    "الوقف النقدي",
+    "الأوقاف الاستثمارية"
+   ],
+   "cat": "عبادات واقتصاد",
+   "anchors": [
+    {
+     "phrase": "وقف الدراهم والدنانير",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "6",
+     "page_num": 43,
+     "level": "exact"
+    },
+    {
+     "phrase": "وقف المنقول",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "8",
+     "page_num": 212,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الصلاة على الكرسي وفي الطائرة",
+   "aliases": [
+    "الصلاة جالسا لعذر"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "صل قائما فإن لم تستطع فقاعدا",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "3",
+     "page_num": 256,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "المسح على الجبيرة والجبس",
+   "aliases": [
+    "المسح على العصابة"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "المسح على الجبيرة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 179,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "المسح على الجوارب والأحذية المعاصرة",
+   "aliases": [
+    "المسح على الجورب"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "المسح على الجوربين",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 373,
+     "level": "exact"
+    },
+    {
+     "phrase": "يمسح على الخفين",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 360,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الوضوء بالماء المعالج والمستعمل",
+   "aliases": [
+    "مياه الصرف المعالجة"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "في الماء المستعمل",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 31,
+     "level": "proximity"
+    },
+    {
+     "phrase": "الماء المطلق",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 14,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التيمم عند انعدام الماء في السفر الحديث",
+   "aliases": [
+    "التيمم في الطائرة"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "جعلت لي الأرض مسجدا وطهورا",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 13,
+     "level": "exact"
+    },
+    {
+     "phrase": "فتيمموا صعيدا طيبا",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 310,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الصيام حيث لا يغيب النهار",
+   "aliases": [
+    "الصيام في الدول القطبية"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "اقدروا له قدره",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "3",
+     "page_num": 47,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الإفطار بحسب غروب الشمس في الطائرة",
+   "aliases": [
+    "توقيت الصيام في السفر الجوي"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "إذا أقبل الليل من هاهنا وأدبر النهار",
+     "book_id": "2561",
+     "title": "مجموع الفتاوى",
+     "author_death": 728,
+     "part": "25",
+     "page_num": 216,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "استقبال القبلة في الطائرة والباخرة",
+   "aliases": [
+    "القبلة في وسائل النقل"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "فأينما تولوا فثم وجه الله",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "2",
+     "page_num": 96,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الحج عن الغير وحج البدل",
+   "aliases": [
+    "الإنابة في الحج"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "فحجي عنه",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "5",
+     "page_num": 20,
+     "level": "exact"
+    },
+    {
+     "phrase": "أرأيت لو كان على أبيك دين",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "3",
+     "page_num": 520,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الإحرام من الطائرة والمواقيت الجوية",
+   "aliases": [
+    "ميقات ركاب الطائرات"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "هن لهن ولمن أتى عليهن",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "5",
+     "page_num": 56,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "لا نكاح إلا بولي والزواج العرفي",
+   "aliases": [
+    "الزواج السري",
+    "زواج بلا ولي"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "لا نكاح إلا بولي",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "5",
+     "page_num": 88,
+     "level": "exact"
+    },
+    {
+     "phrase": "أعلنوا النكاح",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "8",
+     "page_num": 570,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "النظر إلى المخطوبة",
+   "aliases": [
+    "النظرة الشرعية"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "انظر إليها فإنه أحرى أن يؤدم بينكما",
+     "book_id": "2874",
+     "title": "بدائع الصنائع في ترتيب الشرائع",
+     "author_death": 587,
+     "part": "5",
+     "page_num": 122,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الخلع",
+   "aliases": [
+    "طلب الخلع"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "اقبل الحديقة وطلقها تطليقة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "10",
+     "page_num": 268,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "حضانة الأطفال بعد الطلاق",
+   "aliases": [
+    "حق الحضانة"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "أنت أحق به ما لم تنكحي",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "11",
+     "page_num": 414,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "إثبات النسب بالبصمة الوراثية",
+   "aliases": [
+    "تحليل DNA للنسب"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "الولد للفراش",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "8",
+     "page_num": 373,
+     "level": "exact"
+    },
+    {
+     "phrase": "القيافة",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "7",
+     "page_num": 369,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التبني وكفالة اليتيم",
+   "aliases": [
+    "تبني الأطفال"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "ادعوهم لآبائهم هو أقسط عند الله",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "8",
+     "page_num": 517,
+     "level": "exact"
+    },
+    {
+     "phrase": "أنا وكافل اليتيم",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "5",
+     "page_num": 394,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "مصافحة النساء الأجنبيات",
+   "aliases": [
+    "لمس المرأة الأجنبية"
+   ],
+   "cat": "مجتمع",
+   "anchors": [
+    {
+     "phrase": "لامستم النساء",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 257,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الخلوة والاختلاط عبر الإنترنت",
+   "aliases": [
+    "المحادثات الخاصة مع الأجنبيات"
+   ],
+   "cat": "مجتمع وتقنية",
+   "anchors": [
+    {
+     "phrase": "لا يخلون رجل بامرأة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "5",
+     "page_num": 31,
+     "level": "exact"
+    },
+    {
+     "phrase": "قل للمؤمنين يغضوا من أبصارهم",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "9",
+     "page_num": 500,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "النظر إلى الصور والمقاطع المحرمة",
+   "aliases": [
+    "المشاهدات المحرمة"
+   ],
+   "cat": "تقنية ومجتمع",
+   "anchors": [
+    {
+     "phrase": "العينان تزنيان وزناهما النظر",
+     "book_id": "1852",
+     "title": "المبسوط للسرخسي",
+     "author_death": 483,
+     "part": "9",
+     "page_num": 38,
+     "level": "exact"
+    },
+    {
+     "phrase": "قل للمؤمنين يغضوا من أبصارهم",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "9",
+     "page_num": 500,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الحجاب وكشف الوجه",
+   "aliases": [
+    "النقاب",
+    "تغطية الوجه"
+   ],
+   "cat": "لباس",
+   "anchors": [
+    {
+     "phrase": "يدنين عليهن من جلابيبهن",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "1",
+     "page_num": 249,
+     "level": "exact"
+    },
+    {
+     "phrase": "الوجه والكفان",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 322,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الإقامة في بلاد غير المسلمين والتجنس",
+   "aliases": [
+    "الهجرة والإقامة بين المشركين"
+   ],
+   "cat": "مجتمع",
+   "anchors": [
+    {
+     "phrase": "يقيم بين أظهر المشركين",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "6",
+     "page_num": 39,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "المشاركة في الانتخابات والشورى السياسية",
+   "aliases": [
+    "التصويت في الانتخابات"
+   ],
+   "cat": "مجتمع",
+   "anchors": [
+    {
+     "phrase": "وأمرهم شورى بينهم",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "13",
+     "page_num": 339,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "اقتناء الكلاب في البيوت",
+   "aliases": [
+    "تربية الكلاب"
+   ],
+   "cat": "مجتمع",
+   "anchors": [
+    {
+     "phrase": "من اقتنى كلبا إلا كلب صيد",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 356,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "تربية القطط في البيوت",
+   "aliases": [
+    "اقتناء القطط"
+   ],
+   "cat": "مجتمع",
+   "anchors": [
+    {
+     "phrase": "إنها من الطوافين عليكم",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 71,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "أكل الأطعمة البحرية المستحدثة",
+   "aliases": [
+    "السوشي",
+    "المأكولات البحرية"
+   ],
+   "cat": "أطعمة",
+   "anchors": [
+    {
+     "phrase": "هو الطهور ماؤه الحل ميتته",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 15,
+     "level": "exact"
+    },
+    {
+     "phrase": "أحلت لنا ميتتان ودمان",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "13",
+     "page_num": 300,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الذبح الآلي واللحوم المستوردة",
+   "aliases": [
+    "الذبائح المستوردة"
+   ],
+   "cat": "أطعمة",
+   "anchors": [
+    {
+     "phrase": "ما أنهر الدم وذكر اسم الله عليه فكل",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "13",
+     "page_num": 265,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الأكل باليد اليسرى وأدوات المائدة",
+   "aliases": [
+    "الأكل بالشوكة باليسرى"
+   ],
+   "cat": "أطعمة",
+   "anchors": [
+    {
+     "phrase": "فإن الشيطان يأكل بشماله",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "10",
+     "page_num": 213,
+     "level": "exact"
+    },
+    {
+     "phrase": "كل بيمينك",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "10",
+     "page_num": 212,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الجلوس على مائدة يشرب عليها الخمر",
+   "aliases": [
+    "حضور مجالس الخمر"
+   ],
+   "cat": "مجتمع",
+   "anchors": [
+    {
+     "phrase": "ولا تعاونوا على الإثم والعدوان",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "3",
+     "page_num": 164,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "حلق رأس المرأة وقصها كالرجال",
+   "aliases": [
+    "قصات شعر النساء"
+   ],
+   "cat": "زينة",
+   "anchors": [
+    {
+     "phrase": "إنما على النساء التقصير",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "5",
+     "page_num": 310,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "اللعب بالدمى وصور ذوات الأرواح للأطفال",
+   "aliases": [
+    "دمى الأطفال"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "اللعب بالبنات",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "10",
+     "page_num": 527,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "رضاعة الكبير",
+   "aliases": [
+    "إرضاع الكبير للحاجة"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "أرضعيه تحرمي عليه",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "9",
+     "page_num": 134,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التعدد وشرط العدل",
+   "aliases": [
+    "تعدد الزوجات"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "فإن خفتم ألا تعدلوا فواحدة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "10",
+     "page_num": 248,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الألعاب الإلكترونية ومسابقاتها بأجر",
+   "aliases": [
+    "مسابقات الألعاب الإلكترونية"
+   ],
+   "cat": "تقنية ولهو",
+   "anchors": [
+    {
+     "phrase": "تعال أقامرك",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "2",
+     "page_num": 62,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "غسيل الكلى أثناء الصيام",
+   "aliases": [
+    "المفطرات الطبية"
+   ],
+   "cat": "طب وعبادات",
+   "anchors": [
+    {
+     "phrase": "وصل إلى جوفه",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "4",
+     "page_num": 353,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التمويل بالمرابحة",
+   "aliases": [
+    "المرابحة المصرفية"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "بمثل الثمن الأول وزيادة ربح",
+     "book_id": "2874",
+     "title": "بدائع الصنائع في ترتيب الشرائع",
+     "author_death": 587,
+     "part": "5",
+     "page_num": 135,
+     "level": "exact"
+    },
+    {
+     "phrase": "التولية والمرابحة",
+     "book_id": "1852",
+     "title": "المبسوط للسرخسي",
+     "author_death": 483,
+     "part": "13",
+     "page_num": 86,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "جوائز المسابقات الرياضية",
+   "aliases": [
+    "احتراف كرة القدم",
+    "جوائز السباقات"
+   ],
+   "cat": "لهو واقتصاد",
+   "anchors": [
+    {
+     "phrase": "سبق الخيل",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "13",
+     "page_num": 404,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الضرائب والجمارك والمكوس",
+   "aliases": [
+    "المكوس",
+    "الرسوم الجمركية"
+   ],
+   "cat": "اقتصاد",
+   "anchors": [
+    {
+     "phrase": "المكوس",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "3",
+     "page_num": 162,
+     "level": "exact"
+    },
+    {
+     "phrase": "أكل المكوس",
+     "book_id": "2561",
+     "title": "مجموع الفتاوى",
+     "author_death": 728,
+     "part": "28",
+     "page_num": 590,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "زكاة الأسهم وعروض التجارة",
+   "aliases": [
+    "زكاة التجارة الإلكترونية"
+   ],
+   "cat": "عبادات واقتصاد",
+   "anchors": [
+    {
+     "phrase": "نعد للبيع",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "4",
+     "page_num": 248,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "جمع الصلوات في السفر الحديث",
+   "aliases": [
+    "الجمع في السفر"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "جمع بين الظهر والعصر",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "1",
+     "page_num": 404,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التوكيل في رمي الجمرات",
+   "aliases": [
+    "الإنابة في الرمي"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "الاستنابة في الرمي",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "8",
+     "page_num": 244,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الزواج المؤقت بنية الطلاق",
+   "aliases": [
+    "زواج المتعة"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "نكاح المتعة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "9",
+     "page_num": 488,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "الطلاق بالكتابة والهاتف والرسائل",
+   "aliases": [
+    "الطلاق الإلكتروني"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "إذا كتب الطلاق بيده",
+     "book_id": "1455",
+     "title": "فتح الباري بشرح البخاري - ط السلفية",
+     "author_death": 852,
+     "part": "9",
+     "page_num": 439,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "سفر المرأة بلا محرم",
+   "aliases": [
+    "سفر المرأة للعمل والدراسة"
+   ],
+   "cat": "أسرة ومجتمع",
+   "anchors": [
+    {
+     "phrase": "أن تسافر مسيرة يوم وليلة",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "11",
+     "page_num": 307,
+     "level": "exact"
+    },
+    {
+     "phrase": "لا يحل لامرأة أن تسافر",
+     "book_id": "1618",
+     "title": "المجموع شرح المهذب - ط المنيرية",
+     "author_death": 676,
+     "part": "4",
+     "page_num": 330,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "العمل في تقديم الخمر وبيع ما يعين على الحرام",
+   "aliases": [
+    "بيع العنب لصانع الخمر"
+   ],
+   "cat": "اقتصاد ومجتمع",
+   "anchors": [
+    {
+     "phrase": "يعصره خمرا",
+     "book_id": "2561",
+     "title": "مجموع الفتاوى",
+     "author_death": 728,
+     "part": "29",
+     "page_num": 236,
+     "level": "exact"
+    },
+    {
+     "phrase": "ساقيها وبائعها",
+     "book_id": "2437",
+     "title": "المغني لابن قدامة - ت التركي",
+     "author_death": 620,
+     "part": "6",
+     "page_num": 318,
+     "level": "proximity"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "التوكيل في الأضاحي والذبح عن بعد",
+   "aliases": [
+    "الأضحية عبر الجمعيات"
+   ],
+   "cat": "عبادات",
+   "anchors": [
+    {
+     "phrase": "يوكل في ذبحها",
+     "book_id": "1473",
+     "title": "شرح النووي على مسلم",
+     "author_death": 676,
+     "part": "13",
+     "page_num": 120,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  },
+  {
+   "term": "طلاق الثلاث بلفظ واحد",
+   "aliases": [
+    "الطلاق الثلاث"
+   ],
+   "cat": "أسرة",
+   "anchors": [
+    {
+     "phrase": "ثلاث تطليقات جميعا",
+     "book_id": "188",
+     "title": "زاد المعاد في هدي خير العباد",
+     "author_death": 751,
+     "part": "5",
+     "page_num": 316,
+     "level": "exact"
+    }
+   ],
+   "validated": true
+  }
+ ]
+}

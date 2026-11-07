@@ -115,9 +115,9 @@ function renderToolsGrid() {
   const enabledChatIds = (function() {
     try {
       const s = localStorage.getItem('almojtahed_chat_enabled_tools');
-      return s ? JSON.parse(s) : ['markmap_mindmap', 'charts_metrics'];
+      return s ? JSON.parse(s) : ['markmap_mindmap', 'charts_metrics', 'echarts_charts'];
     } catch (e) {
-      return ['markmap_mindmap', 'charts_metrics'];
+      return ['markmap_mindmap', 'charts_metrics', 'echarts_charts'];
     }
   })();
 
@@ -126,7 +126,7 @@ function renderToolsGrid() {
     const badgeClass = isWeb ? 'tool-badge-web' : 'tool-badge-python';
     const badgeText = isWeb ? '🌐 مكتبة ويب جاهزة' : '🐍 كود بايثون مخصص';
     const isEnabled = t.enabled !== false;
-    const isBuiltin = ['charts_metrics', 'astronomy_hijri_sync', 'hadith_isnad_tree'].includes(t.id);
+    const isBuiltin = ['charts_metrics', 'astronomy_hijri_sync', 'hadith_isnad_tree', 'markmap_mindmap', 'echarts_charts', 'islamap_map'].includes(t.id);
     const isChatEnabled = enabledChatIds.includes(t.id);
 
     return `
@@ -212,9 +212,9 @@ function toggleToolChatEnabled(toolId, isEnabled) {
   try {
     const saved = localStorage.getItem('almojtahed_chat_enabled_tools');
     if (saved) enabledIds = JSON.parse(saved);
-    else enabledIds = ['markmap_mindmap', 'charts_metrics'];
+    else enabledIds = ['markmap_mindmap', 'charts_metrics', 'echarts_charts'];
   } catch (e) {
-    enabledIds = ['markmap_mindmap', 'charts_metrics'];
+    enabledIds = ['markmap_mindmap', 'charts_metrics', 'echarts_charts'];
   }
 
   if (isEnabled) {
@@ -1215,7 +1215,7 @@ function downloadJsonFile(filename, dataObj) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
 
 // 1. تصدير أداة واحدة محددة
@@ -1508,7 +1508,48 @@ function openToolPlayground(toolId) {
   const container = document.getElementById('playgroundWorkArea');
   if (!container) return;
 
-  if (toolId === 'markmap_mindmap' || tool.category === 'تشجير ومفاهيم' || toolId.includes('markmap')) {
+  if (toolId === 'echarts_charts') {
+    container.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font-size:13px; color:var(--text-secondary);">أمثلة من أنواع Apache ECharts. اختر نوعاً لرسمه هنا، وفي المحادثة يولّد النموذج أكثر من رسم حسب بيانات البحث.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn-primary-gradient" onclick="renderPlaygroundEcharts('bar')">أعمدة</button>
+          <button type="button" class="btn-secondary-action" onclick="renderPlaygroundEcharts('line')">خطي</button>
+          <button type="button" class="btn-secondary-action" onclick="renderPlaygroundEcharts('pie')">دائري</button>
+          <button type="button" class="btn-secondary-action" onclick="renderPlaygroundEcharts('radar')">رادار</button>
+          <button type="button" class="btn-secondary-action" onclick="renderPlaygroundEcharts('tree')">شجرة</button>
+          <button type="button" class="btn-secondary-action" onclick="renderPlaygroundEcharts('sankey')">سانكي</button>
+        </div>
+        <div id="playgroundEcharts" style="height:360px; width:100%; border:1px solid var(--border-subtle); border-radius:8px;"></div>
+      </div>
+    `;
+    setTimeout(() => renderPlaygroundEcharts('bar'), 80);
+  } else if (toolId === 'islamap_map') {
+    container.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="font-size:13px; color:var(--text-secondary);">مثال للتجربة فقط، لا يُعد تحقيقاً تاريخياً. في المحادثة تُرسم الخارطة من نتيجة البحث.</div>
+        <div id="playgroundIslamap"></div>
+      </div>`;
+    const holder = document.getElementById('playgroundIslamap');
+    const sample = {
+      title: 'مثال توضيحي',
+      regions: [
+        { id: 'iraq', value: 'حنفي', note: 'الكوفة' },
+        { id: 'egypt', value: 'شافعي' },
+        { id: 'sham', value: 'حنبلي' },
+        { id: 'hijaz', value: 'مالكي', note: 'المدينة' }
+      ],
+      cities: [
+        { id: 'kufa', value: 'حنفي' },
+        { id: 'fustat', value: 'شافعي' },
+        { id: 'dimashq', value: 'حنبلي' },
+        { id: 'madina', value: 'مالكي' }
+      ],
+      routes: [{ from: 'madina', to: 'dimashq', label: 'فتح الشام', year: '13هـ' }]
+    };
+    holder.innerHTML = `<pre><code class="language-islamap">${JSON.stringify(sample)}</code></pre>`;
+    if (typeof renderIslamapBlocks === 'function') renderIslamapBlocks(holder);
+  } else if (toolId === 'markmap_mindmap' || tool.category === 'تشجير ومفاهيم' || toolId.includes('markmap')) {
     const rawMd = (tool.mock_data && tool.mock_data.markdown) ? tool.mock_data.markdown :
 `# مسألة إتيان المرأة في دبرها: تحرير المذاهب والأقوال
 ## 1. القول الأول: التحريم القطعي (جمهور الأمة)
@@ -1670,6 +1711,26 @@ function closeToolPlayground() {
     toolsState.playgroundChartInstance.destroy();
     toolsState.playgroundChartInstance = null;
   }
+}
+
+function renderPlaygroundEcharts(kind) {
+  const host = document.getElementById('playgroundEcharts');
+  if (!host || !window.echarts) return;
+  const samples = {
+    bar: { title: { text: 'مقارنة الأقوال' }, tooltip: { trigger: 'axis' }, xAxis: { type: 'category', data: ['الجواز', 'الكراهة', 'المنع'] }, yAxis: { type: 'value' }, series: [{ type: 'bar', data: [4, 1, 2] }] },
+    line: { title: { text: 'الخط الزمني' }, tooltip: { trigger: 'axis' }, xAxis: { type: 'category', data: ['101', '620', '728', '1252'] }, yAxis: { type: 'value' }, series: [{ type: 'line', data: [1, 2, 3, 4], smooth: true }] },
+    pie: { title: { text: 'نسب الأقوال' }, tooltip: { trigger: 'item' }, series: [{ type: 'pie', radius: '60%', data: [{ name: 'الجواز', value: 4 }, { name: 'الكراهة', value: 1 }, { name: 'المنع', value: 2 }] }] },
+    radar: { title: { text: 'معايير الترجيح' }, radar: { indicator: [{ name: 'النقل', max: 10 }, { name: 'التعليل', max: 10 }, { name: 'المذهب', max: 10 }] }, series: [{ type: 'radar', data: [{ value: [8, 6, 7], name: 'القول الأول' }, { value: [5, 8, 4], name: 'القول الثاني' }] }] },
+    tree: { title: { text: 'شجرة الأقوال' }, series: [{ type: 'tree', data: [{ name: 'التورق', children: [{ name: 'الجواز' }, { name: 'المنع' }] }], top: '8%', left: '12%', bottom: '8%', right: '18%', symbolSize: 10, label: { position: 'left', verticalAlign: 'middle', align: 'right' } }] },
+    sankey: { title: { text: 'من الدليل إلى القول' }, series: [{ type: 'sankey', data: [{ name: 'حديث' }, { name: 'قياس' }, { name: 'الجواز' }, { name: 'المنع' }], links: [{ source: 'حديث', target: 'الجواز', value: 3 }, { source: 'قياس', target: 'المنع', value: 2 }] }] }
+  };
+  const option = samples[kind] || samples.bar;
+  option.textStyle = { fontFamily: 'Tajawal, Amiri, sans-serif' };
+  if (window._playgroundEchart) {
+    try { window._playgroundEchart.dispose(); } catch (e) {}
+  }
+  window._playgroundEchart = window.echarts.init(host);
+  window._playgroundEchart.setOption(option);
 }
 
 function renderPlaygroundChart(chartType) {
@@ -2368,3 +2429,615 @@ window.handleImportToolFile = handleImportToolFile;
 window.handleImportModalToolFile = handleImportModalToolFile;
 window.autoDetectMockDataFromCode = autoDetectMockDataFromCode;
 window.onPythonCodeInputChanged = onPythonCodeInputChanged;
+
+// =============================================================================
+// مهندس الأدوات: حوار، بحث Tavily، خطة، توليد واختبار وحفظ
+// =============================================================================
+let toolArchitectState = { messages: [], spec: null, research: null, plan: null, draft: null, tested: false, researchRound: 1, autoBusy: false };
+
+function toolArchitectKeys() {
+  try { return readProviderKeys(); } catch (e) { return {}; }
+}
+
+function toolArchitectModel() {
+  return document.getElementById('toolArchitectModelSelect')?.value || 'google/gemini-2.5-flash';
+}
+
+async function openToolArchitect() {
+  const modal = document.getElementById('toolArchitectModal');
+  if (!modal) return;
+  modal.classList.add('active', 'open');
+  if (!toolArchitectState.messages.length) {
+    toolArchitectState.messages.push({ role: 'assistant', content: 'أهلاً بك. الأداة ستحوّل بحثاً جاهزاً من مخزن الشاملة، ولن أسألك عن مصدر البيانات. اختر الشكل، ثم أبحث بنفسي عبر Tavily وأعرض عليك الأدوات التي وجدتها بروابطها لتختار المناسبة.\n```choices\n{"questions":[{"id":"output_kind","prompt":"ما شكل التحويل المطلوب من ناتج البحث؟","multiple":false,"options":["جدول منظم","رسم بياني","خط زمني","تحرير وتلخيص","مقارنة ونسب","شكل آخر"]}]}\n```' });
+  }
+  renderToolArchitectChat();
+  updateToolArchitectButtons();
+  await initToolAiModels();
+  renderToolArchitectModels('');
+}
+
+function closeToolArchitect() {
+  document.getElementById('toolArchitectModal')?.classList.remove('active', 'open');
+}
+
+function resetToolArchitect() {
+  toolArchitectState = { messages: [], spec: null, research: null, plan: null, draft: null, tested: false, researchRound: 1, autoBusy: false };
+  const researchBox = document.getElementById('toolArchitectResearchBox');
+  const planBox = document.getElementById('toolArchitectPlanBox');
+  const codeBox = document.getElementById('toolArchitectCodeBox');
+  hideCoderWait();
+  if (researchBox) researchBox.style.display = 'none';
+  if (planBox) planBox.style.display = 'none';
+  if (codeBox) codeBox.style.display = 'none';
+  openToolArchitect();
+  updateToolArchitectButtons();
+}
+
+function renderToolArchitectModels(filter = '') {
+  const select = document.getElementById('toolArchitectModelSelect');
+  if (!select) return;
+  const current = select.value || 'google/gemini-2.5-flash';
+  const q = String(filter || '').toLowerCase();
+  const seen = new Set();
+  const models = [];
+  [...toolSuggestedModels(), ...(toolAiAllModels || [])].forEach(m => {
+    if (!m || !m.id || seen.has(m.id)) return;
+    seen.add(m.id);
+    const label = m.name ? `${m.name} (${m.id})` : m.id;
+    if (!q || m.id.toLowerCase().includes(q) || label.toLowerCase().includes(q)) models.push({ id: m.id, label });
+  });
+  select.innerHTML = models.map(m => `<option value="${escapeHtml(m.id)}" ${m.id === current ? 'selected' : ''}>${escapeHtml(m.label)}</option>`).join('') || `<option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>`;
+  if ([...select.options].some(o => o.value === current)) select.value = current;
+}
+
+function filterToolArchitectModels(query) { renderToolArchitectModels(query); }
+
+function extractToolArchitectChoices(text) {
+  const match = String(text || '').match(/```choices\s*([\s\S]*?)```/);
+  if (!match) return [];
+  try {
+    const data = JSON.parse(match[1]);
+    const questions = Array.isArray(data) ? data : (data.questions || []);
+    return questions.filter(q => q && q.prompt && Array.isArray(q.options) && q.options.length);
+  } catch (e) { return []; }
+}
+
+function toolArchitectChoicesHtml(questions, index) {
+  if (!questions.length) return '';
+  const blocks = questions.map((question, qIndex) => {
+    const inputType = question.multiple ? 'checkbox' : 'radio';
+    const options = question.options.map(option => `
+      <label class="architect-choice-option">
+        <input type="${inputType}" name="toolArchitectQ${index}_${qIndex}" value="${escapeHtml(String(option))}">
+        <span>${escapeHtml(String(option))}</span>
+      </label>`).join('');
+    return `<div class="architect-choice-q" data-prompt="${escapeHtml(question.prompt)}"><strong>${escapeHtml(question.prompt)}</strong>${options}</div>`;
+  }).join('');
+  return `<div class="architect-choices" id="toolArchitectChoices${index}">${blocks}
+    <label class="architect-choice-extra">اختيار آخر أو إضافة<textarea rows="2" placeholder="اكتب هنا فقط إن لم تكفك الخيارات"></textarea></label>
+    <button type="button" class="btn-primary-gradient" onclick="submitToolArchitectChoices(${index})">إرسال الاختيار</button></div>`;
+}
+
+function submitToolArchitectChoices(index) {
+  const root = document.getElementById(`toolArchitectChoices${index}`);
+  const input = document.getElementById('toolArchitectInput');
+  if (!root || !input) return;
+  const lines = [...root.querySelectorAll('.architect-choice-q')].map(block => {
+    const chosen = [...block.querySelectorAll('input:checked')].map(item => item.value);
+    return chosen.length ? `${block.getAttribute('data-prompt')}: ${chosen.join('، ')}` : '';
+  }).filter(Boolean);
+  const extra = root.querySelector('textarea')?.value.trim() || '';
+  if (extra) lines.push(`إضافة: ${extra}`);
+  if (!lines.length) { showToast('اختر جواباً أو اكتب إضافة'); return; }
+  const message = toolArchitectState.messages[index];
+  if (message && message.kind === 'recommendations') {
+    chooseToolArchitectRecommendation(message, lines.join('\n'), extra);
+    return;
+  }
+  input.value = lines.join('\n');
+  sendToolArchitectMessage();
+}
+
+function renderToolArchitectChat() {
+  const log = document.getElementById('toolArchitectChatLog');
+  if (!log) return;
+  const lastAssistant = toolArchitectState.messages.reduce((found, m, i) => m.role === 'assistant' ? i : found, -1);
+  log.innerHTML = toolArchitectState.messages.map((m, index) => {
+    const mine = m.role === 'user';
+    const clean = String(m.content || '').replace(/```json[\s\S]*?```/gi, '').replace(/```choices[\s\S]*?```/gi, '').trim();
+    const shown = m.html || escapeHtml(clean || String(m.content || '')).replace(/\n/g, '<br>');
+    const choices = (!mine && index === lastAssistant) ? toolArchitectChoicesHtml(extractToolArchitectChoices(m.content), index) : '';
+    return `<div style="align-self:${mine ? 'flex-start' : 'stretch'}; max-width:${mine ? '88%' : '100%'}; background:${mine ? 'rgba(180,83,9,.12)' : 'var(--bg-surface)'}; border:1px solid var(--border-subtle); border-radius:8px; padding:9px 11px; font-size:13px; line-height:1.9; white-space:normal;">${shown}${choices}</div>`;
+  }).join('');
+  log.scrollTop = log.scrollHeight;
+}
+
+function updateToolArchitectButtons() {
+  const buildBtn = document.getElementById('toolArchitectBuildBtn');
+  const testBtn = document.getElementById('toolArchitectTestBtn');
+  const saveBtn = document.getElementById('toolArchitectSaveBtn');
+  if (buildBtn) buildBtn.disabled = !toolArchitectState.spec || toolArchitectState.autoBusy;
+  if (testBtn) testBtn.disabled = !(toolArchitectState.draft && toolArchitectState.draft.code);
+  if (saveBtn) saveBtn.disabled = !(toolArchitectState.draft && toolArchitectState.tested);
+  const status = document.getElementById('toolArchitectSpecStatus');
+  if (status) status.textContent = toolArchitectState.coderBusy
+    ? 'وكيل البرمجة ينفذ المهمة الآن. فضلاً الانتظار.'
+    : (toolArchitectState.autoBusy
+    ? '⏳ المهندس يبحث الآن عبر Tavily ثم سيعرض الأدوات وروابطها داخل الحوار لتختار.'
+    : (toolArchitectState.recommended ? 'اختر الأداة المناسبة من الحوار، أو اطلب البحث عن غيرها، أو البناء من الصفر.' : 'اختر شكل الأداة، وسيبحث المهندس بنفسه ثم يسألك أي أداة تناسبك.'));
+}
+
+async function architectFetch(url, payload) {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.status === 'error') throw new Error(data.detail || data.message || 'فشل الطلب');
+  return data;
+}
+
+function toolEnglishHints(text) {
+  const hints = [];
+  if (/خط|زمني|وفيات|علماء|تراجم/.test(text)) hints.push('timeline visualization scholars vis-timeline');
+  if (/رسم|بياني|شارت|نسب|مؤشر/.test(text)) hints.push('chart.js data visualization library');
+  if (/جدول/.test(text)) hints.push('data table javascript library');
+  if (/شجرة|سند|إسناد|رواة/.test(text)) hints.push('network graph vis.js citation tree');
+  if (/خريطة|تشجير|ذهن/.test(text)) hints.push('markmap mindmap library');
+  return hints;
+}
+
+function ensureToolSpecFromConversation() {
+  const userText = toolArchitectState.messages.filter(m => m.role === 'user').map(m => m.content).join('\n').trim();
+  const previous = toolArchitectState.spec || {};
+  toolArchitectState.spec = {
+    ...previous,
+    name: previous.name || userText.split('\n')[0].slice(0, 90) || 'أداة تحويل ناتج البحث',
+    purpose: userText.slice(0, 1200),
+    output_kind: previous.output_kind || '',
+    data_source: 'ناتج بحث جاهز من مخزن الشاملة',
+    example_input: previous.example_input || { research_text: 'ناتج بحث جاهز استخلصه النموذج من مخزن الشاملة' },
+    application_instruction: previous.application_instruction || 'استخرج الحقول من ناتج البحث الجاهز وطبّق الأداة دون سؤال الباحث عن مصدر البيانات.',
+    keywords: previous.keywords || [],
+    english_keywords: toolEnglishHints(userText)
+  };
+  return toolArchitectState.spec;
+}
+
+async function sendToolArchitectMessage() {
+  const input = document.getElementById('toolArchitectInput');
+  const text = input?.value.trim();
+  if (!text) { showToast('اختر شكلاً أو اكتب فكرة الأداة', true); return; }
+  toolArchitectState.messages.push({ role: 'user', content: text });
+  if (input) input.value = '';
+  ensureToolSpecFromConversation();
+  renderToolArchitectChat();
+  const btn = document.getElementById('toolArchitectSendBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>جارٍ البحث...</span>'; }
+  try {
+    if (toolArchitectState.recommended) toolArchitectState.researchRound = (toolArchitectState.researchRound || 1) + 1;
+    await autoResearchToolArchitect();
+    toolArchitectState.recommended = true;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>إرسال</span>'; }
+    renderToolArchitectChat();
+    updateToolArchitectButtons();
+  }
+}
+
+async function autoResearchToolArchitect() {
+  if (toolArchitectState.autoBusy) return;
+  toolArchitectState.autoBusy = true;
+  const status = { role: 'assistant', content: 'أبحث الآن بنفسي عبر Tavily عن أدوات ومكتبات موثقة تناسب فكرتك، ثم أسألك أيها المناسب.' };
+  toolArchitectState.messages.push(status);
+  renderToolArchitectChat();
+  updateToolArchitectButtons();
+  let error = '';
+  try {
+    await researchToolArchitect();
+    try { await planToolArchitect(); } catch (err) { error = err.message; }
+  } catch (err) {
+    error = err.message;
+  } finally {
+    const statusIndex = toolArchitectState.messages.lastIndexOf(status);
+    if (statusIndex >= 0) toolArchitectState.messages.splice(statusIndex, 1);
+    presentToolRecommendationsInChat(error);
+    toolArchitectState.autoBusy = false;
+    updateToolArchitectButtons();
+  }
+}
+
+async function searchMoreToolArchitect() {
+  if (toolArchitectState.autoBusy) return;
+  ensureToolSpecFromConversation();
+  toolArchitectState.researchRound = (toolArchitectState.researchRound || 1) + 1;
+  await autoResearchToolArchitect();
+}
+
+function memoryToolCandidates(plan) {
+  const items = Array.isArray(plan.memory_candidates) ? plan.memory_candidates : [];
+  return items.slice(0, 4).map(raw => {
+    const item = typeof raw === 'string' ? { name: raw } : (raw || {});
+    const name = String(item.name || item.title || '').trim();
+    if (!name) return null;
+    const registry = String(item.registry || '').toLowerCase();
+    let url = String(item.url || item.link || '').trim();
+    if (!url && registry === 'pypi') url = `https://pypi.org/project/${encodeURIComponent(name)}/`;
+    if (!url && registry === 'npm') url = `https://www.npmjs.com/package/${encodeURIComponent(name)}`;
+    return {
+      title: name,
+      url,
+      content: `اقتراح من ذاكرة النموذج${registry ? ` (${registry})` : ''}: ${item.reason || item.description || ''}`,
+      source: 'memory'
+    };
+  }).filter(Boolean);
+}
+
+function presentToolRecommendationsInChat(error = '') {
+  const results = (toolArchitectState.research?.results || []).filter(item => item && item.url).slice(0, 4);
+  const plan = toolArchitectState.plan || {};
+  const remembered = memoryToolCandidates(plan);
+  if (!results.length && !remembered.length) {
+    const reason = error || toolArchitectState.researchError || 'لم تَعُد نتائج مطابقة.';
+    const content = 'بحثت عبر Tavily ولم أعرض أداة جاهزة. السبب: ' + reason + '\n```choices\n' + JSON.stringify({ questions: [{ id: 'tool_pick', prompt: 'ماذا تريد الآن؟', multiple: false, options: ['ابحث عن أدوات أخرى', 'ابنِ أداة بايثون من الصفر'] }] }) + '\n```';
+    toolArchitectState.messages.push({ role: 'assistant', kind: 'recommendations', candidates: [], content, html: escapeHtml(`بحثت عبر Tavily ولم أعرض أداة جاهزة، ولم تكتمل اقتراحات الذاكرة. السبب: ${reason}`).replace(/\n/g, '<br>') });
+    renderToolArchitectChat();
+    return;
+  }
+  const recommendedUrl = plan.library_url || '';
+  const ordered = [...results].sort((a, b) => (b.url === recommendedUrl) - (a.url === recommendedUrl));
+  const found = ordered.map((item, index) => ({ ...item, source: 'search', pick: `من البحث ${index + 1}: ${(item.title || 'أداة').slice(0, 80)}` }));
+  const memory = remembered.map((item, index) => ({ ...item, pick: `من الذاكرة ${index + 1}: ${item.title.slice(0, 80)}` }));
+  const candidates = [...found, ...memory];
+  const card = item => `<div style="margin:8px 0; padding:8px; border:1px solid var(--border-subtle); border-radius:8px; background:var(--bg-canvas);"><strong>${escapeHtml(item.pick)}</strong>${item.url ? `<br><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.url)}</a>` : ''}<br><span style="color:var(--text-secondary)">${escapeHtml(String(item.content || '').slice(0, 280))}</span></div>`;
+  const rationale = plan.rationale ? `<div style="margin-bottom:8px;">${escapeHtml(plan.rationale)}</div>` : '';
+  const options = [...candidates.map(item => item.pick), 'ابحث عن أدوات أخرى', 'لا تناسبني، ابنِ أداة بايثون من الصفر'];
+  const content = 'هذه أدوات البحث واقتراحات الذاكرة. اختر واحدة.\n```choices\n' + JSON.stringify({ questions: [{ id: 'tool_pick', prompt: 'أي أداة تناسب بحثك؟', multiple: false, options }] }) + '\n```';
+  toolArchitectState.messages.push({
+    role: 'assistant',
+    kind: 'recommendations',
+    candidates,
+    content,
+    html: `<strong>أدوات من سجلات البحث، ثم اقتراحات من ذاكرة النموذج:</strong>${rationale}${found.length ? `<div style="margin-top:8px; font-weight:700;">من البحث</div>${found.map(card).join('')}` : ''}${memory.length ? `<div style="margin-top:8px; font-weight:700;">من ذاكرة النموذج</div>${memory.map(card).join('')}` : ''}`
+  });
+  renderToolArchitectChat();
+}
+
+function chooseToolArchitectRecommendation(message, answer, extra) {
+  const text = `${answer}\n${extra || ''}`.trim();
+  toolArchitectState.messages.push({ role: 'user', content: text });
+  renderToolArchitectChat();
+  if (/ابحث عن أدوات أخرى/.test(text)) {
+    searchMoreToolArchitect();
+    return;
+  }
+  if (/من الصفر|بايثون/.test(text)) {
+    toolArchitectState.messages.push({ role: 'assistant', content: 'لم تختر أداة جاهزة. سأبني الأداة من الصفر بكود بايثون، وأختبرها وأصلح أخطاءها مع نموذج البرمجة قبل أن تعتمدها.' });
+    renderToolArchitectChat();
+    buildToolArchitect(true);
+    return;
+  }
+  const picked = (message.candidates || []).find(item => text.includes(item.pick)) || (message.candidates || [])[0];
+  if (!picked) { showToast('تعذر تحديد الأداة المختارة', true); return; }
+  toolArchitectState.tested = false;
+  toolArchitectState.draft = null;
+  updateToolArchitectButtons();
+  commissionChosenTool(picked);
+}
+
+function pushToolArchitectLine(text) {
+  toolArchitectState.messages.push({ role: 'assistant', content: text });
+  renderToolArchitectChat();
+}
+
+function showCoderWait(text) {
+  const box = document.getElementById('toolArchitectCoderWait');
+  const label = document.getElementById('toolArchitectCoderWaitText');
+  if (label) label.textContent = text || 'وكيل البرمجة ينفذ المهمة. فضلاً الانتظار.';
+  if (box) {
+    box.hidden = false;
+    box.scrollIntoView({ block: 'nearest' });
+  }
+  toolArchitectState.coderBusy = true;
+  updateToolArchitectButtons();
+}
+
+function hideCoderWait() {
+  const box = document.getElementById('toolArchitectCoderWait');
+  if (box) box.hidden = true;
+  toolArchitectState.coderBusy = false;
+  updateToolArchitectButtons();
+}
+
+function acceptStudiedTool(draft) {
+  toolArchitectState.draft = draft;
+  toolArchitectState.tested = true;
+  const box = document.getElementById('toolArchitectCodeBox');
+  if (box && draft.code) {
+    box.style.display = 'block';
+    document.getElementById('toolArchitectCodePre').textContent = draft.code;
+    document.getElementById('toolArchitectTestResult').innerHTML = '<span style="color:#16a34a; font-weight:700;">نجحت التجربة بين المهندس ووكيل البرمجة. يمكنك اعتماد الأداة الآن.</span>';
+  }
+  pushToolArchitectLine('المهندس: نجحت الدراسة والتنصيب والتجربة. صار زر «اعتماد وحفظ الأداة» متاحاً، ولن تُنشأ البطاقة قبله.');
+  updateToolArchitectButtons();
+}
+
+async function resolveToolCodingModel() {
+  if (toolArchitectState.codingModel?.id) return toolArchitectState.codingModel;
+  const keys = toolArchitectKeys();
+  const data = await architectFetch('/api/tools/architect/coding-model', { api_key: keys.openrouter || '' });
+  toolArchitectState.codingModel = data.model || {};
+  return toolArchitectState.codingModel;
+}
+
+async function commissionChosenTool(picked) {
+  const coding = await resolveToolCodingModel();
+  const model = coding.id || toolArchitectModel();
+  const keys = toolArchitectKeys();
+  pushToolArchitectLine(`المهندس: وكيل البرمجة هو الأعلى في معيار coding_index على OpenRouter: «${coding.name || model}» (${model}) بمؤشر ${coding.coding_index ?? 'غير منشور'}. سيقرأ وثائق المكتبة من سجلها ثم ينصبها ويجربها. الاعتماد مقفل حتى تنجح التجربة.`);
+  showCoderWait('وكيل البرمجة ينفذ المهمة الآن. فضلاً الانتظار.');
+  try {
+  let feedback = '';
+  for (let round = 1; round <= 3; round += 1) {
+    let study;
+    showCoderWait(`وكيل البرمجة يدرس المكتبة ويكتب الكود. الجولة ${round} من 3. فضلاً الانتظار.`);
+    try {
+      const data = await architectFetch('/api/tools/architect/study', {
+        url: picked.url,
+        title: picked.title || '',
+        excerpt: picked.content || '',
+        spec: toolArchitectState.spec || {},
+        model,
+        api_key: keys.openrouter || '',
+        feedback
+      });
+      study = data.study || {};
+    } catch (err) {
+      pushToolArchitectLine(`وكيل البرمجة: تعذرت الدراسة في الجولة ${round}: ${err.message}`);
+      feedback = err.message;
+      continue;
+    }
+    const packages = (study.packages || []).join('، ') || 'لا مكتبات بايثون إضافية';
+    pushToolArchitectLine(`وكيل البرمجة: ${study.summary || 'درست وثائق الأداة.'} المكتبات المطلوبة: ${packages}.`);
+    let install = { ok: false, log: '' };
+    try {
+      install = await architectFetch('/api/tools/architect/install', { packages: study.packages || [], urls: study.cdn_urls || [] });
+    } catch (err) {
+      install = { ok: false, log: err.message };
+    }
+    pushToolArchitectLine(`المهندس: نتيجة التنصيب والتحقق من المكتبات:\n${String(install.log || 'بلا سجل').slice(0, 900)}`);
+    if (!install.ok) {
+      feedback = `فشل التنصيب أو التحقق: ${install.log || ''}`;
+      pushToolArchitectLine('وكيل البرمجة: سأراجع الوثائق وأسماء المكتبات ثم أعيد المحاولة.');
+      continue;
+    }
+    const mock = study.mock_data || toolArchitectState.spec?.example_input || {};
+    let code = study.code || '';
+    if (!code && study.kind === 'web') {
+      acceptStudiedTool({
+        web: true,
+        name: picked.title || 'أداة ويب',
+        id: `tool_web_${Date.now()}`,
+        description: study.summary || picked.content || '',
+        library_url: (study.cdn_urls || [])[0] || picked.url,
+        init_script: study.init_script || '',
+        cdn_urls: study.cdn_urls || [],
+        packages: study.packages || [],
+        mock_data: mock,
+        build_model: model
+      });
+      return;
+    }
+    if (!code) {
+      feedback = 'لم ينتج وكيل البرمجة دالة run_tool للتجربة.';
+      pushToolArchitectLine('المهندس: التجربة غير ممكنة بلا كود. أعد الدراسة مع دالة قابلة للتشغيل.');
+      continue;
+    }
+    let result = await testToolArchitectCode(code, mock);
+    pushToolArchitectLine(result.success ? `المهندس: نجحت تجربة الجولة ${round}.` : `المهندس: فشلت التجربة: ${String(result.error || result.message || '').slice(0, 500)}`);
+    if (!result.success) {
+      showCoderWait('وكيل البرمجة يصلح الكود بعد فشل التجربة. فضلاً الانتظار.');
+      try {
+        const fixed = await architectFetch('/api/tools/architect/repair', {
+          code,
+          error: result.error || result.message || JSON.stringify(result.output || {}),
+          spec: toolArchitectState.spec || {},
+          model,
+          api_key: keys.openrouter || '',
+          allowed_packages: study.packages || []
+        });
+        if (fixed.code && fixed.code !== code) {
+          code = fixed.code;
+          result = await testToolArchitectCode(code, mock);
+          pushToolArchitectLine(result.success ? 'وكيل البرمجة: أصلحت الكود، وأعاد المهندس التجربة بنجاح.' : 'وكيل البرمجة: الإصلاح لم يجتز التجربة بعد.');
+        }
+      } catch (err) {
+        feedback = err.message;
+      }
+    }
+    if (result.success) {
+      acceptStudiedTool({
+        web: false,
+        name: picked.title || toolArchitectState.spec?.name || 'أداة مدروسة',
+        id: `tool_py_${Date.now()}`,
+        description: study.summary || picked.content || '',
+        code,
+        sample_input: mock,
+        test_output: JSON.stringify(result.output ?? result, null, 2),
+        library_url: picked.url,
+        init_script: study.init_script || '',
+        cdn_urls: study.cdn_urls || [],
+        packages: study.packages || [],
+        build_model: model
+      });
+      return;
+    }
+    feedback = result.error || result.message || feedback;
+  }
+  pushToolArchitectLine('المهندس: لم تنجح التجربة بيني وبين وكيل البرمجة بعد ثلاث جولات، لذلك تبقى الأداة غير معتمدة. اختر أداة أخرى أو اطلب البناء من الصفر.');
+  updateToolArchitectButtons();
+  } finally {
+    hideCoderWait();
+  }
+}
+
+function approveToolArchitectCandidate() {
+  if (toolArchitectState.plan?.mode === 'ready_web') buildToolArchitect();
+}
+
+async function researchToolArchitect() {
+  ensureToolSpecFromConversation();
+  try {
+    const keys = toolArchitectKeys();
+    const previousUrls = (toolArchitectState.research?.results || []).map(r => r.url).filter(Boolean);
+    toolArchitectState.research = null;
+    const data = await architectFetch('/api/tools/architect/research', { spec: toolArchitectState.spec, idea: toolArchitectState.spec.purpose || toolArchitectState.spec.name || '', api_key: keys.tavily || '', round: toolArchitectState.researchRound || 1, exclude_urls: previousUrls });
+    toolArchitectState.research = data.research;
+    toolArchitectState.researchError = '';
+  } catch (err) {
+    toolArchitectState.researchError = err.message;
+    throw err;
+  } finally { updateToolArchitectButtons(); }
+}
+
+async function planToolArchitect() {
+  if (!toolArchitectState.spec) return;
+  try {
+    const keys = toolArchitectKeys();
+    const data = await architectFetch('/api/tools/architect/plan', { spec: toolArchitectState.spec, research: toolArchitectState.research || {}, model: toolArchitectModel(), api_key: keys.openrouter || '' });
+    toolArchitectState.plan = data.plan;
+  } catch (err) { throw err; }
+  finally { updateToolArchitectButtons(); }
+}
+
+async function testToolArchitectCode(code, inputData) {
+  const res = await fetch('/api/tools/test-python', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, input_data: inputData || {}, entry_function: 'run_tool' }) });
+  return res.json();
+}
+
+async function buildToolArchitect(forcePython = false) {
+  if (forcePython && !toolArchitectState.plan) {
+    ensureToolSpecFromConversation();
+    toolArchitectState.plan = { mode: 'python_build', tool_name: toolArchitectState.spec.name, description: toolArchitectState.spec.purpose, build_prompt: toolArchitectState.spec.purpose, coding_model: toolArchitectModel() };
+  }
+  const plan = toolArchitectState.plan;
+  if (!plan) return;
+  if (plan.mode === 'ready_web' && !forcePython) {
+    closeToolArchitect();
+    openAddToolModal();
+    switchToolModalType('ready_web_lib');
+    document.getElementById('toolNameInput').value = plan.tool_name || '';
+    document.getElementById('toolIdInput').value = plan.tool_id || '';
+    document.getElementById('toolDescInput').value = plan.description || '';
+    document.getElementById('toolWebUrlInput').value = plan.library_url || '';
+    document.getElementById('toolWebInitScript').value = plan.init_script || '';
+    document.getElementById('toolWebMockData').value = typeof plan.mock_data === 'string' ? plan.mock_data : JSON.stringify(plan.mock_data || {}, null, 2);
+    showToast('عبأ المهندس الأداة الجاهزة في المحرر. اختبرها ثم اضغط اعتماد وحفظ الأداة.');
+    return;
+  }
+  const btn = document.getElementById('toolArchitectBuildBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>جارٍ التوليد والاختبار...</span>'; }
+  try {
+    const keys = toolArchitectKeys();
+    const coding = await resolveToolCodingModel();
+    const codingModel = coding.id || toolArchitectModel();
+    pushToolArchitectLine(`المهندس: سأكتب كود بايثون بالنموذج الأعلى في معيار البرمجة على OpenRouter: «${coding.name || codingModel}» (${codingModel}) بمؤشر ${coding.coding_index ?? 'غير منشور'}، مع مكتبة حديثة من PyPI عند الحاجة.`);
+    pushToolArchitectLine('المهندس: بدأت الكتابة الآن. مهلتها تصل إلى 8 دقائق، وسأعرض الكود أو سبب التوقف داخل هذا الحوار.');
+    showCoderWait('وكيل البرمجة يكتب كود الأداة الآن. فضلاً الانتظار، وقد تبلغ المهلة 8 دقائق.');
+    const prompt = `${plan.build_prompt || ''}\n\nمواصفات الأداة المعتمدة:\n${JSON.stringify(toolArchitectState.spec || {}, null, 2)}\n\nعقد التطبيق الإلزامي: مدخل الأداة هو ناتج بحث جاهز من الشاملة كما في example_input، وعلى run_tool تحويله إلى example_output أو بنية مكافئة. لا تطلب من المستخدم مصدر البيانات.\n\nمصادر بحث يجب احترامها دون اختراع روابط:\n${JSON.stringify((toolArchitectState.research?.results || []).slice(0, 5), null, 2)}`;
+    const generated = await architectFetch('/api/tools/generate-code', { prompt, tool_name: plan.tool_name || '', tool_desc: plan.description || '', model: codingModel, api_key: keys.openrouter || '', modern_python: true });
+    pushToolArchitectLine(`المهندس: وصل الكود من النموذج (${String(generated.code || '').split('\n').length} سطراً). سأنصبه ثم أجربه.`);
+    if ((generated.packages || []).length) {
+      const install = await architectFetch('/api/tools/architect/install', { packages: generated.packages, urls: [] });
+      pushToolArchitectLine(`المهندس: تنصيب مكتبة الكود «${generated.packages.join('، ')}»:\n${String(install.log || '').slice(0, 700)}`);
+    }
+    let code = generated.code || '';
+    let sample = generated.sample_input || toolArchitectState.spec?.example_input || {};
+    let result = await testToolArchitectCode(code, sample);
+    let repairs = 0;
+    while (!result.success && repairs < 3) {
+      repairs += 1;
+      pushToolArchitectLine(`المهندس: فشلت التجربة، وأرسلت الخطأ إلى نموذج البرمجة لإصلاحه. الجولة ${repairs} من 3.`);
+      showCoderWait(`وكيل البرمجة يصلح الكود. الجولة ${repairs} من 3. فضلاً الانتظار.`);
+        const fixed = await architectFetch('/api/tools/architect/repair', { code, error: result.error || result.message || JSON.stringify(result.output || {}), spec: toolArchitectState.spec || {}, model: codingModel, api_key: keys.openrouter || '', allowed_packages: generated.packages || [] });
+      if (!fixed.code || fixed.code === code) break;
+      code = fixed.code;
+      result = await testToolArchitectCode(code, sample);
+    }
+    toolArchitectState.draft = { web: false, name: plan.tool_name || generated.tool_name || 'أداة بايثون', id: plan.tool_id || generated.tool_id || `tool_py_${Date.now()}`, description: plan.description || '', code, sample_input: sample, test_output: JSON.stringify(result.output ?? result, null, 2), build_model: codingModel, packages: generated.packages || [], engineer_tested: !!result.success };
+    toolArchitectState.tested = false;
+    const box = document.getElementById('toolArchitectCodeBox');
+    if (box) box.style.display = 'block';
+    document.getElementById('toolArchitectCodePre').textContent = code;
+    document.getElementById('toolArchitectTestResult').innerHTML = result.success
+      ? `<span style="color:#16a34a; font-weight:700;">✅ اختبر المهندس الكود بنجاح${repairs ? ` بعد ${repairs} جولة إصلاح مع نموذج البرمجة` : ''} (${result.execution_time_ms || 0} ms). اضغط الآن «اختبار الأداة» لترى نتيجتها بنفسك، ثم اعتمدها إن ارتضيتها.</span><pre style="direction:ltr; text-align:left; white-space:pre-wrap;">${escapeHtml(JSON.stringify(result.output, null, 2))}</pre>`
+      : `<span style="color:#dc2626; font-weight:700;">❌ لم تنجح الأداة بعد ثلاث جولات إصلاح:</span> ${escapeHtml(result.error || result.message || '')}`;
+    const preview = String(code || '').slice(0, 1800);
+    toolArchitectState.messages.push({
+      role: 'assistant',
+      content: result.success ? 'اكتمل بناء الأداة.' : 'وصل الكود ولم تجتز التجربة بعد.',
+      html: `<strong>${result.success ? 'اكتمل بناء الأداة واجتازت اختبار المهندس.' : 'وصل الكود، ولم تجتز التجربة بعد الإصلاح.'}</strong><br>اضغط «اختبار الأداة» لرؤية النتيجة، ثم «اعتماد وحفظ الأداة» إن ارتضيتها.<pre style="direction:ltr; text-align:left; white-space:pre-wrap; max-height:240px; overflow:auto;">${escapeHtml(preview)}</pre>`
+    });
+    renderToolArchitectChat();
+  } catch (err) {
+    pushToolArchitectLine(`المهندس: توقف التوليد قبل ظهور الأداة. السبب: ${err.message}`);
+  } finally {
+    hideCoderWait();
+    if (btn) btn.innerHTML = '<span>بناء أداة من الصفر 🐍</span>';
+    updateToolArchitectButtons();
+  }
+}
+
+async function testToolArchitectDraft() {
+  const draft = toolArchitectState.draft;
+  if (!draft || !draft.code) return;
+  const btn = document.getElementById('toolArchitectTestBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>جارٍ اختبار الأداة...</span>'; }
+  try {
+    const result = await testToolArchitectCode(draft.code, draft.sample_input || {});
+    draft.test_output = JSON.stringify(result.output ?? result, null, 2);
+    toolArchitectState.tested = !!result.success;
+    const box = document.getElementById('toolArchitectCodeBox');
+    if (box) box.style.display = 'block';
+    document.getElementById('toolArchitectTestResult').innerHTML = result.success
+      ? `<span style="color:#16a34a; font-weight:700;">✅ نجح اختبارك للأداة (${result.execution_time_ms || 0} ms). إن ارتضيت النتيجة اضغط «اعتماد وحفظ الأداة».</span><pre style="direction:ltr; text-align:left; white-space:pre-wrap;">${escapeHtml(JSON.stringify(result.output, null, 2))}</pre>`
+      : `<span style="color:#dc2626; font-weight:700;">❌ فشل اختبار الأداة:</span> ${escapeHtml(result.error || result.message || '')}`;
+  } catch (err) { showToast(err.message, true); }
+  finally { if (btn) btn.innerHTML = '<span>اختبار الأداة 🧪</span>'; updateToolArchitectButtons(); }
+}
+
+async function saveToolArchitect() {
+  const draft = toolArchitectState.draft;
+  if (!draft || !toolArchitectState.tested) return;
+  const payload = draft.web ? {
+    id: draft.id || `tool_web_${Date.now()}`, name: draft.name || 'أداة ويب', desc: draft.description || '', description: draft.description || '', type: 'web_library', tool_type: 'ready_web_lib', category: 'أدوات مهندس الأدوات', enabled: true, library_url: draft.library_url || '', github_url: draft.library_url || '', init_script: draft.init_script || '', cdn_urls: draft.cdn_urls || [], packages: draft.packages || [], mock_data: draft.mock_data || {}, mock_test_data: draft.mock_data || {}, architect_spec: toolArchitectState.spec, research_sources: toolArchitectState.research?.results || [], build_model: toolArchitectModel()
+  } : {
+    id: draft.id || `tool_py_${Date.now()}`, name: draft.name || 'أداة بايثون', desc: draft.description || '', description: draft.description || '', type: 'python_script', tool_type: 'python_code', category: 'أدوات مهندس الأدوات', enabled: true, python_code: draft.code || '', entry_function: 'run_tool', library_url: draft.library_url || '', init_script: draft.init_script || '', cdn_urls: draft.cdn_urls || [], packages: draft.packages || [], mock_data: draft.sample_input || {}, mock_test_data: draft.sample_input || {}, test_output: draft.test_output || '', architect_spec: toolArchitectState.spec, research_sources: toolArchitectState.research?.results || [], build_model: draft.build_model || toolArchitectModel(), example_input: toolArchitectState.spec?.example_input || draft.sample_input || {}, example_output: toolArchitectState.spec?.example_output || {}, application_instruction: toolArchitectState.spec?.application_instruction || ''
+  };
+  try {
+    const res = await fetch('/api/tools', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'فشل حفظ الأداة');
+    try {
+      const key = 'almojtahed_chat_enabled_tools';
+      const ids = JSON.parse(localStorage.getItem(key) || '[]');
+      if (!ids.includes(payload.id)) ids.push(payload.id);
+      localStorage.setItem(key, JSON.stringify(ids));
+      if (typeof renderChatAssistantTools === 'function') renderChatAssistantTools();
+    } catch (e) {}
+    showToast(`🎉 حُفظت أداة «${payload.name}» في بطاقة داخل قسم الأدوات`);
+    closeToolArchitect();
+    await loadToolsList();
+  } catch (err) { showToast(err.message, true); }
+}
+
+window.openToolArchitect = openToolArchitect;
+window.closeToolArchitect = closeToolArchitect;
+window.resetToolArchitect = resetToolArchitect;
+window.sendToolArchitectMessage = sendToolArchitectMessage;
+window.researchToolArchitect = researchToolArchitect;
+window.planToolArchitect = planToolArchitect;
+window.buildToolArchitect = buildToolArchitect;
+window.testToolArchitectDraft = testToolArchitectDraft;
+window.searchMoreToolArchitect = searchMoreToolArchitect;
+window.approveToolArchitectCandidate = approveToolArchitectCandidate;
+window.submitToolArchitectChoices = submitToolArchitectChoices;
+window.saveToolArchitect = saveToolArchitect;
+window.filterToolArchitectModels = filterToolArchitectModels;

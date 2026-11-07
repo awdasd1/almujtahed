@@ -79,7 +79,7 @@ function toggleHybridSearchMode() {
   updateHybridToggleUI();
   if (typeof showToast === 'function') {
     if (isHybridSearchEnabled) {
-      showToast('تم تفعيل نمط البحث الهجين (Dense + BM25) ⚡');
+      showToast('تم تفعيل نمط البحث الهجين (دلالي + لفظي) ⚡');
     } else {
       showToast('تم تفعيل نمط البحث الدلالي الصرف (Dense Vector Only) 🧠');
     }
@@ -103,7 +103,7 @@ function updateHybridToggleUI() {
     btn.classList.remove('is-disabled');
     btn.setAttribute('aria-pressed', 'true');
     btn.title = 'البحث الهجين مفعّل: يدمج الفهم الدلالي للذكاء الاصطناعي مع التطابق اللفظي الصارم (BM25). انقر للتعطيل.';
-    label.textContent = 'بحث هجين مفعّل (Dense + BM25)';
+    label.textContent = 'بحث هجين مفعّل (دلالي + لفظي)';
     if (icon) icon.setAttribute('data-lucide', 'layers');
   } else {
     btn.classList.remove('is-active');
@@ -235,7 +235,13 @@ function renderSearchResults(results, query, duration, rawData = {}) {
 
   metaInfo.style.display = 'flex';
   const poolCount = rawData.pool_size || rawData.pool_count || results.length;
-  const modeLabel = rawData.is_reranked ? ' (هجين: Dense + BM25)' : ' (دلالي متجهات صرف)';
+  // تسمية صادقة لمصدر النتائج: المصدر يأتي من الخادم ولا يُخترع هنا.
+  const src = String(rawData.source || '');
+  let modeLabel;
+  if (rawData.is_reranked || rawData.is_hybrid) modeLabel = ' (هجين: دلالي + لفظي)';
+  else if (/فهرس المكتبة|المراسي|لفظي/.test(src)) modeLabel = ' (بحث لفظي في فهرس المكتبة)';
+  else if (/متجهات|دلالي/.test(src)) modeLabel = ' (دلالي متجهات صرف)';
+  else modeLabel = src ? ` (${src})` : '';
   countText.textContent = `تم العثور على ${results.length} نصاً محققاً ومطابقاً${modeLabel}`;
   timingText.textContent = `زمن البحث: ${duration} ثانية`;
 
@@ -347,7 +353,7 @@ async function verifySearchResultQuote(idx) {
   if (!window._lastSearchResults || !window._lastSearchResults[idx]) return;
   const item = window._lastSearchResults[idx];
   return openMcpLiteralVerify({
-    book: item.book_title || item.book,
+    book: item.book_title || item.book || item.title,
     quote: (item.text || item.content || '').slice(0, 160),
     page: item.page ? parseInt(item.page, 10) : null,
     part: item.volume ? String(item.volume) : null,
@@ -449,6 +455,9 @@ async function openMcpLiteralVerify({ book, quote, page, part, rel_path }) {
 
       snippetBox.style.display = 'none';
       openReaderBtn.style.display = 'none';
+      if (data.error) {
+        statusMsg.innerHTML = `<strong>تعذر فحص الصفحة:</strong> ${data.error}`;
+      }
     }
 
     if (window.refreshLucideIcons) window.refreshLucideIcons();
@@ -482,7 +491,37 @@ let selectedBooksScope = [];
 let catalogBooksCache = [];
 let currentScopeCategory = '';
 let currentScopeSearchQuery = '';
+let currentScopeDeathMax = null;
 let scopeModalTarget = 'search'; // 'search' or 'agent'
+
+function parseScopeDeathYear(value) {
+  const normalized = String(value || '')
+    .replace(/[٠-٩]/g, (digit) => '٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
+    .replace(/[۰-۹]/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))
+    .replace(/[^\d]/g, '');
+  const year = parseInt(normalized, 10);
+  return Number.isFinite(year) && year > 0 ? year : null;
+}
+
+function bookWithinScopeDeath(book, limit) {
+  if (!limit) return true;
+  const year = Number(book && book.death);
+  return Number.isFinite(year) && year > 0 && year !== 99999 && year <= limit;
+}
+
+function scopeBooksMatchingFilters() {
+  const catId = currentScopeCategory ? parseInt(currentScopeCategory, 10) : null;
+  const q = currentScopeSearchQuery.trim().toLowerCase();
+  const deathLimit = currentScopeDeathMax;
+  return catalogBooksCache.filter((book) => {
+    if (catId !== null && book.category_id !== catId) return false;
+    if (!bookWithinScopeDeath(book, deathLimit)) return false;
+    if (!q) return true;
+    const titleMatch = book.title && book.title.toLowerCase().includes(q);
+    const authorMatch = book.author && book.author.toLowerCase().includes(q);
+    return titleMatch || authorMatch;
+  });
+}
 
 // فتح نافذة تحديد نطاق البحث (تدعم البحث الدلالي أو تخصيص نطاق الوكيل أو وكلاء المشاريع البحثية)
 async function openSearchScopeModal(target = 'search') {
@@ -501,6 +540,9 @@ async function openSearchScopeModal(target = 'search') {
     if (scopeCatSelect) scopeCatSelect.value = '';
     const scopeFilterInp = document.getElementById('scopeFilterQuery');
     if (scopeFilterInp) scopeFilterInp.value = '';
+    currentScopeDeathMax = null;
+    const scopeDeathInp = document.getElementById('scopeDeathMax');
+    if (scopeDeathInp) scopeDeathInp.value = '';
     modal.style.zIndex = '800';
   } else if (target === 'project_subagent') {
     selectedBooksScope = [...(window._activeProjectSubagentBooks || [])];
@@ -589,18 +631,7 @@ function renderScopeBooks() {
   const listContainer = document.getElementById('scopeBooksList');
   if (!listContainer) return;
 
-  const catId = currentScopeCategory ? parseInt(currentScopeCategory) : null;
-  const q = currentScopeSearchQuery.trim().toLowerCase();
-
-  const filtered = catalogBooksCache.filter(b => {
-    if (catId !== null && b.category_id !== catId) return false;
-    if (q) {
-      const titleMatch = b.title && b.title.toLowerCase().includes(q);
-      const authorMatch = b.author && b.author.toLowerCase().includes(q);
-      if (!titleMatch && !authorMatch) return false;
-    }
-    return true;
-  });
+  const filtered = scopeBooksMatchingFilters();
 
   const visibleCountEl = document.getElementById('scopeVisibleCountText');
   const selectedCountEl = document.getElementById('scopeSelectedCountText');
@@ -707,20 +738,14 @@ function clearScopeFilterText() {
   }
 }
 
+function onScopeDeathInput(value) {
+  currentScopeDeathMax = parseScopeDeathYear(value);
+  renderScopeBooks();
+}
+
 // تحديد الكل المعروض حالياً
 function scopeSelectAllVisible() {
-  const catId = currentScopeCategory ? parseInt(currentScopeCategory) : null;
-  const q = currentScopeSearchQuery.trim().toLowerCase();
-
-  const filtered = catalogBooksCache.filter(b => {
-    if (catId !== null && b.category_id !== catId) return false;
-    if (q) {
-      const titleMatch = b.title && b.title.toLowerCase().includes(q);
-      const authorMatch = b.author && b.author.toLowerCase().includes(q);
-      if (!titleMatch && !authorMatch) return false;
-    }
-    return true;
-  });
+  const filtered = scopeBooksMatchingFilters();
 
   filtered.forEach(b => {
     if (!selectedBooksScope.includes(b.title)) {
@@ -887,6 +912,9 @@ function scopeResetToAllBooks() {
   if (scopeCatSelect) scopeCatSelect.value = '';
   const scopeFilterInp = document.getElementById('scopeFilterQuery');
   if (scopeFilterInp) scopeFilterInp.value = '';
+  currentScopeDeathMax = null;
+  const scopeDeathInp = document.getElementById('scopeDeathMax');
+  if (scopeDeathInp) scopeDeathInp.value = '';
   const label = document.getElementById('scopeSelectorLabel');
   if (label) label.textContent = 'جميع كتب الشاملة';
   const badge = document.getElementById('scopeSelectedBadge');
@@ -910,6 +938,9 @@ function resetSearchScope(event) {
   if (scopeCatSelect) scopeCatSelect.value = '';
   const scopeFilterInp = document.getElementById('scopeFilterQuery');
   if (scopeFilterInp) scopeFilterInp.value = '';
+  currentScopeDeathMax = null;
+  const scopeDeathInp = document.getElementById('scopeDeathMax');
+  if (scopeDeathInp) scopeDeathInp.value = '';
   const label = document.getElementById('scopeSelectorLabel');
   if (label) label.textContent = 'جميع كتب الشاملة';
   const badge = document.getElementById('scopeSelectedBadge');

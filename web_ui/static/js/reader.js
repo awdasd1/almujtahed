@@ -29,6 +29,7 @@ let readerState = {
   prevPage: null,
   nextPage: null,
   highlightText: '',
+  bookId: '',
   missing: false
 };
 
@@ -86,7 +87,8 @@ function openBookReaderFromSearch(idx) {
 
   openBookReader({
     rel_path: item.rel_path || '',
-    book_title: item.book_title || item.book || '',
+    book_id: item.book_id || '',
+    book_title: item.book_title || item.book || item.title || '',
     part: item.volume || '',
     page_num: parseInt(item.page) || null,
     highlight: item.text || ''
@@ -112,8 +114,12 @@ async function openBookReader(arg1, arg2, arg3, arg4, arg5) {
   if (!modal) return;
 
   readerState.isOpen = true;
+  readerState.bookId = params.book_id || '';
+  readerState.relPath = params.rel_path || '';
   readerState.highlightText = params.highlight || '';
   readerState.showBetaka = false;
+  readerState.isSurroundingView = false;
+  clearReaderBookFilter();
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden'; // قفل التمرير في الخلفية
 
@@ -136,6 +142,7 @@ async function loadReaderPage(params) {
   try {
     const q = new URLSearchParams();
     if (params.rel_path) q.set('rel_path', params.rel_path);
+    if (params.book_id) q.set('book_id', params.book_id);
     if (params.book_title) q.set('book_title', params.book_title);
     if (params.part !== undefined && params.part !== null) q.set('part', params.part);
     if (params.page_num) q.set('page_num', params.page_num);
@@ -146,14 +153,15 @@ async function loadReaderPage(params) {
     const res = await fetch(`/api/book/page?${q.toString()}`);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'تعذر تحميل الصفحة المطلوبة');
+      const detail = Array.isArray(err.detail) ? 'تعذر تحميل الصفحة المطلوبة' : (err.detail || 'تعذر تحميل الصفحة المطلوبة');
+      throw new Error(detail);
     }
 
     const data = await res.json();
     if (myToken !== readerLoadToken || !readerState.isOpen) return;
 
-    // تحديث الحالة
     readerState.relPath = data.rel_path;
+    readerState.bookId = params.book_id || '';
     readerState.bookTitle = data.book_title;
     readerState.author = data.author;
     readerState.deathYear = data.death_year;
@@ -194,7 +202,7 @@ async function loadReaderPage(params) {
     console.error('Reader load error:', err);
     document.getElementById('readerPageBody').innerHTML = `
       <div style="text-align: center; padding: 40px; color: #c0392b;">
-        <p style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">${err.message}</p>
+        <p style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">${escapeHtml(err.message || '')}</p>
         <button class="btn-flat-secondary" onclick="closeBookReader()">إغلاق النافذة</button>
       </div>
     `;
@@ -208,10 +216,6 @@ function renderReaderView() {
   const authorStr = readerState.author + (readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : '');
   document.getElementById('readerModalAuthor').textContent = authorStr;
   document.getElementById('readerModalCategory').textContent = readerState.category || 'عام';
-  const filterInput = document.getElementById('readerBookFilterInput');
-  if (filterInput && document.activeElement !== filterInput) {
-    filterInput.value = readerState.bookTitle || '';
-  }
 
   // عرض بانر رأس الحولية التاريخية أو رأس المسألة الفقهية الحاكمة
   const banner = document.getElementById('readerContextBanner');
@@ -365,6 +369,12 @@ function toggleReaderBetaka() {
   }
 }
 
+function clearReaderBookFilter() {
+  closeReaderBookFilter();
+  const input = document.getElementById('readerBookFilterInput');
+  if (input) input.value = '';
+}
+
 function closeReaderBookFilter() {
   const menu = document.getElementById('readerBookFilterMenu');
   if (menu) menu.hidden = true;
@@ -413,10 +423,10 @@ async function switchReaderBook(book) {
   readerState.author = book.author || '';
   readerState.deathYear = book.death || null;
   readerState.relPath = '';
+  readerState.bookId = '';
   readerState.highlightText = '';
   readerState.isSurroundingView = false;
-  const input = document.getElementById('readerBookFilterInput');
-  if (input) input.value = readerState.bookTitle;
+  clearReaderBookFilter();
   document.getElementById('readerModalTitle').textContent = readerState.bookTitle;
   document.getElementById('readerModalCategory').textContent = readerState.category;
   const authorStr = readerState.author + (readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : '');
@@ -543,6 +553,7 @@ function closeBookReader() {
   document.body.style.overflow = '';
   readerState.isOpen = false;
   readerState.highlightText = '';
+  clearReaderBookFilter();
   const tooltip = document.getElementById('readerSelectionTooltip');
   if (tooltip) tooltip.style.display = 'none';
 }
@@ -578,6 +589,81 @@ function onReaderSurroundingSpanChange() {
   if (readerState.isSurroundingView) loadSurroundingPagesView();
 }
 
+async function showReaderPageText() {
+  readerState.isSurroundingView = false;
+  const btnToolbar = document.getElementById('btnToggleSurrounding');
+  if (btnToolbar) btnToolbar.classList.remove('active');
+
+  const bodyContainer = document.getElementById('readerPageBody');
+  const footContainer = document.getElementById('readerFootnotes');
+  if ((readerState.rawBody || '').trim()) {
+    readerState.missing = false;
+    renderReaderBodyText();
+    return;
+  }
+  const myToken = ++readerLoadToken;
+  if (!bodyContainer) return;
+
+  bodyContainer.innerHTML = `
+    <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
+      <div style="display: inline-block; width: 28px; height: 28px; border: 3px solid var(--border-subtle); border-top-color: var(--accent-clay); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 10px;"></div>
+      <p style="font-family: var(--font-amiri); font-size: 17px;">جارٍ عرض متن الصفحة...</p>
+    </div>
+  `;
+  if (footContainer) footContainer.style.display = 'none';
+
+  const pickPage = (pages) => {
+    const list = pages || [];
+    const hint = (readerState.highlightText || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (hint) {
+      const hit = list.find(p => (p.body || '').includes(hint));
+      if (hit && (hit.body || '').trim()) return hit;
+    }
+    return list.find(p => p.is_target && (p.body || '').trim())
+      || list.find(p => (p.body || '').trim())
+      || list.find(p => p.is_target)
+      || null;
+  };
+
+  try {
+    const loadSpan = async (before, after) => {
+      const q = new URLSearchParams();
+      if (readerState.relPath) q.set('rel_path', readerState.relPath);
+      if (readerState.bookId) q.set('book_id', readerState.bookId);
+      if (readerState.bookTitle) q.set('book_title', readerState.bookTitle);
+      if (readerState.part !== undefined && readerState.part !== null) q.set('part', readerState.part);
+      if (readerState.pageNum) q.set('page_num', readerState.pageNum);
+      q.set('before', String(before));
+      q.set('after', String(after));
+      const res = await fetch(`/api/book/surrounding-pages?${q.toString()}`);
+      if (!res.ok) throw new Error('تعذر عرض النص');
+      return res.json();
+    };
+
+    let data = await loadSpan(0, 0);
+    let page = pickPage(data.pages);
+    if (!page || !(page.body || '').trim()) {
+      data = await loadSpan(3, 3);
+      page = pickPage(data.pages);
+    }
+    if (!page || !(page.body || '').trim()) throw new Error('تعذر عرض النص');
+    if (myToken !== readerLoadToken || !readerState.isOpen) return;
+
+    readerState.rawBody = page.body || '';
+    readerState.footnotes = page.footnotes || '';
+    if (page.part) readerState.part = page.part;
+    if (page.page_num) readerState.pageNum = page.page_num;
+    readerState.missing = false;
+    renderReaderView();
+  } catch (err) {
+    console.error('Show page text error:', err);
+    if (myToken !== readerLoadToken || !readerState.isOpen) return;
+    if (bodyContainer) {
+      bodyContainer.innerHTML = '<p style="text-align:center; padding: 30px; color: var(--text-muted);">تعذر عرض متن هذه الصفحة.</p>';
+    }
+  }
+}
+
 async function toggleSurroundingPagesView() {
   readerState.isSurroundingView = !readerState.isSurroundingView;
   const btnToolbar = document.getElementById('btnToggleSurrounding');
@@ -607,6 +693,7 @@ async function loadSurroundingPagesView() {
   try {
     const q = new URLSearchParams();
     if (readerState.relPath) q.set('rel_path', readerState.relPath);
+    if (readerState.bookId) q.set('book_id', readerState.bookId);
     if (readerState.bookTitle) q.set('book_title', readerState.bookTitle);
     if (readerState.part !== undefined && readerState.part !== null) q.set('part', readerState.part);
     if (readerState.pageNum) q.set('page_num', readerState.pageNum);
@@ -617,6 +704,19 @@ async function loadSurroundingPagesView() {
     if (!res.ok) throw new Error('تعذر جلب باقة الصفحات المتتالية');
 
     const data = await res.json();
+    if (data.book_title) {
+      readerState.bookTitle = data.book_title;
+      const titleEl = document.getElementById('readerModalTitle');
+      if (titleEl) titleEl.textContent = data.book_title;
+    }
+    if (data.author) {
+      readerState.author = data.author;
+      readerState.deathYear = data.death_year || '';
+      const authorEl = document.getElementById('readerModalAuthor');
+      if (authorEl) {
+        authorEl.textContent = data.author + (data.death_year ? ` (ت: ${data.death_year} هـ)` : '');
+      }
+    }
     const pages = data.pages || [];
 
     if (pages.length === 0) {
@@ -721,6 +821,7 @@ async function loadSurroundingPagesView() {
 
 // تصدير الدوال على النطاق العام
 window.onReaderSurroundingSpanChange = onReaderSurroundingSpanChange;
+window.showReaderPageText = showReaderPageText;
 window.toggleSurroundingPagesView = toggleSurroundingPagesView;
 window.loadSurroundingPagesView = loadSurroundingPagesView;
 window.sendReaderSelectionToChat = sendReaderSelectionToChat;

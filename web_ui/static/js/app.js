@@ -66,7 +66,8 @@ const DEFAULT_SETTINGS = {
     topK: 40,
     repPenalty: 1.1,
     maxTokens: 65536,
-    contextTokens: 1048576
+    contextTokens: 1048576,
+    customGeneration: false
   }
 };
 
@@ -409,6 +410,8 @@ function initThemeSelects() {
     const fluid = select.classList.contains('form-select')
       || select.classList.contains('form-select-sm')
       || select.classList.contains('chat-graph-kind-fixed')
+      || select.classList.contains('chat-echart-kind-fixed')
+      || select.classList.contains('chat-islamap-kind-fixed')
       || /width\s*:\s*100%/i.test(inline);
     if (fluid) wrap.classList.add('is-fluid');
 
@@ -833,6 +836,128 @@ function updateTextSize(size, save = true) {
 // =============================================================================
 // نافذة الإعدادات الشاملة (Settings Modal)
 // =============================================================================
+function localExportSize(bytes) {
+  const value = Number(bytes) || 0;
+  const gb = value / 1073741824;
+  if (gb >= 1) return gb.toFixed(2) + ' جيجا';
+  return Math.max(0, Math.round(value / 1048576)) + ' ميجا';
+}
+
+function chooseNativeFolder(prompt) {
+  const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+  if (!bridge) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    window.__almujtahedPick = (path) => {
+      window.__almujtahedPick = null;
+      resolve(typeof path === 'string' ? path : '');
+    };
+    bridge.postMessage({ action: 'chooseFolder', prompt: prompt || 'اختر المجلد' });
+  });
+}
+
+function openLocalExportModal() {
+  const modal = document.getElementById('localExportModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  modal.classList.add('open');
+  const close = document.getElementById('localExportClose');
+  if (close) close.hidden = true;
+}
+
+function closeLocalExportModal() {
+  const modal = document.getElementById('localExportModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  modal.classList.remove('open');
+}
+
+function paintLocalExport(data) {
+  const done = data.state === 'done';
+  const failed = data.state === 'error';
+  const expected = Number(data.expected) || 0;
+  const received = Number(data.received) || 0;
+  let pct = 0;
+  if (done) pct = 100;
+  else if (expected > 0) pct = Math.min(99, Math.round(received / expected * 100));
+  const fill = document.getElementById('localExportFill');
+  const track = document.getElementById('localExportTrack');
+  const percent = document.getElementById('localExportPercent');
+  const message = document.getElementById('localExportMessage');
+  const detail = document.getElementById('localExportDetail');
+  const close = document.getElementById('localExportClose');
+  if (fill) fill.style.width = pct + '%';
+  if (track) track.setAttribute('aria-valuenow', String(pct));
+  if (percent) percent.textContent = pct + '%';
+  if (message) {
+    message.textContent = failed
+      ? (data.error || data.message || 'تعذر النسخ')
+      : (data.message || (done ? 'اكتمل' : 'جاري النسخ'));
+  }
+  if (detail) {
+    detail.textContent = !failed && expected > 0
+      ? localExportSize(done ? expected : received) + ' من ' + localExportSize(expected)
+      : '';
+  }
+  if (close) close.hidden = !(done || failed);
+}
+
+async function exportLocalBundle() {
+  const accepted = await showConfirmDialog({
+    title: 'تأكيد التصدير',
+    message: 'سيُصدَّر نموذج التضمين والمكتبة الشاملة وقاعدة البيانات إلى مجلد. قد يستغرق ذلك عدة دقائق حسب سرعة القرص.',
+    confirmText: 'تصدير',
+    cancelText: 'إلغاء',
+    danger: false,
+    icon: 'hard-drive'
+  });
+  if (!accepted) return;
+  await runLocalBundle('export');
+}
+
+async function runLocalBundle(kind) {
+  const exporting = kind === 'export';
+  const button = document.getElementById(exporting ? 'localBundleBtn' : 'localImportBtn');
+  if (button) button.disabled = true;
+  const title = document.getElementById('localExportTitle');
+  if (title) title.textContent = exporting ? 'تصدير النسخة المحلية' : 'استيراد النسخة المحلية';
+  try {
+    const folder = await chooseNativeFolder(exporting ? 'اختر مجلد حفظ النسخة المحلية' : 'اختر مجلد النسخة المحلية');
+    if (folder === '') return;
+    const res = await fetch(exporting ? '/api/local-bundle/export' : '/api/local-bundle/import', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folder || '' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر بدء النسخ');
+    if (data.state === 'cancelled') return;
+    openLocalExportModal();
+    paintLocalExport(data.state ? data : { state: 'copying', received: 0, expected: 0, message: exporting ? 'جاري تصدير النسخة المحلية' : 'جاري استيراد النسخة المحلية' });
+    if (data.state === 'error') return;
+    await watchLocalBundleExport();
+  } catch (err) {
+    openLocalExportModal();
+    paintLocalExport({ state: 'error', error: err.message || 'تعذر النسخ' });
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function watchLocalBundleExport() {
+  for (let step = 0; step < 172800; step += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const res = await fetch('/api/local-bundle/status', { credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    if (data.state === 'cancelled' || data.state === 'idle') {
+      closeLocalExportModal();
+      return;
+    }
+    paintLocalExport(data);
+    if (data.state === 'done' || data.state === 'error') return;
+  }
+}
+
 function openSettingsModal() {
   syncSettingsToUI();
   loadCustomFonts()
@@ -899,6 +1024,84 @@ function currentContextTokens() {
 window.setContextTokens = setContextTokens;
 window.currentContextTokens = currentContextTokens;
 
+const WITNESS_COUNT_ALLOWED = [10, 30, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
+
+function witnessCountTier(count) {
+  if (count >= 500) return 'witness-danger';
+  if (count >= 200) return 'witness-warn';
+  return 'witness-safe';
+}
+
+function setWitnessCount(value) {
+  const parsed = parseInt(value, 10);
+  const next = WITNESS_COUNT_ALLOWED.includes(parsed) ? parsed : 50;
+  localStorage.setItem('almojtahed_witness_count', String(next));
+  const btn = document.getElementById('witnessDdBtn');
+  const label = document.getElementById('witnessDdValue');
+  if (label) label.textContent = String(next);
+  if (btn) {
+    btn.classList.remove('witness-safe', 'witness-warn', 'witness-danger');
+    btn.classList.add(witnessCountTier(next));
+  }
+  document.querySelectorAll('#witnessDdMenu .witness-dd-item').forEach((item) => {
+    item.classList.toggle('is-selected', parseInt(item.dataset.value, 10) === next);
+  });
+  closeWitnessDropdown();
+}
+
+function currentWitnessCount() {
+  const parsed = parseInt(localStorage.getItem('almojtahed_witness_count') || '50', 10);
+  return WITNESS_COUNT_ALLOWED.includes(parsed) ? parsed : 50;
+}
+window.setWitnessCount = setWitnessCount;
+window.currentWitnessCount = currentWitnessCount;
+
+// سقف وفاة المؤلف الذي يحدده الباحث (هـ)؛ فارغ = بلا سقف زمني (بحث مفتوح)
+function currentDeathMax() {
+  const parsed = parseInt(localStorage.getItem('almojtahed_death_max') || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+window.currentDeathMax = currentDeathMax;
+// فنون البحث المستهدفة التي يعلنها الباحث؛ فارغ = توزيع عام متوازن
+function currentIntentGenres() {
+  const v = (localStorage.getItem('almojtahed_intent') || '').trim();
+  return v ? v.split(',').map(s => s.trim()).filter(Boolean) : null;
+}
+window.currentIntentGenres = currentIntentGenres;
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('deathMaxSelect');
+  if (sel) sel.value = localStorage.getItem('almojtahed_death_max') || '';
+  const isel = document.getElementById('intentSelect');
+  if (isel) isel.value = localStorage.getItem('almojtahed_intent') || '';
+});
+
+function closeWitnessDropdown() {
+  const menu = document.getElementById('witnessDdMenu');
+  const btn = document.getElementById('witnessDdBtn');
+  if (menu) menu.hidden = true;
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleWitnessDropdown(event) {
+  if (event) event.stopPropagation();
+  const menu = document.getElementById('witnessDdMenu');
+  const btn = document.getElementById('witnessDdBtn');
+  if (!menu) return;
+  const opening = menu.hidden;
+  menu.hidden = !opening;
+  if (btn) btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}
+window.toggleWitnessDropdown = toggleWitnessDropdown;
+window.closeWitnessDropdown = closeWitnessDropdown;
+
+document.addEventListener('click', (event) => {
+  const wrap = document.getElementById('witnessDropdown');
+  if (wrap && !wrap.contains(event.target)) closeWitnessDropdown();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeWitnessDropdown();
+});
+
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
@@ -943,7 +1146,41 @@ function syncSettingsToUI() {
     document.getElementById('valMaxTokens').textContent = Number(m.maxTokens ?? 65536).toLocaleString() + ' توكن';
   }
   if (typeof setContextTokens === 'function') setContextTokens(m.contextTokens || 1048576);
+  if (typeof setWitnessCount === 'function') setWitnessCount(currentWitnessCount());
+  applyCustomGenerationState();
 }
+
+function applyCustomGenerationState() {
+  const on = !!currentSettings.modelParams?.customGeneration;
+  const btn = document.getElementById('btnCustomGeneration');
+  if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  const hint = document.getElementById('customGenerationHint');
+  if (hint) {
+    hint.textContent = on
+      ? 'التخصيص مفعّل. هذا الموجه وهذه المعلمات وحدها تصل إلى النموذج الأساسي في الشات، بلا التوجيه القياسي.'
+      : 'التخصيص معطّل. الشات يعمل بالتوجيه القياسي داخل المنظومة، وتبقى الحرارة و top_k بيدك دائماً.';
+  }
+  const pane = document.getElementById('setPaneModelParams');
+  if (pane) pane.classList.toggle('is-custom-off', !on);
+  ['systemPromptInput', 'paramRepPenalty', 'paramMaxTokens', 'paramContextTokens'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !on;
+  });
+  // الحرارة و top_k للنموذج الرئيسي: تعمل في الحالتين، لا تنتظر تفعيل التخصيص.
+  ['paramTemperature', 'paramTopK'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
+}
+
+function toggleCustomGeneration() {
+  currentSettings.modelParams = currentSettings.modelParams || {};
+  currentSettings.modelParams.customGeneration = !currentSettings.modelParams.customGeneration;
+  localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(currentSettings));
+  applyCustomGenerationState();
+}
+window.toggleCustomGeneration = toggleCustomGeneration;
+window.applyCustomGenerationState = applyCustomGenerationState;
 
 // حفظ كافة الإعدادات
 function saveAllSettings() {
@@ -970,11 +1207,12 @@ function saveAllSettings() {
 
   currentSettings.modelParams = {
     systemPrompt: document.getElementById('systemPromptInput')?.value.trim() || '',
-    temperature: parseFloat(document.getElementById('paramTemperature')?.value || 0.2),
+    temperature: parseFloat(document.getElementById('paramTemperature')?.value ?? '0.2'),
     topK: parseInt(document.getElementById('paramTopK')?.value || 40),
     repPenalty: parseFloat(document.getElementById('paramRepPenalty')?.value || 1.1),
     maxTokens: parseInt(document.getElementById('paramMaxTokens')?.value || 65536),
     contextTokens: (typeof currentContextTokens === 'function') ? currentContextTokens() : 1048576,
+    customGeneration: !!currentSettings.modelParams?.customGeneration,
   };
 
   localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(currentSettings));
@@ -1189,6 +1427,393 @@ async function loadLibraryStats() {
   }
 }
 
+// تنبيه تنزيل موحّد: أي ملف يُنزَّل من التطبيق (تقرير بحث، سجل قياس،
+// مشروع، صورة، جدول...) يعلن نفسه بنافذة باسم الملف وموضعه، فلا تنزيل صامتًا.
+(function installDownloadNotifier() {
+  if (window._dlNotifierInstalled) return;
+  window._dlNotifierInstalled = true;
+  function showDownloadNotice(rawName) {
+    const name = String(rawName || 'ملف').replace(/[<>&"]/g, '');
+    let box = document.getElementById('downloadNoticeBox');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'downloadNoticeBox';
+      box.style.cssText = 'position:fixed;bottom:22px;inset-inline-start:22px;z-index:99999;background:#1f2937;color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 16px;font-size:13px;line-height:1.8;box-shadow:0 10px 30px rgba(0,0,0,.35);max-width:370px;direction:rtl;font-family:inherit;';
+      document.body.appendChild(box);
+    }
+    box.innerHTML = `⬇️ <b>تم تنزيل الملف بنجاح</b><br><span style="opacity:.88">${name}</span><br><span style="opacity:.62;font-size:12px">ستجده في مجلد التنزيلات (Downloads) في جهازك.</span>`;
+    box.style.transition = '';
+    box.style.display = 'block';
+    box.style.opacity = '1';
+    clearTimeout(window._dlNoticeTimer);
+    window._dlNoticeTimer = setTimeout(() => {
+      box.style.transition = 'opacity .5s';
+      box.style.opacity = '0';
+      setTimeout(() => { box.style.display = 'none'; }, 520);
+    }, 4500);
+  }
+  window.notifyDownload = showDownloadNotice;
+  const origClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () {
+    try {
+      const name = this.getAttribute('download') || '';
+      const href = this.getAttribute('href') || '';
+      if (name || href.startsWith('blob:')) showDownloadNotice(name ? decodeURIComponent(name) : 'ملف');
+    } catch (e) { }
+    return origClick.apply(this, arguments);
+  };
+})();
+
+let _researchMetricsCache = null;
+
+function toggleResearchMetrics() {
+  const sec = document.getElementById('researchMetricsSection');
+  if (!sec) return;
+  const show = sec.style.display === 'none';
+  sec.style.display = show ? 'block' : 'none';
+  if (show) loadResearchMetrics();
+}
+
+async function loadResearchMetrics() {
+  const summary = document.getElementById('researchMetricsSummary');
+  const rows = document.getElementById('researchMetricsRows');
+  try {
+    const res = await fetch('/api/research-metrics');
+    if (!res.ok) throw new Error('unauthorized');
+    const data = await res.json();
+    _researchMetricsCache = data;
+    buildMetricsAdvice(data);
+    const s = data.summary || {};
+    if (summary) {
+      summary.textContent = `بحوث مسجلة: ${s.researches ?? 0} · متوسط الثبوت (ثابت+منقول): ${s.avg_audit_recognition_pct ?? '—'}٪ · وكلاء ساقطون: ${s.agents_failed_total ?? 0} من ${s.agents_total ?? 0} (في ${s.agent_failure_runs ?? 0} بحث) · متوسط المدة: ${s.avg_duration_s ?? '—'} ث · متوسط الحجم: ${s.avg_answer_chars ?? '—'} حرف · دعاوى اتفاق مطلقة: ${s.ijma_unattributed_total ?? 0}`;
+    }
+    if (rows) {
+      const origItems = data.items || [];
+      const items = origItems.slice().reverse();
+      rows.innerHTML = items.map((it, ri) => {
+        const origIdx = origItems.length - 1 - ri;
+        const a = it.audit || {};
+        const ratio = a.checked ? Math.round(100 * ((a.verified || 0) + (a.relocated || 0)) / a.checked) + '٪' : '—';
+        const mins = it.duration_s ? (it.duration_s / 60).toFixed(1) + ' د' : '—';
+        const failed = (it.agents_failed || []).length;
+        return `<tr style="border-bottom: 1px solid var(--border-subtle);">
+          <td style="padding: 6px; max-width: 240px;">${(it.question || '').slice(0, 46)}</td>
+          <td style="padding: 6px;">${mins}</td>
+          <td style="padding: 6px;">${it.answer_chars ?? '—'}</td>
+          <td style="padding: 6px;">${it.witnesses ?? '—'}</td>
+          <td style="padding: 6px;">${it.agents_total ?? '—'}</td>
+          <td style="padding: 6px; ${failed ? 'color:#ef4444;font-weight:700;' : ''}">${failed}${failed ? ' (' + it.agents_failed.join('، ').slice(0, 40) + ')' : ''}</td>
+          <td style="padding: 6px;">${a.checked ?? '—'}</td>
+          <td style="padding: 6px;">${a.linked ?? '—'}</td>
+          <td style="padding: 6px;">${ratio}</td>
+          <td style="padding: 6px;">${a.ijma_unattributed ?? 0}</td>
+          <td style="padding: 6px;"><button type="button" class="btn-secondary-action" onclick="downloadResearchReport(${origIdx})" style="font-size: 11px; padding: 4px 9px; white-space: nowrap;">تقرير البحث</button></td></tr>`;
+      }).join('') || '<tr><td colspan="11" style="padding: 10px;">لا بحوث مسجلة بعد — يبدأ التسجيل من أول بحث وكلاء منجز.</td></tr>';
+    }
+  } catch (err) {
+    if (summary) summary.textContent = 'تعذر جلب سجل القياس — تأكد من تسجيل الدخول.';
+  }
+}
+
+function _findAgentConfig(agentName) {
+  try {
+    const groups = window.agentGroups || JSON.parse(localStorage.getItem('almojtahed_agent_groups') || '[]');
+    for (const g of groups || []) {
+      for (const ag of g.agents || []) {
+        if (ag.name === agentName) return { group: g.name, ...ag };
+      }
+    }
+  } catch (e) { }
+  return null;
+}
+
+function _agentAlternative(model) {
+  return {
+    'google/gemini-3.8-flash': '~anthropic/claude-sonnet-latest (أدق تحريرًا وأثبت اتصالًا)',
+    'google/gemini-2.5-flash': 'google/gemini-3.8-flash (أقوى جمعًا وتحريرًا)',
+    'google/gemini-4-argon': '~anthropic/claude-sonnet-latest (أسرع استجابة وأقل مهلات)',
+    'anthropic/claude-opus-5.5': 'openai/gpt-6.1-sol بتفكير high بدل max (الردود الفارغة عند أقصى تفكير تتكرر)',
+    '~anthropic/claude-sonnet-latest': 'google/gemini-3.8-flash بسياق أوسع (مليون رمز) إن كانت شواهده كبيرة'
+  }[model] || 'نموذج سريع واسع السياق (مليون رمز فأكثر) قوي في الجمع والتلخيص الدقيق';
+}
+
+function _agentFixText(name) {
+  const cfg = _findAgentConfig(name);
+  if (!cfg) return `بدّل نموذجه إلى نموذج سريع واسع السياق قوي في الجمع، وخفّف تفكيره درجة، وقلّل شواهده إلى ٨٠ منتقاة — من بطاقة الوكيل في مجموعته.`;
+  const model = cfg.model || 'غير مضبوط';
+  const think = cfg.thinking || 'medium';
+  const topk = cfg.top_k || cfg.topK || 150;
+  const booksN = (cfg.booksScope || cfg.books || []).length;
+  let s = `نموذجه الحالي «${model}» بتفكير ${think} وشواهد ${topk}${booksN ? ` ونطاق ${booksN} كتابًا` : ''}. البديل المقترح: ${ _agentAlternative(model)}`;
+  if (think === 'max' || think === 'high') s += '؛ مع تخفيف التفكير درجة واحدة لأن المهلات والردود الفارغة تكثر عند التفكير العالي مع الشواهد الكبيرة';
+  if (topk > 100) s += `؛ وتقليل الشواهد من ${topk} إلى ٨٠ منتقاة`;
+  if (booksN > 25) s += `؛ وتقسيم نطاق كتبه الواسع (${booksN} كتابًا) إلى وكيلين أضيق`;
+  return s + ' — يعدَّل من بطاقة الوكيل في مجموعته ثم يعاد البحث.';
+}
+
+function downloadResearchReport(idx) {
+  const items = (_researchMetricsCache || {}).items || [];
+  const it = items[idx];
+  if (!it) return;
+  const a = it.audit || {};
+  const ratio = a.checked ? Math.round(100 * ((a.verified || 0) + (a.relocated || 0)) / a.checked) : null;
+  const linkRatio = a.checked && a.linked != null ? Math.round(100 * a.linked / a.checked) : null;
+  const failed = it.agents_failed || [];
+  let verdict = 'قوي';
+  if (failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
+  else if (failed.length === 2 || (ratio !== null && ratio < 65) || (a.ijma_unattributed || 0) > 0) verdict = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
+  const L = [];
+  L.push('تقرير بحث خاص — سجل قياس البحوث في المجتهد');
+  L.push('==========================================');
+  L.push('');
+  L.push(`البحث: ${it.question || '—'}`);
+  L.push(`التاريخ: ${it.ts || '—'} · المجموعة: ${it.group || '—'} · نموذج المدير: ${it.manager_model || '—'}`);
+  L.push(`المدة: ${it.duration_s ? Math.round(it.duration_s / 60 * 10) / 10 + ' دقيقة' : '—'} · حروف الجواب: ${it.answer_chars ?? '—'} · الشواهد المعروضة على المدير: ${it.witnesses ?? '—'} · المجمعة من الوكلاء: ${it.citations_collected ?? '—'}`);
+  L.push('');
+  L.push('الحكم العام: ' + verdict);
+  L.push('');
+  L.push('أولًا: اكتمال الفريق');
+  L.push(`الوكلاء المرسلون: ${it.agents_total ?? '—'} · الساقطون: ${failed.length}${failed.length ? ' (' + failed.join('، ') + ')' : ''}`);
+  if (!failed.length) L.push('لا سقوط: تقارير الفريق كلها حاضرة، والأقسام مبنية على تحرير وكلائها أنفسهم.');
+  const disabledByUser = it.agents_disabled || [];
+  if (disabledByUser.length) L.push(`معطّلون قصدًا بقرار المستخدم (${disabledByUser.length}): ${disabledByUser.join('، ')} — لم يُطلب منهم شيء ولم يُعوّض دورهم، وبُني البحث على النطاق المقلّص بقرار الباحث؛ فلا يُعدّ غيابهم قصورًا في التنفيذ.`);
+  failed.forEach(n => {
+    L.push(`- «${n}»: سقط تقريره رغم إعادة المحاولة بنموذج بديل؛ قسمه في البحث مبني على بطاقات شواهده وبطاقات الخلاف والمقارنة لا على تقريره.`);
+    L.push('  البديل والمعالجة: ' + _agentFixText(n));
+  });
+  L.push('');
+  L.push('ثانيًا: التدقيق التوثيقي');
+  L.push(`نقول دخلت الفحص: ${a.checked ?? '—'} · مربوطة بحواشيها: ${a.linked ?? '—'}${linkRatio !== null ? ' (' + linkRatio + '٪)' : ''} · ثابتة في كتب إحالتها: ${a.verified ?? '—'} · ثابتة في غير موضعها: ${a.relocated ?? '—'} · غير ثابتة آليًا: ${a.unverified ?? '—'} · نسبة الثبوت: ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪)`);
+  if (ratio !== null && ratio < 65) L.push('ملحوظة: الثبوت دون العتبة؛ راجع يدويًا النقول غير الثابتة المؤثرة المذكورة في «سجل التدقيق» ذيل الجواب قبل اعتماد البحث أكاديميًا، وقلّل شواهد وكلاء المسح الواسع لصالح شواهد أضيق منتقاة من كتب الطبقات.');
+  if (linkRatio !== null && linkRatio < 80) L.push('ملحوظة: ربط الحواشي دون ٨٠٪؛ أكثر النقول خارج عين التدقيق لا محكوم عليها. المعالجة: طلب إحالات مرقمة ملاصقة لكل نقل في توجيه المدير قبل إعادة التوليد.');
+  if ((a.tier_warnings || 0) > 0) L.push(`ملحوظة: ${a.tier_warnings} نقل قام على موسوعة مقارنة سندًا وحيدًا؛ يحتاج كل منها أصله من كتب مذهبه قبل الاعتماد.`);
+  if ((a.ijma_flags || 0) > 0) L.push(`ملحوظة: ${a.ijma_flags} دعوى إجماع بلا نقل ظاهر من كتب الإجماع؛ حررها من إجماع ابن المنذر أو مراتب ابن حزم أو خففها إلى «الجمهور».`);
+  if ((a.ijma_unattributed || 0) > 0) L.push(`ملحوظة: ${a.ijma_unattributed} دعوى اتفاق مطلقة بلا نسبة لقائل؛ انسبها لقائلها الموثق أو خففها إلى «الجمهور».`);
+  if ((a.cited_books || 0) > 0) L.push(`الكتب المحال إليها فعلًا في الحواشي: ${a.cited_books} كتابًا${it.witnesses ? ' من ' + it.witnesses + ' شاهدًا معروضًا' : ''}.`);
+  L.push('');
+  L.push('ثالثًا: ملحوظات الحجم والمدة');
+  if (it.duration_s > 1800) L.push(`المدة ${Math.round(it.duration_s / 60)} دقيقة فوق المعتاد؛ قلّل extract_count لوكلاء الجمع والمسح إلى ١٥٠ وأبق العمق لوكلاء التحرير والمناظرة.`);
+  else L.push('المدة والحجم ضمن المعتاد لبحوث الوكلاء الموسوعية، ما لم يكن المطلوب مختصرًا فيقارن بطول الطلب لا بهذا المعتاد.');
+  L.push('');
+  L.push('رابعًا: بدائل عملية مرتبة');
+  let altN = 0;
+  failed.forEach(n => { altN++; L.push(`${altN}. لوكيل «${n}»: ${_agentFixText(n)}`); });
+  if (ratio !== null && ratio < 65) { altN++; L.push(`${altN}. أعد توليد البحث بعد تضييق شواهد وكلاء المسح إلى كتب الطبقات أولًا، وقارن نسبة الثبوت الجديدة بهذه.`); }
+  if ((a.ijma_unattributed || 0) > 0 || (a.ijma_flags || 0) > 0) { altN++; L.push(`${altN}. أضف لبطاقة وكيل الإجماع إلزام التصريح بمصدر كل دعوى اتفاق أو تخفيفها إلى «الجمهور».`); }
+  if (!altN) L.push('لا بدائل مطلوبة: مؤشرات هذا البحث ضمن العتبات؛ يحفظ مرجعًا للمقارنة بالإصدارات القادمة.');
+  if (it.audit_record) {
+    L.push('');
+    L.push('خامسًا: سجل التدقيق الآلي الكامل (كما خرج من المنظومة)');
+    L.push('--------------------------------------------------');
+    L.push(it.audit_record.replace(/\*\*/g, ''));
+  }
+  L.push('');
+  L.push('تنبيه: هذا التقرير بوصلة تنبيه من مؤشرات آلية، لا بديل عن قراءة متن البحث.');
+  const blob = new Blob(['\ufeff' + L.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const dl = document.createElement('a');
+  dl.href = URL.createObjectURL(blob);
+  dl.download = 'تقرير-بحث-' + (it.chat_id || idx) + '.txt';
+  dl.click();
+  URL.revokeObjectURL(dl.href);
+}
+
+function buildMetricsAdvice(data) {
+  const box = document.getElementById('researchMetricsAdvice');
+  if (!box) return;
+  const items = data.items || [];
+  if (!items.length) { box.style.display = 'none'; return; }
+  const advice = [];
+  // 1) الوكلاء الساقطون: اقتراح مسمى لكل وكيل بنموذجه الحالي
+  const failCount = {};
+  items.forEach(it => (it.agents_failed || []).forEach(n => { failCount[n] = (failCount[n] || 0) + 1; }));
+  Object.entries(failCount).forEach(([name, count]) => {
+    const cfg = _findAgentConfig(name);
+    const alt = {
+      'google/gemini-3.8-flash': '~anthropic/claude-sonnet-latest (أدق تحريرًا وأثبت اتصالًا)',
+      'google/gemini-2.5-flash': 'google/gemini-3.8-flash (أقوى جمعًا وتحريرًا)',
+      'google/gemini-4-argon': '~anthropic/claude-sonnet-latest (أسرع استجابة وأقل مهلات)',
+      'anthropic/claude-opus-5.5': 'openai/gpt-6.1-sol بتفكير high بدل max (الردود الفارغة عند أقصى تفكير تتكرر)',
+      '~anthropic/claude-sonnet-latest': 'google/gemini-3.8-flash بسياق أوسع (مليون رمز) إن كانت شواهده كبيرة'
+    };
+    let line = `🔧 <b>${name}</b> سقط في ${count} بحث: `;
+    if (cfg) {
+      const model = cfg.model || 'غير مضبوط';
+      const think = cfg.thinking || 'medium';
+      const topk = cfg.top_k || cfg.topK || 150;
+      const booksN = (cfg.booksScope || cfg.books || []).length;
+      line += `نموذجه الحالي «${model}» بتفكير ${think} وشواهد ${topk}${booksN ? ` ونطاق ${booksN} كتابًا` : ''}. جرّب: `;
+      line += `تبديل النموذج إلى ${alt[model] || 'نموذج سريع واسع السياق (١مليون رمز فأكثر) قوي في الجمع والتلخيص'}؛ `;
+      line += think === 'max' || think === 'high' ? 'وتخفيف التفكير درجة واحدة (المهلات تكثر عند التفكير العالي مع الشواهد الكبيرة)؛ ' : '';
+      line += topk > 100 ? `وتقليل الشواهد من ${topk} إلى ٨٠ منتقاة؛ ` : '';
+      line += booksN > 25 ? `وتقسيم نطاق كتبه الواسع (${booksN}) إلى وكيلين أضيق؛ ` : '';
+      line += 'من بطاقة الوكيل في مجموعته.';
+    } else {
+      line += 'بدّل نموذجه إلى نموذج سريع واسع السياق قوي في الجمع، وخفّف تفكيره درجة، وقلّل شواهده إلى ٨٠ منتقاة من بطاقته.';
+    }
+    advice.push(line);
+  });
+  // 2) آخر بحث: مؤشرات تستدعي معالجة
+  const last = items[items.length - 1];
+  const a = (last && last.audit) || {};
+  if (a.checked) {
+    const ratio = Math.round(100 * ((a.verified || 0) + (a.relocated || 0)) / a.checked);
+    if (ratio < 65) advice.push(`📉 ثبوت آخر بحث ${ratio}٪ (دون عتبة ٦٥٪): راجع يدويًا النقول «غير الثابتة» المهمة في سجل تدقيقه قبل اعتماده، وقلّل شواهد وكلاء المسح الواسع لصالح شواهد أضيق منتقاة في كتب الطبقات.`);
+    if (a.linked != null && a.checked && a.linked / a.checked < 0.8) advice.push(`🔗 ربط الحواشي في آخر بحث ${a.linked}/${a.checked} (دون ٨٠٪): أكثر النقول خارج عين التدقيق؛ عالجها بطلب إحالات مرقمة ملاصقة لكل نقل في توجيه المدير.`);
+  }
+  if ((a.ijma_unattributed || 0) > 0) advice.push(`⚖️ في آخر بحث ${a.ijma_unattributed} دعوى اتفاق مطلقة بلا نسبة: حرّرها بنقل من كتب الإجماع (ابن المنذر، مراتب ابن حزم) أو خفّفها إلى «الجمهور».`);
+  if (last && last.duration_s > 1800) advice.push(`⏱ مدة آخر بحث ${Math.round(last.duration_s / 60)} دقيقة: قلّل extract_count لوكلاء الجمع والمسح إلى ١٥٠، وأبقِ العمق لوكلاء التحرير والمناظرة فقط.`);
+  if (!advice.length) {
+    box.innerHTML = '<b>حلول يدوية مقترحة:</b> لا تنبيهات معالجة على البحوث المسجلة — المؤشرات ضمن العتبات.';
+  } else {
+    box.innerHTML = '<b>حلول يدوية مقترحة لتجويد البحث (من مؤشرات سجلك):</b><br>' + advice.join('<br>');
+  }
+  box.style.display = 'block';
+}
+
+function exportResearchMetrics() {
+  if (!_researchMetricsCache) { loadResearchMetrics(); return; }
+  const esc = v => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const head = ['التاريخ', 'البحث', 'المجموعة', 'نموذج المدير', 'المدة (ثانية)', 'المدة (دقيقة)', 'حروف الجواب', 'الشواهد', 'الشواهد المجمعة', 'الوكلاء', 'عدد الساقطين', 'الوكلاء الساقطون', 'معطّلون قصدًا', 'نقول مفحوصة', 'نقول مربوطة', 'ثابت', 'غير ثابت', 'ثابت في غير موضعه', 'نسبة الثبوت %', 'تنبيهات وسيط', 'دعاوى إجماع', 'اتفاق مطلق بلا نسبة', 'كتب محال إليها', 'قناة دلالية معززة', 'شواهد دلالية'];
+  const lines = [head.join(',')];
+  (_researchMetricsCache.items || []).forEach(it => {
+    const a = it.audit || {};
+    const ratio = a.checked ? Math.round(1000 * ((a.verified || 0) + (a.relocated || 0)) / a.checked) / 10 : '';
+    lines.push([
+      it.ts || '', it.question || '', it.group || '', it.manager_model || '',
+      it.duration_s ?? '', it.duration_s ? Math.round(it.duration_s / 6) / 10 : '',
+      it.answer_chars ?? '', it.witnesses ?? '', it.citations_collected ?? '',
+      it.agents_total ?? '', (it.agents_failed || []).length, (it.agents_failed || []).join('؛ '),
+      (it.agents_disabled || []).join('؛ '),
+      a.checked ?? '', a.linked ?? '', a.verified ?? '', a.unverified ?? '', a.relocated ?? '',
+      ratio, a.tier_warnings ?? '', a.ijma_flags ?? '', a.ijma_unattributed ?? '', a.cited_books ?? '',
+      ({ active: 'مفعّلة وباحثة', unavailable: 'مفعّلة وغير متوفرة', disabled: 'معطّلة بقرار الباحث' })[a.semantic_channel] || '', a.semantic_witnesses ?? ''
+    ].map(esc).join(','));
+  });
+  // BOM ليتعرف Excel على العربية (UTF-8) بلا رموز مشوشة
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'سجل-قياس-البحوث.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadResearchMetricsGuide() {
+  const guide = `شرح قراءة «سجل قياس البحوث» في المجتهد
+====================================
+
+ما هذا السجل؟
+-------------
+سجل قياس البحوث محاسبة آلية تُكتب مع كل بحث ينفّذه فريق وكلاء، بمؤشرات
+ثابتة لا تتغير من بحث لآخر، حتى يعرف الباحث قوة البحث الذي بين يديه
+بأرقام، وحتى تُقاس جودة المنظومة عبر الإصدارات قياسًا واحدًا لا بانطباعات.
+
+كيف تقرأ الجدول سطرًا سطرًا؟
+-----------------------------
+كل سطر بحث واحد. والأعمدة:
+
+• التاريخ والبحث والمجموعة ونموذج المدير: تعريف بالبحث والفريق والنموذج
+  الذي تولّى التوليف النهائي.
+
+• المدة: زمن البحث كله من إرسال الطلب إلى اكتمال الجواب. بحوث الوكلاء
+  الموسوعية تدور غالبًا بين ١٥ و٣٥ دقيقة؛ قصرها جدًا مع حجم كبير علامة
+  استعجال تستحق النظر.
+
+• حروف الجواب: طول المتن الخالص تقريبًا. لا علاقة له بالجودة وحده؛ يقارن
+  بطلبك: فإن طلبت مختصرًا وخرج مطولًا فهذا خلل انضباط لا ثراء.
+
+• الشواهد: عدد المقاطع الموثقة المعروضة على المدير في التوليف. كثرتها
+  بلا ثبوت عالٍ تعني جمعًا واسعًا وانتقاء ضعيفًا.
+
+مؤشرات الفريق (الوكلاء):
+------------------------
+• الوكلاء: عدد وكلاء الفريق الذين أُرسلوا فعلًا في هذا البحث.
+
+• الساقطون: وكلاء تعذّر وصول تقريرهم التحريري رغم إعادة محاولة الاتصال
+  بنموذجهم ثم بنموذج بديل مناظر. «ساقط» لا يعني أن قسمه غائب من البحث؛
+  يعني أن قسمه بُني على بطاقات الشواهد المستخرجة من كتبه وعلى بطاقات
+  الخلاف والمقارنة، لا على تقرير محرر من الوكيل نفسه. وهو معلن في متن
+  البحث وفي ذيله («تنبيه اكتمال الفريق») بأسماء الساقطين.
+  القراءة السليمة: ساقط واحد من ستة عشر يُحتمل ويُنتبه لقسمه عند القراءة؛
+  ثلاثة فأكثر تعني أن البحث ناقص الأركان ويستحق إعادة توليد لا اعتمادًا.
+
+مؤشرات التدقيق التوثيقي (قلب السجل):
+------------------------------------
+التدقيق يطابق النقول المنقولة بين «...» في الجواب على صفحات كتبها، وهو
+تدقيق غير مدمر: لا يحذف ولا يعدل، بل يحصي وينبه للمراجعة البشرية.
+
+• مفحوص: عدد النقول التي دخلت الفحص أصلًا. ليس كل نقول الجواب؛ فما لم
+  يرتبط بحاشيته لم يدخل. فإذا قرأت «مفحوص ٣١» والجواب فيه نقول كثيرة،
+  فاعلم أن عين التدقيق لم تصل إلى الباقي، لا أنها حكمت عليه.
+
+• مربوط: من المفحوص، ما رُبط بحاشيته وكتاب إحالته. نسبة المربوط إلى
+  المفحوص تقيس وصول التدقيق؛ المستهدف ٨٠٪ فأعلى.
+
+• ثابت: نقل وُجد مطابقًا (حرفيًا أو بفروق تنقيط ورسم) في كتاب إحالته
+  وعلى صفحته أو قريبًا منها. هذا أقوى مؤشرات صحة النقل.
+
+• ثابت في غير موضعه: النقل موجود حرفيًا لكن في كتاب آخر من الشواهد أو
+  غير صفحة إحالته؛ تنبيه ربط: أعد ضبط الإحالة لا تهم النقل بالبطلان.
+
+• غير ثابت آليًا: لم يُعثر عليه في كتاب إحالته ولا في كتب الشواهد بفحص
+  آلي متسامح. ليس حكمًا باختلاقه؛ قد يكون نقلًا بالمعنى أو من طبعة أخرى
+  أو بتقديم وتأخير. موضعه: مراجعة بشرية للمواضع المهمة منه قبل الاعتماد
+  الأكاديمي، ولا يهمل الجملةَ لأن بعض نقوله لم يثبت.
+
+• نسبة الثبوت: (ثابت + ثابت في غير موضعه) ÷ مفحوص. عتبة الاعتماد
+  المقترحة ٦٥٪ فأعلى؛ ودونها يقرأ البحث بوصفه مسودة تحتاج تحققًا،
+  ولا سيما إذا اقترنت بسقوط وكلاء.
+
+تنبيهات الضبط:
+--------------
+• تنبيهات وسيط: نقول قامت حاشيتها على موسوعة مقارنة وحدها سندًا وحيدًا.
+  الوسائط مشروعة للمقارنة والضبط بجانب أصل، ممنوعة سندًا وحيدًا لمتن
+  حديث أو قول مذهبي. كل تنبيه يعني: هذا النقل يحتاج أصله قبل الاعتماد.
+
+• دعاوى إجماع: مواضع ادعى فيها المتن إجماعًا أو اتفاقًا ولا نقل ظاهر من
+  كتب الإجماع في الشواهد. الإجماع أثقل الدعاوى؛ موضعه كتاب الإجماع لا
+  انطباع الكاتب.
+
+• اتفاق مطلق بلا نسبة: دعاوى «اتفقوا/باتفاق المذاهب/لا نزاع» المطلقة من
+  عند الكاتب بلا نسبة لقائل أو كتاب، ولو وجدت كتب إجماع في البحث.
+  تحريرها بنقل موثق أو تخفيفها إلى «الجمهور». المستهدف صفر.
+
+• كتب محال إليها: عدد الكتب المختلفة التي أحالت إليها حواشي الجواب
+  فعلًا؛ يقارن بعدد الشواهد ليعرف اتساع قاعدة البحث من ضيقها.
+
+كيف تحكم على بحث من سطره؟ قاعدة سريعة:
+--------------------------------------
+بحث قوي: ساقطون ٠-١، ثبوت ٦٥٪ فأعلى، مربوط ٨٠٪ فأعلى، اتفاق مطلق صفر.
+بحث مقبول بتنبيه: ساقطون ٢، أو ثبوت ٥٠-٦٥٪: اعتمده مسودة وحرر مواضعه
+المنبهة (غير الثابت المهم، والوسيط الوحيد، والاتفاق المطلق).
+بحث ضعيف: ساقطون ٣ فأكثر أو ثبوت دون ٥٠٪: أعد توليده ولا تعتمده مرجعًا.
+وكل حكم من هذه بلا قراءة المتن ناقص؛ فالسجل بوصلة تنبيه لا بديل عن النظر.
+
+حلول يدوية مقترحة:
+-------------------
+تحت جدول السجل تظهر «حلول يدوية مقترحة» مشتقة من مؤشرات بحوثك نفسها:
+لكل وكيل ساقط اقتراح بنموذجه الحالي وبديل مسمى أو موصوف (سريع واسع
+السياق قوي في الجمع)، وتخفيف تفكيره درجة، وتقليل شواهده أو تقسيم نطاق
+كتبه — تنفذها من بطاقة الوكيل في مجموعته ثم تعيد البحث. ولانخفاض الثبوت
+أو الربط أو دعاوى الاتفاق معالجاتها المكتوبة تحت الجدول بعينها.
+
+أين يظهر كل هذا في الجواب نفسه؟
+--------------------------------
+ذيل كل بحث يحمل «سجل التدقيق الآلي (غير مدمر)» بأرقامه وتغطية طبقات
+المذاهب وتنبيهاته، و«تنبيه اكتمال الفريق» إن سقط وكيل. وسجل القياس هنا
+يجمع تلك الأرقام عبر بحوثك كلها للمقارنة والتتبع.
+`;
+  const blob = new Blob(['\ufeff' + guide], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'شرح-قراءة-سجل-قياس-البحوث.txt';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 async function fetchServerHealth(showToast = false) {
   const refreshIcon = document.getElementById('serverRefreshIcon');
   if (refreshIcon) refreshIcon.style.animation = 'spin 0.8s linear infinite';
@@ -1271,7 +1896,9 @@ async function fetchServerHealth(showToast = false) {
       const restoring = !!(restore && restore.active);
 
       if (statQdrantPoints) {
-        if (restoring) {
+        if (restoring && restore.phase === 'install') {
+          statQdrantPoints.textContent = `${Math.round(restore.percent || 0)}%`;
+        } else if (restoring) {
           statQdrantPoints.textContent = `${restore.received_gb} / ${restore.expected_gb} GB`;
         } else if (data.qdrant.points_count) {
           statQdrantPoints.textContent = Number(data.qdrant.points_count).toLocaleString('en-US');
@@ -1284,6 +1911,9 @@ async function fetchServerHealth(showToast = false) {
         if (restoring && restore.phase === 'error') {
           badgeQdrantStatus.textContent = 'تعثّر السحب';
           badgeQdrantStatus.style.color = '#ef4444';
+        } else if (restoring && restore.phase === 'install') {
+          badgeQdrantStatus.textContent = 'جاري التركيب';
+          badgeQdrantStatus.style.color = '#f59e0b';
         } else if (restoring) {
           badgeQdrantStatus.textContent = 'جاري السحب';
           badgeQdrantStatus.style.color = '#f59e0b';
@@ -1294,7 +1924,9 @@ async function fetchServerHealth(showToast = false) {
       }
       if (restoreWrap) restoreWrap.style.display = restoring ? 'block' : 'none';
       if (restoring && restoreBar) restoreBar.style.width = `${Math.max(2, restore.percent || 0)}%`;
-      if (restoring && restoreLabel) restoreLabel.textContent = restore.label || 'جاري سحب سنابشوت المتجهات...';
+      if (restoring && restoreLabel) restoreLabel.textContent = restore.label || (restore.phase === 'install'
+        ? 'جاري تركيب قاعدة البيانات ... فضلا انتظر حتى تكتمل ويتوقف العداد'
+        : 'جاري سحب قاعدة البيانات');
       if (persistWarn) {
         if (restore && restore.persistent === false) {
           persistWarn.style.display = 'block';
@@ -1304,8 +1936,7 @@ async function fetchServerHealth(showToast = false) {
           persistWarn.textContent = '';
         }
       }
-      const restartBtn = document.getElementById('btnRestartQdrant');
-      if (restartBtn) restartBtn.disabled = false;
+      if (!window._qdrantActionBusy) setQdrantActionButtons(false);
     }
 
     // 5. تحديث حالة النموذج
@@ -1513,19 +2144,31 @@ async function downloadEmbeddingModel() {
   }
 }
 
-async function restartQdrantStore() {
-  const btn = document.getElementById('btnRestartQdrant');
+function setQdrantActionButtons(disabled) {
+  window._qdrantActionBusy = !!disabled;
+  const restartBtn = document.getElementById('btnRestartQdrant');
+  const stopBtn = document.getElementById('btnStopQdrant');
+  if (restartBtn) restartBtn.disabled = !!disabled;
+  if (stopBtn) stopBtn.disabled = !!disabled;
+}
+
+function showQdrantFeedback(data, fallback) {
   const feedback = document.getElementById('telemetryFeedbackMsg');
-  if (btn) btn.disabled = true;
+  if (!feedback) return;
+  const ok = data && data.status === 'ok';
+  feedback.style.display = 'block';
+  feedback.style.background = ok ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)';
+  feedback.style.color = ok ? '#10b981' : '#b45309';
+  feedback.textContent = (data && data.message) || fallback;
+}
+
+async function restartQdrantStore() {
+  const feedback = document.getElementById('telemetryFeedbackMsg');
+  setQdrantActionButtons(true);
   try {
     const res = await fetch('/api/system/qdrant/restart', { method: 'POST' });
     const data = await res.json();
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.background = data.status === 'ok' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)';
-      feedback.style.color = data.status === 'ok' ? '#10b981' : '#b45309';
-      feedback.textContent = data.message || 'تمت إعادة تشغيل المخزن';
-    }
+    showQdrantFeedback(data, 'تمت إعادة تشغيل المخزن');
     await fetchServerHealth(false);
   } catch (err) {
     if (feedback) {
@@ -1534,7 +2177,26 @@ async function restartQdrantStore() {
       feedback.textContent = 'تعذر إعادة تشغيل المخزن';
     }
   } finally {
-    if (btn) btn.disabled = false;
+    setQdrantActionButtons(false);
+  }
+}
+
+async function stopQdrantStore() {
+  const feedback = document.getElementById('telemetryFeedbackMsg');
+  setQdrantActionButtons(true);
+  try {
+    const res = await fetch('/api/system/qdrant/stop', { method: 'POST' });
+    const data = await res.json();
+    showQdrantFeedback(data, 'تم إيقاف المخزن');
+    await fetchServerHealth(false);
+  } catch (err) {
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.color = '#ef4444';
+      feedback.textContent = 'تعذر إيقاف المخزن';
+    }
+  } finally {
+    setQdrantActionButtons(false);
   }
 }
 

@@ -37,6 +37,26 @@ const FORCE3D_EXAMPLES = [
   { id: 'lib-callgraph', group: 'قيود على هذا الرسم', label: 'صفوف الأجيال', note: 'على شجرتك: كل جيل في صف، والشيخ فوق التلميذ أو الدليل فوق الاعتراض.' }
 ];
 
+const G6_EXAMPLES = [
+  { id: 'g6-fund', label: 'تدفق', note: 'تدفق من الأصل إلى الفروع: طريق الاستدلال أو الإسناد في اتجاه واحد.' },
+  { id: 'g6-org', label: 'هيكل', note: 'هيكل من الأعلى: المسألة، ثم القول، ثم القائل والدليل.' },
+  { id: 'g6-diagnosis', label: 'مخطط التشخيص', note: 'سؤال ثم تفريع الجواب، كشجرة النوازل والتمييز بين الصور.' },
+  { id: 'g6-snake', label: 'مسار متعرج', note: 'السلسلة الطويلة في صفوف متعرجة حتى تُقرأ داخل الصفحة.' },
+  { id: 'g6-dagre-combo', label: 'طبقات بإطارات', note: 'كل نوع داخل إطار: الأقوال معاً، والأدلة معاً، والرواة معاً.' },
+  { id: 'g6-dagre', label: 'طبقات موجهة', note: 'طبقات موجهة من الأصل إلى ما يتفرع عنه.' },
+  { id: 'g6-compact', label: 'صندوق مدمج', note: 'شجرة مدمجة من اليمين إلى اليسار تناسب النص العربي.' },
+  { id: 'g6-compact-tb', label: 'صندوق من الأعلى', note: 'الأصل في الأعلى والفروع تنزل تحته.' },
+  { id: 'g6-radial', label: 'شعاعي', note: 'الأصل في الوسط والطبقات حوله.' },
+  { id: 'g6-mind-auto', label: 'خريطة ذهنية تلقائية', note: 'الخريطة توزع الفروع على اليمين واليسار بحسب اتساعها.' },
+  { id: 'g6-mind-right', label: 'خريطة ذهنية يميناً', note: 'الفروع كلها إلى اليمين.' },
+  { id: 'g6-mind-left', label: 'خريطة ذهنية يساراً', note: 'الفروع كلها إلى اليسار.' },
+  { id: 'g6-mind-custom', label: 'خريطة ذهنية مخصصة', note: 'طرف يميناً وطرف يساراً، كالجواز والمنع أو الدعوى والاعتراض.' },
+  { id: 'g6-indent-both', label: 'فهرسة من الجانبين', note: 'فهرسة من الجانبين، كأبواب الكتاب وفصوله.' },
+  { id: 'g6-indent-left', label: 'فهرسة إلى اليسار', note: 'فهرسة متدرجة إلى اليسار، كطبقات الإسناد تحت المتن.' },
+  { id: 'g6-fishbone', label: 'عظمة السمكة', note: 'المسألة على العمود، والأقوال والأسباب تتفرع فوقه وتحته.' },
+  { id: 'g6-bar', label: 'أعمدة', note: 'أعمدة بعدد الأقوال والأدلة والرواة والمذاهب في هذا التشجير.' }
+];
+
 const FORCE3D_FONTS = [
   ['Amiri', 'أميري'],
   ['Noto Naskh Arabic', 'نسخ نوتو'],
@@ -136,7 +156,7 @@ function force3dDisplayLink(link, data) {
 }
 
 function force3dExample(id) {
-  return FORCE3D_EXAMPLES.find((item) => item.id === id) || FORCE3D_EXAMPLES[0];
+  return FORCE3D_EXAMPLES.find((item) => item.id === id) || G6_EXAMPLES.find((item) => item.id === id) || FORCE3D_EXAMPLES[0];
 }
 
 function loadClassicScript(src) {
@@ -296,12 +316,14 @@ function force3dMadarId(data) {
   return best ? best.id : null;
 }
 
-function force3dExampleOptions(selected) {
+function force3dExampleOptions(selected, list) {
+  const source = list || FORCE3D_EXAMPLES;
   const groups = [];
-  FORCE3D_EXAMPLES.forEach((item) => {
-    let group = groups.find((entry) => entry.label === item.group);
+  source.forEach((item) => {
+    const label = item.group || 'أمثلة';
+    let group = groups.find((entry) => entry.label === label);
     if (!group) {
-      group = { label: item.group, items: [] };
+      group = { label, items: [] };
       groups.push(group);
     }
     group.items.push(item);
@@ -773,6 +795,306 @@ function mountCytoscape(wrapper, data, exampleId) {
   });
 }
 
+function g6RoleArabic(key) {
+  return {
+    madar: 'مدار', sahabi: 'صحابي', weak: 'ضعيف', issue: 'مسألة', opinion: 'قول', madhhab: 'مذهب',
+    evidence: 'دليل', objection: 'اعتراض', reply: 'جواب', tarjih: 'ترجيح', usul: 'أصل', book: 'كتاب',
+    narrator: 'راوٍ', hadith: 'حديث', prophet: 'نبي', tabi: 'تابعي', taba: 'تابع التابعين'
+  }[key] || 'موضع';
+}
+
+function g6ClearDraw(wrapper) {
+  if (wrapper._g6) {
+    try { wrapper._g6.destroy(); } catch (e) { /* الرسم السابق أُغلق */ }
+    wrapper._g6 = null;
+  }
+  if (wrapper._g2) {
+    try { wrapper._g2.destroy(); } catch (e) { /* الرسم السابق أُغلق */ }
+    wrapper._g2 = null;
+  }
+  const host = wrapper.querySelector('.force3d-g6');
+  if (host) {
+    host.innerHTML = '';
+    host.removeAttribute('dir');
+    host.style.background = '';
+  }
+}
+
+function g6TreeFrom(data) {
+  const byId = new Map(data.nodes.map((node) => [String(node.id), node]));
+  const children = new Map([...byId.keys()].map((id) => [id, []]));
+  const parent = new Map();
+  data.links.forEach((link) => {
+    const source = String(link.source);
+    const target = String(link.target);
+    if (!byId.has(source) || !byId.has(target) || parent.has(target)) return;
+    parent.set(target, source);
+    children.get(source).push(target);
+  });
+  const roots = [...byId.keys()].filter((id) => !parent.has(id));
+  const build = (id) => {
+    const raw = byId.get(id);
+    const name = String(raw.name || '');
+    const row = {
+      id,
+      name,
+      role: raw.role || '',
+      label: name.length > 42 ? name.slice(0, 40) + '…' : (name || '—'),
+      children: (children.get(id) || []).map(build)
+    };
+    if (!row.children.length) delete row.children;
+    return row;
+  };
+  if (roots.length === 1) return build(roots[0]);
+  return { id: '__root', name: data.title || 'الأصل', role: 'مسألة', label: data.title || 'الأصل', children: roots.map(build) };
+}
+
+function g6PaintNode(node, exampleId, family) {
+  const stroke = FORCE3D_COLORS[force3dRoleKey(node.role)] || '#44403c';
+  const question = exampleId === 'g6-diagnosis' && /مسألة|سؤال|دعوى|محل النزاع/.test(`${node.role} ${node.name}`) && String(node.label || '').length < 22;
+  node.type = question ? 'diamond' : 'rect';
+  if (question) node.size = [168, 74];
+  if (exampleId === 'g6-org' && node.role) node.label = `${node.label}\n${node.role}`;
+  node.style = { fill: '#f7f3ec', stroke, radius: 8, lineWidth: 1.4 };
+  node.labelCfg = { position: 'center', style: { fill: '#1c1917', fontSize: 13, fontFamily: `${family}, Amiri, sans-serif` } };
+  (node.children || []).forEach((child) => g6PaintNode(child, exampleId, family));
+}
+
+function g6AssignSides(node, mode) {
+  const kids = node.children || [];
+  kids.forEach((child, index) => {
+    if (mode === 'custom') child.side = /منع|اعتراض|ضعيف|نقيض/.test(`${child.role} ${child.name}`) ? 'left' : (index % 2 ? 'left' : 'right');
+    else child.side = index < Math.ceil(kids.length / 2) ? 'right' : 'left';
+    g6AssignSides(child, mode);
+  });
+}
+
+function g6TreeLayout(exampleId) {
+  const measure = {
+    getId: (node) => node.id,
+    getHeight: () => 36,
+    getWidth: (node) => Math.min(260, Math.max(96, String(node.label || '').length * 12 + 28)),
+    getVGap: () => 18,
+    getHGap: () => 58
+  };
+  if (exampleId === 'g6-compact') return Object.assign({ type: 'compactBox', direction: 'RL' }, measure);
+  if (exampleId === 'g6-fund') return Object.assign({ type: 'compactBox', direction: 'LR' }, measure);
+  if (exampleId === 'g6-compact-tb' || exampleId === 'g6-org' || exampleId === 'g6-diagnosis') return Object.assign({ type: 'compactBox', direction: 'TB' }, measure);
+  if (exampleId === 'g6-radial') return Object.assign({ type: 'dendrogram', direction: 'LR', radial: true }, measure);
+  const sideOf = (node) => (node.data && node.data.side) || 'right';
+  if (exampleId === 'g6-mind-right') return Object.assign({ type: 'mindmap', direction: 'H', getSide: () => 'right' }, measure);
+  if (exampleId === 'g6-mind-left') return Object.assign({ type: 'mindmap', direction: 'H', getSide: () => 'left' }, measure);
+  if (exampleId === 'g6-mind-auto') return Object.assign({ type: 'mindmap', direction: 'H' }, measure);
+  if (exampleId === 'g6-mind-custom') return Object.assign({ type: 'mindmap', direction: 'H', getSide: sideOf }, measure);
+  if (exampleId === 'g6-indent-left') return { type: 'indented', direction: 'LR', indent: 52, dropCap: false, getHeight: () => 32, getVGap: () => 10 };
+  if (exampleId === 'g6-indent-both') return { type: 'indented', direction: 'H', indent: 52, getHeight: () => 32, getVGap: () => 10, getSide: sideOf };
+  return null;
+}
+
+function g6Walk(node, visit) {
+  visit(node);
+  (node.children || []).forEach((child) => g6Walk(child, visit));
+}
+
+function g6PlaceSpecial(data, exampleId) {
+  const tree = g6TreeFrom(data);
+  const places = new Map();
+  if (exampleId === 'g6-fishbone') {
+    places.set(tree.id, { x: 0, y: 0 });
+    (tree.children || []).forEach((child, index) => {
+      const x = (index + 1) * 230;
+      const side = index % 2 === 0 ? -1 : 1;
+      places.set(child.id, { x, y: side * 90 });
+      (child.children || []).forEach((grand, grandIndex) => {
+        places.set(grand.id, { x: x + 36, y: side * (160 + grandIndex * 58) });
+      });
+    });
+  } else {
+    const order = [];
+    g6Walk(tree, (node) => order.push(node.id));
+    const perRow = 4;
+    order.forEach((id, index) => {
+      const row = Math.floor(index / perRow);
+      const col = index % perRow;
+      places.set(id, { x: (row % 2 ? perRow - 1 - col : col) * 210, y: row * 88 });
+    });
+  }
+  data.nodes.forEach((node, index) => {
+    if (!places.has(String(node.id))) places.set(String(node.id), { x: (index % 4) * 210, y: 360 });
+  });
+  return places;
+}
+
+function g6MountBars(wrapper, host, data, family) {
+  if (!window.G2 || typeof window.G2.Chart !== 'function') {
+    if (typeof showToast === 'function') showToast('تعذر تشغيل أعمدة G2');
+    return;
+  }
+  const counts = new Map();
+  data.nodes.forEach((node) => {
+    const role = g6RoleArabic(force3dRoleKey(node.role));
+    counts.set(role, (counts.get(role) || 0) + 1);
+  });
+  const rows = [...counts.entries()].map(([role, count]) => ({ role: `\u202B${role}\u202C`, count }));
+  host.setAttribute('dir', 'ltr');
+  host.style.background = '#f7f3ec';
+  const chart = new window.G2.Chart({ container: host, autoFit: true, height: host.clientHeight || 460, padding: [28, 36, 44, 168] });
+  chart.data(rows);
+  chart.coordinate().transpose();
+  chart.scale('count', { alias: 'العدد', nice: true });
+  chart.axis('role', { label: { style: { fontFamily: `${family}, Amiri, sans-serif`, fontSize: 15, fill: '#1c1917' } } });
+  chart.interval().position('role*count').color('role', ['#9a3412', '#1d4e89', '#3f6212', '#b45309', '#7c3aed', '#0f766e']);
+  chart.legend(false);
+  chart.render();
+  wrapper._g2 = chart;
+}
+
+function renderForce3dG6(wrapper) {
+  const host = wrapper.querySelector('.force3d-g6');
+  const data = wrapper._forceData;
+  if (!host || !data || !window.G6) {
+    if (typeof showToast === 'function') showToast('تعذر تشغيل G6 في هذه الصفحة');
+    return;
+  }
+  const exampleId = wrapper._g6Example || 'g6-compact';
+  const example = G6_EXAMPLES.find((item) => item.id === exampleId) || G6_EXAMPLES.find((item) => item.id === 'g6-compact');
+  const detail = wrapper.querySelector('.force3d-detail');
+  if (detail && example) detail.textContent = example.note;
+  g6ClearDraw(wrapper);
+  const font = wrapper.querySelector('[data-force3d-font]');
+  const family = (font && font.value) || 'Amiri';
+  if (exampleId === 'g6-bar') {
+    g6MountBars(wrapper, host, data, family);
+    return;
+  }
+  const treeLayout = g6TreeLayout(exampleId);
+  const edgeType = ['g6-compact-tb', 'g6-org', 'g6-diagnosis', 'g6-radial'].includes(exampleId) ? 'cubic-vertical' : 'cubic-horizontal';
+  try {
+    if (treeLayout) {
+      const tree = g6TreeFrom(data);
+      if (exampleId === 'g6-mind-auto' || exampleId === 'g6-indent-both') g6AssignSides(tree, 'both');
+      if (exampleId === 'g6-mind-custom') g6AssignSides(tree, 'custom');
+      g6PaintNode(tree, exampleId, family);
+      const graph = new window.G6.TreeGraph({
+        container: host,
+        width: host.clientWidth || 720,
+        height: host.clientHeight || 460,
+        fitView: true,
+        fitViewPadding: 28,
+        animate: true,
+        modes: { default: ['drag-canvas', 'zoom-canvas', 'collapse-expand'] },
+        defaultNode: { type: 'rect' },
+        defaultEdge: {
+          type: edgeType,
+          style: {
+            stroke: exampleId === 'g6-fund' ? '#1d4e89' : '#a8a29e',
+            lineWidth: exampleId === 'g6-fund' ? 2.4 : 1.2,
+            endArrow: { path: window.G6.Arrow.triangle(8, 10, 0), fill: exampleId === 'g6-fund' ? '#1d4e89' : '#a8a29e' }
+          }
+        },
+        layout: treeLayout
+      });
+      graph.data(tree);
+      graph.render();
+      graph.fitView(28);
+      wrapper._g6 = graph;
+      return;
+    }
+    const places = exampleId === 'g6-fishbone' || exampleId === 'g6-snake' ? g6PlaceSpecial(data, exampleId) : null;
+    const comboOf = new Map();
+    const combos = [];
+    if (exampleId === 'g6-dagre-combo') {
+      data.nodes.forEach((node) => {
+        const key = force3dRoleKey(node.role);
+        const id = `combo-${key}`;
+        comboOf.set(String(node.id), id);
+        if (!combos.some((combo) => combo.id === id)) combos.push({ id, label: g6RoleArabic(key) });
+      });
+    }
+    const nodes = data.nodes.map((node) => {
+      const label = String(node.name || '');
+      const stroke = FORCE3D_COLORS[force3dRoleKey(node.role)] || '#44403c';
+      const row = {
+        id: String(node.id),
+        type: 'rect',
+        label: label.length > 42 ? label.slice(0, 40) + '…' : label,
+        size: [Math.min(260, Math.max(96, label.length * 12 + 24)), 36],
+        style: { fill: '#f7f3ec', stroke, radius: 8, lineWidth: 1.4 },
+        labelCfg: { position: 'center', style: { fill: '#1c1917', fontSize: 13, fontFamily: `${family}, Amiri, sans-serif` } }
+      };
+      if (places) Object.assign(row, places.get(String(node.id)) || { x: 0, y: 0 });
+      if (comboOf.has(row.id)) row.comboId = comboOf.get(row.id);
+      return row;
+    });
+    const edges = data.links.map((link, index) => ({ id: `e${index}`, source: String(link.source), target: String(link.target), label: link.label || '' }));
+    const graph = new window.G6.Graph({
+      container: host,
+      width: host.clientWidth || 720,
+      height: host.clientHeight || 460,
+      fitView: true,
+      fitViewPadding: 28,
+      groupByTypes: false,
+      modes: { default: ['drag-canvas', 'zoom-canvas', 'drag-node'] },
+      layout: places ? undefined : { type: 'dagre', rankdir: 'TB', nodesep: 28, ranksep: 54 },
+      defaultNode: { type: 'rect' },
+      defaultCombo: {
+        type: 'rect',
+        style: { fill: 'rgba(244,239,230,0.55)', stroke: '#b7aa96', radius: 10 },
+        labelCfg: { position: 'top', refY: -16, style: { fill: '#44403c', fontFamily: `${family}, Amiri, sans-serif`, fontSize: 13 } }
+      },
+      defaultEdge: {
+        type: exampleId === 'g6-fishbone' ? 'polyline' : 'cubic-horizontal',
+        style: { stroke: '#a8a29e', endArrow: { path: window.G6.Arrow.triangle(8, 10, 0), fill: '#a8a29e' } },
+        labelCfg: { style: { fill: '#44403c', fontSize: 12, fontFamily: `${family}, Amiri, sans-serif` } }
+      }
+    });
+    graph.data({ nodes, edges, combos });
+    graph.render();
+    graph.fitView(28);
+    wrapper._g6 = graph;
+  } catch (err) {
+    console.warn('G6 layout error:', err);
+    if (exampleId !== 'g6-compact') {
+      if (detail) detail.textContent = 'تعذر هذا المثال، وجُرّب الصندوق المدمج.';
+      wrapper._g6Example = 'g6-compact';
+      const select = wrapper.querySelector('[data-force3d-example]');
+      if (select) select.value = 'g6-compact';
+      renderForce3dG6(wrapper);
+    }
+  }
+}
+
+function fillForce3dExamples(wrapper) {
+  const select = wrapper.querySelector('[data-force3d-example]');
+  if (!select) return;
+  const ali = wrapper._library === 'g6';
+  const selected = ali ? (wrapper._g6Example || 'g6-compact') : (wrapper._example || 'tree');
+  select.innerHTML = force3dExampleOptions(selected, ali ? G6_EXAMPLES : FORCE3D_EXAMPLES);
+  select.value = selected;
+}
+
+function showForce3dLibrary(wrapper, engine) {
+  const stage = wrapper.querySelector('.force3d-stage:not(.force3d-g6)');
+  const host = wrapper.querySelector('.force3d-g6');
+  if (stage) stage.hidden = engine === 'g6';
+  if (host) host.hidden = engine !== 'g6';
+  wrapper._library = engine;
+  wrapper.querySelectorAll('[data-force3d-lib]').forEach((button) => {
+    const active = button.dataset.force3dLib === engine;
+    button.style.background = active ? 'var(--accent-clay)' : '';
+    button.style.color = active ? '#fff' : '';
+  });
+  fillForce3dExamples(wrapper);
+  if (engine === 'g6') renderForce3dG6(wrapper);
+  else if (wrapper._cy) {
+    const example = force3dExample(wrapper._example || 'tree');
+    const detail = wrapper.querySelector('.force3d-detail');
+    if (detail) detail.textContent = `${example.note} الوصلات: ${wrapper._forceData.links.length}.`;
+    wrapper._cy.resize();
+    wrapper._cy.fit(undefined, 28);
+  }
+}
+
 function renderForce3dBlocks(container) {
   if (!container) return;
   const blocks = [];
@@ -801,6 +1123,12 @@ function renderForce3dBlocks(container) {
             <span>${force3dEscape(title)}</span>
           </div>
           <div class="force3d-tools">
+            <button type="button" class="btn-chart-type" data-force3d-lib="cytoscape" style="background:var(--accent-clay);color:#fff">تشجير</button>
+            <button type="button" class="btn-chart-type" data-force3d-lib="g6">تشجير مفرغ</button>
+            <button type="button" class="btn-chart-type" data-force3d-share="1" title="مشاركة">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+              <span>مشاركة</span>
+            </button>
             <label class="force3d-example-label">
               <span>المثال</span>
               <select data-force3d-example dir="rtl">
@@ -847,6 +1175,7 @@ function renderForce3dBlocks(container) {
           </div>
         </div>
         <div class="force3d-stage"></div>
+        <div class="force3d-stage force3d-g6" hidden></div>
         <div class="force3d-detail"></div>
         <div class="force3d-code" hidden></div>
       `;
@@ -876,8 +1205,14 @@ function onForce3dExampleChange(event) {
   const wrapper = select.closest('.force3d-render-wrapper');
   if (!wrapper || !wrapper._forceData) return;
   const example = force3dExample(select.value);
-  wrapper._example = example.id;
   const detail = wrapper.querySelector('.force3d-detail');
+  if (wrapper._library === 'g6') {
+    wrapper._g6Example = example.id;
+    if (detail) detail.textContent = example.note;
+    renderForce3dG6(wrapper);
+    return;
+  }
+  wrapper._example = example.id;
   if (wrapper._libraryMode || !wrapper._cy) {
     mountCytoscape(wrapper, wrapper._forceData, example.id);
     return;
@@ -998,11 +1333,111 @@ function applyForce3dType(wrapper) {
   });
 }
 
+function force3dTitle(wrapper) {
+  const titleNode = wrapper.querySelector('.isnad-render-title span:last-child');
+  return (titleNode && titleNode.textContent || 'مشجر').trim() || 'مشجر';
+}
+
+function force3dShareName(title, ext) {
+  const base = String(title || 'مشجر').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'مشجر';
+  return `${base}.${ext}`;
+}
+
+function captureForce3dImage(wrapper) {
+  const bg = wrapper._bg || '#f7f3ec';
+  if (wrapper._library === 'g6' && wrapper._g2) {
+    const canvas = wrapper.querySelector('.force3d-g6 canvas');
+    if (!canvas) return Promise.reject(new Error('empty'));
+    const copy = document.createElement('canvas');
+    copy.width = canvas.width;
+    copy.height = canvas.height;
+    const ctx = copy.getContext('2d');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, copy.width, copy.height);
+    ctx.drawImage(canvas, 0, 0);
+    return new Promise((resolve, reject) => {
+      copy.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('empty'))), 'image/png');
+    });
+  }
+  if (wrapper._library === 'g6' && wrapper._g6 && typeof wrapper._g6.toFullDataURL === 'function') {
+    return new Promise((resolve, reject) => {
+      try {
+        wrapper._g6.toFullDataURL((url) => {
+          fetch(url).then((res) => res.blob()).then(resolve, reject);
+        }, 'image/png', { backgroundColor: bg, padding: 16 });
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+  const cy = wrapper._cy;
+  if (!cy) return Promise.reject(new Error('empty'));
+  return Promise.resolve(cy.png({ output: 'blob-promise', bg, full: true, scale: 2 }));
+}
+
+async function shareForce3dFile(file, title) {
+  const payload = { files: [file], title: title || 'مشجر' };
+  if (typeof navigator.share !== 'function') return false;
+  if (typeof navigator.canShare === 'function' && !navigator.canShare(payload)) return false;
+  try {
+    await navigator.share(payload);
+  } catch (err) {
+    if (err && err.name === 'AbortError') return true;
+  }
+  return true;
+}
+
+async function shareCapturedImage(blob, title, emptyMessage) {
+  if (!blob || blob.size < 80) {
+    if (typeof showToast === 'function') showToast(emptyMessage || 'تعذر تجهيز الصورة للمشاركة');
+    return;
+  }
+  if (typeof navigator.share !== 'function') {
+    if (typeof showToast === 'function') showToast('هذا النظام لا يفتح قائمة المشاركة');
+    return;
+  }
+  const image = new File([blob], force3dShareName(title, 'png'), { type: 'image/png' });
+  if (await shareForce3dFile(image, title)) return;
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+    const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${force3dEscape(title)}</title></head><body style="margin:0;background:#f7f3ec"><img alt="" src="${dataUrl}" style="width:100%"></body></html>`;
+    const res = await fetch('/api/projects/export-pdf', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html, title })
+    });
+    if (!res.ok) throw new Error('pdf');
+    const pdf = await res.blob();
+    if (!pdf || pdf.size < 800) throw new Error('pdf');
+    const shared = await shareForce3dFile(new File([pdf], force3dShareName(title, 'pdf'), { type: 'application/pdf' }), title);
+    if (!shared && typeof showToast === 'function') showToast('هذا النظام لا يتيح مشاركة الملف عبر قائمة المشاركة');
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('تعذر تجهيز ملف المشاركة');
+  }
+}
+
+async function shareForce3d(wrapper) {
+  let blob;
+  try {
+    blob = await captureForce3dImage(wrapper);
+  } catch (err) {
+    blob = null;
+  }
+  await shareCapturedImage(blob, force3dTitle(wrapper), 'تعذر تجهيز صورة التشجير للمشاركة');
+}
+
+window.shareCapturedImage = shareCapturedImage;
+
 function downloadForce3dShot(wrapper) {
   const cy = wrapper && wrapper._cy;
   if (!cy) return;
-  const titleNode = wrapper.querySelector('.isnad-render-title span:last-child');
-  const title = (titleNode && titleNode.textContent || 'مشجر').trim() || 'مشجر';
+  const title = force3dTitle(wrapper);
   const shot = cy.png({ output: 'blob-promise', bg: wrapper._bg || '#f7f3ec', full: true, scale: 2 });
   Promise.resolve(shot).then((blob) => {
     if (!blob) return;
@@ -1032,6 +1467,11 @@ function setForce3dExpanded(wrapper, expanded) {
     if (wrapper._homeParent) wrapper._homeParent.insertBefore(wrapper, wrapper._homeNext);
   }
   requestAnimationFrame(() => {
+    const host = wrapper.querySelector('.force3d-g6');
+    if (wrapper._library === 'g6' && wrapper._g6 && host) {
+      wrapper._g6.changeSize(host.clientWidth, host.clientHeight);
+      wrapper._g6.fitView(24);
+    }
     if (!cy || !stage || !stage.isConnected) return;
     cy.resize();
     cy.fit(undefined, 28);
@@ -1051,22 +1491,41 @@ function onForce3dStyleChange(event) {
 }
 
 function onForce3dClick(event) {
-  const button = event.target.closest('[data-force3d-fit], [data-force3d-expand], [data-force3d-close], [data-force3d-code], [data-force3d-reset], [data-force3d-shot]');
+  const button = event.target.closest('[data-force3d-lib], [data-force3d-fit], [data-force3d-expand], [data-force3d-close], [data-force3d-code], [data-force3d-reset], [data-force3d-shot], [data-force3d-share]');
   if (!button) return;
   const wrapper = button.closest('.force3d-render-wrapper');
   if (!wrapper) return;
   event.preventDefault();
+  if (button.dataset.force3dLib) {
+    showForce3dLibrary(wrapper, button.dataset.force3dLib);
+    return;
+  }
   const cy = wrapper._cy;
-  if (button.dataset.force3dFit && cy) {
-    cy.resize();
-    cy.fit(undefined, 28);
+  if (button.dataset.force3dFit) {
+    if (wrapper._library === 'g6' && wrapper._g6) {
+      wrapper._g6.fitView(24);
+      return;
+    }
+    if (cy) {
+      cy.resize();
+      cy.fit(undefined, 28);
+    }
     return;
   }
   if (button.dataset.force3dReset) {
     restoreForce3dPositions(wrapper);
     return;
   }
+  if (button.dataset.force3dShare) {
+    shareForce3d(wrapper);
+    return;
+  }
   if (button.dataset.force3dShot) {
+    if (wrapper._library === 'g6' && wrapper._g6) {
+      const title = force3dTitle(wrapper);
+      wrapper._g6.downloadFullImage(title, 'image/png', { backgroundColor: wrapper._bg || '#f7f3ec', padding: 16 });
+      return;
+    }
     downloadForce3dShot(wrapper);
     return;
   }

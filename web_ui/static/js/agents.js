@@ -110,9 +110,11 @@ async function loadAgentGroups() {
 
   // ملف الخادم هو المرجع بعد الأرشفة والاسترجاع، بما في ذلك القائمة الفارغة
   let storedOnServer = false;
+  let serverChecked = false;
   try {
     const res = await fetch('/api/agent-groups');
     if (res.ok) {
+      serverChecked = true;
       const serverGroups = await res.json();
       storedOnServer = res.headers.get('X-Agent-Groups-Stored') === '1';
       if (Array.isArray(serverGroups) && (storedOnServer || serverGroups.length > 0)) {
@@ -124,27 +126,8 @@ async function loadAgentGroups() {
     console.warn('Could not fetch server agent groups:', err);
   }
 
-  // المجموعة الافتراضية تُنشأ مرة واحدة فقط إذا لم يُحفظ شيء بعد على الخادم
-  if ((!agentGroups || agentGroups.length === 0) && !storedOnServer) {
-    let initialAgents = [...DEFAULT_AGENTS];
-    const legacyRaw = localStorage.getItem(LEGACY_AGENTS_STORAGE_KEY);
-    if (legacyRaw) {
-      try {
-        const parsed = JSON.parse(legacyRaw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          initialAgents = parsed;
-        }
-      } catch (e) {}
-    }
-
-    agentGroups = [
-      {
-        id: 'group_heritage_default',
-        name: 'مجموعة العلوم التراثية الأساسية',
-        desc: 'وكلاء الفقه وأصوله، والحديث ورجاله، والتفسير والتاريخ لتحضير مسائل المخزن والربط مع الشاملة.',
-        agents: initialAgents
-      }
-    ];
+  // وكلاء محفوظون في هذا الجهاز ولم يصلوا الخادم بعد: يُرفعون الآن إلى قاعدة بيانات العضو
+  if (serverChecked && !storedOnServer && Array.isArray(agentGroups) && agentGroups.length > 0) {
     saveAgentGroups();
   }
 
@@ -175,11 +158,15 @@ function saveAgentGroups(updatedGroups = null) {
     if (typeof renderGroupsTable === 'function') {
       renderGroupsTable();
     }
-    // حفظ دائم في ملف خادم المنظومة لحماية البيانات عند مسح الكاش
+    // حفظ دائم في قاعدة بيانات العضو على الخادم لحماية البيانات عند مسح الكاش
     fetch('/api/agent-groups', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(agentGroups)
+    }).then((res) => {
+      if (!res.ok && typeof showToast === 'function') {
+        showToast('تعذر حفظ الوكلاء على الخادم. تحقق من تسجيل الدخول ثم أعد المحاولة');
+      }
     }).catch(err => console.warn('Sync agent groups to server error:', err));
   } catch (e) {
     console.error('Error saving agent groups:', e);
@@ -415,7 +402,7 @@ function downloadAgentJsonFile(filename, dataObj) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
 
 // 1. تصدير مجموعة وكلاء كاملة كملف JSON
@@ -650,16 +637,49 @@ function renderAgentsGrid() {
     grid.innerHTML = `
       <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; background: var(--bg-surface); border: 1px dashed var(--border-subtle); border-radius: var(--radius-md);">
         <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 14px;">لا يوجد وكلاء في هذه المجموعة بعد.</p>
-        <button type="button" class="btn-flat-primary" onclick="openAddAgentModal()">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          <span>إضافة وكيل مساعد جديد لهذه المجموعة</span>
-        </button>
+        <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+          <button type="button" class="btn-flat-secondary" onclick="openAddMcpModal()">
+            <span>إضافة MCP جديد</span>
+          </button>
+          <button type="button" class="btn-flat-primary" onclick="openAddAgentModal()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            <span>إضافة وكيل مساعد جديد لهذه المجموعة</span>
+          </button>
+        </div>
       </div>
     `;
     return;
   }
 
   grid.innerHTML = agents.map((agent) => {
+    if (agent.kind === 'mcp') {
+      const tools = Array.isArray(agent.tools) ? agent.tools : [];
+      const isEnabled = agent.enabled !== false && agent.active !== false;
+      return `
+      <div class="agent-card" id="card_${agent.id}">
+        <div class="agent-card-header">
+          <div class="agent-title-row">
+            <span class="agent-name">${escapeHtml(agent.name)}</span>
+            <span class="chat-agent-scope-badge">MCP</span>
+          </div>
+          <label class="switch-toggle" title="${isEnabled ? 'تعطيل' : 'تفعيل'}">
+            <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleAgentActive('${agent.id}', this.checked)">
+            <span class="slider-toggle"></span>
+          </label>
+        </div>
+        <p class="agent-desc">${escapeHtml(agent.url || '')}</p>
+        <div class="agent-params-badge-grid">
+          <span class="param-badge">${tools.length} فروع محددة</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-light); background: var(--bg-canvas); padding: 8px 10px; border-radius: var(--radius-sm); border: 1px dashed var(--border-subtle); margin-top: 6px; line-height: 1.5; max-height: 64px; overflow-y: auto;">
+          ${escapeHtml(tools.map(tool => tool.name).join('، ') || 'بلا فروع')}
+        </div>
+        <div class="agent-card-footer">
+          <button type="button" class="btn-flat-secondary" onclick="openAddMcpModal('${agent.id}')" style="font-size: 12.5px; padding: 4px 12px;">تعديل</button>
+          <button type="button" class="btn-flat-secondary" onclick="deleteAgent('${agent.id}')" style="font-size: 12.5px; padding: 4px 10px; color: #c0392b;">حذف</button>
+        </div>
+      </div>`;
+    }
     const booksList = (agent.booksScope && Array.isArray(agent.booksScope)) ? agent.booksScope : (agent.books && Array.isArray(agent.books)) ? agent.books : [];
     const scopeCount = booksList.length;
     const scopeLabel = scopeCount > 0 ? `نطاق: ${scopeCount} كتب` : 'نطاق: جميع كتب الشاملة';
@@ -1004,6 +1024,10 @@ function openAddAgentModal() {
   // تعيين النموذج الافتراضي وقائمة النماذج والتفكير
   document.getElementById('agentSelectedModelId').value = 'anthropic/claude-3.7-sonnet';
   document.getElementById('agentThinkingSelect').value = 'medium';
+  const _smNew = document.getElementById('agentSearchModeSelect');
+  if (_smNew) _smNew.value = 'hybrid';
+  const _dirNew = document.getElementById('agentDirectorInput');
+  if (_dirNew) _dirNew.checked = false;
   populateAgentModelDropdown('anthropic/claude-3.7-sonnet');
 
   // تعيين نطاق الكتب لجميع كتب الشاملة
@@ -1028,6 +1052,10 @@ function editAgent(id) {
 
   const agent = currentGroup.agents.find(a => a.id === id);
   if (!agent) return;
+  if (agent.kind === 'mcp') {
+    openAddMcpModal(agent.id);
+    return;
+  }
 
   document.getElementById('editAgentId').value = agent.id;
   document.getElementById('agentModalTitle').textContent = `تعديل ${agent.name}`;
@@ -1040,6 +1068,10 @@ function editAgent(id) {
   document.getElementById('agentTokensInput').value = agentContextTokens(agent);
   document.getElementById('agentPoolInput').value = agent.poolSize || agent.pool_size || 250;
   document.getElementById('agentTopRerankInput').value = agent.topK || agent.top_k || agent.topRerank || agent.top_rerank || 40;
+  const _sm = document.getElementById('agentSearchModeSelect');
+  if (_sm) _sm.value = agent.search_mode || ((agent.use_hybrid === false) ? 'semantic' : 'hybrid');
+  const _dir = document.getElementById('agentDirectorInput');
+  if (_dir) _dir.checked = !!(agent.is_director || agent.role === 'director' || agent.kind === 'director');
 
   // تعيين النموذج ومستوى التفكير المخزنين
   const modelToSet = agent.model || 'anthropic/claude-3.7-sonnet';
@@ -1087,6 +1119,134 @@ function handleAgentModalOverlayClick(e) {
   }
 }
 
+function openAddMcpModal(agentId) {
+  const urlInput = document.getElementById('mcpUrlInput');
+  const nameInput = document.getElementById('mcpNameInput');
+  const status = document.getElementById('mcpVerifyStatus');
+  const block = document.getElementById('mcpAdoptBlock');
+  const list = document.getElementById('mcpToolList');
+  const hidden = document.getElementById('editMcpId');
+  window._mcpInspectTools = [];
+  if (status) status.textContent = '';
+  if (block) block.style.display = 'none';
+  if (list) list.innerHTML = '';
+  const group = agentGroups.find(item => item.id === currentActiveGroupId);
+  const existing = agentId && group ? (group.agents || []).find(item => item.id === agentId && item.kind === 'mcp') : null;
+  if (hidden) hidden.value = existing ? existing.id : '';
+  if (urlInput) urlInput.value = existing ? (existing.url || '') : '';
+  if (nameInput) nameInput.value = existing ? (existing.name || '') : '';
+  document.getElementById('mcpModalTitle').textContent = existing ? `تعديل ${existing.name}` : 'إضافة MCP جديد';
+  document.getElementById('mcpModalOverlay').classList.add('open');
+  if (existing && Array.isArray(existing.tools) && existing.tools.length) {
+    window._mcpInspectTools = existing.tools.slice();
+    renderMcpToolChoices(existing.tools, new Set(existing.tools.map(tool => tool.name)));
+  }
+}
+
+function closeMcpModal() {
+  document.getElementById('mcpModalOverlay')?.classList.remove('open');
+}
+
+function renderMcpToolChoices(tools, selected) {
+  const list = document.getElementById('mcpToolList');
+  const block = document.getElementById('mcpAdoptBlock');
+  if (block) block.style.display = 'block';
+  if (!list) return;
+  list.innerHTML = (tools || []).map(tool => `
+    <label style="display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; font-size: 13px;">
+      <input type="checkbox" value="${escapeHtml(tool.name)}" ${selected.has(tool.name) ? 'checked' : ''}>
+      <span><strong>${escapeHtml(tool.name)}</strong><br><span style="color: var(--text-muted);">${escapeHtml(tool.description || '')}</span></span>
+    </label>`).join('') || '<p>لا توجد فروع في هذا الخادم.</p>';
+}
+
+function useInternalMcp() {
+  const input = document.getElementById('mcpUrlInput');
+  if (input) input.value = window.location.origin + '/mcp';
+  const nameInput = document.getElementById('mcpNameInput');
+  if (nameInput && !nameInput.value.trim()) nameInput.value = 'المجتهد';
+  verifyMcpUrl();
+}
+
+async function verifyMcpUrl() {
+  const url = (document.getElementById('mcpUrlInput')?.value || '').trim();
+  const status = document.getElementById('mcpVerifyStatus');
+  const button = document.getElementById('mcpVerifyBtn');
+  if (!url) {
+    showToast('ضع رابط خادم MCP');
+    return;
+  }
+  if (button) button.disabled = true;
+  if (status) status.textContent = 'جارٍ التحقق من الرابط...';
+  const control = new AbortController();
+  const timer = setTimeout(() => control.abort(), 45000);
+  try {
+    const response = await fetch('/api/mcp/inspect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: control.signal
+    });
+    const data = await response.json();
+    if (!response.ok || data.status === 'error') {
+      if (status) status.textContent = data.error || 'تعذر قراءة الخادم';
+      return;
+    }
+    window._mcpInspectTools = data.tools || [];
+    if (!window._mcpInspectTools.length) {
+      if (status) status.textContent = 'اتصل الرابط لكن الخادم لم يرجع أي فرع. تأكد أنه خادم MCP يعمل.';
+      return;
+    }
+    renderMcpToolChoices(window._mcpInspectTools, new Set(window._mcpInspectTools.map(tool => tool.name)));
+    if (status) status.textContent = `تم العثور على ${window._mcpInspectTools.length} فرع. حدّد ما تريد ثم سمِّه.`;
+  } catch (e) {
+    if (status) status.textContent = e && e.name === 'AbortError'
+      ? 'انتهت مهلة الاتصال بالخادم دون رد. تحقق من الرابط ثم أعد المحاولة.'
+      : 'تعذر الاتصال بالخادم';
+  } finally {
+    clearTimeout(timer);
+    if (button) button.disabled = false;
+  }
+}
+
+function adoptMcpBranches() {
+  const group = agentGroups.find(item => item.id === currentActiveGroupId);
+  if (!group) return;
+  if (!group.agents) group.agents = [];
+  const name = (document.getElementById('mcpNameInput')?.value || '').trim();
+  const url = (document.getElementById('mcpUrlInput')?.value || '').trim();
+  const chosen = [...document.querySelectorAll('#mcpToolList input:checked')].map(box =>
+    (window._mcpInspectTools || []).find(tool => tool.name === box.value)
+  ).filter(Boolean);
+  if (!name) {
+    showToast('سمِّ هذه الفروع، مثل: وكيل كتب السنة');
+    return;
+  }
+  if (!chosen.length) {
+    showToast('حدّد فرعاً واحداً على الأقل');
+    return;
+  }
+  const id = document.getElementById('editMcpId')?.value || ('mcp_agent_' + Date.now());
+  const record = {
+    id,
+    kind: 'mcp',
+    name,
+    url,
+    tools: chosen,
+    desc: `فروع MCP: ${chosen.map(tool => tool.name).join('، ')}`,
+    enabled: true,
+    active: true,
+    books: [],
+    booksScope: []
+  };
+  const index = group.agents.findIndex(agent => agent.id === id);
+  if (index === -1) group.agents.push(record);
+  else group.agents[index] = { ...group.agents[index], ...record };
+  saveAgentGroups();
+  renderAgentsGrid();
+  closeMcpModal();
+  showToast(`اعتُمد «${name}» ضمن المجموعة`);
+}
+
 // حفظ الوكيل داخل المجموعة المحددة
 function saveAgentFromModal() {
   const currentGroup = agentGroups.find(g => g.id === currentActiveGroupId) || agentGroups[0];
@@ -1106,7 +1266,14 @@ function saveAgentFromModal() {
     return;
   }
 
+  const _isDirector = !!document.getElementById('agentDirectorInput')?.checked;
+  const _searchMode = document.getElementById('agentSearchModeSelect')?.value || 'hybrid';
   const agentData = {
+    is_director: _isDirector,
+    role: _isDirector ? 'director' : '',
+    search_mode: _searchMode,
+    use_hybrid: _searchMode !== 'semantic',
+    extract_count: parseInt(document.getElementById('agentTopRerankInput').value || document.getElementById('agentTopKInput').value || 40),
     id: id || ('agent_' + Date.now()),
     name: name,
     desc: desc || 'وكيل تراثي مساعد',
@@ -1141,16 +1308,35 @@ function saveAgentFromModal() {
     currentGroup.agents.push(agentData);
   }
 
+  // قائد واحد في المجموعة: نزع القيادة عن غير المعيّن
+  if (_isDirector) {
+    const savedId = id || agentData.id;
+    (currentGroup.agents || []).forEach(a => {
+      if (a.id !== savedId && (a.is_director || a.role === 'director')) {
+        a.is_director = false;
+        if (a.role === 'director') a.role = '';
+      }
+    });
+  }
+
   saveAgentGroups();
   renderAgentsGrid();
   closeAgentModal();
   showToast('تم حفظ إعدادات الوكيل المساعد بنجاح');
+  // إن فُتحت البطاقة من قائمة المحادثة حدّث قائمتها وشارة القيادة فورًا
+  if (typeof populateSubAgentsDropdown === 'function') populateSubAgentsDropdown(currentGroup.id);
+  if (typeof refreshDirectorAuthorityUI === 'function') refreshDirectorAuthorityUI();
 }
 
 // =============================================================================
 // تصدير للدوال العامة
 // =============================================================================
 window.loadAgentGroups = loadAgentGroups;
+window.openAgentEditorForGroup = function (groupId, agentId) {
+  currentActiveGroupId = groupId;
+  if (typeof loadAgentGroups === 'function' && (!agentGroups || !agentGroups.length)) loadAgentGroups();
+  editAgent(agentId);
+};
 window.saveAgentGroups = saveAgentGroups;
 window.renderGroupsTable = renderGroupsTable;
 window.openCreateGroupModal = openCreateGroupModal;
@@ -1165,6 +1351,11 @@ window.renderAgentsGrid = renderAgentsGrid;
 window.toggleAgentActive = toggleAgentActive;
 window.deleteAgent = deleteAgent;
 window.openAddAgentModal = openAddAgentModal;
+window.useInternalMcp = useInternalMcp;
+window.openAddMcpModal = openAddMcpModal;
+window.closeMcpModal = closeMcpModal;
+window.verifyMcpUrl = verifyMcpUrl;
+window.adoptMcpBranches = adoptMcpBranches;
 window.editAgent = editAgent;
 window.closeAgentModal = closeAgentModal;
 window.handleAgentModalOverlayClick = handleAgentModalOverlayClick;
