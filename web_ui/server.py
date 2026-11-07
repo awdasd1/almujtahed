@@ -2899,10 +2899,68 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         except Exception:
             return None
 
+    def _contains_fold(page_f: str, quote: str) -> bool:
+        """احتواء متسامح مع الحذف والاختصار: مقطع مطوي كامل، أو 80% من
+        كلمات النقل المميزة حاضرة في الصفحة."""
+        qf = _fold_ar(quote)
+        if len(qf) >= 24 and qf[:24] in page_f:
+            return True
+        for a, b in ((0, 40), (len(qf) // 3, len(qf) // 3 + 40),
+                     (max(0, len(qf) - 40), len(qf))):
+            seg = qf[a:b].strip()
+            if len(seg) >= 20 and seg in page_f:
+                return True
+        segwords = {w for w in qf.split() if len(w) >= 4}
+        if not segwords:
+            return False
+        hits = sum(1 for w in segwords if w in page_f)
+        return hits / len(segwords) >= 0.8
+
+    def _bridge_match(bid, quote):
+        """تحقق من فهرس المكتبة نفسه (مرآة الشاملة عبر جسورها): عبارة مميزة
+        من النقل داخل كتاب إحالته، فإن لم توجد فكلماته المميزة مجتمعة في
+        صفحة واحدة ثم تحقق من متنها — إثبات موضعي في أجزاء الثانية بدل مسح
+        ملف الكتاب كله. True إثبات، False لا شاهد، None تعذّر الجسر."""
+        try:
+            import shamela_link as _SLV
+            if _SLV.library_source() != "shamela":
+                return None
+            import shamela_search
+            words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", _fold_ar(quote))]
+            if len(words) < 4:
+                return None
+            r = shamela_search.search(" ".join(words[:7]), mode="phrase",
+                                       book_ids=[int(bid)], limit=2)
+            if r.get("results"):
+                return True
+            distinct = sorted(set(words), key=len, reverse=True)[:6]
+            if len(distinct) < 3:
+                return False
+            r2 = shamela_search.search(" ".join(distinct), mode="words",
+                                        book_ids=[int(bid)], limit=4)
+            for h in (r2.get("results") or []):
+                pg = shamela_local_mcp.get_page(int(bid), int(h.get("page_num") or 0),
+                                                 h.get("part") or None)
+                if pg.get("status") == "ok" and _contains_fold(
+                        _fold_ar((pg.get("page") or {}).get("body") or ""), quote):
+                    return True
+            return False
+        except Exception:
+            return None
+
     def _match(bid, quote, part=None, page=None, allow_scan=False) -> bool:
         key = (str(bid), quote[:180])
         if key in _match_cache:
             return _match_cache[key]
+        bm = _bridge_match(bid, quote)
+        if bm:
+            _match_cache[key] = True
+            return True
+        if bm is False:
+            # الجسر فهرس قاعدة بيانات الكتب نفسه: بحث ووجد الكتاب خاليًا من
+            # النقل فلا مسح كاملًا باهظًا بعده؛ المسح احتياطي لتعذّر الجسر.
+            _match_cache[key] = False
+            return False
         ok = False
         # المسبار حارس سرعة للكتب البديلة فقط؛ كتاب الإحالة نفسه يُفحص دائمًا
         # بالمسح المتسامح، فمسبار صارم قد يقتل نقلًا قريبًا من الحرفية قبل فحصه.
@@ -2944,6 +3002,11 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         if (part is not None or page is not None) and _match(bid, quote, None, None, allow_scan=True):
             return True
         variants = []
+        # مقاطع الحذف الصريح (…): ثبوت أطول مقطع بلا حذف ثبوتٌ للنقل بحذفه
+        for _seg in re.split(r"…|\.\.\.", quote):
+            _seg = _seg.strip(" :؛،")
+            if len(_seg) >= 25 and _seg not in variants:
+                variants.append(_seg)
         # مقاطع قصيرة مميزة: المسح المتسامح قد يرفض النقل الطويل المركب كله
         # ويثبت على مقطعه الأول أو الأوسط.
         for _seg in (quote[:70].rsplit(" ", 1)[0],
@@ -2983,26 +3046,149 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                 if (i + 1) % 15 == 0:
                     print(f"🚧 [Documentation Audit] مرحلة الإحالة: {i + 1}/{len(pending)} ({round(_time.time() - _t0)}s)", flush=True)
 
+    def _relocate_via_bridge(job):
+        """موضع النقل الحقيقي من فهرس المكتبة: عبارة مميزة فإن لم توجد
+        فأطول كلمات النقل مجتمعة — تُبحث في كتب الشواهد كلها عبر الجسور،
+        وتُفتح الصفحة المرشحة للتحقق من متنها قبل اعتماد الموضع."""
+        try:
+            import shamela_link as _SLR
+            if _SLR.library_source() != "shamela":
+                return None
+            import shamela_search
+            words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", _fold_ar(job["quote"]))]
+            if len(words) < 5:
+                return None
+            ids = [int(w) for w in witness_ids if str(w).isdigit()][:48]
+            if not ids:
+                return None
+
+            def _location(h):
+                bid2 = int(h.get("book_id") or 0)
+                if not bid2 or str(bid2) == str(job.get("bid") or ""):
+                    return None
+                pg = shamela_local_mcp.get_page(bid2, int(h.get("page_num") or 0),
+                                                 h.get("part") or None)
+                if pg.get("status") != "ok":
+                    return None
+                if not _contains_fold(_fold_ar((pg.get("page") or {}).get("body") or ""),
+                                      job["quote"]):
+                    return None
+                meta = shamela_local_mcp.resolve_book(bid2) or {}
+                return {"book_id": bid2, "part": str(h.get("part") or ""),
+                        "page": int(h.get("page_num") or 0),
+                        "title": meta.get("title") or h.get("title") or "",
+                        "author": meta.get("author") or h.get("author") or "",
+                        "rel_path": meta.get("rel_path") or h.get("rel_path") or ""}
+
+            r = shamela_search.search(" ".join(words[:7]), mode="phrase",
+                                      book_ids=ids, limit=6)
+            for h in (r.get("results") or []):
+                loc = _location(h)
+                if loc:
+                    return loc
+            distinct = sorted(set(words), key=len, reverse=True)[:6]
+            r2 = shamela_search.search(" ".join(distinct), mode="words",
+                                       book_ids=ids, limit=8)
+            for h in (r2.get("results") or []):
+                loc = _location(h)
+                if loc:
+                    return loc
+        except Exception:
+            return None
+        return None
+
+    def _bridge_locate(bid2, quote):
+        """صفحة النقل وجزؤها في كتاب بعينه من فهرس المكتبة، أو None."""
+        try:
+            import shamela_search
+            words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", _fold_ar(quote))]
+            if len(words) < 4:
+                return None
+            hits = []
+            r = shamela_search.search(" ".join(words[:7]), mode="phrase",
+                                      book_ids=[int(bid2)], limit=3)
+            hits.extend(r.get("results") or [])
+            distinct = sorted(set(words), key=len, reverse=True)[:6]
+            if len(distinct) >= 3 and not hits:
+                r2 = shamela_search.search(" ".join(distinct), mode="words",
+                                           book_ids=[int(bid2)], limit=5)
+                hits.extend(r2.get("results") or [])
+            for h in hits:
+                pg = shamela_local_mcp.get_page(int(bid2), int(h.get("page_num") or 0),
+                                                 h.get("part") or None)
+                if pg.get("status") != "ok":
+                    continue
+                if _contains_fold(_fold_ar((pg.get("page") or {}).get("body") or ""), quote):
+                    meta = shamela_local_mcp.resolve_book(int(bid2)) or {}
+                    return {"book_id": int(bid2), "part": str(h.get("part") or ""),
+                            "page": int(h.get("page_num") or 0),
+                            "title": meta.get("title") or h.get("title") or "",
+                            "author": meta.get("author") or h.get("author") or "",
+                            "rel_path": meta.get("rel_path") or h.get("rel_path") or ""}
+        except Exception:
+            return None
+        return None
+
     def _phase_b(job):
-        # بدائل محدودة من كتب الشواهد لتشخيص موضع النقل، بلا أي أثر في النص:
-        # الثبوت في غير كتاب الإحالة تنبيه ربط، وعدمه تنبيه مراجعة لا حذف.
+        # بدائل من كتب الشواهد: ثبوت في غير كتاب الإحالة يُصلَح موضعه في
+        # الحاشية إلى موضعه الحقيقي (النص المنقول لا يُمسّ)، وعدمه تنبيه.
         if _time.time() - _t0 > 240:
-            return job, "NOT_FOUND"
+            return job, "NOT_FOUND", None
         bid = job.get("bid") or cited_bid(job["num"])
         for wid in [w for w in witness_ids if w != str(bid or "")][:8]:
             if _match(wid, job["quote"]):
-                return job, "RELOCATED"
-        return job, "NOT_FOUND"
+                loc = _bridge_locate(wid, job["quote"])
+                if loc:
+                    return job, "REPAIRABLE", loc
+                return job, "RELOCATED", None
+        loc = _relocate_via_bridge(job)
+        if loc:
+            return job, "REPAIRABLE", loc
+        return job, "NOT_FOUND", None
 
+    _repairs = []
     if failed:
         with ThreadPoolExecutor(max_workers=8) as ex:
-            for job, status in ex.map(_phase_b, failed):
+            for job, status, loc in ex.map(_phase_b, failed):
                 if status == "RELOCATED":
                     stats["relocated"] = stats.get("relocated", 0) + 1
                     stats["failures"].append({"quote": job["quote"][:120], "reason": "ثابت في غير كتاب إحالته أو موضعه: تنبيه ربط، أُبقي بلا حذف"})
+                elif status == "REPAIRABLE" and loc:
+                    _repairs.append((job, loc))
                 else:
                     stats["unverified"] = stats.get("unverified", 0) + 1
                     stats["failures"].append({"quote": job["quote"][:120], "reason": "لم يثبت آليًا في كتاب إحالته ولا في كتب الشواهد: أُبقي للمراجعة"})
+    if _repairs:
+        # إصلاح مواضع الحواشي إلى مواضعها المثبتة: تُعاد كتابة وسم الإحالة
+        # وعرضه فقط، والنص المنقول وجسم البحث كما هما.
+        _defs_now = _footnote_defs(text)
+        _edits = []
+        for job, loc in _repairs:
+            d = next((x for x in _defs_now if x["num"] == job.get("num")), None)
+            if not d:
+                continue
+            body = d["body"]
+            mspan = re.search(r'<span class="cit-src"[^>]*>.*?</span>', body, re.S)
+            if not mspan:
+                continue
+            new_span = (
+                '<span class="cit-src" '
+                f'data-book="{html.escape(loc["title"], quote=True)}" '
+                f'data-rel-path="{html.escape(loc["rel_path"], quote=True)}" '
+                f'data-book-id="{loc["book_id"]}" '
+                f'data-part="{html.escape(loc["part"], quote=True)}" '
+                f'data-page="{loc["page"]}" '
+                f'data-quote="{html.escape(" ".join(job["quote"].split())[:120], quote=True)}">'
+                f'{html.escape(loc["title"])}، {html.escape(loc["author"])}، {loc["part"]}، {loc["page"]}</span>')
+            new_body = body[:mspan.start()] + new_span + body[mspan.end():]
+            _slice = text[d["start"]:d["end"]]
+            if body in _slice:
+                _edits.append((d["start"], d["end"], _slice.replace(body, new_body, 1)))
+        for s, e, new in sorted(_edits, key=lambda x: x[0], reverse=True):
+            text = text[:s] + new + text[e:]
+        stats["repaired"] = len(_edits)
+        if _edits:
+            print(f"🚧 [Documentation Audit] أُصلح موضع {len(_edits)} إحالة إلى موضعها المثبت في فهرس المكتبة", flush=True)
     _no_bid = sum(1 for j in failed if not j.get("bid"))
     if failed:
         print(f"🚧 [Documentation Audit] تشخيص: بلا كتاب إحالة={_no_bid}/{len(failed)}", flush=True)
@@ -4314,7 +4500,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.271"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.272"},
         },
     })
     if opened.get("error"):
@@ -9128,6 +9314,14 @@ def _consult_research_advisors(
     if think_advisors:
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(think_advisors))) as ex:
             proposals.extend(list(ex.map(_one_think, think_advisors)))
+    # المدير عضو مناوب في الترشيح لا حَكَم لاحق فقط (مستشار واحد + المدير):
+    # يرشّح بمحفّز المستشارين نفسه فتُحسب ترشيحاته صوتًا في الاتفاق والمراسي،
+    # ثم يجلس بعدها للمطابقة والإسناد على حصيلة يشارك في صنعها.
+    if director_model:
+        proposals.append(_one_think({
+            "name": "مدير المشروع (مشارك في الترشيح)",
+            "model": director_model, "thinking": "high",
+        }))
 
     if tav_advisors and (tavily_key or "").strip():
         try:
@@ -9726,20 +9920,55 @@ def expand_query_with_anchor_rounds(
                 except Exception:
                     return False
 
+            def _hits_words(ph: str) -> bool:
+                # طبقة دلالية: ألفاظ المرسى مجتمعة في مواضع حقيقية — لصيغ
+                # العناوين والمصطلحات التي لا توجد عبارة حرفية في المتن.
+                _sup = int((_meta.get(ph) or {}).get("support", 1) or 1)
+                try:
+                    import shamela_link as _SLG2
+                    if _SLG2.library_source() == "shamela":
+                        import shamela_search
+                        _ids = [int(b) for b in (_vids or []) if str(b).isdigit()] or None
+                        r = shamela_search.search(ph, mode="words", book_ids=_ids, death_max=death_max, limit=5)
+                        _books = {h.get("book_id") for h in (r.get("results") or [])}
+                        return bool(_books) and (len(_books) >= 2 or _sup >= 2)
+                except Exception:
+                    pass
+                try:
+                    import library_search
+                    if library_search.index_status().get("available"):
+                        _ids = [int(b) for b in (_vids or []) if str(b).isdigit()] or None
+                        r = library_search.get_index().search(ph, mode="words", book_ids=_ids, death_max=death_max, limit=5)
+                        _books = {h.get("book_id") for h in (r.get("results") or [])}
+                        return bool(_books) and (len(_books) >= 2 or _sup >= 2)
+                except Exception:
+                    pass
+                return False
+
+            def _verdict(ph: str) -> str:
+                if _hits(ph):
+                    return "phrase"
+                if _hits_words(ph):
+                    return "words"
+                return ""
+
             _pool = _ranked[:12]
-            _verdicts: Dict[str, bool] = {}
+            _verdicts: Dict[str, str] = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exv:
-                for ph, ok in zip(_pool, exv.map(_hits, _pool)):
-                    _verdicts[ph] = ok
+                for ph, v in zip(_pool, exv.map(_verdict, _pool)):
+                    _verdicts[ph] = v
             for ph in _pool:
                 if not _verdicts.get(ph):
                     print(f"⚓ [Anchor Gate] سقطت في التحقق الحي (بلا شاهد): «{ph}»")
+                elif _verdicts[ph] == "words":
+                    print(f"⚓ [Anchor Gate] قُبلت دلاليًا (كلمات مجتمعة): «{ph}»")
             _verified = [ph for ph in _ranked if _verdicts.get(ph)][:5]
             if _verified:
                 adopted = _verified
                 _gmap = {p.get("phrase"): p.get("genre", "عام") for p in panel}
                 panel = [{"phrase": ph, "support": (_meta.get(ph) or {}).get("support", 1),
-                          "confidence": "متحقق", "genre": _gmap.get(ph, "عام")} for ph in adopted]
+                          "confidence": "متحقق" if _verdicts.get(ph) == "phrase" else "متحقق دلاليًا",
+                          "genre": _gmap.get(ph, "عام")} for ph in adopted]
             print(f"⚓ [Anchor Gate] مراس متحقق منها حيا ({len(adopted)}): {adopted}")
         if semantic_terms:
             # مراسي وكيل الألفاظ الدلالية عند المتقدمين (موثقة كلماتيًا لا
@@ -19268,7 +19497,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "【سادساً: هندسة الفريق】\n"
         "تعيّن الفريق بحسب طبيعة المشروع. لكل وكيل بطاقة تكليف وتوجيه مستقل:\n"
         "── (1) مدير المشروع [م-01]: يقود التنفيذ، وله الصلاحية العلمية الكاملة لإعادة البحث والتخريج حتى 3 مرات، ومُلزم حتماً بإفراد جدول «📚 ثبت المصادر والمراجع المعتمدة في المشروع» الببليوغرافي الكامل في نهاية التقرير النهائي.\n"
-        "── (1-ب) مجلس المستشارين [س-xx] — ركن إلزامي قبل المتخصصين في كل مشروع: عضوان متفرغان للمدير بالروستر المعتمد حرفيًا: `~anthropic/claude-sonnet-latest`، `meta/muse-wonder` (thinking: max، بلا كتب وبلا استخراج نصوص). `kind`: `advisor`. أسماؤهم محايدة بأسماء نماذجهم، ولا تقسيم فنون ولا زوايا بينهم: وظيفتهم الوحيدة قبل بدء البحث أن تصل كلًّا منهم المسألة كاملة استقلالًا فيتولّد له (أ) قائمة أمهات الكتب التي هي مظانّ هذه المسألة بعينها، (ب) مراسي بحث تراثية قوية. المنظومة توحّد مكررهم وتحسب اتفاقهم وتحفظ لقطاتهم الفريدة، وتتحقق من وجود الكتب في قاعدة الشاملة بمطابقة المؤلف، ثم يعرضها على مدير المشروع (النموذج الأساسي) فيحكم على المشترك والفريد ويُسند كل كتاب إلى وكيله المختص، وتُطعّم بقراره في البطاقات. لا تجعل العضو وكيل جمع ولا مناظرًا، ولا تُسند الإسناد لقاعدة آلية. ولا عضو للشبكة الخارجية في الفريق؛ البحث كله داخل مكتبة الشاملة. وتنبيه بنيوي: الوكيل الذهبي لا يُصمَّم في مخططك ولا تذكره في الفريق؛ تنشئه المنظومة تلقائيًا وقت التنفيذ بعد مجلس المستشارين وقرار المدير، وكيلًا مؤقتًا بتوجيه نوعي من المدير يبحث في كتب المجلس المطابقة حصرًا صلبًا للبحث.\n"
+        "── (1-ب) مجلس المستشارين [س-xx] — ركن إلزامي قبل المتخصصين في كل مشروع: مستشار واحد متفرغ للمدير بالروستر المعتمد حرفيًا: `~anthropic/claude-sonnet-latest` (thinking: max، بلا كتب وبلا استخراج نصوص)، ومدير المشروع نفسه عضو مناوب في الترشيح بصوته قبل أن يحكم بالمطابقة والإسناد. `kind`: `advisor`. أسماؤهم محايدة بأسماء نماذجهم، ولا تقسيم فنون ولا زوايا بينهم: وظيفتهم الوحيدة قبل بدء البحث أن تصل كلًّا منهم المسألة كاملة استقلالًا فيتولّد له (أ) قائمة أمهات الكتب التي هي مظانّ هذه المسألة بعينها، (ب) مراسي بحث تراثية قوية. المنظومة توحّد مكررهم وتحسب اتفاقهم وتحفظ لقطاتهم الفريدة، وتتحقق من وجود الكتب في قاعدة الشاملة بمطابقة المؤلف، ثم يعرضها على مدير المشروع (النموذج الأساسي) فيحكم على المشترك والفريد ويُسند كل كتاب إلى وكيله المختص، وتُطعّم بقراره في البطاقات. لا تجعل العضو وكيل جمع ولا مناظرًا، ولا تُسند الإسناد لقاعدة آلية. ولا عضو للشبكة الخارجية في الفريق؛ البحث كله داخل مكتبة الشاملة. وتنبيه بنيوي: الوكيل الذهبي لا يُصمَّم في مخططك ولا تذكره في الفريق؛ تنشئه المنظومة تلقائيًا وقت التنفيذ بعد مجلس المستشارين وقرار المدير، وكيلًا مؤقتًا بتوجيه نوعي من المدير يبحث في كتب المجلس المطابقة حصرًا صلبًا للبحث.\n"
         "── (2) الخبراء المتخصصون [خ-xx]: (الفقيه المقارن لكل مذهب، الأصولي، المحدّث، خبير الرجال، المؤرخ، خبير الفلك، المفسر، اللغوي، خبير التحقيق).\n"
         "── (3) هيئة المناظرة [ن-xx] (قلب المشروع في المسائل الخلافية):\n"
         "• المُثبِت [ن-01]: ينصر القول الأول بكل ما أوتي من أدلة ونقول.\n"
