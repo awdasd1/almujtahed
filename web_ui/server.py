@@ -2734,10 +2734,12 @@ def _renumber_footnotes(text: str) -> str:
 
 
 def _documentation_gate(text: str, witness_rows: List[dict]):
-    """يطابق كل نقل منقول على كتاب إحالته تدقيقًا غير مدمّر.
+    """يطابق كل نقل منقول على كتاب إحالته، ويُصلح مواضع الإحالات، ويستبعد
+    ما كان مصدره خارج المكتبة.
 
-    يرجع (النص كما هو، إحصاء)؛ فلا حذف ولا إعادة ترقيم ولا استبدال. ما لم
-    يثبت آليًا يُحصى ويُنبَّه عليه في سجل التوثيق للمراجعة البشرية."""
+    يرجع (النص بعد الإصلاح والاستبعاد، إحصاء). ما لم يثبت آليًا في كتاب
+    مكتبة يُحصى ويُنبَّه عليه للمراجعة؛ أما النقل الذي لا كتاب له في
+    المكتبة البتة فيُقطع بحاشيته — قاعدة: لا نقل من خارج المكتبة."""
     stats = {"checked": 0, "verified": 0, "cut_notfound": 0, "cut_relocated": 0,
              "cut_tier": 0, "unverified": 0, "relocated": 0, "tier_warnings": 0,
              "ijma_flags": 0, "tier_footnotes": 0, "cited_book_ids": [],
@@ -2896,6 +2898,48 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
             for sp in footnote_span_books(d["num"]):
                 if sp["bid"] not in witness_ids:
                     witness_ids.append(sp["bid"])
+
+    def _title_in_library(raw) -> bool:
+        """عنوان الإحالة وحده (بلا موضع) موجود في المكتبة؟ الفصل بين «كتاب
+        خارج المكتبة» (يُستبعد) و«كتاب فيها أُحيل إليه بلا موضع تام»."""
+        txt = re.sub(r"<[^>]+>", " ", raw or "").replace("⚠", " ")
+        txt = re.sub(r"\s+", " ", txt).strip()
+        m = _STAMP_LOCATOR.search(txt)
+        head = (txt[:m.start()] if m else txt).strip(" ،,؛:")
+        attempts = [head]
+        trimmed = head
+        while re.search(r"[،,]", trimmed) and len(attempts) < 4:
+            trimmed = re.sub(r"[،,][^،,]*$", "", trimmed).strip(" ،,")
+            if trimmed and trimmed not in attempts:
+                attempts.append(trimmed)
+        for att in attempts:
+            if not att:
+                continue
+            try:
+                row = shamela_local_mcp.resolve_book(att)
+            except Exception:
+                row = None
+            if row and row.get("status") == "ok" and row.get("book_id"):
+                ak, rk = _stamp_title_key(att), _stamp_title_key(row.get("title") or "")
+                if ak and rk and (ak == rk or f" {rk} " in f" {ak} " or f" {ak} " in f" {rk} "):
+                    return True
+        return False
+
+    def _outside_library(job) -> bool:
+        """حاشية النقل لا كتاب لها في المكتبة البتة: لا ختم، ولا حلّ عنوان،
+        ولا رقم إحالة — فمصدر النقل خارج المكتبة ويخضع لقاعدة الاستبعاد."""
+        num = job.get("num")
+        if not num:
+            return False
+        if footnote_span_books(num):
+            return False
+        if cited_bid(num):
+            return False
+        d = next((x for x in defs if x["num"] == num), None)
+        if d and _title_in_library(d["body"]):
+            return False
+        return True
+
     def_spans = [(d["start"], d["end"]) for d in defs]
 
     def in_def(pos: int) -> bool:
@@ -3235,6 +3279,7 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         return job, "NOT_FOUND", None
 
     _repairs = []
+    _excluded = []
     if failed:
         with ThreadPoolExecutor(max_workers=8) as ex:
             for job, status, loc in ex.map(_phase_b, failed):
@@ -3243,9 +3288,24 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                     stats["failures"].append({"quote": job["quote"][:120], "reason": "ثابت في غير كتاب إحالته أو موضعه: تنبيه ربط، أُبقي بلا حذف"})
                 elif status == "REPAIRABLE" and loc:
                     _repairs.append((job, loc))
+                elif _outside_library(job):
+                    # قاعدة المكتبة: مصدر خارجها يُستبعد ولا يُنقل منه.
+                    _excluded.append(job)
                 else:
                     stats["unverified"] = stats.get("unverified", 0) + 1
                     stats["failures"].append({"quote": job["quote"][:120], "reason": "لم يثبت آليًا في كتاب إحالته ولا في كتب الشواهد: أُبقي للمراجعة"})
+    if _excluded:
+        # الاستبعاد الفوري: يُقطع النقل بعلامة حاشيته من المتن وتُزال حاشيته،
+        # بعد أن فشل كل ترحيل له إلى كتاب من كتب المكتبة في المراحل السابقة.
+        for job in sorted(_excluded, key=lambda j: j["start"], reverse=True):
+            text = text[:job["start"]] + text[job["cut_end"]:]
+        _ex_nums = {j["num"] for j in _excluded if j.get("num")}
+        if _ex_nums:
+            for d in sorted((x for x in _footnote_defs(text) if x["num"] in _ex_nums),
+                            key=lambda x: x["start"], reverse=True):
+                text = text[:d["start"]] + text[d["end"]:]
+        stats["excluded_outside"] = stats.get("excluded_outside", 0) + len(_excluded)
+        print(f"🚧 [Documentation Audit] استُبعد {len(_excluded)} نقلًا مصدره خارج المكتبة (قاعدة: لا نقل من خارجها)", flush=True)
     if _repairs:
         # إصلاح مواضع الحواشي إلى مواضعها المثبتة: تُعاد كتابة وسم الإحالة
         # وعرضه فقط، والنص المنقول وجسم البحث كما هما.
@@ -3284,14 +3344,24 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
     _defs_now = _footnote_defs(text)
     _edits = []
     _healed_n = 0
+    _dropped_n = 0
     for d in _defs_now:
         if "cit-unresolved" not in d["body"]:
             continue
         body = d["body"]
         pieces, pos, changed = [], 0, False
+        _dropped_here = 0
         for um in re.finditer(r'<span class="cit-unresolved"[^>]*>(.*?)</span>', body, re.S):
             info = _parse_unresolved(um.group(1))
             if not info:
+                if _title_in_library(um.group(1)):
+                    continue
+                # كتاب خارج المكتبة: تُستبعد إحالته من الحاشية فورًا.
+                pieces.append(body[pos:um.start()])
+                pos = um.end()
+                changed = True
+                _dropped_here += 1
+                _dropped_n += 1
                 continue
             inner = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1)).replace("⚠", " ")).strip()
             q = " ".join(str(_heal_quotes.get(d["num"]) or "").split())[:120]
@@ -3319,15 +3389,33 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         if not changed:
             continue
         pieces.append(body[pos:])
+        new_body = "".join(pieces)
+        if _dropped_here:
+            # نظافة الوصلات اليتيمة بعد الاستبعاد («؛ وينظر:» بلا كتاب بعدها)
+            _toks = re.split(r"(<[^>]+>)", new_body)
+            for _i, _tok in enumerate(_toks):
+                if _tok.startswith("<"):
+                    continue
+                _tok = re.sub(r"[؛;]\s*(?:وينظر|ينظر|انظر|راجع)\s*[:：]\s*(?=[؛;]|$)", "", _tok)
+                _tok = re.sub(r"^\s*(?:وينظر|ينظر|انظر|راجع)\s*[:：]\s*(?=[؛;])", "", _tok)
+                _toks[_i] = _tok
+            new_body = "".join(_toks)
+            if len(re.sub(r"<[^>]+>", " ", new_body).strip(" .؛:،«»()0123456789٠١٢٣٤٥٦٧٨٩")) < 4:
+                # لم يبق في الحاشية إلا رقمها: تُزال كلها.
+                _edits.append((d["start"], d["end"], ""))
+                continue
         _slice = text[d["start"]:d["end"]]
         if body in _slice:
-            _edits.append((d["start"], d["end"], _slice.replace(body, "".join(pieces), 1)))
+            _edits.append((d["start"], d["end"], _slice.replace(body, new_body, 1)))
     for s, e, new in sorted(_edits, key=lambda x: x[0], reverse=True):
         text = text[:s] + new + text[e:]
     if _healed_n:
         stats["repaired"] = stats.get("repaired", 0) + _healed_n
         stats["healed"] = _healed_n
         print(f"🚧 [Documentation Audit] شُفيت {_healed_n} إحالة معلَّمة: حُلّ كتابها في المكتبة فخُتمت كاملة", flush=True)
+    if _dropped_n:
+        stats["excluded_outside"] = stats.get("excluded_outside", 0) + _dropped_n
+        print(f"🚧 [Documentation Audit] استُبعدت {_dropped_n} إحالة كتابها خارج المكتبة", flush=True)
     _no_bid = sum(1 for j in failed if not j.get("bid"))
     if failed:
         print(f"🚧 [Documentation Audit] تشخيص: بلا كتاب إحالة={_no_bid}/{len(failed)}", flush=True)
@@ -4639,7 +4727,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.273"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.274"},
         },
     })
     if opened.get("error"):
@@ -12087,6 +12175,10 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "وما سجّله تعارضًا فافصل فيه أنت عند الترجيح. وارجع إلى التقارير أعلاه لنصوص البطاقات الحرفية عند النقل والتحرير.\n"
                 + _evidence_ledger + "\n"
             )
+        agent_routing_instruction += (
+            "\n🚫 [قاعدة المكتبة الحاكمة]: النقل والاستشهاد من كتب مكتبة الشاملة وحدها؛ ما كان خارجها يُستبعد فورًا ولا يُنقل منه ولا يُحال إليه ولو صحّ في نفسه. "
+            "إن لم تجد نقلًا إلا خارج الشواهد فاحذفه من بحثك ولا تسدّه من ذاكرتك، ويكفيك ما ثبت في كتب المكتبة.\n"
+        )
         _ac = locals().get("_advisor_consult") or {}
         if _ac.get("grafted") or _ac.get("missing") or _ac.get("anchors") or _ac.get("tavily"):
             _glines = [f"• أُضيف إلى بطاقة «{g['agent']}»: {g['entry']}" + (f" — {g['why']}" if g.get("why") else "") + (f" ({'ترشيح مشترك اتفق عليه ' + str(g.get('votes')) + ' من المجلس' if g.get('band') == 'consensus' else 'لقطة فريدة قبِلها المدير' if g.get('band') == 'unique' else 'ترشيح قناة الشبكة'})" if g.get("band") else "") + (f" (إسناد {'المدير' if g.get('assigned_by') == 'director' else 'احتياطي معلن'}: {g['reason']})" if g.get("reason") else "") for g in (_ac.get("grafted") or [])]
@@ -13057,7 +13149,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             "audit": {
                 "checked": _gs.get("checked", 0), "linked": _gs.get("linked"),
                 "verified": _gs.get("verified", 0), "unverified": _gs.get("unverified", 0),
-                "relocated": _gs.get("relocated", 0), "tier_warnings": _gs.get("tier_warnings", 0),
+                "relocated": _gs.get("relocated", 0), "repaired": _gs.get("repaired", 0),
+                "excluded_outside": _gs.get("excluded_outside", 0), "tier_warnings": _gs.get("tier_warnings", 0),
                 "ijma_flags": _gs.get("ijma_flags", 0),
                 "ijma_unattributed": len(_gs.get("ijma_unattributed") or []),
                 "cited_books": len(_gs.get("cited_book_ids") or []),
