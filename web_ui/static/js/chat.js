@@ -1222,7 +1222,8 @@ function attachFootnoteHover(container) {
     const refHeads = [];
     content.querySelectorAll('h1, h2, h3, h4, h5, h6, p, strong, b').forEach((h) => {
       const t = (h.textContent || '').trim();
-      if (/^(?:📚\s*)?(?:قائمة\s+)?(?:المصادر والمراجع|المصادر|المراجع|الحواشي|ثبت المصادر والمراجع)\s*[:：]?$/.test(t)) {
+      if (/^(?:📚\s*)?(?:قائمة\s+)?(?:المصادر والمراجع|المصادر|المراجع|الحواشي|ثبت المصادر والمراجع)\s*[:：]?$/.test(t)
+        || /^(?:📚\s*)?(?:قائمة\s+)?(?:المصادر والمراجع|المصادر|المراجع|الحواشي)\s*[:：]\s*\S/.test(t)) {
         refHeads.push(h.closest('h1, h2, h3, h4, h5, h6, p') || h);
       }
     });
@@ -1253,6 +1254,32 @@ function attachFootnoteHover(container) {
       if (list.querySelector('.cit-src, .cit-unresolved, [id*="fn"]')) return;
       const cites = items.filter((li) => /\(\s*[\d٠-٩]+\s*[-/]\s*[\d٠-٩]+\s*\)|#\d{2,}/.test(li.textContent || '')).length;
       if (cites >= Math.ceil(items.length * 0.7)) list.remove();
+    });
+    // وكل أشكال تعريفات الحواشي الأخرى تُخفى ولا تُحذف — منها سطور
+    // «(ن) انظر: …» العادية في آخر الجواب — فتبقى في البنية مصدرًا
+    // لبطاقة الشاهد عند تمرير المؤشر على رقمها في المتن
+    content.querySelectorAll('.chat-fn-list, .footnote-list, .footnote-line, .footnotes').forEach((el) => {
+      el.style.display = 'none';
+      el.dataset.fnHidden = '1';
+    });
+    content.querySelectorAll('p, li').forEach((el) => {
+      if (el.closest('.chat-fn-list, .footnote-list')) return;
+      const t = (el.textContent || '').trim();
+      if (/^\(\s*[\d٠-٩]+\s*\)/.test(t)
+        && /(انظر|ينظر|يُنظر|راجع|#\d|\(\s*[\d٠-٩]+\s*[-/]\s*[\d٠-٩]+\s*\)|ص\s*\(?\s*[\d٠-٩]+)/.test(t)) {
+        el.style.display = 'none';
+        el.dataset.fnHidden = '1';
+      }
+    });
+    // وفواصل أفقية لم يبقَ بعدها إلا مخفيّ فلا معنى لبقائها ظاهرة
+    content.querySelectorAll('hr').forEach((hr) => {
+      let n = hr.nextElementSibling;
+      let onlyHidden = true;
+      while (n) {
+        if (n.dataset.fnHidden !== '1' && n.style.display !== 'none') { onlyHidden = false; break; }
+        n = n.nextElementSibling;
+      }
+      if (onlyHidden) hr.style.display = 'none';
     });
     const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
       acceptNode: (node) => {
