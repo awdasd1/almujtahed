@@ -595,16 +595,104 @@ MAX_FONT_BYTES = 20 * 1024 * 1024
 for _ext, _mime in (("ttf", "font/ttf"), ("otf", "font/otf"), ("woff", "font/woff"), ("woff2", "font/woff2")):
     mimetypes.add_type(_mime, f".{_ext}")
 
-def _font_family_name(path: Path, used: set) -> str:
-    family = (path.stem or path.name).strip() or "font"
-    if family in used:
-        family = f"{family} {path.suffix.lower().lstrip('.')}"
-    used.add(family)
-    return family
+def _parse_font_metadata(path: Path) -> Dict[str, Any]:
+    """قراءة اسم عائلة الخط الحقيقي ووزنه وميله من جداول الخط نفسه
+    (name وOS/2 وhead) لا من اسم الملف — حتى يتطابق اسم العائلة مع
+    ما يعرفه وورد ونظام التشغيل عن الخط (مثل Traditional Arabic
+    بنسختيه العادية والغامقة تحت اسم واحد)."""
+    import zlib as _zlib
+
+    meta: Dict[str, Any] = {}
+    try:
+        data = path.read_bytes()
+    except Exception:
+        return meta
+    tables: Dict[str, bytes] = {}
+    try:
+        if data[:4] == b"wOFF":
+            num_tables = int.from_bytes(data[12:14], "big")
+            for i in range(num_tables):
+                off = 44 + i * 20
+                tag = data[off:off + 4].decode("latin-1")
+                toff = int.from_bytes(data[off + 4:off + 8], "big")
+                clen = int.from_bytes(data[off + 8:off + 12], "big")
+                olen = int.from_bytes(data[off + 12:off + 16], "big")
+                raw = data[toff:toff + clen]
+                if clen < olen:
+                    raw = _zlib.decompress(raw)
+                tables[tag] = raw[:olen]
+        elif data[:4] == b"wOF2":
+            return meta
+        else:
+            num_tables = int.from_bytes(data[4:6], "big")
+            for i in range(num_tables):
+                off = 12 + i * 16
+                tag = data[off:off + 4].decode("latin-1")
+                toff = int.from_bytes(data[off + 8:off + 12], "big")
+                tlen = int.from_bytes(data[off + 12:off + 16], "big")
+                tables[tag] = data[toff:toff + tlen]
+    except Exception:
+        return meta
+    name = tables.get("name")
+    if name and len(name) >= 6:
+        count = int.from_bytes(name[2:4], "big")
+        storage = int.from_bytes(name[4:6], "big")
+        by_id: Dict[int, List[Any]] = {}
+        for i in range(count):
+            roff = 6 + i * 12
+            if roff + 12 > len(name):
+                break
+            platform, _enc, _lang, nid, length, offset = (
+                int.from_bytes(name[roff + j:roff + j + 2], "big") for j in (0, 2, 4, 6, 8, 10)
+            )
+            raw = name[storage + offset:storage + offset + length]
+            try:
+                text = raw.decode("utf-16-be") if platform in (0, 3) else raw.decode("mac-roman", "ignore")
+            except Exception:
+                continue
+            text = text.replace("\x00", "").strip()
+            if text:
+                score = 2 if platform == 3 else (1 if platform == 0 else 0)
+                by_id.setdefault(nid, []).append((score, text))
+
+        def _pick(nid: int) -> str:
+            cands = by_id.get(nid)
+            return sorted(cands, reverse=True)[0][1] if cands else ""
+
+        family = _pick(16) or _pick(1)
+        subfamily = _pick(17) or _pick(2)
+        if family and len(family) <= 120:
+            meta["family"] = family
+        if subfamily:
+            meta["subfamily"] = subfamily
+    weight = 0
+    bold = False
+    italic = False
+    os2 = tables.get("OS/2")
+    if os2 and len(os2) >= 64:
+        weight = int.from_bytes(os2[4:6], "big")
+        fs_selection = int.from_bytes(os2[62:64], "big")
+        bold = bool(fs_selection & 0x20)
+        italic = bool(fs_selection & 0x01)
+    head = tables.get("head")
+    if head and len(head) >= 46:
+        mac_style = int.from_bytes(head[44:46], "big")
+        bold = bold or bool(mac_style & 0x01)
+        italic = italic or bool(mac_style & 0x02)
+    sub = str(meta.get("subfamily") or "").lower()
+    if "bold" in sub:
+        bold = True
+    if "italic" in sub or "oblique" in sub:
+        italic = True
+    if bold and weight < 600:
+        weight = 700
+    if not (100 <= weight <= 900):
+        weight = 700 if bold else 400
+    meta.update({"weight": weight, "bold": bold, "italic": italic})
+    return meta
 
 def _iter_custom_fonts() -> List[Dict[str, Any]]:
     records = []
-    used_families = set()
     if not FONTS_DIR.exists():
         return records
     for path in sorted(FONTS_DIR.iterdir(), key=lambda item: item.name.lower()):
@@ -613,10 +701,17 @@ def _iter_custom_fonts() -> List[Dict[str, Any]]:
         font_format = FONT_EXTENSIONS.get(path.suffix.lower())
         if not font_format:
             continue
+        meta = _parse_font_metadata(path)
+        family = str(meta.get("family") or path.stem or path.name).strip() or "font"
+        weight = int(meta.get("weight") or 400)
+        italic = bool(meta.get("italic"))
         filename = path.name
         records.append({
             "filename": filename,
-            "family": _font_family_name(path, used_families),
+            "family": family,
+            "weight": weight,
+            "bold": bool(meta.get("bold")),
+            "italic": italic,
             "url": "/fonts/" + urllib.parse.quote(filename),
             "format": font_format,
             "size": path.stat().st_size,
@@ -668,7 +763,13 @@ async def upload_custom_font(file: UploadFile = File(...)):
         raise HTTPException(status_code=413, detail="حجم الخط أكبر من 20 ميغابايت")
     destination = FONTS_DIR / filename
     destination.write_bytes(contents)
-    saved = next((item for item in _iter_custom_fonts() if item["filename"] == filename), None)
+    fonts = _iter_custom_fonts()
+    saved = next((item for item in fonts if item["filename"] == filename), None)
+    if saved is None:
+        # رفع مكرر لعائلة ووزن مسجلين: أعِد سجل العائلة القائم نفسه
+        meta = _parse_font_metadata(destination)
+        fam = str(meta.get("family") or "").lower()
+        saved = next((item for item in fonts if item["family"].lower() == fam), None)
     return {"success": True, "font": saved}
 
 @app.delete("/api/fonts/{filename}")
@@ -5336,7 +5437,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.328"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.329"},
         },
     })
     if opened.get("error"):

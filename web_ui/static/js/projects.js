@@ -6768,7 +6768,7 @@ function paperPrintCss() {
     const font = customFns.find((f) => `custom:${f.filename}` === v);
     if (!font) return;
     const url = new URL(font.url || '', location.origin).href.replace(/'/g, '%27');
-    head.push(`<style>@font-face{font-family:'${String(font.family).replace(/'/g, '')}';src:url('${url}') format('${font.format || 'truetype'}');font-weight:100 900;font-display:swap;}</style>`);
+    head.push(`<style>@font-face{font-family:'${String(font.family).replace(/'/g, '')}';src:url('${url}') format('${font.format || 'truetype'}');font-weight:${parseInt(font.weight, 10) || 400};font-style:${font.italic ? 'italic' : 'normal'};font-display:swap;}</style>`);
   });
   const css = `
     .paper-main-title { font-family: ${stack(s.printH1Font)}; font-size: ${h1Size}pt; font-weight: ${h1W};${col(s.printH1Color)} }

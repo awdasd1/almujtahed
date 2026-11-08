@@ -597,7 +597,11 @@ function ensureCustomFontFaces() {
   style.textContent = customFonts.map((font) => {
     const family = cssFontFamily(font.family);
     const url = String(font.url || '').replace(/'/g, '%27');
-    return `@font-face{font-family:${family};src:url('${url}') format('${font.format || 'truetype'}');font-weight:100 900;font-style:normal;font-display:swap;}`;
+    const weight = parseInt(font.weight, 10) || 400;
+    // كل ملف يُسجَّل بوزنه الحقيقي تحت اسم عائلته الداخلي، فيجتمع
+    // العادي والغامق للعائلة الواحدة (كـ Traditional Arabic) اسمًا
+    // واحدًا يطابق ما يعرفه وورد — لا عائلات وهمية بأسماء الملفات
+    return `@font-face{font-family:${family};src:url('${url}') format('${font.format || 'truetype'}');font-weight:${weight};font-style:${font.italic ? 'italic' : 'normal'};font-display:swap;}`;
   }).join('\n');
 }
 
@@ -620,6 +624,13 @@ function updateFontPreviews() {
     if (!preview) return;
     preview.style.setProperty('font-family', stackForFontChoice(currentSettings[field.key]), 'important');
   });
+}
+
+/* تسمية الخط الخاص: عند اشتراك ملفين في عائلة واحدة يُميَّزان بالنمط */
+function customFontLabel(font) {
+  const shared = customFonts.filter((f) => f.family === font.family).length > 1;
+  if (!shared) return font.family;
+  return `${font.family} (${(parseInt(font.weight, 10) >= 600) ? 'غامق' : 'عادي'})`;
 }
 
 function appendFontOption(parent, value, label, stack) {
@@ -652,7 +663,7 @@ function populateFontSelects() {
       customGroup.label = 'خطوط خاصة';
       customFonts.forEach((font) => {
         const value = `custom:${font.filename}`;
-        appendFontOption(customGroup, value, font.family, stackForFontChoice(value));
+        appendFontOption(customGroup, value, customFontLabel(font), stackForFontChoice(value));
       });
       select.appendChild(customGroup);
     }
@@ -713,7 +724,7 @@ function populatePrintFontSelects() {
       customGroup.label = 'خطوط خاصة';
       customFonts.forEach((font) => {
         const value = `custom:${font.filename}`;
-        appendFontOption(customGroup, value, font.family, stackForFontChoice(value));
+        appendFontOption(customGroup, value, customFontLabel(font), stackForFontChoice(value));
       });
       select.appendChild(customGroup);
     }
@@ -1013,7 +1024,7 @@ function renderCustomFontsList() {
     meta.className = 'custom-font-meta';
     const name = document.createElement('div');
     name.className = 'custom-font-name';
-    name.textContent = font.family;
+    name.textContent = customFontLabel(font);
     name.style.setProperty('font-family', stackForFontChoice(`custom:${font.filename}`), 'important');
     const file = document.createElement('div');
     file.className = 'custom-font-file';
