@@ -226,6 +226,22 @@ async function performSearch() {
   }
 }
 
+async function runSearchDiagnose() {
+  const box = document.getElementById('searchDiagTest');
+  if (!box) return;
+  box.textContent = 'جارٍ الفحص الكامل (قد يستغرق ثواني أول مرة)…';
+  try {
+    const r = await fetch('/api/search/diagnose');
+    const d = await r.json();
+    const t = d.bridge_test || {};
+    box.innerHTML = t.status === 'ok'
+      ? `✅ بحث تجريبي في جسر الشاملة: ناجح (${t.hits} نتيجة) خلال ${t.seconds} ثانية.`
+      : `⚠️ بحث تجريبي في جسر الشاملة: ${t.status || 'فشل'}${t.message ? ` — <span dir="ltr" style="font-size:11px;">${t.message}</span>` : ''} خلال ${t.seconds ?? '—'} ثانية.`;
+  } catch (e) {
+    box.textContent = 'تعذّر الفحص.';
+  }
+}
+
 // عرض بطاقات النتائج الفقهية مع ترقيمها المباشر
 function renderSearchResults(results, query, duration, rawData = {}) {
   const container = document.getElementById('searchResultsList');
@@ -246,10 +262,25 @@ function renderSearchResults(results, query, duration, rawData = {}) {
   timingText.textContent = `زمن البحث: ${duration} ثانية`;
 
   if (results.length === 0) {
+    const d = rawData.diagnostics || {};
+    const b = d.bridge || {};
+    const le = (b.last_error || {}).message || '';
+    const diagLine = (label, val) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0;"><span>${label}</span><b dir="auto">${val}</b></div>`;
     container.innerHTML = `
       <div class="result-card" style="text-align: center; padding: 40px 20px;">
         <p style="font-family: var(--font-amiri); font-size: 20px; color: var(--text-muted); margin-bottom: 6px;">لم يتم العثور على نتائج مطابقة للشروط المحددة</p>
         <p style="font-size: 13px; color: var(--text-light);">حاول توسيع نطاق البحث أو إزالة بعض الفلاتر.</p>
+        <div style="max-width: 560px; margin: 18px auto 0; text-align: right; font-size: 12.5px; color: var(--text-muted); background: var(--bg-surface-elevated, #f6f1e7); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px 16px;">
+          <div style="font-weight: 700; margin-bottom: 6px;">حالة البحث على هذا الجهاز</div>
+          ${diagLine('مصدر المكتبة', d.library_source || '—')}
+          ${diagLine('الشاملة مكتشفة', d.shamela_found ? 'نعم' : 'لا')}
+          ${d.shamela_root ? diagLine('مسارها', `<span dir="ltr" style="font-size:11px;">${d.shamela_root}</span>`) : ''}
+          ${diagLine('جسر بحث الشاملة (Java/Lucene)', b.jvm_found ? `جاهز (${b.lucene_jars} مكتبة)` : 'غير جاهز — لم يُعثر على JRE/Lucene الشاملة')}
+          ${le ? diagLine('آخر خطأ من الجسر', `<span dir="ltr" style="font-size:11px;">${le}</span>`) : ''}
+          ${diagLine('فهرس المكتبة المحلي', d.fts_available ? `جاهز (${d.fts_shards} شظية)` : 'غير مبني')}
+          <div id="searchDiagTest" style="margin-top: 8px;"></div>
+          <button type="button" class="btn-secondary-action" style="margin-top: 10px;" onclick="runSearchDiagnose()">فحص حالة البحث الآن</button>
+        </div>
       </div>
     `;
     return;

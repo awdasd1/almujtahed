@@ -501,6 +501,28 @@ def _search_local(query, mode="phrase", death_max=None, death_min=None, categori
                          "note": "بحث مباشر في فهرس الشاملة المثبتة (مسار كسول)"}}
 
 
+_LAST_ERROR = {"message": "", "at": 0.0}
+
+
+def last_error() -> dict:
+    return dict(_LAST_ERROR)
+
+
+def bridge_diagnostics() -> dict:
+    """تشخيص جسر الشاملة دون بحث فعلي: الجذر، الـ JVM، مكتبات Lucene."""
+    import shamela_link as SL
+    root = SL.find_shamela_root()
+    jvm, jars = (SL._find_jvm_and_jars(root) if root else (None, []))
+    return {
+        "shamela_root": str(root) if root else "",
+        "jvm_found": bool(jvm),
+        "jvm_path": str(jvm or ""),
+        "lucene_jars": len(jars or []),
+        "reader_open": _STATE.get("reader") is not None,
+        "last_error": dict(_LAST_ERROR),
+    }
+
+
 def search(query, mode="phrase", death_max=None, death_min=None, categories=None,
            book_ids=None, include_alive=False, limit=10):
     """بحث الجسر: ذاكرة نتائج أولًا، ثم توزيع على جسور العمال المتوازية إن
@@ -533,6 +555,10 @@ def search(query, mode="phrase", death_max=None, death_min=None, categories=None
                                death_min=death_min, categories=categories,
                                book_ids=book_ids, include_alive=include_alive,
                                limit=limit)
+    if result.get("status") != "ok":
+        import time as _time
+        _LAST_ERROR.update({"message": str(result.get("message") or "")[:300],
+                            "at": _time.time()})
     if result.get("status") == "ok":
         with _CACHE_LOCK:
             _RESULT_CACHE[_ckey] = result

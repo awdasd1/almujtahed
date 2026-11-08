@@ -5382,7 +5382,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.347"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.348"},
         },
     })
     if opened.get("error"):
@@ -7078,6 +7078,53 @@ def _format_endpoint_results(cands, req) -> List[Dict[str, Any]]:
     return out
 
 
+def _search_diagnostics_light() -> Dict[str, Any]:
+    """تشخيص خفيف لحالة البحث يُرفق بالنتائج الفارغة بدل الصمت."""
+    diag: Dict[str, Any] = {}
+    try:
+        import shamela_link
+        diag["library_source"] = shamela_link.library_source()
+        root = shamela_link.find_shamela_root()
+        diag["shamela_found"] = bool(root)
+        diag["shamela_root"] = str(root) if root else ""
+        diag["mirror_ready"] = shamela_link.mirror_ready()
+    except Exception as exc:
+        diag["library_source"] = f"error: {exc}"
+    try:
+        import library_search
+        st = library_search.index_status()
+        diag["fts_available"] = bool(st.get("available"))
+        diag["fts_shards"] = st.get("shards", 0)
+    except Exception:
+        pass
+    try:
+        import shamela_search
+        diag["bridge"] = shamela_search.bridge_diagnostics()
+    except Exception as exc:
+        diag["bridge_error"] = str(exc)[:200]
+    return diag
+
+
+@app.get("/api/search/diagnose")
+async def search_diagnose():
+    """فحص كامل لمنظومة البحث مع بحث تجريبي فعلي في الجسر — لتشخيص
+    أجهزة المستخدمين عن بُعد (يُعرض من زر «فحص حالة البحث»)."""
+    diag = _search_diagnostics_light()
+    t0 = time.time()
+    try:
+        import shamela_search
+        test = shamela_search.search("الصلاة", mode="phrase", limit=1)
+        diag["bridge_test"] = {
+            "status": test.get("status"),
+            "hits": len(test.get("results") or []),
+            "message": str(test.get("message") or "")[:300],
+            "seconds": round(time.time() - t0, 2),
+        }
+    except Exception as exc:
+        diag["bridge_test"] = {"status": "exception", "message": str(exc)[:300]}
+    return diag
+
+
 @app.post("/api/search")
 async def search_endpoint(req: SearchRequest):
     """
@@ -7124,7 +7171,8 @@ async def search_endpoint(req: SearchRequest):
         return {
             "results": [],
             "query": query,
-            "error": "مخزن المتجهات Qdrant غير متصل أو لم تكتمل استعادة السنابشوت بعد.",
+            "error": "لا نتائج من أي قناة بحث متاحة على هذا الجهاز.",
+            "diagnostics": _search_diagnostics_light(),
             "count": 0,
             "duration": round(time.time() - t0, 3)
         }
