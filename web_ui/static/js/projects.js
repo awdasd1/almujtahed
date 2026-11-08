@@ -7241,6 +7241,16 @@ function buildAcademicPaperHtml(runData, options) {
    الصفحات تُستدعى طباعة الإطار نفسه فتظهر خيارات طباعة النظام */
 function openAcademicPaperWindow(runData) {
   const html = buildAcademicPaperHtml(runData, { toolbar: false, forPdf: true });
+  /* تطبيق ماك الأصلي: WKWebView يتجاهل window.print()، فيتولى الغلاف
+     الأصلي الطباعة ويفتح لوحة طباعة نظام التشغيل مباشرة */
+  const macBridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+  if (macBridge) {
+    try {
+      macBridge.postMessage({ action: 'printHtml', html: html, base: location.origin + '/' });
+      showToast('جارٍ تجهيز صفحات البحث للطباعة…');
+      return;
+    } catch (e) {}
+  }
   const old = document.getElementById('almujtahed-print-frame');
   if (old) old.remove();
   const frame = document.createElement('iframe');
