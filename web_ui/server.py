@@ -5336,7 +5336,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.324"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.325"},
         },
     })
     if opened.get("error"):
@@ -21919,7 +21919,7 @@ def build_docx_bytes(payload: dict) -> bytes:
     paras = "".join(_docx_paragraph(b, styles, fn_count) for b in blocks if isinstance(b, dict))
     sect = (
         "<w:sectPr>"
-        '<w:footnotePr><w:numFmt w:val="arabic"/><w:numRestart w:val="eachPage"/></w:footnotePr>'
+        '<w:footnotePr><w:numFmt w:val="arabic"/></w:footnotePr>'
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="1134" w:right="1020" w:bottom="1361" w:left="1020" w:header="720" w:footer="720" w:gutter="0"/>'
         '<w:docGrid w:linePitch="360"/>'

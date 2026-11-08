@@ -7263,6 +7263,22 @@ function buildAcademicPaperHtml(runData, options) {
           payload.blocks.push({ kind: kind, runs: cleaned });
         });
       });
+      // ترتيب الحواشي بحسب أول ورود إحالاتها في المتن ليتوافق رقم
+      // وورد التلقائي المتصل مع رقم الحاشية النصي توافقًا تامًا
+      var refOrder = [];
+      var refSeen = new Set();
+      payload.blocks.forEach(function (b) {
+        b.runs.forEach(function (r) {
+          if (r.fn !== undefined && !refSeen.has(r.fn)) { refSeen.add(r.fn); refOrder.push(r.fn); }
+        });
+      });
+      payload.footnotes.forEach(function (f, i) { if (!refSeen.has(i)) refOrder.push(i); });
+      var remap = new Map(refOrder.map(function (oldIdx, newIdx) { return [oldIdx, newIdx]; }));
+      payload.footnotes = refOrder.map(function (oldIdx) { return payload.footnotes[oldIdx]; });
+      payload.blocks.forEach(function (b) {
+        b.runs.forEach(function (r) { if (r.fn !== undefined) r.fn = remap.get(r.fn); });
+      });
+      payload.footnotes.forEach(function (f, i) { f.n = i + 1; });
       return payload;
     }
     async function exportPaperWord() {

@@ -1797,6 +1797,21 @@ function buildWordPayload(doc) {
       payload.blocks.push({ kind, runs: cleaned });
     });
   });
+  // ترتيب الحواشي بحسب أول ورود إحالاتها في المتن: رقم وورد التلقائي
+  // المتصل ورقم الحاشية النصي بين قوسيها يتبعان التسلسل نفسه حتمًا
+  // فلا ينزلق التوافق مهما اختلف تصفيح وورد عن تصفيح التطبيق
+  const refOrder = [];
+  const refSeen = new Set();
+  payload.blocks.forEach((b) => b.runs.forEach((r) => {
+    if (r.fn !== undefined && !refSeen.has(r.fn)) { refSeen.add(r.fn); refOrder.push(r.fn); }
+  }));
+  payload.footnotes.forEach((f, i) => { if (!refSeen.has(i)) refOrder.push(i); });
+  const remap = new Map(refOrder.map((oldIdx, newIdx) => [oldIdx, newIdx]));
+  payload.footnotes = refOrder.map((oldIdx) => payload.footnotes[oldIdx]);
+  payload.blocks.forEach((b) => b.runs.forEach((r) => {
+    if (r.fn !== undefined) r.fn = remap.get(r.fn);
+  }));
+  payload.footnotes.forEach((f, i) => { f.n = i + 1; });
   return payload;
 }
 
