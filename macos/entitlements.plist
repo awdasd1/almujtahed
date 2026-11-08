@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- المُشغّل لا يحمّل إلا أطر نظام آبل، ولا JIT داخل عمليته (WebKit
+	     يعمل في عمليات نظام منفصلة)، فلا تصاريح استثنائية. وجود الملف
+	     يوثّق هذا القصد ويترك موضعًا لأي تصريح مستقبلي. -->
+</dict>
+</plist>

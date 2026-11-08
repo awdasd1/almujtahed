@@ -61,4 +61,41 @@ cp "$ROOT/web_ui/static/fonts/Almarai-Regular.ttf" "$ROOT/web_ui/static/fonts/Al
 chmod +x "$DEST/Contents/MacOS/AlMujtahed" "$DEST/Contents/Resources/launch.sh"
 rsync -a "$STAGE/source/" "$DEST/Contents/Resources/source/"
 xattr -cr "$DEST" || true
+
+# --- التوقيع والتوثيق (Developer ID + Notarization) -----------------------
+# إن وُجدت شهادة «Developer ID Application» في سلسلة المفاتيح وقّعنا
+# بالتصليب الأمني وختم زمني، ثم وثّقنا عند آبل إن توفر ملف اعتماد
+# التوثيق (almujtahed-notary). بغيابهما يُبنى التطبيق غير موقّع كما
+# كان، مع تنبيه. تعطيل التوثيق وحده: ALMUJTAHED_NOTARIZE=off
+SIGN_ID="${ALMUJTAHED_SIGN_ID:-}"
+if [ -z "$SIGN_ID" ]; then
+  SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)".*/\1/')"
+fi
+if [ -n "$SIGN_ID" ]; then
+  echo "🔏 التوقيع بهوية: $SIGN_ID"
+  codesign --force --options runtime --timestamp \
+    --entitlements "$ROOT/macos/entitlements.plist" \
+    --sign "$SIGN_ID" "$DEST/Contents/MacOS/AlMujtahed"
+  codesign --force --options runtime --timestamp \
+    --entitlements "$ROOT/macos/entitlements.plist" \
+    --sign "$SIGN_ID" "$DEST"
+  codesign --verify --strict --verbose=2 "$DEST"
+  NOTARY_PROFILE="${ALMUJTAHED_NOTARY_PROFILE:-almujtahed-notary}"
+  if [ "${ALMUJTAHED_NOTARIZE:-on}" != "off" ] \
+     && xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+    echo "📨 التوثيق عند آبل (قد يستغرق دقائق)…"
+    ZIP_TMP="$(mktemp -d)/almujtahed-notarize.zip"
+    ditto -c -k --keepParent "$DEST" "$ZIP_TMP"
+    xcrun notarytool submit "$ZIP_TMP" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$DEST"
+    xcrun stapler validate "$DEST"
+    spctl --assess --type execute --verbose=2 "$DEST" || true
+    echo "✅ تطبيق موقّع وموثّق"
+  else
+    echo "⚠️ وُقّع التطبيق وتخطينا التوثيق (لا ملف اعتماد توثيق «$NOTARY_PROFILE»)"
+  fi
+else
+  echo "⚠️ لا شهادة Developer ID في سلسلة المفاتيح — التطبيق غير موقّع"
+fi
 echo "$DEST"
