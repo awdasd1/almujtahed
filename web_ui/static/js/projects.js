@@ -7237,20 +7237,15 @@ function buildAcademicPaperHtml(runData, options) {
 }
 
 /* الطباعة مباشرة إلى نافذة طباعة نظام التشغيل (ماك/ويندوز) بلا نافذة
-   وسيطة: تُبنى الورقة في إطار مخفي خارج الشاشة، وبعد اكتمال تقسيم
-   الصفحات تُستدعى طباعة الإطار نفسه فتظهر خيارات طباعة النظام */
+   وسيطة. التقسيم الصفحي (Paged.js) لا يتقدّم في نوافذ ويب خفية تمامًا
+   (ثبت بالاختبار: ٠ صفحة في عرض WKWebView خارج الشاشة)، فيجري التقسيم
+   هنا داخل إطار بصفحة التطبيق الحيّة، ثم:
+   - ماك: تُرسل الورقة مقسّمةً جاهزة إلى الغلاف الأصلي (لأن WKWebView
+     يتجاهل window.print) فيطبعها بلوحة طباعة النظام.
+   - ويندوز/المتصفح: تُطبع طباعةَ الإطار نفسه إلى نافذة نظام التشغيل */
 function openAcademicPaperWindow(runData) {
   const html = buildAcademicPaperHtml(runData, { toolbar: false, forPdf: true });
-  /* تطبيق ماك الأصلي: WKWebView يتجاهل window.print()، فيتولى الغلاف
-     الأصلي الطباعة ويفتح لوحة طباعة نظام التشغيل مباشرة */
   const macBridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
-  if (macBridge) {
-    try {
-      macBridge.postMessage({ action: 'printHtml', html: html, base: location.origin + '/' });
-      showToast('جارٍ تجهيز صفحات البحث للطباعة…');
-      return;
-    } catch (e) {}
-  }
   const old = document.getElementById('almujtahed-print-frame');
   if (old) old.remove();
   const frame = document.createElement('iframe');
@@ -7259,11 +7254,26 @@ function openAcademicPaperWindow(runData) {
   frame.style.cssText = 'position:fixed;top:0;left:-10000px;width:900px;height:1200px;border:0;visibility:hidden;';
   document.body.appendChild(frame);
   showToast('جارٍ تجهيز صفحات البحث للطباعة…');
-  let printed = false;
+  let settled = false;
   const cleanup = () => { setTimeout(() => { try { frame.remove(); } catch (e) {} }, 3000); };
-  const doPrint = () => {
-    if (printed) return;
-    printed = true;
+  const finish = (paginated) => {
+    if (settled) return;
+    settled = true;
+    if (macBridge) {
+      let out = html;
+      if (paginated) {
+        try {
+          out = '<!DOCTYPE html>\n' + frame.contentDocument.documentElement.outerHTML;
+          out = out.replace(/<script[^>]*paged\.polyfill[^>]*><\/script>/i, '');
+        } catch (e) { out = html; }
+      }
+      try {
+        macBridge.postMessage({ action: 'printHtml', html: out, base: location.origin + '/' });
+        showToast('جارٍ فتح نافذة طباعة النظام…');
+      } catch (e) {}
+      cleanup();
+      return;
+    }
     const win = frame.contentWindow;
     if (!win) { cleanup(); return; }
     try { win.addEventListener('afterprint', cleanup); } catch (e) {}
@@ -7279,9 +7289,9 @@ function openAcademicPaperWindow(runData) {
   const timer = setInterval(() => {
     let done = false;
     try { done = !!(frame.contentWindow && frame.contentWindow.__pagedDone); } catch (e) {}
-    if (done || Date.now() - started > 180000) {
+    if (done || Date.now() - started > (macBridge ? 60000 : 180000)) {
       clearInterval(timer);
-      setTimeout(doPrint, 350);
+      setTimeout(() => finish(done), 350);
     }
   }, 400);
 }

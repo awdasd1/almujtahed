@@ -184,7 +184,7 @@ final class ReadingWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigatio
    الصفحات (__pagedDone)، ثم تفتح لوحة طباعة نظام التشغيل
    (NSPrintPanel) على نافذة التطبيق. عملية الطباعة نفسها محفوظة بقوة
    حتى اكتمالها — تحريرها مبكرًا كان يمنع ظهور اللوحة ويسبب انهيارًا */
-final class NativePrinter: NSObject {
+final class NativePrinter: NSObject, WKNavigationDelegate {
     static let shared = NativePrinter()
 
     private let webView: WKWebView
@@ -210,9 +210,19 @@ final class NativePrinter: NSObject {
         )
         hostWindow.contentView = webView
         super.init()
+        webView.navigationDelegate = self
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        NSLog("AlMujtahedPrint: navigation finished")
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        NSLog("AlMujtahedPrint: navigation failed: %@", error.localizedDescription)
     }
 
     func enqueue(html: String, baseURL: URL, presentingWindow: NSWindow?) {
+        NSLog("AlMujtahedPrint: enqueue %d chars", html.count)
         queue.append((html: html, baseURL: baseURL, presenting: presentingWindow))
         pump()
     }
@@ -231,22 +241,32 @@ final class NativePrinter: NSObject {
         }
     }
 
+    /* الورقة تصل مقسّمة الصفحات جاهزة من صفحة التطبيق (تقسيم Paged.js
+       لا يعمل في نافذة خفية)، فيكفي هنا اكتمال التحميل وجهوزية الخطوط */
     private func poll() {
         guard phase == .loading else { return }
-        if Date().timeIntervalSince(startedAt) > 180 {
+        if Date().timeIntervalSince(startedAt) > 120 {
+            NSLog("AlMujtahedPrint: timeout — opening panel anyway")
             openPrintPanel()
             return
         }
-        webView.evaluateJavaScript("window.__pagedDone === true") { [weak self] result, _ in
+        webView.evaluateJavaScript("document.readyState") { [weak self] result, _ in
             guard let self, self.phase == .loading else { return }
-            if (result as? Bool) == true {
-                self.openPrintPanel()
+            guard (result as? String) == "complete" else { return }
+            self.pollTimer?.invalidate()
+            self.pollTimer = nil
+            self.webView.evaluateJavaScript("document.fonts && document.fonts.ready ? document.fonts.ready.then(function () { return true; }) : true") { [weak self] _, _ in
+                guard let self, self.phase == .loading else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                    self?.openPrintPanel()
+                }
             }
         }
     }
 
     private func openPrintPanel() {
         guard phase == .loading else { return }
+        NSLog("AlMujtahedPrint: opening print panel")
         phase = .panel
         pollTimer?.invalidate()
         pollTimer = nil
@@ -279,6 +299,7 @@ final class NativePrinter: NSObject {
     }
 
     @objc func printOperationDidRun(_ operation: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
+        NSLog("AlMujtahedPrint: panel closed success=%@", success ? "true" : "false")
         finishJob()
     }
 
@@ -529,7 +550,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.300")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.301")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -613,7 +634,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.300"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.301"
     }
 
     private func buildWindow() {
