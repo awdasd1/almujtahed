@@ -8299,15 +8299,34 @@ table tr:hover td,
   background: #fff;
 }
 
-.chat-reading-close {
-  align-self: flex-start;
-  margin: 8px 12px;
+.chat-reading-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  border-bottom: 1px solid #e5e0d8;
   z-index: 2;
+}
+
+.chat-reading-print {
+  border: none;
+  background: linear-gradient(135deg, #B45309, #D97706);
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-reading-close {
   border: 1px solid #e5e0d8;
   background: #fff;
   color: #1f2937;
   border-radius: 6px;
-  padding: 4px 10px;
+  padding: 6px 12px;
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;

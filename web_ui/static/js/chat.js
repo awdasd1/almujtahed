@@ -1448,6 +1448,31 @@ function writeChatReadingDocument(win, htmlContent) {
   win.__readingSource = htmlContent;
 }
 
+/* طباعة محتوى تراكب القراءة/الطباعة من رأسه مباشرة: على الماك تُسلَّم
+   الصفحة (مقسّمةً إن كانت ورقة طباعة) إلى غلاف التطبيق ليفتح لوحة
+   طباعة النظام، وفي غيره تُطبع طباعة الإطار نفسه */
+function printChatReadingFrame() {
+  const frame = document.getElementById('chatReadingFrame');
+  if (!frame || !frame.contentWindow) return;
+  const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+  if (bridge) {
+    let out = '';
+    try {
+      out = '<!DOCTYPE html>\n' + frame.contentDocument.documentElement.outerHTML;
+      out = out.replace(/<script[^>]*paged\.polyfill[^>]*><\/script>/i, '');
+    } catch (e) { out = ''; }
+    if (out) {
+      try {
+        bridge.postMessage({ action: 'printHtml', html: out, base: location.origin + '/' });
+        showToast('جارٍ فتح نافذة طباعة النظام…');
+        return;
+      } catch (e) {}
+    }
+  }
+  try { frame.contentWindow.focus(); } catch (e) {}
+  try { frame.contentWindow.print(); } catch (e) {}
+}
+
 function openChatReadingOverlay(htmlContent) {
   let overlay = document.getElementById('chatReadingOverlay');
   if (!overlay) {
@@ -1456,7 +1481,10 @@ function openChatReadingOverlay(htmlContent) {
     overlay.className = 'chat-reading-overlay';
     overlay.innerHTML = `
       <div class="chat-reading-window" role="dialog" aria-label="قراءة">
-        <button type="button" class="chat-reading-close" aria-label="إغلاق">إغلاق</button>
+        <div class="chat-reading-head">
+          <button type="button" class="chat-reading-print">🖨️ طباعة / حفظ PDF</button>
+          <button type="button" class="chat-reading-close" aria-label="إغلاق">إغلاق</button>
+        </div>
         <iframe id="chatReadingFrame" title="قراءة"></iframe>
       </div>`;
     overlay.addEventListener('click', (event) => {
@@ -1464,6 +1492,9 @@ function openChatReadingOverlay(htmlContent) {
     });
     overlay.querySelector('.chat-reading-close').addEventListener('click', () => {
       overlay.hidden = true;
+    });
+    overlay.querySelector('.chat-reading-print').addEventListener('click', () => {
+      printChatReadingFrame();
     });
     document.body.appendChild(overlay);
   }
