@@ -1547,7 +1547,7 @@ function exportChatMessageHtml(idx) {
     directorModel: cleanModelDisplayName(msg.model || 'الذكاء الاصطناعي الأكاديمي'),
     rounds: [{
       round: 1,
-      name: 'النتيجة والدراسة التحريرية المعتمدة',
+      name: '',
       output: msg.content,
       executedAt: new Date().toLocaleString('ar-SA')
     }]
@@ -1917,7 +1917,7 @@ function chatAnswerPaper(idx) {
       bibliography: Array.isArray(msg.witnesses) ? msg.witnesses : [],
       rounds: [{
         round: 1,
-        name: msg.selection_research ? title : 'النتيجة والدراسة التحريرية المعتمدة',
+        name: msg.selection_research ? title : '',
         output,
         executedAt: new Date().toLocaleString('ar-SA')
       }]

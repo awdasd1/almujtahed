@@ -5571,7 +5571,7 @@ function buildStandaloneProjectHtml(runData, options) {
     <div class="execution-round-card">
       <div class="round-card-header">
         <div class="round-title-box">
-          <span class="round-name">📌 ${escapeHtml(r.name || `الجولة رقم ${r.round}`)}</span>
+          ${r.name === '' ? '' : `<span class="round-name">📌 ${escapeHtml(r.name || `الجولة رقم ${r.round}`)}</span>`}
           <span class="round-date">(${escapeHtml(r.executedAt || '')})</span>
         </div>
         <span class="round-badge">جولة معتمدة ومحققة ✓</span>
@@ -6799,7 +6799,7 @@ function buildAcademicPaperHtml(runData, options) {
     : [{ round: 1, name: 'المرحلة التحريرية الكاملة', output: runData.rawOutput }];
   const roundsBodyHtml = pagedPaperTransform(rounds.map(r => `
     <section class="academic-round-section">
-      <h2 class="academic-round-title">${escapeHtml(r.name || `الجولة رقم ${toArabicIndicDigits(r.round)}`)}</h2>
+      ${r.name === '' ? '' : `<h2 class="academic-round-title">${escapeHtml(r.name || `الجولة رقم ${toArabicIndicDigits(r.round)}`)}</h2>`}
       <div class="academic-text-content">${formatAcademicBody(r.output || '')}</div>
     </section>
   `).join(''));
@@ -7520,7 +7520,6 @@ function buildAcademicPaperHtml(runData, options) {
   <header class="print-cover-header">
     <div class="paper-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
     <h1 class="paper-main-title">${escapeHtml(title)}</h1>
-    <div class="paper-sub-meta">بحث علمي محكم مستخرج عبر منظومة المجتهد</div>
   </header>
   <main>${roundsBodyHtml}${biblioHtml}</main>
   </div>
