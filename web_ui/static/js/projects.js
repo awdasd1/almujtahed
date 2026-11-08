@@ -6746,9 +6746,9 @@ function paperPrintCss() {
     .paper-main-title { font-family: ${stack(s.printH1Font)}; font-size: ${h1Size}pt; font-weight: ${h1W};${col(s.printH1Color)} }
     .academic-round-title { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(13, h1Size - 4)}pt; font-weight: ${h1W};${col(s.printH1Color)} }
     .academic-text-content h1 { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(12, h1Size - 3)}pt; font-weight: ${h1W};${col(s.printH1Color)} }
-    .academic-text-content h2, .academic-subheading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W};${col(s.printH2Color)} }
+    .academic-text-content h2, .academic-text-content .academic-subheading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W};${col(s.printH2Color)} }
     .academic-text-content h3, .academic-text-content h4 { font-family: ${stack(s.printH2Font)}; font-size: ${Math.max(10, h2Size - 2)}pt; font-weight: ${h2W};${col(s.printH2Color)} }
-    .academic-text-content h5, .academic-text-content h6, .academic-inline-heading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W};${col(s.printH2Color)} }
+    .academic-text-content h5, .academic-text-content h6, .academic-text-content .academic-inline-heading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W};${col(s.printH2Color)} }
     .biblio-title { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size + 1}pt; font-weight: ${h2W};${col(s.printH2Color)} }
     body { font-family: ${stack(s.printBodyFont)};${col(s.printBodyColor)} }
     .academic-text-content p, .academic-paragraph { font-family: ${stack(s.printBodyFont)}; font-size: ${bodySize}pt; font-weight: ${bodyW};${col(s.printBodyColor)} }
