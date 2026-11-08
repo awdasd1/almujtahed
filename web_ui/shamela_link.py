@@ -511,6 +511,21 @@ def _find_jvm_and_jars(root: Path):
     jvms = sorted(glob.glob(str(root / "app" / "mac" / "*" / "jre" / "*" / "lib" / "server" / "libjvm.dylib")))
     jvms += sorted(glob.glob(str(root / "app" / "*" / "jre" / "*" / "lib" / "server" / "libjvm.dylib")))
     jvms += sorted(glob.glob(str(root / "app" / "**" / "jvm.dll"), recursive=True))
+    # الشاملة تشحن JRE بعدة معماريات (win\32 وwin\64…): لا بد أن تطابق
+    # معماريةُ الـ JVM معماريةَ بايثوننا، وإلا رفض النظام تحميلها
+    # (WinError 193). نرتّب المرشحين بالمطابقة قبل الأبجدية.
+    import struct as _struct
+    _bits = _struct.calcsize("P") * 8
+
+    def _arch_rank(p: str) -> int:
+        s = str(p).lower().replace("\\", "/")
+        is64 = any(k in s for k in ("arm64", "x64", "amd64", "x86_64", "/64/", "win64"))
+        is32 = ("/32/" in s or "win32" in s or "/x86/" in s) and not is64
+        if _bits == 64:
+            return 0 if is64 else (2 if is32 else 1)
+        return 0 if is32 else (2 if is64 else 1)
+
+    jvms = sorted(jvms, key=lambda p: (_arch_rank(p), p))
     jars = sorted(glob.glob(str(root / "app" / "lucene" / "*" / "*.jar")))
     if not jars:
         jars = sorted(glob.glob(str(root / "app" / "**" / "lucene-core-*.jar"), recursive=True))

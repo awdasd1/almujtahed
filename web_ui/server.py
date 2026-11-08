@@ -5382,7 +5382,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.348"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.349"},
         },
     })
     if opened.get("error"):
@@ -8776,8 +8776,11 @@ def _fts_candidates(query: str, dynamic_anchors, selected_books, top_k: int, dea
     try:
         import shamela_link as _SL
         if _SL.library_source() == "shamela":
-            return _shamela_bridge_candidates(query, dynamic_anchors, selected_books, top_k,
-                                              death_max=death_max, categories=categories, mode=mode)
+            _bridge_hits = _shamela_bridge_candidates(query, dynamic_anchors, selected_books, top_k,
+                                                      death_max=death_max, categories=categories, mode=mode)
+            if _bridge_hits:
+                return _bridge_hits
+            # الجسر ساقط أو فارغ: لا صمت — نكمل إلى الفهرس المحلي إن وُجد
     except Exception:
         pass
     try:
