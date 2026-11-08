@@ -1621,6 +1621,207 @@ function printHtmlViaTempFrame(html) {
   });
 }
 
+/* ===== تصدير وورد: جمع بنية الورقة (فقرات وحواشٍ وأنماط مقاسة) ===== */
+function wordRgbToHex(rgb) {
+  const s = String(rgb || '');
+  if (s.startsWith('rgba(0, 0, 0, 0')) return '';
+  const m = s.match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+  if (!m) return '';
+  return ((1 << 24) + (+m[1] << 16) + (+m[2] << 8) + +m[3]).toString(16).slice(1);
+}
+
+function wordMeasureStyle(el) {
+  if (!el) return null;
+  try {
+    const cs = getComputedStyle(el);
+    const font = (cs.fontFamily || '').split(',')[0].replace(/["']/g, '').trim();
+    if (!font) return null;
+    return {
+      font,
+      size: Math.round(parseFloat(cs.fontSize || '16') * 0.75 * 2) / 2,
+      weight: parseInt(cs.fontWeight, 10) || 400,
+      color: wordRgbToHex(cs.color),
+    };
+  } catch (e) { return null; }
+}
+
+function wordCleanRuns(runs) {
+  const out = [];
+  (runs || []).forEach((r) => {
+    if (r.fn !== undefined) { out.push(r); return; }
+    const t = String(r.t || '');
+    if (!t) return;
+    const prev = out[out.length - 1];
+    if (prev && prev.fn === undefined && !!prev.b === !!r.b && !!prev.i === !!r.i && (prev.cls || '') === (r.cls || '')) {
+      prev.t += t;
+    } else {
+      const nr = { t };
+      if (r.b) nr.b = 1;
+      if (r.i) nr.i = 1;
+      if (r.cls) nr.cls = r.cls;
+      out.push(nr);
+    }
+  });
+  while (out.length && out[0].fn === undefined && !out[0].t.trim()) out.shift();
+  while (out.length && out[out.length - 1].fn === undefined && !out[out.length - 1].t.trim()) out.pop();
+  if (out.length && out[0].fn === undefined) out[0].t = out[0].t.replace(/^\s+/, '');
+  if (out.length && out[out.length - 1].fn === undefined) out[out.length - 1].t = out[out.length - 1].t.replace(/\s+$/, '');
+  return out;
+}
+
+function wordRunsFromNode(node, ctx, out) {
+  node.childNodes.forEach((ch) => {
+    if (ch.nodeType === 3) {
+      if (ch.nodeValue) out.push({ t: ch.nodeValue });
+      return;
+    }
+    if (ch.nodeType !== 1) return;
+    const el = ch;
+    if (el.hasAttribute('data-footnote-call')) {
+      const fnIdx = ctx.callMap ? ctx.callMap.get(el) : undefined;
+      if (fnIdx !== undefined && fnIdx >= 0) out.push({ fn: fnIdx });
+      return;
+    }
+    const cls = typeof el.className === 'string' ? el.className : '';
+    if (el.tagName === 'A') {
+      const href = el.getAttribute('href') || '';
+      const m = href.match(/paper-fn(\d+)/);
+      if (m && ctx.defMap) {
+        if (ctx.defMap.has(m[1])) out.push({ fn: ctx.defMap.get(m[1]) });
+        return;
+      }
+      if (/pg-fn-call|pg-fn-marker|chat-fn-back/.test(cls)) return;
+    }
+    if (/(btn-verify-citation|btn-mcp-verify|chat-source-book|pg-fn-call|pg-fn-marker|chat-fn-back|no-print)/.test(cls)) return;
+    if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'BUTTON') return;
+    if (el.tagName === 'BR') { out.push({ t: '\n' }); return; }
+    const sub = [];
+    wordRunsFromNode(el, ctx, sub);
+    const isB = el.tagName === 'B' || el.tagName === 'STRONG';
+    const isI = el.tagName === 'I' || el.tagName === 'EM';
+    let runCls = '';
+    if (el.classList.contains('quran-verse')) runCls = 'quran';
+    else if (el.classList.contains('hadith-text')) runCls = 'hadith';
+    else if (el.classList.contains('quoted-text')) runCls = 'quote';
+    sub.forEach((r) => {
+      if (r.fn !== undefined) { out.push(r); return; }
+      if (isB) r.b = 1;
+      if (isI) r.i = 1;
+      if (runCls && !r.cls) r.cls = runCls;
+      out.push(r);
+    });
+  });
+}
+
+function wordBodyMeasureEl(doc) {
+  const ps = Array.from(doc.querySelectorAll('.academic-text-content p'));
+  let best = null;
+  let bestLen = 0;
+  ps.slice(0, 40).forEach((p) => {
+    const len = (p.textContent || '').length;
+    if (len > bestLen) { bestLen = len; best = p; }
+  });
+  return best || doc.querySelector('.paper-sheet p');
+}
+
+function buildWordPayload(doc) {
+  const payload = { title: '', styles: {}, blocks: [], footnotes: [] };
+  const titleEl = doc.querySelector('.paper-main-title');
+  payload.title = titleEl ? titleEl.textContent.trim() : (doc.title || 'بحث');
+  payload.styles = {
+    title: wordMeasureStyle(titleEl),
+    body: wordMeasureStyle(wordBodyMeasureEl(doc)),
+    h: wordMeasureStyle(doc.querySelector('.academic-round-title') || doc.querySelector('.academic-subheading') || doc.querySelector('h2')),
+    fn: wordMeasureStyle(doc.querySelector('[data-footnote-marker]') || doc.querySelector('.footnote-item')),
+    biblio: wordMeasureStyle(doc.querySelector('.biblio-list li')),
+    meta: wordMeasureStyle(doc.querySelector('.paper-sub-meta')),
+    quran: wordMeasureStyle(doc.querySelector('.quran-verse')),
+    hadith: wordMeasureStyle(doc.querySelector('.hadith-text')),
+    quote: wordMeasureStyle(doc.querySelector('.quoted-text')),
+  };
+  const ctx = { callMap: new Map(), defMap: new Map() };
+  const pages = Array.from(doc.querySelectorAll('.pagedjs_page'));
+  if (pages.length) {
+    pages.forEach((page) => {
+      const calls = Array.from(page.querySelectorAll('[data-footnote-call]'));
+      const markers = Array.from(page.querySelectorAll('.pagedjs_footnote_area [data-footnote-marker]'));
+      calls.forEach((call, i) => {
+        const mk = markers[i];
+        if (!mk) { ctx.callMap.set(call, -1); return; }
+        const clone = mk.cloneNode(true);
+        clone.querySelectorAll('.pg-fn-marker, .btn-verify-citation, .btn-mcp-verify, script, style').forEach((n) => n.remove());
+        const runs = [];
+        wordRunsFromNode(clone, { callMap: new Map(), defMap: new Map() }, runs);
+        ctx.callMap.set(call, payload.footnotes.length);
+        payload.footnotes.push({ runs: wordCleanRuns(runs) });
+      });
+    });
+  } else {
+    Array.from(doc.querySelectorAll('.footnote-list .footnote-item, p.footnote-line')).forEach((defEl) => {
+      let num = '';
+      const idm = (defEl.getAttribute('id') || '').match(/(\d+)/);
+      const tm = (defEl.textContent || '').trim().match(/^\((\d+|[٠-٩]+)\)/);
+      if (idm) num = idm[1];
+      if (tm) num = String(tm[1]).replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+      if (!num) return;
+      const clone = defEl.cloneNode(true);
+      clone.querySelectorAll('a.chat-fn-back, .btn-verify-citation, .btn-mcp-verify, script, style').forEach((n) => n.remove());
+      const runs = [];
+      wordRunsFromNode(clone, { callMap: new Map(), defMap: new Map() }, runs);
+      const cleaned = wordCleanRuns(runs);
+      if (cleaned.length && cleaned[0].t) cleaned[0].t = cleaned[0].t.replace(/^\s*\((?:\d+|[٠-٩]+)\)\s*/, '');
+      ctx.defMap.set(num, payload.footnotes.length);
+      payload.footnotes.push({ runs: cleaned });
+    });
+  }
+  const roots = pages.length
+    ? pages.map((p) => p.querySelector('.pagedjs_area') || p)
+    : [doc.querySelector('.paper-sheet') || doc.body];
+  const blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
+  roots.forEach((root) => {
+    if (!root) return;
+    root.querySelectorAll(blockSel).forEach((el) => {
+      if (el.closest('.pagedjs_footnote_area')) return;
+      if (el.closest('.footnote-list') || el.classList.contains('footnote-line') || el.classList.contains('footnote-item')) return;
+      let kind = 'p';
+      if (el.classList.contains('paper-main-title')) kind = 'title';
+      else if (el.classList.contains('paper-sub-meta')) kind = 'meta';
+      else if (el.classList.contains('paper-bismillah')) kind = 'bismillah';
+      else if (el.classList.contains('biblio-title')) kind = 'biblioTitle';
+      else if (el.closest('.biblio-list')) kind = 'biblioItem';
+      else if (/^H[1-6]$/.test(el.tagName) || el.classList.contains('academic-round-title') || el.classList.contains('academic-subheading')) kind = 'h';
+      const runs = [];
+      wordRunsFromNode(el, ctx, runs);
+      const cleaned = wordCleanRuns(runs);
+      if (!cleaned.length) return;
+      payload.blocks.push({ kind, runs: cleaned });
+    });
+  });
+  return payload;
+}
+
+async function exportWordFromDoc(doc) {
+  const payload = buildWordPayload(doc);
+  if (!payload.blocks.length) throw new Error('empty');
+  const res = await fetch('/api/projects/export-docx', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('docx');
+  const blob = await res.blob();
+  const name = `${String(payload.title || 'بحث').replace(/[\s/\\:*?"<>|]+/g, '_').slice(0, 80) || 'بحث'}.docx`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
 function printChatReadingFrame(raw) {
   const frame = document.getElementById('chatReadingFrame');
   if (!frame || !frame.contentWindow) return;
@@ -1657,6 +1858,7 @@ function openChatReadingOverlay(htmlContent) {
         <div class="chat-reading-head">
           <button type="button" class="chat-reading-print">🖨️ طباعة / حفظ PDF</button>
           <button type="button" class="chat-reading-print chat-reading-print-raw" title="نفس الطباعة لكن بأرقام حواشٍ غير مرتبطة: نص خام بلا روابط بين المتن والحاشية">🖨️ طباعة خام</button>
+          <button type="button" class="chat-reading-print chat-reading-word" title="تصدير البحث ملف وورد DOCX بنفس التنسيق وبحواشٍ سفلية حقيقية">📝 تصدير وورد</button>
           <button type="button" class="chat-reading-close" aria-label="إغلاق">إغلاق</button>
         </div>
         <iframe id="chatReadingFrame" title="قراءة"></iframe>
@@ -1672,6 +1874,18 @@ function openChatReadingOverlay(htmlContent) {
     });
     overlay.querySelector('.chat-reading-print-raw').addEventListener('click', () => {
       printChatReadingFrame(true);
+    });
+    overlay.querySelector('.chat-reading-word').addEventListener('click', async () => {
+      const fr = document.getElementById('chatReadingFrame');
+      const fw = fr && fr.contentWindow;
+      if (fw && typeof fw.exportPaperWord === 'function') { fw.exportPaperWord(); return; }
+      if (!fr || !fr.contentDocument) return;
+      try {
+        await exportWordFromDoc(fr.contentDocument);
+        showToast('تم تصدير ملف وورد');
+      } catch (e) {
+        showToast('تعذر تصدير ملف وورد');
+      }
     });
     document.body.appendChild(overlay);
   }

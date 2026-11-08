@@ -6841,6 +6841,9 @@ function buildAcademicPaperHtml(runData, options) {
       <button class="btn-act" type="button" onclick="printRawPaper()" title="طباعة الورقة نفسها لكن بأرقام حواشٍ غير مرتبطة: نص خام بلا روابط بين المتن والحاشية">
         <span>🖨️ طباعة خام</span>
       </button>
+      <button class="btn-act" id="btnWordExport" type="button" onclick="exportPaperWord()" title="تصدير البحث ملف وورد DOCX بنفس التنسيق وبحواشٍ سفلية حقيقية">
+        <span>📝 تصدير وورد</span>
+      </button>
       <button class="btn-act" id="btnShareReport" type="button" onclick="shareReportPdf()" title="مشاركة" aria-label="مشاركة" disabled>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
       </button>
@@ -7096,6 +7099,206 @@ function buildAcademicPaperHtml(runData, options) {
         return;
       }
       printRawViaIframe(out);
+    }
+    /* تصدير وورد: جمع بنية الورقة بأنماطها المقاسة وإرسالها للخادم
+       ليولّد DOCX بحواشٍ سفلية حقيقية وبنفس تنسيق هذه الورقة */
+    function wordRgbToHex(rgb) {
+      var s = String(rgb || '');
+      if (s.indexOf('rgba(0, 0, 0, 0') === 0) return '';
+      var m = s.match(/(\\d+)[,\\s]+(\\d+)[,\\s]+(\\d+)/);
+      if (!m) return '';
+      return ((1 << 24) + (+m[1] << 16) + (+m[2] << 8) + +m[3]).toString(16).slice(1);
+    }
+    function wordMeasureStyle(el) {
+      if (!el) return null;
+      try {
+        var cs = getComputedStyle(el);
+        var font = (cs.fontFamily || '').split(',')[0].replace(/["']/g, '').trim();
+        if (!font) return null;
+        return { font: font, size: Math.round(parseFloat(cs.fontSize || '16') * 0.75 * 2) / 2, weight: parseInt(cs.fontWeight, 10) || 400, color: wordRgbToHex(cs.color) };
+      } catch (e) { return null; }
+    }
+    function wordCleanRuns(runs) {
+      var out = [];
+      (runs || []).forEach(function (r) {
+        if (r.fn !== undefined) { out.push(r); return; }
+        var t = String(r.t || '');
+        if (!t) return;
+        var prev = out[out.length - 1];
+        if (prev && prev.fn === undefined && !!prev.b === !!r.b && !!prev.i === !!r.i && (prev.cls || '') === (r.cls || '')) prev.t += t;
+        else {
+          var nr = { t: t };
+          if (r.b) nr.b = 1;
+          if (r.i) nr.i = 1;
+          if (r.cls) nr.cls = r.cls;
+          out.push(nr);
+        }
+      });
+      while (out.length && out[0].fn === undefined && !out[0].t.trim()) out.shift();
+      while (out.length && out[out.length - 1].fn === undefined && !out[out.length - 1].t.trim()) out.pop();
+      if (out.length && out[0].fn === undefined) out[0].t = out[0].t.replace(/^\\s+/, '');
+      if (out.length && out[out.length - 1].fn === undefined) out[out.length - 1].t = out[out.length - 1].t.replace(/\\s+$/, '');
+      return out;
+    }
+    function wordRunsFromNode(node, ctx, out) {
+      node.childNodes.forEach(function (ch) {
+        if (ch.nodeType === 3) {
+          if (ch.nodeValue) out.push({ t: ch.nodeValue });
+          return;
+        }
+        if (ch.nodeType !== 1) return;
+        var el = ch;
+        if (el.hasAttribute('data-footnote-call')) {
+          var fnIdx = ctx.callMap ? ctx.callMap.get(el) : undefined;
+          if (fnIdx !== undefined && fnIdx >= 0) out.push({ fn: fnIdx });
+          return;
+        }
+        var cls = typeof el.className === 'string' ? el.className : '';
+        if (el.tagName === 'A') {
+          var href = el.getAttribute('href') || '';
+          var m = href.match(/paper-fn(\\d+)/);
+          if (m && ctx.defMap) {
+            if (ctx.defMap.has(m[1])) out.push({ fn: ctx.defMap.get(m[1]) });
+            return;
+          }
+          if (/pg-fn-call|pg-fn-marker|chat-fn-back/.test(cls)) return;
+        }
+        if (/(btn-verify-citation|btn-mcp-verify|chat-source-book|pg-fn-call|pg-fn-marker|chat-fn-back|no-print)/.test(cls)) return;
+        if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'BUTTON') return;
+        if (el.tagName === 'BR') { out.push({ t: '\\n' }); return; }
+        var sub = [];
+        wordRunsFromNode(el, ctx, sub);
+        var isB = el.tagName === 'B' || el.tagName === 'STRONG';
+        var isI = el.tagName === 'I' || el.tagName === 'EM';
+        var runCls = '';
+        if (el.classList.contains('quran-verse')) runCls = 'quran';
+        else if (el.classList.contains('hadith-text')) runCls = 'hadith';
+        else if (el.classList.contains('quoted-text')) runCls = 'quote';
+        sub.forEach(function (r) {
+          if (r.fn !== undefined) { out.push(r); return; }
+          if (isB) r.b = 1;
+          if (isI) r.i = 1;
+          if (runCls && !r.cls) r.cls = runCls;
+          out.push(r);
+        });
+      });
+    }
+    function wordBodyMeasureEl(doc) {
+      var best = null;
+      var bestLen = 0;
+      Array.from(doc.querySelectorAll('.academic-text-content p')).slice(0, 40).forEach(function (p) {
+        var len = (p.textContent || '').length;
+        if (len > bestLen) { bestLen = len; best = p; }
+      });
+      return best || doc.querySelector('.paper-sheet p');
+    }
+    function buildWordPayload(doc) {
+      var payload = { title: '', styles: {}, blocks: [], footnotes: [] };
+      var titleEl = doc.querySelector('.paper-main-title');
+      payload.title = titleEl ? titleEl.textContent.trim() : (doc.title || 'بحث');
+      payload.styles = {
+        title: wordMeasureStyle(titleEl),
+        body: wordMeasureStyle(wordBodyMeasureEl(doc)),
+        h: wordMeasureStyle(doc.querySelector('.academic-round-title') || doc.querySelector('.academic-subheading') || doc.querySelector('h2')),
+        fn: wordMeasureStyle(doc.querySelector('[data-footnote-marker]') || doc.querySelector('.footnote-item')),
+        biblio: wordMeasureStyle(doc.querySelector('.biblio-list li')),
+        meta: wordMeasureStyle(doc.querySelector('.paper-sub-meta')),
+        quran: wordMeasureStyle(doc.querySelector('.quran-verse')),
+        hadith: wordMeasureStyle(doc.querySelector('.hadith-text')),
+        quote: wordMeasureStyle(doc.querySelector('.quoted-text'))
+      };
+      var ctx = { callMap: new Map(), defMap: new Map() };
+      var pages = Array.from(doc.querySelectorAll('.pagedjs_page'));
+      if (pages.length) {
+        pages.forEach(function (page) {
+          var calls = Array.from(page.querySelectorAll('[data-footnote-call]'));
+          var markers = Array.from(page.querySelectorAll('.pagedjs_footnote_area [data-footnote-marker]'));
+          calls.forEach(function (call, i) {
+            var mk = markers[i];
+            if (!mk) { ctx.callMap.set(call, -1); return; }
+            var clone = mk.cloneNode(true);
+            clone.querySelectorAll('.pg-fn-marker, .btn-verify-citation, .btn-mcp-verify, script, style').forEach(function (n) { n.remove(); });
+            var runs = [];
+            wordRunsFromNode(clone, { callMap: new Map(), defMap: new Map() }, runs);
+            ctx.callMap.set(call, payload.footnotes.length);
+            payload.footnotes.push({ runs: wordCleanRuns(runs) });
+          });
+        });
+      } else {
+        Array.from(doc.querySelectorAll('.footnote-list .footnote-item, p.footnote-line')).forEach(function (defEl) {
+          var num = '';
+          var idm = (defEl.getAttribute('id') || '').match(/(\\d+)/);
+          var tm = (defEl.textContent || '').trim().match(/^\\((\\d+|[٠-٩]+)\\)/);
+          if (idm) num = idm[1];
+          if (tm) num = String(tm[1]).replace(/[٠-٩]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); });
+          if (!num) return;
+          var clone = defEl.cloneNode(true);
+          clone.querySelectorAll('a.chat-fn-back, .btn-verify-citation, .btn-mcp-verify, script, style').forEach(function (n) { n.remove(); });
+          var runs = [];
+          wordRunsFromNode(clone, { callMap: new Map(), defMap: new Map() }, runs);
+          var cleaned = wordCleanRuns(runs);
+          if (cleaned.length && cleaned[0].t) cleaned[0].t = cleaned[0].t.replace(/^\\s*\\((?:\\d+|[٠-٩]+)\\)\\s*/, '');
+          ctx.defMap.set(num, payload.footnotes.length);
+          payload.footnotes.push({ runs: cleaned });
+        });
+      }
+      var roots = pages.length ? pages.map(function (p) { return p.querySelector('.pagedjs_area') || p; }) : [doc.querySelector('.paper-sheet') || doc.body];
+      var blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
+      roots.forEach(function (root) {
+        if (!root) return;
+        root.querySelectorAll(blockSel).forEach(function (el) {
+          if (el.closest('.pagedjs_footnote_area')) return;
+          if (el.closest('.footnote-list') || el.classList.contains('footnote-line') || el.classList.contains('footnote-item')) return;
+          var kind = 'p';
+          if (el.classList.contains('paper-main-title')) kind = 'title';
+          else if (el.classList.contains('paper-sub-meta')) kind = 'meta';
+          else if (el.classList.contains('paper-bismillah')) kind = 'bismillah';
+          else if (el.classList.contains('biblio-title')) kind = 'biblioTitle';
+          else if (el.closest('.biblio-list')) kind = 'biblioItem';
+          else if (/^H[1-6]$/.test(el.tagName) || el.classList.contains('academic-round-title') || el.classList.contains('academic-subheading')) kind = 'h';
+          var runs = [];
+          wordRunsFromNode(el, ctx, runs);
+          var cleaned = wordCleanRuns(runs);
+          if (!cleaned.length) return;
+          payload.blocks.push({ kind: kind, runs: cleaned });
+        });
+      });
+      return payload;
+    }
+    async function exportPaperWord() {
+      var btn = document.getElementById('btnWordExport');
+      var label = btn ? btn.querySelector('span') : null;
+      var old = label ? label.textContent : '';
+      try {
+        if (btn) btn.disabled = true;
+        if (label) label.textContent = 'جارٍ تجهيز وورد…';
+        var payload = buildWordPayload(document);
+        if (!payload.blocks.length) throw new Error('empty');
+        var res = await fetch('/api/projects/export-docx', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('docx');
+        var blob = await res.blob();
+        var name = String(payload.title || 'بحث').replace(/[\\s\\/\\\\:*?"<>|]+/g, '_').slice(0, 80) + '.docx';
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = name || 'بحث.docx';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+        if (label) label.textContent = 'تم تصدير وورد ✓';
+      } catch (e) {
+        window.alert('تعذر تصدير ملف وورد');
+        if (label) label.textContent = old;
+      } finally {
+        if (btn) btn.disabled = false;
+        if (label) setTimeout(function () { label.textContent = old; }, 2600);
+      }
     }
     /* تطبيق ماك: زر الطباعة العلوي يسلّم الورقة مقسّمةً إلى غلاف
        التطبيق الأصلي ليفتح لوحة طباعة النظام (WKWebView يتجاهل

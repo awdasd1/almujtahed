@@ -5336,7 +5336,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.320"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.321"},
         },
     })
     if opened.get("error"):
@@ -21804,6 +21804,225 @@ async def export_project_pdf_endpoint(req: ExportPdfRequest):
             "Content-Type": "application/pdf"
         }
     )
+
+class ExportDocxRequest(BaseModel):
+    title: Optional[str] = "almojtahed_report"
+    styles: dict = {}
+    blocks: list = []
+    footnotes: list = []
+
+
+def _docx_esc(value) -> str:
+    return (str(value if value is not None else "")
+            .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+def _docx_style(styles: dict, key: str, fallback: dict) -> dict:
+    out = dict(fallback or {})
+    st = styles.get(key) if isinstance(styles, dict) else None
+    if isinstance(st, dict):
+        for k in ("font", "size", "weight", "color"):
+            if st.get(k) not in (None, ""):
+                out[k] = st[k]
+    return out
+
+
+def _docx_rpr(style: dict, bold: bool = False, italic: bool = False) -> str:
+    font = _docx_esc(style.get("font") or "Amiri")
+    try:
+        size = float(style.get("size") or 12)
+    except Exception:
+        size = 12
+    half = max(8, int(round(size * 2)))
+    weight = style.get("weight")
+    is_bold = bool(bold)
+    if isinstance(weight, (int, float)) and weight >= 600:
+        is_bold = True
+    elif isinstance(weight, str) and weight.isdigit() and int(weight) >= 600:
+        is_bold = True
+    elif isinstance(weight, str) and weight.lower() in ("bold", "bolder"):
+        is_bold = True
+    color = str(style.get("color") or "").lstrip("#")
+    parts = [f'<w:rFonts w:ascii="{font}" w:hAnsi="{font}" w:cs="{font}" w:eastAsia="{font}"/>']
+    if is_bold:
+        parts.append("<w:b/><w:bCs/>")
+    if italic:
+        parts.append("<w:i/><w:iCs/>")
+    parts.append(f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>')
+    if re.fullmatch(r"[0-9a-fA-F]{6}", color or ""):
+        parts.append(f'<w:color w:val="{color.upper()}"/>')
+    parts.append("<w:rtl/>")
+    return "<w:rPr>" + "".join(parts) + "</w:rPr>"
+
+
+def _docx_runs(runs, base_style: dict, styles: dict, fn_count: int) -> str:
+    out = []
+    for run in runs or []:
+        if not isinstance(run, dict):
+            continue
+        text = str(run.get("t") or "")
+        cls = run.get("cls")
+        style = _docx_style(styles, cls, base_style) if cls in ("quran", "hadith", "quote") else base_style
+        if text:
+            rpr = _docx_rpr(style, bold=bool(run.get("b")), italic=bool(run.get("i")))
+            for i, seg in enumerate(text.split("\n")):
+                if i:
+                    out.append("<w:r><w:br/></w:r>")
+                if seg:
+                    out.append(f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(seg)}</w:t></w:r>')
+        fn = run.get("fn")
+        if isinstance(fn, int) and 0 <= fn < fn_count:
+            out.append(
+                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
+                f'<w:footnoteReference w:id="{fn + 2}"/></w:r>'
+            )
+    return "".join(out)
+
+
+def _docx_paragraph(block: dict, styles: dict, fn_count: int) -> str:
+    kind = str(block.get("kind") or "p")
+    body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
+    key = {"title": "title", "meta": "meta", "h": "h", "biblioTitle": "h", "biblioItem": "biblio"}.get(kind, "body")
+    base = _docx_style(styles, key, body)
+    align = "center" if kind in ("title", "meta", "bismillah", "biblioTitle") else "both"
+    ppr = []
+    if kind == "biblioTitle":
+        ppr.append("<w:pageBreakBefore/>")
+    ppr.append("<w:bidi/>")
+    line = 360 if kind in ("title", "h", "biblioTitle") else 480
+    ppr.append(f'<w:spacing w:line="{line}" w:lineRule="auto" w:after="60"/>')
+    if kind == "p":
+        ppr.append('<w:ind w:firstLine="300"/>')
+    ppr.append(f'<w:jc w:val="{align}"/>')
+    runs = _docx_runs(block.get("runs"), base, styles, fn_count)
+    if not runs:
+        runs = "<w:r><w:t> </w:t></w:r>"
+    return f'<w:p><w:pPr>{"".join(ppr)}</w:pPr>{runs}</w:p>'
+
+
+def build_docx_bytes(payload: dict) -> bytes:
+    styles = payload.get("styles") or {}
+    blocks = payload.get("blocks") or []
+    footnotes = payload.get("footnotes") or []
+    total_chars = sum(len(str(r.get("t") or "")) for b in blocks if isinstance(b, dict) for r in (b.get("runs") or []) if isinstance(r, dict))
+    if len(blocks) > 6000 or len(footnotes) > 6000 or total_chars > 5_000_000:
+        raise ValueError("payload too large")
+    body_style = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
+    fn_style = _docx_style(styles, "fn", {"font": body_style.get("font") or "Amiri", "size": 10, "weight": 400})
+    fn_count = len(footnotes)
+
+    paras = "".join(_docx_paragraph(b, styles, fn_count) for b in blocks if isinstance(b, dict))
+    sect = (
+        "<w:sectPr>"
+        '<w:footnotePr><w:numRestart w:val="eachPage"/></w:footnotePr>'
+        '<w:pgSz w:w="11906" w:h="16838"/>'
+        '<w:pgMar w:top="1134" w:right="1020" w:bottom="1361" w:left="1020" w:header="720" w:footer="720" w:gutter="0"/>'
+        '<w:docGrid w:linePitch="360"/>'
+        "</w:sectPr>"
+    )
+    document_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f"<w:body>{paras}{sect}</w:body></w:document>"
+    )
+
+    fn_paras = []
+    for i, fnote in enumerate(footnotes):
+        runs = _docx_runs((fnote or {}).get("runs"), fn_style, styles, 0) if isinstance(fnote, dict) else ""
+        if not runs:
+            runs = "<w:r><w:t> </w:t></w:r>"
+        fn_paras.append(
+            f'<w:footnote w:id="{i + 2}"><w:p>'
+            '<w:pPr><w:pStyle w:val="FootnoteText"/><w:bidi/>'
+            '<w:spacing w:line="360" w:lineRule="auto" w:after="40"/>'
+            '<w:jc w:val="both"/></w:pPr>'
+            f"{runs}</w:p></w:footnote>"
+        )
+    footnotes_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:footnote w:type="separator" w:id="0"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:separator/></w:r></w:p></w:footnote>'
+        '<w:footnote w:type="continuationSeparator" w:id="1"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>'
+        + "".join(fn_paras)
+        + "</w:footnotes>"
+    )
+
+    body_rpr = _docx_rpr(body_style)
+    fn_rpr = _docx_rpr(fn_style)
+    styles_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'<w:docDefaults><w:rPrDefault>{body_rpr}</w:rPrDefault>'
+        '<w:pPrDefault><w:pPr><w:bidi/><w:jc w:val="both"/></w:pPr></w:pPrDefault></w:docDefaults>'
+        '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>'
+        f"<w:pPr><w:bidi/><w:jc w:val=\"both\"/></w:pPr>{body_rpr}</w:style>"
+        '<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/>'
+        "<w:basedOn w:val=\"Normal\"/>" + fn_rpr + "</w:style>"
+        '<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/>'
+        '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'
+        "</w:styles>"
+    )
+    settings_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        "<w:compat/></w:settings>"
+    )
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>'
+        '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
+        '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
+        "</Types>"
+    )
+    rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+        "</Relationships>"
+    )
+    doc_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>'
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+        '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
+        "</Relationships>"
+    )
+    buf = _io.BytesIO()
+    with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", content_types)
+        z.writestr("_rels/.rels", rels)
+        z.writestr("word/document.xml", document_xml)
+        z.writestr("word/footnotes.xml", footnotes_xml)
+        z.writestr("word/styles.xml", styles_xml)
+        z.writestr("word/settings.xml", settings_xml)
+        z.writestr("word/_rels/document.xml.rels", doc_rels)
+    return buf.getvalue()
+
+
+@app.post("/api/projects/export-docx")
+async def export_project_docx_endpoint(req: ExportDocxRequest):
+    """تصدير البحث ملف وورد (DOCX) بنفس تنسيق ورقة الطباعة وبحواشٍ سفلية حقيقية"""
+    safe_title = re.sub(r'[\s/\\:*?"<>|]', "_", (req.title or "almojtahed_report").strip()) or "almojtahed_report"
+    try:
+        data = build_docx_bytes({"styles": req.styles, "blocks": req.blocks, "footnotes": req.footnotes})
+    except ValueError:
+        raise HTTPException(status_code=413, detail="حجم البحث أكبر من حد تصدير وورد")
+    except Exception:
+        raise HTTPException(status_code=500, detail="فشل توليد ملف وورد")
+    encoded_filename = urllib.parse.quote(f"{safe_title}.docx")
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
+    )
+
 
 if __name__ == "__main__":
     import uvicorn
