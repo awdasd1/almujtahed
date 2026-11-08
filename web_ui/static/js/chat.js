@@ -1217,6 +1217,43 @@ function attachFootnoteHover(container) {
   container.querySelectorAll('.message-bubble.brief-comment .message-content').forEach((content) => {
     if (content.dataset.fnPlainWrapped === '1') return;
     content.dataset.fnPlainWrapped = '1';
+    // حذف أي قسم مراجع/حواشٍ ختامي صاغه النموذج بنفسه مهما كانت
+    // وسومه: العنوان وكل ما يليه حتى آخر النتيجة
+    const refHeads = [];
+    content.querySelectorAll('h1, h2, h3, h4, h5, h6, p, strong, b').forEach((h) => {
+      const t = (h.textContent || '').trim();
+      if (/^(?:📚\s*)?(?:قائمة\s+)?(?:المصادر والمراجع|المصادر|المراجع|الحواشي|ثبت المصادر والمراجع)\s*[:：]?$/.test(t)) {
+        refHeads.push(h.closest('h1, h2, h3, h4, h5, h6, p') || h);
+      }
+    });
+    refHeads.forEach((head) => {
+      let node = head;
+      while (node.parentElement && node.parentElement !== content
+        && !(node.parentElement.classList && node.parentElement.classList.contains('chat-academic'))) {
+        node = node.parentElement;
+      }
+      if (!node.parentElement) return;
+      let n = node;
+      while (n) {
+        const nx = n.nextSibling;
+        // توقف عند شريط أزرار الرسالة أو أي أداة مركّبة فلا يُبتلع
+        if (n.nodeType === 1 && (n.classList.contains('applied-tool-mount')
+          || n.querySelector('.btn-msg-export, .btn-user-msg-action, .applied-tool-mount'))) break;
+        n.remove();
+        n = nx;
+      }
+    });
+    // وقائمة ختامية بلا عنوان إن كانت بنودها إحالات كتب صريحة —
+    // أما قوائم تعريف الحواشي المختومة فتبقى مخفية لتعمل بطاقتها
+    const tail = [...content.querySelectorAll('.chat-academic > ol, .chat-academic > ul, :scope > ol, :scope > ul')]
+      .filter((list) => !list.classList.contains('chat-fn-list'));
+    tail.forEach((list) => {
+      const items = [...list.querySelectorAll(':scope > li')];
+      if (items.length < 2) return;
+      if (list.querySelector('.cit-src, .cit-unresolved, [id*="fn"]')) return;
+      const cites = items.filter((li) => /\(\s*[\d٠-٩]+\s*[-/]\s*[\d٠-٩]+\s*\)|#\d{2,}/.test(li.textContent || '')).length;
+      if (cites >= Math.ceil(items.length * 0.7)) list.remove();
+    });
     const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
       acceptNode: (node) => {
         if (!node.nodeValue || !/\(\s*[٠-٩\d]+\s*\)/.test(node.nodeValue)) return NodeFilter.FILTER_REJECT;
