@@ -6734,13 +6734,20 @@ function paperPrintCss() {
       const imgSize = bgMode === 'cover' ? 'cover' : `${bgSizePct}% auto`;
       const imgRepeat = bgMode === 'repeat' ? 'repeat' : 'no-repeat';
       const imgPos = bgMode === 'repeat' ? '0 0' : 'center';
-      bgCss = `
-    .pagedjs_page {
+      const bgDecls = `
       background-color: #fff;
       background-image: linear-gradient(rgba(255,255,255,${veil}), rgba(255,255,255,${veil})), url('${bgUrl}');
       background-repeat: no-repeat, ${imgRepeat};
       background-position: center, ${imgPos};
       background-size: 100% 100%, ${imgSize};
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;`;
+      bgCss = `
+    .pagedjs_page {${bgDecls}
+    }
+    @media print {
+      .pagedjs_page {${bgDecls}
+      }
     }`;
     } catch (e) {}
   }
