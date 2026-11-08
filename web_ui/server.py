@@ -5437,7 +5437,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.331"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.332"},
         },
     })
     if opened.get("error"):
@@ -21986,7 +21986,7 @@ def _docx_runs(runs, base_style: dict, styles: dict, fn_count: int) -> str:
     return "".join(out)
 
 
-def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool = False) -> str:
+def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool = False, biblio_num: int = 0) -> str:
     kind = str(block.get("kind") or "p")
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     key = {"title": "title", "meta": "meta", "h": "h", "biblioTitle": "h", "biblioItem": "biblio"}.get(kind, "body")
@@ -22016,6 +22016,10 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     runs = _docx_runs(block.get("runs"), base, styles, fn_count)
     if not runs:
         runs = "<w:r><w:t> </w:t></w:r>"
+    if kind == "biblioItem" and biblio_num > 0:
+        # ترقيم قائمة المراجع في وورد بأرقام عربية مشرقية: ١- …
+        num_ar = str(biblio_num).translate(str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩"))
+        runs = f'<w:r>{_docx_rpr(base)}<w:t xml:space="preserve">{num_ar}- </w:t></w:r>' + runs
     return f'<w:p><w:pPr>{"".join(ppr)}</w:pPr>{runs}</w:p>'
 
 
@@ -22034,13 +22038,18 @@ def build_docx_bytes(payload: dict) -> bytes:
     # صفحة جديدة، فيتطابق تصفيح وورد مع صفحات التطبيق صفحةً صفحة
     para_parts = []
     pending_break = False
+    biblio_counter = 0
     for b in blocks:
         if not isinstance(b, dict):
             continue
         if str(b.get("kind") or "") == "pageBreak":
             pending_break = True
             continue
-        para_parts.append(_docx_paragraph(b, styles, fn_count, page_break=pending_break))
+        if str(b.get("kind") or "") == "biblioItem":
+            biblio_counter += 1
+            para_parts.append(_docx_paragraph(b, styles, fn_count, page_break=pending_break, biblio_num=biblio_counter))
+        else:
+            para_parts.append(_docx_paragraph(b, styles, fn_count, page_break=pending_break))
         pending_break = False
     paras = "".join(para_parts)
     sect = (

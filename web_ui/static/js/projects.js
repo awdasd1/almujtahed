@@ -6790,6 +6790,23 @@ function paperPrintCss() {
   return { head: head.join('\n'), css, bg: bgSpec };
 }
 
+/* مفتاح الفرز الأبجدي العربي لعناوين المراجع: بلا تشكيل، وبتوحيد
+   الهمزات والألف المقصورة والتاء المربوطة، وبتجاهل «ال» التعريف */
+function biblioTitleSortKey(title) {
+  return String(title || '').trim()
+    .replace(/[ً-ٰٟ]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/^[^ء-يA-Za-z0-9]+/, '')
+    .replace(/^ال/, '')
+    .trim();
+}
+function compareBiblioTitles(a, b) {
+  return biblioTitleSortKey(a).localeCompare(biblioTitleSortKey(b), 'ar')
+    || String(a || '').localeCompare(String(b || ''), 'ar');
+}
+
 function buildAcademicPaperHtml(runData, options) {
   const settings = options || {};
   if (!runData) return '';
@@ -6825,10 +6842,12 @@ function buildAcademicPaperHtml(runData, options) {
       if ((row.publisher || '').trim()) bits.push(`الناشر: ${escapeHtml(row.publisher)}`);
       if ((row.city || '').trim()) bits.push(`مكان النشر: ${escapeHtml(row.city)}`);
       if (row.print_year) bits.push(`سنة الطبع: ${escapeHtml(toArabicIndicDigits(row.print_year))}`);
-      if (bits.length) biblioItems.push(`<li>${bits.join('، ')}</li>`);
+      if (bits.length) biblioItems.push({ sortTitle: row.title || row.author || '', html: `<li>${bits.join('، ')}</li>` });
     }
     if (biblioItems.length) {
-      biblioHtml = `<section class="academic-round-section"><h2 class="biblio-title">المصادر والمراجع</h2><ol class="biblio-list">${biblioItems.join('')}</ol></section>`;
+      // ترتيب القائمة على الحروف الأبجدية بعناوين الكتب
+      biblioItems.sort((a, b) => compareBiblioTitles(a.sortTitle, b.sortTitle));
+      biblioHtml = `<section class="academic-round-section"><h2 class="biblio-title">المصادر والمراجع</h2><ol class="biblio-list">${biblioItems.map((item) => item.html).join('')}</ol></section>`;
     }
   }
   const printExtras = paperPrintCss();

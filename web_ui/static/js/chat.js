@@ -1034,6 +1034,23 @@ function chatSourceBibliography(row, places) {
   return bits.join('، ');
 }
 
+/* مفتاح الفرز الأبجدي العربي لعناوين المراجع: بلا تشكيل، وبتوحيد
+   الهمزات والألف المقصورة والتاء المربوطة، وبتجاهل «ال» التعريف */
+function biblioTitleSortKey(title) {
+  return String(title || '').trim()
+    .replace(/[ً-ٰٟ]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/^[^ء-يA-Za-z0-9]+/, '')
+    .replace(/^ال/, '')
+    .trim();
+}
+function compareBiblioTitles(a, b) {
+  return biblioTitleSortKey(a).localeCompare(biblioTitleSortKey(b), 'ar')
+    || String(a || '').localeCompare(String(b || ''), 'ar');
+}
+
 function chatWitnessesHtml(msg, idx) {
   const rows = Array.isArray(msg.witnesses) ? msg.witnesses : [];
   if (!rows.length || msg.role === 'user') return '';
@@ -1049,6 +1066,8 @@ function chatWitnessesHtml(msg, idx) {
     const group = groups[index.get(key)];
     if (place && !group.places.includes(place)) group.places.push(place);
   });
+  // ترتيب القائمة على الحروف الأبجدية بعناوين الكتب
+  groups.sort((a, b) => compareBiblioTitles(a.row.title || a.row.author, b.row.title || b.row.author));
   const items = groups.map(({ row, n, places }) => `
       <li class="chat-source-item">
         <div class="chat-source-row">
