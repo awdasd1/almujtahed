@@ -179,17 +179,24 @@ final class ReadingWindow: NSObject, NSWindowDelegate, WKUIDelegate, WKNavigatio
 }
 
 /* طباعة أصلية للماك: WKWebView يتجاهل window.print() من الجافاسكربت،
-   فتستلم هذه المهمة HTML الورقة المقسّمة، وتحملها في عرض ويب خفي خارج
-   الشاشة، وتنتظر اكتمال تقسيم الصفحات (__pagedDone)، ثم تفتح لوحة
-   طباعة نظام التشغيل (NSPrintPanel) على نافذة التطبيق */
-final class NativePrintJob: NSObject {
+   فتستلم هذه الطابعة الدائمة (لا تُدمَّر طوال حياة التطبيق) HTML الورقة
+   المقسّمة، وتحملها في عرض ويب خفي خارج الشاشة، وتنتظر اكتمال تقسيم
+   الصفحات (__pagedDone)، ثم تفتح لوحة طباعة نظام التشغيل
+   (NSPrintPanel) على نافذة التطبيق. عملية الطباعة نفسها محفوظة بقوة
+   حتى اكتمالها — تحريرها مبكرًا كان يمنع ظهور اللوحة ويسبب انهيارًا */
+final class NativePrinter: NSObject {
+    static let shared = NativePrinter()
+
     private let webView: WKWebView
     private let hostWindow: NSWindow
     private weak var presentingWindow: NSWindow?
     private var pollTimer: Timer?
     private var startedAt = Date()
-    private var finished = false
-    var onFinish: (() -> Void)?
+    private var phase: Phase = .idle
+    private var currentOperation: NSPrintOperation?
+    private var queue: [(html: String, baseURL: URL, presenting: NSWindow?)] = []
+
+    private enum Phase { case idle, loading, panel }
 
     override init() {
         let configuration = WKWebViewConfiguration()
@@ -205,24 +212,33 @@ final class NativePrintJob: NSObject {
         super.init()
     }
 
-    func start(html: String, baseURL: URL, presentingWindow: NSWindow?) {
-        self.presentingWindow = presentingWindow
+    func enqueue(html: String, baseURL: URL, presentingWindow: NSWindow?) {
+        queue.append((html: html, baseURL: baseURL, presenting: presentingWindow))
+        pump()
+    }
+
+    private func pump() {
+        guard phase == .idle, !queue.isEmpty else { return }
+        let job = queue.removeFirst()
+        phase = .loading
+        presentingWindow = job.presenting
         startedAt = Date()
         hostWindow.orderFrontRegardless()
-        webView.loadHTMLString(html, baseURL: baseURL)
+        webView.loadHTMLString(job.html, baseURL: job.baseURL)
+        pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.poll()
         }
     }
 
     private func poll() {
-        if finished { return }
+        guard phase == .loading else { return }
         if Date().timeIntervalSince(startedAt) > 180 {
             openPrintPanel()
             return
         }
         webView.evaluateJavaScript("window.__pagedDone === true") { [weak self] result, _ in
-            guard let self, !self.finished else { return }
+            guard let self, self.phase == .loading else { return }
             if (result as? Bool) == true {
                 self.openPrintPanel()
             }
@@ -230,8 +246,8 @@ final class NativePrintJob: NSObject {
     }
 
     private func openPrintPanel() {
-        if finished { return }
-        finished = true
+        guard phase == .loading else { return }
+        phase = .panel
         pollTimer?.invalidate()
         pollTimer = nil
         let info = NSPrintInfo()
@@ -247,32 +263,33 @@ final class NativePrintJob: NSObject {
         let operation = webView.printOperation(with: info)
         operation.showsPrintPanel = true
         operation.showsProgressPanel = true
+        currentOperation = operation
         NSApp.activate(ignoringOtherApps: true)
         if let window = presentingWindow {
             operation.runModal(
                 for: window,
                 delegate: self,
-                didRun: #selector(NativePrintJob.printOperationDidRun(_:success:contextInfo:)),
+                didRun: #selector(NativePrinter.printOperationDidRun(_:success:contextInfo:)),
                 contextInfo: nil
             )
         } else {
             operation.run()
-            cleanup()
+            finishJob()
         }
     }
 
     @objc func printOperationDidRun(_ operation: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
-        cleanup()
+        finishJob()
     }
 
-    private func cleanup() {
+    private func finishJob() {
+        currentOperation = nil
         pollTimer?.invalidate()
         pollTimer = nil
-        hostWindow.contentView = nil
-        hostWindow.close()
-        let callback = onFinish
-        onFinish = nil
-        DispatchQueue.main.async { callback?() }
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
+        phase = .idle
+        pump()
     }
 }
 
@@ -282,7 +299,6 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     var onQuit: (() -> Void)?
     private var quitting = false
     private var readingWindows: [ReadingWindow] = []
-    private var printJobs: [NativePrintJob] = []
 
     init(url: URL) {
         let configuration = WKWebViewConfiguration()
@@ -419,13 +435,7 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
             guard let html = body["html"] as? String, !html.isEmpty else { return }
             let base = (body["base"] as? String).flatMap { URL(string: $0) }
                 ?? URL(string: "http://127.0.0.1:8085/")!
-            let job = NativePrintJob()
-            printJobs.append(job)
-            job.onFinish = { [weak self, weak job] in
-                guard let self, let job else { return }
-                self.printJobs.removeAll { $0 === job }
-            }
-            job.start(html: html, baseURL: base, presentingWindow: window)
+            NativePrinter.shared.enqueue(html: html, baseURL: base, presentingWindow: window)
             return
         }
         guard action == "chooseFolder" else { return }
@@ -519,7 +529,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.299")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.300")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -603,7 +613,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.299"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.300"
     }
 
     private func buildWindow() {
