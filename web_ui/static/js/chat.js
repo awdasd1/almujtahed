@@ -634,9 +634,9 @@ function scrollChatMessageTop(idx) {
 // 🧵 خط زمني لإجابات الشات على يمين منطقة الرسائل: خط طولي عليه نقطة
 // عند رأس كل إجابة، وبجوار كل نقطة مستطيل صغير وسطه اسم مرحلة الإجابة
 // (أول إجابة: مسودة، إجابات جلسة المناقشة: مناقشة ١، ٢...، وإقفال
-// المناقشة واعتماد البحث: نسخة نهائية)، والضغط عليها يقفز إلى رأسها.
+// المناقشة واعتماد البحث: إجابة معتمدة)، والضغط عليها يقفز إلى رأسها.
 // المرحلة مختومة على الرسالة عند توليدها (stage)، وللجلسات القديمة
-// تُستنتج: الجواب التالي لرسالة الإقفال 🔒 نسخة نهائية حتمًا.
+// تُستنتج: الجواب التالي لرسالة الإقفال 🔒 إجابة معتمدة حتمًا.
 // =============================================================================
 function chatAnswerStages(session) {
   const out = [];
@@ -657,7 +657,7 @@ function chatAnswerStages(session) {
     const text = String(msg.content || '');
     if (!text.trim() || text.startsWith('⚠️ تعذر')) { prevFinalize = false; return; }
     if (msg.stage === 'final' || prevFinalize) {
-      out.push({ idx, kind: 'final', label: 'نسخة نهائية' });
+      out.push({ idx, kind: 'final', label: 'إجابة معتمدة' });
     } else if (msg.stage === 'discussion') {
       discCount += 1;
       out.push({ idx, kind: 'discussion', label: `مناقشة ${num(discCount)}` });
