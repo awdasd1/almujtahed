@@ -6520,7 +6520,7 @@ async function downloadProjectReportPdf() {
     showToast('🎉 تم تحميل تقرير PDF الأكاديمي بنجاح!');
   } catch (err) {
     console.warn('Server PDF generation failed, falling back to browser print:', err);
-    showToast('تعذر توليد PDF — تُفتح طباعة النظام مباشرة');
+    showToast('تعذر توليد PDF — تُفتح الورقة HTML للطباعة من زرها العلوي');
     openAcademicPaperWindow(currentProjectRunData);
   }
 }
@@ -7236,64 +7236,27 @@ function buildAcademicPaperHtml(runData, options) {
 </html>`;
 }
 
-/* الطباعة مباشرة إلى نافذة طباعة نظام التشغيل (ماك/ويندوز) بلا نافذة
-   وسيطة. التقسيم الصفحي (Paged.js) لا يتقدّم في نوافذ ويب خفية تمامًا
-   (ثبت بالاختبار: ٠ صفحة في عرض WKWebView خارج الشاشة)، فيجري التقسيم
-   هنا داخل إطار بصفحة التطبيق الحيّة، ثم:
-   - ماك: تُرسل الورقة مقسّمةً جاهزة إلى الغلاف الأصلي (لأن WKWebView
-     يتجاهل window.print) فيطبعها بلوحة طباعة النظام.
-   - ويندوز/المتصفح: تُطبع طباعةَ الإطار نفسه إلى نافذة نظام التشغيل */
+/* بروتوكول الطباعة المعتمد: تُفتح الورقة صفحةَ HTML في نافذة مستقلة
+   (نافذة قراءة في تطبيق الماك/نافذة متصفح في غيره) وفي أعلاها شريط
+   فيه زر «طباعة / حفظ كـ PDF»، فيطبع المستخدم متى شاء بعد اكتمال
+   تقسيم الصفحات أمامه */
 function openAcademicPaperWindow(runData) {
-  const html = buildAcademicPaperHtml(runData, { toolbar: false, forPdf: true });
-  const macBridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
-  const old = document.getElementById('almujtahed-print-frame');
-  if (old) old.remove();
-  const frame = document.createElement('iframe');
-  frame.id = 'almujtahed-print-frame';
-  frame.setAttribute('aria-hidden', 'true');
-  frame.style.cssText = 'position:fixed;top:0;left:-10000px;width:900px;height:1200px;border:0;visibility:hidden;';
-  document.body.appendChild(frame);
-  showToast('جارٍ تجهيز صفحات البحث للطباعة…');
-  let settled = false;
-  const cleanup = () => { setTimeout(() => { try { frame.remove(); } catch (e) {} }, 3000); };
-  const finish = (paginated) => {
-    if (settled) return;
-    settled = true;
-    if (macBridge) {
-      let out = html;
-      if (paginated) {
-        try {
-          out = '<!DOCTYPE html>\n' + frame.contentDocument.documentElement.outerHTML;
-          out = out.replace(/<script[^>]*paged\.polyfill[^>]*><\/script>/i, '');
-        } catch (e) { out = html; }
-      }
-      try {
-        macBridge.postMessage({ action: 'printHtml', html: out, base: location.origin + '/' });
-        showToast('جارٍ فتح نافذة طباعة النظام…');
-      } catch (e) {}
-      cleanup();
+  const fullPrintHtml = buildAcademicPaperHtml(runData, { toolbar: true });
+  const printWin = window.open('', '_blank');
+  if (!printWin || printWin === window) {
+    if (typeof openChatReadingOverlay === 'function') {
+      openChatReadingOverlay(fullPrintHtml);
+      showToast('تم فتح نافذة القراءة');
       return;
     }
-    const win = frame.contentWindow;
-    if (!win) { cleanup(); return; }
-    try { win.addEventListener('afterprint', cleanup); } catch (e) {}
-    setTimeout(cleanup, 300000);
-    try { win.focus(); } catch (e) {}
-    try { win.print(); } catch (e) {
-      showToast('تعذرت طباعة البحث من هذا المتصفح');
-      cleanup();
-    }
-  };
-  frame.srcdoc = html;
-  const started = Date.now();
-  const timer = setInterval(() => {
-    let done = false;
-    try { done = !!(frame.contentWindow && frame.contentWindow.__pagedDone); } catch (e) {}
-    if (done || Date.now() - started > (macBridge ? 60000 : 180000)) {
-      clearInterval(timer);
-      setTimeout(() => finish(done), 350);
-    }
-  }, 400);
+    showToast('تعذر فتح صفحة البحث. اسمح بالنوافذ المنبثقة ثم أعد التصدير');
+    return;
+  }
+  printWin.document.open();
+  printWin.document.write(fullPrintHtml);
+  printWin.document.close();
+  showToast('تم فتح البحث. احفظه كـ PDF من زر الطباعة، وروابط المتن والحاشية تبقى في الملف');
+  setTimeout(() => { try { printWin.focus(); } catch (e) {} }, 400);
 }
 
 function printAcademicPaper() {
