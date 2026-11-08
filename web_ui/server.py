@@ -5336,7 +5336,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.321"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.322"},
         },
     })
     if opened.get("error"):
@@ -21890,8 +21890,7 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int) -> str:
     if kind == "biblioTitle":
         ppr.append("<w:pageBreakBefore/>")
     ppr.append("<w:bidi/>")
-    line = 360 if kind in ("title", "h", "biblioTitle") else 480
-    ppr.append(f'<w:spacing w:line="{line}" w:lineRule="auto" w:after="60"/>')
+    ppr.append('<w:spacing w:line="240" w:lineRule="auto" w:after="60"/>')
     if kind == "p":
         ppr.append('<w:ind w:firstLine="300"/>')
     ppr.append(f'<w:jc w:val="{align}"/>')
@@ -21936,7 +21935,7 @@ def build_docx_bytes(payload: dict) -> bytes:
         fn_paras.append(
             f'<w:footnote w:id="{i + 2}"><w:p>'
             '<w:pPr><w:pStyle w:val="FootnoteText"/><w:bidi/>'
-            '<w:spacing w:line="360" w:lineRule="auto" w:after="40"/>'
+            '<w:spacing w:line="240" w:lineRule="auto" w:after="40"/>'
             '<w:jc w:val="both"/></w:pPr>'
             f"{runs}</w:p></w:footnote>"
         )
