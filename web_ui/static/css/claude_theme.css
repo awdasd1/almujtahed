@@ -10690,6 +10690,21 @@ body::-webkit-scrollbar,
 
 /* بطاقة الشاهد المنبثقة عند التمرير على رقم الحاشية في المتن —
    ألوانها من متغيرات النمط المحدد حصرًا فتلائم كل أنماط الواجهة */
+/* نتيجة «تعليق وشرح مختصر»: أرقام إحالات في المتن فقط، بلا قوائم
+   حواشٍ ولا مراجع ظاهرة — تبقى التعريفات في بنية الصفحة مخفية
+   لتعمل بطاقة الشاهد المنبثقة عند تمرير المؤشر على الرقم */
+.message-bubble.brief-comment .chat-fn-list,
+.message-bubble.brief-comment .footnote-list,
+.message-bubble.brief-comment .footnote-line {
+  display: none !important;
+}
+
+.message-bubble.brief-comment sup.fn-plain-ref {
+  color: var(--link);
+  cursor: pointer;
+  font-weight: 700;
+}
+
 .fn-hover-card {
   position: fixed; z-index: 10060; max-width: 430px; min-width: 260px;
   background: var(--glass, var(--bg-surface)); color: var(--text-main);

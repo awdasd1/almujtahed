@@ -1054,6 +1054,8 @@ function compareBiblioTitles(a, b) {
 function chatWitnessesHtml(msg, idx) {
   const rows = Array.isArray(msg.witnesses) ? msg.witnesses : [];
   if (!rows.length || msg.role === 'user') return '';
+  // «تعليق وشرح مختصر»: لا قائمة مراجع تحت النتيجة — أرقام وبطاقة شاهد فقط
+  if (msg.selection_research) return '';
   const groups = [];
   const index = new Map();
   rows.forEach((row, n) => {
@@ -1208,7 +1210,38 @@ window.openChatWitness = openChatWitness;
 // الحاشية نفسه، مع زر فتح الموضع في الكتاب — تحقق بلا نزول إلى آخر
 // البحث ولا فتح للكتاب إلا عند القصد.
 function attachFootnoteHover(container) {
-  if (!container || container.dataset.fnHoverBound === '1') return;
+  if (!container) return;
+  // في نتائج «تعليق وشرح مختصر» قد يأتي رقم الإحالة نصًا عاديًا (١)
+  // لا عنصر إحالة: يُغلَّف بعنصر مرتفع ليمرَّر عليه وتنبثق بطاقة
+  // شاهده كما في سائر الإجابات
+  container.querySelectorAll('.message-bubble.brief-comment .message-content').forEach((content) => {
+    if (content.dataset.fnPlainWrapped === '1') return;
+    content.dataset.fnPlainWrapped = '1';
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        if (!node.nodeValue || !/\(\s*[٠-٩\d]+\s*\)/.test(node.nodeValue)) return NodeFilter.FILTER_REJECT;
+        if (node.parentElement.closest('.chat-fn-list, .footnote-list, .footnote-line, a, sup, button')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+    textNodes.forEach((node) => {
+      const frag = document.createDocumentFragment();
+      node.nodeValue.split(/(\(\s*[٠-٩\d]+\s*\))/g).forEach((part) => {
+        if (/^\(\s*[٠-٩\d]+\s*\)$/.test(part)) {
+          const sup = document.createElement('sup');
+          sup.className = 'fn-plain-ref';
+          sup.textContent = part;
+          frag.appendChild(sup);
+        } else {
+          frag.appendChild(document.createTextNode(part));
+        }
+      });
+      node.replaceWith(frag);
+    });
+  });
+  if (container.dataset.fnHoverBound === '1') return;
   container.dataset.fnHoverBound = '1';
   let card = document.getElementById('fnHoverCard');
   if (!card) {
@@ -1281,6 +1314,22 @@ function attachFootnoteHover(container) {
             rel: un.getAttribute('data-rel-path') || '', unverified: true,
           });
         }
+      }
+    }
+    if (!entries.length) {
+      // بلا تعريف حاشية في النص (كتعليقات «شرح مختصر»): الشاهد برقم
+      // إحالته من شواهد الرسالة نفسها بترتيب ورودها
+      const idxm = (bubble.id || '').match(/chatMsg(\d+)/);
+      const sess = (typeof chatSessions !== 'undefined' && typeof activeSessionId !== 'undefined')
+        ? chatSessions.find((s) => s.id === activeSessionId) : null;
+      const msgw = (idxm && sess && sess.messages[+idxm[1]]) ? sess.messages[+idxm[1]].witnesses : null;
+      const w = Array.isArray(msgw) ? msgw[parseInt(n, 10) - 1] : null;
+      if (w) {
+        entries.push({
+          book: w.title || '', part: w.part || '', page: w.page || '',
+          quote: String(w.text || '').slice(0, 320),
+          bookId: w.book_id || '', rel: w.rel_path || '',
+        });
       }
     }
     if (entries.length) {
@@ -1471,7 +1520,7 @@ function renderSessionMessages(sessionId, options) {
     `;
 
     return `
-      <div class="message-bubble ${isUser ? 'user' : 'assistant'}" id="chatMsg${idx}">
+      <div class="message-bubble ${isUser ? 'user' : 'assistant'}${msg.selection_research ? ' brief-comment' : ''}" id="chatMsg${idx}">
         <div class="message-avatar">${avatar}</div>
         <div class="message-content">
           ${(!isUser && msg.regenerated) ? `
@@ -7781,7 +7830,7 @@ function onChatSelectPanelClick(event) {
 }
 
 function selectionResearchInstruction(kind) {
-  return `علّق على النص التالي واشرحه شرحًا مختصرًا ${kind.angle}، معتمدًا على الشواهد المرفقة من كتب هذا الفن فقط:\n«${selectionResearch.text}»\nاجعل الجواب مختصرًا مركزًا في فقرات قصيرة بلا إطالة.`;
+  return `علّق على النص التالي واشرحه شرحًا مختصرًا ${kind.angle}، معتمدًا على الشواهد المرفقة من كتب هذا الفن فقط:\n«${selectionResearch.text}»\nاجعل الجواب مختصرًا مركزًا في فقرات قصيرة بلا إطالة.\nضع رقم إحالة كل نقل بين قوسين في موضعه من المتن هكذا (١) (٢) متسلسلًا بحسب ترتيب الشواهد، ولا تكتب في آخر الجواب قائمة حواشٍ ولا قائمة مصادر ومراجع — الأرقام وحدها.`;
 }
 
 async function runSelectionResearch() {
