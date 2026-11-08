@@ -5336,7 +5336,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.325"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.326"},
         },
     })
     if opened.get("error"):
@@ -21885,14 +21885,14 @@ def _docx_runs(runs, base_style: dict, styles: dict, fn_count: int) -> str:
     return "".join(out)
 
 
-def _docx_paragraph(block: dict, styles: dict, fn_count: int) -> str:
+def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool = False) -> str:
     kind = str(block.get("kind") or "p")
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     key = {"title": "title", "meta": "meta", "h": "h", "biblioTitle": "h", "biblioItem": "biblio"}.get(kind, "body")
     base = _docx_style(styles, key, body)
     align = "center" if kind in ("title", "meta", "bismillah", "biblioTitle") else "both"
     ppr = []
-    if kind == "biblioTitle":
+    if page_break or kind == "biblioTitle":
         ppr.append("<w:pageBreakBefore/>")
     ppr.append("<w:bidi/>")
     ppr.append('<w:spacing w:line="240" w:lineRule="auto" w:after="60"/>')
@@ -21916,10 +21916,22 @@ def build_docx_bytes(payload: dict) -> bytes:
     fn_style = _docx_style(styles, "fn", {"font": body_style.get("font") or "Amiri", "size": 10, "weight": 400})
     fn_count = len(footnotes)
 
-    paras = "".join(_docx_paragraph(b, styles, fn_count) for b in blocks if isinstance(b, dict))
+    # كتل pageBreak لا تُرسم: تُرفع علمًا يجعل الفقرة التالية تبدأ
+    # صفحة جديدة، فيتطابق تصفيح وورد مع صفحات التطبيق صفحةً صفحة
+    para_parts = []
+    pending_break = False
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        if str(b.get("kind") or "") == "pageBreak":
+            pending_break = True
+            continue
+        para_parts.append(_docx_paragraph(b, styles, fn_count, page_break=pending_break))
+        pending_break = False
+    paras = "".join(para_parts)
     sect = (
         "<w:sectPr>"
-        '<w:footnotePr><w:numFmt w:val="arabic"/></w:footnotePr>'
+        '<w:footnotePr><w:numFmt w:val="arabic"/><w:numRestart w:val="eachPage"/></w:footnotePr>'
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="1134" w:right="1020" w:bottom="1361" w:left="1020" w:header="720" w:footer="720" w:gutter="0"/>'
         '<w:docGrid w:linePitch="360"/>'

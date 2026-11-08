@@ -1778,8 +1778,11 @@ function buildWordPayload(doc) {
     ? pages.map((p) => p.querySelector('.pagedjs_area') || p)
     : [doc.querySelector('.paper-sheet') || doc.body];
   const blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
-  roots.forEach((root) => {
+  roots.forEach((root, rootIdx) => {
     if (!root) return;
+    // فاصل صفحة صريح بين صفحات التطبيق حتى يصفّح وورد على حدود
+    // الصفحات نفسها فيتطابق ترقيم كل صفحة في المتن والحاشية
+    if (pages.length && rootIdx > 0) payload.blocks.push({ kind: 'pageBreak', runs: [] });
     root.querySelectorAll(blockSel).forEach((el) => {
       if (el.closest('.pagedjs_footnote_area')) return;
       if (el.closest('.footnote-list') || el.classList.contains('footnote-line') || el.classList.contains('footnote-item')) return;
@@ -1797,21 +1800,9 @@ function buildWordPayload(doc) {
       payload.blocks.push({ kind, runs: cleaned });
     });
   });
-  // ترتيب الحواشي بحسب أول ورود إحالاتها في المتن: رقم وورد التلقائي
-  // المتصل ورقم الحاشية النصي بين قوسيها يتبعان التسلسل نفسه حتمًا
-  // فلا ينزلق التوافق مهما اختلف تصفيح وورد عن تصفيح التطبيق
-  const refOrder = [];
-  const refSeen = new Set();
-  payload.blocks.forEach((b) => b.runs.forEach((r) => {
-    if (r.fn !== undefined && !refSeen.has(r.fn)) { refSeen.add(r.fn); refOrder.push(r.fn); }
-  }));
-  payload.footnotes.forEach((f, i) => { if (!refSeen.has(i)) refOrder.push(i); });
-  const remap = new Map(refOrder.map((oldIdx, newIdx) => [oldIdx, newIdx]));
-  payload.footnotes = refOrder.map((oldIdx) => payload.footnotes[oldIdx]);
-  payload.blocks.forEach((b) => b.runs.forEach((r) => {
-    if (r.fn !== undefined) r.fn = remap.get(r.fn);
-  }));
-  payload.footnotes.forEach((f, i) => { f.n = i + 1; });
+  // أرقام الحواشي (n) محفوظة بترتيبها داخل كل صفحة من صفحات
+  // التطبيق، وفواصل الصفحات الصريحة أعلاه تثبّت تصفيح وورد عليها
+  // فيعيد وورد الترقيم من ١ في كل صفحة موافقًا للمتن والحاشية معًا
   return payload;
 }
 

@@ -7244,8 +7244,9 @@ function buildAcademicPaperHtml(runData, options) {
       }
       var roots = pages.length ? pages.map(function (p) { return p.querySelector('.pagedjs_area') || p; }) : [doc.querySelector('.paper-sheet') || doc.body];
       var blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
-      roots.forEach(function (root) {
+      roots.forEach(function (root, rootIdx) {
         if (!root) return;
+        if (pages.length && rootIdx > 0) payload.blocks.push({ kind: 'pageBreak', runs: [] });
         root.querySelectorAll(blockSel).forEach(function (el) {
           if (el.closest('.pagedjs_footnote_area')) return;
           if (el.closest('.footnote-list') || el.classList.contains('footnote-line') || el.classList.contains('footnote-item')) return;
@@ -7263,22 +7264,8 @@ function buildAcademicPaperHtml(runData, options) {
           payload.blocks.push({ kind: kind, runs: cleaned });
         });
       });
-      // ترتيب الحواشي بحسب أول ورود إحالاتها في المتن ليتوافق رقم
-      // وورد التلقائي المتصل مع رقم الحاشية النصي توافقًا تامًا
-      var refOrder = [];
-      var refSeen = new Set();
-      payload.blocks.forEach(function (b) {
-        b.runs.forEach(function (r) {
-          if (r.fn !== undefined && !refSeen.has(r.fn)) { refSeen.add(r.fn); refOrder.push(r.fn); }
-        });
-      });
-      payload.footnotes.forEach(function (f, i) { if (!refSeen.has(i)) refOrder.push(i); });
-      var remap = new Map(refOrder.map(function (oldIdx, newIdx) { return [oldIdx, newIdx]; }));
-      payload.footnotes = refOrder.map(function (oldIdx) { return payload.footnotes[oldIdx]; });
-      payload.blocks.forEach(function (b) {
-        b.runs.forEach(function (r) { if (r.fn !== undefined) r.fn = remap.get(r.fn); });
-      });
-      payload.footnotes.forEach(function (f, i) { f.n = i + 1; });
+      // أرقام الحواشي محفوظة بترتيبها داخل كل صفحة، وفواصل
+      // الصفحات الصريحة تثبّت تصفيح وورد على صفحات التطبيق
       return payload;
     }
     async function exportPaperWord() {
