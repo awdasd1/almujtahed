@@ -179,7 +179,7 @@ def data_database_dir():
 _MIRROR_SYNC_LOCK = threading.Lock()
 
 
-def sync_mirror(progress=lambda m: None) -> dict:
+def sync_mirror(progress=lambda m: None, report=None) -> dict:
     """مزامنة تفاضلية لقاعدة الشاملة إلى مرآتنا: الجديد والمتغير فقط،
     وملفات segments_* أخيرًا حتى لا يشير فهرس المرآة إلى مقاطع لم تصل.
     اكتمالها يرفع علم .mirror_ok فتتحول القراءة إليها من أول بحث تالٍ."""
@@ -204,21 +204,34 @@ def sync_mirror(progress=lambda m: None) -> dict:
             except Exception:
                 return True
 
+        # تعداد مسبق حتى يعرض شريط التقدم «ملف i من of»
+        all_files = []
         for dirpath, _dirs, files in os.walk(src):
             rel_dir = Path(dirpath).relative_to(src)
             for name in files:
-                scanned += 1
-                s, d = Path(dirpath) / name, dst / rel_dir / name
-                if name.startswith("segments"):
-                    segments.append((s, d))
-                    continue
-                if _stale(s, d):
-                    try:
-                        d.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(s, d)
-                        copied += 1
-                    except Exception:
-                        pass
+                all_files.append((Path(dirpath) / name, dst / rel_dir / name, name))
+        total_files = len(all_files)
+
+        def _tick():
+            if report and (scanned % 40 == 0 or scanned == total_files):
+                try:
+                    report(scanned, total_files)
+                except Exception:
+                    pass
+
+        for s, d, name in all_files:
+            scanned += 1
+            if name.startswith("segments"):
+                segments.append((s, d))
+                continue
+            if _stale(s, d):
+                try:
+                    d.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(s, d)
+                    copied += 1
+                except Exception:
+                    pass
+            _tick()
         for s, d in segments:
             if _stale(s, d):
                 try:
@@ -558,7 +571,7 @@ def extract_book(their_id: int, progress=lambda m: None) -> dict:
     return convert(book_ids=[int(their_id)], as_primary=True, progress=progress)
 
 
-def register_new_books() -> int:
+def register_new_books(progress=None) -> int:
     """تسجيل كتب الشاملة المنزّلة غير المعروفة عندنا في الكتالوج والخريطة
     بلا تحويل نصوص — تُستخرج كسولًا عند أول لمس. هذا عمل الإقلاع الخفيف."""
     root = find_shamela_root()
@@ -577,7 +590,14 @@ def register_new_books() -> int:
     con = sqlite3.connect(str(cat)) if cat.exists() else None
     try:
         nxt = NEW_ID_BASE
-        for tid in sorted(downloaded):
+        _dl_sorted = sorted(downloaded)
+        _dl_total = len(_dl_sorted)
+        for _dl_i, tid in enumerate(_dl_sorted, 1):
+            if progress and (_dl_i % 100 == 0 or _dl_i == _dl_total):
+                try:
+                    progress(_dl_i, _dl_total)
+                except Exception:
+                    pass
             if tid in known_theirs:
                 continue
             meta = theirs.get(tid, {})

@@ -5382,7 +5382,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.345"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.346"},
         },
     })
     if opened.get("error"):
@@ -7694,9 +7694,9 @@ async def shamela_set_path(req: ShamelaPathRequest):
     import shamela_link
     res = shamela_link.set_custom_root(req.path)
     if res.get("ok"):
-        # المرآة الداخلية قد تكون من موضع سابق: زامِنها من المسار الجديد
-        threading.Thread(target=lambda: shamela_link.sync_mirror(),
-                         daemon=True, name="shamela-mirror-after-path").start()
+        # المرآة الداخلية قد تكون من موضع سابق: خط الاستيراد المرئي يعيد بناءها
+        threading.Thread(target=_run_shamela_import_job,
+                         daemon=True, name="shamela-import-after-path").start()
         try:
             res["status"] = shamela_link.census()
         except Exception:
@@ -7716,17 +7716,30 @@ async def shamela_clear_path():
 
 
 def _run_shamela_import_job():
-    """تسجيل كتب الشاملة الجديدة في الكتالوج (المسار الكسول): بلا تحويل
-    جماعي — النصوص تُستخرج كتابًا كتابًا عند أول لمس في بحث أو قراءة."""
+    """خط استيراد مرئي المراحل: (١) مزامنة مرآة قاعدة الشاملة الداخلية
+    بعدّاد ملفات، (٢) تسجيل كتبها الجديدة في الكتالوج بعدّاد كتب (المسار
+    الكسول: بلا تحويل جماعي — النصوص تُستخرج عند أول لمس)."""
     if _shamela_job["running"]:
         return
-    _shamela_job.update({"running": True, "stage": "start", "i": 0, "of": 0,
+    _shamela_job.update({"running": True, "stage": "mirror", "i": 0, "of": 0,
                          "title": "", "report": None, "error": "", "started_at": time.time()})
     try:
         import shamela_link
-        _shamela_job["stage"] = "register"
-        added = shamela_link.register_new_books()
-        _shamela_job["report"] = {"registered": added}
+        if not shamela_link.find_shamela_root():
+            _shamela_job.update({"stage": "error",
+                                 "error": "لم يُعثر على الشاملة — حدّد مسارها من بطاقة الربط أولًا."})
+            return
+        mr = shamela_link.sync_mirror(
+            report=lambda i, of: _shamela_job.update({"i": i, "of": of}))
+        _shamela_job.update({"stage": "register", "i": 0, "of": 0})
+        added = shamela_link.register_new_books(
+            progress=lambda i, of: _shamela_job.update({"i": i, "of": of}))
+        _shamela_job["report"] = {
+            "registered": added,
+            "mirror_ok": bool(mr.get("ok")),
+            "mirror_copied": mr.get("copied", 0),
+            "mirror_scanned": mr.get("scanned", 0),
+        }
         _shamela_job["stage"] = "done"
         print(f"📥 [ShamelaLink] سُجّل {added} كتابًا جديدًا من الشاملة (يُستخرج عند اللمس)", flush=True)
     except Exception as exc:
@@ -7782,27 +7795,13 @@ async def shamela_complete():
 
 
 def _shamela_autostart():
-    """عند إقلاع التطبيق: مزامنة مرآة الشاملة الداخلية ثم استيراد ما جدّ."""
+    """عند إقلاع التطبيق: خط الاستيراد نفسه (مرآة ثم تسجيل) وبحالته
+    المرئية في الواجهة، فلا عمل صامت بعد اليوم."""
     try:
         import time as _t
         _t.sleep(25)  # بعد استقرار الإقلاع تمامًا — لا منافسة على أول ثوانٍ
         import shamela_link
-        # الخطة الثانية: مرآة قاعدة الشاملة داخل التطبيق تُزامَن أولًا
-        # (أول مرة: نسخ كامل؛ بعدها: تفاضلي سريع)، فتعمل القراءة منها.
-        try:
-            _mr = shamela_link.sync_mirror(progress=lambda m: print(m, flush=True))
-            if _mr.get("ok"):
-                try:
-                    _added = shamela_link.register_new_books()
-                    if _added:
-                        print(f"📥 [Mirror] سُجّل {_added} كتابًا جديدًا من المرآة", flush=True)
-                except Exception:
-                    pass
-        except Exception as _mexc:
-            print(f"⚠️ [Mirror] تعذّرت المزامنة (نبقى على الأصل): {_mexc}", flush=True)
-        st = shamela_link.census()
-        if st.get("found") and st.get("importable_new", 0) > 0:
-            print(f"📥 [ShamelaLink] {st['importable_new']} كتاب جديد في الشاملة — يُستورد تلقائيًا…", flush=True)
+        if shamela_link.find_shamela_root():
             _run_shamela_import_job()
     except Exception as exc:
         print(f"⚠️ [ShamelaLink] تعذّر الاستيراد التلقائي: {exc}", flush=True)

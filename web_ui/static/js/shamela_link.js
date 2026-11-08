@@ -37,6 +37,7 @@ async function loadShamelaStatus() {
     const cbtn = document.getElementById('shamelaCompleteBtn');
     if (cbtn) cbtn.style.display = st.missing_from_shamela_downloads > 0 ? '' : 'none';
     const job = st.job || {};
+    btn.disabled = !!job.running;
     if (job.watching && !job.running) {
       prog.style.display = '';
       prog.textContent = '👀 نراقب تطبيق الشاملة: نزّل الكتب الناقصة هناك وستُستورد هنا تلقائيًا فور وصولها.';
@@ -47,13 +48,19 @@ async function loadShamelaStatus() {
       const elapsed = job.started_at ? Math.max(0, Math.round(Date.now() / 1000 - job.started_at)) : 0;
       const el = elapsed >= 60 ? `${Math.floor(elapsed / 60)} د ${elapsed % 60} ث` : `${elapsed} ث`;
       let msg;
-      if (job.stage === 'scan' && job.of) {
+      if (job.stage === 'mirror') {
+        msg = job.of
+          ? `جارٍ الاستيراد (١ من ٢) — بناء مرآة الشاملة الداخلية: ملف ${Number(job.i).toLocaleString('ar')} من ${Number(job.of).toLocaleString('ar')} (${Math.min(100, Math.round(100 * job.i / job.of))}٪) · منذ ${el}`
+          : `جارٍ الاستيراد (١ من ٢) — فحص ملفات الشاملة لبناء مرآتها الداخلية… · منذ ${el}`;
+      } else if (job.stage === 'scan' && job.of) {
         const pct = Math.min(100, Math.round(100 * job.i / job.of));
         msg = `جارٍ الاستيراد — فحص فهرس الشاملة: ${Number(job.i).toLocaleString('ar')} من ${Number(job.of).toLocaleString('ar')} صفحة (${pct}٪) · منذ ${el}`;
       } else if (job.stage === 'book' && job.of) {
         msg = `جارٍ الاستيراد — تحويل كتاب ${job.i} من ${job.of}: ${job.title || ''} · منذ ${el}`;
       } else if (job.stage === 'register') {
-        msg = 'جارٍ تسجيل كتب الشاملة الجديدة في المكتبة (بلا تحويل — تُستخرج عند أول لمس)…';
+        msg = job.of
+          ? `جارٍ الاستيراد (٢ من ٢) — تسجيل كتب الشاملة في المكتبة: ${Number(job.i).toLocaleString('ar')} من ${Number(job.of).toLocaleString('ar')} كتابًا · منذ ${el}`
+          : `جارٍ الاستيراد (٢ من ٢) — تسجيل كتب الشاملة الجديدة في المكتبة (بلا تحويل — تُستخرج عند أول لمس)… · منذ ${el}`;
       } else if (job.stage === 'install_jpype') {
         msg = 'جارٍ الاستيراد — تجهيز قارئ فهرس الشاملة (مرة واحدة)…';
       } else if (job.stage === 'indexed') {
@@ -67,7 +74,7 @@ async function loadShamelaStatus() {
       prog.style.display = '';
       const rep = job.report;
       prog.textContent = rep.registered !== undefined
-        ? `اكتمل تسجيل كتب الشاملة الجديدة: ${Number(rep.registered || 0).toLocaleString('ar')} كتابًا — تُستخرج نصوصها تلقائيًا عند أول بحث أو قراءة فيها.`
+        ? `✅ اكتمل الاستيراد: مرآة الشاملة الداخلية محدّثة (فُحص ${Number(rep.mirror_scanned || 0).toLocaleString('ar')} ملفًا${rep.mirror_copied ? `، نُسخ ${Number(rep.mirror_copied).toLocaleString('ar')} جديد/محدّث` : ''})، وسُجّل ${Number(rep.registered || 0).toLocaleString('ar')} كتابًا جديدًا — تُستخرج نصوصها تلقائيًا عند أول بحث أو قراءة فيها.`
         : `اكتمل آخر استيراد: ${rep.converted ? rep.converted.length : 0} كتابًا (${Number(rep.pages || 0).toLocaleString('ar')} صفحة).`;
     } else if (job.stage === 'error') {
       prog.style.display = '';
@@ -96,15 +103,26 @@ function _startShamelaPoll() {
 
 async function startShamelaImport() {
   const btn = document.getElementById('shamelaImportBtn');
+  const prog = document.getElementById('shamelaImportProgress');
   btn.disabled = true;
+  if (prog) {
+    prog.style.display = '';
+    prog.textContent = '⏳ بدأ الاستيراد — نبني مرآة الشاملة الداخلية ثم نسجّل كتبها، وسيظهر التقدم هنا…';
+  }
   try {
     const r = await fetch('/api/shamela/import', { method: 'POST' });
     const st = await r.json();
-    if (!st.ok) alert(st.message || 'تعذّر بدء الاستيراد');
-    else _startShamelaPoll();
+    if (!st.ok && !(st.message || '').includes('جارٍ')) {
+      alert(st.message || 'تعذّر بدء الاستيراد');
+      if (prog) prog.style.display = 'none';
+      btn.disabled = false;
+      return;
+    }
+    _startShamelaPoll();
+    loadShamelaStatus();
   } catch (e) {
     alert('تعذّر بدء الاستيراد');
-  } finally {
+    if (prog) prog.style.display = 'none';
     btn.disabled = false;
   }
 }
