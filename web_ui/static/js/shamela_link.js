@@ -131,6 +131,48 @@ function _applyShamelaPathUi(st) {
   if (clearBtn) clearBtn.style.display = st.custom_root ? '' : 'none';
 }
 
+function _pickFolderNative(promptText) {
+  /* منتقي مجلد أصلي: جسر الماك الجاهز، أو جسر ويندوز (WebView2)،
+     وnull إن فتح المستخدم الواجهة من متصفح عادي بلا جسر. */
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed
+      && typeof chooseNativeFolder === 'function') {
+    return chooseNativeFolder(promptText);
+  }
+  if (window.chrome && window.chrome.webview) {
+    return new Promise((resolve) => {
+      const handler = (e) => {
+        try {
+          const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+          if (d && 'almujtahedFolder' in d) {
+            window.chrome.webview.removeEventListener('message', handler);
+            resolve(d.almujtahedFolder || '');
+          }
+        } catch (_) { /* رسائل أخرى */ }
+      };
+      window.chrome.webview.addEventListener('message', handler);
+      window.chrome.webview.postMessage(JSON.stringify({ action: 'chooseFolder', prompt: promptText }));
+      setTimeout(() => {
+        window.chrome.webview.removeEventListener('message', handler);
+        resolve('');
+      }, 180000);
+    });
+  }
+  return Promise.resolve(null);
+}
+
+async function browseShamelaPath() {
+  const input = document.getElementById('shamelaPathInput');
+  const picked = await _pickFolderNative('اختر مجلد المكتبة الشاملة — المجلد الذي يحتوي مجلد database');
+  if (picked === null) {
+    if (input) { input.focus(); input.select(); }
+    if (typeof showToast === 'function') showToast('الاستعراض الأصلي متاح داخل التطبيق؛ هنا الصق المسار يدويًا');
+    return;
+  }
+  if (!picked) return; // ألغي الاختيار
+  if (input) input.value = picked;
+  saveShamelaPath();
+}
+
 async function saveShamelaPath() {
   const input = document.getElementById('shamelaPathInput');
   const note = document.getElementById('shamelaPathNote');

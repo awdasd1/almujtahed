@@ -695,7 +695,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.344");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.345");
         tray.Visible = false;
     }
 
@@ -1229,6 +1229,35 @@ sealed class AppForm : Form
                 web.CoreWebView2.Settings.IsStatusBarEnabled = false;
                 web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
                 await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(HideScrollbarsScript);
+                web.CoreWebView2.WebMessageReceived += (_, e) =>
+                {
+                    string text = "";
+                    try { text = e.TryGetWebMessageAsString() ?? ""; } catch { }
+                    if (!text.Contains("chooseFolder")) return;
+                    try
+                    {
+                        BeginInvoke((Action)(() =>
+                        {
+                            string picked = "";
+                            using (var dialog = new FolderBrowserDialog
+                            {
+                                Description = "اختر مجلد المكتبة الشاملة (الذي يحتوي مجلد database)",
+                                ShowNewFolderButton = false
+                            })
+                            {
+                                if (dialog.ShowDialog(this) == DialogResult.OK)
+                                    picked = dialog.SelectedPath ?? "";
+                            }
+                            try
+                            {
+                                web.CoreWebView2?.PostWebMessageAsJson(
+                                    "{\"almujtahedFolder\":" + JsonSerializer.Serialize(picked) + "}");
+                            }
+                            catch { }
+                        }));
+                    }
+                    catch { }
+                };
                 web.CoreWebView2.NavigationStarting += (_, args) =>
                 {
                     if (args.IsUserInitiated && !IsLocal(args.Uri))
