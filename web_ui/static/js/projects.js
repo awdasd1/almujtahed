@@ -6036,9 +6036,9 @@ function buildStandaloneProjectHtml(runData, options) {
       <span>منظومة المجتهد - تقرير استخراج وتحقيق أكاديمي</span>
     </div>
     <div class="bar-actions">
-      <button class="btn-act btn-primary" onclick="window.print()">
+      ${settings.printable === false ? '' : `<button class="btn-act btn-primary" onclick="window.print()">
         <span>🖨️ طباعة / حفظ كـ PDF</span>
-      </button>
+      </button>`}
       <button class="btn-act" onclick="toggleReportTheme()">
         <span>🌓 تبديل النمط</span>
       </button>
@@ -6867,12 +6867,12 @@ function buildAcademicPaperHtml(runData, options) {
   const toolbar = settings.toolbar === false ? '' : `
   <header class="top-action-bar no-print-toolbar">
     <div class="bar-actions">
-      <button class="btn-act btn-primary" type="button" onclick="window.print()">
+      ${settings.printable === false ? '' : `<button class="btn-act btn-primary" type="button" onclick="window.print()">
         <span>🖨️ طباعة / حفظ كـ PDF</span>
       </button>
       <button class="btn-act" type="button" onclick="printRawPaper()" title="طباعة الورقة نفسها لكن بأرقام حواشٍ غير مرتبطة: نص خام بلا روابط بين المتن والحاشية">
         <span>🖨️ طباعة خام</span>
-      </button>
+      </button>`}
       <button class="btn-act" id="btnWordExport" type="button" onclick="exportPaperWord()" title="تصدير البحث ملف وورد DOCX بنفس التنسيق وبحواشٍ سفلية حقيقية">
         <span>📝 تصدير وورد</span>
       </button>
@@ -7647,13 +7647,13 @@ function buildAcademicPaperHtml(runData, options) {
    (نافذة قراءة في تطبيق الماك/نافذة متصفح في غيره) وفي أعلاها شريط
    فيه زر «طباعة / حفظ كـ PDF»، فيطبع المستخدم متى شاء بعد اكتمال
    تقسيم الصفحات أمامه */
-function openAcademicPaperWindow(runData) {
-  const fullPrintHtml = buildAcademicPaperHtml(runData, { toolbar: true });
+function openAcademicPaperWindow(runData, printable) {
+  const fullPrintHtml = buildAcademicPaperHtml(runData, { toolbar: true, printable });
   /* داخل التطبيق: تراكب قراءة بملء الشاشة — نافذة النظام الأصلية
      («قراءة») كانت تومض ولا يصلها شريط الأدوات بثبات */
   if (typeof openChatReadingOverlay === 'function') {
-    openChatReadingOverlay(fullPrintHtml);
-    showToast('تم فتح البحث. اطبع من زر الطباعة في أعلى الصفحة');
+    openChatReadingOverlay(fullPrintHtml, printable);
+    showToast(printable === false ? 'تم فتح البحث للقراءة' : 'تم فتح البحث. اطبع من زر الطباعة في أعلى الصفحة');
     return;
   }
   const printWin = window.open('', '_blank');

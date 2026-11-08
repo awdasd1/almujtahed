@@ -675,6 +675,11 @@ function chatAnswerStages(session) {
   return out;
 }
 
+/* الطباعة حق للإجابة المعتمدة وحدها: جواب إقفال المناقشة النهائي */
+function isFinalApprovedAnswer(session, idx) {
+  return chatAnswerStages(session).some((s) => s.idx === idx && s.kind === 'final');
+}
+
 function scrollToChatAnswer(idx) {
   const scroller = document.getElementById('chatMessagesContainer');
   const msg = document.getElementById(`chatMsg${idx}`);
@@ -1498,6 +1503,7 @@ function renderSessionMessages(sessionId, options) {
   }
 
   let briefTitleCount = 0;
+  const stageByIdx = new Map(chatAnswerStages(session).map((s) => [s.idx, s.kind]));
   container.innerHTML = session.messages.map((msg, idx) => {
     if (idx === 0 && isStoredOpening(msg)) return '';
     const isUser = msg.role === 'user';
@@ -1547,9 +1553,9 @@ function renderSessionMessages(sessionId, options) {
         <button type="button" class="btn-msg-export" onclick="exportChatMessageHtml(${idx})" title="قراءة هذه النتيجة في صفحة قراءة">
           📄 قراءة
         </button>
-        <button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="طباعة هذه النتيجة بحواشٍ لكل صفحة أو حفظها PDF">
+        ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="طباعة هذه النتيجة بحواشٍ لكل صفحة أو حفظها PDF">
           🖨️ طباعة
-        </button>
+        </button>` : ''}
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
         </button>
@@ -1703,11 +1709,12 @@ function exportChatMessageHtml(idx) {
   };
 
   const filename = readingHtmlFilename(title);
+  const printable = isFinalApprovedAnswer(session, idx);
   const htmlContent = (typeof window.buildStandaloneProjectHtml === 'function')
-    ? window.buildStandaloneProjectHtml(runData, { portrait: true, downloadName: filename })
+    ? window.buildStandaloneProjectHtml(runData, { portrait: true, downloadName: filename, printable })
     : msg.content;
 
-  openChatReadingWindow(htmlContent);
+  openChatReadingWindow(htmlContent, printable);
 }
 
 function readingHtmlFilename(title) {
@@ -1719,7 +1726,7 @@ function readingHtmlFilename(title) {
   return `${base}.html`;
 }
 
-function openChatReadingWindow(htmlContent) {
+function openChatReadingWindow(htmlContent, printable) {
   const width = Math.min(860, Math.max(680, (window.screen.availWidth || 1200) - 80));
   const height = Math.max(720, (window.screen.availHeight || 900) - 40);
   const left = Math.max(0, Math.round(((window.screen.availWidth || width) - width) / 2));
@@ -1730,7 +1737,7 @@ function openChatReadingWindow(htmlContent) {
     setTimeout(() => { try { win.focus(); } catch (e) {} }, 200);
     return;
   }
-  openChatReadingOverlay(htmlContent);
+  openChatReadingOverlay(htmlContent, printable);
   showToast('تم فتح نافذة القراءة');
 }
 
@@ -1999,7 +2006,7 @@ function printChatReadingFrame(raw) {
   try { frame.contentWindow.print(); } catch (e) {}
 }
 
-function openChatReadingOverlay(htmlContent) {
+function openChatReadingOverlay(htmlContent, printable) {
   let overlay = document.getElementById('chatReadingOverlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -2041,6 +2048,11 @@ function openChatReadingOverlay(htmlContent) {
     });
     document.body.appendChild(overlay);
   }
+  /* الطباعة من التراكب للإجابة المعتمدة فقط؛ تصدير وورد يبقى متاحًا */
+  const canPrint = printable !== false;
+  overlay.querySelectorAll('.chat-reading-print:not(.chat-reading-word)').forEach((b) => {
+    b.style.display = canPrint ? '' : 'none';
+  });
   const frame = overlay.querySelector('#chatReadingFrame');
   overlay.hidden = false;
   frame.onload = () => {
@@ -2095,7 +2107,8 @@ async function exportChatMessagePdf(idx) {
   const paper = chatAnswerPaper(idx);
   if (!paper) return;
   if (typeof window.openAcademicPaperWindow === 'function') {
-    window.openAcademicPaperWindow(paper.runData);
+    const session = chatSessions.find(s => s.id === activeSessionId);
+    window.openAcademicPaperWindow(paper.runData, session ? isFinalApprovedAnswer(session, idx) : true);
     return;
   }
   showToast('تعذر تجهيز صفحة البحث للطباعة');
