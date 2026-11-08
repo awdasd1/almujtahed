@@ -6585,14 +6585,14 @@ function formatAcademicBody(rawMarkdown) {
     if (boldOnly && plain.length <= 110 && headingLike) {
       return `<p class="academic-subheading">${content}</p>`;
     }
-    /* عنوان داخل المتن: مطلع فقرة عريض منتهٍ بنقطتين (١- تحرير المذهب
-       الحنفي: ...) — يأخذ خط العناوين الفرعية المضبوط */
-    const leadMatch = trimmedContent.match(/^((?:[٠-٩\d]+\s*[-–.)]\s*)?)<(b|strong)>([\s\S]*?)<\/\2>/i);
+    /* عنوان مبحث فاصل في مطلع فقرة يتبعه متن (الراجح: كذا...) دون
+       تعداد رقمي أو نقطي — يأخذ خط العناوين الفرعية وحده دون بقية
+       الفقرة. البنود المرقّمة والمخدّمة بنقط ليست عناوين مباحث */
+    const leadMatch = trimmedContent.match(/^<(b|strong)>([\s\S]*?)<\/\1>/i);
     if (leadMatch) {
-      const innerPlain = leadMatch[3].replace(/<[^>]+>/g, '').trim();
-      if (innerPlain.length <= 70 && /[:：]\s*$/.test(innerPlain)) {
-        const boldPart = leadMatch[0].slice(leadMatch[1].length);
-        content = leadMatch[1] + `<span class="academic-inline-heading">${boldPart}</span>` + trimmedContent.slice(leadMatch[0].length);
+      const innerPlain = leadMatch[2].replace(/<[^>]+>/g, '').trim();
+      if (innerPlain.length <= 50 && /[:：]\s*$/.test(innerPlain)) {
+        content = `<span class="academic-inline-heading">${leadMatch[0]}</span>` + trimmedContent.slice(leadMatch[0].length);
       }
     }
     const isFootnote = inBibliography
@@ -6600,6 +6600,18 @@ function formatAcademicBody(rawMarkdown) {
       || /^\([\d٠-٩]+\)/.test(plain);
     if (isFootnote) {
       return `<p class="footnote-line">${content}</p>`;
+    }
+    /* عنوان مبحث أو فصل فاصل قائم بذاته ولو لم يكن بخط عريض (صورة
+       المسألة، تحرير محل النزاع، الراجح، الأقوال، الأدلة...): فقرة
+       قصيرة عنوانية لا تنتهي بعلامة إغلاق جملة، ولا تبدأ بتعداد
+       رقمي أو نقطي فليست من البنود المعدودة */
+    if (!inBibliography
+      && plain.length >= 3 && plain.length <= 60
+      && (/[:：]\s*$/.test(plain) || plain.length <= 32)
+      && !/[.؟!؛،…»]$/.test(plain)
+      && !/^[٠-٩\d(«•\-*]/.test(plain)
+      && !plain.includes('﴿')) {
+      return `<p class="academic-subheading">${content}</p>`;
     }
     /* مطلع مرقّم بعنوان عريض (١- <b>تحرير المذهب الحنفي:</b> ...) عنوان
        فرعي مبدوء به سطر فقرته — يأخذ فراغ ما قبل العناوين */
