@@ -317,18 +317,8 @@ def is_auth_configured() -> bool:
     return bool(username and pwd_hash)
 
 def get_current_user_from_request(request: Request) -> Optional[str]:
-    cookie_token = request.cookies.get(SESSION_COOKIE_NAME)
-    if cookie_token:
-        user = verify_session_token(cookie_token)
-        if user:
-            return user
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:].strip()
-        user = verify_session_token(token)
-        if user:
-            return user
-    return None
+    """تطبيق جهاز شخصي بمالك واحد: المستخدم الحالي دائمًا صاحب الجهاز."""
+    return os.getenv("AUTH_USERNAME", "").strip() or "admin"
 
 MEMBERS_PATH = BASE_DIR / "members.json"
 NOTICES_PATH = BASE_DIR / "notices.json"
@@ -373,18 +363,8 @@ def find_member_account(username: str) -> Optional[Dict[str, Any]]:
     return None
 
 def account_role(username: Optional[str]) -> Optional[str]:
-    name = (username or "").strip()
-    if not name:
-        return None
-    admin_name = os.getenv("AUTH_USERNAME", "").strip()
-    if admin_name and same_text(name, admin_name):
-        return "admin"
-    account = find_member_account(name)
-    if not account:
-        return None
-    if account.get("disabled"):
-        return "disabled"
-    return "member"
+    """مالك واحد على جهازه: الصلاحية دائمًا مشرف."""
+    return "admin" if (username or "").strip() else None
 
 def require_admin(request: Request) -> str:
     user = get_current_user_from_request(request)
@@ -525,47 +505,12 @@ class NoticeCreateRequest(BaseModel):
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    # السماح بالملفات الثابتة ومسارات المصادقة والمستندات
-    if (
-        path.startswith("/static/") or
-        path.startswith("/fonts/") or
-        path.startswith("/api/auth/") or
-        path.startswith("/join/") or
-        path == "/login" or
-        path == "/favicon.ico"
-    ):
-        return await call_next(request)
-
-    # خادم المجتهد MCP الداخلي: متاح من الجهاز نفسه فقط (اتصال التطبيق بذاته
-    # وأدوات MCP المحلية)، وأدواته للقراءة والبحث داخل الشاملة المحلية.
+    # تطبيق جهاز شخصي: لا تسجيل دخول ولا أعضاء، والخادم لا يستمع إلا على
+    # هذا الجهاز (127.0.0.1). خادم MCP الداخلي متاح من الجهاز نفسه فقط.
     if path == "/mcp":
         client_host = request.client.host if request.client else ""
-        if client_host in ("127.0.0.1", "::1", "localhost"):
-            return await call_next(request)
-
-    # إذا لم يكن النظام مهيأ بحساب بعد، نسمح للواجهة بطلب التأسيس
-    if not is_auth_configured():
-        if path.startswith("/api/"):
-            return JSONResponse(status_code=401, content={"detail": "يجب تأسيس حساب المشرف أولاً", "code": "SETUP_REQUIRED"})
-        auth_file = TEMPLATES_DIR / "auth.html"
-        return HTMLResponse(content=auth_file.read_text(encoding="utf-8"))
-
-    # فحص جلسة المستخدم المسجل
-    user = get_current_user_from_request(request)
-    if account_role(user) not in ("admin", "member"):
-        if path.startswith("/api/"):
-            return JSONResponse(status_code=401, content={"detail": "جلسة غير مصرح بها أو الحساب معطّل", "code": "UNAUTHORIZED"})
-        auth_file = TEMPLATES_DIR / "auth.html"
-        return HTMLResponse(content=auth_file.read_text(encoding="utf-8"))
-
-    if path.startswith("/uploads/"):
-        owner = ADMIN_OWNER_ID if account_role(user) == "admin" else ensure_member_id(user or "")
-        relative = path[len("/uploads/"):].strip("/")
-        parts = [part for part in relative.split("/") if part]
-        if len(parts) >= 2 and parts[0] != owner:
-            return JSONResponse(status_code=403, content={"detail": "هذا المرفق خاص بعضو آخر"})
-        if len(parts) == 1 and owner != ADMIN_OWNER_ID:
-            return JSONResponse(status_code=403, content={"detail": "هذا المرفق خاص بعضو آخر"})
+        if client_host not in ("127.0.0.1", "::1", "localhost"):
+            return JSONResponse(status_code=403, content={"detail": "MCP متاح من الجهاز نفسه فقط"})
 
     return await call_next(request)
 
@@ -5437,7 +5382,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.342"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.343"},
         },
     })
     if opened.get("error"):
@@ -5815,17 +5760,8 @@ async def mcp_search_in_book(book: str, query: str, limit: int = 10):
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    user = get_current_user_from_request(request)
-    if not user or not is_auth_configured():
-        auth_file = TEMPLATES_DIR / "auth.html"
-        return HTMLResponse(content=auth_file.read_text(encoding="utf-8"))
     index_file = TEMPLATES_DIR / "index.html"
     return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page_route(request: Request):
-    auth_file = TEMPLATES_DIR / "auth.html"
-    return HTMLResponse(content=auth_file.read_text(encoding="utf-8"))
 
 @app.get("/changes.md")
 async def read_changes_log():
@@ -5836,245 +5772,19 @@ async def read_changes_log():
 
 @app.get("/api/auth/status")
 async def get_auth_status(request: Request):
-    configured = is_auth_configured()
-    current_user = get_current_user_from_request(request)
-    role = account_role(current_user) if current_user else None
-    active = role in ("admin", "member")
+    """هوية الجهاز الشخصي: مالك واحد بصلاحية مشرف، بلا تسجيل دخول."""
     return {
-        "is_configured": configured,
-        "is_authenticated": active,
-        "username": current_user if active else "",
-        "role": role if active else "",
-        "owner_id": (ADMIN_OWNER_ID if role == "admin" else ensure_member_id(current_user)) if active and current_user else ""
-    }
-
-@app.post("/api/auth/setup")
-async def setup_auth_endpoint(req: SetupAccountRequest, response: Response):
-    if is_auth_configured():
-        raise HTTPException(status_code=400, detail="حساب المشرف مؤسس مسبقاً، يرجى تسجيل الدخول")
-
-    username = req.username.strip()
-    password = req.password
-    if not username or not password:
-        raise HTTPException(status_code=400, detail="اسم المستخدم وكلمة المرور مطلوبان")
-
-    salt = secrets.token_hex(16)
-    pwd_hash = hash_password(password, salt)
-    secret = secrets.token_hex(32)
-
-    env_data = {
-        "AUTH_USERNAME": username,
-        "AUTH_PASSWORD_HASH": pwd_hash,
-        "AUTH_SALT": salt,
-        "SESSION_SECRET": secret
-    }
-    if req.openrouter_key and req.openrouter_key.strip():
-        env_data["OPENROUTER_API_KEY"] = req.openrouter_key.strip()
-        global OPENROUTER_DEFAULT_KEY
-        OPENROUTER_DEFAULT_KEY = req.openrouter_key.strip()
-
-    update_env_file(env_data)
-
-    token = generate_session_token(username)
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=token,
-        max_age=SESSION_DURATION_SECONDS,
-        httponly=True,
-        samesite="lax",
-        path="/"
-    )
-    return {
-        "status": "success",
-        "message": "تم تأسيس الحساب بنجاح وتفعيل الجلسة لمدة 3 أيام",
-        "username": username,
-        "token": token
-    }
-
-@app.post("/api/auth/login")
-async def login_auth_endpoint(req: LoginAccountRequest, response: Response):
-    if not is_auth_configured():
-        raise HTTPException(status_code=400, detail="يجب تأسيس حساب المشرف أولاً")
-
-    expected_user = os.getenv("AUTH_USERNAME", "").strip()
-    expected_hash = os.getenv("AUTH_PASSWORD_HASH", "").strip()
-    salt = os.getenv("AUTH_SALT", "").strip()
-    name = req.username.strip()
-
-    if same_text(name, expected_user):
-        computed_hash = hash_password(req.password, salt)
-        if not same_text(computed_hash, expected_hash):
-            raise HTTPException(status_code=401, detail="اسم المستخدم أو كلمة المرور غير صحيحة")
-        session_name = expected_user
-    else:
-        account = find_member_account(name)
-        if not account or not same_text(hash_password(req.password, account.get("salt", "")), account.get("password_hash", "")):
-            raise HTTPException(status_code=401, detail="اسم المستخدم أو كلمة المرور غير صحيحة")
-        if account.get("disabled"):
-            raise HTTPException(status_code=403, detail="تم تعطيل هذا الحساب، راجع المشرف")
-        session_name = account["username"]
-
-    token = generate_session_token(session_name)
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=token,
-        max_age=SESSION_DURATION_SECONDS,
-        httponly=True,
-        samesite="lax",
-        path="/"
-    )
-    return {
-        "status": "success",
-        "message": "تم تسجيل الدخول بنجاح",
-        "username": session_name,
-        "token": token
+        "is_configured": True,
+        "is_authenticated": True,
+        "username": get_current_user_from_request(request),
+        "role": "admin",
+        "owner_id": ADMIN_OWNER_ID,
     }
 
 @app.post("/api/auth/logout")
 async def logout_auth_endpoint(response: Response):
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
     return {"status": "success", "message": "تم تسجيل الخروج بنجاح"}
-
-def member_invite_url(request: Request, token: str) -> str:
-    base = str(request.base_url).rstrip("/")
-    return f"{base}/join/{token}"
-
-def public_invite(invite: Dict[str, Any], request: Request) -> Dict[str, Any]:
-    return {
-        "id": invite.get("id"),
-        "label": invite.get("label") or "",
-        "url": member_invite_url(request, invite.get("token", "")),
-        "created_at": invite.get("created_at"),
-        "used": bool(invite.get("used")),
-        "used_by": invite.get("used_by") or ""
-    }
-
-@app.get("/join/{token}", response_class=HTMLResponse)
-async def join_member_page(token: str):
-    page = TEMPLATES_DIR / "join.html"
-    return HTMLResponse(content=page.read_text(encoding="utf-8"))
-
-@app.get("/api/auth/join/{token}")
-async def join_member_status(token: str):
-    store = load_members_store()
-    invite = next((item for item in store.get("invites", []) if item.get("token") == token), None)
-    if not invite or invite.get("used"):
-        return {"valid": False}
-    return {"valid": True, "label": invite.get("label") or ""}
-
-@app.post("/api/auth/join")
-async def join_member_account(req: JoinAccountRequest, response: Response):
-    username = (req.username or "").strip()
-    password = req.password or ""
-    if not MEMBER_USERNAME_RE.match(username):
-        raise HTTPException(status_code=400, detail="اسم المستخدم من 3 إلى 32 حرفاً إنجليزياً أو رقماً، ويبدأ بحرف أو رقم")
-    if len(password) < 4:
-        raise HTTPException(status_code=400, detail="كلمة المرور أربعة أحرف على الأقل")
-    admin_name = os.getenv("AUTH_USERNAME", "").strip()
-    if admin_name and same_text(username, admin_name):
-        raise HTTPException(status_code=400, detail="اسم المستخدم مستخدم")
-    if find_member_account(username):
-        raise HTTPException(status_code=400, detail="اسم المستخدم مستخدم")
-
-    store = load_members_store()
-    invite = next((item for item in store.get("invites", []) if item.get("token") == (req.token or "").strip()), None)
-    if not invite or invite.get("used"):
-        raise HTTPException(status_code=400, detail="رابط الدعوة غير صالح أو استُخدم من قبل")
-
-    salt = secrets.token_hex(16)
-    account = {
-        "id": "m_" + secrets.token_hex(8),
-        "username": username,
-        "display_name": str(invite.get("label") or "").strip()[:80],
-        "salt": salt,
-        "password_hash": hash_password(password, salt),
-        "disabled": False,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "invite_id": invite.get("id")
-    }
-    invite["used"] = True
-    invite["used_by"] = username
-    invite["used_at"] = account["created_at"]
-    store.setdefault("accounts", []).append(account)
-    save_members_store(store)
-
-    token = generate_session_token(username)
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=token,
-        max_age=SESSION_DURATION_SECONDS,
-        httponly=True,
-        samesite="lax",
-        path="/"
-    )
-    return {"status": "success", "message": "تم إنشاء الحساب والدخول", "username": username}
-
-@app.get("/api/members")
-async def list_members(request: Request):
-    require_admin(request)
-    store = load_members_store()
-    return {
-        "admin_username": os.getenv("AUTH_USERNAME", "").strip(),
-        "invites": [public_invite(item, request) for item in store.get("invites", [])],
-        "accounts": [
-            {
-                "id": item.get("id") or "",
-                "username": item.get("username"),
-                "disabled": bool(item.get("disabled")),
-                "created_at": item.get("created_at") or ""
-            }
-            for item in store.get("accounts", [])
-        ]
-    }
-
-@app.post("/api/members/invites")
-async def create_member_invite(req: MemberInviteRequest, request: Request):
-    require_admin(request)
-    label = (req.label or "").strip()[:80]
-    invite = {
-        "id": secrets.token_hex(8),
-        "token": secrets.token_urlsafe(24),
-        "label": label,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "used": False,
-        "used_by": ""
-    }
-    store = load_members_store()
-    store.setdefault("invites", []).insert(0, invite)
-    save_members_store(store)
-    return {"status": "success", "invite": public_invite(invite, request)}
-
-@app.delete("/api/members/invites/{invite_id}")
-async def delete_member_invite(invite_id: str, request: Request):
-    require_admin(request)
-    store = load_members_store()
-    kept = []
-    removed = False
-    for item in store.get("invites", []):
-        if item.get("id") == invite_id and not item.get("used"):
-            removed = True
-            continue
-        kept.append(item)
-    if not removed:
-        raise HTTPException(status_code=404, detail="الدعوة غير موجودة أو استُخدمت")
-    store["invites"] = kept
-    save_members_store(store)
-    return {"status": "success"}
-
-@app.post("/api/members/{username}/disabled")
-async def set_member_disabled(username: str, req: MemberDisableRequest, request: Request):
-    require_admin(request)
-    store = load_members_store()
-    found = False
-    for account in store.get("accounts", []):
-        if account.get("username") == username:
-            account["disabled"] = bool(req.disabled)
-            found = True
-            break
-    if not found:
-        raise HTTPException(status_code=404, detail="العضو غير موجود")
-    save_members_store(store)
-    return {"status": "success", "disabled": bool(req.disabled)}
 
 def load_notices_store() -> Dict[str, Any]:
     with _notices_lock:
@@ -15482,19 +15192,6 @@ def _share_people() -> List[Dict[str, str]]:
             "label": "المشرف",
             "display_name": "المشرف",
         })
-    for account in load_members_store().get("accounts") or []:
-        if not isinstance(account, dict):
-            continue
-        username = str(account.get("username") or "").strip()
-        if not username or account.get("disabled"):
-            continue
-        owner_id = str(account.get("id") or "").strip() or ensure_member_id(username)
-        people.append({
-            "username": username,
-            "owner_id": owner_id,
-            "label": "عضو",
-            "display_name": _person_display_name(username),
-        })
     return people
 
 def _share_kind_label(kind: str) -> str:
@@ -15643,18 +15340,8 @@ def _record_share(kind: str, source_id: str, from_owner: str, to_owner: str) -> 
 
 @app.get("/api/share/members")
 async def list_share_members(request: Request):
-    """أسماء من يمكن مشاركتهم، بلا كلمات مرور أو معرفات داخلية."""
-    me = require_signed_in(request)
-    members = [
-        {
-            "username": person["username"],
-            "label": person["label"],
-            "display_name": person.get("display_name") or person["label"],
-        }
-        for person in _share_people()
-        if not same_text(person["username"], me)
-    ]
-    return {"members": members}
+    """تطبيق جهاز شخصي: لا أعضاء للمشاركة معهم؛ الحفظ في الجهاز هو البديل."""
+    return {"members": []}
 
 @app.post("/api/shares")
 async def create_share(req: ShareRequest, request: Request):
@@ -22178,5 +21865,5 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8085))
     print(f"🚀 تشغيل منظومة المجتهد الحية على المنفذ: http://localhost:{port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="127.0.0.1", port=port)
 

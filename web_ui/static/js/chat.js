@@ -2276,10 +2276,9 @@ async function handleFileSelected(e) {
 
       if (resp.status === 401) {
         item.uploading = false;
-        item.error = 'انتهت الجلسة';
+        item.error = 'تعذر الرفع';
         renderAttachmentsPreview();
-        if (typeof showToast === 'function') showToast('انتهت الجلسة. سجّل الدخول ثم أعد رفع الملف');
-        setTimeout(() => { window.location.href = '/login'; }, 700);
+        if (typeof showToast === 'function') showToast('تعذر رفع الملف. أعد المحاولة');
         return;
       }
 

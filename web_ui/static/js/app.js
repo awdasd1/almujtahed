@@ -3221,13 +3221,4 @@ window.promptRestoreBackup = promptRestoreBackup;
 window.cancelRestoreBackupPrompt = cancelRestoreBackupPrompt;
 window.executeRestoreBackupNow = executeRestoreBackupNow;
 
-window.logoutAlmujtahed = async function () {
-  if (confirm('هل ترغب بالتأكيد في تسجيل الخروج من منظومة المجتهد؟')) {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-    } catch (e) { }
-    localStorage.removeItem('almujtahed_auth_token');
-    window.location.href = '/login';
-  }
-};
 

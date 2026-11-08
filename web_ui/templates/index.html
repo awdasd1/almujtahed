@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.342">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.343">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.342 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.343 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -42,11 +42,7 @@
                 <button class="btn-icon" id="libraryStatsBtn" type="button" onclick="openLibraryStatsModal()" title="إحصائيات المكتبة والأعضاء" aria-label="الإحصائيات">
                     <i data-lucide="bar-chart-3" class="icon" aria-hidden="true"></i>
                 </button>
-                <button class="btn-icon notice-bell-btn" id="noticeBellBtn" type="button" onclick="openNoticesModal()" title="الرسائل" aria-label="الرسائل">
-                    <i data-lucide="bell" class="icon" aria-hidden="true"></i>
-                    <span class="notice-badge" id="noticeBadge" hidden aria-hidden="true">0</span>
-                </button>
-                <button class="btn-icon server-health-btn" id="serverHealthBtn" onclick="openServerHealthModal()"
+                                <button class="btn-icon server-health-btn" id="serverHealthBtn" onclick="openServerHealthModal()"
                     title="مؤشر موارد وحالة السيرفر (الذاكرة والقرص)">
                     <span class="status-pulse-dot status-green" id="serverPulseDot"></span>
                     <i data-lucide="activity" class="icon" aria-hidden="true"></i>
@@ -64,8 +60,6 @@
                 <button class="btn-icon" id="quitAppBtn" type="button" hidden onclick="quitDesktopApp()" title="إغلاق التطبيق" aria-label="إغلاق التطبيق" style="color: #9f3d32;">
                     <i data-lucide="power" class="icon" aria-hidden="true"></i>
                 </button>
-                <button class="btn-icon" id="logoutBtn" onclick="logoutAlmujtahed()" title="تسجيل الخروج من المنظومة" style="color: #ef4444;">
-                    <i data-lucide="log-out" class="icon" aria-hidden="true"></i>
                 </button>
             </div>
         </div>
@@ -111,11 +105,7 @@
                 <span>الأرشفة</span>
             </button>
 
-            <button class="nav-tab-btn admin-only-tab" id="tabNavMembers" onclick="switchMainTab('members')">
-                <i data-lucide="user-plus" class="icon" aria-hidden="true"></i>
-                <span>الأعضاء</span>
-            </button>
-        </nav>
+                    </nav>
     </header>
 
     <!-- =======================================================================
@@ -2175,40 +2165,6 @@
                         </div>
                     </div>
                 </form>
-            </div>
-        </section>
-
-        <section class="tab-pane" id="paneMembers">
-            <div class="providers-container">
-                <div class="search-hero">
-                    <h2>الأعضاء</h2>
-                    <p id="membersNote">أنشئ رابط دعوة. العضو يختار اسم المستخدم وكلمة المرور ثم يعيد كتابتها، ويدخل بصلاحية المشرف دون هذا التبويب.</p>
-                </div>
-                <form id="memberInviteForm" class="result-card provider-main-card member-invite-form">
-                    <label for="memberInviteLabel">ملاحظة الدعوة (اختيارية)</label>
-                    <input id="memberInviteLabel" type="text" maxlength="80" placeholder="مثال: باحث الفقه">
-                    <button type="submit" class="btn-flat-primary">إنشاء رابط العضو</button>
-                </form>
-                <div id="membersList" class="result-card provider-main-card"></div>
-                <section id="memberNoticesPanel" class="result-card provider-main-card member-notices-panel">
-                    <h3>الرسائل</h3>
-                    <form id="memberNoticeForm" class="member-notice-form">
-                        <label for="noticeTitle">عنوان الرسالة</label>
-                        <input id="noticeTitle" type="text" maxlength="120" placeholder="عنوان يظهر بخط عريض">
-                        <label for="noticeBody">نص الرسالة</label>
-                        <textarea id="noticeBody" maxlength="4000" rows="4" placeholder="نص الرسالة التي تصل إلى جرس العضو"></textarea>
-                        <label for="noticeMemberFilter">الأعضاء</label>
-                        <input id="noticeMemberFilter" type="text" placeholder="صفِّ الأعضاء بالاسم" oninput="filterNoticeMembers(this.value)">
-                        <label class="notice-everyone">
-                            <input id="noticeEveryone" type="checkbox" onchange="toggleNoticeEveryone(this.checked)">
-                            <span>الجميع</span>
-                        </label>
-                        <div id="noticeMemberPicker" class="notice-member-picker"></div>
-                        <button type="submit" class="btn-flat-primary">أرسل</button>
-                        <p id="noticeSendNote" class="member-meta"></p>
-                    </form>
-                    <div id="adminNoticesList"></div>
-                </section>
             </div>
         </section>
 
@@ -5405,18 +5361,17 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/members.js?v=1792835200"></script>
-    <script src="/static/js/app.js?v=1.10.342"></script>
+    <script src="/static/js/app.js?v=1.10.343"></script>
     <script src="/static/js/search.js?v=1793188000"></script>
     <script src="/static/js/reader.js?v=1793225300"></script>
-    <script src="/static/js/force3d.js?v=1.10.342"></script>
+    <script src="/static/js/force3d.js?v=1.10.343"></script>
     <script src="/static/js/share.js?v=1793225500"></script>
-    <script src="/static/js/chat.js?v=1.10.342"></script>
-    <script src="/static/js/agents.js?v=1.10.342"></script>
+    <script src="/static/js/chat.js?v=1.10.343"></script>
+    <script src="/static/js/agents.js?v=1.10.343"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1.10.342"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.342"></script>
-    <script src="/static/js/projects.js?v=1.10.342"></script>
+    <script src="/static/js/tools.js?v=1.10.343"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.343"></script>
+    <script src="/static/js/projects.js?v=1.10.343"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
