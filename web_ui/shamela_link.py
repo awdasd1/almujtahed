@@ -58,18 +58,75 @@ NEW_ID_BASE = 900000  # نطاق أرقام الكتب المستوردة عند
 
 # ---------------------------------------------------------------- كشف المواضع
 
+def _custom_root_file() -> Path:
+    return _ROOT / "shamela_path.txt"
+
+
+def saved_custom_root():
+    """مسار الشاملة الذي حدّده المستخدم يدويًا من الواجهة، إن وُجد."""
+    try:
+        v = _custom_root_file().read_text(encoding="utf-8").strip()
+        return Path(v).expanduser() if v else None
+    except OSError:
+        return None
+
+
+def set_custom_root(raw: str) -> dict:
+    """حفظ مسار شاملة يحدّده المستخدم بعد التحقق أنه مجلد شاملة صالح
+    (فيه database/master.db). يقبل أيضًا اختيار مجلد database نفسه."""
+    text = str(raw or "").strip().strip('"').strip("'")
+    if not text:
+        return {"ok": False, "message": "المسار فارغ."}
+    p = Path(text).expanduser()
+    if (p / "database" / "master.db").exists():
+        root = p
+    elif (p / "master.db").exists():
+        root = p.parent
+    else:
+        return {"ok": False,
+                "message": "هذا المسار ليس مجلد شاملة صالحًا: لم نجد فيه database/master.db. "
+                           "حدّد المجلد الذي يحتوي مجلد database (مثال ويندوز: C:\\shamela)."}
+    try:
+        _custom_root_file().write_text(str(root) + "\n", encoding="utf-8")
+    except OSError as exc:
+        return {"ok": False, "message": f"تعذّر حفظ المسار: {exc}"}
+    return {"ok": True, "root": str(root), "message": f"حُفظ مسار الشاملة: {root}"}
+
+
+def clear_custom_root() -> None:
+    try:
+        _custom_root_file().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _candidate_shamela_roots():
     home = Path.home()
     roots = []
     env = os.getenv("SHAMELA_APP_DIR", "").strip()
     if env:
         roots.append(Path(env).expanduser())
-    roots += [
-        home / "Library" / "Application Support" / "Shamela",          # macOS
-        Path(os.getenv("APPDATA", "")) / "Shamela" if os.getenv("APPDATA") else None,
-        Path(os.getenv("LOCALAPPDATA", "")) / "Shamela" if os.getenv("LOCALAPPDATA") else None,
-        home / "AppData" / "Roaming" / "Shamela",                      # Windows احتياطي
-    ]
+    custom = saved_custom_root()
+    if custom:
+        roots.append(custom)
+    if sys.platform == "darwin":
+        roots += [
+            home / "Library" / "Application Support" / "Shamela",
+            home / "Library" / "Application Support" / "shamela",
+            home / "Shamela",
+        ]
+    else:
+        # افتراضي الشاملة على ويندوز: C:\shamela، ثم مواضع بيانات التطبيقات
+        roots += [
+            Path("C:/shamela"),
+            Path("C:/Shamela"),
+            Path(os.getenv("APPDATA", "")) / "Shamela" if os.getenv("APPDATA") else None,
+            Path(os.getenv("LOCALAPPDATA", "")) / "Shamela" if os.getenv("LOCALAPPDATA") else None,
+            Path(os.getenv("ProgramFiles", "C:/Program Files")) / "Shamela",
+            Path(os.getenv("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Shamela",
+            home / "AppData" / "Roaming" / "Shamela",
+            home / "shamela",
+        ]
     return [r for r in roots if r]
 
 
@@ -383,9 +440,15 @@ def ensure_id_map() -> dict:
 def census() -> dict:
     """حالة الربط كاملة: كشف + عدّ + فجوات. بلا JVM (SQLite وملفات فقط)."""
     st = {"found": False}
+    custom = saved_custom_root()
+    st["custom_root"] = str(custom) if custom else ""
     root = find_shamela_root()
     if not root:
-        st["message"] = "لم يُعثر على تطبيق المكتبة الشاملة الجديد على هذا الجهاز."
+        hint = ("C:\\shamela على ويندوز" if sys.platform != "darwin"
+                else "~/Library/Application Support/Shamela على ماك")
+        st["message"] = ("لم يُعثر على تطبيق المكتبة الشاملة على هذا الجهاز في موضعه الافتراضي "
+                         f"({hint}). إن كانت الشاملة عندك في موضع آخر، حدّد مسارها من حقل "
+                         "«مسار الشاملة» أسفل هذه البطاقة.")
         return st
     db_dir = data_database_dir() or (root / "database")
     st.update({"found": True, "shamela_root": str(root)})
@@ -908,6 +971,14 @@ def open_shamela_app() -> dict:
             except Exception:
                 continue
         return {"ok": False, "message": "تعذّر فتح تطبيق الشاملة — افتحه يدويًا ونزّل ما تحتاجه ثم عُد."}
+    root = find_shamela_root()
+    if root:
+        for exe in sorted(glob.glob(str(root / "*.exe"))) + sorted(glob.glob(str(root / "app" / "*.exe"))):
+            try:
+                subprocess.Popen([exe], cwd=str(root))
+                return {"ok": True, "message": "فُتح تطبيق الشاملة — نزّل الكتب الناقصة هناك وستُستورد هنا تلقائيًا."}
+            except Exception:
+                continue
     return {"ok": False, "message": "افتح تطبيق الشاملة ونزّل الكتب الناقصة، وستُستورد هنا تلقائيًا عند رصدها."}
 
 

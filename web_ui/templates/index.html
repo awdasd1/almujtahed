@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.343">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.344">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.343 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.344 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -2315,6 +2315,18 @@
                         إن كان عندك تطبيق المكتبة الشاملة، يستطيع المجتهد قراءة كتالوجه واستيراد الكتب المنزّلة فيه إلى مكتبته — بلا تنزيل المكتبة كاملة من جديد.
                     </p>
                     <div id="shamelaImportProgress" style="display: none; margin-top: 10px; font-size: 13px; color: var(--text-muted);"></div>
+                    <div style="margin-top: 14px; border-top: 1px dashed var(--border-subtle); padding-top: 12px;">
+                        <label for="shamelaPathInput" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">📂 مسار الشاملة على هذا الجهاز</label>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                            <input id="shamelaPathInput" type="text" dir="ltr" placeholder="C:\shamela"
+                                style="flex: 1; min-width: 240px; text-align: left; padding: 9px 12px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface, #fff); color: var(--text-main); font-size: 13px;">
+                            <button type="button" class="btn-secondary-action" onclick="saveShamelaPath()">حفظ المسار والتحقق</button>
+                            <button type="button" class="btn-secondary-action" id="shamelaPathClearBtn" onclick="clearShamelaPath()" style="display: none;">إلغاء المسار اليدوي</button>
+                        </div>
+                        <p id="shamelaPathNote" style="font-size: 12.5px; color: var(--text-muted); line-height: 1.8; margin: 8px 0 0;">
+                            يُكتشف تلقائيًا في موضعه الافتراضي (<span dir="ltr">C:\shamela</span> في ويندوز). إن غيّرت موضعه، الصق هنا مسار مجلد الشاملة — المجلد الذي يحتوي مجلد <span dir="ltr">database</span> — ثم احفظ.
+                        </p>
+                    </div>
                 </div>
 
                 <!-- شريط التصفية والفلترة -->
@@ -5361,17 +5373,17 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.343"></script>
+    <script src="/static/js/app.js?v=1.10.344"></script>
     <script src="/static/js/search.js?v=1793188000"></script>
     <script src="/static/js/reader.js?v=1793225300"></script>
-    <script src="/static/js/force3d.js?v=1.10.343"></script>
+    <script src="/static/js/force3d.js?v=1.10.344"></script>
     <script src="/static/js/share.js?v=1793225500"></script>
-    <script src="/static/js/chat.js?v=1.10.343"></script>
-    <script src="/static/js/agents.js?v=1.10.343"></script>
+    <script src="/static/js/chat.js?v=1.10.344"></script>
+    <script src="/static/js/agents.js?v=1.10.344"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1.10.343"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.343"></script>
-    <script src="/static/js/projects.js?v=1.10.343"></script>
+    <script src="/static/js/tools.js?v=1.10.344"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.344"></script>
+    <script src="/static/js/projects.js?v=1.10.344"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>

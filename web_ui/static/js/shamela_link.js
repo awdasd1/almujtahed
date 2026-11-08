@@ -10,6 +10,7 @@ async function loadShamelaStatus() {
   try {
     const r = await fetch('/api/shamela/status');
     const st = await r.json();
+    _applyShamelaPathUi(st);
     if (!st.found) {
       badge.textContent = 'غير موجود';
       text.textContent = st.message || 'لم يُعثر على تطبيق المكتبة الشاملة الجديد على هذا الجهاز. تبقى مكتبة المجتهد المدمجة هي المصدر.';
@@ -18,6 +19,7 @@ async function loadShamelaStatus() {
     }
     badge.textContent = 'موجود ✓';
     const lines = [
+      st.shamela_root ? `<span dir="ltr" style="unicode-bidi: embed;">📂 ${st.shamela_root}</span>` : '',
       st.library_source === 'shamela'
         ? '📚 مصدر مكتبة البحث الحالي: <b>الشاملة المثبتة على جهازك</b> (النسخ المستوردة منها) — والنسخة المدمجة محفوظة احتياطًا للرجوع.'
         : '📚 مصدر مكتبة البحث الحالي: النسخة المدمجة في التطبيق.',
@@ -117,6 +119,47 @@ async function startShamelaComplete() {
   } catch (e) {
     alert('تعذّر فتح الشاملة — افتحها يدويًا ونزّل ما تحتاجه، ثم اضغط «استيراد الكتب المنزّلة».');
   }
+}
+
+function _applyShamelaPathUi(st) {
+  const input = document.getElementById('shamelaPathInput');
+  const clearBtn = document.getElementById('shamelaPathClearBtn');
+  if (!input) return;
+  if (document.activeElement !== input) {
+    input.value = st.custom_root || st.shamela_root || '';
+  }
+  if (clearBtn) clearBtn.style.display = st.custom_root ? '' : 'none';
+}
+
+async function saveShamelaPath() {
+  const input = document.getElementById('shamelaPathInput');
+  const note = document.getElementById('shamelaPathNote');
+  const path = (input?.value || '').trim();
+  if (!path) { alert('الصق مسار مجلد الشاملة أولًا.'); return; }
+  try {
+    const r = await fetch('/api/shamela/path', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    const res = await r.json();
+    if (!res.ok) { alert(res.message || 'المسار غير صالح.'); return; }
+    if (note) note.textContent = `✅ ${res.message} — أعدنا الفحص والمزامنة على هذا الأساس.`;
+    if (typeof showToast === 'function') showToast('تم حفظ مسار الشاملة والتحقق منه');
+    loadShamelaStatus();
+  } catch (e) {
+    alert('تعذّر حفظ المسار.');
+  }
+}
+
+async function clearShamelaPath() {
+  try {
+    await fetch('/api/shamela/path', { method: 'DELETE' });
+    const input = document.getElementById('shamelaPathInput');
+    if (input) input.value = '';
+    if (typeof showToast === 'function') showToast('أُلغي المسار اليدوي — عاد الكشف الافتراضي');
+    loadShamelaStatus();
+  } catch (e) { /* تجاهل */ }
 }
 
 document.addEventListener('DOMContentLoaded', () => { loadShamelaStatus(); });

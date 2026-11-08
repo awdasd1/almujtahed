@@ -5382,7 +5382,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.343"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.344"},
         },
     })
     if opened.get("error"):
@@ -7682,6 +7682,37 @@ async def shamela_status():
     st["job"] = dict(_shamela_job)
     st["job"]["watching"] = bool(_shamela_watch.get("active"))
     return st
+
+
+class ShamelaPathRequest(BaseModel):
+    path: str = ""
+
+
+@app.post("/api/shamela/path")
+async def shamela_set_path(req: ShamelaPathRequest):
+    """تحديد مسار الشاملة يدويًا إن غيّره المستخدم عن الافتراضي، وحفظه."""
+    import shamela_link
+    res = shamela_link.set_custom_root(req.path)
+    if res.get("ok"):
+        # المرآة الداخلية قد تكون من موضع سابق: زامِنها من المسار الجديد
+        threading.Thread(target=lambda: shamela_link.sync_mirror(),
+                         daemon=True, name="shamela-mirror-after-path").start()
+        try:
+            res["status"] = shamela_link.census()
+        except Exception:
+            pass
+    return res
+
+
+@app.delete("/api/shamela/path")
+async def shamela_clear_path():
+    """إلغاء المسار اليدوي والرجوع إلى الكشف الافتراضي."""
+    import shamela_link
+    shamela_link.clear_custom_root()
+    try:
+        return {"ok": True, "status": shamela_link.census()}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
 
 
 def _run_shamela_import_job():
