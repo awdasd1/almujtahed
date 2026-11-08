@@ -630,6 +630,126 @@ function scrollChatMessageTop(idx) {
   scroller.scrollTo({ top: message.offsetTop, behavior: 'smooth' });
 }
 
+// =============================================================================
+// 🧵 خط زمني لإجابات الشات على يمين منطقة الرسائل: خط طولي عليه نقطة
+// عند رأس كل إجابة، وبجوار كل نقطة مستطيل صغير وسطه اسم مرحلة الإجابة
+// (أول إجابة: مسودة، إجابات جلسة المناقشة: مناقشة ١، ٢...، وإقفال
+// المناقشة واعتماد البحث: نسخة نهائية)، والضغط عليها يقفز إلى رأسها.
+// المرحلة مختومة على الرسالة عند توليدها (stage)، وللجلسات القديمة
+// تُستنتج: الجواب التالي لرسالة الإقفال 🔒 نسخة نهائية حتمًا.
+// =============================================================================
+function chatAnswerStages(session) {
+  const out = [];
+  if (!session || !Array.isArray(session.messages)) return out;
+  const num = (n) => (typeof toArabicDigits === 'function' ? toArabicDigits(n) : String(n));
+  let mainCount = 0;
+  let discCount = 0;
+  let prevFinalize = false;
+  session.messages.forEach((msg, idx) => {
+    if (!msg) return;
+    if (msg.role === 'user') {
+      if (String(msg.content || '').startsWith('🔒 أقفل جلسة المناقشة')) prevFinalize = true;
+      return;
+    }
+    if (msg.role !== 'assistant') return;
+    if (idx === 0 && typeof isStoredOpening === 'function' && isStoredOpening(msg)) return;
+    const text = String(msg.content || '');
+    if (!text.trim() || text.startsWith('⚠️ تعذر')) { prevFinalize = false; return; }
+    if (msg.stage === 'final' || prevFinalize) {
+      out.push({ idx, kind: 'final', label: 'نسخة نهائية' });
+    } else if (msg.stage === 'discussion') {
+      discCount += 1;
+      out.push({ idx, kind: 'discussion', label: `مناقشة ${num(discCount)}` });
+    } else {
+      mainCount += 1;
+      out.push({ idx, kind: mainCount === 1 ? 'draft' : 'answer', label: mainCount === 1 ? 'مسودة' : `إجابة ${num(mainCount)}` });
+    }
+    prevFinalize = false;
+  });
+  return out;
+}
+
+function scrollToChatAnswer(idx) {
+  const scroller = document.getElementById('chatMessagesContainer');
+  const msg = document.getElementById(`chatMsg${idx}`);
+  if (!scroller || !msg) return;
+  scroller.scrollTo({ top: Math.max(0, msg.offsetTop - scroller.offsetTop - 8), behavior: 'smooth' });
+  msg.classList.remove('chat-timeline-flash');
+  void msg.offsetWidth;
+  msg.classList.add('chat-timeline-flash');
+  setTimeout(() => msg.classList.remove('chat-timeline-flash'), 1700);
+}
+
+let _chatTlRaf = 0;
+function scheduleChatTimeline() {
+  if (_chatTlRaf) return;
+  _chatTlRaf = requestAnimationFrame(() => { _chatTlRaf = 0; positionChatTimeline(); });
+}
+
+function buildChatTimeline(sessionArg) {
+  const container = document.getElementById('chatMessagesContainer');
+  const main = container && container.closest('.chat-main');
+  if (!container || !main) return;
+  let rail = document.getElementById('chatTimeline');
+  if (!rail) {
+    rail = document.createElement('div');
+    rail.id = 'chatTimeline';
+    rail.className = 'chat-timeline';
+    rail.innerHTML = '<div class="chat-timeline-line"></div>';
+    main.appendChild(rail);
+    container.addEventListener('scroll', scheduleChatTimeline, { passive: true });
+    window.addEventListener('resize', scheduleChatTimeline);
+  }
+  const session = sessionArg
+    || ((typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null);
+  const stages = chatAnswerStages(session);
+  rail.querySelectorAll('.chat-timeline-item').forEach((n) => n.remove());
+  if (!stages.length) { rail.style.display = 'none'; return; }
+  rail.style.display = '';
+  stages.forEach((st) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `chat-timeline-item is-${st.kind}`;
+    btn.dataset.msgIdx = String(st.idx);
+    btn.title = `الانتقال إلى رأس الإجابة: ${st.label}`;
+    const dot = document.createElement('span');
+    dot.className = 'chat-timeline-dot';
+    const chip = document.createElement('span');
+    chip.className = 'chat-timeline-chip';
+    chip.textContent = st.label;
+    btn.appendChild(dot);
+    btn.appendChild(chip);
+    btn.addEventListener('click', () => scrollToChatAnswer(st.idx));
+    rail.appendChild(btn);
+  });
+  positionChatTimeline();
+}
+
+function positionChatTimeline() {
+  const container = document.getElementById('chatMessagesContainer');
+  const rail = document.getElementById('chatTimeline');
+  if (!container || !rail || rail.style.display === 'none') return;
+  rail.style.top = `${container.offsetTop}px`;
+  rail.style.height = `${container.clientHeight}px`;
+  const cRect = container.getBoundingClientRect();
+  let prevY = -Infinity;
+  let activeItem = null;
+  rail.querySelectorAll('.chat-timeline-item').forEach((item) => {
+    const msg = document.getElementById(`chatMsg${item.dataset.msgIdx}`);
+    if (!msg) { item.style.display = 'none'; return; }
+    item.style.display = '';
+    const rawTop = msg.getBoundingClientRect().top - cRect.top;
+    let y = rawTop + 16;
+    if (y < prevY + 24) y = prevY + 24;
+    prevY = y;
+    item.style.top = `${y}px`;
+    if (rawTop <= 110) activeItem = item;
+  });
+  rail.querySelectorAll('.chat-timeline-item').forEach((item) => {
+    item.classList.toggle('is-active', item === activeItem);
+  });
+}
+
 function deleteChatMessage(idx) {
   const session = chatSessions.find(item => item.id === activeSessionId);
   if (!session || !session.messages[idx]) return;
@@ -1212,6 +1332,7 @@ function renderSessionMessages(sessionId, options) {
     }
     if (placeholderOnly) {
       container.innerHTML = chatOpeningHtml();
+      buildChatTimeline(session);
       return;
     }
   }
@@ -1354,6 +1475,7 @@ function renderSessionMessages(sessionId, options) {
 
   if (keepPosition) container.scrollTop = previousScroll;
   else scrollToBottom();
+  buildChatTimeline(session);
 }
 
 if (!window._chatFnJumpBound) {
@@ -1998,7 +2120,9 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
       thinking_effort: data.thinking_effort || '',
       thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : '',
       witnesses: Array.isArray(data.witnesses) ? data.witnesses : [],
-      regenerated: !!options.regenerated
+      regenerated: !!options.regenerated,
+      stage: (options && options.discussionMode === 'finalize') ? 'final'
+        : (((options && options.discussionMode === 'open') || discussionState(session.id) === 'open') ? 'discussion' : undefined)
     }, options);
 
     saveChatSessions();
