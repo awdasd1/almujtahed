@@ -1595,23 +1595,48 @@ function writeChatReadingDocument(win, htmlContent) {
 /* طباعة محتوى تراكب القراءة/الطباعة من رأسه مباشرة: على الماك تُسلَّم
    الصفحة (مقسّمةً إن كانت ورقة طباعة) إلى غلاف التطبيق ليفتح لوحة
    طباعة النظام، وفي غيره تُطبع طباعة الإطار نفسه */
-function printChatReadingFrame() {
+/* طباعة خام: فك روابط أرقام الحواشي من نسخة الطباعة وحدها */
+function stripChatFootnoteLinks(html) {
+  return String(html || '')
+    .replace(/<a\b[^>]*class="[^"]*pg-fn-call[^"]*"[^>]*>([\s\S]*?)<\/a>/gi, '$1')
+    .replace(/<a\b[^>]*class="[^"]*pg-fn-marker[^"]*"[^>]*>([\s\S]*?)<\/a>/gi, '$1')
+    .replace(/<a\b[^>]*class="[^"]*chat-fn-ref[^"]*"[^>]*>([\s\S]*?)<\/a>/gi, '$1')
+    .replace(/<a\b[^>]*class="[^"]*chat-fn-back[^"]*"[^>]*>([\s\S]*?)<\/a>/gi, '$1');
+}
+
+function printHtmlViaTempFrame(html) {
+  const tmp = document.createElement('iframe');
+  tmp.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+  tmp.srcdoc = html;
+  document.body.appendChild(tmp);
+  tmp.addEventListener('load', () => {
+    setTimeout(() => {
+      try { tmp.contentWindow.focus(); tmp.contentWindow.print(); } catch (e) {}
+      setTimeout(() => tmp.remove(), 1500);
+    }, 400);
+  });
+}
+
+function printChatReadingFrame(raw) {
   const frame = document.getElementById('chatReadingFrame');
   if (!frame || !frame.contentWindow) return;
   const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
-  if (bridge) {
-    let out = '';
+  let out = '';
+  try {
+    out = '<!DOCTYPE html>\n' + frame.contentDocument.documentElement.outerHTML;
+    out = out.replace(/<script[^>]*paged\.polyfill[^>]*><\/script>/i, '');
+    if (raw) out = stripChatFootnoteLinks(out);
+  } catch (e) { out = ''; }
+  if (bridge && out) {
     try {
-      out = '<!DOCTYPE html>\n' + frame.contentDocument.documentElement.outerHTML;
-      out = out.replace(/<script[^>]*paged\.polyfill[^>]*><\/script>/i, '');
-    } catch (e) { out = ''; }
-    if (out) {
-      try {
-        bridge.postMessage({ action: 'printHtml', html: out, base: location.origin + '/' });
-        showToast('جارٍ فتح نافذة طباعة النظام…');
-        return;
-      } catch (e) {}
-    }
+      bridge.postMessage({ action: 'printHtml', html: out, base: location.origin + '/' });
+      showToast(raw ? 'جارٍ فتح نافذة الطباعة الخام…' : 'جارٍ فتح نافذة طباعة النظام…');
+      return;
+    } catch (e) {}
+  }
+  if (raw && out) {
+    printHtmlViaTempFrame(out);
+    return;
   }
   try { frame.contentWindow.focus(); } catch (e) {}
   try { frame.contentWindow.print(); } catch (e) {}
@@ -1627,6 +1652,7 @@ function openChatReadingOverlay(htmlContent) {
       <div class="chat-reading-window" role="dialog" aria-label="قراءة">
         <div class="chat-reading-head">
           <button type="button" class="chat-reading-print">🖨️ طباعة / حفظ PDF</button>
+          <button type="button" class="chat-reading-print chat-reading-print-raw" title="نفس الطباعة لكن بأرقام حواشٍ غير مرتبطة: نص خام بلا روابط بين المتن والحاشية">🖨️ طباعة خام</button>
           <button type="button" class="chat-reading-close" aria-label="إغلاق">إغلاق</button>
         </div>
         <iframe id="chatReadingFrame" title="قراءة"></iframe>
@@ -1638,7 +1664,10 @@ function openChatReadingOverlay(htmlContent) {
       overlay.hidden = true;
     });
     overlay.querySelector('.chat-reading-print').addEventListener('click', () => {
-      printChatReadingFrame();
+      printChatReadingFrame(false);
+    });
+    overlay.querySelector('.chat-reading-print-raw').addEventListener('click', () => {
+      printChatReadingFrame(true);
     });
     document.body.appendChild(overlay);
   }

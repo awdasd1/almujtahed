@@ -8,8 +8,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>AlMujtahed</AssemblyName>
     <RootNamespace>AlMujtahed</RootNamespace>
-    <Version>1.10.316</Version>
-    <InformationalVersion>1.10.316</InformationalVersion>
+    <Version>1.10.317</Version>
+    <InformationalVersion>1.10.317</InformationalVersion>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>

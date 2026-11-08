@@ -6838,6 +6838,9 @@ function buildAcademicPaperHtml(runData, options) {
       <button class="btn-act btn-primary" type="button" onclick="window.print()">
         <span>🖨️ طباعة / حفظ كـ PDF</span>
       </button>
+      <button class="btn-act" type="button" onclick="printRawPaper()" title="طباعة الورقة نفسها لكن بأرقام حواشٍ غير مرتبطة: نص خام بلا روابط بين المتن والحاشية">
+        <span>🖨️ طباعة خام</span>
+      </button>
       <button class="btn-act" id="btnShareReport" type="button" onclick="shareReportPdf()" title="مشاركة" aria-label="مشاركة" disabled>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
       </button>
@@ -7055,6 +7058,41 @@ function buildAcademicPaperHtml(runData, options) {
       } catch (err) {
         if (err && err.name === 'AbortError') return;
       }
+    }
+    /* طباعة خام: نفس الورقة لكن بأرقام حواشٍ غير مرتبطة — تُفك روابط
+       أرقام المتن وحواشيها من نسخة الطباعة وحدها وتبقى النسخة
+       المعروضة مرتبطة كما هي */
+    function stripFootnoteLinks(html) {
+      return String(html || '')
+        .replace(/<a\\b[^>]*class="[^"]*pg-fn-call[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '$1')
+        .replace(/<a\\b[^>]*class="[^"]*pg-fn-marker[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '$1')
+        .replace(/<a\\b[^>]*class="[^"]*chat-fn-ref[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '$1')
+        .replace(/<a\\b[^>]*class="[^"]*chat-fn-back[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '$1');
+    }
+    function printRawViaIframe(html) {
+      var tmp = document.createElement('iframe');
+      tmp.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+      tmp.srcdoc = html;
+      document.body.appendChild(tmp);
+      tmp.addEventListener('load', function () {
+        setTimeout(function () {
+          try { tmp.contentWindow.focus(); tmp.contentWindow.print(); } catch (e) {}
+          setTimeout(function () { tmp.remove(); }, 1500);
+        }, 400);
+      });
+    }
+    function printRawPaper() {
+      var out = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
+      out = out.replace(/<script[^>]*paged\\.polyfill[^>]*><\\/script>/i, '');
+      out = stripFootnoteLinks(out);
+      var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+      if (bridge) {
+        var base = 'http://127.0.0.1:8085/';
+        try { if (window.location && window.location.origin && window.location.origin !== 'null') base = window.location.origin + '/'; } catch (e) {}
+        try { bridge.postMessage({ action: 'printHtml', html: out, base: base }); } catch (e) {}
+        return;
+      }
+      printRawViaIframe(out);
     }
     /* تطبيق ماك: زر الطباعة العلوي يسلّم الورقة مقسّمةً إلى غلاف
        التطبيق الأصلي ليفتح لوحة طباعة النظام (WKWebView يتجاهل
