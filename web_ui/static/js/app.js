@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS = {
   fontReading: 'google:Noto Naskh Arabic',
   printH1Font: 'google:Amiri', printH1Size: 25, printH1Weight: 700,
   printH2Font: 'google:Amiri', printH2Size: 19, printH2Weight: 700,
+  printBodyFont: 'google:Amiri', printBodySize: 18, printBodyWeight: 400,
   printFnFont: 'google:Amiri', printFnSize: 11.5, printFnWeight: 400,
   printSepWidth: 30,
   textSize: 19,
@@ -680,9 +681,10 @@ function handleFontRoleChange(role, value) {
 
 /* تبويب «الطباعة»: خطوط ورقة الطباعة المقسّمة وعرض خطها الفاصل */
 const PRINT_FONT_FIELDS = {
-  h1: { selectId: 'printH1FontSelect', key: 'printH1Font', sizeKey: 'printH1Size', weightKey: 'printH1Weight', previewId: 'printH1Preview' },
-  h2: { selectId: 'printH2FontSelect', key: 'printH2Font', sizeKey: 'printH2Size', weightKey: 'printH2Weight', previewId: 'printH2Preview' },
-  fn: { selectId: 'printFnFontSelect', key: 'printFnFont', sizeKey: 'printFnSize', weightKey: 'printFnWeight', previewId: 'printFnPreview' }
+  h1: { selectId: 'printH1FontSelect', key: 'printH1Font', sizeKey: 'printH1Size', weightKey: 'printH1Weight', previewId: 'printH1Preview', label: 'العناوين الرئيسة' },
+  h2: { selectId: 'printH2FontSelect', key: 'printH2Font', sizeKey: 'printH2Size', weightKey: 'printH2Weight', previewId: 'printH2Preview', label: 'العناوين الفرعية' },
+  body: { selectId: 'printBodyFontSelect', key: 'printBodyFont', sizeKey: 'printBodySize', weightKey: 'printBodyWeight', previewId: 'printBodyPreview', label: 'المتن' },
+  fn: { selectId: 'printFnFontSelect', key: 'printFnFont', sizeKey: 'printFnSize', weightKey: 'printFnWeight', previewId: 'printFnPreview', label: 'الحاشية' }
 };
 
 function populatePrintFontSelects() {
@@ -746,6 +748,43 @@ function handlePrintSetting(key, value) {
   currentSettings[key] = Number.isFinite(numeric) ? numeric : value;
   persistFontSettings();
   updatePrintPreviews();
+}
+
+/* رفع خط خاص بموضع طباعة بعينه: يُحفظ في مجلد fonts ويُعيَّن مباشرة
+   لذلك الموضع (عناوين رئيسة/فرعية/متن/حاشية) */
+async function uploadPrintFont(event, role) {
+  const field = PRINT_FONT_FIELDS[role];
+  const input = event.target;
+  const files = [...(input.files || [])];
+  input.value = '';
+  if (!field || !files.length) return;
+  let lastAdded = null;
+  const errors = [];
+  for (const file of files) {
+    const body = new FormData();
+    body.append('file', file);
+    try {
+      const response = await fetch('/api/fonts/upload', { method: 'POST', body });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.font) {
+        errors.push(apiErrorDetail(data, `تعذر رفع ${file.name}`));
+        continue;
+      }
+      lastAdded = data.font;
+    } catch (error) {
+      errors.push(`تعذر رفع ${file.name}`);
+    }
+  }
+  if (!lastAdded) {
+    if (errors.length) showToast(errors[0]);
+    return;
+  }
+  try { await loadCustomFonts(); } catch (error) {}
+  currentSettings[field.key] = `custom:${lastAdded.filename}`;
+  persistFontSettings();
+  populateFontSelects();
+  updatePrintPreviews();
+  showToast(`تم حفظ الخط وتعيينه لخط ${field.label} في الطباعة`);
 }
 
 function renderCustomFontsList() {
@@ -878,6 +917,11 @@ async function deleteCustomFont(filename) {
   Object.values(FONT_ROLE_FIELDS).forEach((field) => {
     if (currentSettings[field.key] === `custom:${filename}`) {
       currentSettings[field.key] = field.key === 'fontReading' ? 'google:Noto Naskh Arabic' : 'google:Amiri';
+    }
+  });
+  Object.values(PRINT_FONT_FIELDS).forEach((field) => {
+    if (currentSettings[field.key] === `custom:${filename}`) {
+      currentSettings[field.key] = 'google:Amiri';
     }
   });
   persistFontSettings();

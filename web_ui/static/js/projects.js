@@ -6520,17 +6520,8 @@ async function downloadProjectReportPdf() {
     showToast('🎉 تم تحميل تقرير PDF الأكاديمي بنجاح!');
   } catch (err) {
     console.warn('Server PDF generation failed, falling back to browser print:', err);
-    showToast('تم فتح المعاينة الأكاديمية للطباعة والحفظ المباشر كـ PDF 🖨️');
-    const printWin = window.open('', '_blank');
-    if (printWin) {
-      printWin.document.open();
-      printWin.document.write(htmlContent);
-      printWin.document.close();
-      setTimeout(() => {
-        printWin.focus();
-        printWin.print();
-      }, 500);
-    }
+    showToast('تعذر توليد PDF — تُفتح طباعة النظام مباشرة');
+    openAcademicPaperWindow(currentProjectRunData);
   }
 }
 
@@ -6695,10 +6686,11 @@ function paperPrintCss() {
   const h1Size = num(s.printH1Size, 25, 10, 44), h1W = Math.round(num(s.printH1Weight, 700, 100, 900));
   const h2Size = num(s.printH2Size, 19, 9, 36), h2W = Math.round(num(s.printH2Weight, 700, 100, 900));
   const fnSize = num(s.printFnSize, 11.5, 7, 20), fnW = Math.round(num(s.printFnWeight, 400, 100, 900));
+  const bodySize = num(s.printBodySize, 18, 10, 30), bodyW = Math.round(num(s.printBodyWeight, 400, 100, 900));
   const sep = num(s.printSepWidth, 30, 5, 100);
   const head = [];
   const fams = new Set();
-  [s.printH1Font, s.printH2Font, s.printFnFont].forEach((v) => {
+  [s.printH1Font, s.printH2Font, s.printBodyFont, s.printFnFont].forEach((v) => {
     if (v && String(v).startsWith('google:')) fams.add(String(v).slice(7));
   });
   fams.forEach((fam) => {
@@ -6707,7 +6699,7 @@ function paperPrintCss() {
   });
   const customFns = (typeof customFonts !== 'undefined' && Array.isArray(customFonts)) ? customFonts : [];
   const customSeen = new Set();
-  [s.printH1Font, s.printH2Font, s.printFnFont].forEach((v) => {
+  [s.printH1Font, s.printH2Font, s.printBodyFont, s.printFnFont].forEach((v) => {
     if (!v || !String(v).startsWith('custom:') || customSeen.has(v)) return;
     customSeen.add(v);
     const font = customFns.find((f) => `custom:${f.filename}` === v);
@@ -6722,6 +6714,8 @@ function paperPrintCss() {
     .academic-text-content h2, .academic-subheading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W}; }
     .academic-text-content h3, .academic-text-content h4 { font-family: ${stack(s.printH2Font)}; font-size: ${Math.max(10, h2Size - 2)}pt; font-weight: ${h2W}; }
     .biblio-title { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size + 1}pt; font-weight: ${h2W}; }
+    body { font-family: ${stack(s.printBodyFont)}; }
+    .academic-text-content p, .academic-paragraph { font-family: ${stack(s.printBodyFont)}; font-size: ${bodySize}pt; font-weight: ${bodyW}; }
     [data-footnote-marker] { font-family: ${stack(s.printFnFont)}; font-size: ${fnSize}pt; font-weight: ${fnW}; }
     .pagedjs_footnote_area { background: linear-gradient(#111, #111) top right / ${sep}% 1px no-repeat; }
   `;
@@ -7242,23 +7236,44 @@ function buildAcademicPaperHtml(runData, options) {
 </html>`;
 }
 
+/* الطباعة مباشرة إلى نافذة طباعة نظام التشغيل (ماك/ويندوز) بلا نافذة
+   وسيطة: تُبنى الورقة في إطار مخفي خارج الشاشة، وبعد اكتمال تقسيم
+   الصفحات تُستدعى طباعة الإطار نفسه فتظهر خيارات طباعة النظام */
 function openAcademicPaperWindow(runData) {
-  const fullPrintHtml = buildAcademicPaperHtml(runData, { toolbar: true });
-  const printWin = window.open('', '_blank');
-  if (!printWin || printWin === window) {
-    if (typeof openChatReadingOverlay === 'function') {
-      openChatReadingOverlay(fullPrintHtml);
-      showToast('تم فتح نافذة القراءة');
-      return;
+  const html = buildAcademicPaperHtml(runData, { toolbar: false, forPdf: true });
+  const old = document.getElementById('almujtahed-print-frame');
+  if (old) old.remove();
+  const frame = document.createElement('iframe');
+  frame.id = 'almujtahed-print-frame';
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;top:0;left:-10000px;width:900px;height:1200px;border:0;visibility:hidden;';
+  document.body.appendChild(frame);
+  showToast('جارٍ تجهيز صفحات البحث للطباعة…');
+  let printed = false;
+  const cleanup = () => { setTimeout(() => { try { frame.remove(); } catch (e) {} }, 3000); };
+  const doPrint = () => {
+    if (printed) return;
+    printed = true;
+    const win = frame.contentWindow;
+    if (!win) { cleanup(); return; }
+    try { win.addEventListener('afterprint', cleanup); } catch (e) {}
+    setTimeout(cleanup, 300000);
+    try { win.focus(); } catch (e) {}
+    try { win.print(); } catch (e) {
+      showToast('تعذرت طباعة البحث من هذا المتصفح');
+      cleanup();
     }
-    showToast('تعذر فتح صفحة البحث. اسمح بالنوافذ المنبثقة ثم أعد التصدير');
-    return;
-  }
-  printWin.document.open();
-  printWin.document.write(fullPrintHtml);
-  printWin.document.close();
-  showToast('تم فتح البحث. احفظه كـ PDF من زر الطباعة، وروابط المتن والحاشية تبقى في الملف');
-  setTimeout(() => { try { printWin.focus(); } catch (e) {} }, 400);
+  };
+  frame.srcdoc = html;
+  const started = Date.now();
+  const timer = setInterval(() => {
+    let done = false;
+    try { done = !!(frame.contentWindow && frame.contentWindow.__pagedDone); } catch (e) {}
+    if (done || Date.now() - started > 180000) {
+      clearInterval(timer);
+      setTimeout(doPrint, 350);
+    }
+  }, 400);
 }
 
 function printAcademicPaper() {
