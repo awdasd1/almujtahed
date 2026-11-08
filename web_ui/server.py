@@ -1781,7 +1781,7 @@ CITATION_FORMAT_RULE = """
 1. اسم الكتاب يُنسخ حرفياً كما هو في سطر «الإحالة المعتمدة» المعدّ بصيغة الحواشي المحكّمة: عنوان بلا طبعة ولا تحقيق، ومؤلف باسمه المشهور وحده بلا أوصاف (الشاطبي لا الشاطبي الأصولي النحوي). يُمنع اختصاره أو تغيير حرف فيه أو إضافة طبعة من عندك.
 1ب. سطر «الإحالة المعتمدة» يبدأ برقم الشاملة الفريد على صورة #ID. في الحاشية وحدها انسخ #ID قبل اسم الكتاب كما هو تماماً، مثل: #1220 سنن الترمذي - ط الرسالة للترمذي (2-123). هذا الرقم علامة ربط آلية بقاعدة الكتب وسيُحذف من العرض، فلا تحذفه ولا تغيّره ولا تستبدله، ولا تضعه في المتن ولا في قائمة المصادر والمراجع.
 1ج. الحاشية شهادة نقل: لا تكتب حاشية ولا إحالة إلا لكتاب ورد نصه في الشواهد المعطاة ونقلتَ منه في الفقرة المرتبطة بها نصاً أو معنى فعلاً. ما لم تنقل منه لا تذكره في حاشية ولو كنت تعرفه أو كان مشهوراً في الباب، ولا تجمع مراجع للزينة أو للاستكثار.
-2. الحاشية الظاهرة تتبع الإخراج القياسي الآتي لا غير: اسم الكتاب للمؤلف (جزء-صفحة) بأرقام لاتينية بين قوسين إنجليزيين، مثل: مجموع الفتاوى لابن تيمية (2-368). فإن كان الكتاب جزءًا واحدًا لا أجزاء له: اسم الكتاب للمؤلف ص (صفحة)، مثل: التدمرية لابن تيمية ص (217). ويُصدَّر النقل الحرفي بـ«انظر:» والنقل بالمعنى بـ«ينظر:»، ولا يوضع أحدهما مكان الآخر. مثال الحرفي: انظر: مجموع الفتاوى لابن تيمية (2-368). ومثال المعنوي: ينظر: مجموع الفتاوى لابن تيمية (2-368).
+2. الحاشية الظاهرة تتبع الإخراج القياسي الآتي لا غير: اسم الكتاب للمؤلف (جزء-صفحة) بأرقام لاتينية بين قوسين إنجليزيين، مثل: مجموع الفتاوى لابن تيمية (2-368). فإن كان الكتاب جزءًا واحدًا لا أجزاء له: اسم الكتاب للمؤلف ص (صفحة)، مثل: التدمرية لابن تيمية ص (217). ويُصدَّر النقل الحرفي بـ«انظر:» والنقل بالمعنى بـ«ينظر:»، ولا يوضع أحدهما مكان الآخر. مثال الحرفي: انظر: مجموع الفتاوى لابن تيمية (2-368). ومثال المعنوي: ينظر: مجموع الفتاوى لابن تيمية (2-368). وفي الحاشية الواحدة متعددة المصادر لا يتكرر «انظر/ينظر» عند كل مصدر: يُصدَّر أول مصدر وحده به ثم تُعطف بقية المصادر بالواو مجردة، مثل: ينظر: مجموع الفتاوى لابن تيمية (2-368)؛ والموافقات للشاطبي (2-413)؛ والمحلى لابن حزم (2-187).
 3. قبل اسم الكتاب في الحاشية وحدها ضع #ID من سطر الإحالة المعتمدة، مثل: #1220 مجموع الفتاوى لابن تيمية (2-368). الرقم علامة ربط ويُحذف من العرض.
 4. تخريج الأحاديث والآثار له قالباه لا ثالث لهما، وبعدهما درجة الحديث إن كان في غير الصحيحين:
    أ. في الصحاح والسنن والمصنفات المبوبة: «أخرجه البخاري، كتاب الصلاة، باب الأذان، حديث رقم (367)، (3-405)» — المخرِّج باسمه المشهور، ثم الكتاب والباب ورقم الحديث منسوخة من متن الصفحة المرفقة وعناوينها لا من الذاكرة، ثم (جزء-صفحة) بصيغة الموضع القياسية.
@@ -2974,6 +2974,71 @@ def _sweep_resolve_book(plain: str) -> Optional[dict]:
     return None
 
 
+_LEAD_WORD_RE = r"(?:ينظر|انظر|يُنظر|أنظر)"
+_LEAD_IN_RE = re.compile(r"([؛;،,.])(\s*)(و)?\s*" + _LEAD_WORD_RE + r"\s*[:：]\s*")
+_LEAD_START_RE = re.compile(r"^(\s*)(و)?\s*" + _LEAD_WORD_RE + r"\s*[:：]\s*")
+
+
+def _normalize_footnote_leads(text: str):
+    """تطبيع روابط الإحالة داخل الحاشية الواحدة: «ينظر/انظر» أول الحاشية
+    فقط، وما تلاها من مصادر يُعطف بالواو مجردة — فلا «؛ وينظر:» ثانية
+    وثالثة في الحاشية نفسها. يعمل على مقاطع النص خارج الأختام فقط."""
+    if not text:
+        return text, 0
+    defs = _footnote_defs(text)
+    if not defs:
+        return text, 0
+    total = 0
+    edits = []
+    for d in defs:
+        body = d["body"]
+        tokens = re.split(r"(<[^>]+>)", body)
+        state = {"seen": False}
+        inside = 0
+        changed = [False]
+        out = []
+        for tok in tokens:
+            if tok.startswith("<"):
+                low = tok.lower()
+                if low.startswith("<span") and ("cit-src" in low or "cit-unresolved" in low):
+                    inside += 1
+                elif low.startswith("</span") and inside:
+                    inside -= 1
+                out.append(tok)
+                continue
+            if inside or not tok:
+                out.append(tok)
+                continue
+            m = _LEAD_START_RE.match(tok)
+            if m:
+                if state["seen"]:
+                    tok = (m.group(1) or "") + "و" + tok[m.end():]
+                    changed[0] = True
+                    total += 1
+                else:
+                    state["seen"] = True
+
+            def _sub_in(mm):
+                nonlocal total
+                if not state["seen"]:
+                    state["seen"] = True
+                    return mm.group(0)
+                changed[0] = True
+                total += 1
+                return mm.group(1) + " و"
+
+            tok = _LEAD_IN_RE.sub(_sub_in, tok)
+            out.append(tok)
+        if changed[0]:
+            new_body = "".join(out)
+            _slice = text[d["start"]:d["end"]]
+            if body in _slice:
+                edits.append((d["start"], d["end"], _slice.replace(body, new_body, 1)))
+    for s, e, new in sorted(edits, key=lambda x: x[0], reverse=True):
+        text = text[:s] + new + text[e:]
+    return text, total
+
+
 def _footnote_icon_sweep(text: str):
     """كنسة الحواشي الأخيرة: لا حاشية قاصدة بلا حالة ظاهرة بعدها.
 
@@ -2982,9 +3047,11 @@ def _footnote_icon_sweep(text: str):
     موضعها)، أو لا شيء إن لم تكن إحالة أصلًا. ما كان يبقى «صامتًا» —
     صيغة موضع لا تقرأها القواعد فلا ختم ولا تنبيه — هو العيب المعالج."""
     stats = {"defs": 0, "with_icon": 0, "unresolved": 0,
-             "unresolved_book": 0, "swept_stamped": 0, "swept_marked": 0}
+             "unresolved_book": 0, "swept_stamped": 0, "swept_marked": 0,
+             "leads_normalized": 0}
     if not text:
         return text, stats
+    text, stats["leads_normalized"] = _normalize_footnote_leads(text)
     defs = _footnote_defs(text)
     stats["defs"] = len(defs)
     edits = []
@@ -5110,7 +5177,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.289"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.290"},
         },
     })
     if opened.get("error"):
@@ -14169,7 +14236,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                           f"ووُسمت {_sweep_stats.get('swept_marked')} ⚠ بدل بقائها صامتة", flush=True)
                 if isinstance(locals().get("_gate_stats"), dict):
                     _gate_stats.update({k: _sweep_stats[k] for k in
-                                        ("defs", "with_icon", "swept_stamped", "swept_marked", "unresolved_book")})
+                                        ("defs", "with_icon", "swept_stamped", "swept_marked", "unresolved_book", "leads_normalized")})
                 if isinstance(locals().get("_audit_record_text"), str) and (_sweep_stats.get("swept_marked") or _sweep_stats.get("swept_stamped")):
                     _audit_record_text += (
                         f"\nكنسة الحواشي: من {_sweep_stats.get('defs')} حاشية خُتم {_sweep_stats.get('with_icon')} بزر تصفح موثّق"
