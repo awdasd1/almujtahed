@@ -685,13 +685,13 @@ function handleFontRoleChange(role, value) {
 
 /* تبويب «الطباعة»: خطوط ورقة الطباعة المقسّمة وعرض خطها الفاصل */
 const PRINT_FONT_FIELDS = {
-  h1: { selectId: 'printH1FontSelect', key: 'printH1Font', sizeKey: 'printH1Size', weightKey: 'printH1Weight', colorKey: 'printH1Color', previewId: 'printH1Preview', label: 'العناوين الرئيسة' },
-  h2: { selectId: 'printH2FontSelect', key: 'printH2Font', sizeKey: 'printH2Size', weightKey: 'printH2Weight', colorKey: 'printH2Color', previewId: 'printH2Preview', label: 'العناوين الفرعية' },
-  body: { selectId: 'printBodyFontSelect', key: 'printBodyFont', sizeKey: 'printBodySize', weightKey: 'printBodyWeight', colorKey: 'printBodyColor', previewId: 'printBodyPreview', label: 'المتن' },
-  fn: { selectId: 'printFnFontSelect', key: 'printFnFont', sizeKey: 'printFnSize', weightKey: 'printFnWeight', colorKey: 'printFnColor', previewId: 'printFnPreview', label: 'الحاشية' },
-  quran: { selectId: 'printQuranFontSelect', key: 'printQuranFont', sizeKey: 'printQuranSize', weightKey: 'printQuranWeight', colorKey: 'printQuranColor', previewId: 'printQuranPreview', label: 'الآيات' },
-  hadith: { selectId: 'printHadithFontSelect', key: 'printHadithFont', sizeKey: 'printHadithSize', weightKey: 'printHadithWeight', colorKey: 'printHadithColor', previewId: 'printHadithPreview', label: 'الأحاديث' },
-  quote: { selectId: 'printQuoteFontSelect', key: 'printQuoteFont', sizeKey: 'printQuoteSize', weightKey: 'printQuoteWeight', colorKey: 'printQuoteColor', previewId: 'printQuotePreview', label: 'الأقوال المنقولة نصًا' }
+  h1: { selectId: 'printH1FontSelect', key: 'printH1Font', sizeKey: 'printH1Size', weightKey: 'printH1Weight', styleKey: 'printH1Style', colorKey: 'printH1Color', previewId: 'printH1Preview', label: 'العناوين الرئيسة' },
+  h2: { selectId: 'printH2FontSelect', key: 'printH2Font', sizeKey: 'printH2Size', weightKey: 'printH2Weight', styleKey: 'printH2Style', colorKey: 'printH2Color', previewId: 'printH2Preview', label: 'العناوين الفرعية' },
+  body: { selectId: 'printBodyFontSelect', key: 'printBodyFont', sizeKey: 'printBodySize', weightKey: 'printBodyWeight', styleKey: 'printBodyStyle', colorKey: 'printBodyColor', previewId: 'printBodyPreview', label: 'المتن' },
+  fn: { selectId: 'printFnFontSelect', key: 'printFnFont', sizeKey: 'printFnSize', weightKey: 'printFnWeight', styleKey: 'printFnStyle', colorKey: 'printFnColor', previewId: 'printFnPreview', label: 'الحاشية' },
+  quran: { selectId: 'printQuranFontSelect', key: 'printQuranFont', sizeKey: 'printQuranSize', weightKey: 'printQuranWeight', styleKey: 'printQuranStyle', colorKey: 'printQuranColor', previewId: 'printQuranPreview', label: 'الآيات' },
+  hadith: { selectId: 'printHadithFontSelect', key: 'printHadithFont', sizeKey: 'printHadithSize', weightKey: 'printHadithWeight', styleKey: 'printHadithStyle', colorKey: 'printHadithColor', previewId: 'printHadithPreview', label: 'الأحاديث' },
+  quote: { selectId: 'printQuoteFontSelect', key: 'printQuoteFont', sizeKey: 'printQuoteSize', weightKey: 'printQuoteWeight', styleKey: 'printQuoteStyle', colorKey: 'printQuoteColor', previewId: 'printQuotePreview', label: 'الأقوال المنقولة نصًا' }
 };
 
 function populatePrintFontSelects() {
@@ -726,6 +726,8 @@ function populatePrintFontSelects() {
     if (sizeInput) sizeInput.value = currentSettings[field.sizeKey];
     const weightSelect = document.getElementById(field.weightKey);
     if (weightSelect) weightSelect.value = String(currentSettings[field.weightKey]);
+    const styleSelect = document.getElementById(field.styleKey);
+    if (styleSelect) styleSelect.value = (parseInt(currentSettings[field.weightKey], 10) >= 600) ? 'bold' : 'normal';
     const colorInput = document.getElementById(field.colorKey);
     if (colorInput) colorInput.value = /^#[0-9a-f]{6}$/i.test(currentSettings[field.colorKey] || '') ? currentSettings[field.colorKey] : '#111111';
   });
@@ -929,8 +931,25 @@ function handlePrintFontChange(role, value) {
 function handlePrintSetting(key, value) {
   const numeric = parseFloat(value);
   currentSettings[key] = Number.isFinite(numeric) ? numeric : value;
+  // مزامنة «نمط الخط» مع الوزن متى تغيّر الوزن من قائمته
+  Object.values(PRINT_FONT_FIELDS).forEach((field) => {
+    if (field.weightKey === key) {
+      const styleSelect = document.getElementById(field.styleKey);
+      if (styleSelect) styleSelect.value = (parseInt(value, 10) >= 600) ? 'bold' : 'normal';
+    }
+  });
   persistFontSettings();
   updatePrintPreviews();
+}
+
+/* نمط الخط: عادي (٤٠٠) أو غامق (٧٠٠) — اختصار صريح لوزن الخط */
+function handlePrintStyleChange(role, value) {
+  const field = PRINT_FONT_FIELDS[role];
+  if (!field) return;
+  const weight = value === 'bold' ? '700' : '400';
+  const weightSelect = document.getElementById(field.weightKey);
+  if (weightSelect) weightSelect.value = weight;
+  handlePrintSetting(field.weightKey, weight);
 }
 
 function handlePrintBgRange(key, value) {
