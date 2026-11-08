@@ -5336,7 +5336,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.322"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.323"},
         },
     })
     if opened.get("error"):
@@ -21873,9 +21873,14 @@ def _docx_runs(runs, base_style: dict, styles: dict, fn_count: int) -> str:
                     out.append(f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(seg)}</w:t></w:r>')
         fn = run.get("fn")
         if isinstance(fn, int) and 0 <= fn < fn_count:
+            # رقم الحاشية في المتن بين قوسين مرتفعًا: (١)
             out.append(
                 '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
+                '<w:t xml:space="preserve">(</w:t></w:r>'
+                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
                 f'<w:footnoteReference w:id="{fn + 2}"/></w:r>'
+                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
+                '<w:t xml:space="preserve">)</w:t></w:r>'
             )
     return "".join(out)
 
@@ -21914,7 +21919,7 @@ def build_docx_bytes(payload: dict) -> bytes:
     paras = "".join(_docx_paragraph(b, styles, fn_count) for b in blocks if isinstance(b, dict))
     sect = (
         "<w:sectPr>"
-        '<w:footnotePr><w:numRestart w:val="eachPage"/></w:footnotePr>'
+        '<w:footnotePr><w:numFmt w:val="arabic"/><w:numRestart w:val="eachPage"/></w:footnotePr>'
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="1134" w:right="1020" w:bottom="1361" w:left="1020" w:header="720" w:footer="720" w:gutter="0"/>'
         '<w:docGrid w:linePitch="360"/>'
@@ -21928,16 +21933,24 @@ def build_docx_bytes(payload: dict) -> bytes:
     )
 
     fn_paras = []
+    fn_mark_rpr = _docx_rpr(fn_style)
     for i, fnote in enumerate(footnotes):
         runs = _docx_runs((fnote or {}).get("runs"), fn_style, styles, 0) if isinstance(fnote, dict) else ""
         if not runs:
             runs = "<w:r><w:t> </w:t></w:r>"
+        # ترقيم الحاشية أمامها بين قوسين: (١) ثم متنها — علامة الرقم
+        # التلقائية بين قوسين بخط الحاشية نفسه
+        prefix = (
+            f'<w:r>{fn_mark_rpr}<w:t xml:space="preserve">(</w:t></w:r>'
+            '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr></w:r>'
+            f'<w:r>{fn_mark_rpr}<w:t xml:space="preserve">) </w:t></w:r>'
+        )
         fn_paras.append(
             f'<w:footnote w:id="{i + 2}"><w:p>'
             '<w:pPr><w:pStyle w:val="FootnoteText"/><w:bidi/>'
             '<w:spacing w:line="240" w:lineRule="auto" w:after="40"/>'
             '<w:jc w:val="both"/></w:pPr>'
-            f"{runs}</w:p></w:footnote>"
+            f"{prefix}{runs}</w:p></w:footnote>"
         )
     footnotes_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
