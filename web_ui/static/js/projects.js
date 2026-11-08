@@ -6586,17 +6586,28 @@ function formatAcademicBody(rawMarkdown) {
       return `<h2 class="biblio-title">${content}</h2>`;
     }
     if (tag !== 'p') return match;
+    /* عنوان فرعي قائم بذاته: فقرة كلها بخط عريض (تنتهي بنقطتين رأسيتين
+       غالبًا) — تُوسم عنوانًا ليبدأ سطرًا جديدًا وقبله سطر فارغ */
+    const trimmedContent = content.trim();
+    const boldOnly = trimmedContent.match(/^<(b|strong)>([\s\S]*?)<\/\1>$/i);
+    const headingLike = /[:：]\s*$/.test(plain) || (plain.length <= 42 && !/[.؟!؛]/.test(plain));
+    if (boldOnly && plain.length <= 110 && headingLike) {
+      return `<p class="academic-subheading">${content}</p>`;
+    }
     const isFootnote = inBibliography
       || /^(<sup>|ينظر:|يُنظر:|أخرجه|رواه)/.test(plain)
       || /^\([\d٠-٩]+\)/.test(plain);
     if (isFootnote) {
       return `<p class="footnote-line">${content}</p>`;
     }
+    /* مطلع مرقّم بعنوان عريض (١- <b>تحرير المذهب الحنفي:</b> ...) عنوان
+       فرعي مبدوء به سطر فقرته — يأخذ فراغ ما قبل العناوين */
+    const leadClass = /^[٠-٩\d]+\s*[-–.)]\s*<(b|strong)>/i.test(trimmedContent) ? ' academic-lead' : '';
     if (/text-indent/.test(attrs)) {
-      if (/class\s*=/.test(attrs)) return `<p${attrs.replace(/class=(["'])/, 'class=$1academic-paragraph ')}>${content}</p>`;
-      return `<p class="academic-paragraph"${attrs}>${content}</p>`;
+      if (/class\s*=/.test(attrs)) return `<p${attrs.replace(/class=(["'])/, `class=$1academic-paragraph${leadClass} `)}>${content}</p>`;
+      return `<p class="academic-paragraph${leadClass}"${attrs}>${content}</p>`;
     }
-    return `<p class="academic-paragraph">${content}</p>`;
+    return `<p class="academic-paragraph${leadClass}">${content}</p>`;
   });
   const refCounts = {};
   html = html.replace(/<sup>\s*<small>\s*\(([^)<]{1,8})\)\s*<\/small>\s*<\/sup>/gi, (match, number) => {
@@ -6708,7 +6719,7 @@ function paperPrintCss() {
     .paper-main-title { font-family: ${stack(s.printH1Font)}; font-size: ${h1Size}pt; font-weight: ${h1W}; }
     .academic-round-title { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(13, h1Size - 4)}pt; font-weight: ${h1W}; }
     .academic-text-content h1 { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(12, h1Size - 3)}pt; font-weight: ${h1W}; }
-    .academic-text-content h2 { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W}; }
+    .academic-text-content h2, .academic-subheading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W}; }
     .academic-text-content h3, .academic-text-content h4 { font-family: ${stack(s.printH2Font)}; font-size: ${Math.max(10, h2Size - 2)}pt; font-weight: ${h2W}; }
     .biblio-title { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size + 1}pt; font-weight: ${h2W}; }
     [data-footnote-marker] { font-family: ${stack(s.printFnFont)}; font-size: ${fnSize}pt; font-weight: ${fnW}; }
@@ -7043,6 +7054,18 @@ function buildAcademicPaperHtml(runData, options) {
       text-justify: inter-word;
     }
     .academic-paragraph { text-indent: 30px; margin: 0; line-height: 2.1; font-size: var(--paper-size); }
+    /* العناوين الفرعية في المتن: تبدأ سطرًا جديدًا دائمًا، وبينها وبين
+       الفقرة السابقة سطر فارغ، ولا تنفصل عن فقرتها عند كسر الصفحة */
+    .academic-text-content h1, .academic-text-content h2, .academic-text-content h3,
+    .academic-text-content h4, .academic-text-content h5, .academic-text-content h6 {
+      margin: 1.9em 0 0.35em; break-after: avoid;
+    }
+    .academic-subheading {
+      font-size: 19pt; font-weight: 700; line-height: 1.9;
+      margin: 1.9em 0 0.35em; text-indent: 0 !important; break-after: avoid;
+    }
+    .academic-lead { margin-top: 1.7em; }
+    .academic-text-content > :is(h1, h2, h3, h4, h5, h6, .academic-subheading, .academic-lead):first-child { margin-top: 0; }
     .footnote-line, .biblio-title { text-indent: 0 !important; margin: 0; }
     .footnote-line { font-size: 14pt; line-height: 1.7; }
     .footnote-list { margin: 16px 0 0; padding: 8px 0 0; }
