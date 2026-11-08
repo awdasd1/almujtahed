@@ -1981,8 +1981,9 @@ body:has(#paneChat.active) .main-content {
 }
 
 /* خط زمني لإجابات الشات: لوحة عائمة متمركزة عموديًا على يمين منطقة
-   الرسائل ودائمة الظهور وسط المحادثة، فيها خط طولي عليه نقطة لكل
-   إجابة وبجوارها مستطيل صغير وسطه اسم مرحلتها — تنقّل سريع بينها */
+   الرسائل، مخفية لا تشغل القارئ ولا يبقى منها إلا تلميح نقاط خافت،
+   فإذا مرّر الفأرة إلى المنطقة اليمنى ظهرت بخطها الطولي ونقاطها
+   ومستطيلات مراحلها (مسودة/مناقشة/نسخة نهائية) — تنقّل سريع بينها */
 .chat-timeline {
   position: absolute;
   right: 4px;
@@ -1994,7 +1995,7 @@ body:has(#paneChat.active) .main-content {
 .chat-timeline-panel {
   position: absolute;
   top: 50%;
-  transform: translateY(-50%);
+  transform: translateY(-50%) translateX(12px);
   right: 2px;
   width: 128px;
   max-height: calc(100% - 24px);
@@ -2005,7 +2006,62 @@ body:has(#paneChat.active) .main-content {
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
   padding: 10px 8px;
+  /* مخفية حتى لا تشغل القارئ؛ تظهر عند تمرير الفأرة إلى اليمين */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease, visibility .18s;
+}
+
+.chat-timeline:hover .chat-timeline-panel,
+.chat-timeline.is-open .chat-timeline-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
   pointer-events: auto;
+}
+
+/* شريط تمرير الفأرة على الحافة اليمنى يكشف اللوحة */
+.chat-timeline-hotzone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 42px;
+  pointer-events: auto;
+}
+
+/* تلميح خافت دائم: نقاط المراحل الصغيرة على الحافة */
+.chat-timeline-hint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  pointer-events: none;
+  opacity: .5;
+  transition: opacity .18s ease;
+}
+
+.chat-timeline-hint i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 2px solid var(--text-muted);
+  background: var(--bg-surface);
+  display: block;
+}
+
+.chat-timeline-hint i.is-draft { border-color: var(--accent-clay); }
+.chat-timeline-hint i.is-discussion { border-color: #2563eb; }
+.chat-timeline-hint i.is-final { border-color: #15803d; background: #15803d; }
+
+.chat-timeline:hover .chat-timeline-hint,
+.chat-timeline.is-open .chat-timeline-hint {
+  opacity: 0;
 }
 
 .chat-timeline-line {

@@ -695,15 +695,32 @@ function buildChatTimeline(sessionArg) {
     rail = document.createElement('div');
     rail.id = 'chatTimeline';
     rail.className = 'chat-timeline';
-    rail.innerHTML = '<div class="chat-timeline-panel"><div class="chat-timeline-line"></div></div>';
+    rail.innerHTML = '<div class="chat-timeline-hotzone" title="مراحل الإجابات"></div>'
+      + '<div class="chat-timeline-hint"></div>'
+      + '<div class="chat-timeline-panel"><div class="chat-timeline-line"></div></div>';
     main.appendChild(rail);
     container.addEventListener('scroll', scheduleChatTimeline, { passive: true });
     window.addEventListener('resize', scheduleChatTimeline);
+    // منطقة التمرير اليمنى لا تحجب عجلة الفأرة عن الرسائل، ولمسها
+    // ينقر فيفتح اللوحة (للأجهزة اللمسية بلا تمرير فأرة)
+    const hot = rail.querySelector('.chat-timeline-hotzone');
+    hot.addEventListener('wheel', (e) => { container.scrollTop += e.deltaY; }, { passive: true });
+    hot.addEventListener('click', () => rail.classList.toggle('is-open'));
   }
   const panel = rail.querySelector('.chat-timeline-panel');
   const session = sessionArg
     || ((typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null);
   const stages = chatAnswerStages(session);
+  // تلميح خافت دائم: نقاط صغيرة بألوان المراحل تنبّه لوجود اللوحة
+  const hint = rail.querySelector('.chat-timeline-hint');
+  if (hint) {
+    hint.innerHTML = '';
+    stages.forEach((st) => {
+      const i = document.createElement('i');
+      i.className = `is-${st.kind}`;
+      hint.appendChild(i);
+    });
+  }
   rail.querySelectorAll('.chat-timeline-item').forEach((n) => n.remove());
   if (!stages.length) { rail.style.display = 'none'; return; }
   rail.style.display = '';
