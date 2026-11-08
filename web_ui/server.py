@@ -680,6 +680,62 @@ async def delete_custom_font(filename: str):
 
 app.mount("/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
+# خلفية ورقة الطباعة: صورة واحدة تُستبدل عند كل رفع، تُطبع خلف نص الصفحات
+PRINT_BG_DIR = BASE_DIR / "print_background"
+PRINT_BG_DIR.mkdir(parents=True, exist_ok=True)
+PRINT_BG_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
+MAX_PRINT_BG_BYTES = 12 * 1024 * 1024
+
+def _print_bg_current():
+    for path in sorted(PRINT_BG_DIR.glob("background.*")):
+        if path.is_file() and path.suffix.lower() in PRINT_BG_EXTENSIONS:
+            return path
+    return None
+
+def _print_bg_payload():
+    path = _print_bg_current()
+    if not path:
+        return {"url": None}
+    version = int(path.stat().st_mtime)
+    return {"url": f"/print-background/{path.name}?v={version}"}
+
+@app.get("/api/print/background")
+async def get_print_background():
+    """رابط صورة خلفية ورقة الطباعة الحالية إن وُجدت"""
+    return _print_bg_payload()
+
+@app.post("/api/print/background")
+async def upload_print_background(file: UploadFile = File(...)):
+    """حفظ صورة خلفية ورقة الطباعة (تستبدل السابقة)"""
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in PRINT_BG_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="صيغة الصورة غير مدعومة (PNG أو JPG أو WEBP أو GIF أو SVG)")
+    contents = await file.read()
+    if len(contents) < 32:
+        raise HTTPException(status_code=400, detail="ملف الصورة فارغ أو تالف")
+    if len(contents) > MAX_PRINT_BG_BYTES:
+        raise HTTPException(status_code=413, detail="حجم الصورة أكبر من 12 ميغابايت")
+    for old in PRINT_BG_DIR.glob("background.*"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    (PRINT_BG_DIR / f"background{ext}").write_bytes(contents)
+    return {"success": True, **_print_bg_payload()}
+
+@app.delete("/api/print/background")
+async def delete_print_background():
+    """حذف صورة خلفية ورقة الطباعة"""
+    path = _print_bg_current()
+    if path:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return {"success": True, "url": None}
+
+app.mount("/print-background", StaticFiles(directory=str(PRINT_BG_DIR)), name="print-background")
+
 # الحالة العامة للنظام والنموذج
 # قرار المنتج (1.10.267): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
 # الدلالة، والبحث اللفظي المضبوط هو الأساس. لا يُشغَّل المحرك ولا يُحمَّل
@@ -5179,7 +5235,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.307"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.308"},
         },
     })
     if opened.get("error"):

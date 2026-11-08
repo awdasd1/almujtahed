@@ -60,6 +60,7 @@ const DEFAULT_SETTINGS = {
   printHadithFont: 'google:Amiri', printHadithSize: 18, printHadithWeight: 600, printHadithColor: '',
   printQuoteFont: 'google:Amiri', printQuoteSize: 18, printQuoteWeight: 400, printQuoteColor: '',
   printSepWidth: 30,
+  printBgUrl: '', printBgMode: 'cover', printBgSize: 100, printBgOpacity: 15,
   textSize: 19,
   providers: {
     claude: '',
@@ -730,7 +731,71 @@ function populatePrintFontSelects() {
   });
   const sep = document.getElementById('printSepWidth');
   if (sep) sep.value = String(currentSettings.printSepWidth || 30);
+  populatePrintBackground();
   updatePrintPreviews();
+}
+
+/* خلفية ورقة الطباعة: صورة خلف نص كل صفحة، بنمط عرض وحجم وشفافية */
+function populatePrintBackground() {
+  const mode = document.getElementById('printBgMode');
+  if (mode) mode.value = currentSettings.printBgMode || 'cover';
+  const size = document.getElementById('printBgSize');
+  if (size) size.value = String(currentSettings.printBgSize ?? 100);
+  const sizeVal = document.getElementById('printBgSizeVal');
+  if (sizeVal) sizeVal.textContent = `${toArabicDigits(currentSettings.printBgSize ?? 100)}٪`;
+  const opacity = document.getElementById('printBgOpacity');
+  if (opacity) opacity.value = String(currentSettings.printBgOpacity ?? 15);
+  const opacityVal = document.getElementById('printBgOpacityVal');
+  if (opacityVal) opacityVal.textContent = `${toArabicDigits(currentSettings.printBgOpacity ?? 15)}٪`;
+  const thumb = document.getElementById('printBgThumb');
+  if (thumb) {
+    if (currentSettings.printBgUrl) {
+      thumb.src = currentSettings.printBgUrl;
+      thumb.style.display = 'block';
+    } else {
+      thumb.removeAttribute('src');
+      thumb.style.display = 'none';
+    }
+  }
+  const removeBtn = document.getElementById('printBgRemove');
+  if (removeBtn) removeBtn.style.display = currentSettings.printBgUrl ? '' : 'none';
+}
+
+function toArabicDigits(value) {
+  return String(value).replace(/[0-9]/g, (d) => '٠١٢٣٤٥٦٧٨٩'[+d]);
+}
+
+async function uploadPrintBackground(event) {
+  const input = event.target;
+  const file = (input.files || [])[0];
+  input.value = '';
+  if (!file) return;
+  const body = new FormData();
+  body.append('file', file);
+  try {
+    const response = await fetch('/api/print/background', { method: 'POST', body });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.url) {
+      showToast(apiErrorDetail(data, 'تعذر رفع صورة الخلفية'));
+      return;
+    }
+    currentSettings.printBgUrl = data.url;
+    persistFontSettings();
+    populatePrintBackground();
+    showToast('تم تعيين صورة خلفية ورقة الطباعة');
+  } catch (error) {
+    showToast('تعذر رفع صورة الخلفية');
+  }
+}
+
+async function removePrintBackground() {
+  try {
+    await fetch('/api/print/background', { method: 'DELETE' });
+  } catch (error) {}
+  currentSettings.printBgUrl = '';
+  persistFontSettings();
+  populatePrintBackground();
+  showToast('تم حذف صورة خلفية ورقة الطباعة');
 }
 
 function updatePrintPreviews() {
@@ -767,6 +832,12 @@ function handlePrintSetting(key, value) {
   currentSettings[key] = Number.isFinite(numeric) ? numeric : value;
   persistFontSettings();
   updatePrintPreviews();
+}
+
+function handlePrintBgRange(key, value) {
+  handlePrintSetting(key, value);
+  const val = document.getElementById(`${key}Val`);
+  if (val) val.textContent = `${toArabicDigits(value)}٪`;
 }
 
 /* رفع خط خاص بموضع طباعة بعينه: يُحفظ في مجلد fonts ويُعيَّن مباشرة
