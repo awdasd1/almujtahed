@@ -695,11 +695,12 @@ function buildChatTimeline(sessionArg) {
     rail = document.createElement('div');
     rail.id = 'chatTimeline';
     rail.className = 'chat-timeline';
-    rail.innerHTML = '<div class="chat-timeline-line"></div>';
+    rail.innerHTML = '<div class="chat-timeline-panel"><div class="chat-timeline-line"></div></div>';
     main.appendChild(rail);
     container.addEventListener('scroll', scheduleChatTimeline, { passive: true });
     window.addEventListener('resize', scheduleChatTimeline);
   }
+  const panel = rail.querySelector('.chat-timeline-panel');
   const session = sessionArg
     || ((typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null);
   const stages = chatAnswerStages(session);
@@ -720,8 +721,9 @@ function buildChatTimeline(sessionArg) {
     btn.appendChild(dot);
     btn.appendChild(chip);
     btn.addEventListener('click', () => scrollToChatAnswer(st.idx));
-    rail.appendChild(btn);
+    (panel || rail).appendChild(btn);
   });
+  rail.dataset.activeIdx = '';
   positionChatTimeline();
 }
 
@@ -729,25 +731,30 @@ function positionChatTimeline() {
   const container = document.getElementById('chatMessagesContainer');
   const rail = document.getElementById('chatTimeline');
   if (!container || !rail || rail.style.display === 'none') return;
+  // اللوحة عائمة متمركزة عموديًا في منتصف منطقة الرسائل دائمًا
   rail.style.top = `${container.offsetTop}px`;
   rail.style.height = `${container.clientHeight}px`;
   const cRect = container.getBoundingClientRect();
-  let prevY = -Infinity;
   let activeItem = null;
   rail.querySelectorAll('.chat-timeline-item').forEach((item) => {
     const msg = document.getElementById(`chatMsg${item.dataset.msgIdx}`);
     if (!msg) { item.style.display = 'none'; return; }
     item.style.display = '';
-    const rawTop = msg.getBoundingClientRect().top - cRect.top;
-    let y = rawTop + 16;
-    if (y < prevY + 24) y = prevY + 24;
-    prevY = y;
-    item.style.top = `${y}px`;
-    if (rawTop <= 110) activeItem = item;
+    if (msg.getBoundingClientRect().top - cRect.top <= 110) activeItem = item;
   });
   rail.querySelectorAll('.chat-timeline-item').forEach((item) => {
     item.classList.toggle('is-active', item === activeItem);
   });
+  // عند كثرة المراحل تمرّر اللوحة داخليًا حتى يبقى الفعّال في وسطها
+  const activeKey = activeItem ? activeItem.dataset.msgIdx : '';
+  if (activeItem && rail.dataset.activeIdx !== activeKey) {
+    rail.dataset.activeIdx = activeKey;
+    const panel = rail.querySelector('.chat-timeline-panel');
+    if (panel && panel.scrollHeight > panel.clientHeight) {
+      const target = activeItem.offsetTop - panel.clientHeight / 2 + activeItem.clientHeight / 2;
+      panel.scrollTop = Math.max(0, target);
+    }
+  }
 }
 
 function deleteChatMessage(idx) {

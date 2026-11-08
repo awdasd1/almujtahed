@@ -1980,40 +1980,61 @@ body:has(#paneChat.active) .main-content {
   margin: 0 auto;
 }
 
-/* خط زمني لإجابات الشات: خط طولي على يمين منطقة الرسائل، عليه نقطة
-   عند رأس كل إجابة وبجوارها مستطيل صغير وسطه اسم مرحلتها */
+/* خط زمني لإجابات الشات: لوحة عائمة متمركزة عموديًا على يمين منطقة
+   الرسائل ودائمة الظهور وسط المحادثة، فيها خط طولي عليه نقطة لكل
+   إجابة وبجوارها مستطيل صغير وسطه اسم مرحلتها — تنقّل سريع بينها */
 .chat-timeline {
   position: absolute;
   right: 4px;
-  width: 118px;
+  width: 132px;
   z-index: 6;
   pointer-events: none;
-  overflow: hidden;
+}
+
+.chat-timeline-panel {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 2px;
+  width: 128px;
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
+  padding: 10px 8px;
+  pointer-events: auto;
 }
 
 .chat-timeline-line {
   position: absolute;
-  top: 6px;
-  bottom: 6px;
-  right: 11px;
+  top: 14px;
+  bottom: 14px;
+  right: 16px;
   width: 2px;
   background: var(--border-subtle);
   border-radius: 2px;
 }
 
 .chat-timeline-item {
-  position: absolute;
-  right: 6px;
-  transform: translateY(-50%);
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   pointer-events: auto;
   background: none;
   border: none;
-  padding: 0;
+  padding: 4px 4px;
   cursor: pointer;
   font-family: inherit;
+  border-radius: 8px;
+}
+
+.chat-timeline-item:hover {
+  background: rgba(154, 106, 31, .07);
 }
 
 .chat-timeline-dot {
@@ -2036,11 +2057,12 @@ body:has(#paneChat.active) .main-content {
   border-radius: 6px;
   padding: 1px 7px;
   white-space: nowrap;
-  max-width: 92px;
+  max-width: 84px;
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: center;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .08);
+  flex: 1;
 }
 
 .chat-timeline-item.is-draft .chat-timeline-dot { border-color: var(--accent-clay); }
@@ -2063,7 +2085,9 @@ body:has(#paneChat.active) .main-content {
 }
 
 @media (max-width: 1100px) {
-  .chat-timeline { width: 26px; }
+  .chat-timeline { width: 34px; }
+  .chat-timeline-panel { width: 32px; padding: 8px 4px; }
+  .chat-timeline-line { right: 14px; }
   .chat-timeline-chip { display: none; }
 }
 
