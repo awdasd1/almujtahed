@@ -2207,8 +2207,27 @@ _STAMP_EDITION_WORDS = {"ط", "ت", "طبعه", "الطبعه", "تحقيق", "�
 _STAMP_LOCATOR = re.compile(
     r"(?:\(\s*(?P<part>[0-9٠-٩۰-۹]{1,3})\s*[-–—]\s*(?P<page>[0-9٠-٩۰-۹]{1,4})\s*\)"
     r"|ص\s*\(\s*(?P<only_page>[0-9٠-٩۰-۹]{1,4})\s*\)"
-    r"|،\s*(?P<comma_part>[0-9٠-٩۰-۹]{1,3})\s*،\s*(?P<comma_page>[0-9٠-٩۰-۹]{1,4}))"
+    r"|،\s*(?P<comma_part>[0-9٠-٩۰-۹]{1,3})\s*،\s*(?P<comma_page>[0-9٠-٩۰-۹]{1,4})"
+    # صيغ النماذج الشائعة خارج القالب القياسي: «ج2 ص413» و«(٢/٤١٣)»
+    # و«ص 837» المجردة ومدى «ص 84-85» — كانت تعمى عنها القواعد فتبقى
+    # الحاشية صامتة بلا ختم ولا تنبيه ولو حملت رقم الكتاب صريحًا.
+    r"|ج\s*[:：]?\s*(?P<bpart>[0-9٠-٩۰-۹]{1,3})\s*[،,]?\s*ص\s*[:：]?\s*(?P<bpage>[0-9٠-٩۰-۹]{1,4})(?:\s*[-–—]\s*[0-9٠-٩۰-۹]{1,4})?"
+    r"|\(\s*(?P<spart>[0-9٠-٩۰-۹]{1,3})\s*/\s*(?P<spage>[0-9٠-٩۰-۹]{1,4})\s*\)"
+    r"|ص\s*[:：]?\s*(?P<ponly>[0-9٠-٩۰-۹]{1,4})(?:\s*[-–—]\s*[0-9٠-٩۰-۹]{1,4})?)"
 )
+
+
+def _locator_parts(m) -> Tuple[str, str]:
+    """(جزء، صفحة) مطبّعان من أي صيغة موضع معروفة في _STAMP_LOCATOR."""
+    if m is None:
+        return "", ""
+    g = m.groupdict()
+    part = _plain_locator_number(g.get("part") or g.get("comma_part")
+                                 or g.get("bpart") or g.get("spart") or "")
+    page = _plain_locator_number(g.get("only_page") or g.get("page")
+                                 or g.get("comma_page") or g.get("bpage")
+                                 or g.get("spage") or g.get("ponly") or "")
+    return part, page
 _STAMP_LEAD = re.compile(
     r"^(?:و\s*)?(?:انظر|ينظر|راجع|قال في|جاء في|ذكره|نقله|رواه|اخرجه|كتاب|المصدر|المرجع|في|من|عند|ثم|او)\s*[:：]?\s*"
 )
@@ -2338,8 +2357,7 @@ def stamp_citation_sources(text: str, rows: List[dict]) -> str:
             segment = chunk[pos:match.start()]
             cut = max(segment.rfind(mark) for mark in ("\n", "؛", ";", "•", "|", ")")) + 1
             raw_title = segment[cut:]
-            part = _plain_locator_number(match.group("part") or match.group("comma_part") or "")
-            page = _plain_locator_number(match.group("only_page") or match.group("page") or match.group("comma_page") or "")
+            part, page = _locator_parts(match)
             id_match = re.search(r"#\s*(\d{1,5})\b", raw_title)
             prefix_end = pos + cut
             display_text = None
@@ -2502,8 +2520,7 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             segment = chunk[pos:match.start()]
             cut = max(segment.rfind(mark) for mark in ("\n", "؛", ";", "•", "|", ")")) + 1
             raw_title = segment[cut:]
-            part = _plain_locator_number(match.group("part") or match.group("comma_part") or "")
-            page = _plain_locator_number(match.group("only_page") or match.group("page") or match.group("comma_page") or "")
+            part, page = _locator_parts(match)
             # الرقم الصريح يُبحث في كامل المقطع السابق للموضع: فالأقواس التوضيحية
             # «(شرح صحيح البخاري)» تقطع استخراج العنوان وتُسقط الرقم منه.
             id_match = re.search(r"#\s*(\d{1,5})\b", segment)
@@ -2936,6 +2953,104 @@ def _renumber_footnotes(text: str) -> str:
     return "\n".join(out_lines)
 
 
+def _sweep_resolve_book(plain: str) -> Optional[dict]:
+    """حلّ كتاب حاشية من نصها المجرد (رقم صريح أولًا ثم أول مقطع عنواني):
+    لزرّ تصفح الكتاب وحده حين يعجز ختم الموضع — تحقق يدوي لا ختم كاذب."""
+    m = re.search(r"#\s*(\d{1,7})\b", plain or "")
+    attempts = []
+    if m:
+        attempts.append(f"#{m.group(1)}")
+    seg = _FOOTNOTE_LEAD.sub("", (plain or "").strip()) if "_FOOTNOTE_LEAD" in globals() else (plain or "")
+    seg = re.split(r"[،,(]", seg)[0].strip(" «»\"'")
+    if len(seg) >= 4:
+        attempts.append(seg)
+    for att in attempts:
+        try:
+            row = shamela_local_mcp.resolve_book(att)
+        except Exception:
+            row = None
+        if row and row.get("book_id"):
+            return row
+    return None
+
+
+def _footnote_icon_sweep(text: str):
+    """كنسة الحواشي الأخيرة: لا حاشية قاصدة بلا حالة ظاهرة بعدها.
+
+    كل تعريف حاشية ينتهي بواحدة من ثلاث: ختم cit-src بزر تصفح موثّق،
+    أو ⚠ ظاهرة (ومعها زر تصفح كتابها إن حُلّ كتابها بثقة ولو لم يثبت
+    موضعها)، أو لا شيء إن لم تكن إحالة أصلًا. ما كان يبقى «صامتًا» —
+    صيغة موضع لا تقرأها القواعد فلا ختم ولا تنبيه — هو العيب المعالج."""
+    stats = {"defs": 0, "with_icon": 0, "unresolved": 0,
+             "unresolved_book": 0, "swept_stamped": 0, "swept_marked": 0}
+    if not text:
+        return text, stats
+    defs = _footnote_defs(text)
+    stats["defs"] = len(defs)
+    edits = []
+    for d in defs:
+        body = d["body"]
+        plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()
+        if 'class="cit-src"' in body:
+            stats["with_icon"] += 1
+            continue
+
+        def _splice(new_body):
+            _slice = text[d["start"]:d["end"]]
+            if body in _slice:
+                edits.append((d["start"], d["end"], _slice.replace(body, new_body, 1)))
+
+        if 'class="cit-unresolved"' in body:
+            stats["unresolved"] += 1
+            row = _sweep_resolve_book(plain)
+            if row:
+                part, page = _locator_parts(_STAMP_LOCATOR.search(plain))
+                add = (f' data-book-id="{row.get("book_id")}"'
+                       f' data-rel-path="{html.escape(str(row.get("rel_path") or ""), quote=True)}"'
+                       f' data-part="{html.escape(part, quote=True)}"'
+                       f' data-page="{html.escape(page, quote=True)}"')
+                new_body, n = re.subn(r'(<span class="cit-unresolved")(?![^>]*data-book-id)',
+                                      r"\1" + add, body, count=1)
+                if n:
+                    stats["unresolved_book"] += 1
+                    _splice(new_body)
+            continue
+        # صامتة: ليست إحالة قاصدة إن خلت من موضع ومرساة إحالة.
+        if len(plain) < 8 or not (_STAMP_LOCATOR.search(plain) or "#" in plain
+                                  or any(h in plain for h in ("انظر", "ينظر", "راجع", "أخرجه", "رواه", "ذكره في", "نقله في"))):
+            continue
+        try:
+            frag, _n = enrich_unstamped_citations(body)
+        except Exception:
+            frag = body
+        if 'class="cit-src"' in frag:
+            stats["swept_stamped"] += 1
+            stats["with_icon"] += 1
+            _splice(frag)
+            continue
+        # لم تُختم: تُوسم ⚠ ظاهرة بدل الصمت، بزر كتابها إن حُلّ.
+        row = _sweep_resolve_book(plain)
+        part, page = _locator_parts(_STAMP_LOCATOR.search(plain))
+        attrs = ""
+        if row:
+            attrs = (f' data-book-id="{row.get("book_id")}"'
+                     f' data-rel-path="{html.escape(str(row.get("rel_path") or ""), quote=True)}"'
+                     f' data-part="{html.escape(part, quote=True)}"'
+                     f' data-page="{html.escape(page, quote=True)}"')
+            stats["unresolved_book"] += 1
+        marker = ('<span class="cit-unresolved"' + attrs +
+                  ' style="color:#b45309;text-decoration:underline dashed" '
+                  'title="مرجع لم يتحقق النظام من موضعه في مكتبته — على ذمة النموذج">⚠</span> ')
+        sup_end = body.find("</sup>")
+        new_body = (body[:sup_end + 6] + marker + body[sup_end + 6:]) if sup_end >= 0 else marker + body
+        stats["swept_marked"] += 1
+        stats["unresolved"] += 1
+        _splice(new_body)
+    for s, e, new in sorted(edits, key=lambda x: x[0], reverse=True):
+        text = text[:s] + new + text[e:]
+    return text, stats
+
+
 def _documentation_gate(text: str, witness_rows: List[dict]):
     """يطابق كل نقل منقول على كتاب إحالته، ويُصلح مواضع الإحالات، ويستبعد
     ما كان مصدره خارج المكتبة.
@@ -2982,8 +3097,7 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         m = _STAMP_LOCATOR.search(plain_by_num.get(num, "") or "")
         if not m:
             return None, None
-        part = _plain_locator_number(m.group("part") or m.group("comma_part") or "")
-        page = _plain_locator_number(m.group("only_page") or m.group("page") or m.group("comma_page") or "")
+        part, page = _locator_parts(m)
         return part, page
 
     _profile_cache: Dict[Any, dict] = {}
@@ -3045,8 +3159,7 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         m = _STAMP_LOCATOR.search(txt)
         if not m:
             return None
-        part = _plain_locator_number(m.group("part") or m.group("comma_part") or "")
-        page = _plain_locator_number(m.group("only_page") or m.group("page") or m.group("comma_page") or "")
+        part, page = _locator_parts(m)
         attempts = [txt[:m.start()].strip(" ،,؛:")]
         trimmed = attempts[0]
         while re.search(r"[،,]", trimmed) and len(attempts) < 4:
@@ -4997,7 +5110,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.288"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.289"},
         },
     })
     if opened.get("error"):
@@ -10472,6 +10585,21 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
             "unresolved_citations", "متوسطة", "إحالات بقيت موسومة ⚠",
             f"{unresolved_citations} إحالة بموضع لم تُحل في قاعدة المكتبة",
             "مفتوح", "مراجع على ذمة النموذج؛ تحقق منها يدويًا أو احذفها"))
+    _swm = int(gs.get("swept_marked") or 0)
+    if _swm:
+        ev.append(_risk_event(
+            "footnote_swept", "متوسطة" if _swm > 3 else "منخفضة",
+            "حواشٍ كانت ستبقى صامتة بلا ختم ولا تنبيه",
+            f"كنسة الحواشي وسمت {_swm} حاشية ⚠ ظاهرة بعد عجز الختم والإغناءة عن مواضعها"
+            f" (وختمت {int(gs.get('swept_stamped') or 0)} كانت صيغ مواضعها خارج القواعد)",
+            "مفتوح: موسومة ⚠ في المتن وبعضها بزر تصفح كتابها",
+            "راجع صيغ إحالات المدير؛ وتكرارها عيب انضباط صياغة لا عيب مكتبة"))
+    _unb = int(gs.get("unresolved_book") or 0)
+    if _unb:
+        ev.append(_risk_event(
+            "unresolved_book_browse", "منخفضة", "حواشٍ ⚠ أُتيح تصفح كتابها",
+            f"{_unb} حاشية ⚠ حُلّ كتابها بثقة ولم يثبت موضعها فأُرفق بها زر تصفح الكتاب للتحقق اليدوي",
+            "معروضة بزر تصفح مميز (موضع غير مؤكد)", "تحقق يدويًا من الموضع قبل الاعتماد"))
     # — هيمنة كتاب وصيغ العرض (من تشريح الجواب)
     text = reply_text or ""
     _span_ids = re.findall(r'data-book-id="(\d+)"', text)
@@ -14032,6 +14160,24 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                                                + " فلم يُطلب منهم شيء ولم يُعوَّض دورهم؛ بُني البحث على النطاق المقلّص بقرار الباحث لا على فريق المجموعة الكامل.")
                 except Exception as _gate_err:
                     print(f"🚧 [Documentation Audit] {_gate_err}", flush=True)
+            # كنسة الحواشي الأخيرة: لا حاشية قاصدة صامتة بعد اليوم — ختم
+            # موثّق أو ⚠ ظاهرة (وبزرّ كتابها إن حُلّ)، وتُحصى في التدقيق.
+            try:
+                reply_text, _sweep_stats = _footnote_icon_sweep(reply_text)
+                if _sweep_stats.get("swept_marked") or _sweep_stats.get("swept_stamped"):
+                    print(f"🧹 [Footnote Sweep] خُتمت {_sweep_stats.get('swept_stamped')} حاشية كانت صيغتها خارج القواعد، "
+                          f"ووُسمت {_sweep_stats.get('swept_marked')} ⚠ بدل بقائها صامتة", flush=True)
+                if isinstance(locals().get("_gate_stats"), dict):
+                    _gate_stats.update({k: _sweep_stats[k] for k in
+                                        ("defs", "with_icon", "swept_stamped", "swept_marked", "unresolved_book")})
+                if isinstance(locals().get("_audit_record_text"), str) and (_sweep_stats.get("swept_marked") or _sweep_stats.get("swept_stamped")):
+                    _audit_record_text += (
+                        f"\nكنسة الحواشي: من {_sweep_stats.get('defs')} حاشية خُتم {_sweep_stats.get('with_icon')} بزر تصفح موثّق"
+                        f" (منها {_sweep_stats.get('swept_stamped')} بصيغ مواضع كانت خارج قواعد الختم)،"
+                        f" ووُسم {_sweep_stats.get('swept_marked')} بعلامة ⚠ ظاهرة بدل بقائه صامتًا"
+                        f" ({_sweep_stats.get('unresolved_book')} منها بزر تصفح كتابها للتحقق اليدوي).")
+            except Exception as _sweep_err:
+                print(f"🧹 [Footnote Sweep] {_sweep_err}", flush=True)
     elif retrieved_citations:
         prefix_tag = f"### [معالجة واستنباط عبر: {group_name}]\n\n" if group_name else ""
         reason_line = f"\nسبب الرفض كما أرجعه المزود: {live_error}" if live_error else ""

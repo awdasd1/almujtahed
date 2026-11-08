@@ -4451,6 +4451,27 @@ function enhanceProjectCitationsWithBookReader(container) {
     button.addEventListener('click', () => openProjectCitationReader(button));
     span.after(button);
   });
+  // حاشية ⚠ حُلّ كتابها ولم يثبت موضعها: زر تصفح الكتاب نفسه للتحقق
+  // اليدوي — مميز بعتامة وعنوان صريح حتى لا يُقرأ ختمًا موثّقًا.
+  container.querySelectorAll('.cit-unresolved[data-book-id]').forEach((span) => {
+    if (span.dataset.readerBound === '1') return;
+    span.dataset.readerBound = '1';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn-verify-citation btn-unverified-book';
+    button.setAttribute('data-book', span.getAttribute('data-book') || '');
+    button.setAttribute('data-rel-path', span.getAttribute('data-rel-path') || '');
+    button.setAttribute('data-book-id', span.getAttribute('data-book-id') || '');
+    button.setAttribute('data-part', span.getAttribute('data-part') || '');
+    button.setAttribute('data-page', span.getAttribute('data-page') || '');
+    button.setAttribute('data-quote', span.getAttribute('data-quote') || '');
+    button.title = 'تصفح الكتاب — موضع هذه الإحالة غير مؤكد آليًا، تحقق منه يدويًا';
+    button.setAttribute('aria-label', 'تصفح الكتاب للتحقق اليدوي');
+    button.textContent = '📖';
+    button.style.opacity = '0.55';
+    button.addEventListener('click', () => openProjectCitationReader(button));
+    span.after(button);
+  });
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const value = node.nodeValue || '';

@@ -967,6 +967,13 @@ function attachStoredWitnesses(container) {
     .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
     .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
   const bindButton = (button, rows) => {
+    // ختم خادمي موثّق (وسم cit-src قبل الزر يحمل رقم كتابه وموضعه):
+    // مرجع التصفح هو الخادم وبوابة توثيقه لا قائمة الشواهد المستخرجة،
+    // فلا يُحذف زرّه لغيابه عنها — بهذا الحذف كانت تُصمَت أختام الإغناءة
+    // من الكتالوج (أغلب حواشي البحوث) وتبقى الحاشية بلا أيقونة تحقق.
+    const prevSpan = button.previousElementSibling;
+    if (prevSpan && (prevSpan.classList.contains('cit-src') || prevSpan.classList.contains('cit-unresolved'))
+        && (prevSpan.getAttribute('data-book-id') || prevSpan.getAttribute('data-rel-path'))) return;
     const page = parseInt(western(button.getAttribute('data-page')), 10);
     const part = western(button.getAttribute('data-part') || '');
     const stampedId = button.getAttribute('data-book-id') || '';
