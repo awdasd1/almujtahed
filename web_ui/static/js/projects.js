@@ -6722,32 +6722,31 @@ function paperPrintCss() {
   const hadithSize = num(s.printHadithSize, 18, 10, 30), hadithW = Math.round(num(s.printHadithWeight, 600, 100, 900));
   const quoteSize = num(s.printQuoteSize, 18, 10, 30), quoteW = Math.round(num(s.printQuoteWeight, 400, 100, 900));
   const col = (v) => (/^#[0-9a-f]{6}$/i.test(v || '') ? ` color: ${v};` : '');
-  /* خلفية الصفحات: صورة مرفوعة من تبويب الطباعة تخفَّف بحجاب أبيض
-     بنسبة الشفافية المضبوطة فتبقى خلف النص بلا مزاحمة للقراءة */
+  /* خلفية الصفحات: لا تُرسم بخاصية background على الصفحة — محركات
+     الطباعة (WebKit/طباعة النظام) تسقط خلفيات الصفحات ولو فُرضت،
+     والصفحة البيضاء المعتمة تحجب ما خلفها. الحل: صفحة شفافة تمامًا
+     والصورة عنصرُ محتوى حقيقي (<img>) يُزرع داخل كل صفحة خلف النص
+     بعد التقسيم (PagedConfig.after) فيُطبع في كل المحركات كالمتن */
   let bgCss = '';
+  let bgSpec = null;
   if (s.printBgUrl) {
     try {
       const bgUrl = new URL(s.printBgUrl, location.origin).href.replace(/'/g, '%27');
       const bgMode = ['cover', 'center', 'repeat'].includes(s.printBgMode) ? s.printBgMode : 'cover';
-      const bgSizePct = num(s.printBgSize, 100, 10, 300);
-      const veil = (1 - num(s.printBgOpacity, 15, 0, 100) / 100).toFixed(2);
-      const imgSize = bgMode === 'cover' ? 'cover' : `${bgSizePct}% auto`;
-      const imgRepeat = bgMode === 'repeat' ? 'repeat' : 'no-repeat';
-      const imgPos = bgMode === 'repeat' ? '0 0' : 'center';
-      const bgDecls = `
-      background-color: #fff;
-      background-image: linear-gradient(rgba(255,255,255,${veil}), rgba(255,255,255,${veil})), url('${bgUrl}');
-      background-repeat: no-repeat, ${imgRepeat};
-      background-position: center, ${imgPos};
-      background-size: 100% 100%, ${imgSize};
-      print-color-adjust: exact;
-      -webkit-print-color-adjust: exact;`;
+      bgSpec = {
+        url: bgUrl,
+        mode: bgMode,
+        size: num(s.printBgSize, 100, 10, 300),
+        opacity: num(s.printBgOpacity, 15, 0, 100),
+      };
       bgCss = `
-    .pagedjs_page {${bgDecls}
-    }
+    .pagedjs_page, .pagedjs_sheet, .pagedjs_pagebox, .paper-sheet { background: transparent !important; }
+    .pagedjs_page { position: relative; }
+    .pagedjs_sheet { position: relative; z-index: 1; }
+    img.pg-bg-img { position: absolute; z-index: 0; pointer-events: none; }
+    .pg-bg-tile { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background-repeat: repeat; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     @media print {
-      .pagedjs_page {${bgDecls}
-      }
+      .pagedjs_page, .pagedjs_sheet, .pagedjs_pagebox, .paper-sheet { background: transparent !important; }
     }`;
     } catch (e) {}
   }
@@ -6788,7 +6787,7 @@ function paperPrintCss() {
     .pagedjs_footnote_area { background: linear-gradient(#111, #111) top right / ${sep}% 1px no-repeat; }
     ${bgCss}
   `;
-  return { head: head.join('\n'), css };
+  return { head: head.join('\n'), css, bg: bgSpec };
 }
 
 function buildAcademicPaperHtml(runData, options) {
@@ -7281,10 +7280,55 @@ function buildAcademicPaperHtml(runData, options) {
   <main>${roundsBodyHtml}${biblioHtml}</main>
   </div>
   <script>
+  window.__paperBg = ${JSON.stringify(printExtras.bg || null).replace(/</g, '\\u003c')};
   window.PagedConfig = {
     auto: true,
     after: function () {
       window.__pagedDone = true;
+      // زرع صورة الخلفية عنصرَ محتوى داخل كل صفحة خلف النص: تُطبع في
+      // كل محرك (خلفيات CSS تسقطها طباعة WebKit/النظام)، والصفحة
+      // شفافة فلا يحجب بياضُها الصورة
+      try {
+        var bg = window.__paperBg;
+        if (bg && bg.url) {
+          document.querySelectorAll('.pagedjs_page').forEach(function (page) {
+            if (page.querySelector('.pg-bg-img, .pg-bg-tile')) return;
+            if (bg.mode === 'repeat') {
+              var tile = document.createElement('div');
+              tile.className = 'pg-bg-tile';
+              tile.style.backgroundImage = "url('" + bg.url + "')";
+              tile.style.backgroundSize = bg.size + '% auto';
+              tile.style.opacity = String(bg.opacity / 100);
+              page.insertBefore(tile, page.firstChild);
+            } else {
+              var img = document.createElement('img');
+              img.className = 'pg-bg-img';
+              img.src = bg.url;
+              img.alt = '';
+              img.style.opacity = String(bg.opacity / 100);
+              if (bg.mode === 'cover') {
+                img.style.left = '0';
+                img.style.top = '0';
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.objectFit = 'cover';
+              } else {
+                img.style.left = '0';
+                img.style.right = '0';
+                img.style.top = '0';
+                img.style.bottom = '0';
+                img.style.margin = 'auto';
+                img.style.width = bg.size + '%';
+                img.style.height = 'auto';
+                img.style.maxWidth = '100%';
+                img.style.maxHeight = '100%';
+                img.style.objectFit = 'contain';
+              }
+              page.insertBefore(img, page.firstChild);
+            }
+          });
+        }
+      } catch (e) {}
       // ربط أرقام المتن بحواشيها: أرقام عربية مرفوعة قابلة للنقر تقفز
       // بين الموضعين كنسق نافذة القراءة، بدل عدّادات CSS اللاتينية.
       try {
