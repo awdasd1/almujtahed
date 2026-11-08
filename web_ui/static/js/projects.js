@@ -6674,6 +6674,49 @@ function pagedPaperTransform(html) {
   }
 }
 
+/* إعدادات تبويب «الطباعة» في نافذة إعدادات المنظومة: خطوط العناوين
+   الرئيسة والفرعية والحاشية (عائلة/حجم/وزن) وعرض الخط الفاصل */
+function paperPrintCss() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem('almojtahed_settings') || '{}') || {}; } catch (e) {}
+  const stack = (v) => (typeof stackForFontChoice === 'function' ? stackForFontChoice(v || 'google:Amiri') : "'Amiri', 'Noto Naskh Arabic', serif");
+  const num = (v, d, min, max) => { const n = parseFloat(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d; };
+  const h1Size = num(s.printH1Size, 25, 10, 44), h1W = Math.round(num(s.printH1Weight, 700, 100, 900));
+  const h2Size = num(s.printH2Size, 19, 9, 36), h2W = Math.round(num(s.printH2Weight, 700, 100, 900));
+  const fnSize = num(s.printFnSize, 11.5, 7, 20), fnW = Math.round(num(s.printFnWeight, 400, 100, 900));
+  const sep = num(s.printSepWidth, 30, 5, 100);
+  const head = [];
+  const fams = new Set();
+  [s.printH1Font, s.printH2Font, s.printFnFont].forEach((v) => {
+    if (v && String(v).startsWith('google:')) fams.add(String(v).slice(7));
+  });
+  fams.forEach((fam) => {
+    const meta = (typeof GOOGLE_FONT_CATALOG !== 'undefined') ? GOOGLE_FONT_CATALOG.find((f) => f.family === fam) : null;
+    head.push(`<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(fam).replace(/%20/g, '+')}:wght@${meta ? meta.weights : '400;700'}&display=swap">`);
+  });
+  const customFns = (typeof customFonts !== 'undefined' && Array.isArray(customFonts)) ? customFonts : [];
+  const customSeen = new Set();
+  [s.printH1Font, s.printH2Font, s.printFnFont].forEach((v) => {
+    if (!v || !String(v).startsWith('custom:') || customSeen.has(v)) return;
+    customSeen.add(v);
+    const font = customFns.find((f) => `custom:${f.filename}` === v);
+    if (!font) return;
+    const url = new URL(font.url || '', location.origin).href.replace(/'/g, '%27');
+    head.push(`<style>@font-face{font-family:'${String(font.family).replace(/'/g, '')}';src:url('${url}') format('${font.format || 'truetype'}');font-weight:100 900;font-display:swap;}</style>`);
+  });
+  const css = `
+    .paper-main-title { font-family: ${stack(s.printH1Font)}; font-size: ${h1Size}pt; font-weight: ${h1W}; }
+    .academic-round-title { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(13, h1Size - 4)}pt; font-weight: ${h1W}; }
+    .academic-text-content h1 { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(12, h1Size - 3)}pt; font-weight: ${h1W}; }
+    .academic-text-content h2 { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W}; }
+    .academic-text-content h3, .academic-text-content h4 { font-family: ${stack(s.printH2Font)}; font-size: ${Math.max(10, h2Size - 2)}pt; font-weight: ${h2W}; }
+    .biblio-title { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size + 1}pt; font-weight: ${h2W}; }
+    [data-footnote-marker] { font-family: ${stack(s.printFnFont)}; font-size: ${fnSize}pt; font-weight: ${fnW}; }
+    .pagedjs_footnote_area { background: linear-gradient(#111, #111) top right / ${sep}% 1px no-repeat; }
+  `;
+  return { head: head.join('\n'), css };
+}
+
 function buildAcademicPaperHtml(runData, options) {
   const settings = options || {};
   if (!runData) return '';
@@ -6698,14 +6741,24 @@ function buildAcademicPaperHtml(runData, options) {
       const key = String(row.book_id || row.rel_path || row.title || '');
       if (!key || seenBiblio.has(key)) continue;
       seenBiblio.add(key);
-      let entry = [row.title || '', row.author || ''].filter(Boolean).join(' — ');
-      if (row.death_year) entry += ` (ت: ${toArabicIndicDigits(row.death_year)} هـ)`;
-      if (entry) biblioItems.push(`<li>${escapeHtml(entry)}</li>`);
+      /* بيانات كاملة كما في قاعدة الكتب: الكتاب، المؤلف، المحقق،
+         الطبعة، الناشر، مكان النشر، سنة الطبع */
+      const bits = [];
+      if (row.title) bits.push(escapeHtml(row.title));
+      const authorBit = [row.author || '', row.death_year ? `(ت: ${toArabicIndicDigits(row.death_year)} هـ)` : ''].filter(Boolean).join(' ');
+      if (authorBit) bits.push(escapeHtml(authorBit));
+      if ((row.editor || '').trim()) bits.push(`تحقيق: ${escapeHtml(row.editor)}`);
+      if ((row.edition || '').trim()) bits.push(`الطبعة: ${escapeHtml(row.edition)}`);
+      if ((row.publisher || '').trim()) bits.push(`الناشر: ${escapeHtml(row.publisher)}`);
+      if ((row.city || '').trim()) bits.push(`مكان النشر: ${escapeHtml(row.city)}`);
+      if (row.print_year) bits.push(`سنة الطبع: ${escapeHtml(toArabicIndicDigits(row.print_year))}`);
+      if (bits.length) biblioItems.push(`<li>${bits.join('، ')}</li>`);
     }
     if (biblioItems.length) {
       biblioHtml = `<section class="academic-round-section"><h2 class="biblio-title">المصادر والمراجع</h2><ol class="biblio-list">${biblioItems.join('')}</ol></section>`;
     }
   }
+  const printExtras = paperPrintCss();
   const toolbar = settings.toolbar === false ? '' : `
   <header class="top-action-bar no-print-toolbar">
     <div class="bar-actions">
@@ -7072,12 +7125,14 @@ function buildAcademicPaperHtml(runData, options) {
     @page { size: A4; margin: 20mm 18mm 24mm 18mm;
       @footnote { border-top: none; padding-top: 8pt; margin-top: 12pt; } }
     .pg-fn { float: footnote; }
-    /* الخط الفاصل بين المتن والحواشي: ربع عرض الصفحة من جهة البدء */
+    /* الخط الفاصل بين المتن والحواشي: ٣٠٪ افتراضيًا من جهة البدء،
+       وعرضه من تبويب «الطباعة» في إعدادات المنظومة */
     .pagedjs_footnote_area {
+      direction: rtl;
       border-top: none !important;
-      background: linear-gradient(#111, #111) top right / 25% 1px no-repeat;
+      background: linear-gradient(#111, #111) top right / 30% 1px no-repeat;
     }
-    [data-footnote-marker] { font-size: 11.5pt; line-height: 1.8; text-align: justify; text-align-last: right; }
+    [data-footnote-marker] { list-style: none; font-size: 11.5pt; line-height: 1.8; text-align: justify; text-align-last: right; }
     .pagedjs_area [data-footnote-call]::after { content: "(" counter(footnote) ")"; font-size: 9pt; font-weight: 700; }
     [data-footnote-marker]::marker { content: "(" counter(footnote-marker) ") "; font-weight: 700; }
     /* أرقام مترابطة كنسق نافذة القراءة: عربية مرفوعة بين قوسين، نقرها
@@ -7092,10 +7147,12 @@ function buildAcademicPaperHtml(runData, options) {
     [data-footnote-call]:target, [data-footnote-marker]:target {
       background: rgba(180, 83, 9, 0.18); border-radius: 4px;
     }
-    /* ثبت المصادر والمراجع يبدأ صفحة جديدة بعد آخر صفحة من البحث */
-    .biblio-title { break-before: page; }
-    .biblio-list { font-size: 13.5pt; line-height: 2; margin: 10px 0 0; padding-inline-start: 26px; list-style-type: arabic-indic; }
-    .biblio-list li { margin: 0 0 4px; text-align: right; }
+    /* ثبت المصادر والمراجع يبدأ صفحة جديدة بعد آخر صفحة من البحث،
+       عنوانه في الوسط وترقيمه عربي بلا نقطة تعداد */
+    .biblio-title { break-before: page; text-align: center; }
+    .biblio-list { font-size: 13.5pt; line-height: 2; margin: 10px 0 0; padding-inline-start: 0; list-style: none; counter-reset: biblio; }
+    .biblio-list li { margin: 0 0 4px; text-align: right; counter-increment: biblio; }
+    .biblio-list li::before { content: counter(biblio, arabic-indic) " "; font-weight: 700; }
     @media print {
       .pg-fn-call, .pg-fn-marker { color: #1d4ed8 !important; }
     }
@@ -7106,6 +7163,8 @@ function buildAcademicPaperHtml(runData, options) {
       .pagedjs_pages { padding: 0; }
     }
   </style>
+  ${printExtras.head}
+  <style id="print-user-css">${printExtras.css}</style>
 </head>
 <body>
   ${toolbar}

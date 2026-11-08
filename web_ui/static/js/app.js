@@ -52,6 +52,10 @@ const DEFAULT_SETTINGS = {
   fontHeading: 'google:Amiri',
   fontApp: 'google:Amiri',
   fontReading: 'google:Noto Naskh Arabic',
+  printH1Font: 'google:Amiri', printH1Size: 25, printH1Weight: 700,
+  printH2Font: 'google:Amiri', printH2Size: 19, printH2Weight: 700,
+  printFnFont: 'google:Amiri', printFnSize: 11.5, printFnWeight: 400,
+  printSepWidth: 30,
   textSize: 19,
   providers: {
     claude: '',
@@ -659,6 +663,7 @@ function populateFontSelects() {
     select.dispatchEvent(new CustomEvent('theme-select-sync'));
   });
   updateFontPreviews();
+  populatePrintFontSelects();
 }
 
 function persistFontSettings() {
@@ -671,6 +676,76 @@ function handleFontRoleChange(role, value) {
   currentSettings[field.key] = value;
   persistFontSettings();
   applyFontRoles();
+}
+
+/* تبويب «الطباعة»: خطوط ورقة الطباعة المقسّمة وعرض خطها الفاصل */
+const PRINT_FONT_FIELDS = {
+  h1: { selectId: 'printH1FontSelect', key: 'printH1Font', sizeKey: 'printH1Size', weightKey: 'printH1Weight', previewId: 'printH1Preview' },
+  h2: { selectId: 'printH2FontSelect', key: 'printH2Font', sizeKey: 'printH2Size', weightKey: 'printH2Weight', previewId: 'printH2Preview' },
+  fn: { selectId: 'printFnFontSelect', key: 'printFnFont', sizeKey: 'printFnSize', weightKey: 'printFnWeight', previewId: 'printFnPreview' }
+};
+
+function populatePrintFontSelects() {
+  Object.values(PRINT_FONT_FIELDS).forEach((field) => {
+    const select = document.getElementById(field.selectId);
+    if (!select) return;
+    const selected = currentSettings[field.key] || select.value;
+    select.replaceChildren();
+    appendFontOption(select, 'system', 'خط النظام', stackForFontChoice('system'));
+    const googleGroup = document.createElement('optgroup');
+    googleGroup.label = 'خطوط جوجل';
+    GOOGLE_FONT_CATALOG.forEach((font) => {
+      const value = `google:${font.family}`;
+      appendFontOption(googleGroup, value, font.label, stackForFontChoice(value));
+    });
+    select.appendChild(googleGroup);
+    if (customFonts.length) {
+      const customGroup = document.createElement('optgroup');
+      customGroup.label = 'خطوط خاصة';
+      customFonts.forEach((font) => {
+        const value = `custom:${font.filename}`;
+        appendFontOption(customGroup, value, font.family, stackForFontChoice(value));
+      });
+      select.appendChild(customGroup);
+    }
+    const known = [...select.options].some((option) => option.value === selected);
+    const waitingForCustom = String(selected).startsWith('custom:') && !customFontsReady;
+    if (known) select.value = selected;
+    else if (!waitingForCustom) { select.value = 'google:Amiri'; currentSettings[field.key] = select.value; }
+    select.dispatchEvent(new CustomEvent('theme-select-sync'));
+    const sizeInput = document.getElementById(field.sizeKey);
+    if (sizeInput) sizeInput.value = currentSettings[field.sizeKey];
+    const weightSelect = document.getElementById(field.weightKey);
+    if (weightSelect) weightSelect.value = String(currentSettings[field.weightKey]);
+  });
+  const sep = document.getElementById('printSepWidth');
+  if (sep) sep.value = String(currentSettings.printSepWidth || 30);
+  updatePrintPreviews();
+}
+
+function updatePrintPreviews() {
+  Object.values(PRINT_FONT_FIELDS).forEach((field) => {
+    const preview = document.getElementById(field.previewId);
+    if (!preview) return;
+    preview.style.setProperty('font-family', stackForFontChoice(currentSettings[field.key]), 'important');
+    preview.style.setProperty('font-size', `${Math.max(10, Math.min(34, parseFloat(currentSettings[field.sizeKey]) || 14))}px`, 'important');
+    preview.style.setProperty('font-weight', String(currentSettings[field.weightKey] || 400), 'important');
+  });
+}
+
+function handlePrintFontChange(role, value) {
+  const field = PRINT_FONT_FIELDS[role];
+  if (!field) return;
+  currentSettings[field.key] = value;
+  persistFontSettings();
+  updatePrintPreviews();
+}
+
+function handlePrintSetting(key, value) {
+  const numeric = parseFloat(value);
+  currentSettings[key] = Number.isFinite(numeric) ? numeric : value;
+  persistFontSettings();
+  updatePrintPreviews();
 }
 
 function renderCustomFontsList() {
@@ -992,7 +1067,8 @@ function switchSettingsTab(tabKey) {
     'visual': { pane: 'setPaneVisual', btn: 'setNavVisual' },
     'providers': { pane: 'setPaneProviders', btn: 'setNavProviders' },
     'modelParams': { pane: 'setPaneModelParams', btn: 'setNavModelParams' },
-    'auxiliary': { pane: 'setPaneAuxiliary', btn: 'setNavAuxiliary' }
+    'auxiliary': { pane: 'setPaneAuxiliary', btn: 'setNavAuxiliary' },
+    'print': { pane: 'setPanePrint', btn: 'setNavPrint' }
   };
 
   const target = map[tabKey];
