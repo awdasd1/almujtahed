@@ -7063,11 +7063,13 @@ function buildAcademicPaperHtml(runData, options) {
        أرقام المتن وحواشيها من نسخة الطباعة وحدها وتبقى النسخة
        المعروضة مرتبطة كما هي */
     function stripFootnoteLinks(html) {
-      return String(html || '')
-        .replace(/<a\\b[^>]*class="[^"]*pg-fn-call[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '$1')
-        .replace(/<a\\b[^>]*class="[^"]*pg-fn-marker[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '$1')
-        .replace(/<a\\b[^>]*class="[^"]*chat-fn-ref[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '$1')
-        .replace(/<a\\b[^>]*class="[^"]*chat-fn-back[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '$1');
+      var rawCss = '<style id="raw-print-css">span.pg-fn-call,span.chat-fn-ref{vertical-align:super;line-height:0}span.chat-fn-ref{font-size:0.72em}</style>';
+      var out = String(html || '')
+        .replace(/<a\\b[^>]*class="[^"]*pg-fn-call[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '<span class="pg-fn-call">$1</span>')
+        .replace(/<a\\b[^>]*class="[^"]*pg-fn-marker[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '<span class="pg-fn-marker">$1</span>')
+        .replace(/<a\\b[^>]*class="[^"]*chat-fn-ref[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '<span class="chat-fn-ref">$1</span>')
+        .replace(/<a\\b[^>]*class="[^"]*chat-fn-back[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/gi, '<span class="chat-fn-back">$1</span>');
+      return out.indexOf('</head>') >= 0 ? out.replace('</head>', rawCss + '\\n</head>') : rawCss + out;
     }
     function printRawViaIframe(html) {
       var tmp = document.createElement('iframe');
