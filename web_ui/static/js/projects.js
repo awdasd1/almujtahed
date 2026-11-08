@@ -6988,6 +6988,24 @@ function buildAcademicPaperHtml(runData, options) {
         if (err && err.name === 'AbortError') return;
       }
     }
+    /* تطبيق ماك: زر الطباعة العلوي يسلّم الورقة مقسّمةً إلى غلاف
+       التطبيق الأصلي ليفتح لوحة طباعة النظام (WKWebView يتجاهل
+       window.print)؛ في المتصفح والويندوز يبقى عمل الزر كما هو */
+    (function () {
+      var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+      if (!bridge) return;
+      var btn = document.querySelector('.top-action-bar .btn-primary');
+      if (!btn) return;
+      btn.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        var out = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
+        out = out.replace(/<script[^>]*paged\\.polyfill[^>]*><\\/script>/i, '');
+        var base = 'http://127.0.0.1:8085/';
+        try { if (window.location && window.location.origin && window.location.origin !== 'null') base = window.location.origin + '/'; } catch (e) {}
+        try { bridge.postMessage({ action: 'printHtml', html: out, base: base }); } catch (e) {}
+      }, true);
+    })();
   </script>`;
   const pageMargin = settings.forPdf ? '0' : '25mm 20mm 25mm 20mm';
 
@@ -7242,13 +7260,15 @@ function buildAcademicPaperHtml(runData, options) {
    تقسيم الصفحات أمامه */
 function openAcademicPaperWindow(runData) {
   const fullPrintHtml = buildAcademicPaperHtml(runData, { toolbar: true });
+  /* داخل التطبيق: تراكب قراءة بملء الشاشة — نافذة النظام الأصلية
+     («قراءة») كانت تومض ولا يصلها شريط الأدوات بثبات */
+  if (typeof openChatReadingOverlay === 'function') {
+    openChatReadingOverlay(fullPrintHtml);
+    showToast('تم فتح البحث. اطبع من زر الطباعة في أعلى الصفحة');
+    return;
+  }
   const printWin = window.open('', '_blank');
   if (!printWin || printWin === window) {
-    if (typeof openChatReadingOverlay === 'function') {
-      openChatReadingOverlay(fullPrintHtml);
-      showToast('تم فتح نافذة القراءة');
-      return;
-    }
     showToast('تعذر فتح صفحة البحث. اسمح بالنوافذ المنبثقة ثم أعد التصدير');
     return;
   }
