@@ -6661,6 +6661,16 @@ function pagedPaperTransform(html) {
     const root = doc.getElementById('pgroot');
     if (!root) return html;
     const western = (v) => String(v || '').replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '');
+    // أرقام المصادر داخل الحاشية (الأجزاء والصفحات ونحوها) بأرقام
+    // عربية مشرقية في مخرجات الطباعة: مسح للعقد النصية فقط
+    const toMashriqiText = (scopeEl) => {
+      const walker = doc.createTreeWalker(scopeEl, NodeFilter.SHOW_TEXT);
+      const textNodes = [];
+      while (walker.nextNode()) textNodes.push(walker.currentNode);
+      textNodes.forEach((n) => {
+        n.nodeValue = n.nodeValue.replace(/[0-9]/g, (d) => '٠١٢٣٤٥٦٧٨٩'[Number(d)]);
+      });
+    };
     const defs = new Map();
     const defEls = [];
     root.querySelectorAll('.footnote-list .footnote-item').forEach((el) => {
@@ -6669,6 +6679,7 @@ function pagedPaperTransform(html) {
       const clone = el.cloneNode(true);
       const back = clone.querySelector('a.chat-fn-back');
       if (back) back.remove();
+      toMashriqiText(clone);
       defs.set(m[1], clone.innerHTML.replace(/^\s*\((?:\d+|[٠-٩]+)\)\s*/, '').trim());
       defEls.push(el);
     });
@@ -6681,7 +6692,9 @@ function pagedPaperTransform(html) {
       if (!n || defs.has(n)) return;
       // سطر حاشية تعريفي لا يُجمع إلا بعد آخر إحالة متن (حواشي آخر البحث)
       if (lastRef && !(el.compareDocumentPosition(lastRef) & Node.DOCUMENT_POSITION_PRECEDING)) return;
-      defs.set(n, el.innerHTML.replace(/^\s*\((?:\d+|[٠-٩]+)\)\s*/, '').trim());
+      const clone = el.cloneNode(true);
+      toMashriqiText(clone);
+      defs.set(n, clone.innerHTML.replace(/^\s*\((?:\d+|[٠-٩]+)\)\s*/, '').trim());
       defEls.push(el);
     });
     if (!defs.size) return html;
