@@ -1049,12 +1049,10 @@ function chatWitnessesHtml(msg, idx) {
     const group = groups[index.get(key)];
     if (place && !group.places.includes(place)) group.places.push(place);
   });
-  const bookIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
   const items = groups.map(({ row, n, places }) => `
       <li class="chat-source-item">
         <div class="chat-source-row">
           <span class="chat-source-text">${escapeHtml(chatSourceBibliography(row, places))}</span>
-          <button type="button" class="chat-source-book" onclick="openChatWitness(${idx}, ${n})" title="فتح النص في نافذة تصفح الكتاب" aria-label="فتح الكتاب">${bookIcon}</button>
         </div>
       </li>`).join('');
   return `
