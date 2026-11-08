@@ -5382,7 +5382,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.346"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.347"},
         },
     })
     if opened.get("error"):
@@ -7682,6 +7682,15 @@ async def shamela_status():
     st["job"] = dict(_shamela_job)
     st["job"]["watching"] = bool(_shamela_watch.get("active"))
     return st
+
+
+@app.get("/api/shamela/job")
+async def shamela_job_status():
+    """حالة وظيفة الاستيراد وحدها — خفيفة للاستطلاع السريع أثناء العمل،
+    بلا إعادة تعداد المكتبة (census) الثقيل في كل مرة."""
+    job = dict(_shamela_job)
+    job["watching"] = bool(_shamela_watch.get("active"))
+    return {"job": job}
 
 
 class ShamelaPathRequest(BaseModel):
