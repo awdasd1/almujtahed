@@ -6619,6 +6619,61 @@ function formatAcademicBody(rawMarkdown) {
   return html;
 }
 
+function pagedPaperTransform(html) {
+  // تحويل الحواشي الختامية إلى حواشٍ صفحية: كل إحالة في المتن تحمل
+  // حاشيتها معها عنصرًا عائمًا (float: footnote) فيوزعها محرك التقسيم
+  // على ذيل صفحتها ويرقمها من (١) في كل صفحة — قالب البحوث المحكمة.
+  try {
+    const doc = new DOMParser().parseFromString(`<div id="pgroot">${html}</div>`, 'text/html');
+    const root = doc.getElementById('pgroot');
+    if (!root) return html;
+    const western = (v) => String(v || '').replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '');
+    const defs = new Map();
+    const defEls = [];
+    root.querySelectorAll('.footnote-list .footnote-item').forEach((el) => {
+      const m = (el.getAttribute('id') || '').match(/paper-fn(\d+)/);
+      if (!m) return;
+      const clone = el.cloneNode(true);
+      const back = clone.querySelector('a.chat-fn-back');
+      if (back) back.remove();
+      defs.set(m[1], clone.innerHTML.replace(/^\s*\((?:\d+|[٠-٩]+)\)\s*/, '').trim());
+      defEls.push(el);
+    });
+    const refs = root.querySelectorAll('a.chat-fn-ref');
+    const lastRef = refs.length ? refs[refs.length - 1] : null;
+    root.querySelectorAll('p.footnote-line').forEach((el) => {
+      const m = (el.textContent || '').trim().match(/^\((\d+|[٠-٩]+)\)/);
+      if (!m) return;
+      const n = western(m[1]);
+      if (!n || defs.has(n)) return;
+      // سطر حاشية تعريفي لا يُجمع إلا بعد آخر إحالة متن (حواشي آخر البحث)
+      if (lastRef && !(el.compareDocumentPosition(lastRef) & Node.DOCUMENT_POSITION_PRECEDING)) return;
+      defs.set(n, el.innerHTML.replace(/^\s*\((?:\d+|[٠-٩]+)\)\s*/, '').trim());
+      defEls.push(el);
+    });
+    if (!defs.size) return html;
+    let placed = 0;
+    refs.forEach((a) => {
+      const m = (a.getAttribute('href') || '').match(/paper-fn(\d+)/);
+      if (!m || !defs.has(m[1])) return;
+      const span = doc.createElement('span');
+      span.className = 'pg-fn';
+      span.innerHTML = defs.get(m[1]);
+      a.replaceWith(span);
+      placed++;
+    });
+    if (!placed) return html;
+    defEls.forEach((el) => {
+      const list = el.closest('.footnote-list');
+      el.remove();
+      if (list && !list.querySelector('.footnote-item')) list.remove();
+    });
+    return root.innerHTML;
+  } catch (e) {
+    return html;
+  }
+}
+
 function buildAcademicPaperHtml(runData, options) {
   const settings = options || {};
   if (!runData) return '';
@@ -6626,12 +6681,12 @@ function buildAcademicPaperHtml(runData, options) {
   const rounds = (runData.rounds && runData.rounds.length > 0)
     ? runData.rounds
     : [{ round: 1, name: 'المرحلة التحريرية الكاملة', output: runData.rawOutput }];
-  const roundsBodyHtml = rounds.map(r => `
+  const roundsBodyHtml = pagedPaperTransform(rounds.map(r => `
     <section class="academic-round-section">
       <h2 class="academic-round-title">${escapeHtml(r.name || `الجولة رقم ${toArabicIndicDigits(r.round)}`)}</h2>
       <div class="academic-text-content">${formatAcademicBody(r.output || '')}</div>
     </section>
-  `).join('');
+  `).join(''));
   const toolbar = settings.toolbar === false ? '' : `
   <header class="top-action-bar no-print-toolbar">
     <div class="bar-actions">
@@ -6860,7 +6915,7 @@ function buildAcademicPaperHtml(runData, options) {
   const pageMargin = settings.forPdf ? '0' : '25mm 20mm 25mm 20mm';
 
   return `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar">
 <head>
   <meta charset="utf-8">
   <title>${escapeHtml(title)}</title>
@@ -6990,11 +7045,28 @@ function buildAcademicPaperHtml(runData, options) {
         text-justify: inter-word !important;
       }
     }
+    /* — حواشي صفحية بمحرك Paged.js: متن مقسم صفحات A4 حقيقية، وكل
+       صفحة تحمل حواشيها في ذيلها مرقمة من (١). الجذر LTR لمحرك التقسيم
+       (اتجاه الجذر RTL يكسر قياسه للكسور) والعربية RTL داخل الورقة. */
+    body { direction: ltr; }
+    .paper-sheet { direction: rtl; text-align: right; max-width: none; margin: 0; padding: 0; }
+    @page { size: A4; margin: 20mm 18mm 24mm 18mm;
+      @footnote { border-top: 1px solid #111; padding-top: 6pt; margin-top: 12pt; } }
+    .pg-fn { float: footnote; }
+    [data-footnote-marker] { font-size: 11.5pt; line-height: 1.8; text-align: justify; text-align-last: right; }
+    .pagedjs_area [data-footnote-call]::after { content: "(" counter(footnote) ")"; font-size: 9pt; font-weight: 700; }
+    [data-footnote-marker]::marker { content: "(" counter(footnote-marker) ") "; font-weight: 700; }
+    .pagedjs_page { counter-reset: footnote 0 footnote-marker 0; margin: 18px auto; background: #fff; color: #111; box-shadow: 0 2px 16px rgba(0,0,0,.28); }
+    .pagedjs_pages { padding: 8px 0 24px; }
+    @media print {
+      .pagedjs_page { margin: 0 auto; box-shadow: none; }
+      .pagedjs_pages { padding: 0; }
+    }
   </style>
 </head>
 <body>
   ${toolbar}
-  <div class="paper-sheet">
+  <div class="paper-sheet" dir="rtl">
   <header class="print-cover-header">
     <div class="paper-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
     <h1 class="paper-main-title">${escapeHtml(title)}</h1>
@@ -7002,6 +7074,8 @@ function buildAcademicPaperHtml(runData, options) {
   </header>
   <main>${roundsBodyHtml}</main>
   </div>
+  <script>window.PagedConfig={auto:true,after:function(){window.__pagedDone=true;}};</script>
+  <script data-pagedjs src="/static/js/paged.polyfill.min.js"></script>
   ${toolbarScript}
 </body>
 </html>`;

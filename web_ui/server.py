@@ -28,6 +28,8 @@ import textwrap
 import subprocess
 import shutil
 import tempfile
+import socket
+import base64
 import concurrent.futures
 import threading
 from dotenv import load_dotenv
@@ -5177,7 +5179,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.290"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.291"},
         },
     })
     if opened.get("error"):
@@ -21495,24 +21497,133 @@ def local_bundle_status(request: Request):
     return local_bundle.job_snapshot()
 
 
+async def render_html_to_pdf_with_cdp(html: str) -> bytes:
+    """طباعة HTML عبر بروتوكول أدوات مطوّر كروم: السائق الوحيد الذي ينتظر
+    اكتمال تقسيم Paged.js (window.__pagedDone) قبل الطباعة، فتخرج الحواشي
+    الصفحية في PDF كما في نافذة الطباعة. بلا تبعيات جديدة (websockets
+    من حزمة uvicorn القياسية) وبمتصفح النظام نفسه."""
+    chrome = find_chrome_binary()
+    if not chrome:
+        raise RuntimeError("لم يُعثر على متصفح لسائق CDP")
+    import websockets
+    with tempfile.TemporaryDirectory(prefix="almojtahed-cdp-") as folder:
+        folder_path = Path(folder)
+        for name in ("Amiri-Regular.ttf", "Amiri-Bold.ttf"):
+            src = AMIRI_FONT_DIR / name
+            if src.is_file():
+                shutil.copyfile(src, folder_path / name)
+        html_path = folder_path / "paper.html"
+        html_path.write_text(html_with_local_amiri(html), encoding="utf-8")
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()
+        proc = subprocess.Popen(
+            [chrome, "--headless=new", "--disable-gpu", "--no-first-run",
+             "--no-default-browser-check", "--disable-extensions",
+             f"--remote-debugging-port={port}",
+             f"--user-data-dir={folder_path / 'profile'}", "about:blank"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            targets = None
+            for _ in range(60):
+                try:
+                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as r:
+                        targets = json.loads(r.read().decode("utf-8"))
+                    if targets:
+                        break
+                except Exception:
+                    await asyncio.sleep(0.25)
+            if not targets:
+                raise RuntimeError("تعذر اتصال CDP بالمتصفح")
+            page_target = next((t for t in targets if t.get("type") == "page"), None)
+            if not page_target or not page_target.get("webSocketDebuggerUrl"):
+                raise RuntimeError("لا هدف صفحة في CDP")
+            async with websockets.connect(page_target["webSocketDebuggerUrl"],
+                                          max_size=64 * 1024 * 1024) as ws:
+                _seq = [0]
+
+                async def call(method, **params):
+                    _seq[0] += 1
+                    mid = _seq[0]
+                    await ws.send(json.dumps({"id": mid, "method": method, "params": params}))
+                    while True:
+                        msg = json.loads(await ws.recv())
+                        if msg.get("id") == mid:
+                            if "error" in msg:
+                                raise RuntimeError(str(msg["error"])[:200])
+                            return msg.get("result") or {}
+
+                await call("Page.enable")
+                await call("Runtime.enable")
+                await call("Page.navigate", url=html_path.as_uri())
+                done = False
+                for _ in range(360):
+                    r = await call("Runtime.evaluate",
+                                   expression="window.__pagedDone===true",
+                                   returnByValue=True)
+                    if ((r.get("result") or {}).get("value")) is True:
+                        done = True
+                        break
+                    await asyncio.sleep(0.5)
+                if not done:
+                    raise RuntimeError("لم يكتمل تقسيم الصفحات في المهلة")
+                res = await call("Page.printToPDF", preferCSSPageSize=True,
+                                 printBackground=True, marginTop=0, marginBottom=0,
+                                 marginLeft=0, marginRight=0)
+                return base64.b64decode(res["data"])
+        finally:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+
 @app.post("/api/projects/export-pdf")
 async def export_project_pdf_endpoint(req: ExportPdfRequest):
     """توليد وتصدير ملف PDF أكاديمي عالي الدقة مستخرج من HTML مع الشارتات والرسوم التفاعلية"""
     safe_title = re.sub(r'[\s/\\:*?"<>|]', '_', (req.title or "almojtahed_report").strip())
     filename = f"{safe_title}.pdf"
     pdf_bytes = None
+    html = req.html or ""
+    paged = "data-pagedjs" in html
+    if paged:
+        # مكتبة التقسيم تُضمّن في متن الصفحة: فمساراتها النسبية لا تصل
+        # إليها ملفات الخادم المؤقتة ولا صفحات set_content.
+        try:
+            lib = (Path(__file__).parent / "static" / "js" / "paged.polyfill.min.js").read_text(encoding="utf-8")
+            html = html.replace('<script data-pagedjs src="/static/js/paged.polyfill.min.js"></script>',
+                                "<script>\n" + lib + "\n</script>")
+        except Exception:
+            pass
     try:
         from playwright.async_api import async_playwright
     except ImportError:
         async_playwright = None
 
     try:
-        if async_playwright is not None:
+        if paged:
+            try:
+                pdf_bytes = await render_html_to_pdf_with_cdp(html)
+            except Exception as cdp_err:
+                print(f"[export-pdf] تعذر سائق CDP: {cdp_err}", flush=True)
+                pdf_bytes = None
+        if pdf_bytes is None and async_playwright is not None:
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=True)
                 page = await browser.new_page()
-                await page.set_content(req.html, wait_until="networkidle")
-                await page.wait_for_timeout(1200)
+                await page.set_content(html, wait_until="networkidle")
+                if paged:
+                    try:
+                        await page.wait_for_function("window.__pagedDone===true", timeout=90000)
+                    except Exception:
+                        pass
+                else:
+                    await page.wait_for_timeout(1200)
                 pdf_bytes = await page.pdf(
                     format="A4",
                     print_background=True,
@@ -21521,8 +21632,8 @@ async def export_project_pdf_endpoint(req: ExportPdfRequest):
                     display_header_footer=False,
                 )
                 await browser.close()
-        else:
-            pdf_bytes = await asyncio.to_thread(render_html_to_pdf_with_chrome, req.html)
+        elif pdf_bytes is None:
+            pdf_bytes = await asyncio.to_thread(render_html_to_pdf_with_chrome, html)
     except Exception as e:
         print(f"Error generating PDF: {type(e).__name__}")
         raise HTTPException(status_code=500, detail="فشل توليد ملف PDF بنفس تنسيق الطباعة")
