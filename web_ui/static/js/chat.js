@@ -1253,8 +1253,11 @@ function renderSessionMessages(sessionId, options) {
     const actionsBar = !isUser ? `
       <div class="chat-msg-actions-bar" style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px dashed var(--border-subtle); padding-top: 8px; flex-wrap: wrap;">
         ${msg.rewriting ? `<span class="chat-rewrite-status">جارٍ ${escapeHtml(msg.rewriting)}...</span>` : ''}
-        <button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="قراءة هذه النتيجة">
+        <button type="button" class="btn-msg-export" onclick="exportChatMessageHtml(${idx})" title="قراءة هذه النتيجة في صفحة قراءة">
           📄 قراءة
+        </button>
+        <button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="طباعة هذه النتيجة بحواشٍ لكل صفحة أو حفظها PDF">
+          🖨️ طباعة
         </button>
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
