@@ -4997,7 +4997,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.287"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.288"},
         },
     })
     if opened.get("error"):
@@ -9400,6 +9400,12 @@ def _targeted_madhhab_passages(madhhab: str, anchors: List[str],
     book_ids = [b[0] for b in books]
     meta = {b[0]: b for b in books}
     queries = [a for a in dict.fromkeys(anchors or []) if a and len(a) >= 4][:6]
+    if "ظاهري" in (madhhab or ""):
+        # صياغة حزمية مساندة: مراسي المذاهب العامة لا تمسك مسائل المحلى
+        # المرقمة وحدها؛ اسم ابن حزم مقترنًا بالمرساة يضيّق على مواضع قوله
+        # هو لا على كلام خصومه المنقول في الكتاب نفسه.
+        queries = list(dict.fromkeys(
+            queries + [f"{q} ابن حزم" for q in queries[:3]]))[:8]
     if not queries:
         return []
     # مصدر الشاملة الكسول: البحث في فهرسها داخل كتب الطبقات حصرًا (الجسر
@@ -9461,7 +9467,12 @@ def _finish_targeted(ranked, meta, madhhab: str, limit: int) -> List[Dict[str, A
         if b not in seen_books:
             seen_books.add(b)
             ordered.append(slot)
-    ordered.extend(s for s in ranked if s not in ordered)
+    _rest = [s for s in ranked if s not in ordered]
+    if "ظاهري" in (madhhab or ""):
+        # إكمال المحلى أولًا: مصدر الفروع الوحيد يتقدم على شواهد النسبة،
+        # وإلا زاحمته كتب النقلة الكبيرة في حدّ القائمة فبقي بصفحته الأولى.
+        _rest.sort(key=lambda s: 0 if int(s["hit"].get("book_id") or 0) == 738 else 1)
+    ordered.extend(_rest)
     out: List[Dict[str, Any]] = []
     per_book: Dict[int, int] = {}
     for slot in ordered:
@@ -9469,7 +9480,10 @@ def _finish_targeted(ranked, meta, madhhab: str, limit: int) -> List[Dict[str, A
             break
         hit = slot["hit"]
         bid = int(hit.get("book_id"))
-        if per_book.get(bid, 0) >= 3:
+        # المحلى استثناء بنيوي: مصدر فروع الظاهرية الوحيد (كتب داود غير
+        # موجودة)، فسقفه أوسع وإلا جُوّع وكيله بسقف الكتب المتكافئة.
+        _cap = 8 if (bid == 738 and "ظاهري" in (madhhab or "")) else 3
+        if per_book.get(bid, 0) >= _cap:
             continue
         part = hit.get("part")
         page_num = hit.get("page_num")
@@ -10583,7 +10597,8 @@ def _risk_officer_memo(events, *, question, group, manager_model, ledger,
         "١) أكّد كل حدث مرشح أو ارفضه إن كان دليله لا يقوم، ولك إعادة تصنيفه (عالية/متوسطة/منخفضة) مع تعليل من سطر.\n"
         "٢) أضف من سجل الأدلة مخاطر نوعية لا تلتقطها العدّادات إن وجدت: ترجيح بلا بطاقة، تغطية مذهبية ناقصة، تناقض بين وكيلين مرّ صامتًا، دعوى بلا سند — بحد أقصى أربع، وبتصنيفها ودليلها من السجل.\n"
         "٣) اكتب مذكرة رسمية إلى «صاحب البحث» بصيغة إدارة مخاطر تنبّه المسؤول الأول: تبدأ بسطر «الحكم العام» (صالح للاعتماد / صالح بتنبيهات / لا يُعتمد قبل معالجة العالية المفتوحة) ثم المخاطر العالية فالمتوسطة فالمنخفضة (أمام كل ملاحظة أيقونتها 🔴/🟡/⚪ وخطورتها ودليلها وحالتها: عولجت آليًا أم مفتوحة)، ثم قسم «قرارات مطلوبة من صاحب البحث» بما لا يعالج إلا بقراره.\n"
-        "التزم الأرقام الواردة حرفيًا ولا تخترع عددًا ولا اسمًا، واختم بسطر: مسؤول المخاطر: " + officer + "."
+        "التزم الأرقام الواردة حرفيًا ولا تخترع عددًا ولا اسمًا، واختم بسطر: مسؤول المخاطر: " + officer + ".\n"
+        "تنبيه ضبط مذهبي ملزم لحكمك: مصدر فروع الظاهرية في هذه المكتبة هو «المحلى» وحده (كتب داود الظاهري غير موجودة فيها)، وكتب نقلتها شواهد نسبة؛ فلا تُعدّ غياب «النبذة الكافية» أو «مراتب الإجماع» أو «الإحكام» في مسألة فرعية خطرًا على وكيل الظاهرية — فهي كتب أصول وإجماع لا فروع — وإنما الخطر غياب المحلى نفسه أو انقطاع النقلة عنه."
     )
     try:
         memo = call_openrouter_raw(
