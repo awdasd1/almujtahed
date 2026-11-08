@@ -5336,7 +5336,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.326"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.327"},
         },
     })
     if opened.get("error"):
@@ -21950,17 +21950,16 @@ def build_docx_bytes(payload: dict) -> bytes:
         runs = _docx_runs((fnote or {}).get("runs"), fn_style, styles, 0) if isinstance(fnote, dict) else ""
         if not runs:
             runs = "<w:r><w:t> </w:t></w:r>"
-        # ترقيم الحاشية أمامها بين قوسين: (١) ثم متنها — الرقم مكتوب
-        # نصًا بأرقام عربية مشرقية بترتيبه داخل صفحته (بعض نسخ وورد
-        # لا ترسم علامة الرقم التلقائية داخل متن الحاشية فتبقى فارغة)
-        try:
-            fn_num = int(fnote.get("n") or 0) if isinstance(fnote, dict) else 0
-        except Exception:
-            fn_num = 0
-        if fn_num <= 0:
-            fn_num = i + 1
-        fn_num_ar = str(fn_num).translate(str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩"))
-        prefix = f'<w:r>{fn_mark_rpr}<w:t xml:space="preserve">({fn_num_ar}) </w:t></w:r>'
+        # ترقيم الحاشية ديناميكي بالكامل: عنصر footnoteRef يجعل وورد
+        # يرسم رقم الحاشية التلقائي نفسه بين قوسين في أولها، فيتطابق
+        # مع رقم إحالتها في المتن على أي صفحة وقعا — مع إعادة بدء
+        # الترقيم كل صفحة (numRestart eachPage) وانقسام الحاشية
+        # الطويلة تلقائيًا إلى الصفحة التالية
+        prefix = (
+            f'<w:r>{fn_mark_rpr}<w:t xml:space="preserve">(</w:t></w:r>'
+            f'<w:r>{fn_mark_rpr}<w:footnoteRef/></w:r>'
+            f'<w:r>{fn_mark_rpr}<w:t xml:space="preserve">) </w:t></w:r>'
+        )
         fn_paras.append(
             f'<w:footnote w:id="{i + 2}"><w:p>'
             '<w:pPr><w:pStyle w:val="FootnoteText"/><w:bidi/>'

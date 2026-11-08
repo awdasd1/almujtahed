@@ -7244,9 +7244,8 @@ function buildAcademicPaperHtml(runData, options) {
       }
       var roots = pages.length ? pages.map(function (p) { return p.querySelector('.pagedjs_area') || p; }) : [doc.querySelector('.paper-sheet') || doc.body];
       var blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
-      roots.forEach(function (root, rootIdx) {
+      roots.forEach(function (root) {
         if (!root) return;
-        if (pages.length && rootIdx > 0) payload.blocks.push({ kind: 'pageBreak', runs: [] });
         root.querySelectorAll(blockSel).forEach(function (el) {
           if (el.closest('.pagedjs_footnote_area')) return;
           if (el.closest('.footnote-list') || el.classList.contains('footnote-line') || el.classList.contains('footnote-item')) return;
@@ -7264,8 +7263,7 @@ function buildAcademicPaperHtml(runData, options) {
           payload.blocks.push({ kind: kind, runs: cleaned });
         });
       });
-      // أرقام الحواشي محفوظة بترتيبها داخل كل صفحة، وفواصل
-      // الصفحات الصريحة تثبّت تصفيح وورد على صفحات التطبيق
+      // بلا فواصل قسرية: تصفيح وورد متدفق وترقيمه متجدد كل صفحة
       return payload;
     }
     async function exportPaperWord() {

@@ -1778,11 +1778,8 @@ function buildWordPayload(doc) {
     ? pages.map((p) => p.querySelector('.pagedjs_area') || p)
     : [doc.querySelector('.paper-sheet') || doc.body];
   const blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
-  roots.forEach((root, rootIdx) => {
+  roots.forEach((root) => {
     if (!root) return;
-    // فاصل صفحة صريح بين صفحات التطبيق حتى يصفّح وورد على حدود
-    // الصفحات نفسها فيتطابق ترقيم كل صفحة في المتن والحاشية
-    if (pages.length && rootIdx > 0) payload.blocks.push({ kind: 'pageBreak', runs: [] });
     root.querySelectorAll(blockSel).forEach((el) => {
       if (el.closest('.pagedjs_footnote_area')) return;
       if (el.closest('.footnote-list') || el.classList.contains('footnote-line') || el.classList.contains('footnote-item')) return;
@@ -1800,9 +1797,9 @@ function buildWordPayload(doc) {
       payload.blocks.push({ kind, runs: cleaned });
     });
   });
-  // أرقام الحواشي (n) محفوظة بترتيبها داخل كل صفحة من صفحات
-  // التطبيق، وفواصل الصفحات الصريحة أعلاه تثبّت تصفيح وورد عليها
-  // فيعيد وورد الترقيم من ١ في كل صفحة موافقًا للمتن والحاشية معًا
+  // لا فواصل صفحات قسرية: يصفّح وورد بتدفق طبيعي فيملأ الصفحات
+  // ويقسّم الحواشي الطويلة، وترقيمه التلقائي متجدد كل صفحة في
+  // المتن والحاشية معًا فلا ينفصل الرقمان أبدًا
   return payload;
 }
 
