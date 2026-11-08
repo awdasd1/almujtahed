@@ -2365,6 +2365,8 @@ async function sendChatMessage() {
   if (session.messages.length <= 1) {
     if (!session.title || session.title === 'محادثة تراثية جديدة' || session.title === 'محادثة جديدة') {
       session.title = (text || (validAttachments[0] ? validAttachments[0].name : 'محادثة جديدة')).slice(0, 35);
+      // عنوان مؤقت من السؤال نفسه، يُستبدل بعنوان الإجابة عند أول مسودة
+      session.titleAuto = true;
     }
     renderChatHistorySidebar();
   }
@@ -2399,6 +2401,43 @@ async function sendChatMessage() {
 // =============================================================================
 // دورة توليد الإجابة وإرسال الطلب للنموذج أو الوكلاء (مشتركة مع إعادة التوليد)
 // =============================================================================
+/* عنوان المسودة: أول إجابة رئيسة تمنح المحادثة والبحث عنوانًا
+   مختصرًا مشتقًا من عنوان الإجابة نفسها لا من نص السؤال */
+function extractDraftTitle(content) {
+  const head = String(content || '').slice(0, 1200);
+  let title = '';
+  const hm = head.match(/#{1,3}\s+([^\n<]{4,100})/) || head.match(/<h[1-3][^>]*>\s*([^<]{4,100}?)\s*<\/h[1-3]>/i);
+  if (hm) title = hm[1];
+  if (!title) {
+    const line = head.split(/\n+/).map((s) => s.replace(/<[^>]+>/g, '').trim())
+      .find((s) => s.length >= 4 && s.length <= 90 && !/^[#>\-*]/.test(s) && !s.endsWith('؟') && !/[.:؛،]$/.test(s));
+    if (line) title = line;
+  }
+  title = String(title || '').replace(/<[^>]+>/g, '').replace(/[*_`#]/g, '').replace(/\s+/g, ' ').replace(/[؟?.:：،؛]+$/, '').trim();
+  if (!title || title.length < 4 || title.endsWith('؟')) return '';
+  if (/^(المقدمة|التمهيد|الخاتمة|النتيجة|الخلاصة|الإجابة|الجواب|بحث|دراسة)$/.test(title)) return '';
+  return title.slice(0, 60);
+}
+
+function applyDraftTitle(session, message) {
+  if (!session || !message || message.selection_research) return;
+  if (message.stage === 'discussion' || message.stage === 'final') return;
+  const hasMainBefore = (session.messages || []).some((m) => m && m !== message && m.role === 'assistant'
+    && !m.selection_research && m.stage !== 'discussion' && m.stage !== 'final'
+    && String(m.content || '').trim() && !String(m.content).startsWith('⚠️ تعذر'));
+  if (hasMainBefore) return;
+  const firstUser = (session.messages || []).find((m) => m && m.role === 'user');
+  const autoLike = session.titleAuto || session.titleDerived || !session.title
+    || ['محادثة تراثية جديدة', 'محادثة جديدة'].includes(session.title)
+    || (firstUser && session.title === String(firstUser.content || '').slice(0, 35));
+  if (!autoLike) return;
+  const title = extractDraftTitle(message.content);
+  if (!title) return;
+  session.title = title;
+  session.titleDerived = true;
+  if (typeof renderChatHistorySidebar === 'function') renderChatHistorySidebar();
+}
+
 function placeChatReply(session, message, options) {
   if (options && Number.isInteger(options.insertAt)) {
     const at = Math.max(0, Math.min(options.insertAt, session.messages.length));
@@ -2529,7 +2568,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
     const durationMs = stopAnswerClock();
     typingBubble.remove();
 
-    placeChatReply(session, {
+    const replyMessage = {
       role: 'assistant',
       content: data.reply || 'عذراً، لم أتلقَّ استجابة واضحة من الخادم.',
       model: data.model || selectedModel,
@@ -2542,7 +2581,9 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
       regenerated: !!options.regenerated,
       stage: (options && options.discussionMode === 'finalize') ? 'final'
         : (((options && options.discussionMode === 'open') || discussionState(session.id) === 'open') ? 'discussion' : undefined)
-    }, options);
+    };
+    placeChatReply(session, replyMessage, options);
+    applyDraftTitle(session, replyMessage);
 
     saveChatSessions();
     renderSessionMessages(activeSessionId);
