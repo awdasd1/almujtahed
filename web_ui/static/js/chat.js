@@ -1598,7 +1598,7 @@ function writeChatReadingDocument(win, htmlContent) {
 /* طباعة خام: فك روابط أرقام الحواشي من نسخة الطباعة وحدها */
 function stripChatFootnoteLinks(html) {
   // الرقم يبقى داخل وسم بصنفه نفسه (مرتفعًا وأصغر كما كان) لكن بلا رابط
-  const rawCss = '<style id="raw-print-css">span.pg-fn-call,span.pg-fn-marker,span.chat-fn-ref,span.chat-fn-back{color:inherit !important;text-decoration:none !important;background:transparent !important;cursor:default}span.pg-fn-call,span.chat-fn-ref{vertical-align:super;line-height:0}span.chat-fn-ref{font-size:0.72em}</style>';
+  const rawCss = '<style id="raw-print-css">span.pg-fn-call,span.pg-fn-marker,span.chat-fn-ref,span.chat-fn-back{color:inherit !important;font-weight:inherit !important;text-decoration:none !important;background:transparent !important;cursor:default}span.pg-fn-call,span.chat-fn-ref{vertical-align:super;line-height:0}span.chat-fn-ref{font-size:0.72em}</style>';
   const out = String(html || '')
     .replace(/<a\b[^>]*class="[^"]*pg-fn-call[^"]*"[^>]*>([\s\S]*?)<\/a>/gi, '<span class="pg-fn-call">$1</span>')
     .replace(/<a\b[^>]*class="[^"]*pg-fn-marker[^"]*"[^>]*>([\s\S]*?)<\/a>/gi, '<span class="pg-fn-marker">$1</span>')
