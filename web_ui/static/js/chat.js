@@ -1042,6 +1042,145 @@ function attachStoredWitnesses(container) {
 }
 window.openChatWitness = openChatWitness;
 
+// بطاقة الشاهد المنبثقة: تمرير الفأرة على رقم الحاشية في المتن يُظهر
+// شاهدها المنقول (اسم الكتاب وجزؤه وصفحته وأول نص الصفحة) من ختم
+// الحاشية نفسه، مع زر فتح الموضع في الكتاب — تحقق بلا نزول إلى آخر
+// البحث ولا فتح للكتاب إلا عند القصد.
+function attachFootnoteHover(container) {
+  if (!container || container.dataset.fnHoverBound === '1') return;
+  container.dataset.fnHoverBound = '1';
+  let card = document.getElementById('fnHoverCard');
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'fnHoverCard';
+    card.className = 'fn-hover-card';
+    card.hidden = true;
+    document.body.appendChild(card);
+  }
+  const western = (v) => String(v || '')
+    .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+    .replace(/\D/g, '');
+  const arabic = (v) => String(v || '').replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[+d]);
+  let hideTimer = 0;
+  let currentMarker = null;
+
+  const hide = () => { card.hidden = true; currentMarker = null; };
+  const scheduleHide = () => { clearTimeout(hideTimer); hideTimer = setTimeout(hide, 260); };
+
+  function markerOf(node) {
+    const el = node && node.closest ? node.closest('sup, a.chat-fn-ref') : null;
+    if (!el || el.classList.contains('chat-fn-back')) return null;
+    if (!/^\(\s*[\d٠-٩۰-۹]+\s*\)$/.test((el.textContent || '').trim())) return null;
+    // رقم تعريف الحاشية في ذيل البحث ليس علامة متن: أول عنصر في سطر تعريفها
+    const host = el.closest('li, p');
+    if (host && (host.querySelector('.cit-src') || host.querySelector('.cit-unresolved'))
+        && (host.textContent || '').trim().startsWith((el.textContent || '').trim())) return null;
+    return el;
+  }
+
+  function findDef(bubble, n) {
+    const byId = bubble.querySelector(`[id="fn${n}"], [id="paper-fn${n}"]`);
+    if (byId) return byId;
+    const ar = arabic(n);
+    const candidates = bubble.querySelectorAll('.footnote-item, .footnote-line, li, p');
+    for (const c of candidates) {
+      const t = (c.textContent || '').trim();
+      if (t.startsWith(`(${n})`) || t.startsWith(`(${ar})`)) return c;
+    }
+    return null;
+  }
+
+  function showCard(marker) {
+    const bubble = marker.closest('.message-bubble') || container;
+    const n = western(marker.textContent);
+    if (!n) return;
+    const def = findDef(bubble, n);
+    let html = `<div class="fn-hover-head">حاشية (${arabic(n)}) — الشاهد المنقول</div>`;
+    const entries = [];
+    if (def) {
+      def.querySelectorAll('.cit-src').forEach((span) => {
+        if (entries.length >= 3) return;
+        entries.push({
+          book: span.getAttribute('data-book') || span.textContent || '',
+          part: span.getAttribute('data-part') || '',
+          page: span.getAttribute('data-page') || '',
+          quote: span.getAttribute('data-quote') || '',
+          bookId: span.getAttribute('data-book-id') || '',
+          rel: span.getAttribute('data-rel-path') || '',
+        });
+      });
+      if (!entries.length) {
+        const un = def.querySelector('.cit-unresolved');
+        if (un) {
+          entries.push({
+            book: (un.textContent || '').replace('⚠', '').trim().slice(0, 90),
+            part: un.getAttribute('data-part') || '', page: un.getAttribute('data-page') || '',
+            quote: '', bookId: un.getAttribute('data-book-id') || '',
+            rel: un.getAttribute('data-rel-path') || '', unverified: true,
+          });
+        }
+      }
+    }
+    if (entries.length) {
+      html += entries.map((e) => {
+        const loc = [e.part ? `ج ${arabic(e.part)}` : '', e.page ? `ص ${arabic(e.page)}` : ''].filter(Boolean).join('، ');
+        return `<div class="fn-hover-entry">
+          <div class="fn-hover-book">📖 ${escapeHtml(e.book)}${loc ? ` <span class="fn-hover-loc">(${loc})</span>` : ''}</div>
+          ${e.quote ? `<blockquote class="fn-hover-quote">${escapeHtml(e.quote)}…</blockquote>` : ''}
+          ${e.unverified ? '<div class="fn-hover-warn">⚠ موضع لم يتحقق منه النظام آليًا — على ذمة النموذج</div>' : ''}
+          ${e.bookId ? `<button type="button" class="fn-hover-open" data-book-id="${escapeHtml(e.bookId)}" data-rel-path="${escapeHtml(e.rel)}" data-book="${escapeHtml(e.book)}" data-part="${escapeHtml(e.part)}" data-page="${escapeHtml(e.page)}" data-quote="${escapeHtml(e.quote)}">تصفح الموضع في الكتاب</button>` : ''}
+        </div>`;
+      }).join('');
+    } else if (def) {
+      html += `<div class="fn-hover-entry"><div class="fn-hover-quote">${escapeHtml((def.textContent || '').trim().slice(0, 420))}</div></div>`;
+    } else {
+      html += '<div class="fn-hover-warn">لم يُعثر على نص هذه الحاشية في الجواب</div>';
+    }
+    card.innerHTML = html;
+    card.querySelectorAll('.fn-hover-open').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        hide();
+        if (typeof openBookReader === 'function') {
+          openBookReader({
+            rel_path: btn.getAttribute('data-rel-path') || '',
+            book_id: btn.getAttribute('data-book-id') || '',
+            book_title: btn.getAttribute('data-book') || '',
+            part: btn.getAttribute('data-part') || '',
+            page_num: parseInt(btn.getAttribute('data-page'), 10) || null,
+            highlight: btn.getAttribute('data-quote') || '',
+          });
+        }
+      });
+    });
+    card.hidden = false;
+    const rect = marker.getBoundingClientRect();
+    const cardW = card.offsetWidth;
+    const cardH = card.offsetHeight;
+    let left = Math.min(Math.max(8, rect.left + rect.width / 2 - cardW / 2), window.innerWidth - cardW - 8);
+    let top = rect.bottom + 8;
+    if (top + cardH > window.innerHeight - 6) top = Math.max(6, rect.top - cardH - 8);
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+  }
+
+  container.addEventListener('mouseover', (e) => {
+    const m = markerOf(e.target);
+    if (m) {
+      clearTimeout(hideTimer);
+      if (m !== currentMarker) { currentMarker = m; showCard(m); }
+    } else if (!e.target.closest || !e.target.closest('#fnHoverCard')) {
+      scheduleHide();
+    }
+  });
+  container.addEventListener('mouseout', (e) => {
+    if (markerOf(e.target)) scheduleHide();
+  });
+  card.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+  card.addEventListener('mouseleave', scheduleHide);
+  container.addEventListener('scroll', hide, { passive: true });
+}
+
 function chatOpeningHtml() {
   return '<div class="chat-opening"><p>مرحبا بك ...</p><p>كيف يمكنني خدمتك؟</p></div>';
 }
@@ -1204,6 +1343,7 @@ function renderSessionMessages(sessionId, options) {
     try {
       window.enhanceProjectCitationsWithBookReader(container);
       attachStoredWitnesses(container);
+      attachFootnoteHover(container);
     } catch (e) {
       console.warn('Citation reader enhance error:', e);
     }

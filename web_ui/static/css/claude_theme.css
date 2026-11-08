@@ -10488,3 +10488,34 @@ body::-webkit-scrollbar,
   background: transparent; border: 0; cursor: pointer; font-size: 13px;
   color: var(--text-muted, #778); padding: 0 2px;
 }
+
+/* بطاقة الشاهد المنبثقة عند التمرير على رقم الحاشية في المتن */
+.fn-hover-card {
+  position: fixed; z-index: 10060; max-width: 430px; min-width: 260px;
+  background: var(--bg-surface, #ffffff); color: var(--text-main, #111111);
+  border: 1px solid rgba(180, 83, 9, 0.35); border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
+  padding: 12px 14px; font-family: 'Amiri', serif;
+  direction: rtl; text-align: right;
+}
+.fn-hover-card[hidden] { display: none; }
+.fn-hover-head {
+  font-family: 'Tajawal', sans-serif; font-size: 12px; font-weight: 700;
+  color: #b45309; margin-bottom: 6px;
+}
+.fn-hover-entry { border-top: 1px dashed rgba(127, 127, 127, 0.3); padding-top: 8px; margin-top: 8px; }
+.fn-hover-entry:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.fn-hover-book { font-weight: 700; font-size: 14.5px; line-height: 1.7; }
+.fn-hover-loc { font-weight: 400; font-size: 12.5px; color: #64748b; }
+.fn-hover-quote {
+  margin: 6px 0 0; padding: 6px 10px; border-right: 3px solid #b45309;
+  background: rgba(180, 83, 9, 0.07); border-radius: 6px;
+  font-size: 13.5px; line-height: 1.9; max-height: 132px; overflow: auto;
+}
+.fn-hover-open {
+  margin-top: 8px; font-family: 'Tajawal', sans-serif; font-size: 12px; font-weight: 700;
+  padding: 5px 12px; border-radius: 999px; border: 1px solid rgba(180, 83, 9, 0.5);
+  background: transparent; color: #b45309; cursor: pointer;
+}
+.fn-hover-open:hover { background: rgba(180, 83, 9, 0.1); }
+.fn-hover-warn { font-size: 12px; color: #b45309; font-family: 'Tajawal', sans-serif; margin-top: 4px; }
