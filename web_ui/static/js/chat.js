@@ -1753,7 +1753,7 @@ function buildWordPayload(doc) {
         const runs = [];
         wordRunsFromNode(clone, { callMap: new Map(), defMap: new Map() }, runs);
         ctx.callMap.set(call, payload.footnotes.length);
-        payload.footnotes.push({ runs: wordCleanRuns(runs) });
+        payload.footnotes.push({ runs: wordCleanRuns(runs), n: i + 1 });
       });
     });
   } else {
@@ -1771,7 +1771,7 @@ function buildWordPayload(doc) {
       const cleaned = wordCleanRuns(runs);
       if (cleaned.length && cleaned[0].t) cleaned[0].t = cleaned[0].t.replace(/^\s*\((?:\d+|[٠-٩]+)\)\s*/, '');
       ctx.defMap.set(num, payload.footnotes.length);
-      payload.footnotes.push({ runs: cleaned });
+      payload.footnotes.push({ runs: cleaned, n: payload.footnotes.length + 1 });
     });
   }
   const roots = pages.length
