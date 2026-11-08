@@ -5437,7 +5437,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.329"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.330"},
         },
     })
     if opened.get("error"):
@@ -21995,8 +21995,21 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     ppr = []
     if page_break or kind == "biblioTitle":
         ppr.append("<w:pageBreakBefore/>")
+    if kind == "h":
+        # العنوان لا ينفصل عن فقرته التالية عند كسر الصفحة
+        ppr.append("<w:keepNext/>")
     ppr.append("<w:bidi/>")
-    ppr.append('<w:spacing w:line="240" w:lineRule="auto" w:after="60"/>')
+    if kind == "h":
+        # سطر فارغ كامل قبل العنوان يفصله عن آخر سطر في الفقرة
+        # السابقة: مسافة علوية بارتفاع سطر من المتن
+        try:
+            body_size = float(body.get("size") or 12)
+        except Exception:
+            body_size = 12
+        before_twips = max(200, min(600, int(round(body_size * 20))))
+        ppr.append(f'<w:spacing w:before="{before_twips}" w:line="240" w:lineRule="auto" w:after="60"/>')
+    else:
+        ppr.append('<w:spacing w:line="240" w:lineRule="auto" w:after="60"/>')
     if kind == "p":
         ppr.append('<w:ind w:firstLine="300"/>')
     ppr.append(f'<w:jc w:val="{align}"/>')
