@@ -736,6 +736,107 @@ async def delete_print_background():
 
 app.mount("/print-background", StaticFiles(directory=str(PRINT_BG_DIR)), name="print-background")
 
+# قوالب الطباعة: حزمة ZIP واحدة فيها الإعدادات والخطوط الخاصة والخلفية،
+# للتصدير والمشاركة والتحميل ثم الاستيراد والتنصيب الكامل
+import io as _io
+import zipfile as _zipfile
+
+MAX_TEMPLATE_BYTES = 80 * 1024 * 1024
+
+@app.post("/api/print/template/export")
+async def export_print_template(payload: dict = Body(...)):
+    """تحزيم قالب طباعة كامل (إعدادات + خطوط مستخدمة + خلفية) في ZIP"""
+    name = str(payload.get("name") or "قالب طباعة المجتهد").strip()[:80] or "قالب طباعة المجتهد"
+    settings = payload.get("settings") if isinstance(payload.get("settings"), dict) else {}
+    fonts_used = []
+    wanted = set()
+    for value in settings.values():
+        if isinstance(value, str) and value.startswith("custom:"):
+            wanted.add(Path(value[len("custom:"):]).name)
+    buffer = _io.BytesIO()
+    with _zipfile.ZipFile(buffer, "w", _zipfile.ZIP_DEFLATED) as bundle:
+        for filename in sorted(wanted):
+            if Path(filename).suffix.lower() not in FONT_EXTENSIONS:
+                continue
+            path = FONTS_DIR / filename
+            if path.is_file():
+                bundle.write(path, f"fonts/{filename}")
+                fonts_used.append(filename)
+        background = _print_bg_current()
+        background_name = None
+        if background:
+            background_name = background.name
+            bundle.write(background, f"background/{background.name}")
+        manifest = {
+            "app": "almujtahed-print-template",
+            "version": 1,
+            "name": name,
+            "exported_at": datetime.now().isoformat(timespec="seconds"),
+            "settings": settings,
+            "fonts": fonts_used,
+            "background": background_name,
+        }
+        bundle.writestr("template.json", json.dumps(manifest, ensure_ascii=False, indent=1))
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=almujtahed-print-template.zip"},
+    )
+
+@app.post("/api/print/template/import")
+async def import_print_template(file: UploadFile = File(...)):
+    """فك حزمة قالب طباعة وتنصيب خطوطها وخلفيتها وإرجاع إعداداتها للتطبيق"""
+    contents = await file.read()
+    if len(contents) > MAX_TEMPLATE_BYTES:
+        raise HTTPException(status_code=413, detail="حزمة القالب أكبر من 80 ميغابايت")
+    try:
+        bundle = _zipfile.ZipFile(_io.BytesIO(contents))
+    except Exception:
+        raise HTTPException(status_code=400, detail="ملف القالب غير صالح (ليس حزمة ZIP سليمة)")
+    infos = bundle.infolist()
+    if len(infos) > 60 or sum(max(0, info.file_size) for info in infos) > MAX_TEMPLATE_BYTES:
+        raise HTTPException(status_code=400, detail="محتوى حزمة القالب أكبر من الحد المسموح")
+    manifest_info = next((info for info in infos if Path(info.filename).name == "template.json"), None)
+    if manifest_info is None:
+        raise HTTPException(status_code=400, detail="الحزمة ليست قالب طباعة (لا يوجد template.json)")
+    try:
+        manifest = json.loads(bundle.read(manifest_info).decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="بيان القالب (template.json) تالف")
+    settings = manifest.get("settings") if isinstance(manifest.get("settings"), dict) else {}
+    installed_fonts = []
+    background_installed = False
+    for info in infos:
+        parts = [part for part in Path(info.filename).parts if part not in ("", ".", "..")]
+        if len(parts) != 2:
+            continue
+        folder, filename = parts[0], Path(parts[1]).name
+        if not filename:
+            continue
+        if folder == "fonts" and Path(filename).suffix.lower() in FONT_EXTENSIONS and info.file_size <= MAX_FONT_BYTES:
+            (FONTS_DIR / filename).write_bytes(bundle.read(info))
+            installed_fonts.append(filename)
+        elif folder == "background" and Path(filename).suffix.lower() in PRINT_BG_EXTENSIONS and info.file_size <= MAX_PRINT_BG_BYTES:
+            ext = Path(filename).suffix.lower()
+            for old in PRINT_BG_DIR.glob("background.*"):
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+            (PRINT_BG_DIR / f"background{ext}").write_bytes(bundle.read(info))
+            background_installed = True
+    if background_installed:
+        settings["printBgUrl"] = _print_bg_payload().get("url") or ""
+    elif "printBgUrl" in settings and not _print_bg_current():
+        settings["printBgUrl"] = settings.get("printBgUrl") or ""
+    return {
+        "success": True,
+        "name": str(manifest.get("name") or "قالب طباعة"),
+        "settings": settings,
+        "fonts_installed": installed_fonts,
+        "background_installed": background_installed,
+    }
+
 # الحالة العامة للنظام والنموذج
 # قرار المنتج (1.10.267): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
 # الدلالة، والبحث اللفظي المضبوط هو الأساس. لا يُشغَّل المحرك ولا يُحمَّل
@@ -5235,7 +5336,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.309"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.310"},
         },
     })
     if opened.get("error"):

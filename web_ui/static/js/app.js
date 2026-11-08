@@ -798,6 +798,105 @@ async function removePrintBackground() {
   showToast('تم حذف صورة خلفية ورقة الطباعة');
 }
 
+/* قوالب الطباعة: تصدير قالب كامل (إعدادات وخطوط وخلفيات) في حزمة ZIP
+   للمشاركة أو التحميل، واستيراده لتنصيبه كاملًا */
+function collectPrintTemplateSettings() {
+  const out = {};
+  Object.values(PRINT_FONT_FIELDS).forEach((field) => {
+    out[field.key] = currentSettings[field.key];
+    out[field.sizeKey] = currentSettings[field.sizeKey];
+    out[field.weightKey] = currentSettings[field.weightKey];
+    out[field.colorKey] = currentSettings[field.colorKey];
+  });
+  ['printSepWidth', 'printBgUrl', 'printBgMode', 'printBgSize', 'printBgOpacity'].forEach((key) => {
+    out[key] = currentSettings[key];
+  });
+  return out;
+}
+
+async function buildPrintTemplateFile() {
+  const nameInput = document.getElementById('printTemplateName');
+  const name = (nameInput && nameInput.value.trim()) || 'قالب طباعة المجتهد';
+  const response = await fetch('/api/print/template/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, settings: collectPrintTemplateSettings() })
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(apiErrorDetail(data, 'تعذر تصدير القالب'));
+  }
+  const blob = await response.blob();
+  const safe = name.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || 'almujtahed-print-template';
+  return new File([blob], `${safe}.zip`, { type: 'application/zip' });
+}
+
+function downloadPrintTemplateFile(file) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+}
+
+async function exportPrintTemplate() {
+  try {
+    const file = await buildPrintTemplateFile();
+    downloadPrintTemplateFile(file);
+    showToast('تم تحميل قالب الطباعة كاملًا (إعدادات وخطوط وخلفية)');
+  } catch (error) {
+    showToast(error.message || 'تعذر تصدير القالب');
+  }
+}
+
+async function sharePrintTemplate() {
+  try {
+    const file = await buildPrintTemplateFile();
+    const payload = { files: [file], title: file.name };
+    if (typeof navigator.share === 'function' && (typeof navigator.canShare !== 'function' || navigator.canShare(payload))) {
+      await navigator.share(payload);
+      return;
+    }
+    downloadPrintTemplateFile(file);
+    showToast('مشاركة النظام غير متاحة هنا — تم تحميل القالب بدلًا منها');
+  } catch (error) {
+    if (error && error.name === 'AbortError') return;
+    showToast(error.message || 'تعذرت مشاركة القالب');
+  }
+}
+
+async function importPrintTemplate(event) {
+  const input = event.target;
+  const file = (input.files || [])[0];
+  input.value = '';
+  if (!file) return;
+  const body = new FormData();
+  body.append('file', file);
+  try {
+    const response = await fetch('/api/print/template/import', { method: 'POST', body });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.settings) {
+      showToast(apiErrorDetail(data, 'تعذر استيراد القالب'));
+      return;
+    }
+    const allowed = new Set(Object.keys(collectPrintTemplateSettings()));
+    Object.entries(data.settings).forEach(([key, value]) => {
+      if (allowed.has(key)) currentSettings[key] = value;
+    });
+    persistFontSettings();
+    try { await loadCustomFonts(); } catch (error) {}
+    populateFontSelects();
+    const nameInput = document.getElementById('printTemplateName');
+    if (nameInput && data.name) nameInput.value = data.name;
+    showToast(`تم تنصيب قالب «${data.name || 'الطباعة'}» كاملًا بخطوطه وخلفيته وألوانه`);
+  } catch (error) {
+    showToast('تعذر استيراد القالب');
+  }
+}
+
 function updatePrintPreviews() {
   Object.values(PRINT_FONT_FIELDS).forEach((field) => {
     const preview = document.getElementById(field.previewId);
