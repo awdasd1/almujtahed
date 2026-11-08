@@ -2564,6 +2564,19 @@ select.graph-kind-select {
   border-color: var(--accent-clay);
 }
 
+.chat-select-kind-icon {
+  display: block;
+  font-size: 21px;
+  line-height: 1.3;
+}
+
+.chat-select-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .chat-select-other { margin-top: 10px; }
 
 .chat-select-label { display: block; }
