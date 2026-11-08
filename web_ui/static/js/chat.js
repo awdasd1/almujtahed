@@ -1489,6 +1489,7 @@ function chatAnswerPaper(idx) {
       projectTitle: title,
       executedAt: new Date().toLocaleString('ar-SA'),
       directorModel: cleanModelDisplayName(msg.model || 'الذكاء الاصطناعي الأكاديمي'),
+      bibliography: Array.isArray(msg.witnesses) ? msg.witnesses : [],
       rounds: [{
         round: 1,
         name: msg.selection_research ? title : 'النتيجة والدراسة التحريرية المعتمدة',

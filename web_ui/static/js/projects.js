@@ -6687,6 +6687,25 @@ function buildAcademicPaperHtml(runData, options) {
       <div class="academic-text-content">${formatAcademicBody(r.output || '')}</div>
     </section>
   `).join(''));
+  // صفحة ختامية مستقلة بأسماء المصادر والمراجع من شواهد الجواب نفسه
+  // (حين لا يحمل المتن ثبتًا خاصًا به) — تبدأ صفحة جديدة بقاعدة الكسر.
+  let biblioHtml = '';
+  const biblioRows = Array.isArray(runData.bibliography) ? runData.bibliography : [];
+  if (biblioRows.length && !roundsBodyHtml.includes('biblio-title')) {
+    const seenBiblio = new Set();
+    const biblioItems = [];
+    for (const row of biblioRows) {
+      const key = String(row.book_id || row.rel_path || row.title || '');
+      if (!key || seenBiblio.has(key)) continue;
+      seenBiblio.add(key);
+      let entry = [row.title || '', row.author || ''].filter(Boolean).join(' — ');
+      if (row.death_year) entry += ` (ت: ${toArabicIndicDigits(row.death_year)} هـ)`;
+      if (entry) biblioItems.push(`<li>${escapeHtml(entry)}</li>`);
+    }
+    if (biblioItems.length) {
+      biblioHtml = `<section class="academic-round-section"><h2 class="biblio-title">المصادر والمراجع</h2><ol class="biblio-list">${biblioItems.join('')}</ol></section>`;
+    }
+  }
   const toolbar = settings.toolbar === false ? '' : `
   <header class="top-action-bar no-print-toolbar">
     <div class="bar-actions">
@@ -7051,11 +7070,35 @@ function buildAcademicPaperHtml(runData, options) {
     body { direction: ltr; }
     .paper-sheet { direction: rtl; text-align: right; max-width: none; margin: 0; padding: 0; }
     @page { size: A4; margin: 20mm 18mm 24mm 18mm;
-      @footnote { border-top: 1px solid #111; padding-top: 6pt; margin-top: 12pt; } }
+      @footnote { border-top: none; padding-top: 8pt; margin-top: 12pt; } }
     .pg-fn { float: footnote; }
+    /* الخط الفاصل بين المتن والحواشي: ربع عرض الصفحة من جهة البدء */
+    .pagedjs_footnote_area {
+      border-top: none !important;
+      background: linear-gradient(#111, #111) top right / 25% 1px no-repeat;
+    }
     [data-footnote-marker] { font-size: 11.5pt; line-height: 1.8; text-align: justify; text-align-last: right; }
     .pagedjs_area [data-footnote-call]::after { content: "(" counter(footnote) ")"; font-size: 9pt; font-weight: 700; }
     [data-footnote-marker]::marker { content: "(" counter(footnote-marker) ") "; font-weight: 700; }
+    /* أرقام مترابطة كنسق نافذة القراءة: عربية مرفوعة بين قوسين، نقرها
+       يقفز بين موضعها في المتن وحاشيتها في ذيل صفحتها وبالعكس */
+    [data-footnote-call].pg-linked::after { content: none !important; }
+    [data-footnote-marker].pg-linked-marker::marker { content: none; }
+    .pg-fn-call, .pg-fn-marker {
+      color: var(--link); text-decoration: none; cursor: pointer; font-weight: 700;
+    }
+    .pg-fn-call { vertical-align: super; font-size: 11pt; line-height: 0; }
+    .pg-fn-marker { font-size: 11.5pt; }
+    [data-footnote-call]:target, [data-footnote-marker]:target {
+      background: rgba(180, 83, 9, 0.18); border-radius: 4px;
+    }
+    /* ثبت المصادر والمراجع يبدأ صفحة جديدة بعد آخر صفحة من البحث */
+    .biblio-title { break-before: page; }
+    .biblio-list { font-size: 13.5pt; line-height: 2; margin: 10px 0 0; padding-inline-start: 26px; list-style-type: arabic-indic; }
+    .biblio-list li { margin: 0 0 4px; text-align: right; }
+    @media print {
+      .pg-fn-call, .pg-fn-marker { color: #1d4ed8 !important; }
+    }
     .pagedjs_page { counter-reset: footnote 0 footnote-marker 0; margin: 18px auto; background: #fff; color: #111; box-shadow: 0 2px 16px rgba(0,0,0,.28); }
     .pagedjs_pages { padding: 8px 0 24px; }
     @media print {
@@ -7072,9 +7115,45 @@ function buildAcademicPaperHtml(runData, options) {
     <h1 class="paper-main-title">${escapeHtml(title)}</h1>
     <div class="paper-sub-meta">بحث علمي محكم مستخرج عبر منظومة المجتهد</div>
   </header>
-  <main>${roundsBodyHtml}</main>
+  <main>${roundsBodyHtml}${biblioHtml}</main>
   </div>
-  <script>window.PagedConfig={auto:true,after:function(){window.__pagedDone=true;}};</script>
+  <script>
+  window.PagedConfig = {
+    auto: true,
+    after: function () {
+      window.__pagedDone = true;
+      // ربط أرقام المتن بحواشيها: أرقام عربية مرفوعة قابلة للنقر تقفز
+      // بين الموضعين كنسق نافذة القراءة، بدل عدّادات CSS اللاتينية.
+      try {
+        var arabic = function (n) { return String(n).replace(/\\d/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[+d]; }); };
+        document.querySelectorAll('.pagedjs_page').forEach(function (page, pi) {
+          var calls = page.querySelectorAll('[data-footnote-call]');
+          var markers = page.querySelectorAll('.pagedjs_footnote_area [data-footnote-marker]');
+          calls.forEach(function (call, i) {
+            call.classList.add('pg-linked');
+            call.id = 'pgcall-' + (pi + 1) + '-' + (i + 1);
+            var a = document.createElement('a');
+            a.className = 'pg-fn-call';
+            a.href = '#pgfn-' + (pi + 1) + '-' + (i + 1);
+            a.textContent = '(' + arabic(i + 1) + ')';
+            call.appendChild(a);
+            var mk = markers[i];
+            if (mk) {
+              mk.classList.add('pg-linked-marker');
+              mk.id = 'pgfn-' + (pi + 1) + '-' + (i + 1);
+              var b = document.createElement('a');
+              b.className = 'pg-fn-marker';
+              b.href = '#pgcall-' + (pi + 1) + '-' + (i + 1);
+              b.textContent = '(' + arabic(i + 1) + ')';
+              mk.insertBefore(b, mk.firstChild);
+              mk.insertBefore(document.createTextNode(' '), b.nextSibling);
+            }
+          });
+        });
+      } catch (e) {}
+    }
+  };
+  </script>
   <script data-pagedjs src="/static/js/paged.polyfill.min.js"></script>
   ${toolbarScript}
 </body>
