@@ -6585,6 +6585,16 @@ function formatAcademicBody(rawMarkdown) {
     if (boldOnly && plain.length <= 110 && headingLike) {
       return `<p class="academic-subheading">${content}</p>`;
     }
+    /* عنوان داخل المتن: مطلع فقرة عريض منتهٍ بنقطتين (١- تحرير المذهب
+       الحنفي: ...) — يأخذ خط العناوين الفرعية المضبوط */
+    const leadMatch = trimmedContent.match(/^((?:[٠-٩\d]+\s*[-–.)]\s*)?)<(b|strong)>([\s\S]*?)<\/\2>/i);
+    if (leadMatch) {
+      const innerPlain = leadMatch[3].replace(/<[^>]+>/g, '').trim();
+      if (innerPlain.length <= 70 && /[:：]\s*$/.test(innerPlain)) {
+        const boldPart = leadMatch[0].slice(leadMatch[1].length);
+        content = leadMatch[1] + `<span class="academic-inline-heading">${boldPart}</span>` + trimmedContent.slice(leadMatch[0].length);
+      }
+    }
     const isFootnote = inBibliography
       || /^(<sup>|ينظر:|يُنظر:|أخرجه|رواه)/.test(plain)
       || /^\([\d٠-٩]+\)/.test(plain);
@@ -6617,6 +6627,15 @@ function formatAcademicBody(rawMarkdown) {
   html = html.replace(/<ol class="footnote-list">([\s\S]*?)<\/ol>/gi, (_, inner) => {
     const items = inner.replace(/<li\b/gi, '<p class="footnote-item"').replace(/<\/li>/gi, '</p>');
     return `<div class="footnote-list">${items}</div>`;
+  });
+  /* تمييز الآيات (بين قوسين مزخرفين) والأحاديث (نص مقول مسبوق بنسبة
+     نبوية قريبة) وسائر الأقوال المنقولة نصًا بين قوسي تنصيص — لكلٍّ
+     خطه وحجمه ووزنه ولونه من تبويب الطباعة */
+  html = html.replace(/﴿([^﴾]{1,800})﴾/g, '<span class="quran-verse">﴿$1﴾</span>');
+  html = html.replace(/«([^»﴿]{6,1200})»/g, (full, inner, offset, whole) => {
+    const before = whole.slice(Math.max(0, offset - 180), offset);
+    const cls = /(رسول الله|النبي|ﷺ|حديث)/.test(before) ? 'hadith-text' : 'quoted-text';
+    return `<span class="${cls}">«${inner}»</span>`;
   });
   return html;
 }
@@ -6687,10 +6706,14 @@ function paperPrintCss() {
   const h2Size = num(s.printH2Size, 19, 9, 36), h2W = Math.round(num(s.printH2Weight, 700, 100, 900));
   const fnSize = num(s.printFnSize, 11.5, 7, 20), fnW = Math.round(num(s.printFnWeight, 400, 100, 900));
   const bodySize = num(s.printBodySize, 18, 10, 30), bodyW = Math.round(num(s.printBodyWeight, 400, 100, 900));
+  const quranSize = num(s.printQuranSize, 19, 10, 30), quranW = Math.round(num(s.printQuranWeight, 700, 100, 900));
+  const hadithSize = num(s.printHadithSize, 18, 10, 30), hadithW = Math.round(num(s.printHadithWeight, 600, 100, 900));
+  const quoteSize = num(s.printQuoteSize, 18, 10, 30), quoteW = Math.round(num(s.printQuoteWeight, 400, 100, 900));
+  const col = (v) => (/^#[0-9a-f]{6}$/i.test(v || '') ? ` color: ${v};` : '');
   const sep = num(s.printSepWidth, 30, 5, 100);
   const head = [];
   const fams = new Set();
-  [s.printH1Font, s.printH2Font, s.printBodyFont, s.printFnFont].forEach((v) => {
+  [s.printH1Font, s.printH2Font, s.printBodyFont, s.printFnFont, s.printQuranFont, s.printHadithFont, s.printQuoteFont].forEach((v) => {
     if (v && String(v).startsWith('google:')) fams.add(String(v).slice(7));
   });
   fams.forEach((fam) => {
@@ -6699,7 +6722,7 @@ function paperPrintCss() {
   });
   const customFns = (typeof customFonts !== 'undefined' && Array.isArray(customFonts)) ? customFonts : [];
   const customSeen = new Set();
-  [s.printH1Font, s.printH2Font, s.printBodyFont, s.printFnFont].forEach((v) => {
+  [s.printH1Font, s.printH2Font, s.printBodyFont, s.printFnFont, s.printQuranFont, s.printHadithFont, s.printQuoteFont].forEach((v) => {
     if (!v || !String(v).startsWith('custom:') || customSeen.has(v)) return;
     customSeen.add(v);
     const font = customFns.find((f) => `custom:${f.filename}` === v);
@@ -6708,15 +6731,19 @@ function paperPrintCss() {
     head.push(`<style>@font-face{font-family:'${String(font.family).replace(/'/g, '')}';src:url('${url}') format('${font.format || 'truetype'}');font-weight:100 900;font-display:swap;}</style>`);
   });
   const css = `
-    .paper-main-title { font-family: ${stack(s.printH1Font)}; font-size: ${h1Size}pt; font-weight: ${h1W}; }
-    .academic-round-title { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(13, h1Size - 4)}pt; font-weight: ${h1W}; }
-    .academic-text-content h1 { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(12, h1Size - 3)}pt; font-weight: ${h1W}; }
-    .academic-text-content h2, .academic-subheading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W}; }
-    .academic-text-content h3, .academic-text-content h4 { font-family: ${stack(s.printH2Font)}; font-size: ${Math.max(10, h2Size - 2)}pt; font-weight: ${h2W}; }
-    .biblio-title { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size + 1}pt; font-weight: ${h2W}; }
-    body { font-family: ${stack(s.printBodyFont)}; }
-    .academic-text-content p, .academic-paragraph { font-family: ${stack(s.printBodyFont)}; font-size: ${bodySize}pt; font-weight: ${bodyW}; }
-    [data-footnote-marker] { font-family: ${stack(s.printFnFont)}; font-size: ${fnSize}pt; font-weight: ${fnW}; }
+    .paper-main-title { font-family: ${stack(s.printH1Font)}; font-size: ${h1Size}pt; font-weight: ${h1W};${col(s.printH1Color)} }
+    .academic-round-title { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(13, h1Size - 4)}pt; font-weight: ${h1W};${col(s.printH1Color)} }
+    .academic-text-content h1 { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(12, h1Size - 3)}pt; font-weight: ${h1W};${col(s.printH1Color)} }
+    .academic-text-content h2, .academic-subheading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W};${col(s.printH2Color)} }
+    .academic-text-content h3, .academic-text-content h4 { font-family: ${stack(s.printH2Font)}; font-size: ${Math.max(10, h2Size - 2)}pt; font-weight: ${h2W};${col(s.printH2Color)} }
+    .academic-text-content h5, .academic-text-content h6, .academic-inline-heading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W};${col(s.printH2Color)} }
+    .biblio-title { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size + 1}pt; font-weight: ${h2W};${col(s.printH2Color)} }
+    body { font-family: ${stack(s.printBodyFont)};${col(s.printBodyColor)} }
+    .academic-text-content p, .academic-paragraph { font-family: ${stack(s.printBodyFont)}; font-size: ${bodySize}pt; font-weight: ${bodyW};${col(s.printBodyColor)} }
+    [data-footnote-marker] { font-family: ${stack(s.printFnFont)}; font-size: ${fnSize}pt; font-weight: ${fnW};${col(s.printFnColor)} }
+    .quran-verse { font-family: ${stack(s.printQuranFont)}; font-size: ${quranSize}pt; font-weight: ${quranW};${col(s.printQuranColor)} }
+    .hadith-text { font-family: ${stack(s.printHadithFont)}; font-size: ${hadithSize}pt; font-weight: ${hadithW};${col(s.printHadithColor)} }
+    .quoted-text { font-family: ${stack(s.printQuoteFont)}; font-size: ${quoteSize}pt; font-weight: ${quoteW};${col(s.printQuoteColor)} }
     .pagedjs_footnote_area { background: linear-gradient(#111, #111) top right / ${sep}% 1px no-repeat; }
   `;
   return { head: head.join('\n'), css };

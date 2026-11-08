@@ -52,10 +52,13 @@ const DEFAULT_SETTINGS = {
   fontHeading: 'google:Amiri',
   fontApp: 'google:Amiri',
   fontReading: 'google:Noto Naskh Arabic',
-  printH1Font: 'google:Amiri', printH1Size: 25, printH1Weight: 700,
-  printH2Font: 'google:Amiri', printH2Size: 19, printH2Weight: 700,
-  printBodyFont: 'google:Amiri', printBodySize: 18, printBodyWeight: 400,
-  printFnFont: 'google:Amiri', printFnSize: 11.5, printFnWeight: 400,
+  printH1Font: 'google:Amiri', printH1Size: 25, printH1Weight: 700, printH1Color: '',
+  printH2Font: 'google:Amiri', printH2Size: 19, printH2Weight: 700, printH2Color: '',
+  printBodyFont: 'google:Amiri', printBodySize: 18, printBodyWeight: 400, printBodyColor: '',
+  printFnFont: 'google:Amiri', printFnSize: 11.5, printFnWeight: 400, printFnColor: '',
+  printQuranFont: 'google:Amiri', printQuranSize: 19, printQuranWeight: 700, printQuranColor: '',
+  printHadithFont: 'google:Amiri', printHadithSize: 18, printHadithWeight: 600, printHadithColor: '',
+  printQuoteFont: 'google:Amiri', printQuoteSize: 18, printQuoteWeight: 400, printQuoteColor: '',
   printSepWidth: 30,
   textSize: 19,
   providers: {
@@ -681,10 +684,13 @@ function handleFontRoleChange(role, value) {
 
 /* تبويب «الطباعة»: خطوط ورقة الطباعة المقسّمة وعرض خطها الفاصل */
 const PRINT_FONT_FIELDS = {
-  h1: { selectId: 'printH1FontSelect', key: 'printH1Font', sizeKey: 'printH1Size', weightKey: 'printH1Weight', previewId: 'printH1Preview', label: 'العناوين الرئيسة' },
-  h2: { selectId: 'printH2FontSelect', key: 'printH2Font', sizeKey: 'printH2Size', weightKey: 'printH2Weight', previewId: 'printH2Preview', label: 'العناوين الفرعية' },
-  body: { selectId: 'printBodyFontSelect', key: 'printBodyFont', sizeKey: 'printBodySize', weightKey: 'printBodyWeight', previewId: 'printBodyPreview', label: 'المتن' },
-  fn: { selectId: 'printFnFontSelect', key: 'printFnFont', sizeKey: 'printFnSize', weightKey: 'printFnWeight', previewId: 'printFnPreview', label: 'الحاشية' }
+  h1: { selectId: 'printH1FontSelect', key: 'printH1Font', sizeKey: 'printH1Size', weightKey: 'printH1Weight', colorKey: 'printH1Color', previewId: 'printH1Preview', label: 'العناوين الرئيسة' },
+  h2: { selectId: 'printH2FontSelect', key: 'printH2Font', sizeKey: 'printH2Size', weightKey: 'printH2Weight', colorKey: 'printH2Color', previewId: 'printH2Preview', label: 'العناوين الفرعية' },
+  body: { selectId: 'printBodyFontSelect', key: 'printBodyFont', sizeKey: 'printBodySize', weightKey: 'printBodyWeight', colorKey: 'printBodyColor', previewId: 'printBodyPreview', label: 'المتن' },
+  fn: { selectId: 'printFnFontSelect', key: 'printFnFont', sizeKey: 'printFnSize', weightKey: 'printFnWeight', colorKey: 'printFnColor', previewId: 'printFnPreview', label: 'الحاشية' },
+  quran: { selectId: 'printQuranFontSelect', key: 'printQuranFont', sizeKey: 'printQuranSize', weightKey: 'printQuranWeight', colorKey: 'printQuranColor', previewId: 'printQuranPreview', label: 'الآيات' },
+  hadith: { selectId: 'printHadithFontSelect', key: 'printHadithFont', sizeKey: 'printHadithSize', weightKey: 'printHadithWeight', colorKey: 'printHadithColor', previewId: 'printHadithPreview', label: 'الأحاديث' },
+  quote: { selectId: 'printQuoteFontSelect', key: 'printQuoteFont', sizeKey: 'printQuoteSize', weightKey: 'printQuoteWeight', colorKey: 'printQuoteColor', previewId: 'printQuotePreview', label: 'الأقوال المنقولة نصًا' }
 };
 
 function populatePrintFontSelects() {
@@ -719,6 +725,8 @@ function populatePrintFontSelects() {
     if (sizeInput) sizeInput.value = currentSettings[field.sizeKey];
     const weightSelect = document.getElementById(field.weightKey);
     if (weightSelect) weightSelect.value = String(currentSettings[field.weightKey]);
+    const colorInput = document.getElementById(field.colorKey);
+    if (colorInput) colorInput.value = /^#[0-9a-f]{6}$/i.test(currentSettings[field.colorKey] || '') ? currentSettings[field.colorKey] : '#111111';
   });
   const sep = document.getElementById('printSepWidth');
   if (sep) sep.value = String(currentSettings.printSepWidth || 30);
@@ -732,7 +740,18 @@ function updatePrintPreviews() {
     preview.style.setProperty('font-family', stackForFontChoice(currentSettings[field.key]), 'important');
     preview.style.setProperty('font-size', `${Math.max(10, Math.min(34, parseFloat(currentSettings[field.sizeKey]) || 14))}px`, 'important');
     preview.style.setProperty('font-weight', String(currentSettings[field.weightKey] || 400), 'important');
+    const color = currentSettings[field.colorKey];
+    if (/^#[0-9a-f]{6}$/i.test(color || '')) preview.style.setProperty('color', color, 'important');
+    else preview.style.removeProperty('color');
   });
+}
+
+function handlePrintColorReset(colorKey, inputId) {
+  currentSettings[colorKey] = '';
+  persistFontSettings();
+  const input = document.getElementById(inputId || colorKey);
+  if (input) input.value = '#111111';
+  updatePrintPreviews();
 }
 
 function handlePrintFontChange(role, value) {
