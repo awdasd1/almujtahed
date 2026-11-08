@@ -2125,6 +2125,22 @@ body:has(#paneChat.active) .main-content {
 .chat-timeline-item.is-answer .chat-timeline-dot { border-color: var(--text-muted); }
 .chat-timeline-item.is-discussion .chat-timeline-dot { border-color: #2563eb; }
 .chat-timeline-item.is-discussion .chat-timeline-chip { color: #2563eb; }
+.chat-timeline-item.is-brief .chat-timeline-dot { border-color: #7c3aed; }
+.chat-timeline-item.is-brief .chat-timeline-chip { color: #7c3aed; }
+.chat-timeline-hint i.is-brief { border-color: #7c3aed; }
+
+.brief-comment-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--border-subtle);
+  font-family: var(--font-amiri);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--accent-clay);
+}
 .chat-timeline-item.is-final .chat-timeline-dot { border-color: #15803d; background: #15803d; }
 .chat-timeline-item.is-final .chat-timeline-chip { color: #15803d; border-color: #15803d; }
 .chat-timeline-item.is-active .chat-timeline-chip { background: #9A6A1F; border-color: #9A6A1F; color: #fff; }

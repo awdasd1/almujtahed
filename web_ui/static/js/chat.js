@@ -644,6 +644,7 @@ function chatAnswerStages(session) {
   const num = (n) => (typeof toArabicDigits === 'function' ? toArabicDigits(n) : String(n));
   let mainCount = 0;
   let discCount = 0;
+  let briefCount = 0;
   let prevFinalize = false;
   session.messages.forEach((msg, idx) => {
     if (!msg) return;
@@ -660,6 +661,9 @@ function chatAnswerStages(session) {
     } else if (msg.stage === 'discussion') {
       discCount += 1;
       out.push({ idx, kind: 'discussion', label: `مناقشة ${num(discCount)}` });
+    } else if (msg.selection_research) {
+      briefCount += 1;
+      out.push({ idx, kind: 'brief', label: `تعليق مختصر ${num(briefCount)}` });
     } else {
       mainCount += 1;
       out.push({ idx, kind: mainCount === 1 ? 'draft' : 'answer', label: mainCount === 1 ? 'مسودة' : `إجابة ${num(mainCount)}` });
@@ -1491,11 +1495,21 @@ function renderSessionMessages(sessionId, options) {
     }
   }
 
+  let briefTitleCount = 0;
   container.innerHTML = session.messages.map((msg, idx) => {
     if (idx === 0 && isStoredOpening(msg)) return '';
     const isUser = msg.role === 'user';
     const avatar = isUser ? 'أنت' : 'مج';
     const parsedText = formatMarkdown(msg.content, `c${idx}`);
+    // عنوان نتيجة «تعليق وشرح مختصر» مرقّمًا بترتيب التعليقات في
+    // الجلسة، موافقًا لترقيمه في الخط الزمني (تعليق مختصر ١، ٢، ٣)
+    let briefTitleHtml = '';
+    if (!isUser && msg.selection_research) {
+      briefTitleCount += 1;
+      const kind = SELECTION_RESEARCH_KINDS.find((k) => k.id === msg.selection_research);
+      const num = (typeof toArabicDigits === 'function') ? toArabicDigits(briefTitleCount) : String(briefTitleCount);
+      briefTitleHtml = `<div class="brief-comment-title"><span>${kind ? kind.icon : '✒️'}</span><span>تعليق وشرح مختصر ${num}${kind ? ` — ${escapeHtml(kind.label)}` : ''}</span></div>`;
+    }
     
     const modelTag = (!isUser && msg.model) ? `
       <div class="message-model-tag" title="النموذج الذي قام بالتحليل والإجابة">
@@ -1593,6 +1607,7 @@ function renderSessionMessages(sessionId, options) {
               <span>إجابة معاد توليدها</span>
             </div>
           ` : ''}
+          ${briefTitleHtml}
           ${parsedText}
           ${msg.tool_figure ? `<div class="applied-tool-mount" data-tool-figure="1" data-tool-index="${idx}" style="min-height:780px;"></div>` : ''}
           ${msg.tool_html && !msg.tool_figure ? `<div class="applied-tool-mount" data-tool-html="1" data-tool-index="${idx}"></div>` : ''}
