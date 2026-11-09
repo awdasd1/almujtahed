@@ -73,7 +73,14 @@ def _data_roots() -> List[Path]:
             roots.insert(0, Path(raw).expanduser())
     home = Path.home()
     _imp = os.environ.get("ALMUJTAHED_SHAMELA_IMPORT_DIR", "")
-    _imp_path = Path(_imp).expanduser() if _imp else home / "Library" / "Application Support" / "Al-Mujtahed" / "runtime" / "shamela_imported"
+    if _imp:
+        _imp_path = Path(_imp).expanduser()
+    else:
+        try:
+            import shamela_link as _SLL
+            _imp_path = _SLL.import_dir()
+        except Exception:
+            _imp_path = home / "Library" / "Application Support" / "Al-Mujtahed" / "runtime" / "shamela_imported"
     if _library_source() == "shamela":
         roots.insert(0, _imp_path)
     else:

@@ -4430,14 +4430,15 @@ def _book_id_value(value: Any) -> Optional[int]:
     text = str(value or "").strip()
     if not text:
         return None
-    if re.fullmatch(r"#?\s*\d{1,5}", text):
-        number = int(re.search(r"\d{1,5}", text).group(0))
+    if re.fullmatch(r"#?\s*\d{1,7}", text):
+        number = int(re.search(r"\d{1,7}", text).group(0))
     else:
-        found = re.search(r"#\s*(\d{1,5})", text)
+        found = re.search(r"#\s*(\d{1,7})", text)
         if not found:
             return None
         number = int(found.group(1))
-    return number if 1 <= number <= 20000 else None
+    # كتالوجنا فيه نطاق المستوردة من الشاملة (900000+) فوق أرقام الشاملة
+    return number if 1 <= number <= 9999999 else None
 
 
 def _pages_for_book_id(book_id: int) -> Tuple[Optional[str], Optional[Path]]:
@@ -5382,7 +5383,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.349"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.350"},
         },
     })
     if opened.get("error"):
