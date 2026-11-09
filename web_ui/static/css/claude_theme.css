@@ -10753,6 +10753,19 @@ body::-webkit-scrollbar,
 .fn-hover-warn { font-size: 12px; color: var(--mark-gold, var(--accent-clay)); font-family: var(--font-ui, 'Amiri', serif); margin-top: 4px; }
 
 /* تبويب «تصاميم»: شات مختصر من الفكرة إلى صورة مختومة بشعار المجتهد */
+/* خطوط التبويب: العناوين بالمراعي والنصوص بالأميري (من جوجل، مع نسخ محلية) */
+@font-face { font-family: 'Almarai'; src: url('/static/fonts/Almarai-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Almarai'; src: url('/static/fonts/Almarai-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Amiri'; src: url('/static/fonts/Amiri-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Amiri'; src: url('/static/fonts/Amiri-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+.designs-container { font-family: 'Amiri', 'Noto Naskh Arabic', serif; }
+.designs-container h1, .designs-container h2, .designs-container h3,
+.designs-container .design-title, .designs-container .design-send-btn,
+.designs-container .designs-controls-label, .designs-container .design-balance,
+.designs-container .design-mini-btn, .designs-container .design-chip,
+.designs-container .design-download {
+  font-family: 'Almarai', 'Amiri', sans-serif;
+}
 .designs-container { max-width: 880px; margin: 0 auto; padding: 18px 16px 28px; display: flex; flex-direction: column; gap: 14px; }
 .designs-hero h2 { margin: 0 0 6px; font-size: 24px; }
 .designs-hero p { margin: 0; color: var(--text-muted); line-height: 1.9; font-size: 14.5px; }
