@@ -5015,14 +5015,141 @@ class DesignImageRequest(BaseModel):
 DESIGN_IMAGE_MODEL = "openai/gpt-image-2.6-sunburst"
 
 
+def _png_decode_rgba(data: bytes):
+    """فك PNG (٨-بت، بلا تشابك) إلى بكسلات RGBA — بلا أي مكتبة خارجية."""
+    import struct as _struct
+    import zlib as _zlib
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not png")
+    pos = 8
+    idat = bytearray()
+    palette = b""
+    trns = b""
+    width = height = bit_depth = color_type = None
+    while pos + 8 <= len(data):
+        length, ctype = _struct.unpack_from(">I4s", data, pos)
+        chunk = data[pos + 8: pos + 8 + length]
+        if ctype == b"IHDR":
+            width, height, bit_depth, color_type, _comp, _filt, interlace = _struct.unpack(">IIBBBBB", chunk)
+            if bit_depth != 8 or interlace != 0:
+                raise ValueError("unsupported png")
+        elif ctype == b"PLTE":
+            palette = chunk
+        elif ctype == b"tRNS":
+            trns = chunk
+        elif ctype == b"IDAT":
+            idat.extend(chunk)
+        pos += 12 + length
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[color_type]
+    raw = _zlib.decompress(bytes(idat))
+    stride = width * channels
+    pixels = bytearray(width * height * 4)
+    prev = bytearray(stride)
+    src = 0
+    for y in range(height):
+        filt = raw[src]
+        src += 1
+        line = bytearray(raw[src: src + stride])
+        src += stride
+        if filt == 1:
+            for i in range(channels, stride):
+                line[i] = (line[i] + line[i - channels]) & 0xFF
+        elif filt == 2:
+            for i in range(stride):
+                line[i] = (line[i] + prev[i]) & 0xFF
+        elif filt == 3:
+            for i in range(stride):
+                left = line[i - channels] if i >= channels else 0
+                line[i] = (line[i] + ((left + prev[i]) >> 1)) & 0xFF
+        elif filt == 4:
+            for i in range(stride):
+                a = line[i - channels] if i >= channels else 0
+                b = prev[i]
+                c = prev[i - channels] if i >= channels else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pr) & 0xFF
+        prev = line
+        base = y * width * 4
+        if color_type == 6:
+            pixels[base: base + width * 4] = line
+        elif color_type == 2:
+            for x in range(width):
+                s, d = x * 3, base + x * 4
+                pixels[d: d + 3] = line[s: s + 3]
+                pixels[d + 3] = 255
+        elif color_type == 4:
+            for x in range(width):
+                s, d = x * 2, base + x * 4
+                pixels[d] = pixels[d + 1] = pixels[d + 2] = line[s]
+                pixels[d + 3] = line[s + 1]
+        elif color_type == 0:
+            for x in range(width):
+                d = base + x * 4
+                pixels[d] = pixels[d + 1] = pixels[d + 2] = line[x]
+                pixels[d + 3] = 255
+        elif color_type == 3:
+            for x in range(width):
+                idx = line[x]
+                d = base + x * 4
+                pixels[d: d + 3] = palette[idx * 3: idx * 3 + 3]
+                pixels[d + 3] = trns[idx] if idx < len(trns) else 255
+    return width, height, pixels
+
+
+def _png_encode_rgba(width: int, height: int, pixels: bytearray) -> bytes:
+    import struct as _struct
+    import zlib as _zlib
+    def chunk(ctype: bytes, payload: bytes) -> bytes:
+        return (_struct.pack(">I", len(payload)) + ctype + payload
+                + _struct.pack(">I", _zlib.crc32(ctype + payload) & 0xFFFFFFFF))
+    rows = bytearray()
+    stride = width * 4
+    for y in range(height):
+        rows.append(0)
+        rows.extend(pixels[y * stride:(y + 1) * stride])
+    ihdr = _struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", _zlib.compress(bytes(rows), 6)) + chunk(b"IEND", b""))
+
+
+def _brand_design_image_png(raw: bytes, logo_bytes: bytes) -> bytes:
+    """الختم بمركّب PNG خالص — يعمل على كل جهاز ولو غابت Pillow."""
+    w, h, px = _png_decode_rgba(raw)
+    lw, lh, lx = _png_decode_rgba(logo_bytes)
+    target_w = max(64, int(w * 0.085))
+    target_h = max(1, int(lh * target_w / max(1, lw)))
+    margin = max(12, int(w * 0.018))
+    ox, oy = margin, h - target_h - margin
+    for ty in range(target_h):
+        sy = min(lh - 1, int(ty * lh / target_h))
+        for tx in range(target_w):
+            sx = min(lw - 1, int(tx * lw / target_w))
+            s = (sy * lw + sx) * 4
+            alpha = lx[s + 3] / 255.0
+            if alpha <= 0:
+                continue
+            dx, dy = ox + tx, oy + ty
+            if not (0 <= dx < w and 0 <= dy < h):
+                continue
+            d = (dy * w + dx) * 4
+            inv = 1.0 - alpha
+            px[d] = int(lx[s] * alpha + px[d] * inv)
+            px[d + 1] = int(lx[s + 1] * alpha + px[d + 1] * inv)
+            px[d + 2] = int(lx[s + 2] * alpha + px[d + 2] * inv)
+            px[d + 3] = 255
+    return _png_encode_rgba(w, h, px)
+
+
 def _brand_design_image(raw: bytes) -> tuple[bytes, bool]:
     """ختم الصورة بشعار المجتهد في الركن الأسفل — طبع فعلي لا يعتمد على نموذج الصورة."""
+    logo_path = BASE_DIR / "design_logo.png"
+    if not logo_path.exists():
+        return raw, False
     try:
         from PIL import Image
         import io as _io
-        logo_path = BASE_DIR / "design_logo.png"
-        if not logo_path.exists():
-            return raw, False
         img = Image.open(_io.BytesIO(raw)).convert("RGBA")
         logo = Image.open(logo_path).convert("RGBA")
         target_w = max(64, int(img.width * 0.085))
@@ -5033,6 +5160,10 @@ def _brand_design_image(raw: bytes) -> tuple[bytes, bool]:
         out = _io.BytesIO()
         img.convert("RGB").save(out, format="PNG")
         return out.getvalue(), True
+    except Exception:
+        pass
+    try:
+        return _brand_design_image_png(raw, logo_path.read_bytes()), True
     except Exception:
         return raw, False
 
@@ -5541,7 +5672,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.357"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.358"},
         },
     })
     if opened.get("error"):
