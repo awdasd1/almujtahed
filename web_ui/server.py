@@ -5020,6 +5020,7 @@ DESIGN_IMAGE_MODEL = "openai/gpt-image-2.6-sunburst"
 DESIGN_IMAGE_MODELS = {
     "gpt": DESIGN_IMAGE_MODEL,
     "muse": "meta/muse-image",
+    "gemini": "google/gemini-3-pro-image-preview",
 }
 
 
@@ -6106,7 +6107,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.386"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.387"},
         },
     })
     if opened.get("error"):
