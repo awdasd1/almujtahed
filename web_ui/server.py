@@ -5006,6 +5006,106 @@ def _book_notfound_detail(book_id=None, rel_path=None, book_title=None) -> str:
     return " — ".join(parts)
 
 
+class DesignImageRequest(BaseModel):
+    prompt: str
+    aspect: str = "16:9"
+    api_key: Optional[str] = None
+
+
+DESIGN_IMAGE_MODEL = "openai/gpt-image-2.6-sunburst"
+
+
+def _brand_design_image(raw: bytes) -> tuple[bytes, bool]:
+    """ختم الصورة بشعار المجتهد في الركن الأسفل — طبع فعلي لا يعتمد على نموذج الصورة."""
+    try:
+        from PIL import Image
+        import io as _io
+        logo_path = BASE_DIR / "design_logo.png"
+        if not logo_path.exists():
+            return raw, False
+        img = Image.open(_io.BytesIO(raw)).convert("RGBA")
+        logo = Image.open(logo_path).convert("RGBA")
+        target_w = max(64, int(img.width * 0.085))
+        scale = target_w / max(1, logo.width)
+        logo = logo.resize((target_w, max(1, int(logo.height * scale))), Image.LANCZOS)
+        margin = max(12, int(img.width * 0.018))
+        img.alpha_composite(logo, (margin, img.height - logo.height - margin))
+        out = _io.BytesIO()
+        img.convert("RGB").save(out, format="PNG")
+        return out.getvalue(), True
+    except Exception:
+        return raw, False
+
+
+@app.post("/api/designs/image")
+async def design_image(req: DesignImageRequest, request: Request):
+    """توليد صورة التصميم عبر OpenRouter (نموذج صورة ثابت) وختمها بشعار المجتهد."""
+    prompt = (req.prompt or "").strip()
+    if len(prompt) < 20:
+        raise HTTPException(status_code=400, detail="توجيه الصورة قصير جدًا")
+    aspect = req.aspect if req.aspect in ("16:9", "9:16", "1:1") else "16:9"
+    key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    payload = {
+        "model": DESIGN_IMAGE_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "modalities": ["image", "text"],
+        "image_config": {"aspect_ratio": aspect},
+    }
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8085",
+            "X-Title": "Al-Mujtahed Designs",
+        },
+        data=json.dumps(payload).encode("utf-8"),
+    )
+    try:
+        with urllib.request.urlopen(http_req, timeout=300) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="ignore")[:400]
+        raise HTTPException(status_code=502, detail=f"رفض نموذج الصورة الطلب: {detail}")
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"تعذر الاتصال بنموذج الصورة: {error}")
+    message = ((data.get("choices") or [{}])[0].get("message") or {})
+    image_b64 = ""
+    for image in message.get("images") or []:
+        url = ((image.get("image_url") or {}).get("url") or "")
+        if url.startswith("data:image") and "," in url:
+            image_b64 = url.split(",", 1)[1]
+            break
+    if not image_b64:
+        content = message.get("content")
+        parts = content if isinstance(content, list) else []
+        for part in parts:
+            url = ((part.get("image_url") or {}).get("url") or "") if isinstance(part, dict) else ""
+            if url.startswith("data:image") and "," in url:
+                image_b64 = url.split(",", 1)[1]
+                break
+    if not image_b64:
+        raise HTTPException(status_code=502, detail="لم يُعد نموذج الصورة صورة قابلة للحفظ")
+    try:
+        raw = base64.b64decode(image_b64)
+    except Exception:
+        raise HTTPException(status_code=502, detail="صورة النموذج تالفة الترميز")
+    branded, did_brand = _brand_design_image(raw)
+    owner_id = current_owner_id(request)
+    designs_dir = UPLOADS_BUCKET_DIR / owner_id / "designs"
+    designs_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"design-{int(time.time())}.png"
+    (designs_dir / filename).write_bytes(branded)
+    return {
+        "image_url": f"/uploads/{owner_id}/designs/{filename}",
+        "branded": did_brand,
+        "model": DESIGN_IMAGE_MODEL,
+        "aspect": aspect,
+    }
+
+
 @app.get("/api/book/diagnose")
 async def book_diagnose(book_id: Optional[int] = None, rel_path: Optional[str] = None,
                         book_title: Optional[str] = None):
@@ -5438,7 +5538,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.355"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.356"},
         },
     })
     if opened.get("error"):

@@ -146,6 +146,14 @@ function switchMainTab(tabName) {
     if (typeof initProjectsTab === 'function') {
       initProjectsTab();
     }
+  } else if (tabName === 'designs') {
+    const pane = document.getElementById('paneDesigns');
+    if (pane) pane.classList.add('active');
+    const btn = document.getElementById('tabNavDesigns');
+    if (btn) btn.classList.add('active');
+    if (typeof initDesignsTab === 'function') {
+      initDesignsTab();
+    }
   } else if (tabName === 'tools') {
     const pane = document.getElementById('paneTools');
     if (pane) pane.classList.add('active');

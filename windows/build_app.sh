@@ -27,6 +27,7 @@ cp -p "$ROOT/.gitignore" "$ROOT/README.md" "$ROOT/changes.md" "$ROOT/dev.md" \
   "$ROOT/requirements-desktop.txt" \
   "$STAGE/source/"
 cp -p "$ROOT/web_ui/server.py" "$STAGE/source/web_ui/server.py"
+cp -p "$ROOT/web_ui/design_logo.png" "$STAGE/source/web_ui/design_logo.png"
 cp -p "$ROOT/web_ui/shamela_local_mcp.py" "$ROOT/web_ui/almujtahed_mcp_server.py" \
   "$ROOT/web_ui/shamela_link.py" "$ROOT/web_ui/shamela_search.py" "$ROOT/web_ui/shamela_bridge_worker.py" \
   "$ROOT/web_ui/library_search.py" "$ROOT/web_ui/build_library_index.py" \
@@ -47,6 +48,7 @@ cp -p "$ROOT/web_ui/static/js/share.js" "$STAGE/source/web_ui/static/js/share.js
 cp -p "$ROOT/web_ui/static/js/tools.js" "$STAGE/source/web_ui/static/js/tools.js"
 cp -p "$ROOT/web_ui/static/js/shamela_link.js" "$STAGE/source/web_ui/static/js/shamela_link.js"
 cp -p "$ROOT/web_ui/static/js/app.js" "$STAGE/source/web_ui/static/js/app.js"
+cp -p "$ROOT/web_ui/static/js/designs.js" "$STAGE/source/web_ui/static/js/designs.js"
 cp -p "$ROOT/web_ui/static/js/force3d.js" "$STAGE/source/web_ui/static/js/force3d.js"
 cp -p "$ROOT/web_ui/static/js/echarts.min.js" "$STAGE/source/web_ui/static/js/echarts.min.js"
 cp -p "$ROOT/web_ui/static/js/g6.min.js" "$STAGE/source/web_ui/static/js/g6.min.js"
