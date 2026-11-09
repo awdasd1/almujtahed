@@ -5185,6 +5185,8 @@ async def design_image(req: DesignImageRequest, request: Request):
         "size": size,
         "response_format": "b64_json",
     }
+    usage_before = _openrouter_key_usage(key)
+    started = time.time()
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/images",
         headers={
@@ -5227,17 +5229,143 @@ async def design_image(req: DesignImageRequest, request: Request):
     except Exception:
         raise HTTPException(status_code=502, detail="صورة النموذج تالفة الترميز")
     branded, did_brand = _brand_design_image(raw)
+    duration_s = round(time.time() - started, 1)
+    cost_usd = None
+    usage_after = _openrouter_key_usage(key)
+    if usage_before is not None and usage_after is not None and usage_after >= usage_before:
+        cost_usd = round(usage_after - usage_before, 6)
+    elif isinstance(data.get("usage"), dict) and isinstance(data["usage"].get("cost"), (int, float)):
+        cost_usd = round(float(data["usage"]["cost"]), 6)
+    title = _design_title_from_prompt(prompt)
     owner_id = current_owner_id(request)
     designs_dir = UPLOADS_BUCKET_DIR / owner_id / "designs"
     designs_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"design-{int(time.time())}.png"
+    safe_title = re.sub(r"[^\w؀-ۿ ]+", "", title, flags=re.UNICODE).strip()
+    safe_title = re.sub(r"\s+", "-", safe_title)[:60].strip("-") or "تصميم-المجتهد"
+    filename = f"{safe_title}-{int(time.time())}.png"
     (designs_dir / filename).write_bytes(branded)
     return {
         "image_url": f"/uploads/{owner_id}/designs/{filename}",
+        "file_name": filename,
+        "title": title,
         "branded": did_brand,
         "model": DESIGN_IMAGE_MODEL,
         "aspect": aspect,
+        "cost_usd": cost_usd,
+        "duration_s": duration_s,
     }
+
+
+def _openrouter_key_usage(key: str):
+    """إجمالي ما استهلكه مفتاح OpenRouter بالدولار — لحساب رصيد وتكلفة كل صورة."""
+    try:
+        http_req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/auth/key",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        with urllib.request.urlopen(http_req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        usage = (data.get("data") or {}).get("usage")
+        return float(usage) if isinstance(usage, (int, float)) else None
+    except Exception:
+        return None
+
+
+def _design_title_from_prompt(prompt: str) -> str:
+    match = re.search(r'["«]([؀-ۿ][^"»]{3,80})["»]', prompt or "")
+    if match:
+        return match.group(1).strip()
+    return "تصميم المجتهد"
+
+
+def _designs_dir(request: Request) -> Path:
+    folder = UPLOADS_BUCKET_DIR / current_owner_id(request) / "designs"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+@app.get("/api/designs/balance")
+async def designs_balance(request: Request):
+    """رصيد OpenRouter المتبقي والمستخدم بالدولار والريال (سعر الصرف 3.75)."""
+    key = owner_openrouter_key(request, None) or OPENROUTER_DEFAULT_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        http_req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/auth/key",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        with urllib.request.urlopen(http_req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"تعذر جلب الرصيد: {error}")
+    info = data.get("data") or {}
+    limit = info.get("limit")
+    usage = info.get("usage")
+    remaining = info.get("limit_remaining")
+    if remaining is None and isinstance(limit, (int, float)) and isinstance(usage, (int, float)):
+        remaining = limit - usage
+    return {
+        "limit_usd": limit,
+        "usage_usd": usage,
+        "remaining_usd": remaining,
+        "is_free_tier": bool(info.get("is_free_tier")),
+        "sar_rate": 3.75,
+    }
+
+
+@app.get("/api/designs/list")
+async def designs_list(request: Request):
+    """كل صور التصاميم المحفوظة في المجلد — لنافذة الاسترجاع."""
+    folder = _designs_dir(request)
+    owner_id = current_owner_id(request)
+    items = []
+    for path in folder.iterdir():
+        if not path.is_file() or path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+            continue
+        stat = path.stat()
+        title = re.sub(r"-\d{9,}$", "", path.stem).replace("-", " ")
+        items.append({
+            "file_name": path.name,
+            "image_url": f"/uploads/{owner_id}/designs/{path.name}",
+            "title": title,
+            "size": stat.st_size,
+            "modified": stat.st_mtime,
+        })
+    items.sort(key=lambda item: item["modified"], reverse=True)
+    return {"items": items, "folder": str(folder)}
+
+
+class DesignFileRequest(BaseModel):
+    image_url: str
+
+
+@app.post("/api/designs/delete")
+async def designs_delete(req: DesignFileRequest, request: Request):
+    """حذف صورة تصميم من المجلد نهائيًا."""
+    folder = _designs_dir(request).resolve()
+    name = Path(urllib.parse.unquote(req.image_url or "")).name
+    target = (folder / name).resolve()
+    if target.parent != folder or not target.is_file():
+        raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
+    target.unlink()
+    return {"deleted": name}
+
+
+@app.post("/api/designs/open-folder")
+async def designs_open_folder(request: Request):
+    """فتح مجلد حفظ صور التصاميم في مدير ملفات النظام."""
+    folder = _designs_dir(request)
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", str(folder)])
+        elif sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", str(folder)])
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"تعذر فتح المجلد: {error}")
+    return {"folder": str(folder)}
 
 
 @app.get("/api/book/diagnose")
@@ -5672,7 +5800,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.359"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.360"},
         },
     })
     if opened.get("error"):

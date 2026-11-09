@@ -112,6 +112,40 @@ function designAspectLabel(aspect) {
   return aspect === '9:16' ? '📱 طولي 9:16' : '🖥️ عرضي 16:9';
 }
 
+const DESIGN_SAR_RATE = 3.75;
+function fmtUsd(value) {
+  if (value == null || isNaN(value)) return '—';
+  return '$' + Number(value).toFixed(Number(value) < 1 ? 4 : 2);
+}
+function fmtSar(value) {
+  if (value == null || isNaN(value)) return '—';
+  return (Number(value) * DESIGN_SAR_RATE).toFixed(2) + ' ر.س';
+}
+function fmtDesignDuration(seconds) {
+  if (seconds == null || isNaN(seconds)) return '—';
+  const total = Math.max(0, Math.round(seconds));
+  return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+}
+
+let designTimerId = null;
+let designTimerStart = 0;
+function startDesignTimer(label) {
+  designTimerStart = Date.now();
+  setDesignStatus(label);
+  stopDesignTimerOnly();
+  designTimerId = setInterval(() => {
+    const el = document.getElementById('designTimerTick');
+    if (el) el.textContent = fmtDesignDuration((Date.now() - designTimerStart) / 1000);
+  }, 250);
+}
+function stopDesignTimerOnly() {
+  if (designTimerId) { clearInterval(designTimerId); designTimerId = null; }
+}
+function stopDesignTimer() {
+  stopDesignTimerOnly();
+  setDesignStatus('');
+}
+
 function renderDesignMessages() {
   const box = document.getElementById('designMessages');
   if (!box) return;
@@ -119,18 +153,31 @@ function renderDesignMessages() {
     box.innerHTML = '<div class="design-empty">مثال: «رحلة الإمام البخاري في طلب الحديث» — ستتحول إلى خريطة إنفوغرافيك تاريخية بعنوان عربي وأسلوب المجتهد البصري.</div>';
     return;
   }
-  box.innerHTML = designMessages.map(msg => {
+  box.innerHTML = designMessages.map((msg, idx) => {
     if (msg.role === 'user') {
       return `<div class="design-msg design-msg-user"><div class="design-bubble">${escapeHtml(msg.text || '')}</div></div>`;
     }
     const books = (msg.books || []).slice(0, 8).map(b => `<span class="design-book-chip">${escapeHtml(b)}</span>`).join('');
+    const costChip = msg.cost_usd != null
+      ? `<span class="design-chip">💲 التكلفة: ${fmtUsd(msg.cost_usd)} (${fmtSar(msg.cost_usd)})</span>` : '';
+    const durChip = msg.duration_s != null
+      ? `<span class="design-chip">⏱️ مدة التوليد: ${fmtDesignDuration(msg.duration_s)}</span>` : '';
     return `<div class="design-msg design-msg-assistant"><div class="design-card">
-      ${msg.image_url ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المجتهد" loading="lazy">` : ''}
+      ${msg.title ? `<div class="design-title">🖼️ ${escapeHtml(msg.title)}</div>` : ''}
+      ${msg.image_url && !msg.collapsed ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المجتهد" loading="lazy">` : ''}
       <div class="design-card-meta">
         <span class="design-chip">${designAspectLabel(msg.aspect || '16:9')}</span>
         ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
         ${msg.branded ? '<span class="design-chip">🟢 مختوم بشعار المجتهد</span>' : '<span class="design-chip">الشعار غير مطبوع (راجع التثبيت)</span>'}
-        ${msg.image_url ? `<a class="design-download" href="${escapeHtml(msg.image_url)}" download>⬇️ تنزيل الصورة</a>` : ''}
+        ${costChip}${durChip}
+        ${msg.file_name ? `<span class="design-chip">📄 ${escapeHtml(msg.file_name)}</span>` : ''}
+      </div>
+      <div class="design-card-actions">
+        ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="fold" data-idx="${idx}">${msg.collapsed ? '👁️ عرض الصورة' : '🙈 طي الصورة'}</button>` : ''}
+        ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="share" data-idx="${idx}">🔗 مشاركة</button>` : ''}
+        ${msg.image_url ? `<a class="design-download" href="${escapeHtml(msg.image_url)}" download>⬇️ تنزيل</a>` : ''}
+        <button type="button" class="design-mini-btn" data-design-action="archive" data-idx="${idx}">🗄️ أرشفة</button>
+        ${msg.image_url ? `<button type="button" class="design-mini-btn design-danger" data-design-action="delete" data-idx="${idx}">🗑️ حذف نهائي</button>` : ''}
       </div>
       ${books ? `<div class="design-books">📚 من كتب: ${books}</div>` : ''}
       ${msg.prompt ? `<details class="design-prompt"><summary>توجيه الصورة الذي أُرسل للنموذج</summary><p dir="ltr">${escapeHtml(msg.prompt)}</p></details>` : ''}
@@ -150,8 +197,26 @@ function setDesignStatus(text) {
     el.className = 'design-msg design-msg-assistant';
     box.appendChild(el);
   }
-  el.innerHTML = `<div class="design-status">⏳ ${escapeHtml(text)}</div>`;
+  el.innerHTML = `<div class="design-status">⏳ ${escapeHtml(text)} <span class="design-timer" id="designTimerTick">0:00</span></div>`;
   box.scrollTop = box.scrollHeight;
+}
+
+async function loadDesignBalance() {
+  const el = document.getElementById('designBalance');
+  if (!el) return;
+  try {
+    const resp = await fetch('/api/designs/balance');
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || '');
+    const parts = [];
+    if (data.remaining_usd != null) parts.push(`الرصيد المتبقي: ${fmtUsd(data.remaining_usd)} (${fmtSar(data.remaining_usd)})`);
+    if (data.usage_usd != null) parts.push(`المستخدم: ${fmtUsd(data.usage_usd)} (${fmtSar(data.usage_usd)})`);
+    if (data.limit_usd != null) parts.push(`حد المفتاح: ${fmtUsd(data.limit_usd)}`);
+    if (data.is_free_tier) parts.push('خطة مجانية');
+    el.textContent = '💰 ' + (parts.join(' • ') || 'الرصيد غير متاح');
+  } catch (e) {
+    el.textContent = '💰 الرصيد: تعذر الجلب';
+  }
 }
 
 async function runDesignGeneration(idea, aspect, scope) {
@@ -160,7 +225,7 @@ async function runDesignGeneration(idea, aspect, scope) {
   try { savedKeys = readProviderKeys(); } catch (e) {}
   const apiKey = savedKeys.openrouter || '';
 
-  setDesignStatus(`فُحص الطلب: ${scope.label} — يبحث Gemini 3.8 Flash في ${books.length} كتابًا ويصوغ توجيه الصورة...`);
+  startDesignTimer(`فُحص الطلب: ${scope.label} — يبحث Gemini 3.8 Flash في ${books.length} كتابًا ويصوغ توجيه الصورة...`);
   const chatResp = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -201,14 +266,20 @@ async function runDesignGeneration(idea, aspect, scope) {
     role: 'assistant',
     prompt,
     image_url: imgData.image_url || '',
+    file_name: imgData.file_name || '',
+    title: imgData.title || '',
     branded: !!imgData.branded,
     aspect,
     discipline: scope.label,
+    cost_usd: (typeof imgData.cost_usd === 'number') ? imgData.cost_usd : null,
+    duration_s: (typeof imgData.duration_s === 'number') ? imgData.duration_s : null,
+    collapsed: false,
     books: witnessBooks
   });
   saveDesignMessages();
-  setDesignStatus('');
+  stopDesignTimer();
   renderDesignMessages();
+  loadDesignBalance();
 }
 
 async function submitDesignIdea(event) {
@@ -229,7 +300,7 @@ async function submitDesignIdea(event) {
   try {
     await runDesignGeneration(idea, aspect, scope);
   } catch (err) {
-    setDesignStatus('');
+    stopDesignTimer();
     if (typeof showToast === 'function') showToast(err.message || 'تعذر توليد التصميم');
     const box = document.getElementById('designMessages');
     if (box) {
@@ -245,9 +316,127 @@ async function submitDesignIdea(event) {
   }
 }
 
+async function shareDesignImage(msg) {
+  try {
+    const resp = await fetch(msg.image_url);
+    const blob = await resp.blob();
+    const file = new File([blob], msg.file_name || 'تصميم-المجتهد.png', { type: blob.type || 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: msg.title || 'تصميم المجتهد' });
+      return;
+    }
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
+      if (typeof showToast === 'function') showToast('نُسخت الصورة — الصقها أين تريد مشاركتها');
+      return;
+    }
+    throw new Error('المشاركة غير مدعومة في هذا المتصفح — استخدم زر التنزيل');
+  } catch (err) {
+    if (err && err.name === 'AbortError') return;
+    if (typeof showToast === 'function') showToast(err.message || 'تعذرت المشاركة');
+  }
+}
+
+async function onDesignCardAction(event) {
+  const btn = event.target.closest('[data-design-action]');
+  if (!btn) return;
+  const idx = Number(btn.getAttribute('data-idx'));
+  const msg = designMessages[idx];
+  if (!msg) return;
+  const action = btn.getAttribute('data-design-action');
+  if (action === 'fold') {
+    msg.collapsed = !msg.collapsed;
+    saveDesignMessages();
+    renderDesignMessages();
+  } else if (action === 'share') {
+    shareDesignImage(msg);
+  } else if (action === 'archive') {
+    designMessages.splice(idx, 1);
+    saveDesignMessages();
+    renderDesignMessages();
+    if (typeof showToast === 'function') showToast('أُرشفت الصورة — باقية في المجلد ويمكن استرجاعها');
+  } else if (action === 'delete') {
+    if (!window.confirm('حذف نهائي؟ ستُمسح الصورة من مجلد التصاميم كليًا ولا يمكن استرجاعها.')) return;
+    try {
+      const resp = await fetch('/api/designs/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: msg.image_url })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || 'تعذر الحذف');
+      designMessages.splice(idx, 1);
+      saveDesignMessages();
+      renderDesignMessages();
+      if (typeof showToast === 'function') showToast('حُذفت الصورة نهائيًا من المجلد');
+    } catch (err) {
+      if (typeof showToast === 'function') showToast(err.message || 'تعذر الحذف');
+    }
+  }
+}
+
+async function openDesignRestore() {
+  const overlay = document.getElementById('designRestoreOverlay');
+  const list = document.getElementById('designRestoreList');
+  if (!overlay || !list) return;
+  overlay.hidden = false;
+  list.innerHTML = '<div class="design-empty">جارٍ قراءة مجلد التصاميم...</div>';
+  try {
+    const resp = await fetch('/api/designs/list');
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || 'تعذر قراءة المجلد');
+    const inChat = new Set(designMessages.map(m => m.image_url).filter(Boolean));
+    const items = (data.items || []).filter(item => !inChat.has(item.image_url));
+    if (!items.length) {
+      list.innerHTML = '<div class="design-empty">لا صور إضافية في المجلد خارج المحادثة الحالية.</div>';
+      return;
+    }
+    list.innerHTML = items.map(item => {
+      const date = new Date(item.modified * 1000).toLocaleString('ar-EG');
+      const size = item.size > 1048576 ? (item.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(item.size / 1024)) + ' KB';
+      return `<label class="design-restore-item">
+        <input type="checkbox" value="${escapeHtml(item.image_url)}" data-title="${escapeHtml(item.title || '')}" data-name="${escapeHtml(item.file_name || '')}">
+        <img src="${escapeHtml(item.image_url)}" alt="" loading="lazy">
+        <span class="design-restore-meta"><strong>${escapeHtml(item.title || item.file_name)}</strong><small>${escapeHtml(item.file_name)} • ${size} • ${escapeHtml(date)}</small></span>
+      </label>`;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = `<div class="design-empty">⚠️ ${escapeHtml(err.message || 'تعذر قراءة المجلد')}</div>`;
+  }
+}
+
+function applyDesignRestore() {
+  const boxes = document.querySelectorAll('#designRestoreList input[type="checkbox"]:checked');
+  if (!boxes.length) {
+    if (typeof showToast === 'function') showToast('حدد صورة واحدة على الأقل');
+    return;
+  }
+  boxes.forEach(box => {
+    designMessages.push({
+      role: 'assistant',
+      prompt: '',
+      image_url: box.value,
+      file_name: box.getAttribute('data-name') || '',
+      title: box.getAttribute('data-title') || '',
+      branded: true,
+      aspect: '16:9',
+      discipline: '♻️ مسترجعة من المجلد',
+      cost_usd: null,
+      duration_s: null,
+      collapsed: false,
+      books: []
+    });
+  });
+  saveDesignMessages();
+  renderDesignMessages();
+  document.getElementById('designRestoreOverlay').hidden = true;
+  if (typeof showToast === 'function') showToast('استُرجعت الصور المحددة إلى المحادثة');
+}
+
 function initDesignsTab() {
   loadDesignMessages();
   renderDesignMessages();
+  loadDesignBalance();
   const select = document.getElementById('designKindSelect');
   if (select && select.options.length <= 1) {
     try {
@@ -261,6 +450,29 @@ function initDesignsTab() {
   }
   if (designsInitDone) return;
   designsInitDone = true;
+  const messagesBox = document.getElementById('designMessages');
+  if (messagesBox) messagesBox.addEventListener('click', onDesignCardAction);
+  const balanceBtn = document.getElementById('designBalanceBtn');
+  if (balanceBtn) balanceBtn.addEventListener('click', loadDesignBalance);
+  const folderBtn = document.getElementById('designOpenFolderBtn');
+  if (folderBtn) folderBtn.addEventListener('click', async () => {
+    try {
+      const resp = await fetch('/api/designs/open-folder', { method: 'POST' });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || 'تعذر فتح المجلد');
+      if (typeof showToast === 'function') showToast('فُتح مجلد الصور: ' + (data.folder || ''));
+    } catch (err) {
+      if (typeof showToast === 'function') showToast(err.message || 'تعذر فتح المجلد');
+    }
+  });
+  const restoreBtn = document.getElementById('designRestoreBtn');
+  if (restoreBtn) restoreBtn.addEventListener('click', openDesignRestore);
+  const restoreClose = document.getElementById('designRestoreClose');
+  if (restoreClose) restoreClose.addEventListener('click', () => { document.getElementById('designRestoreOverlay').hidden = true; });
+  const restoreOverlay = document.getElementById('designRestoreOverlay');
+  if (restoreOverlay) restoreOverlay.addEventListener('click', (event) => { if (event.target === restoreOverlay) restoreOverlay.hidden = true; });
+  const restoreApply = document.getElementById('designRestoreApply');
+  if (restoreApply) restoreApply.addEventListener('click', applyDesignRestore);
   const form = document.getElementById('designComposer');
   if (form) form.addEventListener('submit', submitDesignIdea);
   const input = document.getElementById('designIdeaInput');
