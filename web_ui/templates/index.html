@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.364">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.365">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.364 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.365 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -2258,9 +2258,17 @@
                 </div>
                 <div class="designs-controls">
                     <span class="designs-controls-label">نطاق البحث:</span>
-                    <select id="designKindSelect" class="design-kind-select">
-                        <option value="auto" selected>🔍 تلقائي — يُفحص الطلب ويُختار فنّه</option>
-                    </select>
+                    <div class="design-kind-picker">
+                        <button type="button" class="design-kind-btn" id="designKindBtn">🔍 نطاق البحث: تلقائي</button>
+                        <div class="design-kind-panel" id="designKindPanel" hidden>
+                            <label class="design-kind-item design-kind-auto-item">
+                                <input type="checkbox" id="designKindAuto" checked>
+                                <span>🔍 تلقائي — يُفحص الطلب ويُختار فنّه</span>
+                            </label>
+                            <div class="design-kind-grid" id="designKindGrid"></div>
+                            <div class="design-kind-hint">ألغِ «تلقائي» وحدّد فنًّا أو أكثر ليُحصر البحث في كتبها مجتمعة.</div>
+                        </div>
+                    </div>
                     <span class="designs-controls-label">أبعاد التصميم:</span>
                     <label class="design-aspect-option">
                         <input type="radio" name="designAspect" value="16:9" checked>
@@ -5441,18 +5449,18 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.364"></script>
+    <script src="/static/js/app.js?v=1.10.365"></script>
     <script src="/static/js/search.js?v=1793188000"></script>
     <script src="/static/js/reader.js?v=1793225300"></script>
-    <script src="/static/js/force3d.js?v=1.10.364"></script>
+    <script src="/static/js/force3d.js?v=1.10.365"></script>
     <script src="/static/js/share.js?v=1793225500"></script>
-    <script src="/static/js/chat.js?v=1.10.364"></script>
-    <script src="/static/js/designs.js?v=1.10.364"></script>
-    <script src="/static/js/agents.js?v=1.10.364"></script>
+    <script src="/static/js/chat.js?v=1.10.365"></script>
+    <script src="/static/js/designs.js?v=1.10.365"></script>
+    <script src="/static/js/agents.js?v=1.10.365"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1.10.364"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.364"></script>
-    <script src="/static/js/projects.js?v=1.10.364"></script>
+    <script src="/static/js/tools.js?v=1.10.365"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.365"></script>
+    <script src="/static/js/projects.js?v=1.10.365"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>

@@ -67,15 +67,93 @@ function classifyDesignKinds(idea) {
   return { kinds: chosen, label, books, angles: chosen.map(kind => kind.angle).join('؛ ') };
 }
 
+const DESIGN_KIND_STATE_KEY = 'almujtahed_designs_kinds_v1';
+let designKindState = { auto: true, selected: [] };
+
+function loadDesignKindState() {
+  try {
+    const raw = localStorage.getItem(DESIGN_KIND_STATE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      designKindState = {
+        auto: parsed.auto !== false,
+        selected: Array.isArray(parsed.selected) ? parsed.selected : []
+      };
+    }
+  } catch (e) { /* حالة افتراضية */ }
+  return designKindState;
+}
+
+function saveDesignKindState() {
+  try { localStorage.setItem(DESIGN_KIND_STATE_KEY, JSON.stringify(designKindState)); } catch (e) {}
+}
+
+function designKindsList() {
+  try { return SELECTION_RESEARCH_KINDS || []; } catch (e) { return []; }
+}
+
+function updateDesignKindButton() {
+  const btn = document.getElementById('designKindBtn');
+  if (!btn) return;
+  const kinds = designKindsList();
+  if (designKindState.auto || !designKindState.selected.length) {
+    btn.textContent = designKindState.auto ? '🔍 نطاق البحث: تلقائي' : '🎯 نطاق البحث: يدوي (كل الفنون)';
+    return;
+  }
+  const chosen = kinds.filter(k => designKindState.selected.includes(k.id));
+  const bookCount = new Set(chosen.flatMap(k => k.books || [])).size;
+  btn.textContent = `🎯 نطاق البحث: ${chosen.map(k => k.label).join(' + ')} (${bookCount} كتابًا)`;
+}
+
+function initDesignKindPicker() {
+  loadDesignKindState();
+  const grid = document.getElementById('designKindGrid');
+  const autoBox = document.getElementById('designKindAuto');
+  const btn = document.getElementById('designKindBtn');
+  const panel = document.getElementById('designKindPanel');
+  if (!grid || !btn || !panel) return;
+  if (autoBox) autoBox.checked = !!designKindState.auto;
+  grid.innerHTML = designKindsList().map(kind =>
+    `<label class="design-kind-item"><input type="checkbox" value="${kind.id}" ${designKindState.selected.includes(kind.id) ? 'checked' : ''} ${designKindState.auto ? 'disabled' : ''}><span>${kind.icon} ${kind.label} (${(kind.books || []).length})</span></label>`
+  ).join('');
+  updateDesignKindButton();
+  if (btn.dataset.wired) return;
+  btn.dataset.wired = '1';
+  btn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    panel.hidden = !panel.hidden;
+  });
+  panel.addEventListener('click', (event) => event.stopPropagation());
+  document.addEventListener('click', () => { panel.hidden = true; });
+  if (autoBox) autoBox.addEventListener('change', () => {
+    designKindState.auto = autoBox.checked;
+    saveDesignKindState();
+    grid.querySelectorAll('input[type="checkbox"]').forEach(box => { box.disabled = designKindState.auto; });
+    updateDesignKindButton();
+  });
+  grid.addEventListener('change', () => {
+    designKindState.selected = [...grid.querySelectorAll('input[type="checkbox"]:checked')].map(box => box.value);
+    saveDesignKindState();
+    updateDesignKindButton();
+  });
+}
+
 function resolveDesignScope(idea) {
-  const select = document.getElementById('designKindSelect');
-  const manual = select?.value || 'auto';
-  if (manual && manual !== 'auto') {
-    let kinds = [];
-    try { kinds = SELECTION_RESEARCH_KINDS || []; } catch (e) { kinds = []; }
-    const kind = kinds.find(item => item.id === manual);
-    if (kind) {
-      return { kinds: [kind], label: `${kind.icon} ${kind.label} (يدوي)`, books: [...(kind.books || [])], angles: kind.angle };
+  loadDesignKindState();
+  const kinds = designKindsList();
+  if (!designKindState.auto) {
+    const chosen = designKindState.selected.length
+      ? kinds.filter(kind => designKindState.selected.includes(kind.id))
+      : kinds;
+    if (chosen.length) {
+      return {
+        kinds: chosen,
+        label: (designKindState.selected.length
+          ? chosen.map(kind => `${kind.icon} ${kind.label}`).join(' + ')
+          : 'كل الفنون') + ' (يدوي)',
+        books: [...new Set(chosen.flatMap(kind => kind.books || []))],
+        angles: chosen.map(kind => kind.angle).join('؛ ')
+      };
     }
   }
   return classifyDesignKinds(idea);
@@ -469,17 +547,7 @@ function initDesignsTab() {
   loadDesignMessages();
   renderDesignMessages();
   loadDesignBalance();
-  const select = document.getElementById('designKindSelect');
-  if (select && select.options.length <= 1) {
-    try {
-      (SELECTION_RESEARCH_KINDS || []).forEach(kind => {
-        const opt = document.createElement('option');
-        opt.value = kind.id;
-        opt.textContent = `${kind.icon} ${kind.label} — ${(kind.books || []).length} كتابًا`;
-        select.appendChild(opt);
-      });
-    } catch (e) { /* قائمة الفنون غير جاهزة */ }
-  }
+  initDesignKindPicker();
   if (designsInitDone) return;
   designsInitDone = true;
   const messagesBox = document.getElementById('designMessages');
