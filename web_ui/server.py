@@ -4990,6 +4990,61 @@ def find_fiqh_issue_backtrack(rel_path: str, book_title: str, part: str, page_nu
     return None
 
 
+def _book_notfound_detail(book_id=None, rel_path=None, book_title=None) -> str:
+    """سبب تشخيصي يرافق ٤٠٤ القارئ حتى لا تكون الرسالة صمّاء."""
+    parts = ["تعذر العثور على ملفات هذا الكتاب في الشاملة"]
+    try:
+        bid = _book_id_value(book_id)
+        parts.append(f"الرقم المفسَّر: {bid if bid is not None else 'لا رقم'}")
+        diag = getattr(shamela_local_mcp, "_LAZY_DIAG", {}) or {}
+        if diag.get("error"):
+            parts.append(f"الاستخراج الكسول: {diag['error']}")
+        elif diag.get("their_id"):
+            parts.append(f"رقم الشاملة المقابل: {diag['their_id']} (استُخرج ولم يُعثر على مجلده)")
+    except Exception:
+        pass
+    return " — ".join(parts)
+
+
+@app.get("/api/book/diagnose")
+async def book_diagnose(book_id: Optional[int] = None, rel_path: Optional[str] = None,
+                        book_title: Optional[str] = None):
+    """تتبّع حلّ ملفات كتاب خطوة خطوة — لتشخيص القارئ على أجهزة المستخدمين."""
+    out: Dict[str, Any] = {}
+    bid = _book_id_value(book_id)
+    out["book_id_parsed"] = bid
+    out["rel_path_in"] = rel_path or ""
+    try:
+        db = get_db()
+        if db and bid:
+            row = db.execute("SELECT rel_path, title_ar FROM books WHERE book_id = ? LIMIT 1", (bid,)).fetchone()
+            out["catalog_rel_path"] = (row["rel_path"] if row else None)
+            out["catalog_title"] = (row["title_ar"] if row else None)
+    except Exception as exc:
+        out["catalog_error"] = str(exc)[:200]
+    try:
+        out["shamela_roots"] = [str(r) for r in _shamela_roots()]
+    except Exception:
+        pass
+    try:
+        out["data_roots"] = [str(r) for r in shamela_local_mcp._data_roots()]
+        probe = rel_path or out.get("catalog_rel_path") or ""
+        d = shamela_local_mcp._dir_for_rel(probe) if probe else None
+        out["dir_for_rel"] = str(d) if d else None
+        out["library_source"] = shamela_local_mcp._library_source()
+    except Exception as exc:
+        out["mcp_error"] = str(exc)[:200]
+    try:
+        import shamela_link as _SL2
+        out["import_dir"] = str(_SL2.import_dir())
+        if bid:
+            out["their_id"] = _SL2.load_id_map().get(str(bid))
+    except Exception:
+        pass
+    out["lazy_diag"] = dict(getattr(shamela_local_mcp, "_LAZY_DIAG", {}) or {})
+    return out
+
+
 @app.get("/api/book/page")
 async def get_book_page(
     rel_path: Optional[str] = None,
@@ -5006,7 +5061,7 @@ async def get_book_page(
     """
     resolved_rel, pages_file = resolve_book_path(rel_path, book_title, book_id)
     if not pages_file or not pages_file.exists():
-        raise HTTPException(status_code=404, detail="تعذر العثور على ملفات هذا الكتاب في الشاملة")
+        raise HTTPException(status_code=404, detail=_book_notfound_detail(book_id, rel_path, book_title))
 
     idx = get_or_build_book_index(resolved_rel, pages_file)
     entries = idx["entries"]
@@ -5182,7 +5237,7 @@ async def get_book_surrounding_pages(
             pages_file = p_res / "pages.jsonl"
             resolved_rel = str(p_res.relative_to(SHAMELA_DATA_PATH.parent)) if SHAMELA_DATA_PATH.parent in p_res.parents else p_res.name
         else:
-            raise HTTPException(status_code=404, detail="تعذر العثور على ملفات هذا الكتاب في الشاملة")
+            raise HTTPException(status_code=404, detail=_book_notfound_detail(book_id, rel_path, book_title))
 
     idx = get_or_build_book_index(resolved_rel, pages_file)
     entries = idx["entries"]
@@ -5383,7 +5438,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.350"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.351"},
         },
     })
     if opened.get("error"):

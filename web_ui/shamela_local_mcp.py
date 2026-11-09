@@ -186,6 +186,7 @@ def resolve_book_files(book_id_or_title: Any) -> Optional[Path]:
 
 _LAZY_FAILED = set()
 _LAZY_LOCK = __import__("threading").Lock()
+_LAZY_DIAG = {"our_id": None, "their_id": None, "error": ""}
 
 
 def _lazy_extract_and_resolve(book_id_or_title) -> Optional[Path]:
@@ -209,20 +210,32 @@ def _lazy_extract_and_resolve(book_id_or_title) -> Optional[Path]:
         except Exception:
             pass
     if our_id is None:
+        _LAZY_DIAG.update({"our_id": None, "error": "رقم الكتاب غير معروف في الكتالوج"})
         return None
     with _LAZY_LOCK:
         if our_id in _LAZY_FAILED:
+            _LAZY_DIAG.update({"our_id": our_id, "error": "فشل استخراج سابق لهذا الكتاب في هذه الجلسة"})
             return None
     import shamela_link as SL
     their_id = SL.ensure_id_map().get(str(our_id))
+    _LAZY_DIAG.update({"our_id": our_id, "their_id": their_id, "error": ""})
     if not their_id:
         with _LAZY_LOCK:
             _LAZY_FAILED.add(our_id)
+        _LAZY_DIAG.update({"error": "لا خريطة هوية لهذا الكتاب إلى رقم الشاملة"})
         return None
     # قفل الكتاب نفسه داخل convert يجعل اللمسات المتزامنة تنتظر الاستخراج
     # الجاري ثم تجد الملفات جاهزة، بدل إقلاع فوري بصفحات ناقصة (1.10.270).
     print(f"📥 [Lazy] استخراج كتاب {our_id} (شاملة {their_id}) عند أول لمس…", flush=True)
-    SL.extract_book(int(their_id))
+    try:
+        _ext = SL.extract_book(int(their_id))
+        if isinstance(_ext, dict) and _ext.get("ok") is False:
+            _LAZY_DIAG.update({"error": f"الاستخراج أرجع فشلًا: {_ext.get('message') or _ext}"})
+    except Exception as _exc:
+        _LAZY_DIAG.update({"error": f"استثناء أثناء الاستخراج: {type(_exc).__name__}: {_exc}"[:300]})
+        with _LAZY_LOCK:
+            _LAZY_FAILED.add(our_id)
+        return None
     # بعد الاستخراج: حلّ جديد عبر الكتالوج
     found = None
     if DB_PATH.exists():

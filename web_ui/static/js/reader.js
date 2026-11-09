@@ -203,9 +203,31 @@ async function loadReaderPage(params) {
     document.getElementById('readerPageBody').innerHTML = `
       <div style="text-align: center; padding: 40px; color: #c0392b;">
         <p style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">${escapeHtml(err.message || '')}</p>
+        <div id="readerDiagBox" style="max-width: 620px; margin: 14px auto; text-align: right; font-size: 12.5px; color: var(--text-muted); background: var(--bg-surface-elevated, #f6f1e7); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px 16px; display: none;"></div>
         <button class="btn-flat-secondary" onclick="closeBookReader()">إغلاق النافذة</button>
       </div>
     `;
+    // تتبّع تشخيصي تلقائي: أين انكسر حلّ ملفات الكتاب؟
+    try {
+      const dq = new URLSearchParams();
+      if (params.rel_path) dq.set('rel_path', params.rel_path);
+      if (params.book_id) dq.set('book_id', params.book_id);
+      if (params.book_title) dq.set('book_title', params.book_title);
+      const dr = await fetch(`/api/book/diagnose?${dq.toString()}`);
+      const dg = await dr.json();
+      const box = document.getElementById('readerDiagBox');
+      if (box) {
+        const line = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0;"><span>${k}</span><b dir="auto" style="font-size:11.5px;">${escapeHtml(String(v ?? '—'))}</b></div>`;
+        box.style.display = '';
+        box.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">تشخيص فتح الكتاب</div>` +
+          line('رقم الكتاب المفسَّر', dg.book_id_parsed) +
+          line('مساره في الكتالوج', dg.catalog_rel_path) +
+          line('مجلده على القرص', dg.dir_for_rel || 'غير موجود') +
+          line('رقم الشاملة المقابل', dg.their_id) +
+          line('مصدر المكتبة', dg.library_source) +
+          (dg.lazy_diag && dg.lazy_diag.error ? line('خطأ الاستخراج الكسول', dg.lazy_diag.error) : '');
+      }
+    } catch (e) { /* التشخيص اختياري */ }
   }
 }
 

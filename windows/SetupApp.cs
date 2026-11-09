@@ -13,12 +13,14 @@ static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         var extractOnly = args.Any(arg => arg == "--extract-only");
-        var folder = args.FirstOrDefault(arg => arg != "--extract-only");
+        var folder = args.FirstOrDefault(arg => arg != "--extract-only" && arg != "--setup");
         if (!string.IsNullOrWhiteSpace(folder))
         {
             try
             {
                 Installer.Extract(folder, null);
+                Installer.WriteMarker(folder);
+                Installer.CreateShortcuts(folder);
                 if (!extractOnly) Installer.Launch(folder);
             }
             catch (Exception ex)
@@ -28,12 +30,70 @@ static class Program
             }
             return;
         }
-        Application.Run(new SetupForm());
+        // مثبّت بنفس نسخة ما على الجهاز؟ شغّل التطبيق مباشرة بلا نافذة تنصيب.
+        var existing = Installer.FindExisting();
+        if (!extractOnly && !args.Any(arg => arg == "--setup")
+            && existing is { } found && found.version == Installer.CurrentVersion)
+        {
+            try { Installer.Launch(found.folder); return; }
+            catch { /* نكمل إلى نافذة التنصيب */ }
+        }
+        Application.Run(new SetupForm(existing));
     }
 }
 
 static class Installer
 {
+    const string MarkerName = "almujtahed-setup-info.txt";
+
+    public static string DefaultFolder => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Programs", "المجتهد");
+
+    public static string CurrentVersion =>
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "";
+
+    public static (string folder, string version)? FindExisting()
+    {
+        var folder = DefaultFolder;
+        if (!File.Exists(Path.Combine(folder, "AlMujtahed.exe"))) return null;
+        var marker = Path.Combine(folder, MarkerName);
+        var version = "";
+        try { version = File.Exists(marker) ? File.ReadAllText(marker).Trim() : ""; } catch { }
+        return (folder, version);
+    }
+
+    public static void WriteMarker(string folder)
+    {
+        try { File.WriteAllText(Path.Combine(folder, MarkerName), CurrentVersion); } catch { }
+    }
+
+    public static void CreateShortcuts(string folder)
+    {
+        var exe = Path.Combine(folder, "AlMujtahed.exe");
+        var links = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                @"Microsoft\Windows\Start Menu\Programs", "المجتهد.lnk"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "المجتهد.lnk")
+        };
+        foreach (var link in links)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+                dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
+                dynamic shortcut = shell.CreateShortcut(link);
+                shortcut.TargetPath = exe;
+                shortcut.WorkingDirectory = folder;
+                shortcut.IconLocation = exe + ",0";
+                shortcut.Description = "المجتهد — منظومة البحث التراثي";
+                shortcut.Save();
+            }
+            catch { }
+        }
+    }
+
     public static void Extract(string folder, IProgress<int>? progress)
     {
         var destination = Path.GetFullPath(folder);
@@ -84,7 +144,7 @@ sealed class SetupForm : Form
     readonly ProgressBar bar = new() { Minimum = 0, Maximum = 100 };
     readonly Label status = new() { Text = "اختر المجلد الذي تُفك فيه ملفات التطبيق", AutoSize = false };
 
-    public SetupForm()
+    public SetupForm((string folder, string version)? existing = null)
     {
         Text = "تثبيت المجتهد";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -110,10 +170,15 @@ sealed class SetupForm : Form
         status.Size = new Size(512, 28);
         pathBox.Location = new Point(140, 92);
         pathBox.Size = new Size(396, 32);
-        pathBox.Text = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Programs",
-            "المجتهد");
+        pathBox.Text = Installer.DefaultFolder;
+        if (existing is { } found)
+        {
+            pathBox.Text = found.folder;
+            install.Text = found.version == Installer.CurrentVersion ? "إعادة التثبيت" : "تحديث";
+            status.Text = found.version == Installer.CurrentVersion
+                ? "التطبيق مثبّت بهذه النسخة — يمكنك إعادة تثبيته أو تشغيله من قائمة ابدأ"
+                : "توجد نسخة أقدم مثبّتة — التحديث يستبدل ملفات التطبيق ويبقي بياناتك";
+        }
         browse.Location = new Point(24, 90);
         browse.Size = new Size(104, 34);
         install.Location = new Point(24, 142);
@@ -149,6 +214,8 @@ sealed class SetupForm : Form
         try
         {
             await Task.Run(() => Installer.Extract(folder, progress));
+            Installer.WriteMarker(folder);
+            Installer.CreateShortcuts(folder);
             status.Text = "اكتمل التثبيت";
             Installer.Launch(folder);
             Close();
