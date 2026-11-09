@@ -15,6 +15,72 @@ function designBooksUnion() {
   return [...books];
 }
 
+/* فحص الطلب وتصنيفه إلى فنّه: كلمات مفتاحية مرجحة لكل فن من فنون
+   «تعليق وشرح مختصر»، فيُحصر البحث في كتب الفن الغالب (أو فنّين
+   متقاربين) بدل الكتب كلها — دقة أعلى وبحث أسرع. */
+const DESIGN_KIND_KEYWORDS = {
+  tafsir: ['تفسير', 'قوله تعالى', 'سورة', 'المفسر', 'تأويل الآية', 'آيات القرآن', 'سبب النزول'],
+  fiqh: ['فقه', 'حكم شرعي', 'الصلاة', 'الصيام', 'الزكاة', 'الحج', 'الطلاق', 'الزواج', 'البيع', 'الميراث', 'الطهارة', 'المذهب', 'المالكية', 'الشافعية', 'الحنفية', 'الحنابلة', 'مسألة فقهية', 'العبادات', 'المعاملات', 'الأحكام'],
+  aqeeda: ['عقيدة', 'التوحيد', 'الإيمان والكفر', 'الشرك', 'البدعة', 'الأسماء والصفات', 'القضاء والقدر', 'أهل السنة', 'المعتزلة', 'الأشاعرة'],
+  hadith: ['شرح حديث', 'حديث نبوي', 'قال رسول الله', 'رواه البخاري في صحيحه', 'رواه مسلم', 'أحاديث الأحكام', 'فوائد الحديث'],
+  takhrij: ['تخريج', 'درجة الحديث', 'صححه', 'ضعفه', 'إسناد الحديث', 'رجال الإسناد', 'علل الحديث', 'حسن صحيح'],
+  usul: ['أصول الفقه', 'قاعدة فقهية', 'مقاصد الشريعة', 'القياس', 'الإجماع', 'الاستحسان', 'سد الذرائع', 'المصلحة المرسلة'],
+  language: ['معنى كلمة', 'في اللغة', 'اشتقاق', 'غريب الحديث', 'إعراب', 'البلاغة', 'النحو', 'الصرف', 'معجم'],
+  tarikh: ['تاريخ', 'معركة', 'غزوة', 'الدولة', 'الخليفة', 'الفتوحات', 'الأندلس', 'العثمانية', 'الأموية', 'العباسية', 'حصار', 'العصور', 'وقعة'],
+  sira: ['سيرة', 'ترجمة', 'تراجم', 'مناقب', 'طلب الحديث', 'طلب العلم', 'رحلة الإمام', 'شيوخه', 'تلاميذه', 'وفاة', 'مولده', 'نشأته', 'ابن تيمية', 'ابن خلدون', 'الإمام البخاري', 'الإمام الشافعي', 'الإمام مالك', 'ابن حنبل', 'الغزالي', 'النووي', 'الذهبي', 'ابن كثير', 'رحلة'],
+  mudun: ['مدينة', 'أين تقع', 'البلدان', 'جغرافيا', 'معالم المدينة', 'أحياء المدينة', 'أسوار المدينة'],
+  fatawa: ['فتوى', 'فتاوى', 'يفتي', 'المفتي', 'أفتى']
+};
+
+function normalizeDesignText(text) {
+  return String(text || '')
+    .replace(/[ً-ٰٟ]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .toLowerCase();
+}
+
+function classifyDesignKinds(idea) {
+  let kinds = [];
+  try { kinds = SELECTION_RESEARCH_KINDS || []; } catch (e) { kinds = []; }
+  if (!kinds.length) return { kinds: [], label: 'الكتب المعتمدة', books: designBooksUnion(), angles: '' };
+  const text = normalizeDesignText(idea);
+  const scored = kinds.map(kind => {
+    let score = 0;
+    (DESIGN_KIND_KEYWORDS[kind.id] || []).forEach(phrase => {
+      if (text.includes(normalizeDesignText(phrase))) score += phrase.length >= 5 ? 3 : 2;
+    });
+    return { kind, score };
+  }).filter(item => item.score > 0).sort((a, b) => b.score - a.score);
+
+  let chosen;
+  if (!scored.length) {
+    chosen = kinds;
+  } else if (scored.length === 1 || scored[0].score - scored[1].score >= 2) {
+    chosen = [scored[0].kind];
+  } else {
+    chosen = scored.filter(item => item.score >= scored[0].score - 2).slice(0, 2).map(item => item.kind);
+  }
+  const books = [...new Set(chosen.flatMap(kind => kind.books || []))];
+  const label = chosen.length === kinds.length ? 'كل الفنون المعتمدة' : chosen.map(kind => `${kind.icon} ${kind.label}`).join(' + ');
+  return { kinds: chosen, label, books, angles: chosen.map(kind => kind.angle).join('؛ ') };
+}
+
+function resolveDesignScope(idea) {
+  const select = document.getElementById('designKindSelect');
+  const manual = select?.value || 'auto';
+  if (manual && manual !== 'auto') {
+    let kinds = [];
+    try { kinds = SELECTION_RESEARCH_KINDS || []; } catch (e) { kinds = []; }
+    const kind = kinds.find(item => item.id === manual);
+    if (kind) {
+      return { kinds: [kind], label: `${kind.icon} ${kind.label} (يدوي)`, books: [...(kind.books || [])], angles: kind.angle };
+    }
+  }
+  return classifyDesignKinds(idea);
+}
+
 function designSystemPrompt() {
   return [
     'أنت مهندس توجيهات صور (Prompt Engineer) لتبويب «تصاميم» في تطبيق المجتهد للبحث التراثي.',
@@ -62,6 +128,7 @@ function renderDesignMessages() {
       ${msg.image_url ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المجتهد" loading="lazy">` : ''}
       <div class="design-card-meta">
         <span class="design-chip">${designAspectLabel(msg.aspect || '16:9')}</span>
+        ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
         ${msg.branded ? '<span class="design-chip">🟢 مختوم بشعار المجتهد</span>' : '<span class="design-chip">الشعار غير مطبوع (راجع التثبيت)</span>'}
         ${msg.image_url ? `<a class="design-download" href="${escapeHtml(msg.image_url)}" download>⬇️ تنزيل الصورة</a>` : ''}
       </div>
@@ -87,13 +154,13 @@ function setDesignStatus(text) {
   box.scrollTop = box.scrollHeight;
 }
 
-async function runDesignGeneration(idea, aspect) {
-  const books = designBooksUnion();
+async function runDesignGeneration(idea, aspect, scope) {
+  const books = scope.books.length ? scope.books : designBooksUnion();
   let savedKeys = {};
   try { savedKeys = readProviderKeys(); } catch (e) {}
   const apiKey = savedKeys.openrouter || '';
 
-  setDesignStatus('يبحث Gemini 3.8 Flash في الكتب المعتمدة ويصوغ توجيه الصورة...');
+  setDesignStatus(`فُحص الطلب: ${scope.label} — يبحث Gemini 3.8 Flash في ${books.length} كتابًا ويصوغ توجيه الصورة...`);
   const chatResp = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -108,7 +175,7 @@ async function runDesignGeneration(idea, aspect) {
       witness_limit: 10,
       context_tokens: 64000,
       messages: [{ role: 'user', content: `فكرة التصميم: ${idea}\nصِغ توجيه الصورة الآن وفق تعليماتك.` }],
-      system_prompt: designSystemPrompt(),
+      system_prompt: designSystemPrompt() + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز تفاصيل التوجيه الموثقة على هذه الزاوية.` : ''),
       temperature: 0.3,
       providers: savedKeys,
       agent_group: null
@@ -136,6 +203,7 @@ async function runDesignGeneration(idea, aspect) {
     image_url: imgData.image_url || '',
     branded: !!imgData.branded,
     aspect,
+    discipline: scope.label,
     books: witnessBooks
   });
   saveDesignMessages();
@@ -150,6 +218,7 @@ async function submitDesignIdea(event) {
   const idea = (input?.value || '').trim();
   if (idea.length < 3) { if (typeof showToast === 'function') showToast('اكتب فكرة التصميم أولًا'); return; }
   const aspect = document.querySelector('input[name="designAspect"]:checked')?.value || '16:9';
+  const scope = resolveDesignScope(idea);
   designMessages.push({ role: 'user', text: idea });
   saveDesignMessages();
   renderDesignMessages();
@@ -158,7 +227,7 @@ async function submitDesignIdea(event) {
   const btn = document.getElementById('designSendBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ جارٍ التوليد...'; }
   try {
-    await runDesignGeneration(idea, aspect);
+    await runDesignGeneration(idea, aspect, scope);
   } catch (err) {
     setDesignStatus('');
     if (typeof showToast === 'function') showToast(err.message || 'تعذر توليد التصميم');
@@ -179,6 +248,17 @@ async function submitDesignIdea(event) {
 function initDesignsTab() {
   loadDesignMessages();
   renderDesignMessages();
+  const select = document.getElementById('designKindSelect');
+  if (select && select.options.length <= 1) {
+    try {
+      (SELECTION_RESEARCH_KINDS || []).forEach(kind => {
+        const opt = document.createElement('option');
+        opt.value = kind.id;
+        opt.textContent = `${kind.icon} ${kind.label} — ${(kind.books || []).length} كتابًا`;
+        select.appendChild(opt);
+      });
+    } catch (e) { /* قائمة الفنون غير جاهزة */ }
+  }
   if (designsInitDone) return;
   designsInitDone = true;
   const form = document.getElementById('designComposer');
