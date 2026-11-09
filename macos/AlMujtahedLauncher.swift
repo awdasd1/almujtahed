@@ -550,7 +550,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.352")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.353")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -561,6 +561,8 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// نسخ نفسه إلى /Applications (أو ~/Applications) وفتح النسخة المنقولة
     /// ثم خرج، فتكون أيقونته هناك هي ما يشغّله دائمًا. نسخة أحدث أو مساوية
     /// مستقرة هناك تُفتح كما هي ولا تُستبدل.
+    private var relocating = false
+
     private func relocateToApplicationsIfNeeded() -> Bool {
         if ProcessInfo.processInfo.environment["ALMUJTAHED_NO_RELOCATE"] == "1" { return false }
         let fm = FileManager.default
@@ -569,24 +571,30 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appsDirs = ["/Applications", homeApps]
         if appsDirs.contains(where: { bundle.path.hasPrefix($0 + "/") }) { return false }
         let myVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        // LaunchServices قد يرسل «إعادة فتح» لنسختنا الجارية بدل تشغيل المنقولة
+        // (نفس معرّف الحزمة)، لذا نطلق المنقولة قسريًا كعملية جديدة ثم نخرج.
+        func launchRelocated(_ dest: URL) -> Bool {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            proc.arguments = ["-n", dest.path]
+            do { try proc.run() } catch { return false }
+            relocating = true
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+            return true
+        }
         for appsDir in appsDirs {
             let dest = URL(fileURLWithPath: appsDir).appendingPathComponent("المجتهد.app")
             if let existing = Bundle(url: dest),
                let ev = existing.infoDictionary?["CFBundleShortVersionString"] as? String,
                ev.compare(myVersion, options: .numeric) != .orderedAscending {
-                NSWorkspace.shared.openApplication(at: dest, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
-                    DispatchQueue.main.async { NSApp.terminate(nil) }
-                }
-                return true
+                if launchRelocated(dest) { return true }
+                continue
             }
             do {
                 try fm.createDirectory(atPath: appsDir, withIntermediateDirectories: true)
                 if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
                 try fm.copyItem(at: bundle, to: dest)
-                NSWorkspace.shared.openApplication(at: dest, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
-                    DispatchQueue.main.async { NSApp.terminate(nil) }
-                }
-                return true
+                if launchRelocated(dest) { return true }
             } catch {
                 continue
             }
@@ -625,7 +633,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
+        if !flag, !relocating, window != nil {
             if ready {
                 showAppWindow()
             } else {
@@ -637,6 +645,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if relocating { return }
         displayTimer?.invalidate()
         probeTimer?.invalidate()
         shutdownServices()
@@ -672,7 +681,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.352"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.353"
     }
 
     private func buildWindow() {
