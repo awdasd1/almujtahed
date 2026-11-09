@@ -772,6 +772,7 @@ async function refreshDesignPublishTargets() {
 async function openDesignPublish(idx) {
   const msg = designMessages[idx];
   if (!msg || !msg.image_url) return;
+  ensureDesignPublishWired();
   designPublishTextJob = null;
   designPublishIdx = idx;
   const overlay = document.getElementById('designPublishOverlay');
@@ -797,6 +798,7 @@ async function openDesignPublish(idx) {
 }
 
 function openDesignTextPublish(text, cb) {
+  ensureDesignPublishWired();
   designPublishTextJob = { text: String(text || ''), cb: typeof cb === 'function' ? cb : null };
   designPublishIdx = -1;
   const overlay = document.getElementById('designPublishOverlay');
@@ -1022,6 +1024,67 @@ function applyDesignRestore() {
   if (typeof showToast === 'function') showToast('استُرجعت الصور المحددة إلى المحادثة');
 }
 
+function ensureDesignPublishWired() {
+  /* توصيل معالجات نافذة النشر مرة واحدة — تُستدعى عند كل فتح حتى تعمل
+     النافذة ولو فُتحت من المحادثات قبل زيارة تبويب «نشر» أصلًا */
+  const overlay = document.getElementById('designPublishOverlay');
+  if (!overlay || overlay.dataset.wired) return;
+  overlay.dataset.wired = '1';
+  const publishClose = document.getElementById('designPublishClose');
+  if (publishClose) publishClose.addEventListener('click', () => { overlay.hidden = true; });
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.hidden = true; });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') overlay.hidden = true; });
+  const publishSubmit = document.getElementById('designPublishSubmit');
+  if (publishSubmit) publishSubmit.addEventListener('click', submitDesignPublish);
+  document.querySelectorAll('input[name="designPublishWhen"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const panel = document.getElementById('designPublishSchedulePanel');
+      const isSchedule = document.querySelector('input[name="designPublishWhen"]:checked')?.value === 'schedule';
+      if (panel) panel.hidden = !isSchedule;
+      if (isSchedule) { ensureDesignScheduleDefaults(); refreshDesignPortalSync(); }
+    });
+  });
+  ['designPublishDateOnly', 'designPublishTimeOnly'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', updateDesignScheduleSummary);
+  });
+  document.querySelectorAll('[data-schedule-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const kind = btn.getAttribute('data-schedule-preset');
+      let dt;
+      if (kind === 'hour') {
+        dt = new Date(Date.now() + 60 * 60 * 1000);
+        dt.setMinutes(Math.ceil(dt.getMinutes() / 5) * 5, 0, 0);
+      } else {
+        dt = new Date();
+        dt.setDate(dt.getDate() + 1);
+        dt.setHours(kind === 'tomorrow-pm' ? 18 : 9, 0, 0, 0);
+      }
+      setDesignScheduleFields(dt);
+      updateDesignScheduleSummary();
+    });
+  });
+  const goServices = document.getElementById('designPublishGoServices');
+  if (goServices) goServices.addEventListener('click', () => {
+    overlay.hidden = true;
+    if (typeof switchMainTab === 'function') switchMainTab('providers');
+    setTimeout(() => {
+      const card = document.getElementById('socialKeysCard');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+  });
+  document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      try { localStorage.setItem(DESIGN_PUBLISH_PROVIDER_KEY, designPublishProvider()); } catch (e) {}
+      refreshDesignPublishTargets();
+      const panel = document.getElementById('designPublishSchedulePanel');
+      if (panel && !panel.hidden) refreshDesignPortalSync();
+    });
+  });
+  const publishRefresh = document.getElementById('designPublishRefresh');
+  if (publishRefresh) publishRefresh.addEventListener('click', refreshDesignPublishTargets);
+}
+
 function initDesignsTab() {
   loadDesignMessages();
   renderDesignMessages();
@@ -1063,59 +1126,7 @@ function initDesignsTab() {
     renderDesignMessages();
     if (typeof showToast === 'function') showToast('مُسحت المحادثة — الصور باقية في المجلد');
   });
-  const publishClose = document.getElementById('designPublishClose');
-  if (publishClose) publishClose.addEventListener('click', () => { document.getElementById('designPublishOverlay').hidden = true; });
-  const publishOverlay = document.getElementById('designPublishOverlay');
-  if (publishOverlay) publishOverlay.addEventListener('click', (event) => { if (event.target === publishOverlay) publishOverlay.hidden = true; });
-  const publishSubmit = document.getElementById('designPublishSubmit');
-  if (publishSubmit) publishSubmit.addEventListener('click', submitDesignPublish);
-  document.querySelectorAll('input[name="designPublishWhen"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const panel = document.getElementById('designPublishSchedulePanel');
-      const isSchedule = document.querySelector('input[name="designPublishWhen"]:checked')?.value === 'schedule';
-      if (panel) panel.hidden = !isSchedule;
-      if (isSchedule) { ensureDesignScheduleDefaults(); refreshDesignPortalSync(); }
-    });
-  });
-  ['designPublishDateOnly', 'designPublishTimeOnly'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('change', updateDesignScheduleSummary);
-  });
-  document.querySelectorAll('[data-schedule-preset]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const kind = btn.getAttribute('data-schedule-preset');
-      let dt;
-      if (kind === 'hour') {
-        dt = new Date(Date.now() + 60 * 60 * 1000);
-        dt.setMinutes(Math.ceil(dt.getMinutes() / 5) * 5, 0, 0);
-      } else {
-        dt = new Date();
-        dt.setDate(dt.getDate() + 1);
-        dt.setHours(kind === 'tomorrow-pm' ? 18 : 9, 0, 0, 0);
-      }
-      setDesignScheduleFields(dt);
-      updateDesignScheduleSummary();
-    });
-  });
-  const goServices = document.getElementById('designPublishGoServices');
-  if (goServices) goServices.addEventListener('click', () => {
-    document.getElementById('designPublishOverlay').hidden = true;
-    if (typeof switchMainTab === 'function') switchMainTab('providers');
-    setTimeout(() => {
-      const card = document.getElementById('socialKeysCard');
-      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 120);
-  });
-  document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      try { localStorage.setItem(DESIGN_PUBLISH_PROVIDER_KEY, designPublishProvider()); } catch (e) {}
-      refreshDesignPublishTargets();
-      const panel = document.getElementById('designPublishSchedulePanel');
-      if (panel && !panel.hidden) refreshDesignPortalSync();
-    });
-  });
-  const publishRefresh = document.getElementById('designPublishRefresh');
-  if (publishRefresh) publishRefresh.addEventListener('click', refreshDesignPublishTargets);
+  ensureDesignPublishWired();
   const lightbox = document.getElementById('designLightbox');
   if (lightbox) lightbox.addEventListener('click', (event) => { if (event.target !== document.getElementById('designLightboxImg')) closeDesignLightbox(); });
   const lightboxClose = document.getElementById('designLightboxClose');
