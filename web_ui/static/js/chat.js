@@ -7982,6 +7982,26 @@ function buildSelectionPublishText(range, host, selectedText) {
   return out;
 }
 
+function sendSelectionToDesign() {
+  const overlay = document.getElementById('chatSelectOverlay');
+  if (overlay) overlay.hidden = true;
+  const raw = selectionResearch.publishText || selectionResearch.text;
+  if (!raw) return;
+  const text = String(raw).replace(/\s*#فوائد_تراثية\s*$/, '').trim();
+  if (typeof switchMainTab === 'function') switchMainTab('designs');
+  if (typeof switchPublishSection === 'function') switchPublishSection('designs');
+  const input = document.getElementById('designIdeaInput');
+  if (!input) {
+    if (typeof showToast === 'function') showToast('مربع فكرة التصميم غير جاهز — حدّث الصفحة');
+    return;
+  }
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  input.focus();
+  if (typeof showToast === 'function') showToast('نُقل النص مع مصدره إلى مربع فكرة التصميم — اختر الأبعاد ونوع التصميم ونموذج الصورة ثم اضغط «🎨 توليد التصميم»');
+}
+
 function publishSelectedText() {
   const overlay = document.getElementById('chatSelectOverlay');
   if (overlay) overlay.hidden = true;
@@ -8007,6 +8027,7 @@ function ensureChatSelectPanel() {
         <h3 class="chat-select-head" id="chatSelectTitle">تعليق وشرح مختصر</h3>
         <div class="chat-select-actions">
           <button type="button" class="chat-select-close chat-select-publish" id="chatSelectPublish" aria-label="نشر النص المحدد" title="نشر النص المحدد مع حاشيته ومصدرها في مواقع التواصل">📤</button>
+          <button type="button" class="chat-select-close chat-select-publish" id="chatSelectDesign" aria-label="نقل النص للتصميم" title="نقل النص المحدد مع حاشيته إلى مربع فكرة التصميم لإخراجه بتصميم جميل">🎨</button>
           <button type="button" class="chat-select-close" id="chatSelectClose" aria-label="إغلاق">×</button>
         </div>
       </div>
@@ -8051,6 +8072,10 @@ function openChatSelectionPanel() {
 function onChatSelectPanelClick(event) {
   if (event.target.closest('#chatSelectPublish')) {
     publishSelectedText();
+    return;
+  }
+  if (event.target.closest('#chatSelectDesign')) {
+    sendSelectionToDesign();
     return;
   }
   const kindButton = event.target.closest('[data-kind]');
