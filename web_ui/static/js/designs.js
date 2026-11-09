@@ -88,12 +88,150 @@ function saveDesignKindState() {
   try { localStorage.setItem(DESIGN_KIND_STATE_KEY, JSON.stringify(designKindState)); } catch (e) {}
 }
 
+/* تحديد الكتب كتابًا كتابًا: إضافات وحذوفات المستخدم فوق نطاق الفنون */
+const DESIGN_BOOKS_STATE_KEY = 'almujtahed_designs_books_v1';
+let designBooksState = { added: [], removed: [] };
+
+function loadDesignBooksState() {
+  try {
+    const raw = localStorage.getItem(DESIGN_BOOKS_STATE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      designBooksState = {
+        added: Array.isArray(parsed.added) ? parsed.added : [],
+        removed: Array.isArray(parsed.removed) ? parsed.removed : []
+      };
+    }
+  } catch (e) { /* حالة افتراضية */ }
+  return designBooksState;
+}
+
+function saveDesignBooksState() {
+  try { localStorage.setItem(DESIGN_BOOKS_STATE_KEY, JSON.stringify(designBooksState)); } catch (e) {}
+}
+
+function designScopeBasisBooks() {
+  loadDesignKindState();
+  const kinds = designKindsList();
+  if (!designKindState.auto && designKindState.selected.length) {
+    return [...new Set(kinds.filter(k => designKindState.selected.includes(k.id)).flatMap(k => k.books || []))];
+  }
+  return designBooksUnion();
+}
+
+function effectiveDesignBooks(baseBooks) {
+  loadDesignBooksState();
+  const removed = new Set(designBooksState.removed);
+  const seen = new Set();
+  const result = [];
+  [...(baseBooks || []), ...designBooksState.added].forEach(book => {
+    if (!removed.has(book) && !seen.has(book)) { seen.add(book); result.push(book); }
+  });
+  return result;
+}
+
+function isDesignBooksCustomized() {
+  loadDesignBooksState();
+  return designBooksState.added.length > 0 || designBooksState.removed.length > 0;
+}
+
+function setDesignBookSelected(book, selected) {
+  loadDesignBooksState();
+  if (selected) {
+    designBooksState.removed = designBooksState.removed.filter(b => b !== book);
+    if (!designScopeBasisBooks().includes(book) && !designBooksState.added.includes(book)) {
+      designBooksState.added.push(book);
+    }
+  } else {
+    designBooksState.added = designBooksState.added.filter(b => b !== book);
+    if (!designBooksState.removed.includes(book)) designBooksState.removed.push(book);
+  }
+  saveDesignBooksState();
+  renderDesignBooksChips();
+  renderDesignBooksList();
+  updateDesignBooksButton();
+}
+
+function renderDesignBooksChips() {
+  const chips = document.getElementById('designBooksChips');
+  const count = document.getElementById('designBooksSelectedCount');
+  if (!chips) return;
+  const effective = effectiveDesignBooks(designScopeBasisBooks());
+  if (count) count.textContent = effective.length;
+  chips.innerHTML = effective.length
+    ? effective.map(b => `<span class="design-book-sel-chip">${escapeHtml(b)}<button type="button" data-remove-book="${escapeHtml(b)}" title="حذف من نطاق البحث" aria-label="حذف ${escapeHtml(b)}">×</button></span>`).join('')
+    : '<span class="design-books-chips-empty">لا كتب محددة — حدّد كتابًا من القائمة بالأسفل</span>';
+}
+
+function renderDesignBooksList() {
+  const list = document.getElementById('designBooksList');
+  if (!list) return;
+  const query = normalizeDesignText(document.getElementById('designBooksSearch')?.value || '');
+  const effective = effectiveDesignBooks(designScopeBasisBooks());
+  const html = designKindsList().map(kind => {
+    const books = (kind.books || []).filter(b => !query || normalizeDesignText(b).includes(query));
+    if (!books.length) return '';
+    return `<div class="design-books-kind-head">${kind.icon} ${kind.label}</div>` + books.map(b =>
+      `<label class="design-kind-item"><input type="checkbox" data-book="${escapeHtml(b)}" ${effective.includes(b) ? 'checked' : ''}><span>${escapeHtml(b)}</span></label>`
+    ).join('');
+  }).join('');
+  list.innerHTML = html || '<div class="design-books-chips-empty">لا نتائج مطابقة لبحثك</div>';
+}
+
+function updateDesignBooksButton() {
+  const btn = document.getElementById('designBooksBtn');
+  if (!btn) return;
+  const count = effectiveDesignBooks(designScopeBasisBooks()).length;
+  btn.textContent = `📚 تصفح الكتب (${count} محددًا${isDesignBooksCustomized() ? ' • معدّلة يدويًا ✋' : ''})`;
+}
+
+function initDesignBooksPicker() {
+  loadDesignBooksState();
+  const btn = document.getElementById('designBooksBtn');
+  const panel = document.getElementById('designBooksPanel');
+  if (!btn || !panel) return;
+  renderDesignBooksChips();
+  renderDesignBooksList();
+  updateDesignBooksButton();
+  if (btn.dataset.wired) return;
+  btn.dataset.wired = '1';
+  btn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) { renderDesignBooksChips(); renderDesignBooksList(); updateDesignBooksButton(); }
+  });
+  panel.addEventListener('click', (event) => event.stopPropagation());
+  document.addEventListener('click', () => { panel.hidden = true; });
+  const chips = document.getElementById('designBooksChips');
+  if (chips) chips.addEventListener('click', (event) => {
+    const removeBtn = event.target.closest('[data-remove-book]');
+    if (removeBtn) setDesignBookSelected(removeBtn.getAttribute('data-remove-book'), false);
+  });
+  const list = document.getElementById('designBooksList');
+  if (list) list.addEventListener('change', (event) => {
+    const box = event.target.closest('input[data-book]');
+    if (box) setDesignBookSelected(box.getAttribute('data-book'), box.checked);
+  });
+  const search = document.getElementById('designBooksSearch');
+  if (search) search.addEventListener('input', renderDesignBooksList);
+  const reset = document.getElementById('designBooksReset');
+  if (reset) reset.addEventListener('click', () => {
+    designBooksState = { added: [], removed: [] };
+    saveDesignBooksState();
+    renderDesignBooksChips();
+    renderDesignBooksList();
+    updateDesignBooksButton();
+    if (typeof showToast === 'function') showToast('أُعيد تعيين تحديد الكتب إلى نطاق الفنون');
+  });
+}
+
 function designKindsList() {
   try { return SELECTION_RESEARCH_KINDS || []; } catch (e) { return []; }
 }
 
 function updateDesignKindButton() {
   const btn = document.getElementById('designKindBtn');
+  if (typeof updateDesignBooksButton === 'function') updateDesignBooksButton();
   if (!btn) return;
   const kinds = designKindsList();
   if (designKindState.auto || !designKindState.selected.length) {
@@ -151,12 +289,14 @@ function resolveDesignScope(idea) {
         label: (designKindState.selected.length
           ? chosen.map(kind => `${kind.icon} ${kind.label}`).join(' + ')
           : 'كل الفنون') + ' (يدوي)',
-        books: [...new Set(chosen.flatMap(kind => kind.books || []))],
+        books: effectiveDesignBooks([...new Set(chosen.flatMap(kind => kind.books || []))]),
         angles: chosen.map(kind => kind.angle).join('؛ ')
       };
     }
   }
-  return classifyDesignKinds(idea);
+  const classified = classifyDesignKinds(idea);
+  classified.books = effectiveDesignBooks(classified.books);
+  return classified;
 }
 
 function designSystemPrompt() {
@@ -377,6 +517,10 @@ async function submitDesignIdea(event) {
   if (idea.length < 3) { if (typeof showToast === 'function') showToast('اكتب فكرة التصميم أولًا'); return; }
   const aspect = document.querySelector('input[name="designAspect"]:checked')?.value || '16:9';
   const scope = resolveDesignScope(idea);
+  if (!scope.books.length) {
+    if (typeof showToast === 'function') showToast('لا كتب في نطاق البحث — أضف كتابًا واحدًا على الأقل من «📚 تصفح الكتب»');
+    return;
+  }
   const userMsg = { role: 'user', text: idea };
   designMessages.push(userMsg);
   saveDesignMessages();
@@ -802,6 +946,7 @@ function initDesignsTab() {
   renderDesignMessages();
   loadDesignBalance();
   initDesignKindPicker();
+  initDesignBooksPicker();
   if (designsInitDone) return;
   designsInitDone = true;
   const messagesBox = document.getElementById('designMessages');
