@@ -344,21 +344,26 @@ function resolveDesignScope(idea) {
 const DESIGN_IMAGE_MODE_KEY = 'almujtahed_designs_imagemode_v1';
 function designImageMode() {
   const sel = document.getElementById('designImageMode');
-  if (sel && (sel.value === 'with' || sel.value === 'without')) return sel.value;
-  try { return localStorage.getItem(DESIGN_IMAGE_MODE_KEY) === 'without' ? 'without' : 'with'; } catch (e) { return 'with'; }
+  if (sel && ['with', 'without', 'none'].includes(sel.value)) return sel.value;
+  try { const saved = localStorage.getItem(DESIGN_IMAGE_MODE_KEY); return ['without', 'none'].includes(saved) ? saved : 'with'; } catch (e) { return 'with'; }
 }
 
 function designSystemPrompt(imageMode) {
   const noLiving = imageMode === 'without';
+  const textOnly = imageMode === 'none';
   return [
     'أنت مهندس توجيهات صور (Prompt Engineer) لتبويب «تصاميم» في تطبيق المجتهد للبحث التراثي.',
     'مهمتك الوحيدة: تحويل فكرة المستخدم إلى توجيه توليد صورة واحد (Image Prompt) بالإنجليزية فقط، جاهز للإرسال مباشرة إلى نموذج توليد صور، مستندًا إلى الشواهد المرفقة من كتب التراث المعتمدة — لا تخترع وقائع أو أماكن أو تواريخ لا تدعمها الشواهد.',
     'أخرج التوجيه وحده في فقرة واحدة متصلة، بلا مقدمة ولا شرح ولا عناوين ولا علامات تنقيط عربية.',
     'يجب أن يتضمن التوجيه حتمًا هذه العناصر:',
-    '1) نوع العمل: highly detailed historical infographic / documentary illustration مناسب لموضوع الفكرة (خريطة رحلة، خط زمني، مشهد تاريخي موثق...) بحسب ما تدعمه الشواهد.',
+    textOnly
+      ? '1) نوع العمل: ملصق طباعي نصي فاخر (Arabic typographic poster) يعتمد كليًا على الخط العربي وتوزيع النصوص والعناوين والزخارف الهندسية المسطحة — لا مشاهد ولا خرائط مرسومة ولا أي عناصر تصويرية، بل تكوين نصي أنيق بخلفية موحّدة اللون أو زخرفة هندسية خفيفة.'
+      : '1) نوع العمل: highly detailed historical infographic / documentary illustration مناسب لموضوع الفكرة (خريطة رحلة، خط زمني، مشهد تاريخي موثق...) بحسب ما تدعمه الشواهد.',
     '2) خطوط الصورة العربية: العنوان الرئيسي والعناوين الفرعية داخل الصورة بخط المراعي (Almarai — Google Fonts) بالوزن العريض، وبقية النصوص العربية (الشروح والتسميات والقوائم والتعليقات) بخط الأميري (Amiri — Google Fonts) الأنيق. اختر عنوانًا عربيًا دقيقًا للفكرة واكتبه في التوجيه بحروف عربية حرفيًا بين علامتي تنصيص، مثل: The main title reads clearly in Arabic: "رحلة الإمام البخاري لطلب الحديث", set in bold Almarai (Google Fonts), ivory white with coral highlights; all other Arabic text, labels and captions in Amiri (Google Fonts) — crisp, perfectly legible, with no distorted characters.',
     '3) هوية المجتهد البصرية الثابتة: Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use: deep ocean navy, muted teal, slate gray, ivory sand, and vibrant coral-orange accents. Absolutely avoid standard black-and-gold or dark vintage fantasy themes.',
-    noLiving
+    textOnly
+      ? '4) بلا صور مطلقًا: ممنوع أي عنصر تصويري مهما كان — لا رسوم ولا صور فوتوغرافية ولا أيقونات ولا مشاهد طبيعية ولا مبانٍ ولا خرائط مرسومة ولا أشخاص ولا حيوانات ولا أي كائنات أو أشياء مصوَّرة. التصميم نصي خالص: خط عربي وعناوين ونصوص موزعة ببراعة مع زخارف هندسية مسطحة وخلفية لونية، ويجب أن يتضمن التوجيه الإنجليزي حرفيًا عبارة بهذا المعنى: Text-only Arabic typographic poster — absolutely no images, no illustrations, no photographs, no drawings, no icons, no scenery, no buildings, no maps, no people, no animals, no pictorial elements of any kind; only elegant Arabic calligraphy and typography, flat geometric ornament and solid color backgrounds.'
+      : noLiving
       ? '4) ممنوع منعًا باتًا ظهور أي كائن حي في التصميم: لا أشخاص ولا بشر ولا حيوانات ولا طيور ولا أي كائنات حية إطلاقًا — لا من الأمام ولا من الخلف ولا حتى ظلال أو صور ظلية (silhouettes) لكائنات حية. اعتمد فقط على الخرائط والعمارة والعناصر الجامدة والزخارف الهندسية والخط العربي، ويجب أن يتضمن التوجيه الإنجليزي حرفيًا عبارة بهذا المعنى: Absolutely no people, no human figures, no animals, no birds, no living beings of any kind, and no silhouettes of living creatures — only maps, architecture, inanimate objects, geometric ornament and Arabic calligraphy.'
       : '4) الأشخاص إن ظهروا: من الخلف تمامًا (strictly and entirely from the back)، بلا وجوه ولا ملامح جانبية، بملابس تاريخية موقرة.',
     '5) تفاصيل موثقة من الشواهد: أسماء الأماكن والأعلام والمسارات كما وردت، بمؤشرات جغرافية نظيفة وخطوط مسار مرجانية مضيئة عند الحاجة.',
@@ -439,7 +444,7 @@ function renderDesignMessages() {
         <div class="design-card-info">
           ${msg.title ? `<span class="design-title">🖼️ ${escapeHtml(msg.title)}</span>` : ''}
           <span class="design-chip">${designAspectLabel(msg.aspect || '16:9')}</span>
-          <span class="design-chip">${msg.image_mode === 'without' ? '🚫 بلا أي كائن حي' : '🖼️ بصور'}</span>
+          <span class="design-chip">${msg.image_mode === 'none' ? '📝 بلا صور مطلقًا' : msg.image_mode === 'without' ? '🚫 بلا أي كائن حي' : '🖼️ بصور'}</span>
           ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
           ${msg.branded ? '<span class="design-chip">🟢 مختوم بشعار المجتهد</span>' : '<span class="design-chip">الشعار غير مطبوع (راجع التثبيت)</span>'}
           ${costChip}${durChip}
@@ -465,18 +470,11 @@ function renderDesignMessages() {
 }
 
 function setDesignStatus(text) {
-  const box = document.getElementById('designMessages');
-  if (!box) return;
-  let el = document.getElementById('designStatusBubble');
-  if (!text) { if (el) el.remove(); return; }
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'designStatusBubble';
-    el.className = 'design-msg design-msg-assistant';
-    box.appendChild(el);
-  }
+  const el = document.getElementById('designLiveStatus');
+  if (!el) return;
+  if (!text) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
   el.innerHTML = `<div class="design-status">⏳ ${escapeHtml(text)} <span class="design-timer" id="designTimerTick">0:00</span></div>`;
-  box.scrollTop = box.scrollHeight;
 }
 
 async function loadDesignBalance() {
@@ -550,7 +548,7 @@ async function runDesignGeneration(idea, aspect, scope, imageMode) {
     title: imgData.title || '',
     branded: !!imgData.branded,
     aspect,
-    image_mode: imageMode === 'without' ? 'without' : 'with',
+    image_mode: ['without', 'none'].includes(imageMode) ? imageMode : 'with',
     discipline: scope.label,
     cost_usd: (typeof imgData.cost_usd === 'number') ? imgData.cost_usd : null,
     duration_s: (typeof imgData.duration_s === 'number') ? imgData.duration_s : null,
@@ -596,13 +594,10 @@ async function submitDesignIdea(event) {
   } catch (err) {
     stopDesignTimer();
     if (typeof showToast === 'function') showToast(err.message || 'تعذر توليد التصميم');
-    const box = document.getElementById('designMessages');
-    if (box) {
-      const el = document.createElement('div');
-      el.className = 'design-msg design-msg-assistant';
-      el.innerHTML = `<div class="design-status design-status-error">⚠️ ${escapeHtml(err.message || 'تعذر توليد التصميم')}</div>`;
-      box.appendChild(el);
-      box.scrollTop = box.scrollHeight;
+    const statusEl = document.getElementById('designLiveStatus');
+    if (statusEl) {
+      statusEl.hidden = false;
+      statusEl.innerHTML = `<div class="design-status design-status-error">⚠️ ${escapeHtml(err.message || 'تعذر توليد التصميم')}</div>`;
     }
   } finally {
     designBusy = false;
@@ -1147,7 +1142,7 @@ function initDesignsTab() {
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDesignLightbox(); });
   const modeSel = document.getElementById('designImageMode');
   if (modeSel) {
-    try { const savedMode = localStorage.getItem(DESIGN_IMAGE_MODE_KEY); if (savedMode === 'without' || savedMode === 'with') modeSel.value = savedMode; } catch (e) {}
+    try { const savedMode = localStorage.getItem(DESIGN_IMAGE_MODE_KEY); if (['with', 'without', 'none'].includes(savedMode)) modeSel.value = savedMode; } catch (e) {}
     modeSel.addEventListener('change', () => { try { localStorage.setItem(DESIGN_IMAGE_MODE_KEY, modeSel.value); } catch (e) {} });
   }
   const form = document.getElementById('designComposer');
