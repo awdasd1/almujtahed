@@ -5353,7 +5353,8 @@ def _ayrshare_call(path: str, key: str, payload: Optional[dict] = None, timeout:
 
 
 class DesignPublishRequest(BaseModel):
-    image_url: str
+    image_url: str = ""
+    text_only: bool = False
     caption: str = ""
     platforms: List[str] = []
     provider: str = "zernio"
@@ -5438,26 +5439,29 @@ def _publish_via_zernio(req: DesignPublishRequest, request: Request, target: Pat
             targets.append({"platform": account["platform"], "accountId": account["id"]})
     if not targets:
         raise HTTPException(status_code=400, detail="الحسابات المختارة غير مرتبطة في Zernio — حدّث القائمة")
-    raw = target.read_bytes()
-    presign = _zernio_call("POST", "/media/presign", key, {
-        "filename": name, "contentType": "image/png", "size": len(raw),
-    }, timeout=60)
-    upload_url = presign.get("uploadUrl")
-    public_url = presign.get("publicUrl")
-    if not upload_url or not public_url:
-        raise HTTPException(status_code=502, detail="لم يعد Zernio رابط رفع صالحًا")
-    put_req = urllib.request.Request(upload_url, data=raw, method="PUT",
-                                     headers={"Content-Type": "image/png"})
-    try:
-        with urllib.request.urlopen(put_req, timeout=300) as resp:
-            resp.read()
-    except Exception as error:
-        raise HTTPException(status_code=502, detail=f"فشل رفع الصورة إلى تخزين Zernio: {error}")
+    public_url = ""
+    if not req.text_only:
+        raw = target.read_bytes()
+        presign = _zernio_call("POST", "/media/presign", key, {
+            "filename": name, "contentType": "image/png", "size": len(raw),
+        }, timeout=60)
+        upload_url = presign.get("uploadUrl")
+        public_url = presign.get("publicUrl")
+        if not upload_url or not public_url:
+            raise HTTPException(status_code=502, detail="لم يعد Zernio رابط رفع صالحًا")
+        put_req = urllib.request.Request(upload_url, data=raw, method="PUT",
+                                         headers={"Content-Type": "image/png"})
+        try:
+            with urllib.request.urlopen(put_req, timeout=300) as resp:
+                resp.read()
+        except Exception as error:
+            raise HTTPException(status_code=502, detail=f"فشل رفع الصورة إلى تخزين Zernio: {error}")
     payload: Dict[str, Any] = {
         "content": (req.caption or "").strip(),
-        "mediaItems": [{"url": public_url, "type": "image"}],
         "platforms": targets,
     }
+    if not req.text_only:
+        payload["mediaItems"] = [{"url": public_url, "type": "image"}]
     if req.schedule:
         payload["scheduledFor"] = req.schedule
         payload["timezone"] = "UTC"
@@ -5510,23 +5514,26 @@ def _publish_via_ayrshare(req: DesignPublishRequest, request: Request, target: P
     platforms = [p for p in (req.platforms or []) if p in AYRSHARE_PLATFORMS]
     if not platforms:
         raise HTTPException(status_code=400, detail="اختر شبكة تواصل واحدة على الأقل")
-    raw = target.read_bytes()
-    if len(raw) > 28 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="الصورة أكبر من حد الرفع (30MB)")
-    upload = _ayrshare_call("/media/upload", key, {
-        "file": "data:image/png;base64," + base64.b64encode(raw).decode("ascii"),
-        "fileName": name,
-        "description": "تصميم المجتهد",
-    }, timeout=180)
-    media_url = upload.get("url") if isinstance(upload, dict) else None
-    if not media_url:
-        message = (upload or {}).get("message") if isinstance(upload, dict) else "رد غير متوقع"
-        raise HTTPException(status_code=502, detail=f"فشل رفع الصورة إلى Ayrshare: {message}")
+    media_url = ""
+    if not req.text_only:
+        raw = target.read_bytes()
+        if len(raw) > 28 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="الصورة أكبر من حد الرفع (30MB)")
+        upload = _ayrshare_call("/media/upload", key, {
+            "file": "data:image/png;base64," + base64.b64encode(raw).decode("ascii"),
+            "fileName": name,
+            "description": "تصميم المجتهد",
+        }, timeout=180)
+        media_url = upload.get("url") if isinstance(upload, dict) else None
+        if not media_url:
+            message = (upload or {}).get("message") if isinstance(upload, dict) else "رد غير متوقع"
+            raise HTTPException(status_code=502, detail=f"فشل رفع الصورة إلى Ayrshare: {message}")
     payload: Dict[str, Any] = {
         "post": (req.caption or "").strip(),
         "platforms": platforms,
-        "mediaUrls": [media_url],
     }
+    if media_url:
+        payload["mediaUrls"] = [media_url]
     if req.schedule:
         payload["scheduleDate"] = req.schedule
     result = _ayrshare_call("/post", key, payload, timeout=180)
@@ -5593,11 +5600,17 @@ async def designs_portal_time(request: Request, provider: str = "zernio"):
 @app.post("/api/designs/publish")
 async def designs_publish(req: DesignPublishRequest, request: Request):
     """رفع صورة التصميم ونشرها أو جدولتها — Zernio معتمدة، وAyrshare خيار باقٍ."""
-    folder = _designs_dir(request).resolve()
-    name = Path(urllib.parse.unquote(req.image_url or "")).name
-    target = (folder / name).resolve()
-    if target.parent != folder or not target.is_file():
-        raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
+    if req.text_only:
+        if not (req.caption or "").strip():
+            raise HTTPException(status_code=400, detail="نص المنشور فارغ")
+        target = None
+        name = ""
+    else:
+        folder = _designs_dir(request).resolve()
+        name = Path(urllib.parse.unquote(req.image_url or "")).name
+        target = (folder / name).resolve()
+        if target.parent != folder or not target.is_file():
+            raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
     provider = (req.provider or "zernio").lower()
     scheduled_for_utc = None
     if req.schedule:
@@ -6087,7 +6100,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.374"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.375"},
         },
     })
     if opened.get("error"):

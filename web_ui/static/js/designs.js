@@ -628,6 +628,7 @@ const DESIGN_PUBLISH_PLATFORMS_KEY = 'almujtahed_designs_platforms_v1';
 const DESIGN_PUBLISH_ACCOUNTS_KEY = 'almujtahed_designs_accounts_v1';
 const DESIGN_PUBLISH_PROVIDER_KEY = 'almujtahed_designs_provider_v1';
 let designPublishIdx = -1;
+let designPublishTextJob = null;
 
 function designPublishProvider() {
   return document.querySelector('input[name="designPublishProvider"]:checked')?.value
@@ -771,10 +772,14 @@ async function refreshDesignPublishTargets() {
 async function openDesignPublish(idx) {
   const msg = designMessages[idx];
   if (!msg || !msg.image_url) return;
+  designPublishTextJob = null;
   designPublishIdx = idx;
   const overlay = document.getElementById('designPublishOverlay');
   if (!overlay) return;
-  document.getElementById('designPublishImg').src = msg.image_url;
+  const imgEl = document.getElementById('designPublishImg');
+  imgEl.style.display = '';
+  imgEl.src = msg.image_url;
+  document.getElementById('designPublishSubmit').textContent = '📤 نشر التصميم';
   document.getElementById('designPublishCaption').value = designCaptionDraft(msg);
   const savedProvider = localStorage.getItem(DESIGN_PUBLISH_PROVIDER_KEY) || 'zernio';
   document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
@@ -791,9 +796,35 @@ async function openDesignPublish(idx) {
   refreshDesignPublishTargets();
 }
 
+function openDesignTextPublish(text, cb) {
+  designPublishTextJob = { text: String(text || ''), cb: typeof cb === 'function' ? cb : null };
+  designPublishIdx = -1;
+  const overlay = document.getElementById('designPublishOverlay');
+  if (!overlay) return;
+  const imgEl = document.getElementById('designPublishImg');
+  imgEl.style.display = 'none';
+  imgEl.removeAttribute('src');
+  document.getElementById('designPublishCaption').value = designPublishTextJob.text;
+  document.getElementById('designPublishSubmit').textContent = '📤 نشر النص';
+  const savedProvider = localStorage.getItem(DESIGN_PUBLISH_PROVIDER_KEY) || 'zernio';
+  document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
+    radio.checked = radio.value === savedProvider;
+  });
+  const result = document.getElementById('designPublishResult');
+  result.hidden = true;
+  result.textContent = '';
+  overlay.hidden = false;
+  const isSchedule = document.querySelector('input[name="designPublishWhen"]:checked')?.value === 'schedule';
+  const panel = document.getElementById('designPublishSchedulePanel');
+  if (panel) panel.hidden = !isSchedule;
+  if (isSchedule) { ensureDesignScheduleDefaults(); refreshDesignPortalSync(); }
+  refreshDesignPublishTargets();
+}
+
 async function submitDesignPublish() {
-  const msg = designMessages[designPublishIdx];
-  if (!msg) return;
+  const textJob = designPublishTextJob;
+  const msg = textJob ? null : designMessages[designPublishIdx];
+  if (!textJob && !msg) return;
   const provider = designPublishProvider();
   const caption = document.getElementById('designPublishCaption').value;
   const checked = [...document.querySelectorAll('#designPublishPlatforms input[type="checkbox"]:checked')];
@@ -821,7 +852,9 @@ async function submitDesignPublish() {
     const resp = await fetch('/api/designs/publish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_url: msg.image_url, caption, platforms, provider, account_ids: accountIds, schedule })
+      body: JSON.stringify(textJob
+        ? { text_only: true, image_url: '', caption, platforms, provider, account_ids: accountIds, schedule }
+        : { image_url: msg.image_url, caption, platforms, provider, account_ids: accountIds, schedule })
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.detail || 'تعذر النشر');
@@ -829,9 +862,10 @@ async function submitDesignPublish() {
     const okLinks = (data.post_ids || []).filter(p => p.status === 'success')
       .map(p => p.postUrl ? `<a href="${escapeHtml(p.postUrl)}" target="_blank" rel="noopener">${escapeHtml(platformLabelAr(p.platform))}</a>` : escapeHtml(platformLabelAr(p.platform))).join('، ');
     const errText = (data.errors || []).map(e => `${escapeHtml(platformLabelAr(e.platform || ''))}: ${escapeHtml(e.message || '')}`).join('<br>');
+    let publishObj = null;
     if (data.status === 'scheduled') {
       const localWhen = schedule ? fmtDesignDateTime(new Date(schedule)) : '';
-      msg.publish = { status: 'scheduled', label: `مجدول: ${platformNames}${localWhen ? ' — ' + localWhen : ''}` };
+      publishObj = { status: 'scheduled', label: `مجدول: ${platformNames}${localWhen ? ' — ' + localWhen : ''}` };
       let confirm = `🗓️ جُدول النشر بنجاح على: ${escapeHtml(platformNames)}`;
       if (data.scheduled_for_utc) {
         const utcDt = new Date(data.scheduled_for_utc);
@@ -847,20 +881,25 @@ async function submitDesignPublish() {
       }
       showResult(confirm);
     } else if ((data.post_ids || []).length) {
-      msg.publish = { status: 'published', label: `${data.status === 'partial' ? 'نُشر جزئيًا' : 'نُشر'}: ${platformNames}` };
+      publishObj = { status: 'published', label: `${data.status === 'partial' ? 'نُشر جزئيًا' : 'نُشر'}: ${platformNames}` };
       showResult(`✅ نُشر على: ${okLinks || escapeHtml(platformNames)}${errText ? '<br>⚠️ ' + errText : ''}`);
     } else {
       showResult(`⚠️ لم يتم النشر${errText ? '<br>' + errText : ''}`);
       return;
     }
-    saveDesignMessages();
-    renderDesignMessages();
+    if (textJob) {
+      if (textJob.cb) textJob.cb(publishObj);
+    } else if (msg) {
+      msg.publish = publishObj;
+      saveDesignMessages();
+      renderDesignMessages();
+    }
     loadDesignBalance();
   } catch (err) {
     showResult('⚠️ ' + escapeHtml(err.message || 'تعذر النشر'));
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = '📤 نشر التصميم';
+    submitBtn.textContent = textJob ? '📤 نشر النص' : '📤 نشر التصميم';
   }
 }
 
@@ -989,6 +1028,7 @@ function initDesignsTab() {
   loadDesignBalance();
   initDesignKindPicker();
   initDesignBooksPicker();
+  if (typeof initTextsTab === 'function') initTextsTab();
   if (designsInitDone) return;
   designsInitDone = true;
   const messagesBox = document.getElementById('designMessages');
@@ -1096,3 +1136,4 @@ function initDesignsTab() {
 
 window.initDesignsTab = initDesignsTab;
 window.submitDesignIdea = submitDesignIdea;
+window.openDesignTextPublish = openDesignTextPublish;

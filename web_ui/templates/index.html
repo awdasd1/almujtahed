@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.374">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.375">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.374 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.375 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -91,8 +91,8 @@
             </button>
 
             <button class="nav-tab-btn" id="tabNavDesigns" onclick="switchMainTab('designs')">
-                <i data-lucide="palette" class="icon" aria-hidden="true"></i>
-                <span>تصاميم</span>
+                <i data-lucide="megaphone" class="icon" aria-hidden="true"></i>
+                <span>نشر</span>
             </button>
 
             <button class="nav-tab-btn" id="tabNavTools" onclick="switchMainTab('tools')">
@@ -2283,6 +2283,11 @@
          تبويب: تصاميم — فكرة تبحث في الكتب المعتمدة ثم تصير صورة بهوية المجتهد
          ======================================================================= -->
         <section class="tab-pane" id="paneDesigns">
+            <div class="publish-sections" role="tablist" aria-label="أقسام النشر">
+                <button type="button" class="publish-section-btn is-active" id="publishSectionDesignsBtn">🎨 التصاميم</button>
+                <button type="button" class="publish-section-btn" id="publishSectionTextsBtn">✍️ النصوص</button>
+            </div>
+            <div id="publishDesignsSection">
             <div class="designs-container">
                 <div class="designs-hero">
                     <h2>🎨 تصاميم المجتهد</h2>
@@ -2403,6 +2408,59 @@
                     <button type="submit" class="design-send-btn" id="designSendBtn">🎨 توليد التصميم</button>
                 </form>
                 <div class="designs-note">النموذج النصي ثابت (Gemini 3.8 Flash) ونموذج الصورة ثابت (GPT Image عبر OpenRouter) — بلا اختيار، والبحث محصور في الكتب المعتمدة.</div>
+            </div>
+            </div>
+            <div id="publishTextsSection" hidden>
+            <div class="designs-container">
+                <div class="designs-hero">
+                    <h2>✍️ نصوص المجتهد</h2>
+                    <p>اكتب موضوعًا، فيبحث النموذج في الكتب التي تحددها ويستخرج فائدة نفيسة مختصرة جاهزة للنشر في مواقع التواصل — منسوبة إلى قائلها ومذيلة بالكتاب المنقول منه. مثال: اختر كتب التفسير أو حدد كتابًا بعينه، ثم اكتب: «استخرج فائدة نفيسة عن الصحبة الصالحة».</p>
+                </div>
+                <div class="designs-controls">
+                    <span class="designs-controls-label">نطاق البحث:</span>
+                    <div class="design-kind-picker">
+                        <button type="button" class="design-kind-btn" id="textKindBtn">🔍 نطاق البحث: تلقائي</button>
+                        <div class="design-kind-panel" id="textKindPanel" hidden>
+                            <label class="design-kind-item design-kind-auto-item">
+                                <input type="checkbox" id="textKindAuto" checked>
+                                <span>🔍 تلقائي — يُفحص الطلب ويُختار فنّه</span>
+                            </label>
+                            <div class="design-kind-grid" id="textKindGrid"></div>
+                            <div class="design-kind-hint">ألغِ «تلقائي» وحدّد فنًّا أو أكثر ليُحصر البحث في كتبها مجتمعة.</div>
+                        </div>
+                    </div>
+                    <div class="design-kind-picker">
+                        <button type="button" class="design-kind-btn" id="textBooksBtn">📚 تصفح الكتب</button>
+                        <div class="design-kind-panel design-books-panel" id="textBooksPanel" hidden>
+                            <div class="design-books-selected-head">
+                                <span>✅ الكتب المحددة للبحث (<span id="textBooksSelectedCount">0</span>)</span>
+                                <button type="button" class="design-mini-btn" id="textBooksReset">↺ إعادة تعيين</button>
+                            </div>
+                            <div class="design-books-chips" id="textBooksChips"></div>
+                            <input type="search" class="design-books-search" id="textBooksSearch" placeholder="🔎 ابحث عن كتاب — في القائمة المعتمدة أو في مكتبة الشاملة كلها...">
+                            <div class="design-books-list design-books-library" id="textBooksLibrary"></div>
+                            <div class="design-books-kind-head">📋 من القائمة المعتمدة</div>
+                            <div class="design-books-list" id="textBooksList"></div>
+                            <div class="design-kind-hint">احذف كتابًا من الأعلى أو ألغِ تحديده فلن يُبحث فيه، وحدّد أي كتاب — من القائمة المعتمدة أو من نتائج مكتبة الشاملة — فيُضاف دائمًا إلى نطاق البحث. تعديلاتك محفوظة وتسري فوق نطاق الفنون (التلقائي أو اليدوي).</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="designs-stats">
+                    <span class="design-balance" id="textBalance">💰 الرصيد: —</span>
+                    <span class="design-stats-actions">
+                        <button type="button" class="design-mini-btn" id="textBalanceBtn">↻ تحديث الرصيد</button>
+                        <button type="button" class="design-mini-btn design-danger" id="textClearBtn">🧹 مسح المحادثة</button>
+                    </span>
+                </div>
+                <div class="designs-messages" id="textMessages">
+                    <div class="design-empty">مثال: «استخرج فائدة نفيسة عن الصحبة الصالحة» — ستأتيك فائدة مختصرة موثقة بقائلها ومصدرها جاهزة للنسخ أو النشر.</div>
+                </div>
+                <form class="designs-composer" id="textComposer">
+                    <textarea id="textIdeaInput" rows="2" placeholder="اكتب موضوع الفائدة هنا... مثال: استخرج فائدة نفيسة عن الصحبة الصالحة"></textarea>
+                    <button type="submit" class="design-send-btn" id="textSendBtn">✍️ استخراج الفائدة</button>
+                </form>
+                <div class="designs-note">النموذج النصي ثابت (Gemini 3.8 Flash) — بلا اختيار، والبحث محصور في الكتب التي تحددها، وكل فائدة منسوبة لقائلها ومذيلة بمصدرها.</div>
+            </div>
             </div>
         </section>
 
@@ -5538,18 +5596,19 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.374"></script>
+    <script src="/static/js/app.js?v=1.10.375"></script>
     <script src="/static/js/search.js?v=1793188000"></script>
     <script src="/static/js/reader.js?v=1793225300"></script>
-    <script src="/static/js/force3d.js?v=1.10.374"></script>
+    <script src="/static/js/force3d.js?v=1.10.375"></script>
     <script src="/static/js/share.js?v=1793225500"></script>
-    <script src="/static/js/chat.js?v=1.10.374"></script>
-    <script src="/static/js/designs.js?v=1.10.374"></script>
-    <script src="/static/js/agents.js?v=1.10.374"></script>
+    <script src="/static/js/chat.js?v=1.10.375"></script>
+    <script src="/static/js/designs.js?v=1.10.375"></script>
+    <script src="/static/js/texts.js?v=1.10.375"></script>
+    <script src="/static/js/agents.js?v=1.10.375"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1.10.374"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.374"></script>
-    <script src="/static/js/projects.js?v=1.10.374"></script>
+    <script src="/static/js/tools.js?v=1.10.375"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.375"></script>
+    <script src="/static/js/projects.js?v=1.10.375"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
