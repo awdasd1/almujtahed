@@ -17,7 +17,8 @@ import urllib.error
 import urllib.parse
 import html
 import mimetypes
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
 import numpy as np
@@ -5543,6 +5544,52 @@ def _publish_via_ayrshare(req: DesignPublishRequest, request: Request, target: P
     }
 
 
+def _portal_clock(provider: str, key: str):
+    """ساعة بوابة النشر من ترويسة Date في ردّها، مقارنة بساعة هذا الجهاز (كلاهما UTC)."""
+    if not key:
+        return None
+    url = ("https://api.ayrshare.com/api/profiles" if provider == "ayrshare"
+           else "https://zernio.com/api/v1/accounts")
+    http_req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key}"}, method="GET")
+    try:
+        with urllib.request.urlopen(http_req, timeout=15) as resp:
+            date_header = resp.headers.get("Date")
+            resp.read()
+    except Exception:
+        return None
+    if not date_header:
+        return None
+    try:
+        portal_dt = parsedate_to_datetime(date_header)
+    except Exception:
+        return None
+    if portal_dt is None:
+        return None
+    if portal_dt.tzinfo is None:
+        portal_dt = portal_dt.replace(tzinfo=timezone.utc)
+    portal_dt = portal_dt.astimezone(timezone.utc)
+    server_dt = datetime.now(timezone.utc)
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    return {
+        "portal_now_utc": portal_dt.strftime(fmt),
+        "server_now_utc": server_dt.strftime(fmt),
+        "offset_seconds": int(round((portal_dt - server_dt).total_seconds())),
+    }
+
+
+@app.get("/api/designs/portal-time")
+async def designs_portal_time(request: Request, provider: str = "zernio"):
+    """وقت بوابة النشر الحالي وفرقه عن ساعة الجهاز — للتحقق من تزامن الجدولة."""
+    provider = (provider or "zernio").lower()
+    key = _owner_ayrshare_key(request) if provider == "ayrshare" else _owner_zernio_key(request)
+    if not key:
+        return {"connected": False, "provider": provider}
+    clock = _portal_clock(provider, key)
+    if not clock:
+        return {"connected": True, "provider": provider, "portal_now_utc": None, "offset_seconds": None}
+    return {"connected": True, "provider": provider, **clock}
+
+
 @app.post("/api/designs/publish")
 async def designs_publish(req: DesignPublishRequest, request: Request):
     """رفع صورة التصميم ونشرها أو جدولتها — Zernio معتمدة، وAyrshare خيار باقٍ."""
@@ -5552,9 +5599,38 @@ async def designs_publish(req: DesignPublishRequest, request: Request):
     if target.parent != folder or not target.is_file():
         raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
     provider = (req.provider or "zernio").lower()
+    scheduled_for_utc = None
+    if req.schedule:
+        # تطبيع أي صيغة واردة إلى لحظة UTC واحدة لا لبس فيها قبل إرسالها للبوابة
+        try:
+            parsed = datetime.fromisoformat(str(req.schedule).replace("Z", "+00:00"))
+        except Exception:
+            raise HTTPException(status_code=400, detail="موعد الجدولة غير صالح")
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.astimezone(timezone.utc)
+        if parsed <= datetime.now(timezone.utc) + timedelta(seconds=30):
+            raise HTTPException(status_code=400,
+                                detail="موعد الجدولة في الماضي أو قريب جدًا — اختر وقتًا بعد دقيقة على الأقل")
+        scheduled_for_utc = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+        req.schedule = scheduled_for_utc
     if provider == "ayrshare":
-        return _publish_via_ayrshare(req, request, target, name)
-    return _publish_via_zernio(req, request, target, name)
+        result = _publish_via_ayrshare(req, request, target, name)
+    else:
+        result = _publish_via_zernio(req, request, target, name)
+    if scheduled_for_utc and isinstance(result, dict):
+        # إثبات الاستلام: الموعد نفسه الذي أُرسل للبوابة + ساعة البوابة للمقارنة
+        result["scheduled_for_utc"] = scheduled_for_utc
+        result["server_now_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            key = _owner_ayrshare_key(request) if provider == "ayrshare" else _owner_zernio_key(request)
+            clock = _portal_clock(provider, key)
+            if clock:
+                result["portal_now_utc"] = clock["portal_now_utc"]
+                result["portal_offset_seconds"] = clock["offset_seconds"]
+        except Exception:
+            pass
+    return result
 
 
 @app.get("/api/designs/ayrshare-status")
@@ -6011,7 +6087,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.370"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.371"},
         },
     })
     if opened.get("error"):

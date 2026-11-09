@@ -10842,6 +10842,19 @@ body::-webkit-scrollbar,
 .design-publish-keyfields input { flex: 1; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); padding: 8px 10px; background: var(--bg-surface); color: var(--text-main); }
 .design-publish-when { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .design-publish-date { font-family: inherit; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); background: var(--bg-surface); color: var(--text-main); padding: 7px 10px; }
+.design-schedule-panel { border: 1.5px solid var(--accent-clay); background: var(--accent-subtle); border-radius: var(--radius-lg, 6px); padding: 14px; display: flex; flex-direction: column; gap: 12px; flex: none; }
+.design-schedule-panel[hidden] { display: none; }
+.design-schedule-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.design-schedule-field { display: flex; flex-direction: column; gap: 6px; font-family: 'Almarai', sans-serif; font-weight: 700; font-size: 13.5px; }
+.design-schedule-field input { font-family: inherit; font-size: 17px; font-weight: 700; padding: 10px 12px; border: 1.5px solid var(--border-subtle); border-radius: var(--radius-md, 6px); background: var(--bg-surface); color: var(--text-main); direction: ltr; text-align: center; color-scheme: light dark; }
+.design-schedule-field input:focus { border-color: var(--accent-clay); outline: none; }
+.design-schedule-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.design-schedule-summary { font-size: 14.5px; line-height: 2; font-weight: 700; background: var(--bg-surface); border: 1px dashed var(--accent-clay); border-radius: var(--radius-md, 6px); padding: 10px 14px; }
+.design-schedule-summary.is-past { color: #b3261e; border-color: #b3261e66; }
+.design-schedule-sync { font-size: 12.5px; color: var(--text-muted); line-height: 1.9; }
+.design-schedule-sync .is-ok { color: #1a7f4b; font-weight: 700; }
+.design-schedule-sync .is-warn { color: #b3261e; font-weight: 700; }
+@media (max-width: 560px) { .design-schedule-fields { grid-template-columns: 1fr; } }
 .design-publish-result { border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); padding: 10px 12px; font-size: 13.5px; line-height: 2; background: var(--accent-subtle); }
 .design-publish-result[hidden] { display: none; }
 .design-publish-result a { color: var(--accent-clay); font-weight: 700; }

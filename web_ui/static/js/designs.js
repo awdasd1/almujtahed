@@ -464,6 +464,80 @@ function designCaptionDraft(msg) {
   return `${msg.title || 'تصميم من المجتهد'}\n\n📚 تصميم موثّق من كتب التراث — عبر تطبيق «المجتهد»\n${[...new Set(tags)].join(' ')}`;
 }
 
+function designScheduleDateTime() {
+  const d = document.getElementById('designPublishDateOnly')?.value || '';
+  const t = document.getElementById('designPublishTimeOnly')?.value || '';
+  if (!d || !t) return null;
+  const dt = new Date(`${d}T${t}`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function setDesignScheduleFields(dt) {
+  const pad = n => String(n).padStart(2, '0');
+  const dateEl = document.getElementById('designPublishDateOnly');
+  const timeEl = document.getElementById('designPublishTimeOnly');
+  if (dateEl) dateEl.value = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+  if (timeEl) timeEl.value = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
+function ensureDesignScheduleDefaults() {
+  if (designScheduleDateTime()) { updateDesignScheduleSummary(); return; }
+  const dt = new Date(Date.now() + 60 * 60 * 1000);
+  dt.setMinutes(Math.ceil(dt.getMinutes() / 5) * 5, 0, 0);
+  setDesignScheduleFields(dt);
+  updateDesignScheduleSummary();
+}
+
+function fmtDesignDateTime(dt, timeZone) {
+  const opts = timeZone ? { timeZone } : {};
+  const date = new Intl.DateTimeFormat('ar', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', ...opts }).format(dt);
+  const time = new Intl.DateTimeFormat('ar', { hour: 'numeric', minute: '2-digit', ...opts }).format(dt);
+  return `${date} — الساعة ${time}`;
+}
+
+function updateDesignScheduleSummary() {
+  const el = document.getElementById('designPublishScheduleSummary');
+  if (!el) return;
+  const dt = designScheduleDateTime();
+  if (!dt) {
+    el.textContent = '🗓️ حدّد تاريخ النشر ووقته ليظهر هنا الموعد النهائي بصيغته المحلية والعالمية.';
+    el.classList.remove('is-past');
+    return;
+  }
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'توقيت جهازك';
+  const past = dt.getTime() <= Date.now();
+  el.classList.toggle('is-past', past);
+  el.innerHTML = `${past ? '⚠️ هذا الموعد في الماضي — ' : '🗓️ سيُنشر: '}<b>${escapeHtml(fmtDesignDateTime(dt))}</b> بتوقيت جهازك (${escapeHtml(tz)})<br>🌍 بالتوقيت العالمي UTC: <b dir="ltr">${escapeHtml(fmtDesignDateTime(dt, 'UTC'))} UTC</b> — وهو الموعد الوحيد الذي تستلمه البوابة، فلا أثر لفروق المناطق الزمنية.`;
+}
+
+async function refreshDesignPortalSync() {
+  const el = document.getElementById('designPublishSync');
+  if (!el) return;
+  const provider = designPublishProvider();
+  const name = provider === 'zernio' ? 'Zernio' : 'Ayrshare';
+  el.textContent = `🛰️ جارٍ فحص ساعة بوابة ${name}...`;
+  try {
+    const resp = await fetch(`/api/designs/portal-time?provider=${encodeURIComponent(provider)}`);
+    const data = await resp.json().catch(() => ({}));
+    if (!data.connected) { el.textContent = ''; return; }
+    if (!data.portal_now_utc || data.offset_seconds == null) {
+      el.textContent = '🛰️ تعذر قراءة ساعة البوابة الآن — الجدولة نفسها تُرسل بالتوقيت العالمي UTC فلا تتأثر.';
+      return;
+    }
+    const off = Number(data.offset_seconds);
+    const portalLocal = new Date(data.portal_now_utc);
+    const when = Number.isNaN(portalLocal.getTime()) ? data.portal_now_utc : fmtDesignDateTime(portalLocal);
+    if (Math.abs(off) <= 120) {
+      el.innerHTML = `🛰️ ساعة بوابة ${name} الآن: <b>${escapeHtml(when)}</b> بتوقيتك — الفرق عن ساعة جهازك <span class="is-ok">${Math.abs(off)} ثانية فقط ✅ متطابقتان، وموعدك سيصل البوابة كما حددته تمامًا.</span>`;
+    } else {
+      const mins = Math.round(Math.abs(off) / 60);
+      el.innerHTML = `🛰️ ساعة بوابة ${name} الآن: <b>${escapeHtml(when)}</b> بتوقيتك — <span class="is-warn">⚠️ ساعة جهازك تختلف عن البوابة بنحو ${mins} دقيقة؛ صحّح ساعة جهازك (أو فعّل «التاريخ والوقت التلقائي») قبل الجدولة حتى لا ينزاح الموعد.</span>`;
+    }
+  } catch (e) {
+    el.textContent = '';
+  }
+}
+
 async function refreshDesignPublishTargets() {
   const provider = designPublishProvider();
   const grid = document.getElementById('designPublishPlatforms');
@@ -524,6 +598,10 @@ async function openDesignPublish(idx) {
   result.hidden = true;
   result.textContent = '';
   overlay.hidden = false;
+  const isSchedule = document.querySelector('input[name="designPublishWhen"]:checked')?.value === 'schedule';
+  const panel = document.getElementById('designPublishSchedulePanel');
+  if (panel) panel.hidden = !isSchedule;
+  if (isSchedule) { ensureDesignScheduleDefaults(); refreshDesignPortalSync(); }
   refreshDesignPublishTargets();
 }
 
@@ -545,10 +623,10 @@ async function submitDesignPublish() {
   const when = document.querySelector('input[name="designPublishWhen"]:checked')?.value || 'now';
   let schedule = null;
   if (when === 'schedule') {
-    const value = document.getElementById('designPublishDate').value;
-    if (!value) { showResult('⚠️ حدد موعد الجدولة'); return; }
-    schedule = new Date(value).toISOString();
-    if (new Date(schedule).getTime() <= Date.now()) { showResult('⚠️ موعد الجدولة في الماضي'); return; }
+    const dt = designScheduleDateTime();
+    if (!dt) { showResult('⚠️ حدّد تاريخ الجدولة ووقتها'); return; }
+    if (dt.getTime() <= Date.now()) { showResult('⚠️ موعد الجدولة في الماضي — اختر وقتًا لاحقًا'); return; }
+    schedule = dt.toISOString();
   }
   const submitBtn = document.getElementById('designPublishSubmit');
   submitBtn.disabled = true;
@@ -566,8 +644,22 @@ async function submitDesignPublish() {
       .map(p => p.postUrl ? `<a href="${escapeHtml(p.postUrl)}" target="_blank" rel="noopener">${escapeHtml(platformLabelAr(p.platform))}</a>` : escapeHtml(platformLabelAr(p.platform))).join('، ');
     const errText = (data.errors || []).map(e => `${escapeHtml(platformLabelAr(e.platform || ''))}: ${escapeHtml(e.message || '')}`).join('<br>');
     if (data.status === 'scheduled') {
-      msg.publish = { status: 'scheduled', label: `مجدول: ${platformNames}` };
-      showResult(`🗓️ جُدول النشر بنجاح على: ${escapeHtml(platformNames)}`);
+      const localWhen = schedule ? fmtDesignDateTime(new Date(schedule)) : '';
+      msg.publish = { status: 'scheduled', label: `مجدول: ${platformNames}${localWhen ? ' — ' + localWhen : ''}` };
+      let confirm = `🗓️ جُدول النشر بنجاح على: ${escapeHtml(platformNames)}`;
+      if (data.scheduled_for_utc) {
+        const utcDt = new Date(data.scheduled_for_utc);
+        if (!Number.isNaN(utcDt.getTime())) {
+          confirm += `<br>⏱️ الموعد الذي استلمته البوابة: <b>${escapeHtml(fmtDesignDateTime(utcDt))}</b> بتوقيتك = <b dir="ltr">${escapeHtml(fmtDesignDateTime(utcDt, 'UTC'))} UTC</b>`;
+        }
+      }
+      if (data.portal_offset_seconds != null) {
+        const off = Math.abs(Number(data.portal_offset_seconds));
+        confirm += off <= 120
+          ? `<br>🛰️ ساعة البوابة مطابقة لساعة جهازك (الفرق ${off} ث) ✅`
+          : `<br>🛰️ تنبيه: فرق ساعة البوابة عن جهازك ${Math.round(off / 60)} دقيقة — راجع ساعة جهازك`;
+      }
+      showResult(confirm);
     } else if ((data.post_ids || []).length) {
       msg.publish = { status: 'published', label: `${data.status === 'partial' ? 'نُشر جزئيًا' : 'نُشر'}: ${platformNames}` };
       showResult(`✅ نُشر على: ${okLinks || escapeHtml(platformNames)}${errText ? '<br>⚠️ ' + errText : ''}`);
@@ -752,8 +844,30 @@ function initDesignsTab() {
   if (publishSubmit) publishSubmit.addEventListener('click', submitDesignPublish);
   document.querySelectorAll('input[name="designPublishWhen"]').forEach(radio => {
     radio.addEventListener('change', () => {
-      const date = document.getElementById('designPublishDate');
-      if (date) date.hidden = document.querySelector('input[name="designPublishWhen"]:checked')?.value !== 'schedule';
+      const panel = document.getElementById('designPublishSchedulePanel');
+      const isSchedule = document.querySelector('input[name="designPublishWhen"]:checked')?.value === 'schedule';
+      if (panel) panel.hidden = !isSchedule;
+      if (isSchedule) { ensureDesignScheduleDefaults(); refreshDesignPortalSync(); }
+    });
+  });
+  ['designPublishDateOnly', 'designPublishTimeOnly'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', updateDesignScheduleSummary);
+  });
+  document.querySelectorAll('[data-schedule-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const kind = btn.getAttribute('data-schedule-preset');
+      let dt;
+      if (kind === 'hour') {
+        dt = new Date(Date.now() + 60 * 60 * 1000);
+        dt.setMinutes(Math.ceil(dt.getMinutes() / 5) * 5, 0, 0);
+      } else {
+        dt = new Date();
+        dt.setDate(dt.getDate() + 1);
+        dt.setHours(kind === 'tomorrow-pm' ? 18 : 9, 0, 0, 0);
+      }
+      setDesignScheduleFields(dt);
+      updateDesignScheduleSummary();
     });
   });
   const goServices = document.getElementById('designPublishGoServices');
@@ -769,6 +883,8 @@ function initDesignsTab() {
     radio.addEventListener('change', () => {
       try { localStorage.setItem(DESIGN_PUBLISH_PROVIDER_KEY, designPublishProvider()); } catch (e) {}
       refreshDesignPublishTargets();
+      const panel = document.getElementById('designPublishSchedulePanel');
+      if (panel && !panel.hidden) refreshDesignPortalSync();
     });
   });
   const publishRefresh = document.getElementById('designPublishRefresh');
