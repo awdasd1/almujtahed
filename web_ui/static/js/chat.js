@@ -7966,7 +7966,10 @@ function selectionPublishSources(range, host) {
 
 function buildSelectionPublishText(range, host, selectedText) {
   const sources = selectionPublishSources(range, host);
-  let out = selectedText;
+  // إزالة أرقام الحواشي من المتن (٤)/(4) — يبقى مصدرها مذكورًا في الذيل
+  let out = String(selectedText || '')
+    .replace(/\s*[\[(]\s*[٠-٩\d۰-۹]{1,2}\s*[\])]/g, '')
+    .replace(/[ \t]{2,}/g, ' ');
   if (sources.length) {
     out += '\n\n📚 المصدر: ' + sources.map((s) => {
       const loc = [];
