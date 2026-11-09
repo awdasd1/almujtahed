@@ -260,7 +260,9 @@ function textSystemPrompt() {
   return [
     'أنت محرّر فوائد تراثية لقسم «النصوص» في تطبيق المجتهد للبحث التراثي.',
     'مهمتك الوحيدة: استخراج فائدة واحدة نفيسة حول موضوع المستخدم من الشواهد المرفقة من الكتب المحددة فقط — لا تخترع أقوالًا ولا تنسب قولًا لغير قائله ولا تخرج عن الشواهد.',
-    'أخرج النص جاهزًا للنشر في مواقع التواصل بهذا الشكل حصرًا، بلا أي مقدمة أو خاتمة من عندك:',
+    'أخرج النص جاهزًا للنشر في مواقع التواصل بهذا القالب حرفيًا، بلا أي مقدمة أو خاتمة من عندك:',
+    'القالب: [عنوان] ثم سطر فارغ ثم [متن الفائدة] ثم سطر فارغ ثم [📚 المصدر: ...] ثم [الوسوم].',
+    'تنبيه صارم: متن الفائدة المنقول أو المستفاد هو قلب النص — إياك أن تحذفه أو أن تكتفي بالعنوان والمصدر والوسوم؛ إخراج بلا متن مرفوض تمامًا.',
     'السطر الأول: عنوان قصير جذاب للفائدة (٣-٧ كلمات) بلا كلمة «عنوان» وبلا ترقيم زخرفي.',
     'ثم فراغ سطر، ثم متن الفائدة: إن وجدت في الشواهد عبارة منقولة بعينها فانقلها حرفيًا بين علامتي تنصيص «...» ومسبوقة بنسبتها: قال فلان رحمه الله: «...». وإن كانت الفائدة معنى مستخلصًا فصُغه بأسلوبك الفصيح الموجز وصدّره بما يدل على الاستفادة مثل: ومما يُستفاد: ... مع نسبة المعنى لصاحبه إن عُرف.',
     'إيجاز صارم: متن الفائدة بين ٤٠ و٩٠ كلمة، لغة فصيحة راقية، جمل قصيرة مؤثرة صالحة للتداول.',
@@ -372,6 +374,15 @@ async function loadTextBalance() {
   }
 }
 
+function isValidBenefit(text) {
+  if (!text || !text.includes('المصدر')) return false;
+  const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+  const srcIdx = lines.findIndex(l => l.includes('المصدر'));
+  if (srcIdx < 1) return false;
+  const body = lines.slice(1, srcIdx).join(' ').replace(/\s+/g, ' ').trim();
+  return body.length >= 60;
+}
+
 async function runTextGeneration(topic, scope) {
   const books = scope.books.length ? scope.books : designBooksUnion();
   let savedKeys = {};
@@ -379,29 +390,42 @@ async function runTextGeneration(topic, scope) {
   const apiKey = savedKeys.openrouter || '';
   const startedAt = Date.now();
   startTextTimer(`فُحص الطلب: ${scope.label} — يبحث Gemini 3.8 Flash في ${books.length} كتابًا ويستخرج الفائدة...`);
-  const chatResp = await fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: DESIGN_TEXT_MODEL,
-      provider: 'openrouter',
-      api_key: apiKey,
-      library_only: true,
-      library_query: topic.slice(0, 800),
-      selected_books: books,
-      extraction_capacity: 10,
-      witness_limit: 10,
-      context_tokens: 64000,
-      messages: [{ role: 'user', content: `موضوع الفائدة: ${topic}\nاستخرج الفائدة الآن وفق تعليماتك.` }],
-      system_prompt: textSystemPrompt() + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز اختيار الفائدة على هذه الزاوية.` : ''),
-      temperature: 0.3,
-      providers: savedKeys,
-      agent_group: null
-    })
-  });
-  const chatData = await chatResp.json().catch(() => ({}));
-  if (!chatResp.ok) throw new Error(chatData.detail || 'تعذر استخراج الفائدة');
-  const text = String(chatData.reply || '').replace(/```[a-z]*|```/gi, '').trim();
+  const requestBenefit = async (extraInstruction) => {
+    const chatResp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: DESIGN_TEXT_MODEL,
+        provider: 'openrouter',
+        api_key: apiKey,
+        library_only: true,
+        library_query: topic.slice(0, 800),
+        selected_books: books,
+        extraction_capacity: 10,
+        witness_limit: 10,
+        context_tokens: 64000,
+        messages: [{ role: 'user', content: `موضوع الفائدة: ${topic}\nاستخرج الفائدة الآن وفق تعليماتك.${extraInstruction || ''}` }],
+        system_prompt: textSystemPrompt() + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز اختيار الفائدة على هذه الزاوية.` : ''),
+        temperature: 0.3,
+        providers: savedKeys,
+        agent_group: null
+      })
+    });
+    const chatData = await chatResp.json().catch(() => ({}));
+    if (!chatResp.ok) throw new Error(chatData.detail || 'تعذر استخراج الفائدة');
+    return {
+      text: String(chatData.reply || '').replace(/```[a-z]*|```/gi, '').trim(),
+      witnesses: chatData.witnesses || []
+    };
+  };
+  let result = await requestBenefit('');
+  if (!isValidBenefit(result.text)) {
+    // النموذج أحيانًا يكتفي بالعنوان والمصدر — إعادة واحدة بقالب مشدد قبل إعلان الفشل
+    setTextStatus('يُعاد ضبط شكل الفائدة (متن منقول + نسبة + مصدر)...');
+    result = await requestBenefit('\nتنبيه إلزامي: لا تحذف متن الفائدة أبدًا؛ أخرج القالب كاملًا: عنوان، ثم متن الفائدة (المنقول حرفيًا بين «...» منسوبًا لقائله «قال فلان رحمه الله»)، ثم سطر المصدر، ثم الوسوم.');
+  }
+  const text = result.text;
+  const chatData = { witnesses: result.witnesses };
   if (text.length < 40) throw new Error('جاءت الفائدة فارغة أو قصيرة — أعد المحاولة');
   const witnessBooks = [...new Set((chatData.witnesses || []).map(w => w.book_title || w.title || w.book || '').filter(Boolean))];
   const firstLine = text.split('\n').map(s => s.trim()).filter(Boolean)[0] || 'فائدة نفيسة';
