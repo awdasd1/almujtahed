@@ -351,8 +351,8 @@ function designImageMode() {
 const DESIGN_IMAGE_MODEL_KEY = 'almujtahed_designs_imagemodel_v1';
 function designImageModelChoice() {
   const sel = document.getElementById('designImageModel');
-  if (sel && ['gpt', 'muse', 'gemini'].includes(sel.value)) return sel.value;
-  try { const saved = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); return ['muse', 'gemini'].includes(saved) ? saved : 'gpt'; } catch (e) { return 'gpt'; }
+  if (sel && ['gpt', 'muse', 'gemini', 'gpt54'].includes(sel.value)) return sel.value;
+  try { const saved = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); return ['muse', 'gemini', 'gpt54'].includes(saved) ? saved : 'gpt'; } catch (e) { return 'gpt'; }
 }
 
 function designSystemPrompt(imageMode) {
@@ -447,7 +447,7 @@ function renderDesignMessages() {
     const publishChip = msg.publish?.status
       ? `<span class="design-chip">${msg.publish.status === 'scheduled' ? '🗓️' : '📤'} ${escapeHtml(msg.publish.label || msg.publish.status)}</span>` : '';
     const modelChip = msg.image_model
-      ? `<span class="design-chip">${String(msg.image_model).includes('muse') ? '✨ Meta Muse Image' : String(msg.image_model).includes('gemini') ? '🌟 Gemini 3 Pro Image' : '🖼️ GPT Image'}</span>` : '';
+      ? `<span class="design-chip">${String(msg.image_model).includes('muse') ? '✨ Meta Muse Image' : String(msg.image_model).includes('gemini') ? '🌟 Gemini 3 Pro Image' : String(msg.image_model).includes('gpt-5.4') ? '🚀 GPT-5.4 Image 2' : '🖼️ GPT Image'}</span>` : '';
     return `<div class="design-msg design-msg-assistant"><div class="design-card">
       <div class="design-card-head">
         <div class="design-card-info">
@@ -1159,7 +1159,7 @@ function initDesignsTab() {
   }
   const modelSel = document.getElementById('designImageModel');
   if (modelSel) {
-    try { const savedModel = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); if (['gpt', 'muse', 'gemini'].includes(savedModel)) modelSel.value = savedModel; } catch (e) {}
+    try { const savedModel = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); if (['gpt', 'muse', 'gemini', 'gpt54'].includes(savedModel)) modelSel.value = savedModel; } catch (e) {}
     modelSel.addEventListener('change', () => { try { localStorage.setItem(DESIGN_IMAGE_MODEL_KEY, modelSel.value); } catch (e) {} });
   }
   const form = document.getElementById('designComposer');
