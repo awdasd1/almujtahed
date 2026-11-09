@@ -435,7 +435,19 @@ const AYRSHARE_PLATFORMS_UI = [
   ['bluesky', '🦋 بلوسكاي'], ['reddit', '👽 ريديت'], ['snapchat', '👻 سناب شات'], ['gmb', '📍 نشاط جوجل']
 ];
 const DESIGN_PUBLISH_PLATFORMS_KEY = 'almujtahed_designs_platforms_v1';
+const DESIGN_PUBLISH_ACCOUNTS_KEY = 'almujtahed_designs_accounts_v1';
+const DESIGN_PUBLISH_PROVIDER_KEY = 'almujtahed_designs_provider_v1';
 let designPublishIdx = -1;
+
+function designPublishProvider() {
+  return document.querySelector('input[name="designPublishProvider"]:checked')?.value
+    || localStorage.getItem(DESIGN_PUBLISH_PROVIDER_KEY) || 'zernio';
+}
+
+function platformLabelAr(platform) {
+  const found = AYRSHARE_PLATFORMS_UI.find(([id]) => id === platform);
+  return found ? found[1] : platform;
+}
 
 function designCaptionDraft(msg) {
   const tags = ['#المجتهد'];
@@ -448,12 +460,51 @@ function designCaptionDraft(msg) {
   return `${msg.title || 'تصميم من المجتهد'}\n\n📚 تصميم موثّق من كتب التراث — عبر تطبيق «المجتهد»\n${[...new Set(tags)].join(' ')}`;
 }
 
-async function designAyrshareConnected() {
+async function refreshDesignPublishTargets() {
+  const provider = designPublishProvider();
+  const grid = document.getElementById('designPublishPlatforms');
+  const label = document.getElementById('designPublishTargetsLabel');
+  const keyRow = document.getElementById('designPublishKeyRow');
+  const keyLabel = document.getElementById('designPublishKeyLabel');
+  if (!grid) return;
+  grid.innerHTML = '<div class="design-empty">جارٍ جلب وجهات النشر...</div>';
   try {
-    const resp = await fetch('/api/designs/ayrshare-status');
-    const data = await resp.json().catch(() => ({}));
-    return !!data.connected;
-  } catch (e) { return false; }
+    if (provider === 'zernio') {
+      const resp = await fetch('/api/designs/zernio-accounts');
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || 'تعذر جلب حسابات Zernio');
+      keyRow.hidden = !!data.connected;
+      keyLabel.textContent = 'مفتاح Zernio API (من لوحة Zernio ← API Keys):';
+      label.textContent = 'حسابات Zernio المرتبطة:';
+      if (!data.connected) {
+        grid.innerHTML = '<div class="design-empty">أدخل مفتاح Zernio واحفظه لتظهر حساباتك المرتبطة.</div>';
+        return;
+      }
+      const accounts = data.accounts || [];
+      if (!accounts.length) {
+        grid.innerHTML = '<div class="design-empty">لا حسابات اجتماعية مرتبطة في Zernio بعد — اربطها من لوحة Zernio ثم «تحديث القائمة».</div>';
+        return;
+      }
+      let savedAccounts = [];
+      try { savedAccounts = JSON.parse(localStorage.getItem(DESIGN_PUBLISH_ACCOUNTS_KEY) || '[]'); } catch (e) {}
+      grid.innerHTML = accounts.map(acc =>
+        `<label class="design-kind-item"><input type="checkbox" value="${escapeHtml(acc.id)}" data-platform="${escapeHtml(acc.platform)}" ${savedAccounts.includes(acc.id) ? 'checked' : ''}><span>${platformLabelAr(acc.platform)} — ${escapeHtml(acc.label)}</span></label>`
+      ).join('');
+    } else {
+      const resp = await fetch('/api/designs/ayrshare-status');
+      const data = await resp.json().catch(() => ({}));
+      keyRow.hidden = !!data.connected;
+      keyLabel.textContent = 'مفتاح Ayrshare API (من لوحة Ayrshare ← API Key):';
+      label.textContent = 'الشبكات (المرتبطة بحسابك في Ayrshare):';
+      let savedPlatforms = [];
+      try { savedPlatforms = JSON.parse(localStorage.getItem(DESIGN_PUBLISH_PLATFORMS_KEY) || '[]'); } catch (e) {}
+      grid.innerHTML = AYRSHARE_PLATFORMS_UI.map(([id, text]) =>
+        `<label class="design-kind-item"><input type="checkbox" value="${id}" ${savedPlatforms.includes(id) ? 'checked' : ''}><span>${text}</span></label>`
+      ).join('');
+    }
+  } catch (err) {
+    grid.innerHTML = `<div class="design-empty">⚠️ ${escapeHtml(err.message || 'تعذر جلب الوجهات')}</div>`;
+  }
 }
 
 async function openDesignPublish(idx) {
@@ -464,28 +515,32 @@ async function openDesignPublish(idx) {
   if (!overlay) return;
   document.getElementById('designPublishImg').src = msg.image_url;
   document.getElementById('designPublishCaption').value = designCaptionDraft(msg);
-  let savedPlatforms = [];
-  try { savedPlatforms = JSON.parse(localStorage.getItem(DESIGN_PUBLISH_PLATFORMS_KEY) || '[]'); } catch (e) {}
-  document.getElementById('designPublishPlatforms').innerHTML = AYRSHARE_PLATFORMS_UI.map(([id, label]) =>
-    `<label class="design-kind-item"><input type="checkbox" value="${id}" ${savedPlatforms.includes(id) ? 'checked' : ''}><span>${label}</span></label>`
-  ).join('');
+  const savedProvider = localStorage.getItem(DESIGN_PUBLISH_PROVIDER_KEY) || 'zernio';
+  document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
+    radio.checked = radio.value === savedProvider;
+  });
   const result = document.getElementById('designPublishResult');
   result.hidden = true;
   result.textContent = '';
-  const keyRow = document.getElementById('designPublishKeyRow');
-  keyRow.hidden = await designAyrshareConnected();
   overlay.hidden = false;
+  refreshDesignPublishTargets();
 }
 
 async function submitDesignPublish() {
   const msg = designMessages[designPublishIdx];
   if (!msg) return;
+  const provider = designPublishProvider();
   const caption = document.getElementById('designPublishCaption').value;
-  const platforms = [...document.querySelectorAll('#designPublishPlatforms input[type="checkbox"]:checked')].map(b => b.value);
+  const checked = [...document.querySelectorAll('#designPublishPlatforms input[type="checkbox"]:checked')];
   const result = document.getElementById('designPublishResult');
   const showResult = (html) => { result.hidden = false; result.innerHTML = html; };
-  if (!platforms.length) { showResult('⚠️ اختر شبكة واحدة على الأقل'); return; }
-  try { localStorage.setItem(DESIGN_PUBLISH_PLATFORMS_KEY, JSON.stringify(platforms)); } catch (e) {}
+  if (!checked.length) { showResult('⚠️ اختر وجهة نشر واحدة على الأقل'); return; }
+  const platforms = checked.map(b => provider === 'zernio' ? (b.getAttribute('data-platform') || b.value) : b.value);
+  const accountIds = provider === 'zernio' ? checked.map(b => b.value) : [];
+  try {
+    localStorage.setItem(provider === 'zernio' ? DESIGN_PUBLISH_ACCOUNTS_KEY : DESIGN_PUBLISH_PLATFORMS_KEY,
+      JSON.stringify(provider === 'zernio' ? accountIds : platforms));
+  } catch (e) {}
   const when = document.querySelector('input[name="designPublishWhen"]:checked')?.value || 'now';
   let schedule = null;
   if (when === 'schedule') {
@@ -501,19 +556,20 @@ async function submitDesignPublish() {
     const resp = await fetch('/api/designs/publish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_url: msg.image_url, caption, platforms, schedule })
+      body: JSON.stringify({ image_url: msg.image_url, caption, platforms, provider, account_ids: accountIds, schedule })
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.detail || 'تعذر النشر');
+    const platformNames = platforms.map(p => platformLabelAr(p)).join('، ');
     const okLinks = (data.post_ids || []).filter(p => p.status === 'success')
-      .map(p => p.postUrl ? `<a href="${escapeHtml(p.postUrl)}" target="_blank" rel="noopener">${escapeHtml(p.platform)}</a>` : escapeHtml(p.platform)).join('، ');
-    const errText = (data.errors || []).map(e => `${escapeHtml(e.platform || '')}: ${escapeHtml(e.message || '')}`).join('<br>');
+      .map(p => p.postUrl ? `<a href="${escapeHtml(p.postUrl)}" target="_blank" rel="noopener">${escapeHtml(platformLabelAr(p.platform))}</a>` : escapeHtml(platformLabelAr(p.platform))).join('، ');
+    const errText = (data.errors || []).map(e => `${escapeHtml(platformLabelAr(e.platform || ''))}: ${escapeHtml(e.message || '')}`).join('<br>');
     if (data.status === 'scheduled') {
-      msg.publish = { status: 'scheduled', label: `مجدول: ${platforms.join('، ')}` };
-      showResult(`🗓️ جُدول النشر بنجاح على: ${escapeHtml(platforms.join('، '))}`);
+      msg.publish = { status: 'scheduled', label: `مجدول: ${platformNames}` };
+      showResult(`🗓️ جُدول النشر بنجاح على: ${escapeHtml(platformNames)}`);
     } else if ((data.post_ids || []).length) {
-      msg.publish = { status: 'published', label: `نُشر: ${platforms.join('، ')}` };
-      showResult(`✅ نُشر على: ${okLinks || escapeHtml(platforms.join('، '))}${errText ? '<br>⚠️ ' + errText : ''}`);
+      msg.publish = { status: 'published', label: `${data.status === 'partial' ? 'نُشر جزئيًا' : 'نُشر'}: ${platformNames}` };
+      showResult(`✅ نُشر على: ${okLinks || escapeHtml(platformNames)}${errText ? '<br>⚠️ ' + errText : ''}`);
     } else {
       showResult(`⚠️ لم يتم النشر${errText ? '<br>' + errText : ''}`);
       return;
@@ -701,21 +757,31 @@ function initDesignsTab() {
   });
   const keySave = document.getElementById('designPublishKeySave');
   if (keySave) keySave.addEventListener('click', async () => {
+    const provider = designPublishProvider();
     const value = document.getElementById('designPublishKey').value.trim();
-    if (!value) { if (typeof showToast === 'function') showToast('الصق مفتاح Ayrshare أولًا'); return; }
+    if (!value) { if (typeof showToast === 'function') showToast('الصق مفتاح API أولًا'); return; }
     try {
       const resp = await fetch('/api/config/providers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ayrshare: value })
+        body: JSON.stringify({ [provider]: value })
       });
       if (!resp.ok) throw new Error('تعذر الحفظ');
       document.getElementById('designPublishKeyRow').hidden = true;
-      if (typeof showToast === 'function') showToast('حُفظ مفتاح Ayrshare — اختر الشبكات وانشر');
+      if (typeof showToast === 'function') showToast(`حُفظ مفتاح ${provider === 'zernio' ? 'Zernio' : 'Ayrshare'} — حدّث القائمة واختر الوجهات`);
+      refreshDesignPublishTargets();
     } catch (err) {
       if (typeof showToast === 'function') showToast(err.message || 'تعذر حفظ المفتاح');
     }
   });
+  document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      try { localStorage.setItem(DESIGN_PUBLISH_PROVIDER_KEY, designPublishProvider()); } catch (e) {}
+      refreshDesignPublishTargets();
+    });
+  });
+  const publishRefresh = document.getElementById('designPublishRefresh');
+  if (publishRefresh) publishRefresh.addEventListener('click', refreshDesignPublishTargets);
   const lightbox = document.getElementById('designLightbox');
   if (lightbox) lightbox.addEventListener('click', (event) => { if (event.target !== document.getElementById('designLightboxImg')) closeDesignLightbox(); });
   const lightboxClose = document.getElementById('designLightboxClose');

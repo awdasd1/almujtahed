@@ -405,6 +405,7 @@ PROVIDER_ENV_KEYS = {
     "tavily": "TAVILY_API_KEY",
     "hf": "HF_TOKEN",
     "ayrshare": "AYRSHARE_API_KEY",
+    "zernio": "ZERNIO_API_KEY",
 }
 
 def _normalize_provider_name(name: str) -> str:
@@ -5353,7 +5354,9 @@ def _ayrshare_call(path: str, key: str, payload: Optional[dict] = None, timeout:
 class DesignPublishRequest(BaseModel):
     image_url: str
     caption: str = ""
-    platforms: List[str]
+    platforms: List[str] = []
+    provider: str = "zernio"
+    account_ids: List[str] = []
     schedule: Optional[str] = None
 
 
@@ -5363,20 +5366,149 @@ AYRSHARE_PLATFORMS = {
 }
 
 
-@app.post("/api/designs/publish")
-async def designs_publish(req: DesignPublishRequest, request: Request):
-    """رفع صورة التصميم إلى Ayrshare ونشرها أو جدولتها على الشبكات المختارة."""
+def _owner_zernio_key(request: Request) -> str:
+    return (load_provider_keys(current_owner_id(request)).get("zernio") or "").strip()
+
+
+def _zernio_call(method: str, path: str, key: str, payload: Optional[dict] = None, timeout: int = 120) -> dict:
+    http_req = urllib.request.Request(
+        f"https://zernio.com/api/v1{path}",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+        data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(http_req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body.strip() else {}
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="ignore")[:600]
+        try:
+            parsed = json.loads(detail)
+            message = parsed.get("error") or parsed.get("message") or detail
+        except Exception:
+            message = detail
+        raise HTTPException(status_code=502, detail=f"رفض Zernio الطلب: {message}")
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"تعذر الاتصال بـ Zernio: {error}")
+
+
+def _zernio_accounts(key: str) -> list:
+    data = _zernio_call("GET", "/accounts?category=social", key, timeout=30)
+    accounts = []
+    for item in (data.get("accounts") or []) if isinstance(data, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        account_id = item.get("_id") or item.get("id") or item.get("accountId")
+        platform = str(item.get("platform") or "").lower()
+        if not account_id or not platform:
+            continue
+        label = item.get("displayName") or item.get("username") or item.get("name") or account_id
+        accounts.append({"id": str(account_id), "platform": platform, "label": str(label),
+                         "status": str(item.get("status") or "")})
+    return accounts
+
+
+@app.get("/api/designs/zernio-accounts")
+async def designs_zernio_accounts(request: Request):
+    """الحسابات الاجتماعية المرتبطة في Zernio لاختيار وجهات النشر."""
+    key = _owner_zernio_key(request)
+    if not key:
+        return {"connected": False, "accounts": []}
+    return {"connected": True, "accounts": _zernio_accounts(key)}
+
+
+def _publish_via_zernio(req: DesignPublishRequest, request: Request, target: Path, name: str) -> dict:
+    key = _owner_zernio_key(request)
+    if not key:
+        raise HTTPException(status_code=400, detail="أدخل مفتاح Zernio API أولًا واحفظه")
+    if not req.account_ids:
+        raise HTTPException(status_code=400, detail="اختر حساب تواصل واحدًا على الأقل")
+    accounts = {a["id"]: a for a in _zernio_accounts(key)}
+    targets = []
+    for account_id in req.account_ids:
+        account = accounts.get(str(account_id))
+        if account:
+            targets.append({"platform": account["platform"], "accountId": account["id"]})
+    if not targets:
+        raise HTTPException(status_code=400, detail="الحسابات المختارة غير مرتبطة في Zernio — حدّث القائمة")
+    raw = target.read_bytes()
+    presign = _zernio_call("POST", "/media/presign", key, {
+        "filename": name, "contentType": "image/png", "size": len(raw),
+    }, timeout=60)
+    upload_url = presign.get("uploadUrl")
+    public_url = presign.get("publicUrl")
+    if not upload_url or not public_url:
+        raise HTTPException(status_code=502, detail="لم يعد Zernio رابط رفع صالحًا")
+    put_req = urllib.request.Request(upload_url, data=raw, method="PUT",
+                                     headers={"Content-Type": "image/png"})
+    try:
+        with urllib.request.urlopen(put_req, timeout=300) as resp:
+            resp.read()
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"فشل رفع الصورة إلى تخزين Zernio: {error}")
+    payload: Dict[str, Any] = {
+        "content": (req.caption or "").strip(),
+        "mediaItems": [{"url": public_url, "type": "image"}],
+        "platforms": targets,
+    }
+    if req.schedule:
+        payload["scheduledFor"] = req.schedule
+        payload["timezone"] = "UTC"
+    else:
+        payload["publishNow"] = True
+    result = _zernio_call("POST", "/posts", key, payload, timeout=300)
+    post = result.get("post") or {}
+    post_ids = []
+    errors = []
+    for entry in post.get("platforms") or []:
+        if not isinstance(entry, dict):
+            continue
+        platform = entry.get("platform") or ""
+        url = entry.get("platformPostUrl") or entry.get("postUrl") or ""
+        status = str(entry.get("status") or "")
+        if url:
+            post_ids.append({"platform": platform, "status": "success", "postUrl": url})
+        elif status in ("failed", "error"):
+            errors.append({"platform": platform, "message": str(entry.get("error") or "فشل النشر")})
+    for entry in result.get("platformResults") or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("status") == "failed" and entry.get("error"):
+            errors.append({"platform": entry.get("platform") or "", "message": str(entry["error"])})
+    if req.schedule:
+        status = "scheduled"
+    elif post_ids and errors:
+        status = "partial"
+    elif post_ids:
+        status = "published"
+    else:
+        status = "error"
+        if not errors and result.get("error"):
+            errors.append({"platform": "", "message": str(result["error"])})
+    return {
+        "status": status,
+        "id": post.get("_id") or result.get("_id"),
+        "post_ids": post_ids,
+        "errors": errors,
+        "schedule_date": req.schedule,
+        "media_url": public_url,
+        "provider": "zernio",
+    }
+
+
+def _publish_via_ayrshare(req: DesignPublishRequest, request: Request, target: Path, name: str) -> dict:
     key = _owner_ayrshare_key(request)
     if not key:
         raise HTTPException(status_code=400, detail="أدخل مفتاح Ayrshare API أولًا واحفظه")
     platforms = [p for p in (req.platforms or []) if p in AYRSHARE_PLATFORMS]
     if not platforms:
         raise HTTPException(status_code=400, detail="اختر شبكة تواصل واحدة على الأقل")
-    folder = _designs_dir(request).resolve()
-    name = Path(urllib.parse.unquote(req.image_url or "")).name
-    target = (folder / name).resolve()
-    if target.parent != folder or not target.is_file():
-        raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
     raw = target.read_bytes()
     if len(raw) > 28 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="الصورة أكبر من حد الرفع (30MB)")
@@ -5399,14 +5531,30 @@ async def designs_publish(req: DesignPublishRequest, request: Request):
     result = _ayrshare_call("/post", key, payload, timeout=180)
     if not isinstance(result, dict):
         raise HTTPException(status_code=502, detail="رد غير متوقع من Ayrshare")
+    status = result.get("status") or "unknown"
     return {
-        "status": result.get("status") or "unknown",
+        "status": "published" if status == "success" else status,
         "id": result.get("id"),
         "post_ids": result.get("postIds") or [],
         "errors": result.get("errors") or [],
         "schedule_date": result.get("scheduleDate"),
         "media_url": media_url,
+        "provider": "ayrshare",
     }
+
+
+@app.post("/api/designs/publish")
+async def designs_publish(req: DesignPublishRequest, request: Request):
+    """رفع صورة التصميم ونشرها أو جدولتها — Zernio معتمدة، وAyrshare خيار باقٍ."""
+    folder = _designs_dir(request).resolve()
+    name = Path(urllib.parse.unquote(req.image_url or "")).name
+    target = (folder / name).resolve()
+    if target.parent != folder or not target.is_file():
+        raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
+    provider = (req.provider or "zernio").lower()
+    if provider == "ayrshare":
+        return _publish_via_ayrshare(req, request, target, name)
+    return _publish_via_zernio(req, request, target, name)
 
 
 @app.get("/api/designs/ayrshare-status")
@@ -5863,7 +6011,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.366"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.367"},
         },
     })
     if opened.get("error"):

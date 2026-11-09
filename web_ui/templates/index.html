@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.366">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.367">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.366 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.367 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -2291,12 +2291,16 @@
                 <div class="design-restore-overlay" id="designPublishOverlay" hidden>
                     <div class="design-restore-panel" role="dialog" aria-modal="true">
                         <div class="design-restore-head">
-                            <h3>📤 نشر التصميم عبر Ayrshare</h3>
+                            <h3>📤 نشر التصميم إلى التواصل</h3>
                             <button type="button" class="design-restore-close" id="designPublishClose" aria-label="إغلاق">×</button>
+                        </div>
+                        <div class="design-publish-when">
+                            <label class="design-kind-item"><input type="radio" name="designPublishProvider" value="zernio" checked><span>⚡ Zernio (المعتمدة)</span></label>
+                            <label class="design-kind-item"><input type="radio" name="designPublishProvider" value="ayrshare"><span>Ayrshare (خيار بديل)</span></label>
                         </div>
                         <img class="design-publish-thumb" id="designPublishImg" alt="التصميم المراد نشره">
                         <div class="design-publish-keyrow" id="designPublishKeyRow" hidden>
-                            <label for="designPublishKey">مفتاح Ayrshare API (من لوحة Ayrshare ← API Key):</label>
+                            <label for="designPublishKey" id="designPublishKeyLabel">مفتاح API:</label>
                             <span class="design-publish-keyfields">
                                 <input type="password" id="designPublishKey" placeholder="AYRSHARE_API_KEY" dir="ltr">
                                 <button type="button" class="design-mini-btn" id="designPublishKeySave">حفظ المفتاح</button>
@@ -2304,7 +2308,7 @@
                         </div>
                         <label class="design-publish-label" for="designPublishCaption">نص المنشور:</label>
                         <textarea class="design-publish-caption" id="designPublishCaption" rows="4"></textarea>
-                        <div class="design-publish-label">الشبكات (المرتبطة بحسابك في Ayrshare):</div>
+                        <div class="design-publish-label"><span id="designPublishTargetsLabel">وجهات النشر:</span> <button type="button" class="design-mini-btn" id="designPublishRefresh">↻ تحديث القائمة</button></div>
                         <div class="design-kind-grid" id="designPublishPlatforms"></div>
                         <div class="design-publish-when">
                             <label class="design-kind-item"><input type="radio" name="designPublishWhen" value="now" checked><span>🚀 نشر الآن</span></label>
@@ -5478,18 +5482,18 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.366"></script>
+    <script src="/static/js/app.js?v=1.10.367"></script>
     <script src="/static/js/search.js?v=1793188000"></script>
     <script src="/static/js/reader.js?v=1793225300"></script>
-    <script src="/static/js/force3d.js?v=1.10.366"></script>
+    <script src="/static/js/force3d.js?v=1.10.367"></script>
     <script src="/static/js/share.js?v=1793225500"></script>
-    <script src="/static/js/chat.js?v=1.10.366"></script>
-    <script src="/static/js/designs.js?v=1.10.366"></script>
-    <script src="/static/js/agents.js?v=1.10.366"></script>
+    <script src="/static/js/chat.js?v=1.10.367"></script>
+    <script src="/static/js/designs.js?v=1.10.367"></script>
+    <script src="/static/js/agents.js?v=1.10.367"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1.10.366"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.366"></script>
-    <script src="/static/js/projects.js?v=1.10.366"></script>
+    <script src="/static/js/tools.js?v=1.10.367"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.367"></script>
+    <script src="/static/js/projects.js?v=1.10.367"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
