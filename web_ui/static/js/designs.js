@@ -205,17 +205,19 @@ async function loadDesignBalance() {
   const el = document.getElementById('designBalance');
   if (!el) return;
   try {
-    const resp = await fetch('/api/designs/balance');
+    // نفس مصدر وصيغة رصيد تبويب المحادثات تمامًا: أرصدة حساب OpenRouter
+    let apiKey = '';
+    try { apiKey = readProviderKeys().openrouter || ''; } catch (e) {}
+    const resp = await fetch(`/api/openrouter/credits?api_key=${encodeURIComponent(apiKey)}`);
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.detail || '');
-    const parts = [];
-    if (data.remaining_usd != null) parts.push(`الرصيد المتبقي: ${fmtUsd(data.remaining_usd)} (${fmtSar(data.remaining_usd)})`);
-    if (data.usage_usd != null) parts.push(`المستخدم: ${fmtUsd(data.usage_usd)} (${fmtSar(data.usage_usd)})`);
-    if (data.limit_usd != null) parts.push(`حد المفتاح: ${fmtUsd(data.limit_usd)}`);
-    if (data.is_free_tier) parts.push('خطة مجانية');
-    el.textContent = '💰 ' + (parts.join(' • ') || 'الرصيد غير متاح');
+    const remUsd = Number(data.remaining_credits_usd);
+    const remSar = Number(data.remaining_credits_sar);
+    if (isNaN(remUsd)) throw new Error('بيانات رصيد ناقصة');
+    el.textContent = `💰 الرصيد الحالي: $${remUsd.toFixed(2)} | ${remSar.toFixed(2)} ﷼`;
+    el.title = `إجمالي الرصيد المشحون: ${fmtUsd(Number(data.total_credits_usd))} • إجمالي المستخدم: ${fmtUsd(Number(data.total_usage_usd))} (${fmtSar(Number(data.total_usage_usd))})`;
   } catch (e) {
-    el.textContent = '💰 الرصيد: تعذر الجلب';
+    el.textContent = '💰 الرصيد الحالي: تعذر الجلب';
   }
 }
 

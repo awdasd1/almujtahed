@@ -5284,36 +5284,6 @@ def _designs_dir(request: Request) -> Path:
     return folder
 
 
-@app.get("/api/designs/balance")
-async def designs_balance(request: Request):
-    """رصيد OpenRouter المتبقي والمستخدم بالدولار والريال (سعر الصرف 3.75)."""
-    key = owner_openrouter_key(request, None) or OPENROUTER_DEFAULT_KEY
-    if not key:
-        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
-    try:
-        http_req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/auth/key",
-            headers={"Authorization": f"Bearer {key}"},
-        )
-        with urllib.request.urlopen(http_req, timeout=20) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception as error:
-        raise HTTPException(status_code=502, detail=f"تعذر جلب الرصيد: {error}")
-    info = data.get("data") or {}
-    limit = info.get("limit")
-    usage = info.get("usage")
-    remaining = info.get("limit_remaining")
-    if remaining is None and isinstance(limit, (int, float)) and isinstance(usage, (int, float)):
-        remaining = limit - usage
-    return {
-        "limit_usd": limit,
-        "usage_usd": usage,
-        "remaining_usd": remaining,
-        "is_free_tier": bool(info.get("is_free_tier")),
-        "sar_rate": 3.75,
-    }
-
-
 @app.get("/api/designs/list")
 async def designs_list(request: Request):
     """كل صور التصاميم المحفوظة في المجلد — لنافذة الاسترجاع."""
@@ -5800,7 +5770,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.361"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.362"},
         },
     })
     if opened.get("error"):
