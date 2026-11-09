@@ -550,14 +550,52 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.351")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.352")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
     private let muted = NSColor(srgbRed: 0.416, green: 0.361, blue: 0.302, alpha: 1)
     private let paper = NSColor(srgbRed: 0.984, green: 0.969, blue: 0.941, alpha: 1)
 
+    /// التطبيق يسكن «التطبيقات» كأي تطبيق: إن شُغّل من التنزيلات أو غيرها
+    /// نسخ نفسه إلى /Applications (أو ~/Applications) وفتح النسخة المنقولة
+    /// ثم خرج، فتكون أيقونته هناك هي ما يشغّله دائمًا. نسخة أحدث أو مساوية
+    /// مستقرة هناك تُفتح كما هي ولا تُستبدل.
+    private func relocateToApplicationsIfNeeded() -> Bool {
+        if ProcessInfo.processInfo.environment["ALMUJTAHED_NO_RELOCATE"] == "1" { return false }
+        let fm = FileManager.default
+        let bundle = Bundle.main.bundleURL
+        let homeApps = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path
+        let appsDirs = ["/Applications", homeApps]
+        if appsDirs.contains(where: { bundle.path.hasPrefix($0 + "/") }) { return false }
+        let myVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        for appsDir in appsDirs {
+            let dest = URL(fileURLWithPath: appsDir).appendingPathComponent("المجتهد.app")
+            if let existing = Bundle(url: dest),
+               let ev = existing.infoDictionary?["CFBundleShortVersionString"] as? String,
+               ev.compare(myVersion, options: .numeric) != .orderedAscending {
+                NSWorkspace.shared.openApplication(at: dest, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
+                    DispatchQueue.main.async { NSApp.terminate(nil) }
+                }
+                return true
+            }
+            do {
+                try fm.createDirectory(atPath: appsDir, withIntermediateDirectories: true)
+                if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                try fm.copyItem(at: bundle, to: dest)
+                NSWorkspace.shared.openApplication(at: dest, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
+                    DispatchQueue.main.async { NSApp.terminate(nil) }
+                }
+                return true
+            } catch {
+                continue
+            }
+        }
+        return false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if relocateToApplicationsIfNeeded() { return }
         if !acquireLock() {
             let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.almujtahed.desktop")
             others.first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }?
@@ -634,7 +672,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.351"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.352"
     }
 
     private func buildWindow() {

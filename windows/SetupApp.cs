@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
+using Microsoft.Win32;
 
 namespace AlMujtahed.Setup;
 
@@ -12,6 +13,11 @@ static class Program
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        if (args.Any(arg => arg == "--uninstall"))
+        {
+            Application.Run(new UninstallForm());
+            return;
+        }
         var extractOnly = args.Any(arg => arg == "--extract-only");
         var folder = args.FirstOrDefault(arg => arg != "--extract-only" && arg != "--setup");
         if (!string.IsNullOrWhiteSpace(folder))
@@ -21,6 +27,7 @@ static class Program
                 Installer.Extract(folder, null);
                 Installer.WriteMarker(folder);
                 Installer.CreateShortcuts(folder);
+                Installer.RegisterUninstallEntry(folder);
                 if (!extractOnly) Installer.Launch(folder);
             }
             catch (Exception ex)
@@ -91,6 +98,45 @@ static class Installer
                 shortcut.Save();
             }
             catch { }
+        }
+    }
+
+    const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\AlMujtahed";
+
+    public static void RegisterUninstallEntry(string folder)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(UninstallKeyPath);
+            key.SetValue("DisplayName", "المجتهد");
+            key.SetValue("DisplayVersion", CurrentVersion);
+            key.SetValue("Publisher", "المجتهد");
+            key.SetValue("InstallLocation", folder);
+            key.SetValue("DisplayIcon", Path.Combine(folder, "AlMujtahed.exe"));
+            var setupExe = Environment.ProcessPath ?? "";
+            key.SetValue("UninstallString", $"\"{setupExe}\" --uninstall");
+            key.SetValue("NoModify", 1, RegistryValueKind.DWord);
+            key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+        }
+        catch { }
+    }
+
+    public static void UnregisterUninstallEntry()
+    {
+        try { Registry.CurrentUser.DeleteSubKeyTree(UninstallKeyPath, false); } catch { }
+    }
+
+    public static void RemoveShortcuts()
+    {
+        var links = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                @"Microsoft\Windows\Start Menu\Programs", "المجتهد.lnk"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "المجتهد.lnk")
+        };
+        foreach (var link in links)
+        {
+            try { if (File.Exists(link)) File.Delete(link); } catch { }
         }
     }
 
@@ -216,6 +262,7 @@ sealed class SetupForm : Form
             await Task.Run(() => Installer.Extract(folder, progress));
             Installer.WriteMarker(folder);
             Installer.CreateShortcuts(folder);
+            Installer.RegisterUninstallEntry(folder);
             status.Text = "اكتمل التثبيت";
             Installer.Launch(folder);
             Close();
@@ -228,5 +275,49 @@ sealed class SetupForm : Form
             install.Enabled = true;
             browse.Enabled = true;
         }
+    }
+}
+
+sealed class UninstallForm : Form
+{
+    public UninstallForm()
+    {
+        Text = "إلغاء تثبيت المجتهد";
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        StartPosition = FormStartPosition.CenterScreen;
+        ClientSize = new Size(460, 150);
+        RightToLeft = RightToLeft.Yes;
+        RightToLeftLayout = true;
+        Font = new Font("Segoe UI", 12);
+        BackColor = Color.FromArgb(241, 233, 220);
+        var label = new Label
+        {
+            Text = "سيُحذف تطبيق المجتهد واختصاراته من هذا الجهاز. بيانات التطبيق في AppData تُحذف أيضًا من داخل التطبيق نفسه (زر حذف التطبيق) إن أردتها.",
+            AutoSize = false,
+            Location = new Point(24, 20),
+            Size = new Size(412, 56),
+            ForeColor = Color.FromArgb(42, 34, 26)
+        };
+        var ok = new Button { Text = "إلغاء التثبيت", Location = new Point(24, 92), Size = new Size(140, 38) };
+        var cancel = new Button { Text = "تراجع", Location = new Point(176, 92), Size = new Size(110, 38), DialogResult = DialogResult.Cancel };
+        ok.Click += (_, _) => DoUninstall();
+        Controls.AddRange(new Control[] { label, ok, cancel });
+        CancelButton = cancel;
+    }
+
+    void DoUninstall()
+    {
+        var existing = Installer.FindExisting();
+        Installer.RemoveShortcuts();
+        Installer.UnregisterUninstallEntry();
+        if (existing is { } found)
+        {
+            try { Directory.Delete(found.folder, true); } catch { }
+        }
+        MessageBox.Show(this, "تم إلغاء تثبيت المجتهد.", "المجتهد", MessageBoxButtons.OK, MessageBoxIcon.Information,
+            MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+        Close();
     }
 }
