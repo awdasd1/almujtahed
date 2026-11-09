@@ -1137,3 +1137,10 @@ function initDesignsTab() {
 window.initDesignsTab = initDesignsTab;
 window.submitDesignIdea = submitDesignIdea;
 window.openDesignTextPublish = openDesignTextPublish;
+
+// نافذة النشر مشتركة بين تبويبَي «نشر» و«المحادثات» (نشر التعليق المختصر) —
+// تُنقل إلى جذر الصفحة حتى لا يحجبها أي تبويب أو قسم مخفي
+(function relocatePublishOverlayToBody() {
+  const overlay = document.getElementById('designPublishOverlay');
+  if (overlay && overlay.parentElement !== document.body) document.body.appendChild(overlay);
+})();

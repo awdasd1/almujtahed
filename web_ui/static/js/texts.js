@@ -632,10 +632,9 @@ function initTextsTab() {
   initTextKindPicker();
   initTextBooksPicker();
   initTextCharLimit();
-  // نافذة النشر تسكن قسم التصاميم؛ انقلها لجذر التبويب حتى تظهر فوق القسمين معًا
+  // نافذة النشر مشتركة وتسكن جذر الصفحة (نقلها designs.js) حتى تظهر فوق كل التبويبات
   const publishOverlay = document.getElementById('designPublishOverlay');
-  const pane = document.getElementById('paneDesigns');
-  if (publishOverlay && pane && publishOverlay.parentElement !== pane) pane.appendChild(publishOverlay);
+  if (publishOverlay && publishOverlay.parentElement !== document.body) document.body.appendChild(publishOverlay);
   const designsBtn = document.getElementById('publishSectionDesignsBtn');
   const textsBtn = document.getElementById('publishSectionTextsBtn');
   if (designsBtn && !designsBtn.dataset.wired) {

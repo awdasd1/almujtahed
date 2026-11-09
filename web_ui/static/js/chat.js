@@ -1559,6 +1559,9 @@ function renderSessionMessages(sessionId, options) {
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
         </button>
+        ${msg.selection_research ? `<button type="button" class="btn-msg-export" onclick="publishBriefComment(${idx})" title="نشر هذه الفائدة في مواقع التواصل — تُعبأ تلقائيًا بمصدرها">
+          📤 نشر
+        </button>` : ''}
         <button type="button" class="btn-msg-export" onclick="shareChatMessage(${idx})" title="مشاركة هذه الإجابة">
           مشاركة
         </button>
@@ -2112,6 +2115,43 @@ async function exportChatMessagePdf(idx) {
     return;
   }
   showToast('تعذر تجهيز صفحة البحث للطباعة');
+}
+
+function briefCommentPublishText(msg) {
+  let body = String(msg.content || '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^>\s?/gm, '')
+    .trim();
+  const seen = new Set();
+  const sources = [];
+  (msg.witnesses || []).forEach(w => {
+    if (!w || !w.title) return;
+    const key = `${w.title}|${w.part || ''}|${w.page || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const loc = [];
+    if (w.part) loc.push(`ج${w.part}`);
+    if (w.page) loc.push(`ص${w.page}`);
+    sources.push(`«${w.title}»${w.author ? ` — ${w.author}` : ''}${loc.length ? ` — ${loc.join('، ')}` : ''}`);
+  });
+  let out = body;
+  if (sources.length) out += `\n\n📚 المصدر: ${sources.slice(0, 3).join('؛ ')}`;
+  out += '\n\n#فوائد_تراثية #تعليق_وشرح_مختصر';
+  return out;
+}
+
+function publishBriefComment(idx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages[idx];
+  if (!msg) return;
+  if (typeof window.openDesignTextPublish !== 'function') {
+    if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
+    return;
+  }
+  window.openDesignTextPublish(briefCommentPublishText(msg), null);
 }
 
 function copyChatMessageText(idx) {
