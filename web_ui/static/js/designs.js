@@ -155,6 +155,28 @@ function setDesignBookSelected(book, selected) {
   updateDesignBooksButton();
 }
 
+function setAllDesignBooks(selected) {
+  loadDesignBooksState();
+  const all = designBooksUnion();
+  if (selected) {
+    const basis = new Set(designScopeBasisBooks());
+    designBooksState.removed = designBooksState.removed.filter(b => !all.includes(b));
+    designBooksState.added = [...new Set([...designBooksState.added, ...all.filter(b => !basis.has(b))])];
+  } else {
+    designBooksState.added = [];
+    designBooksState.removed = [...all];
+  }
+  saveDesignBooksState();
+  renderDesignBooksChips();
+  renderDesignBooksList();
+  const effective = effectiveDesignBooks(designScopeBasisBooks());
+  document.querySelectorAll('#designBooksLibrary input[data-book]').forEach(box => {
+    box.checked = effective.includes(box.getAttribute('data-book'));
+  });
+  updateDesignBooksButton();
+  if (typeof showToast === 'function') showToast(selected ? `حُدّدت كل كتب القائمة المعتمدة (${all.length} كتابًا)` : 'أُلغي تحديد كل الكتب');
+}
+
 function renderDesignBooksChips() {
   const chips = document.getElementById('designBooksChips');
   const count = document.getElementById('designBooksSelectedCount');
@@ -265,6 +287,10 @@ function initDesignBooksPicker() {
     updateDesignBooksButton();
     if (typeof showToast === 'function') showToast('أُعيد تعيين تحديد الكتب إلى نطاق الفنون');
   });
+  const selectAll = document.getElementById('designBooksSelectAll');
+  if (selectAll) selectAll.addEventListener('click', () => setAllDesignBooks(true));
+  const selectNone = document.getElementById('designBooksSelectNone');
+  if (selectNone) selectNone.addEventListener('click', () => setAllDesignBooks(false));
 }
 
 function designKindsList() {

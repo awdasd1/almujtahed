@@ -142,6 +142,28 @@ function setTextBookSelected(book, selected) {
   updateTextBooksButton();
 }
 
+function setAllTextBooks(selected) {
+  loadTextBooksState();
+  const all = designBooksUnion();
+  if (selected) {
+    const basis = new Set(textScopeBasisBooks());
+    textBooksState.removed = textBooksState.removed.filter(b => !all.includes(b));
+    textBooksState.added = [...new Set([...textBooksState.added, ...all.filter(b => !basis.has(b))])];
+  } else {
+    textBooksState.added = [];
+    textBooksState.removed = [...all];
+  }
+  saveTextBooksState();
+  renderTextBooksChips();
+  renderTextBooksList();
+  const effective = effectiveTextBooks(textScopeBasisBooks());
+  document.querySelectorAll('#textBooksLibrary input[data-book]').forEach(box => {
+    box.checked = effective.includes(box.getAttribute('data-book'));
+  });
+  updateTextBooksButton();
+  if (typeof showToast === 'function') showToast(selected ? `حُدّدت كل كتب القائمة المعتمدة (${all.length} كتابًا)` : 'أُلغي تحديد كل الكتب');
+}
+
 function renderTextBooksChips() {
   const chips = document.getElementById('textBooksChips');
   const count = document.getElementById('textBooksSelectedCount');
@@ -254,6 +276,10 @@ function initTextBooksPicker() {
     updateTextBooksButton();
     if (typeof showToast === 'function') showToast('أُعيد تعيين تحديد الكتب إلى نطاق الفنون');
   });
+  const selectAll = document.getElementById('textBooksSelectAll');
+  if (selectAll) selectAll.addEventListener('click', () => setAllTextBooks(true));
+  const selectNone = document.getElementById('textBooksSelectNone');
+  if (selectNone) selectNone.addEventListener('click', () => setAllTextBooks(false));
 }
 
 const TEXT_CHARLIMIT_KEY = 'almujtahed_texts_charlimit_v1';
