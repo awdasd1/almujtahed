@@ -254,6 +254,8 @@ function renderDesignMessages() {
         ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="fold" data-idx="${idx}">${msg.collapsed ? '👁️ عرض الصورة' : '🙈 طي الصورة'}</button>` : ''}
         ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="zoom" data-idx="${idx}">🔍 تكبير</button>` : ''}
         ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="share" data-idx="${idx}">🔗 مشاركة</button>` : ''}
+        ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="publish" data-idx="${idx}">📤 نشر</button>` : ''}
+        ${msg.publish?.status ? `<span class="design-chip">${msg.publish.status === 'scheduled' ? '🗓️' : '📤'} ${escapeHtml(msg.publish.label || msg.publish.status)}</span>` : ''}
         ${msg.image_url ? `<a class="design-download" href="${escapeHtml(msg.image_url)}" download>⬇️ تنزيل</a>` : ''}
         <button type="button" class="design-mini-btn" data-design-action="archive" data-idx="${idx}">🗄️ أرشفة</button>
         ${msg.image_url ? `<button type="button" class="design-mini-btn design-danger" data-design-action="delete" data-idx="${idx}">🗑️ حذف نهائي</button>` : ''}
@@ -426,6 +428,107 @@ async function shareDesignImage(msg) {
   }
 }
 
+const AYRSHARE_PLATFORMS_UI = [
+  ['instagram', '📸 إنستغرام'], ['twitter', '𝕏 إكس'], ['facebook', '📘 فيسبوك'],
+  ['threads', '🧵 ثريدز'], ['telegram', '✈️ تيليغرام'], ['linkedin', '💼 لينكدإن'],
+  ['tiktok', '🎵 تيك توك'], ['youtube', '▶️ يوتيوب'], ['pinterest', '📌 بينترست'],
+  ['bluesky', '🦋 بلوسكاي'], ['reddit', '👽 ريديت'], ['snapchat', '👻 سناب شات'], ['gmb', '📍 نشاط جوجل']
+];
+const DESIGN_PUBLISH_PLATFORMS_KEY = 'almujtahed_designs_platforms_v1';
+let designPublishIdx = -1;
+
+function designCaptionDraft(msg) {
+  const tags = ['#المجتهد'];
+  const disc = String(msg.discipline || '').replace(/\(يدوي\)|مسترجعة من المجلد/g, '').trim();
+  disc.split('+').forEach(part => {
+    const word = part.replace(/[^\u0600-\u06FF ]/g, '').trim().replace(/\s+/g, '');
+    if (word.length > 1) tags.push('#' + word);
+  });
+  tags.push('#تراث', '#تاريخ_إسلامي');
+  return `${msg.title || 'تصميم من المجتهد'}\n\n📚 تصميم موثّق من كتب التراث — عبر تطبيق «المجتهد»\n${[...new Set(tags)].join(' ')}`;
+}
+
+async function designAyrshareConnected() {
+  try {
+    const resp = await fetch('/api/designs/ayrshare-status');
+    const data = await resp.json().catch(() => ({}));
+    return !!data.connected;
+  } catch (e) { return false; }
+}
+
+async function openDesignPublish(idx) {
+  const msg = designMessages[idx];
+  if (!msg || !msg.image_url) return;
+  designPublishIdx = idx;
+  const overlay = document.getElementById('designPublishOverlay');
+  if (!overlay) return;
+  document.getElementById('designPublishImg').src = msg.image_url;
+  document.getElementById('designPublishCaption').value = designCaptionDraft(msg);
+  let savedPlatforms = [];
+  try { savedPlatforms = JSON.parse(localStorage.getItem(DESIGN_PUBLISH_PLATFORMS_KEY) || '[]'); } catch (e) {}
+  document.getElementById('designPublishPlatforms').innerHTML = AYRSHARE_PLATFORMS_UI.map(([id, label]) =>
+    `<label class="design-kind-item"><input type="checkbox" value="${id}" ${savedPlatforms.includes(id) ? 'checked' : ''}><span>${label}</span></label>`
+  ).join('');
+  const result = document.getElementById('designPublishResult');
+  result.hidden = true;
+  result.textContent = '';
+  const keyRow = document.getElementById('designPublishKeyRow');
+  keyRow.hidden = await designAyrshareConnected();
+  overlay.hidden = false;
+}
+
+async function submitDesignPublish() {
+  const msg = designMessages[designPublishIdx];
+  if (!msg) return;
+  const caption = document.getElementById('designPublishCaption').value;
+  const platforms = [...document.querySelectorAll('#designPublishPlatforms input[type="checkbox"]:checked')].map(b => b.value);
+  const result = document.getElementById('designPublishResult');
+  const showResult = (html) => { result.hidden = false; result.innerHTML = html; };
+  if (!platforms.length) { showResult('⚠️ اختر شبكة واحدة على الأقل'); return; }
+  try { localStorage.setItem(DESIGN_PUBLISH_PLATFORMS_KEY, JSON.stringify(platforms)); } catch (e) {}
+  const when = document.querySelector('input[name="designPublishWhen"]:checked')?.value || 'now';
+  let schedule = null;
+  if (when === 'schedule') {
+    const value = document.getElementById('designPublishDate').value;
+    if (!value) { showResult('⚠️ حدد موعد الجدولة'); return; }
+    schedule = new Date(value).toISOString();
+    if (new Date(schedule).getTime() <= Date.now()) { showResult('⚠️ موعد الجدولة في الماضي'); return; }
+  }
+  const submitBtn = document.getElementById('designPublishSubmit');
+  submitBtn.disabled = true;
+  submitBtn.textContent = '⏳ جارٍ الرفع والنشر...';
+  try {
+    const resp = await fetch('/api/designs/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_url: msg.image_url, caption, platforms, schedule })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || 'تعذر النشر');
+    const okLinks = (data.post_ids || []).filter(p => p.status === 'success')
+      .map(p => p.postUrl ? `<a href="${escapeHtml(p.postUrl)}" target="_blank" rel="noopener">${escapeHtml(p.platform)}</a>` : escapeHtml(p.platform)).join('، ');
+    const errText = (data.errors || []).map(e => `${escapeHtml(e.platform || '')}: ${escapeHtml(e.message || '')}`).join('<br>');
+    if (data.status === 'scheduled') {
+      msg.publish = { status: 'scheduled', label: `مجدول: ${platforms.join('، ')}` };
+      showResult(`🗓️ جُدول النشر بنجاح على: ${escapeHtml(platforms.join('، '))}`);
+    } else if ((data.post_ids || []).length) {
+      msg.publish = { status: 'published', label: `نُشر: ${platforms.join('، ')}` };
+      showResult(`✅ نُشر على: ${okLinks || escapeHtml(platforms.join('، '))}${errText ? '<br>⚠️ ' + errText : ''}`);
+    } else {
+      showResult(`⚠️ لم يتم النشر${errText ? '<br>' + errText : ''}`);
+      return;
+    }
+    saveDesignMessages();
+    renderDesignMessages();
+    loadDesignBalance();
+  } catch (err) {
+    showResult('⚠️ ' + escapeHtml(err.message || 'تعذر النشر'));
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = '📤 نشر التصميم';
+  }
+}
+
 function openDesignLightbox(url) {
   const box = document.getElementById('designLightbox');
   const img = document.getElementById('designLightboxImg');
@@ -454,6 +557,8 @@ async function onDesignCardAction(event) {
   const action = btn.getAttribute('data-design-action');
   if (action === 'zoom') {
     openDesignLightbox(msg.image_url);
+  } else if (action === 'publish') {
+    openDesignPublish(idx);
   } else if (action === 'fold') {
     msg.collapsed = !msg.collapsed;
     saveDesignMessages();
@@ -581,6 +686,35 @@ function initDesignsTab() {
     saveDesignMessages();
     renderDesignMessages();
     if (typeof showToast === 'function') showToast('مُسحت المحادثة — الصور باقية في المجلد');
+  });
+  const publishClose = document.getElementById('designPublishClose');
+  if (publishClose) publishClose.addEventListener('click', () => { document.getElementById('designPublishOverlay').hidden = true; });
+  const publishOverlay = document.getElementById('designPublishOverlay');
+  if (publishOverlay) publishOverlay.addEventListener('click', (event) => { if (event.target === publishOverlay) publishOverlay.hidden = true; });
+  const publishSubmit = document.getElementById('designPublishSubmit');
+  if (publishSubmit) publishSubmit.addEventListener('click', submitDesignPublish);
+  document.querySelectorAll('input[name="designPublishWhen"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const date = document.getElementById('designPublishDate');
+      if (date) date.hidden = document.querySelector('input[name="designPublishWhen"]:checked')?.value !== 'schedule';
+    });
+  });
+  const keySave = document.getElementById('designPublishKeySave');
+  if (keySave) keySave.addEventListener('click', async () => {
+    const value = document.getElementById('designPublishKey').value.trim();
+    if (!value) { if (typeof showToast === 'function') showToast('الصق مفتاح Ayrshare أولًا'); return; }
+    try {
+      const resp = await fetch('/api/config/providers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ayrshare: value })
+      });
+      if (!resp.ok) throw new Error('تعذر الحفظ');
+      document.getElementById('designPublishKeyRow').hidden = true;
+      if (typeof showToast === 'function') showToast('حُفظ مفتاح Ayrshare — اختر الشبكات وانشر');
+    } catch (err) {
+      if (typeof showToast === 'function') showToast(err.message || 'تعذر حفظ المفتاح');
+    }
   });
   const lightbox = document.getElementById('designLightbox');
   if (lightbox) lightbox.addEventListener('click', (event) => { if (event.target !== document.getElementById('designLightboxImg')) closeDesignLightbox(); });

@@ -10829,6 +10829,18 @@ body::-webkit-scrollbar,
 .design-restore-actions { display: flex; justify-content: flex-start; }
 .design-restore-actions .design-send-btn { padding: 10px 22px; }
 .design-image { cursor: zoom-in; }
+.design-publish-thumb { width: 100%; max-height: 300px; object-fit: contain; border-radius: var(--radius-md, 6px); background: var(--accent-subtle); }
+.design-publish-label { font-family: 'Almarai', sans-serif; font-weight: 700; font-size: 13.5px; }
+.design-publish-caption { font-family: inherit; font-size: 14.5px; line-height: 1.9; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); background: var(--bg-surface); color: var(--text-main); padding: 10px 12px; resize: vertical; width: 100%; box-sizing: border-box; }
+.design-publish-keyrow { display: flex; flex-direction: column; gap: 8px; border: 1px dashed var(--accent-clay); border-radius: var(--radius-md, 6px); padding: 10px 12px; font-size: 13px; }
+.design-publish-keyrow[hidden] { display: none; }
+.design-publish-keyfields { display: flex; gap: 8px; }
+.design-publish-keyfields input { flex: 1; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); padding: 8px 10px; background: var(--bg-surface); color: var(--text-main); }
+.design-publish-when { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.design-publish-date { font-family: inherit; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); background: var(--bg-surface); color: var(--text-main); padding: 7px 10px; }
+.design-publish-result { border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); padding: 10px 12px; font-size: 13.5px; line-height: 2; background: var(--accent-subtle); }
+.design-publish-result[hidden] { display: none; }
+.design-publish-result a { color: var(--accent-clay); font-weight: 700; }
 .design-lightbox { position: fixed; inset: 0; background: rgba(12, 10, 6, 0.92); z-index: 10070; display: flex; align-items: center; justify-content: center; padding: 22px; cursor: zoom-out; }
 .design-lightbox[hidden] { display: none; }
 .design-lightbox img { max-width: 96vw; max-height: 94vh; border-radius: var(--radius-lg, 6px); box-shadow: 0 24px 70px rgba(0,0,0,0.5); cursor: default; }

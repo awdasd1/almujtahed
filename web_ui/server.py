@@ -404,6 +404,7 @@ PROVIDER_ENV_KEYS = {
     "groq": "GROQ_API_KEY",
     "tavily": "TAVILY_API_KEY",
     "hf": "HF_TOKEN",
+    "ayrshare": "AYRSHARE_API_KEY",
 }
 
 def _normalize_provider_name(name: str) -> str:
@@ -5322,6 +5323,98 @@ async def designs_delete(req: DesignFileRequest, request: Request):
     return {"deleted": name}
 
 
+def _owner_ayrshare_key(request: Request) -> str:
+    return (load_provider_keys(current_owner_id(request)).get("ayrshare") or "").strip()
+
+
+def _ayrshare_call(path: str, key: str, payload: Optional[dict] = None, timeout: int = 120) -> dict:
+    http_req = urllib.request.Request(
+        f"https://api.ayrshare.com/api{path}",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+        data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+        method="POST" if payload is not None else "GET",
+    )
+    try:
+        with urllib.request.urlopen(http_req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="ignore")[:500]
+        try:
+            return json.loads(detail)
+        except Exception:
+            raise HTTPException(status_code=502, detail=f"رفض Ayrshare الطلب: {detail}")
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"تعذر الاتصال بـ Ayrshare: {error}")
+
+
+class DesignPublishRequest(BaseModel):
+    image_url: str
+    caption: str = ""
+    platforms: List[str]
+    schedule: Optional[str] = None
+
+
+AYRSHARE_PLATFORMS = {
+    "instagram", "twitter", "facebook", "threads", "telegram", "linkedin",
+    "tiktok", "youtube", "pinterest", "bluesky", "reddit", "snapchat", "gmb",
+}
+
+
+@app.post("/api/designs/publish")
+async def designs_publish(req: DesignPublishRequest, request: Request):
+    """رفع صورة التصميم إلى Ayrshare ونشرها أو جدولتها على الشبكات المختارة."""
+    key = _owner_ayrshare_key(request)
+    if not key:
+        raise HTTPException(status_code=400, detail="أدخل مفتاح Ayrshare API أولًا واحفظه")
+    platforms = [p for p in (req.platforms or []) if p in AYRSHARE_PLATFORMS]
+    if not platforms:
+        raise HTTPException(status_code=400, detail="اختر شبكة تواصل واحدة على الأقل")
+    folder = _designs_dir(request).resolve()
+    name = Path(urllib.parse.unquote(req.image_url or "")).name
+    target = (folder / name).resolve()
+    if target.parent != folder or not target.is_file():
+        raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
+    raw = target.read_bytes()
+    if len(raw) > 28 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="الصورة أكبر من حد الرفع (30MB)")
+    upload = _ayrshare_call("/media/upload", key, {
+        "file": "data:image/png;base64," + base64.b64encode(raw).decode("ascii"),
+        "fileName": name,
+        "description": "تصميم المجتهد",
+    }, timeout=180)
+    media_url = upload.get("url") if isinstance(upload, dict) else None
+    if not media_url:
+        message = (upload or {}).get("message") if isinstance(upload, dict) else "رد غير متوقع"
+        raise HTTPException(status_code=502, detail=f"فشل رفع الصورة إلى Ayrshare: {message}")
+    payload: Dict[str, Any] = {
+        "post": (req.caption or "").strip(),
+        "platforms": platforms,
+        "mediaUrls": [media_url],
+    }
+    if req.schedule:
+        payload["scheduleDate"] = req.schedule
+    result = _ayrshare_call("/post", key, payload, timeout=180)
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=502, detail="رد غير متوقع من Ayrshare")
+    return {
+        "status": result.get("status") or "unknown",
+        "id": result.get("id"),
+        "post_ids": result.get("postIds") or [],
+        "errors": result.get("errors") or [],
+        "schedule_date": result.get("scheduleDate"),
+        "media_url": media_url,
+    }
+
+
+@app.get("/api/designs/ayrshare-status")
+async def designs_ayrshare_status(request: Request):
+    """حالة ربط Ayrshare: وجود المفتاح فقط (التحقق الفعلي عند أول نشر)."""
+    return {"connected": bool(_owner_ayrshare_key(request))}
+
+
 @app.post("/api/designs/open-folder")
 async def designs_open_folder(request: Request):
     """فتح مجلد حفظ صور التصاميم في مدير ملفات النظام."""
@@ -5770,7 +5863,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.365"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.366"},
         },
     })
     if opened.get("error"):
