@@ -1559,9 +1559,6 @@ function renderSessionMessages(sessionId, options) {
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
         </button>
-        ${msg.selection_research ? `<button type="button" class="btn-msg-export" onclick="publishBriefComment(${idx})" title="نشر هذه الفائدة في مواقع التواصل — تُعبأ تلقائيًا بمصدرها">
-          📤 نشر
-        </button>` : ''}
         <button type="button" class="btn-msg-export" onclick="shareChatMessage(${idx})" title="مشاركة هذه الإجابة">
           مشاركة
         </button>
@@ -2115,43 +2112,6 @@ async function exportChatMessagePdf(idx) {
     return;
   }
   showToast('تعذر تجهيز صفحة البحث للطباعة');
-}
-
-function briefCommentPublishText(msg) {
-  let body = String(msg.content || '')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/^>\s?/gm, '')
-    .trim();
-  const seen = new Set();
-  const sources = [];
-  (msg.witnesses || []).forEach(w => {
-    if (!w || !w.title) return;
-    const key = `${w.title}|${w.part || ''}|${w.page || ''}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    const loc = [];
-    if (w.part) loc.push(`ج${w.part}`);
-    if (w.page) loc.push(`ص${w.page}`);
-    sources.push(`«${w.title}»${w.author ? ` — ${w.author}` : ''}${loc.length ? ` — ${loc.join('، ')}` : ''}`);
-  });
-  let out = body;
-  if (sources.length) out += `\n\n📚 المصدر: ${sources.slice(0, 3).join('؛ ')}`;
-  out += '\n\n#فوائد_تراثية #تعليق_وشرح_مختصر';
-  return out;
-}
-
-function publishBriefComment(idx) {
-  const session = chatSessions.find(s => s.id === activeSessionId);
-  const msg = session && session.messages[idx];
-  if (!msg) return;
-  if (typeof window.openDesignTextPublish !== 'function') {
-    if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
-    return;
-  }
-  window.openDesignTextPublish(briefCommentPublishText(msg), null);
 }
 
 function copyChatMessageText(idx) {
@@ -7941,9 +7901,95 @@ const SELECTION_RESEARCH_KINDS = [
 
 const selectionResearch = {
   text: '',
+  publishText: '',
   kindId: '',
   running: false
 };
+
+function selectionPublishSources(range, host) {
+  /* مصادر حاشية النص المحدد: أختام cit داخل التحديد، أو تعريفات الحواشي
+     المرقمة الواردة فيه، أو شواهد الرسالة بترتيب أرقامها (للتعليقات المختصرة) */
+  const bubble = host ? host.closest('.message-bubble') : null;
+  const root = bubble || host || document;
+  const western = (v) => String(v || '')
+    .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+    .replace(/\D/g, '');
+  const arabicDigits = (v) => String(v || '').replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[+d]);
+  const sources = [];
+  const seen = new Set();
+  const push = (book, part, page) => {
+    book = String(book || '').replace(/\s+/g, ' ').trim();
+    if (!book) return;
+    const key = `${book}|${part || ''}|${page || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    sources.push({ book, part: part || '', page: page || '' });
+  };
+  const fromSpan = (span) => push(
+    span.getAttribute('data-book') || span.textContent,
+    span.getAttribute('data-part'),
+    span.getAttribute('data-page'));
+  try {
+    range.cloneContents().querySelectorAll('.cit-src, .cit-unresolved').forEach(fromSpan);
+  } catch (e) { /* تحديد بلا أختام */ }
+  const nums = [...new Set((range.toString().match(/\(\s*[٠-٩\d۰-۹]+\s*\)/g) || [])
+    .map((m) => western(m)).filter(Boolean))];
+  const findDef = (n) => {
+    const byId = root.querySelector(`[id="fn${n}"], [id="paper-fn${n}"]`);
+    if (byId) return byId;
+    const ar = arabicDigits(n);
+    for (const c of root.querySelectorAll('.footnote-item, .footnote-line, li, p')) {
+      const t = (c.textContent || '').trim();
+      if (t.startsWith(`(${n})`) || t.startsWith(`(${ar})`)) return c;
+    }
+    return null;
+  };
+  nums.forEach((n) => {
+    const def = findDef(n);
+    if (def) def.querySelectorAll('.cit-src, .cit-unresolved').forEach(fromSpan);
+  });
+  if (!sources.length && nums.length && bubble) {
+    const idxm = (bubble.id || '').match(/chatMsg(\d+)/);
+    const sess = (typeof chatSessions !== 'undefined' && typeof activeSessionId !== 'undefined')
+      ? chatSessions.find((s) => s.id === activeSessionId) : null;
+    const msgw = (idxm && sess && sess.messages[+idxm[1]]) ? sess.messages[+idxm[1]].witnesses : null;
+    if (Array.isArray(msgw)) {
+      nums.forEach((n) => {
+        const w = msgw[parseInt(n, 10) - 1];
+        if (w) push(w.title, w.part, w.page);
+      });
+    }
+  }
+  return sources.slice(0, 3);
+}
+
+function buildSelectionPublishText(range, host, selectedText) {
+  const sources = selectionPublishSources(range, host);
+  let out = selectedText;
+  if (sources.length) {
+    out += '\n\n📚 المصدر: ' + sources.map((s) => {
+      const loc = [];
+      if (s.part) loc.push(`ج${s.part}`);
+      if (s.page) loc.push(`ص${s.page}`);
+      return `«${s.book}»${loc.length ? ` — ${loc.join('، ')}` : ''}`;
+    }).join('؛ ');
+  }
+  out += '\n\n#فوائد_تراثية';
+  return out;
+}
+
+function publishSelectedText() {
+  const overlay = document.getElementById('chatSelectOverlay');
+  if (overlay) overlay.hidden = true;
+  const text = selectionResearch.publishText || selectionResearch.text;
+  if (!text) return;
+  if (typeof window.openDesignTextPublish !== 'function') {
+    if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
+    return;
+  }
+  window.openDesignTextPublish(text, null);
+}
 
 function ensureChatSelectPanel() {
   let overlay = document.getElementById('chatSelectOverlay');
@@ -7956,7 +8002,10 @@ function ensureChatSelectPanel() {
     <div id="chatSelectPanel" class="chat-select-panel" role="dialog" aria-modal="true">
       <div class="chat-select-top">
         <h3 class="chat-select-head" id="chatSelectTitle">تعليق وشرح مختصر</h3>
-        <button type="button" class="chat-select-close" id="chatSelectClose" aria-label="إغلاق">×</button>
+        <div class="chat-select-actions">
+          <button type="button" class="chat-select-close chat-select-publish" id="chatSelectPublish" aria-label="نشر النص المحدد" title="نشر النص المحدد مع حاشيته ومصدرها في مواقع التواصل">📤</button>
+          <button type="button" class="chat-select-close" id="chatSelectClose" aria-label="إغلاق">×</button>
+        </div>
       </div>
       <div class="chat-select-body">
         <div class="chat-select-quote" id="chatSelectQuote"></div>
@@ -7985,6 +8034,11 @@ function openChatSelectionPanel() {
   const overlay = ensureChatSelectPanel();
   if (!overlay.hidden) return;
   selectionResearch.text = text.slice(0, 2500);
+  try {
+    selectionResearch.publishText = buildSelectionPublishText(selection.getRangeAt(0), host, selectionResearch.text);
+  } catch (e) {
+    selectionResearch.publishText = selectionResearch.text;
+  }
   selectionResearch.kindId = '';
   overlay.querySelector('#chatSelectQuote').textContent = selectionResearch.text;
   overlay.hidden = false;
@@ -7992,6 +8046,10 @@ function openChatSelectionPanel() {
 }
 
 function onChatSelectPanelClick(event) {
+  if (event.target.closest('#chatSelectPublish')) {
+    publishSelectedText();
+    return;
+  }
   const kindButton = event.target.closest('[data-kind]');
   if (kindButton) {
     selectionResearch.kindId = kindButton.getAttribute('data-kind');

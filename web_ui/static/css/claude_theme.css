@@ -2471,6 +2471,9 @@ select.graph-kind-select {
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.chat-select-actions { display: flex; align-items: center; gap: 8px; }
+.chat-select-publish { font-size: 15px; line-height: 1; }
+.chat-select-publish:hover { border-color: var(--accent-clay); background: var(--accent-subtle); }
 .chat-select-head {
   font-family: var(--font-amiri);
   font-size: 24px;
