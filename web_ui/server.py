@@ -6011,7 +6011,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.368"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.369"},
         },
     })
     if opened.get("error"):
@@ -6609,6 +6609,12 @@ def _provider_key_ok(provider: str, key: str) -> bool:
         headers["Authorization"] = f"Bearer {key}"
     elif name == "deepseek":
         url = "https://api.deepseek.com/models"
+        headers["Authorization"] = f"Bearer {key}"
+    elif name == "zernio":
+        url = "https://zernio.com/api/v1/accounts"
+        headers["Authorization"] = f"Bearer {key}"
+    elif name == "ayrshare":
+        url = "https://api.ayrshare.com/api/profiles"
         headers["Authorization"] = f"Bearer {key}"
     else:
         return False

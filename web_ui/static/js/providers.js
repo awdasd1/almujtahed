@@ -83,6 +83,7 @@ function initProvidersTab() {
         if (data.keys && typeof data.keys === 'object') {
           writeProviderKeys(data.keys);
           writeTavilyKey(data.keys.tavily || '');
+          fillSocialKeys(data.keys);
         }
       }
     } catch (e) {}
@@ -189,6 +190,69 @@ async function testCurrentProviderKey() {
   button.classList.add(ok ? 'is-success' : 'is-failure');
   button.textContent = ok ? 'نجاح' : 'فشل';
 }
+
+// مفاتيح النشر الاجتماعي (Zernio/Ayrshare) — قسم موحّد في تبويب الخدمات
+function fillSocialKeys(keys) {
+  const zernio = document.getElementById('socialKeyZernio');
+  const ayrshare = document.getElementById('socialKeyAyrshare');
+  if (zernio) zernio.value = (keys && keys.zernio) || '';
+  if (ayrshare) ayrshare.value = (keys && keys.ayrshare) || '';
+}
+
+function toggleSocialKeyVisibility(which) {
+  const input = document.getElementById('socialKey' + which);
+  if (!input) return;
+  input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+async function testSocialKey(provider) {
+  const cap = provider === 'zernio' ? 'Zernio' : 'Ayrshare';
+  const button = document.getElementById('socialKeyTest' + cap);
+  const key = (document.getElementById('socialKey' + cap)?.value || '').trim();
+  if (!button) return;
+  button.classList.remove('is-success', 'is-failure');
+  button.disabled = true;
+  button.textContent = 'اختبار';
+  let ok = false;
+  try {
+    const res = await fetch('/api/config/providers/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, key })
+    });
+    const data = await res.json().catch(() => ({}));
+    ok = res.ok && data.ok === true;
+  } catch (err) {
+    ok = false;
+  }
+  button.disabled = false;
+  button.classList.add(ok ? 'is-success' : 'is-failure');
+  button.textContent = ok ? 'نجاح' : 'فشل';
+  if (typeof showToast === 'function') {
+    showToast(ok ? `مفتاح ${cap} صالح لدى المنصة` : `مفتاح ${cap} لم ينجح لدى المنصة`);
+  }
+}
+
+function saveSocialKey(provider) {
+  const cap = provider === 'zernio' ? 'Zernio' : 'Ayrshare';
+  const key = (document.getElementById('socialKey' + cap)?.value || '').trim();
+  const savedKeys = readProviderKeys();
+  savedKeys[provider] = key;
+  writeProviderKeys(savedKeys);
+  fetch('/api/config/providers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [provider]: key })
+  }).catch(e => console.warn('Could not sync social key:', e));
+  if (typeof showToast === 'function') {
+    showToast(`حُفظ مفتاح ${cap} — صار متاحًا في نافذة نشر التصاميم`);
+  }
+}
+
+window.fillSocialKeys = fillSocialKeys;
+window.toggleSocialKeyVisibility = toggleSocialKeyVisibility;
+window.testSocialKey = testSocialKey;
+window.saveSocialKey = saveSocialKey;
 
 function toggleApiKeyVisibility() {
   const input = document.getElementById('providerApiKey');

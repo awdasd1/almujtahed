@@ -465,7 +465,6 @@ async function refreshDesignPublishTargets() {
   const grid = document.getElementById('designPublishPlatforms');
   const label = document.getElementById('designPublishTargetsLabel');
   const keyRow = document.getElementById('designPublishKeyRow');
-  const keyLabel = document.getElementById('designPublishKeyLabel');
   if (!grid) return;
   grid.innerHTML = '<div class="design-empty">جارٍ جلب وجهات النشر...</div>';
   try {
@@ -474,7 +473,6 @@ async function refreshDesignPublishTargets() {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.detail || 'تعذر جلب حسابات Zernio');
       keyRow.hidden = !!data.connected;
-      keyLabel.textContent = 'مفتاح Zernio API (من لوحة Zernio ← API Keys):';
       label.textContent = 'حسابات Zernio المرتبطة:';
       if (!data.connected) {
         grid.innerHTML = '<div class="design-empty">أدخل مفتاح Zernio واحفظه لتظهر حساباتك المرتبطة.</div>';
@@ -494,7 +492,6 @@ async function refreshDesignPublishTargets() {
       const resp = await fetch('/api/designs/ayrshare-status');
       const data = await resp.json().catch(() => ({}));
       keyRow.hidden = !!data.connected;
-      keyLabel.textContent = 'مفتاح Ayrshare API (من لوحة Ayrshare ← API Key):';
       label.textContent = 'الشبكات (المرتبطة بحسابك في Ayrshare):';
       let savedPlatforms = [];
       try { savedPlatforms = JSON.parse(localStorage.getItem(DESIGN_PUBLISH_PLATFORMS_KEY) || '[]'); } catch (e) {}
@@ -755,24 +752,14 @@ function initDesignsTab() {
       if (date) date.hidden = document.querySelector('input[name="designPublishWhen"]:checked')?.value !== 'schedule';
     });
   });
-  const keySave = document.getElementById('designPublishKeySave');
-  if (keySave) keySave.addEventListener('click', async () => {
-    const provider = designPublishProvider();
-    const value = document.getElementById('designPublishKey').value.trim();
-    if (!value) { if (typeof showToast === 'function') showToast('الصق مفتاح API أولًا'); return; }
-    try {
-      const resp = await fetch('/api/config/providers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [provider]: value })
-      });
-      if (!resp.ok) throw new Error('تعذر الحفظ');
-      document.getElementById('designPublishKeyRow').hidden = true;
-      if (typeof showToast === 'function') showToast(`حُفظ مفتاح ${provider === 'zernio' ? 'Zernio' : 'Ayrshare'} — حدّث القائمة واختر الوجهات`);
-      refreshDesignPublishTargets();
-    } catch (err) {
-      if (typeof showToast === 'function') showToast(err.message || 'تعذر حفظ المفتاح');
-    }
+  const goServices = document.getElementById('designPublishGoServices');
+  if (goServices) goServices.addEventListener('click', () => {
+    document.getElementById('designPublishOverlay').hidden = true;
+    if (typeof switchMainTab === 'function') switchMainTab('providers');
+    setTimeout(() => {
+      const card = document.getElementById('socialKeysCard');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
   });
   document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
     radio.addEventListener('change', () => {

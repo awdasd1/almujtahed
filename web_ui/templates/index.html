@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.368">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.369">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.368 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.369 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1702,6 +1702,38 @@
 
                     </div> <!-- نهاية بطاقة provider-main-card -->
 
+                    <div class="result-card provider-main-card" id="socialKeysCard">
+                        <div class="result-header">
+                            <div class="result-book-meta">
+                                <span class="book-title-tag">مفاتيح النشر إلى التواصل الاجتماعي</span>
+                                <span class="author-tag">تُستخدم في تبويب «تصاميم» للنشر والجدولة — اربط حساباتك في لوحة المنصة أولًا</span>
+                            </div>
+                            <span class="score-badge">Designs Publishing</span>
+                        </div>
+                        <div class="provider-controls-bar">
+                            <div class="filter-item provider-ctrl-item provider-key-wrapper">
+                                <label for="socialKeyZernio">Zernio (المعتمدة):</label>
+                                <div class="provider-key-actions">
+                                    <input type="password" id="socialKeyZernio" class="filter-input" placeholder="ZERNIO_API_KEY..." autocomplete="off" dir="ltr">
+                                    <button type="button" class="btn-flat-secondary btn-icon-pad" onclick="toggleSocialKeyVisibility('Zernio')" title="إظهار / إخفاء المفتاح">👁️</button>
+                                    <button type="button" id="socialKeyTestZernio" class="btn-flat-secondary btn-save-pad" onclick="testSocialKey('zernio')">اختبار</button>
+                                    <button type="button" class="btn-flat-primary btn-save-pad" onclick="saveSocialKey('zernio')">حفظ</button>
+                                    <a class="btn-flat-secondary btn-save-pad" href="https://zernio.com" target="_blank" rel="noopener noreferrer" title="فتح لوحة Zernio لإنشاء المفتاح وربط الحسابات">إنشاء مفتاح</a>
+                                </div>
+                            </div>
+                            <div class="filter-item provider-ctrl-item provider-key-wrapper">
+                                <label for="socialKeyAyrshare">Ayrshare (خيار بديل):</label>
+                                <div class="provider-key-actions">
+                                    <input type="password" id="socialKeyAyrshare" class="filter-input" placeholder="AYRSHARE_API_KEY..." autocomplete="off" dir="ltr">
+                                    <button type="button" class="btn-flat-secondary btn-icon-pad" onclick="toggleSocialKeyVisibility('Ayrshare')" title="إظهار / إخفاء المفتاح">👁️</button>
+                                    <button type="button" id="socialKeyTestAyrshare" class="btn-flat-secondary btn-save-pad" onclick="testSocialKey('ayrshare')">اختبار</button>
+                                    <button type="button" class="btn-flat-primary btn-save-pad" onclick="saveSocialKey('ayrshare')">حفظ</button>
+                                    <a class="btn-flat-secondary btn-save-pad" href="https://app.ayrshare.com" target="_blank" rel="noopener noreferrer" title="فتح لوحة Ayrshare لإنشاء المفتاح وربط الحسابات">إنشاء مفتاح</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="result-card provider-main-card" id="localModelsCard">
                         <div class="result-header">
                             <div class="result-book-meta">
@@ -2300,11 +2332,8 @@
                         </div>
                         <img class="design-publish-thumb" id="designPublishImg" alt="التصميم المراد نشره">
                         <div class="design-publish-keyrow" id="designPublishKeyRow" hidden>
-                            <label for="designPublishKey" id="designPublishKeyLabel">مفتاح API:</label>
-                            <span class="design-publish-keyfields">
-                                <input type="password" id="designPublishKey" placeholder="AYRSHARE_API_KEY" dir="ltr">
-                                <button type="button" class="design-mini-btn" id="designPublishKeySave">حفظ المفتاح</button>
-                            </span>
+                            <span>⚠️ مفتاح منصة النشر غير مُدخل بعد — المفاتيح تُدخل وتُختبر وتُحفظ من مكانها الموحّد:</span>
+                            <button type="button" class="design-mini-btn" id="designPublishGoServices">🔑 تبويب الخدمات ← مفاتيح النشر</button>
                         </div>
                         <label class="design-publish-label" for="designPublishCaption">نص المنشور:</label>
                         <textarea class="design-publish-caption" id="designPublishCaption" rows="4"></textarea>
@@ -5482,18 +5511,18 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.368"></script>
+    <script src="/static/js/app.js?v=1.10.369"></script>
     <script src="/static/js/search.js?v=1793188000"></script>
     <script src="/static/js/reader.js?v=1793225300"></script>
-    <script src="/static/js/force3d.js?v=1.10.368"></script>
+    <script src="/static/js/force3d.js?v=1.10.369"></script>
     <script src="/static/js/share.js?v=1793225500"></script>
-    <script src="/static/js/chat.js?v=1.10.368"></script>
-    <script src="/static/js/designs.js?v=1.10.368"></script>
-    <script src="/static/js/agents.js?v=1.10.368"></script>
+    <script src="/static/js/chat.js?v=1.10.369"></script>
+    <script src="/static/js/designs.js?v=1.10.369"></script>
+    <script src="/static/js/agents.js?v=1.10.369"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1.10.368"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.368"></script>
-    <script src="/static/js/projects.js?v=1.10.368"></script>
+    <script src="/static/js/tools.js?v=1.10.369"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.369"></script>
+    <script src="/static/js/projects.js?v=1.10.369"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
