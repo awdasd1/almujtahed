@@ -155,7 +155,7 @@ function renderDesignMessages() {
   }
   box.innerHTML = designMessages.map((msg, idx) => {
     if (msg.role === 'user') {
-      return `<div class="design-msg design-msg-user"><div class="design-bubble">${escapeHtml(msg.text || '')}</div></div>`;
+      return `<div class="design-msg design-msg-user"><div class="design-bubble">${escapeHtml(msg.text || '')}</div><button type="button" class="design-req-del" data-design-req-del="${idx}" title="حذف هذا الطلب من الشات">🗑️ حذف الطلب</button></div>`;
     }
     const books = (msg.books || []).slice(0, 8).map(b => `<span class="design-book-chip">${escapeHtml(b)}</span>`).join('');
     const costChip = msg.cost_usd != null
@@ -164,7 +164,7 @@ function renderDesignMessages() {
       ? `<span class="design-chip">⏱️ مدة التوليد: ${fmtDesignDuration(msg.duration_s)}</span>` : '';
     return `<div class="design-msg design-msg-assistant"><div class="design-card">
       ${msg.title ? `<div class="design-title">🖼️ ${escapeHtml(msg.title)}</div>` : ''}
-      ${msg.image_url && !msg.collapsed ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المجتهد" loading="lazy">` : ''}
+      ${msg.image_url && !msg.collapsed ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المجتهد" loading="lazy" data-design-zoom="${idx}" title="انقر للتكبير">` : ''}
       <div class="design-card-meta">
         <span class="design-chip">${designAspectLabel(msg.aspect || '16:9')}</span>
         ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
@@ -174,6 +174,7 @@ function renderDesignMessages() {
       </div>
       <div class="design-card-actions">
         ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="fold" data-idx="${idx}">${msg.collapsed ? '👁️ عرض الصورة' : '🙈 طي الصورة'}</button>` : ''}
+        ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="zoom" data-idx="${idx}">🔍 تكبير</button>` : ''}
         ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="share" data-idx="${idx}">🔗 مشاركة</button>` : ''}
         ${msg.image_url ? `<a class="design-download" href="${escapeHtml(msg.image_url)}" download>⬇️ تنزيل</a>` : ''}
         <button type="button" class="design-mini-btn" data-design-action="archive" data-idx="${idx}">🗄️ أرشفة</button>
@@ -339,14 +340,46 @@ async function shareDesignImage(msg) {
   }
 }
 
+function openDesignLightbox(url) {
+  const box = document.getElementById('designLightbox');
+  const img = document.getElementById('designLightboxImg');
+  if (!box || !img || !url) return;
+  img.src = url;
+  box.hidden = false;
+}
+
+function closeDesignLightbox() {
+  const box = document.getElementById('designLightbox');
+  if (box) box.hidden = true;
+}
+
 async function onDesignCardAction(event) {
+  const delBtn = event.target.closest('[data-design-req-del]');
+  if (delBtn) {
+    const idx = Number(delBtn.getAttribute('data-design-req-del'));
+    if (designMessages[idx]) {
+      designMessages.splice(idx, 1);
+      saveDesignMessages();
+      renderDesignMessages();
+      if (typeof showToast === 'function') showToast('حُذف الطلب من الشات');
+    }
+    return;
+  }
+  const zoomImg = event.target.closest('[data-design-zoom]');
+  if (zoomImg) {
+    const msg = designMessages[Number(zoomImg.getAttribute('data-design-zoom'))];
+    if (msg) openDesignLightbox(msg.image_url);
+    return;
+  }
   const btn = event.target.closest('[data-design-action]');
   if (!btn) return;
   const idx = Number(btn.getAttribute('data-idx'));
   const msg = designMessages[idx];
   if (!msg) return;
   const action = btn.getAttribute('data-design-action');
-  if (action === 'fold') {
+  if (action === 'zoom') {
+    openDesignLightbox(msg.image_url);
+  } else if (action === 'fold') {
     msg.collapsed = !msg.collapsed;
     saveDesignMessages();
     renderDesignMessages();
@@ -475,6 +508,20 @@ function initDesignsTab() {
   if (restoreOverlay) restoreOverlay.addEventListener('click', (event) => { if (event.target === restoreOverlay) restoreOverlay.hidden = true; });
   const restoreApply = document.getElementById('designRestoreApply');
   if (restoreApply) restoreApply.addEventListener('click', applyDesignRestore);
+  const clearBtn = document.getElementById('designClearBtn');
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    if (!designMessages.length) { if (typeof showToast === 'function') showToast('المحادثة فارغة أصلًا'); return; }
+    if (!window.confirm('مسح محادثة التصاميم كلها؟ تبقى الصور في المجلد ويمكن استرجاعها منه.')) return;
+    designMessages = [];
+    saveDesignMessages();
+    renderDesignMessages();
+    if (typeof showToast === 'function') showToast('مُسحت المحادثة — الصور باقية في المجلد');
+  });
+  const lightbox = document.getElementById('designLightbox');
+  if (lightbox) lightbox.addEventListener('click', (event) => { if (event.target !== document.getElementById('designLightboxImg')) closeDesignLightbox(); });
+  const lightboxClose = document.getElementById('designLightboxClose');
+  if (lightboxClose) lightboxClose.addEventListener('click', closeDesignLightbox);
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDesignLightbox(); });
   const form = document.getElementById('designComposer');
   if (form) form.addEventListener('submit', submitDesignIdea);
   const input = document.getElementById('designIdeaInput');

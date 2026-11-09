@@ -10819,3 +10819,11 @@ body::-webkit-scrollbar,
 .design-restore-meta small { color: var(--text-muted); direction: ltr; text-align: right; unicode-bidi: plaintext; }
 .design-restore-actions { display: flex; justify-content: flex-start; }
 .design-restore-actions .design-send-btn { padding: 10px 22px; }
+.design-msg-user { align-items: center; gap: 8px; }
+.design-req-del { font-family: 'Almarai', sans-serif; font-size: 11.5px; font-weight: 700; border: 1px solid #b3261e55; color: #b3261e; background: transparent; border-radius: var(--radius-pill, 6px); padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+.design-req-del:hover { background: #b3261e14; }
+.design-image { cursor: zoom-in; }
+.design-lightbox { position: fixed; inset: 0; background: rgba(12, 10, 6, 0.92); z-index: 10070; display: flex; align-items: center; justify-content: center; padding: 22px; cursor: zoom-out; }
+.design-lightbox[hidden] { display: none; }
+.design-lightbox img { max-width: 96vw; max-height: 94vh; border-radius: var(--radius-lg, 6px); box-shadow: 0 24px 70px rgba(0,0,0,0.5); cursor: default; }
+.design-lightbox-close { position: absolute; top: 14px; inset-inline-start: 18px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.08); color: #fff; font-size: 26px; line-height: 1; cursor: pointer; z-index: 2; }
