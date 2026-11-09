@@ -179,7 +179,7 @@ function renderDesignBooksList() {
       `<label class="design-kind-item"><input type="checkbox" data-book="${escapeHtml(b)}" ${effective.includes(b) ? 'checked' : ''}><span>${escapeHtml(b)}</span></label>`
     ).join('');
   }).join('');
-  list.innerHTML = html || '<div class="design-books-chips-empty">لا نتائج مطابقة لبحثك</div>';
+  list.innerHTML = html || '<div class="design-books-chips-empty">لا نتائج مطابقة في القائمة المعتمدة</div>';
 }
 
 let designLibrarySearchTimer = null;
