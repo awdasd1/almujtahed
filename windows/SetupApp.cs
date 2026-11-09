@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32;
 
 namespace AlMujtahed.Setup;
@@ -25,9 +27,7 @@ static class Program
             try
             {
                 Installer.Extract(folder, null);
-                Installer.WriteMarker(folder);
-                Installer.CreateShortcuts(folder);
-                Installer.RegisterUninstallEntry(folder);
+                Installer.EnsureInstalledIntegration(folder);
                 if (!extractOnly) Installer.Launch(folder);
             }
             catch (Exception ex)
@@ -42,6 +42,9 @@ static class Program
         if (!extractOnly && !args.Any(arg => arg == "--setup")
             && existing is { } found && found.version == Installer.CurrentVersion)
         {
+            // حتى لو كانت النسخة مثبتة، نصلح الاختصارات وقيد التطبيقات المثبتة
+            // عند كل تشغيل للمثبّت؛ فقد تكون نسخة سابقة ثُبّتت قبل اكتمال التسجيل.
+            Installer.EnsureInstalledIntegration(found.folder);
             try { Installer.Launch(found.folder); return; }
             catch { /* نكمل إلى نافذة التنصيب */ }
         }
@@ -62,12 +65,24 @@ static class Installer
 
     public static (string folder, string version)? FindExisting()
     {
-        var folder = DefaultFolder;
-        if (!File.Exists(Path.Combine(folder, "AlMujtahed.exe"))) return null;
-        var marker = Path.Combine(folder, MarkerName);
-        var version = "";
-        try { version = File.Exists(marker) ? File.ReadAllText(marker).Trim() : ""; } catch { }
-        return (folder, version);
+        var candidates = new List<string> { DefaultFolder };
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(UninstallKeyPath);
+            if (key?.GetValue("InstallLocation") is string registered && registered.Length > 0)
+                candidates.Insert(0, registered);
+        }
+        catch { }
+
+        foreach (var folder in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(Path.Combine(folder, "AlMujtahed.exe"))) continue;
+            var marker = Path.Combine(folder, MarkerName);
+            var version = "";
+            try { version = File.Exists(marker) ? File.ReadAllText(marker).Trim() : ""; } catch { }
+            return (folder, version);
+        }
+        return null;
     }
 
     public static void WriteMarker(string folder)
@@ -75,13 +90,39 @@ static class Installer
         try { File.WriteAllText(Path.Combine(folder, MarkerName), CurrentVersion); } catch { }
     }
 
+    public static void EnsureInstalledIntegration(string folder)
+    {
+        WriteMarker(folder);
+        EnsureIconFile(folder);
+        CreateShortcuts(folder);
+        RegisterUninstallEntry(folder);
+    }
+
+    static string IconPath(string folder) => Path.Combine(folder, "app.ico");
+
+    static void EnsureIconFile(string folder)
+    {
+        var iconPath = IconPath(folder);
+        if (File.Exists(iconPath)) return;
+        try
+        {
+            var source = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(source)) return;
+            using var icon = Icon.ExtractAssociatedIcon(source);
+            if (icon == null) return;
+            using var stream = File.Create(iconPath);
+            icon.Save(stream);
+        }
+        catch { }
+    }
+
     public static void CreateShortcuts(string folder)
     {
         var exe = Path.Combine(folder, "AlMujtahed.exe");
+        var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : exe;
         var links = new[]
         {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                @"Microsoft\Windows\Start Menu\Programs", "المجتهد.lnk"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "المجتهد.lnk"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "المجتهد.lnk")
         };
         foreach (var link in links)
@@ -89,16 +130,82 @@ static class Installer
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(link)!);
-                dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
-                dynamic shortcut = shell.CreateShortcut(link);
-                shortcut.TargetPath = exe;
-                shortcut.WorkingDirectory = folder;
-                shortcut.IconLocation = exe + ",0";
-                shortcut.Description = "المجتهد — منظومة البحث التراثي";
-                shortcut.Save();
+                CreateShellShortcut(link, exe, folder, iconPath);
             }
-            catch { }
+            catch
+            {
+                try { CreateWScriptShortcut(link, exe, folder, iconPath); } catch { }
+            }
         }
+    }
+
+    static void CreateShellShortcut(string linkPath, string targetPath, string workingDirectory, string iconPath)
+    {
+        var link = (IShellLinkW)new ShellLink();
+        link.SetDescription("المجتهد — منظومة البحث التراثي");
+        link.SetPath(targetPath);
+        link.SetWorkingDirectory(workingDirectory);
+        link.SetIconLocation(iconPath, 0);
+        link.SetShowCmd(1);
+        var file = (IPersistFile)link;
+        file.Save(linkPath, true);
+        Marshal.FinalReleaseComObject(file);
+    }
+
+    static void CreateWScriptShortcut(string linkPath, string targetPath, string workingDirectory, string iconPath)
+    {
+        dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
+        dynamic shortcut = shell.CreateShortcut(linkPath);
+        shortcut.TargetPath = targetPath;
+        shortcut.WorkingDirectory = workingDirectory;
+        shortcut.IconLocation = iconPath + ",0";
+        shortcut.Description = "المجتهد — منظومة البحث التراثي";
+        shortcut.Save();
+    }
+
+    [ComImport]
+    [Guid("00021401-0000-0000-C000-000000000046")]
+    class ShellLink
+    {
+    }
+
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("000214F9-0000-0000-C000-000000000046")]
+    interface IShellLinkW
+    {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile, int cchMaxPath, IntPtr pfd, uint fFlags);
+        void GetIDList(out IntPtr ppidl);
+        void SetIDList(IntPtr pidl);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName, int cchMaxName);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir, int cchMaxPath);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs, int cchMaxPath);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+        void GetHotkey(out short pwHotkey);
+        void SetHotkey(short wHotkey);
+        void GetShowCmd(out int piShowCmd);
+        void SetShowCmd(int iShowCmd);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath, int cchIconPath, out int piIcon);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
+        void Resolve(IntPtr hwnd, uint fFlags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+    }
+
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("0000010B-0000-0000-C000-000000000046")]
+    interface IPersistFile
+    {
+        void GetClassID(out Guid pClassID);
+        [PreserveSig]
+        int IsDirty();
+        void Load([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, uint dwMode);
+        void Save([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, [MarshalAs(UnmanagedType.Bool)] bool fRemember);
+        void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string pszFileName);
+        void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string ppszFileName);
     }
 
     const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\AlMujtahed";
@@ -112,7 +219,9 @@ static class Installer
             key.SetValue("DisplayVersion", CurrentVersion);
             key.SetValue("Publisher", "المجتهد");
             key.SetValue("InstallLocation", folder);
-            key.SetValue("DisplayIcon", Path.Combine(folder, "AlMujtahed.exe"));
+            var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : Path.Combine(folder, "AlMujtahed.exe");
+            key.SetValue("DisplayIcon", $"\"{iconPath}\",0");
+            key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
             // ملف الإلغاء يعيش داخل مجلد التثبيت نفسه، لا عند ملف التنزيلات
             // الذي قد يحذفه المستخدم فينكسر إلغاء التثبيت من الإعدادات.
             var uninstaller = Path.Combine(folder, "إلغاء تثبيت المجتهد.exe");
@@ -120,7 +229,9 @@ static class Installer
             try
             {
                 if (setupExe.Length > 0 &&
-                    !string.Equals(Path.GetFullPath(setupExe), Path.GetFullPath(uninstaller), StringComparison.OrdinalIgnoreCase))
+                    !string.Equals(Path.GetFullPath(setupExe), Path.GetFullPath(uninstaller), StringComparison.OrdinalIgnoreCase) &&
+                    (!File.Exists(uninstaller) ||
+                     FileVersionInfo.GetVersionInfo(uninstaller).FileVersion != FileVersionInfo.GetVersionInfo(setupExe).FileVersion))
                     File.Copy(setupExe, uninstaller, true);
             }
             catch { uninstaller = setupExe; }
@@ -270,9 +381,7 @@ sealed class SetupForm : Form
         try
         {
             await Task.Run(() => Installer.Extract(folder, progress));
-            Installer.WriteMarker(folder);
-            Installer.CreateShortcuts(folder);
-            Installer.RegisterUninstallEntry(folder);
+            Installer.EnsureInstalledIntegration(folder);
             status.Text = "اكتمل التثبيت";
             Installer.Launch(folder);
             Close();
