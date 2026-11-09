@@ -10779,6 +10779,9 @@ body::-webkit-scrollbar,
 .design-bubble { background: var(--accent-subtle); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg, 6px); padding: 10px 16px; line-height: 1.9; max-width: 85%; font-size: 15px; }
 .design-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg, 6px); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .design-image { width: 100%; border-radius: var(--radius-md, 6px); display: block; }
+.design-card-head { display: flex; flex-direction: column; gap: 9px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px; }
+.design-card-info { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 10px; }
+.design-card-info .design-title { margin-inline-end: 6px; }
 .design-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .design-chip { font-size: 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-pill, 6px); padding: 4px 10px; color: var(--text-muted); }
 .design-download { font-size: 12.5px; font-weight: 700; color: var(--accent-clay); text-decoration: none; border: 1px solid var(--accent-clay); border-radius: var(--radius-pill, 6px); padding: 4px 12px; }
@@ -10831,7 +10834,8 @@ body::-webkit-scrollbar,
 .design-image { cursor: zoom-in; }
 .design-publish-thumb { width: 25%; min-width: 130px; max-width: 200px; max-height: 170px; object-fit: contain; align-self: center; border-radius: var(--radius-md, 6px); background: var(--accent-subtle); }
 .design-publish-label { font-family: 'Almarai', sans-serif; font-weight: 700; font-size: 13.5px; }
-.design-publish-caption { font-family: inherit; font-size: 14.5px; line-height: 1.9; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); background: var(--bg-surface); color: var(--text-main); padding: 10px 12px; resize: vertical; width: 100%; box-sizing: border-box; }
+.design-publish-caption { font-family: inherit; font-size: 14.5px; line-height: 1.9; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); background: var(--bg-surface); color: var(--text-main); padding: 10px 12px; resize: vertical; width: 100%; box-sizing: border-box; flex: none; min-height: 110px; max-height: 65vh; height: auto; overflow-y: auto; }
+.design-publish-caption:focus { border-color: var(--accent-clay); outline: none; }
 .design-publish-keyrow { display: flex; flex-direction: column; gap: 8px; border: 1px dashed var(--accent-clay); border-radius: var(--radius-md, 6px); padding: 10px 12px; font-size: 13px; }
 .design-publish-keyrow[hidden] { display: none; }
 .design-publish-keyfields { display: flex; gap: 8px; }

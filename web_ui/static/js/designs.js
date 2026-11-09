@@ -240,26 +240,30 @@ function renderDesignMessages() {
       ? `<span class="design-chip">💲 التكلفة: ${fmtUsd(msg.cost_usd)} (${fmtSar(msg.cost_usd)})</span>` : '';
     const durChip = msg.duration_s != null
       ? `<span class="design-chip">⏱️ مدة التوليد: ${fmtDesignDuration(msg.duration_s)}</span>` : '';
+    const publishChip = msg.publish?.status
+      ? `<span class="design-chip">${msg.publish.status === 'scheduled' ? '🗓️' : '📤'} ${escapeHtml(msg.publish.label || msg.publish.status)}</span>` : '';
     return `<div class="design-msg design-msg-assistant"><div class="design-card">
-      ${msg.title ? `<div class="design-title">🖼️ ${escapeHtml(msg.title)}</div>` : ''}
+      <div class="design-card-head">
+        <div class="design-card-info">
+          ${msg.title ? `<span class="design-title">🖼️ ${escapeHtml(msg.title)}</span>` : ''}
+          <span class="design-chip">${designAspectLabel(msg.aspect || '16:9')}</span>
+          ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
+          ${msg.branded ? '<span class="design-chip">🟢 مختوم بشعار المجتهد</span>' : '<span class="design-chip">الشعار غير مطبوع (راجع التثبيت)</span>'}
+          ${costChip}${durChip}
+          ${msg.file_name ? `<span class="design-chip">📄 ${escapeHtml(msg.file_name)}</span>` : ''}
+          ${publishChip}
+        </div>
+        <div class="design-card-actions">
+          ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="fold" data-idx="${idx}">${msg.collapsed ? '👁️ عرض الصورة' : '🙈 طي الصورة'}</button>` : ''}
+          ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="zoom" data-idx="${idx}">🔍 تكبير</button>` : ''}
+          ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="share" data-idx="${idx}">🔗 مشاركة</button>` : ''}
+          ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="publish" data-idx="${idx}">📤 نشر</button>` : ''}
+          ${msg.image_url ? `<a class="design-download" href="${escapeHtml(msg.image_url)}" download>⬇️ تنزيل</a>` : ''}
+          <button type="button" class="design-mini-btn" data-design-action="archive" data-idx="${idx}">🗄️ أرشفة</button>
+          ${msg.image_url ? `<button type="button" class="design-mini-btn design-danger" data-design-action="delete" data-idx="${idx}">🗑️ حذف نهائي</button>` : ''}
+        </div>
+      </div>
       ${msg.image_url && !msg.collapsed ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المجتهد" loading="lazy" data-design-zoom="${idx}" title="انقر للتكبير">` : ''}
-      <div class="design-card-meta">
-        <span class="design-chip">${designAspectLabel(msg.aspect || '16:9')}</span>
-        ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
-        ${msg.branded ? '<span class="design-chip">🟢 مختوم بشعار المجتهد</span>' : '<span class="design-chip">الشعار غير مطبوع (راجع التثبيت)</span>'}
-        ${costChip}${durChip}
-        ${msg.file_name ? `<span class="design-chip">📄 ${escapeHtml(msg.file_name)}</span>` : ''}
-      </div>
-      <div class="design-card-actions">
-        ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="fold" data-idx="${idx}">${msg.collapsed ? '👁️ عرض الصورة' : '🙈 طي الصورة'}</button>` : ''}
-        ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="zoom" data-idx="${idx}">🔍 تكبير</button>` : ''}
-        ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="share" data-idx="${idx}">🔗 مشاركة</button>` : ''}
-        ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="publish" data-idx="${idx}">📤 نشر</button>` : ''}
-        ${msg.publish?.status ? `<span class="design-chip">${msg.publish.status === 'scheduled' ? '🗓️' : '📤'} ${escapeHtml(msg.publish.label || msg.publish.status)}</span>` : ''}
-        ${msg.image_url ? `<a class="design-download" href="${escapeHtml(msg.image_url)}" download>⬇️ تنزيل</a>` : ''}
-        <button type="button" class="design-mini-btn" data-design-action="archive" data-idx="${idx}">🗄️ أرشفة</button>
-        ${msg.image_url ? `<button type="button" class="design-mini-btn design-danger" data-design-action="delete" data-idx="${idx}">🗑️ حذف نهائي</button>` : ''}
-      </div>
       ${books ? `<div class="design-books">📚 من كتب: ${books}</div>` : ''}
       ${msg.prompt ? `<details class="design-prompt"><summary>توجيه الصورة الذي أُرسل للنموذج</summary><p dir="ltr">${escapeHtml(msg.prompt)}</p></details>` : ''}
     </div></div>`;
@@ -475,7 +479,7 @@ async function refreshDesignPublishTargets() {
       keyRow.hidden = !!data.connected;
       label.textContent = 'حسابات Zernio المرتبطة:';
       if (!data.connected) {
-        grid.innerHTML = '<div class="design-empty">أدخل مفتاح Zernio واحفظه لتظهر حساباتك المرتبطة.</div>';
+        grid.innerHTML = '';
         return;
       }
       const accounts = data.accounts || [];
