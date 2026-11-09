@@ -5013,9 +5013,14 @@ class DesignImageRequest(BaseModel):
     prompt: str
     aspect: str = "16:9"
     api_key: Optional[str] = None
+    image_model: Optional[str] = None
 
 
 DESIGN_IMAGE_MODEL = "openai/gpt-image-2.6-sunburst"
+DESIGN_IMAGE_MODELS = {
+    "gpt": DESIGN_IMAGE_MODEL,
+    "muse": "meta/muse-image",
+}
 
 
 def _png_decode_rgba(data: bytes):
@@ -5182,8 +5187,9 @@ async def design_image(req: DesignImageRequest, request: Request):
     if not key:
         raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
     size = {"16:9": "1536x1024", "9:16": "1024x1536", "1:1": "1024x1024"}[aspect]
+    model = DESIGN_IMAGE_MODELS.get((req.image_model or "gpt").strip(), DESIGN_IMAGE_MODEL)
     payload = {
-        "model": DESIGN_IMAGE_MODEL,
+        "model": model,
         "prompt": prompt,
         "size": size,
         "response_format": "b64_json",
@@ -5252,7 +5258,7 @@ async def design_image(req: DesignImageRequest, request: Request):
         "file_name": filename,
         "title": title,
         "branded": did_brand,
-        "model": DESIGN_IMAGE_MODEL,
+        "model": model,
         "aspect": aspect,
         "cost_usd": cost_usd,
         "duration_s": duration_s,
@@ -6100,7 +6106,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.385"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.386"},
         },
     })
     if opened.get("error"):

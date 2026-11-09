@@ -348,6 +348,13 @@ function designImageMode() {
   try { const saved = localStorage.getItem(DESIGN_IMAGE_MODE_KEY); return ['without', 'none'].includes(saved) ? saved : 'with'; } catch (e) { return 'with'; }
 }
 
+const DESIGN_IMAGE_MODEL_KEY = 'almujtahed_designs_imagemodel_v1';
+function designImageModelChoice() {
+  const sel = document.getElementById('designImageModel');
+  if (sel && ['gpt', 'muse'].includes(sel.value)) return sel.value;
+  try { return localStorage.getItem(DESIGN_IMAGE_MODEL_KEY) === 'muse' ? 'muse' : 'gpt'; } catch (e) { return 'gpt'; }
+}
+
 function designSystemPrompt(imageMode) {
   const noLiving = imageMode === 'without';
   const textOnly = imageMode === 'none';
@@ -439,12 +446,15 @@ function renderDesignMessages() {
       ? `<span class="design-chip">⏱️ مدة التوليد: ${fmtDesignDuration(msg.duration_s)}</span>` : '';
     const publishChip = msg.publish?.status
       ? `<span class="design-chip">${msg.publish.status === 'scheduled' ? '🗓️' : '📤'} ${escapeHtml(msg.publish.label || msg.publish.status)}</span>` : '';
+    const modelChip = msg.image_model
+      ? `<span class="design-chip">${String(msg.image_model).includes('muse') ? '✨ Meta Muse Image' : '🖼️ GPT Image'}</span>` : '';
     return `<div class="design-msg design-msg-assistant"><div class="design-card">
       <div class="design-card-head">
         <div class="design-card-info">
           ${msg.title ? `<span class="design-title">🖼️ ${escapeHtml(msg.title)}</span>` : ''}
           <span class="design-chip">${designAspectLabel(msg.aspect || '16:9')}</span>
           <span class="design-chip">${msg.image_mode === 'none' ? '📝 بلا صور مطلقًا' : msg.image_mode === 'without' ? '🚫 بلا أي كائن حي' : '🖼️ بصور'}</span>
+          ${modelChip}
           ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
           ${msg.branded ? '<span class="design-chip">🟢 مختوم بشعار المجتهد</span>' : '<span class="design-chip">الشعار غير مطبوع (راجع التثبيت)</span>'}
           ${costChip}${durChip}
@@ -497,7 +507,7 @@ async function loadDesignBalance() {
   }
 }
 
-async function runDesignGeneration(idea, aspect, scope, imageMode) {
+async function runDesignGeneration(idea, aspect, scope, imageMode, imageModel) {
   const books = scope.books.length ? scope.books : designBooksUnion();
   let savedKeys = {};
   try { savedKeys = readProviderKeys(); } catch (e) {}
@@ -535,7 +545,7 @@ async function runDesignGeneration(idea, aspect, scope, imageMode) {
   const imgResp = await fetch('/api/designs/image', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, aspect, api_key: apiKey })
+    body: JSON.stringify({ prompt, aspect, api_key: apiKey, image_model: imageModel || 'gpt' })
   });
   const imgData = await imgResp.json().catch(() => ({}));
   if (!imgResp.ok) throw new Error(imgData.detail || 'تعذر توليد الصورة');
@@ -549,6 +559,7 @@ async function runDesignGeneration(idea, aspect, scope, imageMode) {
     branded: !!imgData.branded,
     aspect,
     image_mode: ['without', 'none'].includes(imageMode) ? imageMode : 'with',
+    image_model: imgData.model || '',
     discipline: scope.label,
     cost_usd: (typeof imgData.cost_usd === 'number') ? imgData.cost_usd : null,
     duration_s: (typeof imgData.duration_s === 'number') ? imgData.duration_s : null,
@@ -569,6 +580,7 @@ async function submitDesignIdea(event) {
   if (idea.length < 3) { if (typeof showToast === 'function') showToast('اكتب فكرة التصميم أولًا'); return; }
   const aspect = document.querySelector('input[name="designAspect"]:checked')?.value || '16:9';
   const imageMode = designImageMode();
+  const imageModel = designImageModelChoice();
   const scope = resolveDesignScope(idea);
   if (!scope.books.length) {
     if (typeof showToast === 'function') showToast('لا كتب في نطاق البحث — أضف كتابًا واحدًا على الأقل من «📚 تصفح الكتب»');
@@ -583,7 +595,7 @@ async function submitDesignIdea(event) {
   const btn = document.getElementById('designSendBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ جارٍ التوليد...'; }
   try {
-    await runDesignGeneration(idea, aspect, scope, imageMode);
+    await runDesignGeneration(idea, aspect, scope, imageMode, imageModel);
     // بعد إنشاء الصورة بنجاح يُحذف طلب المستخدم تلقائيًا — تبقى البطاقة وحدها
     const reqIdx = designMessages.indexOf(userMsg);
     if (reqIdx >= 0) {
@@ -1144,6 +1156,11 @@ function initDesignsTab() {
   if (modeSel) {
     try { const savedMode = localStorage.getItem(DESIGN_IMAGE_MODE_KEY); if (['with', 'without', 'none'].includes(savedMode)) modeSel.value = savedMode; } catch (e) {}
     modeSel.addEventListener('change', () => { try { localStorage.setItem(DESIGN_IMAGE_MODE_KEY, modeSel.value); } catch (e) {} });
+  }
+  const modelSel = document.getElementById('designImageModel');
+  if (modelSel) {
+    try { const savedModel = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); if (['gpt', 'muse'].includes(savedModel)) modelSel.value = savedModel; } catch (e) {}
+    modelSel.addEventListener('change', () => { try { localStorage.setItem(DESIGN_IMAGE_MODEL_KEY, modelSel.value); } catch (e) {} });
   }
   const form = document.getElementById('designComposer');
   if (form) form.addEventListener('submit', submitDesignIdea);
