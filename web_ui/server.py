@@ -5047,14 +5047,15 @@ async def design_image(req: DesignImageRequest, request: Request):
     key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
     if not key:
         raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    size = {"16:9": "1536x1024", "9:16": "1024x1536", "1:1": "1024x1024"}[aspect]
     payload = {
         "model": DESIGN_IMAGE_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "modalities": ["image", "text"],
-        "image_config": {"aspect_ratio": aspect},
+        "prompt": prompt,
+        "size": size,
+        "response_format": "b64_json",
     }
     http_req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
+        "https://openrouter.ai/api/v1/images",
         headers={
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
@@ -5071,21 +5072,23 @@ async def design_image(req: DesignImageRequest, request: Request):
         raise HTTPException(status_code=502, detail=f"رفض نموذج الصورة الطلب: {detail}")
     except Exception as error:
         raise HTTPException(status_code=502, detail=f"تعذر الاتصال بنموذج الصورة: {error}")
-    message = ((data.get("choices") or [{}])[0].get("message") or {})
     image_b64 = ""
-    for image in message.get("images") or []:
-        url = ((image.get("image_url") or {}).get("url") or "")
-        if url.startswith("data:image") and "," in url:
-            image_b64 = url.split(",", 1)[1]
+    image_url_remote = ""
+    for item in data.get("data") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("b64_json"):
+            image_b64 = item["b64_json"]
             break
-    if not image_b64:
-        content = message.get("content")
-        parts = content if isinstance(content, list) else []
-        for part in parts:
-            url = ((part.get("image_url") or {}).get("url") or "") if isinstance(part, dict) else ""
-            if url.startswith("data:image") and "," in url:
-                image_b64 = url.split(",", 1)[1]
-                break
+        if item.get("url"):
+            image_url_remote = item["url"]
+            break
+    if not image_b64 and image_url_remote:
+        try:
+            with urllib.request.urlopen(image_url_remote, timeout=120) as img_resp:
+                image_b64 = base64.b64encode(img_resp.read()).decode("ascii")
+        except Exception:
+            image_b64 = ""
     if not image_b64:
         raise HTTPException(status_code=502, detail="لم يُعد نموذج الصورة صورة قابلة للحفظ")
     try:
@@ -5538,7 +5541,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.356"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.357"},
         },
     })
     if opened.get("error"):

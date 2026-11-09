@@ -695,7 +695,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.356");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.357");
         tray.Visible = false;
     }
 
