@@ -113,8 +113,18 @@ static class Installer
             key.SetValue("Publisher", "المجتهد");
             key.SetValue("InstallLocation", folder);
             key.SetValue("DisplayIcon", Path.Combine(folder, "AlMujtahed.exe"));
+            // ملف الإلغاء يعيش داخل مجلد التثبيت نفسه، لا عند ملف التنزيلات
+            // الذي قد يحذفه المستخدم فينكسر إلغاء التثبيت من الإعدادات.
+            var uninstaller = Path.Combine(folder, "إلغاء تثبيت المجتهد.exe");
             var setupExe = Environment.ProcessPath ?? "";
-            key.SetValue("UninstallString", $"\"{setupExe}\" --uninstall");
+            try
+            {
+                if (setupExe.Length > 0 &&
+                    !string.Equals(Path.GetFullPath(setupExe), Path.GetFullPath(uninstaller), StringComparison.OrdinalIgnoreCase))
+                    File.Copy(setupExe, uninstaller, true);
+            }
+            catch { uninstaller = setupExe; }
+            key.SetValue("UninstallString", $"\"{uninstaller}\" --uninstall");
             key.SetValue("NoModify", 1, RegistryValueKind.DWord);
             key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
         }
@@ -315,6 +325,23 @@ sealed class UninstallForm : Form
         if (existing is { } found)
         {
             try { Directory.Delete(found.folder, true); } catch { }
+            // إن كان ملف الإلغاء نفسه داخل المجلد بقيت بقايا مقفلة أثناء
+            // تشغيله، فتُحذف بعملية منفصلة بعد خروجه.
+            if (Directory.Exists(found.folder))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "cmd.exe",
+                        Arguments = $"/c ping -n 4 127.0.0.1 >nul & rmdir /s /q \"{found.folder}\"",
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    });
+                }
+                catch { }
+            }
         }
         MessageBox.Show(this, "تم إلغاء تثبيت المجتهد.", "المجتهد", MessageBoxButtons.OK, MessageBoxIcon.Information,
             MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
