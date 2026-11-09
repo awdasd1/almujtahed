@@ -10819,9 +10819,6 @@ body::-webkit-scrollbar,
 .design-restore-meta small { color: var(--text-muted); direction: ltr; text-align: right; unicode-bidi: plaintext; }
 .design-restore-actions { display: flex; justify-content: flex-start; }
 .design-restore-actions .design-send-btn { padding: 10px 22px; }
-.design-msg-user { align-items: center; gap: 8px; }
-.design-req-del { font-family: 'Almarai', sans-serif; font-size: 11.5px; font-weight: 700; border: 1px solid #b3261e55; color: #b3261e; background: transparent; border-radius: var(--radius-pill, 6px); padding: 4px 10px; cursor: pointer; white-space: nowrap; }
-.design-req-del:hover { background: #b3261e14; }
 .design-image { cursor: zoom-in; }
 .design-lightbox { position: fixed; inset: 0; background: rgba(12, 10, 6, 0.92); z-index: 10070; display: flex; align-items: center; justify-content: center; padding: 22px; cursor: zoom-out; }
 .design-lightbox[hidden] { display: none; }

@@ -155,7 +155,7 @@ function renderDesignMessages() {
   }
   box.innerHTML = designMessages.map((msg, idx) => {
     if (msg.role === 'user') {
-      return `<div class="design-msg design-msg-user"><div class="design-bubble">${escapeHtml(msg.text || '')}</div><button type="button" class="design-req-del" data-design-req-del="${idx}" title="حذف هذا الطلب من الشات">🗑️ حذف الطلب</button></div>`;
+      return `<div class="design-msg design-msg-user"><div class="design-bubble">${escapeHtml(msg.text || '')}</div></div>`;
     }
     const books = (msg.books || []).slice(0, 8).map(b => `<span class="design-book-chip">${escapeHtml(b)}</span>`).join('');
     const costChip = msg.cost_usd != null
@@ -293,7 +293,8 @@ async function submitDesignIdea(event) {
   if (idea.length < 3) { if (typeof showToast === 'function') showToast('اكتب فكرة التصميم أولًا'); return; }
   const aspect = document.querySelector('input[name="designAspect"]:checked')?.value || '16:9';
   const scope = resolveDesignScope(idea);
-  designMessages.push({ role: 'user', text: idea });
+  const userMsg = { role: 'user', text: idea };
+  designMessages.push(userMsg);
   saveDesignMessages();
   renderDesignMessages();
   input.value = '';
@@ -302,6 +303,13 @@ async function submitDesignIdea(event) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ جارٍ التوليد...'; }
   try {
     await runDesignGeneration(idea, aspect, scope);
+    // بعد إنشاء الصورة بنجاح يُحذف طلب المستخدم تلقائيًا — تبقى البطاقة وحدها
+    const reqIdx = designMessages.indexOf(userMsg);
+    if (reqIdx >= 0) {
+      designMessages.splice(reqIdx, 1);
+      saveDesignMessages();
+      renderDesignMessages();
+    }
   } catch (err) {
     stopDesignTimer();
     if (typeof showToast === 'function') showToast(err.message || 'تعذر توليد التصميم');
@@ -354,17 +362,6 @@ function closeDesignLightbox() {
 }
 
 async function onDesignCardAction(event) {
-  const delBtn = event.target.closest('[data-design-req-del]');
-  if (delBtn) {
-    const idx = Number(delBtn.getAttribute('data-design-req-del'));
-    if (designMessages[idx]) {
-      designMessages.splice(idx, 1);
-      saveDesignMessages();
-      renderDesignMessages();
-      if (typeof showToast === 'function') showToast('حُذف الطلب من الشات');
-    }
-    return;
-  }
   const zoomImg = event.target.closest('[data-design-zoom]');
   if (zoomImg) {
     const msg = designMessages[Number(zoomImg.getAttribute('data-design-zoom'))];
