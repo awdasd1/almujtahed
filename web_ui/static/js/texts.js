@@ -256,7 +256,43 @@ function initTextBooksPicker() {
   });
 }
 
-function textSystemPrompt() {
+const TEXT_CHARLIMIT_KEY = 'almujtahed_texts_charlimit_v1';
+
+function textCharLimit() {
+  const sel = document.getElementById('textCharLimit');
+  if (!sel) return 250;
+  if (sel.value === 'custom') {
+    const v = parseInt(document.getElementById('textCharLimitCustom')?.value || '', 10);
+    return (v >= 50 && v <= 10000) ? v : 250;
+  }
+  return parseInt(sel.value, 10) || 250;
+}
+
+function initTextCharLimit() {
+  const sel = document.getElementById('textCharLimit');
+  const custom = document.getElementById('textCharLimitCustom');
+  if (!sel) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(TEXT_CHARLIMIT_KEY) || 'null');
+    if (saved && saved.sel) {
+      sel.value = saved.sel;
+      if (custom && saved.custom) custom.value = saved.custom;
+    }
+  } catch (e) { /* افتراضي */ }
+  const sync = () => {
+    if (custom) custom.hidden = sel.value !== 'custom';
+    try { localStorage.setItem(TEXT_CHARLIMIT_KEY, JSON.stringify({ sel: sel.value, custom: custom ? custom.value : '' })); } catch (e) {}
+  };
+  if (!sel.dataset.wired) {
+    sel.dataset.wired = '1';
+    sel.addEventListener('change', sync);
+    if (custom) custom.addEventListener('change', sync);
+  }
+  sync();
+}
+
+function textSystemPrompt(charLimit) {
+  const limit = charLimit || 250;
   return [
     'أنت محرّر فوائد تراثية لقسم «النصوص» في تطبيق المجتهد للبحث التراثي.',
     'مهمتك الوحيدة: استخراج فائدة واحدة نفيسة حول موضوع المستخدم من الشواهد المرفقة من الكتب المحددة فقط — لا تخترع أقوالًا ولا تنسب قولًا لغير قائله ولا تخرج عن الشواهد.',
@@ -266,10 +302,41 @@ function textSystemPrompt() {
     'السطر الأول: عنوان قصير جذاب للفائدة (٣-٧ كلمات) بلا كلمة «عنوان» وبلا ترقيم زخرفي.',
     'ثم فراغ سطر، ثم متن الفائدة: إن وجدت في الشواهد عبارة منقولة بعينها فانقلها حرفيًا بين علامتي تنصيص «...» ومسبوقة بنسبتها: قال فلان رحمه الله: «...». وإن كانت الفائدة معنى مستخلصًا فصُغه بأسلوبك الفصيح الموجز وصدّره بما يدل على الاستفادة مثل: ومما يُستفاد: ... مع نسبة المعنى لصاحبه إن عُرف.',
     'إيجاز صارم: متن الفائدة بين ٤٠ و٩٠ كلمة، لغة فصيحة راقية، جمل قصيرة مؤثرة صالحة للتداول.',
-    'ثم سطر مستقل: 📚 المصدر: «اسم الكتاب» — اسم المؤلف (كما يظهر في الشاهد).',
+    'ثم سطر مستقل: 📚 المصدر: «اسم الكتاب» — اسم المؤلف — والجزء والصفحة كما يظهران في الشاهد بصيغة (ج٢، ص١٤٥) متى توفّرا في الشاهد، وإياك أن تخترع جزءًا أو صفحة غير موجودين في الشاهد.',
+    `حد الحروف الصارم: النص كاملًا بكل سطوره — العنوان والمتن والمصدر والوسوم وفواصل الأسطر — لا يتجاوز ${limit} حرفًا أبدًا (لأن بعض المنصات كإكس ترفض ما زاد). عدّ الحروف قبل الإخراج، وإن طال الاقتباس اختر أقصر عبارة دالة أو لخّص المعنى بأسلوبك حتى تلتزم بالحد دون حذف النسبة والمصدر.`,
     'ثم سطر أخير: ٣ إلى ٥ وسوم عربية متصلة بالموضوع تبدأ بـ # ومفصولة بمسافات، مثل: #فائدة #تراث',
     'إن لم تجد في الشواهد فائدة مباشرة في الموضوع فاستخرج أقرب فائدة إليه وصرّح في متنها بأنها في معنى الموضوع، ولا تدّعِ غير ذلك.'
   ].join('\n');
+}
+
+function enrichTextSource(text, witnesses) {
+  /* تثبيت الجزء والصفحة في سطر المصدر من بيانات الشاهد الفعلية — لا من ذاكرة النموذج */
+  const rows = (witnesses || []).filter(w => w && w.title);
+  if (!rows.length) return text;
+  const norm = (s) => normalizeDesignText(String(s || '')).replace(/[«»"()\-—–:]/g, ' ').replace(/\s+/g, ' ').trim();
+  const format = (w) => {
+    const parts = [`«${w.title}»`];
+    if (w.author) parts.push(w.author + (w.death_year ? ` (ت ${w.death_year})` : ''));
+    const loc = [];
+    if (w.part) loc.push(`ج${w.part}`);
+    if (w.page) loc.push(`ص${w.page}`);
+    if (loc.length) parts.push(loc.join('، '));
+    return `📚 المصدر: ${parts.join(' — ')}`;
+  };
+  const lines = String(text).split('\n');
+  const srcIdx = lines.findIndex(l => l.includes('المصدر'));
+  if (srcIdx >= 0) {
+    const match = lines[srcIdx].match(/«([^»]+)»/);
+    const wanted = norm(match ? match[1] : '');
+    let witness = rows.find(w => { const t = norm(w.title); return wanted && (t.includes(wanted) || wanted.includes(t)); });
+    if (!witness) witness = rows.find(w => norm(lines[srcIdx]).includes(norm(w.title)));
+    if (witness) lines[srcIdx] = format(witness);
+    return lines.join('\n');
+  }
+  const tagIdx = lines.findIndex(l => l.trim().startsWith('#'));
+  if (tagIdx >= 0) lines.splice(tagIdx, 0, '', format(rows[0]));
+  else lines.push('', format(rows[0]));
+  return lines.join('\n');
 }
 
 function loadTextMessages() {
@@ -303,13 +370,16 @@ function renderTextMessages() {
       ? `<span class="design-chip">⏱️ مدة الاستخراج: ${fmtDesignDuration(msg.duration_s)}</span>` : '';
     const publishChip = msg.publish?.status
       ? `<span class="design-chip">${msg.publish.status === 'scheduled' ? '🗓️' : '📤'} ${escapeHtml(msg.publish.label || msg.publish.status)}</span>` : '';
+    const charCount = (msg.text || '').length;
+    const overLimit = msg.char_limit && charCount > msg.char_limit;
+    const charChip = `<span class="design-chip" ${overLimit ? 'style="color:#b3261e;border-color:#b3261e66;font-weight:700"' : ''}>🔢 ${charCount} حرفًا${msg.char_limit ? ` / حد ${msg.char_limit}` : ''}${overLimit ? ' — تجاوز الحد!' : ''}</span>`;
     const bodyHtml = escapeHtml(msg.text || '').replace(/(📚 المصدر:[^\n]*)/g, '<span class="design-text-source">$1</span>');
     return `<div class="design-msg design-msg-assistant"><div class="design-card">
       <div class="design-card-head">
         <div class="design-card-info">
           ${msg.title ? `<span class="design-title">✍️ ${escapeHtml(msg.title)}</span>` : ''}
           ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
-          ${durChip}${publishChip}
+          ${durChip}${charChip}${publishChip}
         </div>
         <div class="design-card-actions">
           <button type="button" class="design-mini-btn" data-text-action="copy" data-idx="${idx}">📋 نسخ النص</button>
@@ -405,7 +475,7 @@ async function runTextGeneration(topic, scope) {
         witness_limit: 10,
         context_tokens: 64000,
         messages: [{ role: 'user', content: `موضوع الفائدة: ${topic}\nاستخرج الفائدة الآن وفق تعليماتك.${extraInstruction || ''}` }],
-        system_prompt: textSystemPrompt() + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز اختيار الفائدة على هذه الزاوية.` : ''),
+        system_prompt: textSystemPrompt(limit) + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز اختيار الفائدة على هذه الزاوية.` : ''),
         temperature: 0.3,
         providers: savedKeys,
         agent_group: null
@@ -418,14 +488,22 @@ async function runTextGeneration(topic, scope) {
       witnesses: chatData.witnesses || []
     };
   };
+  const limit = textCharLimit();
   let result = await requestBenefit('');
-  if (!isValidBenefit(result.text)) {
-    // النموذج أحيانًا يكتفي بالعنوان والمصدر — إعادة واحدة بقالب مشدد قبل إعلان الفشل
-    setTextStatus('يُعاد ضبط شكل الفائدة (متن منقول + نسبة + مصدر)...');
-    result = await requestBenefit('\nتنبيه إلزامي: لا تحذف متن الفائدة أبدًا؛ أخرج القالب كاملًا: عنوان، ثم متن الفائدة (المنقول حرفيًا بين «...» منسوبًا لقائله «قال فلان رحمه الله»)، ثم سطر المصدر، ثم الوسوم.');
+  const problemsOf = (t) => {
+    const probs = [];
+    if (!isValidBenefit(t)) probs.push('تنبيه إلزامي: لا تحذف متن الفائدة أبدًا؛ أخرج القالب كاملًا: عنوان، ثم متن الفائدة (المنقول حرفيًا بين «...» منسوبًا لقائله «قال فلان رحمه الله»)، ثم سطر المصدر بالجزء والصفحة، ثم الوسوم.');
+    if (t.length > limit) probs.push(`تنبيه إلزامي: نصك السابق بلغ ${t.length} حرفًا والحد الأقصى ${limit} حرفًا للنص كاملًا — أعد الاستخراج أقصر: اختر عبارة منقولة أقصر أو لخّص المعنى، والتزم بالحد التزامًا صارمًا.`);
+    return probs;
+  };
+  const problems = problemsOf(result.text);
+  if (problems.length) {
+    // النموذج أحيانًا يكتفي بالعنوان والمصدر أو يطيل فوق حد المنصة — إعادة واحدة مشددة
+    setTextStatus('يُعاد ضبط الفائدة (قالب كامل وضمن حد الحروف)...');
+    result = await requestBenefit('\n' + problems.join('\n'));
   }
-  const text = result.text;
   const chatData = { witnesses: result.witnesses };
+  const text = enrichTextSource(result.text, chatData.witnesses);
   if (text.length < 40) throw new Error('جاءت الفائدة فارغة أو قصيرة — أعد المحاولة');
   const witnessBooks = [...new Set((chatData.witnesses || []).map(w => w.book_title || w.title || w.book || '').filter(Boolean))];
   const firstLine = text.split('\n').map(s => s.trim()).filter(Boolean)[0] || 'فائدة نفيسة';
@@ -435,7 +513,9 @@ async function runTextGeneration(topic, scope) {
     title: firstLine.replace(/^#+\s*/, '').slice(0, 90),
     discipline: scope.label,
     duration_s: Math.round((Date.now() - startedAt) / 1000),
-    books: witnessBooks
+    books: witnessBooks,
+    witnesses: (chatData.witnesses || []).slice(0, 10),
+    char_limit: limit
   });
   saveTextMessages();
   stopTextTimer();
@@ -551,6 +631,11 @@ function initTextsTab() {
   loadTextBalance();
   initTextKindPicker();
   initTextBooksPicker();
+  initTextCharLimit();
+  // نافذة النشر تسكن قسم التصاميم؛ انقلها لجذر التبويب حتى تظهر فوق القسمين معًا
+  const publishOverlay = document.getElementById('designPublishOverlay');
+  const pane = document.getElementById('paneDesigns');
+  if (publishOverlay && pane && publishOverlay.parentElement !== pane) pane.appendChild(publishOverlay);
   const designsBtn = document.getElementById('publishSectionDesignsBtn');
   const textsBtn = document.getElementById('publishSectionTextsBtn');
   if (designsBtn && !designsBtn.dataset.wired) {

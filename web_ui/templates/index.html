@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.378">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.379">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.378 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.379 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -2444,6 +2444,21 @@
                             <div class="design-kind-hint">احذف كتابًا من الأعلى أو ألغِ تحديده فلن يُبحث فيه، وحدّد أي كتاب — من القائمة المعتمدة أو من نتائج مكتبة الشاملة — فيُضاف دائمًا إلى نطاق البحث. تعديلاتك محفوظة وتسري فوق نطاق الفنون (التلقائي أو اليدوي).</div>
                         </div>
                     </div>
+                    <span class="designs-controls-label">حد الحروف:</span>
+                    <select id="textCharLimit" class="design-publish-date" title="الحد الأقصى لعدد حروف النص كاملًا">
+                        <option value="250" selected>٢٥٠ حرفًا (آمن لإكس)</option>
+                        <option value="300">٣٠٠ حرف</option>
+                        <option value="350">٣٥٠ حرفًا</option>
+                        <option value="400">٤٠٠ حرف</option>
+                        <option value="500">٥٠٠ حرف</option>
+                        <option value="600">٦٠٠ حرف</option>
+                        <option value="700">٧٠٠ حرف</option>
+                        <option value="1000">١٠٠٠ حرف</option>
+                        <option value="1200">١٢٠٠ حرف</option>
+                        <option value="1500">١٥٠٠ حرف</option>
+                        <option value="custom">أخرى (يُحدد)...</option>
+                    </select>
+                    <input type="number" id="textCharLimitCustom" class="design-publish-date" min="50" max="10000" step="10" placeholder="عدد الحروف" hidden style="width:110px">
                 </div>
                 <div class="designs-stats">
                     <span class="design-balance" id="textBalance">💰 الرصيد: —</span>
@@ -5596,19 +5611,19 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.378"></script>
+    <script src="/static/js/app.js?v=1.10.379"></script>
     <script src="/static/js/search.js?v=1793188000"></script>
     <script src="/static/js/reader.js?v=1793225300"></script>
-    <script src="/static/js/force3d.js?v=1.10.378"></script>
+    <script src="/static/js/force3d.js?v=1.10.379"></script>
     <script src="/static/js/share.js?v=1793225500"></script>
-    <script src="/static/js/chat.js?v=1.10.378"></script>
-    <script src="/static/js/designs.js?v=1.10.378"></script>
-    <script src="/static/js/texts.js?v=1.10.378"></script>
-    <script src="/static/js/agents.js?v=1.10.378"></script>
+    <script src="/static/js/chat.js?v=1.10.379"></script>
+    <script src="/static/js/designs.js?v=1.10.379"></script>
+    <script src="/static/js/texts.js?v=1.10.379"></script>
+    <script src="/static/js/agents.js?v=1.10.379"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1.10.378"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.378"></script>
-    <script src="/static/js/projects.js?v=1.10.378"></script>
+    <script src="/static/js/tools.js?v=1.10.379"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.379"></script>
+    <script src="/static/js/projects.js?v=1.10.379"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>
