@@ -149,6 +149,9 @@ function setDesignBookSelected(book, selected) {
   saveDesignBooksState();
   renderDesignBooksChips();
   renderDesignBooksList();
+  document.querySelectorAll('#designBooksLibrary input[data-book]').forEach(box => {
+    if (box.getAttribute('data-book') === book) box.checked = selected;
+  });
   updateDesignBooksButton();
 }
 
@@ -167,15 +170,49 @@ function renderDesignBooksList() {
   const list = document.getElementById('designBooksList');
   if (!list) return;
   const query = normalizeDesignText(document.getElementById('designBooksSearch')?.value || '');
+  const words = query.split(/\s+/).filter(Boolean);
   const effective = effectiveDesignBooks(designScopeBasisBooks());
   const html = designKindsList().map(kind => {
-    const books = (kind.books || []).filter(b => !query || normalizeDesignText(b).includes(query));
+    const books = (kind.books || []).filter(b => !words.length || words.every(w => normalizeDesignText(b).includes(w)));
     if (!books.length) return '';
     return `<div class="design-books-kind-head">${kind.icon} ${kind.label}</div>` + books.map(b =>
       `<label class="design-kind-item"><input type="checkbox" data-book="${escapeHtml(b)}" ${effective.includes(b) ? 'checked' : ''}><span>${escapeHtml(b)}</span></label>`
     ).join('');
   }).join('');
   list.innerHTML = html || '<div class="design-books-chips-empty">لا نتائج مطابقة لبحثك</div>';
+}
+
+let designLibrarySearchTimer = null;
+let designLibrarySearchToken = 0;
+
+function renderDesignBooksLibrary() {
+  const box = document.getElementById('designBooksLibrary');
+  if (!box) return;
+  const query = (document.getElementById('designBooksSearch')?.value || '').trim();
+  if (query.length < 2) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة</div><div class="design-books-chips-empty">جارٍ البحث في المكتبة...</div>';
+  if (designLibrarySearchTimer) clearTimeout(designLibrarySearchTimer);
+  designLibrarySearchTimer = setTimeout(async () => {
+    const token = ++designLibrarySearchToken;
+    try {
+      const resp = await fetch(`/api/books/search?q=${encodeURIComponent(query)}&limit=30`);
+      const data = await resp.json().catch(() => ({}));
+      if (token !== designLibrarySearchToken) return;
+      const books = Array.isArray(data.books) ? data.books : [];
+      if (!books.length) {
+        box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة</div><div class="design-books-chips-empty">لا نتائج في مكتبة الشاملة لهذا البحث — جرّب كلمات أقل أو عنوانًا أدق</div>';
+        return;
+      }
+      const effective = effectiveDesignBooks(designScopeBasisBooks());
+      box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة — حدّد كتابًا لإضافته إلى نطاق البحث</div>' + books.map(b => {
+        const meta = [b.author, (b.death && b.death !== '—') ? `ت ${b.death}` : '', b.category_name].filter(Boolean).join(' — ');
+        return `<label class="design-kind-item"><input type="checkbox" data-book="${escapeHtml(b.title)}" ${effective.includes(b.title) ? 'checked' : ''}><span>${escapeHtml(b.title)}${meta ? ` <small style="color:var(--text-muted)">${escapeHtml(meta)}</small>` : ''}</span></label>`;
+      }).join('');
+    } catch (e) {
+      if (token !== designLibrarySearchToken) return;
+      box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة</div><div class="design-books-chips-empty">تعذر البحث في المكتبة الآن</div>';
+    }
+  }, 280);
 }
 
 function updateDesignBooksButton() {
@@ -212,8 +249,13 @@ function initDesignBooksPicker() {
     const box = event.target.closest('input[data-book]');
     if (box) setDesignBookSelected(box.getAttribute('data-book'), box.checked);
   });
+  const library = document.getElementById('designBooksLibrary');
+  if (library) library.addEventListener('change', (event) => {
+    const box = event.target.closest('input[data-book]');
+    if (box) setDesignBookSelected(box.getAttribute('data-book'), box.checked);
+  });
   const search = document.getElementById('designBooksSearch');
-  if (search) search.addEventListener('input', renderDesignBooksList);
+  if (search) search.addEventListener('input', () => { renderDesignBooksList(); renderDesignBooksLibrary(); });
   const reset = document.getElementById('designBooksReset');
   if (reset) reset.addEventListener('click', () => {
     designBooksState = { added: [], removed: [] };
