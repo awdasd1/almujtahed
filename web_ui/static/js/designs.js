@@ -177,6 +177,23 @@ function setAllDesignBooks(selected) {
   if (typeof showToast === 'function') showToast(selected ? `حُدّدت كل كتب القائمة المعتمدة (${all.length} كتابًا)` : 'أُلغي تحديد كل الكتب');
 }
 
+function selectAllLibraryDesignBooks() {
+  const box = document.getElementById('designBooksLibrary');
+  if (!box) return;
+  const titles = [...box.querySelectorAll('input[data-book]')].map(b => b.getAttribute('data-book')).filter(Boolean);
+  if (!titles.length) return;
+  loadDesignBooksState();
+  const basis = new Set(designScopeBasisBooks());
+  designBooksState.removed = designBooksState.removed.filter(b => !titles.includes(b));
+  titles.forEach(t => { if (!basis.has(t) && !designBooksState.added.includes(t)) designBooksState.added.push(t); });
+  saveDesignBooksState();
+  renderDesignBooksChips();
+  renderDesignBooksList();
+  box.querySelectorAll('input[data-book]').forEach(b => { b.checked = true; });
+  updateDesignBooksButton();
+  if (typeof showToast === 'function') showToast(`أُضيفت كل نتائج الشاملة الظاهرة (${titles.length} كتابًا) إلى نطاق البحث`);
+}
+
 function renderDesignBooksChips() {
   const chips = document.getElementById('designBooksChips');
   const count = document.getElementById('designBooksSelectedCount');
@@ -226,7 +243,7 @@ function renderDesignBooksLibrary() {
         return;
       }
       const effective = effectiveDesignBooks(designScopeBasisBooks());
-      box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة — حدّد كتابًا لإضافته إلى نطاق البحث</div>' + books.map(b => {
+      box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة — حدّد كتابًا لإضافته إلى نطاق البحث <button type="button" class="design-mini-btn" data-lib-select-all>☑️ تحديد الكل</button></div>' + books.map(b => {
         const meta = [b.author, (b.death && b.death !== '—') ? `ت ${b.death}` : '', b.category_name].filter(Boolean).join(' — ');
         return `<label class="design-kind-item"><input type="checkbox" data-book="${escapeHtml(b.title)}" ${effective.includes(b.title) ? 'checked' : ''}><span>${escapeHtml(b.title)}${meta ? ` <small style="color:var(--text-muted)">${escapeHtml(meta)}</small>` : ''}</span></label>`;
       }).join('');
@@ -275,6 +292,9 @@ function initDesignBooksPicker() {
   if (library) library.addEventListener('change', (event) => {
     const box = event.target.closest('input[data-book]');
     if (box) setDesignBookSelected(box.getAttribute('data-book'), box.checked);
+  });
+  if (library) library.addEventListener('click', (event) => {
+    if (event.target.closest('[data-lib-select-all]')) selectAllLibraryDesignBooks();
   });
   const search = document.getElementById('designBooksSearch');
   if (search) search.addEventListener('input', () => { renderDesignBooksList(); renderDesignBooksLibrary(); });
