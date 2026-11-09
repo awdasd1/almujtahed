@@ -341,7 +341,15 @@ function resolveDesignScope(idea) {
   return classified;
 }
 
-function designSystemPrompt() {
+const DESIGN_IMAGE_MODE_KEY = 'almujtahed_designs_imagemode_v1';
+function designImageMode() {
+  const sel = document.getElementById('designImageMode');
+  if (sel && (sel.value === 'with' || sel.value === 'without')) return sel.value;
+  try { return localStorage.getItem(DESIGN_IMAGE_MODE_KEY) === 'without' ? 'without' : 'with'; } catch (e) { return 'with'; }
+}
+
+function designSystemPrompt(imageMode) {
+  const noLiving = imageMode === 'without';
   return [
     'أنت مهندس توجيهات صور (Prompt Engineer) لتبويب «تصاميم» في تطبيق المجتهد للبحث التراثي.',
     'مهمتك الوحيدة: تحويل فكرة المستخدم إلى توجيه توليد صورة واحد (Image Prompt) بالإنجليزية فقط، جاهز للإرسال مباشرة إلى نموذج توليد صور، مستندًا إلى الشواهد المرفقة من كتب التراث المعتمدة — لا تخترع وقائع أو أماكن أو تواريخ لا تدعمها الشواهد.',
@@ -350,7 +358,9 @@ function designSystemPrompt() {
     '1) نوع العمل: highly detailed historical infographic / documentary illustration مناسب لموضوع الفكرة (خريطة رحلة، خط زمني، مشهد تاريخي موثق...) بحسب ما تدعمه الشواهد.',
     '2) خطوط الصورة العربية: العنوان الرئيسي والعناوين الفرعية داخل الصورة بخط المراعي (Almarai — Google Fonts) بالوزن العريض، وبقية النصوص العربية (الشروح والتسميات والقوائم والتعليقات) بخط الأميري (Amiri — Google Fonts) الأنيق. اختر عنوانًا عربيًا دقيقًا للفكرة واكتبه في التوجيه بحروف عربية حرفيًا بين علامتي تنصيص، مثل: The main title reads clearly in Arabic: "رحلة الإمام البخاري لطلب الحديث", set in bold Almarai (Google Fonts), ivory white with coral highlights; all other Arabic text, labels and captions in Amiri (Google Fonts) — crisp, perfectly legible, with no distorted characters.',
     '3) هوية المجتهد البصرية الثابتة: Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use: deep ocean navy, muted teal, slate gray, ivory sand, and vibrant coral-orange accents. Absolutely avoid standard black-and-gold or dark vintage fantasy themes.',
-    '4) الأشخاص إن ظهروا: من الخلف تمامًا (strictly and entirely from the back)، بلا وجوه ولا ملامح جانبية، بملابس تاريخية موقرة.',
+    noLiving
+      ? '4) ممنوع منعًا باتًا ظهور أي كائن حي في التصميم: لا أشخاص ولا بشر ولا حيوانات ولا طيور ولا أي كائنات حية إطلاقًا — لا من الأمام ولا من الخلف ولا حتى ظلال أو صور ظلية (silhouettes) لكائنات حية. اعتمد فقط على الخرائط والعمارة والعناصر الجامدة والزخارف الهندسية والخط العربي، ويجب أن يتضمن التوجيه الإنجليزي حرفيًا عبارة بهذا المعنى: Absolutely no people, no human figures, no animals, no birds, no living beings of any kind, and no silhouettes of living creatures — only maps, architecture, inanimate objects, geometric ornament and Arabic calligraphy.'
+      : '4) الأشخاص إن ظهروا: من الخلف تمامًا (strictly and entirely from the back)، بلا وجوه ولا ملامح جانبية، بملابس تاريخية موقرة.',
     '5) تفاصيل موثقة من الشواهد: أسماء الأماكن والأعلام والمسارات كما وردت، بمؤشرات جغرافية نظيفة وخطوط مسار مرجانية مضيئة عند الحاجة.',
     '6) بلا أي شعارات أو علامات مائية داخل الصورة (الشعار يضيفه التطبيق لاحقًا)، وبلا نصوص إنجليزية داخل الصورة سوى أسماء الأماكن على الخريطة عند الحاجة.'
   ].join('\n');
@@ -410,7 +420,7 @@ function renderDesignMessages() {
   const box = document.getElementById('designMessages');
   if (!box) return;
   if (!designMessages.length) {
-    box.innerHTML = '<div class="design-empty">مثال: «رحلة الإمام البخاري في طلب الحديث» — ستتحول إلى خريطة إنفوغرافيك تاريخية بعنوان عربي وأسلوب المجتهد البصري.</div>';
+    box.innerHTML = '';
     return;
   }
   box.innerHTML = designMessages.map((msg, idx) => {
@@ -429,6 +439,7 @@ function renderDesignMessages() {
         <div class="design-card-info">
           ${msg.title ? `<span class="design-title">🖼️ ${escapeHtml(msg.title)}</span>` : ''}
           <span class="design-chip">${designAspectLabel(msg.aspect || '16:9')}</span>
+          <span class="design-chip">${msg.image_mode === 'without' ? '🚫 بلا أي كائن حي' : '🖼️ بصور'}</span>
           ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
           ${msg.branded ? '<span class="design-chip">🟢 مختوم بشعار المجتهد</span>' : '<span class="design-chip">الشعار غير مطبوع (راجع التثبيت)</span>'}
           ${costChip}${durChip}
@@ -488,7 +499,7 @@ async function loadDesignBalance() {
   }
 }
 
-async function runDesignGeneration(idea, aspect, scope) {
+async function runDesignGeneration(idea, aspect, scope, imageMode) {
   const books = scope.books.length ? scope.books : designBooksUnion();
   let savedKeys = {};
   try { savedKeys = readProviderKeys(); } catch (e) {}
@@ -509,7 +520,7 @@ async function runDesignGeneration(idea, aspect, scope) {
       witness_limit: 10,
       context_tokens: 64000,
       messages: [{ role: 'user', content: `فكرة التصميم: ${idea}\nصِغ توجيه الصورة الآن وفق تعليماتك.` }],
-      system_prompt: designSystemPrompt() + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز تفاصيل التوجيه الموثقة على هذه الزاوية.` : ''),
+      system_prompt: designSystemPrompt(imageMode) + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز تفاصيل التوجيه الموثقة على هذه الزاوية.` : ''),
       temperature: 0.3,
       providers: savedKeys,
       agent_group: null
@@ -539,6 +550,7 @@ async function runDesignGeneration(idea, aspect, scope) {
     title: imgData.title || '',
     branded: !!imgData.branded,
     aspect,
+    image_mode: imageMode === 'without' ? 'without' : 'with',
     discipline: scope.label,
     cost_usd: (typeof imgData.cost_usd === 'number') ? imgData.cost_usd : null,
     duration_s: (typeof imgData.duration_s === 'number') ? imgData.duration_s : null,
@@ -558,6 +570,7 @@ async function submitDesignIdea(event) {
   const idea = (input?.value || '').trim();
   if (idea.length < 3) { if (typeof showToast === 'function') showToast('اكتب فكرة التصميم أولًا'); return; }
   const aspect = document.querySelector('input[name="designAspect"]:checked')?.value || '16:9';
+  const imageMode = designImageMode();
   const scope = resolveDesignScope(idea);
   if (!scope.books.length) {
     if (typeof showToast === 'function') showToast('لا كتب في نطاق البحث — أضف كتابًا واحدًا على الأقل من «📚 تصفح الكتب»');
@@ -572,7 +585,7 @@ async function submitDesignIdea(event) {
   const btn = document.getElementById('designSendBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ جارٍ التوليد...'; }
   try {
-    await runDesignGeneration(idea, aspect, scope);
+    await runDesignGeneration(idea, aspect, scope, imageMode);
     // بعد إنشاء الصورة بنجاح يُحذف طلب المستخدم تلقائيًا — تبقى البطاقة وحدها
     const reqIdx = designMessages.indexOf(userMsg);
     if (reqIdx >= 0) {
@@ -1132,6 +1145,11 @@ function initDesignsTab() {
   const lightboxClose = document.getElementById('designLightboxClose');
   if (lightboxClose) lightboxClose.addEventListener('click', closeDesignLightbox);
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDesignLightbox(); });
+  const modeSel = document.getElementById('designImageMode');
+  if (modeSel) {
+    try { const savedMode = localStorage.getItem(DESIGN_IMAGE_MODE_KEY); if (savedMode === 'without' || savedMode === 'with') modeSel.value = savedMode; } catch (e) {}
+    modeSel.addEventListener('change', () => { try { localStorage.setItem(DESIGN_IMAGE_MODE_KEY, modeSel.value); } catch (e) {} });
+  }
   const form = document.getElementById('designComposer');
   if (form) form.addEventListener('submit', submitDesignIdea);
   const input = document.getElementById('designIdeaInput');
