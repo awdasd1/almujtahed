@@ -5341,6 +5341,23 @@ def _pcm16_to_wav(pcm: bytes, sample_rate: int = 24000) -> bytes:
     return buf.getvalue()
 
 
+def _pcm16_to_mp3(pcm: bytes, sample_rate: int = 24000, bit_rate: int = 64) -> Optional[bytes]:
+    """تشفير PCM إلى MP3 محليًا بـ lameenc إن توفّر (أصغر من WAV بنحو ست مرات لصوت الكلام) وإلا None."""
+    try:
+        import lameenc
+    except Exception:
+        return None
+    try:
+        encoder = lameenc.Encoder()
+        encoder.set_bit_rate(bit_rate)
+        encoder.set_in_sample_rate(sample_rate)
+        encoder.set_channels(1)
+        encoder.set_quality(2)
+        return bytes(encoder.encode(pcm)) + bytes(encoder.flush())
+    except Exception:
+        return None
+
+
 def _openrouter_tts(key: str, text: str, with_instructions: bool) -> bytes:
     payload = {
         "model": AUDIO_TTS_MODEL,
@@ -5473,10 +5490,14 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
 
     if all(_is_mp3(p) for p in parts):
         blob, ext = b"".join(parts), "mp3"
-    elif all(p[:4] == b"RIFF" for p in parts):
-        blob, ext = _pcm16_to_wav(b"".join(p[44:] for p in parts)), "wav"
-    else:  # PCM خام من Gemini TTS: ادمج المقاطع ثم غلّفها WAV بمعدل 24kHz أحادي 16-بت
-        blob, ext = _pcm16_to_wav(b"".join(parts)), "wav"
+    else:
+        # PCM خام من Gemini TTS: ادمج المقاطع ثم شفّرها MP3 محليًا، وWAV بديل عند غياب المشفّر
+        pcm = b"".join(p[44:] for p in parts) if all(p[:4] == b"RIFF" for p in parts) else b"".join(parts)
+        mp3 = _pcm16_to_mp3(pcm)
+        if mp3:
+            blob, ext = mp3, "mp3"
+        else:
+            blob, ext = _pcm16_to_wav(pcm), "wav"
     owner_id = current_owner_id(request)
     audio_dir = UPLOADS_BUCKET_DIR / owner_id / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
@@ -6310,7 +6331,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.424"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.425"},
         },
     })
     if opened.get("error"):

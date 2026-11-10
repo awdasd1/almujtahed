@@ -2202,7 +2202,7 @@ function renderSessionMessages(sessionId, options) {
         </div>
         <audio controls preload="metadata" src="${escapeHtml(msg.audio_summary.url)}"></audio>
         <div class="chat-audio-summary-actions">
-          <a class="btn-msg-export" href="${escapeHtml(msg.audio_summary.url)}" download="ملخص-صوتي-المجتهد.wav" title="تنزيل الملف الصوتي">⬇️ تنزيل</a>
+          <a class="btn-msg-export" href="${escapeHtml(msg.audio_summary.url)}" download="ملخص-صوتي-المجتهد.${escapeHtml(String(msg.audio_summary.url).split('.').pop() || 'wav')}" title="تنزيل الملف الصوتي">⬇️ تنزيل</a>
           <button type="button" class="btn-msg-export" onclick="shareAudioSummary(${idx})" title="مشاركة الملف الصوتي">🔗 مشاركة</button>
           ${msg.audio_summary.text ? `<button type="button" class="btn-msg-export" onclick="toggleAudioSummaryText(${idx}, this)" title="عرض نص الملخص الصوتي أو إخفاؤه">📝 نص الملخص</button>` : ''}
         </div>
@@ -2833,7 +2833,8 @@ async function shareAudioSummary(idx) {
     const resp = await fetch(info.url);
     if (resp.ok) {
       const blob = await resp.blob();
-      const file = new File([blob], 'ملخص-صوتي-المجتهد.wav', { type: blob.type || 'audio/wav' });
+      const ext = (String(info.url).split('.').pop() || 'wav').toLowerCase();
+      const file = new File([blob], `ملخص-صوتي-المجتهد.${ext}`, { type: blob.type || (ext === 'mp3' ? 'audio/mpeg' : 'audio/wav') });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'ملخص صوتي — المجتهد' });
         return;
