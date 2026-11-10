@@ -1060,9 +1060,23 @@ function handleChatModelSearchKey(event) {
 
 let modelHoverItem = null;
 let modelHoverTimer = 0;
+let modelHoverHideTimer = 0;
+// مهلة قبل إخفاء بطاقة النموذج: تتيح للباحث نقل المؤشر إلى البطاقة وتمرير الوصف الطويل داخلها
+const MODEL_HOVER_HIDE_DELAY = 2000;
+
+function cancelModelHoverHide() {
+  clearTimeout(modelHoverHideTimer);
+  modelHoverHideTimer = 0;
+}
+
+function scheduleModelHoverHide() {
+  cancelModelHoverHide();
+  modelHoverHideTimer = setTimeout(hideModelHoverCard, MODEL_HOVER_HIDE_DELAY);
+}
 
 function hideModelHoverCard() {
   clearTimeout(modelHoverTimer);
+  cancelModelHoverHide();
   modelHoverItem = null;
   const card = document.getElementById('modelHoverCard');
   if (card) card.hidden = true;
@@ -1075,6 +1089,9 @@ function ensureModelHoverCard() {
   card.id = 'modelHoverCard';
   card.className = 'model-hover-card';
   card.hidden = true;
+  // دخول المؤشر إلى البطاقة يُبقيها ظاهرة للقراءة والتمرير، وخروجه منها يؤجّل الإخفاء
+  card.addEventListener('mouseenter', cancelModelHoverHide);
+  card.addEventListener('mouseleave', scheduleModelHoverHide);
   document.body.appendChild(card);
   return card;
 }
@@ -1175,7 +1192,10 @@ function modelHoverRow(node) {
 
 document.addEventListener('mouseover', (event) => {
   const item = modelHoverRow(event.target);
-  if (!item || item === modelHoverItem) return;
+  if (!item) return;
+  // أي عودة إلى عنصر نموذج تلغي إخفاءً مؤجّلًا (حتى لو كان العنصر نفسه بعد خروج وجيز)
+  cancelModelHoverHide();
+  if (item === modelHoverItem) return;
   modelHoverItem = item;
   fillModelHoverCard(item);
 });
@@ -1184,7 +1204,11 @@ document.addEventListener('mouseout', (event) => {
   if (!modelHoverItem) return;
   const next = event.relatedTarget;
   if (next && modelHoverItem.contains(next)) return;
-  hideModelHoverCard();
+  // الاتجاه إلى البطاقة نفسها لا يخفيها: تبقى للقراءة والتمرير
+  const card = document.getElementById('modelHoverCard');
+  if (next && card && card.contains(next)) return;
+  // إخفاء مؤجّل ثانيتين: مهلة للوصول إلى البطاقة والتمرير داخلها قبل اختفائها
+  scheduleModelHoverHide();
 });
 
 document.addEventListener('scroll', (event) => {
