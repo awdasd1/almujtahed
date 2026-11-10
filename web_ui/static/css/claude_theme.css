@@ -2246,8 +2246,6 @@ body:has(#paneChat.active) .main-content {
   max-width: 860px;
   width: 100%;
   margin: 0 auto;
-  /* فاصل متقطع كفواصل أقسام لوحة التخصيص: بين حوار المحادثة والأيقونات وزرّي الإرسال والإيقاف */
-  border-top: 1px dashed var(--border-subtle);
 }
 
 .chat-input-box {
@@ -2357,6 +2355,9 @@ select.graph-kind-select {
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
+  /* فاصل متقطع كفواصل أقسام لوحة التخصيص: بين مساحة الكتابة وصف الأيقونات وزرّي الإرسال والإيقاف */
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: 10px;
 }
 
 .chat-input-left {
