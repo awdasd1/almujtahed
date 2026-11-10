@@ -2184,25 +2184,26 @@ function renderSessionMessages(sessionId, options) {
         <button type="button" class="btn-msg-export" onclick="exportChatMessageHtml(${idx})" title="قراءة هذه النتيجة في صفحة قراءة">
           📄 قراءة
         </button>
-        ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="طباعة هذه النتيجة بحواشٍ لكل صفحة أو حفظها PDF">
+        <!-- أزرار مخفية بقرار المستخدم (تُركت في الكود وقد تُزال لاحقًا): الظاهر فقط قراءة، نسخ، مناقشة، بحث، تقرير، حذف -->
+        ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" style="display:none" onclick="exportChatMessagePdf(${idx})" title="طباعة هذه النتيجة بحواشٍ لكل صفحة أو حفظها PDF">
           🖨️ طباعة
         </button>` : ''}
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
         </button>
-        <button type="button" class="btn-msg-export" onclick="shareChatMessage(${idx})" title="مشاركة هذه الإجابة">
+        <button type="button" class="btn-msg-export" style="display:none" onclick="shareChatMessage(${idx})" title="مشاركة هذه الإجابة">
           مشاركة
         </button>
-        <button type="button" class="btn-msg-export" onclick="scrollChatMessageTop(${idx})" title="الانتقال إلى أعلى هذه الإجابة">
+        <button type="button" class="btn-msg-export" style="display:none" onclick="scrollChatMessageTop(${idx})" title="الانتقال إلى أعلى هذه الإجابة">
           أعلى الإجابة
         </button>
-        <button type="button" class="btn-msg-export" onclick="toggleChatMessageTashkeel(${idx})" title="إزالة التشكيل أو إعادته">
+        <button type="button" class="btn-msg-export" style="display:none" onclick="toggleChatMessageTashkeel(${idx})" title="إزالة التشكيل أو إعادته">
           ${msg.tashkeel_hidden ? 'إعادة التشكيل' : 'إزالة التشكيل'}
         </button>
-        <button type="button" class="btn-msg-export" onclick="abbreviateChatMessage(${idx})" title="اختصار هذه الإجابة بنموذج Gemini 3.8 Flash" ${msg.rewriting ? 'disabled' : ''}>
+        <button type="button" class="btn-msg-export" style="display:none" onclick="abbreviateChatMessage(${idx})" title="اختصار هذه الإجابة بنموذج Gemini 3.8 Flash" ${msg.rewriting ? 'disabled' : ''}>
           اختصار
         </button>
-        <button type="button" class="btn-msg-export" onclick="openChatTranslatePicker(${idx})" title="ترجمة هذه الإجابة بعد اختصارها" ${msg.rewriting ? 'disabled' : ''}>
+        <button type="button" class="btn-msg-export" style="display:none" onclick="openChatTranslatePicker(${idx})" title="ترجمة هذه الإجابة بعد اختصارها" ${msg.rewriting ? 'disabled' : ''}>
           ترجمة
         </button>
         <button type="button" class="btn-msg-export" onclick="openDiscussion(${idx})" title="فتح جلسة مناقشة مع مدير المشروع حول هذا البحث: حوار واستكمال للنواقص بلا بحث جديد، وله أن يطلب وكيلًا بعينه للتحقق، ثم يقفل الجلسة ويعيد الصياغة النهائية">
