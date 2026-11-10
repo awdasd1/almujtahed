@@ -2184,8 +2184,9 @@ function renderSessionMessages(sessionId, options) {
         <button type="button" class="btn-msg-export" onclick="exportChatMessageHtml(${idx})" title="قراءة هذه النتيجة في صفحة قراءة">
           📄 قراءة
         </button>
-        <!-- أزرار مخفية بقرار المستخدم (تُركت في الكود وقد تُزال لاحقًا): الظاهر فقط قراءة، نسخ، مناقشة، بحث، تقرير، حذف -->
-        ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" style="display:none" onclick="exportChatMessagePdf(${idx})" title="طباعة هذه النتيجة بحواشٍ لكل صفحة أو حفظها PDF">
+        <!-- أزرار مخفية بقرار المستخدم (تُركت في الكود وقد تُزال لاحقًا): الظاهر فقط قراءة، نسخ، مناقشة، بحث، تقرير، حذف.
+             واستثناء مرسوم سلفًا: الطباعة تظهر عند إقفال المناقشة للإجابة المعتمدة النهائية وحدها -->
+        ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="طباعة هذه النتيجة بحواشٍ لكل صفحة أو حفظها PDF">
           🖨️ طباعة
         </button>` : ''}
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
