@@ -2208,7 +2208,7 @@ function renderSessionMessages(sessionId, options) {
           ترجمة
         </button>
         <button type="button" class="btn-msg-export" onclick="openDiscussion(${idx})" title="فتح جلسة مناقشة مع مدير المشروع حول هذا البحث: حوار واستكمال للنواقص بلا بحث جديد، وله أن يطلب وكيلًا بعينه للتحقق، ثم يقفل الجلسة ويعيد الصياغة النهائية">
-          🗣️ مناقشة المدير
+          🗣️ المناقشة
         </button>
         <button type="button" class="btn-msg-export" onclick="openAnswerSearch(${idx})" title="بحث مفلتر داخل نص هذه الإجابة نفسها: عدّادات وتظليل تلقائي للمواضع وتنقل بينها">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px;"><circle cx="7" cy="15" r="4"/><circle cx="17" cy="15" r="4"/><path d="M7 11V5h3v6M17 11V5h-3v6M11 8h2"/></svg>
@@ -3524,7 +3524,7 @@ function closeDiscussion() {
   setDiscussionState(activeSessionId, '');
   const input = document.getElementById('chatInputText');
   if (input) input.placeholder = 'اسأل المجتهد في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
-  if (typeof showToast === 'function') showToast('أُنهيت المناقشة مؤقتًا؛ محادثتها محفوظة وتستطيع استئنافها بزر «مناقشة المدير» متى شئت', 3000);
+  if (typeof showToast === 'function') showToast('أُنهيت المناقشة مؤقتًا؛ محادثتها محفوظة وتستطيع استئنافها بزر «المناقشة» متى شئت', 3000);
 }
 // 📋 زر الباحث المختصر: يجلب ثغرات تقرير البحث وفجواته من سجل القياس
 // مرقمةً واحدة تلو الأخرى، ويرفعها إلى مدير المشروع دفعة واحدة في رسالة
@@ -3639,7 +3639,7 @@ async function finalizeDiscussion() {
   renderSessionMessages(activeSessionId);
   if (typeof saveChatSessions === 'function') saveChatSessions();
   await triggerChatCompletion(session, [], { discussionMode: 'finalize' });
-  if (typeof showToast === 'function') showToast('🔒 أُقفلت المناقشة وصيغت الصياغة النهائية؛ وتستطيع فتح مناقشة جديدة عليها بزر «مناقشة المدير»', 3500);
+  if (typeof showToast === 'function') showToast('🔒 أُقفلت المناقشة وصيغت الصياغة النهائية؛ وتستطيع فتح مناقشة جديدة عليها بزر «المناقشة»', 3500);
 }
 
 // =============================================================================
