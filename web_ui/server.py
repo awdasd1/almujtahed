@@ -5647,6 +5647,19 @@ def _audio_blob_from_raw(raw: bytes):
     return _pcm16_to_wav(raw), "wav"
 
 
+def _save_slide_image(img_bytes: bytes, folder: Path, i: int) -> Path:
+    """حفظ صورة الشريحة JPEG مضغوطة ليخفّ ملف العرض للمشاركة، مع إبقاء الأصل PNG عند التعذر."""
+    jpg = folder / f"slide-{i:02d}.jpg"
+    try:
+        from PIL import Image
+        Image.open(_io.BytesIO(img_bytes)).convert("RGB").save(str(jpg), "JPEG", quality=88)
+        return jpg
+    except Exception:
+        png = folder / f"slide-{i:02d}.png"
+        png.write_bytes(img_bytes)
+        return png
+
+
 def _speaker_icon_png(path: Path) -> None:
     from PIL import Image, ImageDraw
     img = Image.new("RGBA", (240, 240), (0, 0, 0, 0))
@@ -5669,7 +5682,7 @@ def _pptx_text(slide, x, y, w, h, lines, size, bold=False, color="FFFFFF") -> No
     for i, line in enumerate(lines):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment = PP_ALIGN.RIGHT
-        p.get_or_add_pPr().set("rtl", "1")
+        p._p.get_or_add_pPr().set("rtl", "1")
         run = p.add_run()
         run.text = line
         run.font.size = Pt(size)
@@ -5737,8 +5750,7 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str)
 
         async def make_slide(i: int, slide_data: dict) -> dict:
             img = await asyncio.to_thread(_openrouter_image_bytes, key, _slide_image_prompt(slide_data["image_prompt"]), DESIGN_IMAGE_MODEL)
-            img_path = folder / f"slide-{i:02d}.png"
-            img_path.write_bytes(img)
+            img_path = await asyncio.to_thread(_save_slide_image, img, folder, i)
             raw = await asyncio.to_thread(_tts_pcm_sync, key, slide_data["narration"])
             blob, ext = _audio_blob_from_raw(raw)
             aud_path = folder / f"slide-{i:02d}.{ext}"
@@ -6621,7 +6633,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.426"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.427"},
         },
     })
     if opened.get("error"):
