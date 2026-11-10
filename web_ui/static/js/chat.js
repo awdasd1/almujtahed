@@ -220,26 +220,28 @@ function ensureCustomResearchPanel() {
       </div>
     </div>
     <div class="custom-research-actions">
-      <button type="button" class="design-mini-btn" id="crCancel">✕ إلغاء</button>
       <button type="button" class="design-send-btn" id="crApply">✓ اعتماد التخصيص</button>
+      <button type="button" class="design-mini-btn" id="crCancel">✕ إلغاء</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.hidden = true; });
-  overlay.querySelector('#crClose').addEventListener('click', () => { overlay.hidden = true; });
   overlay.querySelector('#crApply').addEventListener('click', () => {
     overlay.hidden = true;
     if (typeof showToast === 'function') showToast('✓ اعتُمد تخصيصك — أرسل سؤالك ليُبحث في حدودك');
     const input = document.getElementById('chatInputText');
     if (input) input.focus();
   });
-  overlay.querySelector('#crCancel').addEventListener('click', () => {
+  // الإلغاء — وزر الإغلاق العلوي يأخذ حدثه نفسه — يعيد المحادثة إلى الوضع الحر
+  // الأصلي وتظهر حاوية تحديد النموذج العلوية من جديد
+  const cancelCustomResearch = () => {
     overlay.hidden = true;
-    // الإلغاء يعيد المحادثة إلى الوضع الحر الأصلي وتعود قائمة النماذج العلوية
     setChatScenario('free');
     const input = document.getElementById('chatInputText');
     if (input) input.focus();
-  });
+  };
+  overlay.querySelector('#crCancel').addEventListener('click', cancelCustomResearch);
+  overlay.querySelector('#crClose').addEventListener('click', cancelCustomResearch);
   const crModelWrapper = overlay.querySelector('#crModelWrapper');
   const crModelTriggerText = overlay.querySelector('#crModelTriggerText');
   overlay.querySelector('#crModelList').addEventListener('click', (event) => {
@@ -3394,16 +3396,25 @@ function chatGroupDirector() {
 // نموذج المحادثة (نموذجه وتفكيره وسياقه وشواهده وسقف وفاته ونوع بحثه)
 // لئلا تتنازع قيادتان؛ وتعطيل المدير من قائمة الوكلاء يعيدها فورًا.
 function refreshDirectorAuthorityUI() {
-  // سلطة المدير تعطّل أدوات النموذج العلوية في البحث الموسع فقط؛ أما في الحر
-  // (والمخصص) فالأدوات نظيفة مفعّلة كما في الافتراضي ولو بقيت مجموعة محددة
+  // سلطة المدير في البحث الموسع: ضوابط نموذج المحادثة (التفكير والسياق ونوع
+  // البحث وسقف الوفاة والشواهد) تختفي تمامًا لا تعطّل فقط، حتى لا تربك الباحث
+  // ولا تتداخل مع قيادة المدير — وما يخصها من قيم ففي بطاقة المدير وتوجيهاته
+  // الخفية. أما في الحر (والمخصص) فالأدوات نظيفة مفعّلة كما في الافتراضي
   const found = chatScenario === 'expanded' ? chatGroupDirector() : null;
   ['chatModelSelect', 'chatThinkingSelect', 'chatContextSelect', 'intentSelect', 'deathMaxSelect', 'witnessDdBtn', 'btnToggleChatHybridSearch', 'chatCustomModelTrigger'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.disabled = !!found;
     el.style.opacity = found ? '0.45' : '';
-    if (found) el.title = 'معطّل: القيادة لمدير المشروع داخل المجموعة';
+    if (found) el.title = 'القيادة لمدير المشروع داخل المجموعة';
   });
+  if (chatScenario === 'expanded') {
+    ['chatThinkingSelect', 'chatContextSelect', 'intentSelect', 'deathMaxSelect', 'witnessDdBtn'].forEach(id => {
+      const el = document.getElementById(id);
+      const wrap = el ? el.closest('.thinking-control') : null;
+      if (wrap) wrap.style.display = found ? 'none' : '';
+    });
+  }
   const badge = document.getElementById('directorAuthorityBadge');
   if (badge) {
     badge.style.display = found ? 'block' : 'none';
