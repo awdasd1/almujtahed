@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.397">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.398">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.397 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.398 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -399,8 +399,8 @@
                                     <span id="chatActiveProviderName">أوبن راوتر (OpenRouter)</span>
                                 </button>
 
-                                <span style="color: var(--border-subtle); margin: 0 1px;">|</span>
-                                <span
+                                <span id="chatModelBarSep" style="color: var(--border-subtle); margin: 0 1px;">|</span>
+                                <span id="chatModelBarLabel"
                                     style="color: var(--text-muted); font-size: 12px; font-weight: 600;">النموذج:</span>
 
                                 <!-- القائمة المنسدلة للنماذج مع فلترة وتصفية سريعة في الأعلى -->
@@ -448,18 +448,6 @@
                                 </div>
                             </div>
 
-                            <!-- سيناريو البحث: يضبط طبيعة المحادثة وأدواتها -->
-                            <div class="thinking-control">
-                                <span
-                                    style="color: var(--text-muted); font-size: 12px; font-weight: 600;">سيناريو البحث:</span>
-                                <select id="chatScenarioSelect" class="filter-select thinking-dropdown"
-                                    onchange="setChatScenario(this.value)" title="حر: دردشة من ذاكرة النموذج — مخصص: حدودك أنت (نموذج وكتب وزمان وموضوع وطول) — موسع: السيناريو المعهود الكامل بالمجموعات">
-                                    <option value="free" selected>💬 بحث حر</option>
-                                    <option value="custom">🔎 بحث مخصص</option>
-                                    <option value="expanded">🌐 بحث موسع</option>
-                                </select>
-                                <button type="button" id="chatCustomEditBtn" class="btn-hybrid-toggle" style="display: none; margin-inline-start: 6px;" onclick="openCustomResearchPanel()" title="فتح لوحة تخصيص البحث: النموذج والكتب والحدود الزمانية والموضوعية وطول البحث">🔎 التخصيص</button>
-                            </div>
                             <!-- مستوى التفكير Reasoning Level كقائمة منسدلة -->
                             <div class="thinking-control">
                                 <span
@@ -5617,19 +5605,19 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.397"></script>
+    <script src="/static/js/app.js?v=1.10.398"></script>
     <script src="/static/js/search.js?v=1793188000"></script>
     <script src="/static/js/reader.js?v=1793225300"></script>
-    <script src="/static/js/force3d.js?v=1.10.397"></script>
+    <script src="/static/js/force3d.js?v=1.10.398"></script>
     <script src="/static/js/share.js?v=1793225500"></script>
-    <script src="/static/js/chat.js?v=1.10.397"></script>
-    <script src="/static/js/designs.js?v=1.10.397"></script>
-    <script src="/static/js/texts.js?v=1.10.397"></script>
-    <script src="/static/js/agents.js?v=1.10.397"></script>
+    <script src="/static/js/chat.js?v=1.10.398"></script>
+    <script src="/static/js/designs.js?v=1.10.398"></script>
+    <script src="/static/js/texts.js?v=1.10.398"></script>
+    <script src="/static/js/agents.js?v=1.10.398"></script>
     <script src="/static/js/providers.js?v=1792899000"></script>
-    <script src="/static/js/tools.js?v=1.10.397"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.397"></script>
-    <script src="/static/js/projects.js?v=1.10.397"></script>
+    <script src="/static/js/tools.js?v=1.10.398"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.398"></script>
+    <script src="/static/js/projects.js?v=1.10.398"></script>
     <script src="/static/js/archive.js?v=1792709100"></script>
     <script src="/static/js/compare.js?v=1792910000"></script>
     <script src="/static/js/local_models.js?v=1792894000"></script>

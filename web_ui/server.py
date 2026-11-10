@@ -1907,6 +1907,7 @@ class ChatRequest(BaseModel):
     free_mode: bool = False # سيناريو البحث الحر: دردشة عامة بلا كتب ولا استرجاع ولا أي توجيه خفي — النموذج يجيب من ذاكرته
     raw_mcp: bool = False # MCP خام مباشر: النموذج يقود أدوات المجتهد بنفسه، بلا وكلاء ولا توجيه ولا خط استرجاع
     selected_books: Optional[List[str]] = None
+    selected_categories: Optional[List[str]] = None  # تصنيفات الشاملة الأساسية المختارة في البحث المخصص — نطاق تصنيفي للبحث
     library_query: Optional[str] = None
     mcp_servers: Optional[List[Dict[str, Any]]] = None
     mcp_for_agents: bool = False
@@ -6110,7 +6111,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.397"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.398"},
         },
     })
     if opened.get("error"):
@@ -11832,7 +11833,7 @@ def expand_query_with_anchor_rounds(
                         # توجيه بفن المرساة: جولة الحديث في كتب الحديث، والفقه في كتب الفقه...
                         # (لا يُفرض مع نطاق وكيل مختار؛ فكتب الوكيل أولى من تصنيف الفن)
                         _genre = next((p.get("genre") for p in panel if p.get("phrase") == anc), None)
-                        _cats = None if scope.get("books") else _GENRE_CATEGORIES.get(_genre or "")
+                        _cats = scope.get("categories") or (None if scope.get("books") else _GENRE_CATEGORIES.get(_genre or ""))
                         hits = run_rag_search(
                             query=query,
                             selected_books=scope.get("books") or None,
@@ -13264,6 +13265,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             retrieval_scopes.append({
                 "name": "direct",
                 "books": target_books or None,
+                "categories": [str(c).strip() for c in (req.selected_categories or []) if str(c).strip()] or None,
                 "top_k": witness_limit if req.witness_limit else agent_top_k,
                 "pool_size": max(witness_limit * 4, 600) if req.witness_limit else agent_pool_size,
             })
