@@ -57,7 +57,10 @@ function applyChatScenarioUI() {
   // لأن نموذج اللوحة وتفكيرها يقومان مقامها — لا مجرد قائمة النماذج
   const modelBar = document.getElementById('chatModelControlsBar');
   if (modelBar) modelBar.style.display = custom ? 'none' : '';
-  // في الموسع تُخفى قائمة النماذج وحدها (نموذجه مدير المشروع) وتبقى بقية الضوابط ظاهرة
+  // في الموسع تختفي قائمة النموذج العلوية كاملة بحاويتها (المزود والنموذج معًا — نموذجه مدير المشروع)
+  // وتبقى بقية الضوابط (التفكير والسياق ونوع البحث...) ظاهرة كما هي
+  const providerSelector = document.getElementById('chatProviderModelSelector');
+  if (providerSelector) providerSelector.style.display = free ? '' : 'none';
   const modelWrap = document.getElementById('chatCustomModelWrapper');
   if (modelWrap) modelWrap.style.display = free ? '' : 'none';
   const modelLabel = document.getElementById('chatModelBarLabel');
@@ -186,8 +189,8 @@ function ensureCustomResearchPanel() {
     </div>
     <div class="custom-research-sec">
       <div class="cr-fold-head">
-        <h4>🧭 الحدود الموضوعية (<span id="crTopicsSummary">كل الموضوعات</span>)</h4>
-        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crGenresBody" title="فتح/طي الحدود الموضوعية">▾</button>
+        <h4>🧭 تحديد كتب أقسام معينة (<span id="crTopicsSummary">كل الأقسام</span>)</h4>
+        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crGenresBody" title="فتح/طي تحديد كتب أقسام معينة">▾</button>
       </div>
       <div id="crGenresBody" hidden>
         <div class="design-kind-grid" id="crTopics"></div>
@@ -318,7 +321,7 @@ function ensureCustomResearchPanel() {
     const parts = [];
     if (customResearch.topics.length) parts.push(customResearch.topics.length + ' محددًا');
     if (other) parts.push('أخرى: ' + other);
-    sum.textContent = parts.length ? parts.join(' + ') : 'كل الموضوعات';
+    sum.textContent = parts.length ? parts.join(' + ') : 'كل الأقسام';
   };
   overlay._updateCrTopicsSummary = updateCrTopicsSummary;
   overlay.querySelector('#crTopics').addEventListener('change', () => {
