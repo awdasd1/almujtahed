@@ -5399,7 +5399,7 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
         lo, hi = max(300, int(src_len * 0.55)), max(400, int(src_len * 0.85))
     else:
         target = int(src_len * 0.35)
-        hi = min(12000, max(1400, int(target * 1.15)))
+        hi = min(36000, max(1400, int(target * 1.15)))
         lo = min(max(1100, int(target * 0.8)), int(hi * 0.75))
     minutes = max(1, round(hi / 580))
     system = (
@@ -5417,7 +5417,7 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
     last_error: Optional[Exception] = None
     for model in AUDIO_SUMMARY_MODELS:
         try:
-            summary = await asyncio.to_thread(_openrouter_chat_text, key, model, system, text[:60000], 240, 16384)
+            summary = await asyncio.to_thread(_openrouter_chat_text, key, model, system, text[:160000], 600, 32768)
             if summary:
                 break
         except Exception as error:  # نموذج متعثّر: جرّب البديل
@@ -5448,7 +5448,11 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
     tts_error: Optional[Exception] = None
     for with_instructions in (True, False):
         try:
-            parts = list(await asyncio.gather(*[_synth(c, with_instructions) for c in chunks]))
+            # دفعات من ستة مقاطع متوازية: ملخص الساعة قد يبلغ ٢٦ مقطعًا فلا تُطلق دفعة واحدة
+            parts = []
+            for start in range(0, len(chunks), 6):
+                batch = chunks[start:start + 6]
+                parts.extend(await asyncio.gather(*[_synth(c, with_instructions) for c in batch]))
             if parts and all(parts):
                 break
         except urllib.error.HTTPError as error:
@@ -6306,7 +6310,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.423"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.424"},
         },
     })
     if opened.get("error"):
