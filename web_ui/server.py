@@ -1908,6 +1908,7 @@ class ChatRequest(BaseModel):
     raw_mcp: bool = False # MCP خام مباشر: النموذج يقود أدوات المجتهد بنفسه، بلا وكلاء ولا توجيه ولا خط استرجاع
     selected_books: Optional[List[str]] = None
     selected_categories: Optional[List[str]] = None  # تصنيفات الشاملة الأساسية المختارة في البحث المخصص — نطاق تصنيفي للبحث
+    custom_focus_topics: Optional[str] = None  # موضوعات حرة من خيار «أخرى» في حدود البحث المخصص الموضوعية — تُركَّز في المراسي والتوجيه
     library_query: Optional[str] = None
     mcp_servers: Optional[List[Dict[str, Any]]] = None
     mcp_for_agents: bool = False
@@ -6111,7 +6112,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.400"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.401"},
         },
     })
     if opened.get("error"):
@@ -13000,6 +13001,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     # أمر بحثي جاهز (سلاش) يضبط القصد والهيكل والعمق؛ وقصد الباحث الصريح أولى منه
     _rcmd = RESEARCH_COMMANDS.get((req.research_command or "").strip()) or {}
     _eff_intent = req.intent_genres or _rcmd.get("intent")
+    _focus_topic = (req.custom_focus_topics or "").strip()[:200]
     subagents_dossiers = []
     _evidence_ledger = ""
     _unresolved_citations = 0
@@ -13316,7 +13318,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 honor_agent_limit=honor_scope,
                 run_id=req.chat_id,
                 death_max=req.death_max,
-                intent_genres=_eff_intent,
+                intent_genres=((list(_eff_intent) + [_focus_topic]) if _focus_topic else _eff_intent),
                 panel_hint=_rcmd.get("panel_hint"),
                 semantic_terms=_semantic_terms,
                 semantic_channel=_sem_pass,
@@ -14199,6 +14201,12 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     system_instruction += "\n" + ACADEMIC_ANSWER_RULE
                 if _rcmd.get("structure"):
                     system_instruction += "\n[هيكل الأمر البحثي المختار «" + str(_rcmd.get("label") or "") + "» — التزمه في ترتيب هذا الجواب]\n" + str(_rcmd["structure"])
+                if _focus_topic:
+                    system_instruction += (
+                        "\n[تركيز موضوعي إضافي حدّده الباحث بنفسه في تخصيص بحثه: «" + _focus_topic + "» — "
+                        "أضف هذا الطلب إلى بحثك وركّز عليه: اجعله محورًا حاضرًا في تحريرك ضمن الموضوعات المحددة الأخرى إن وُجدت، "
+                        "فإن انفرد بلا موضوعات أخرى فهو محور التركيز الأول بعد صلب السؤال، واستحضر شواهده وكتبه الخادمة له ما أمكن.]"
+                    )
                 if _discussion in ("open", "finalize"):
                     _audit_ctx = ""
                     try:

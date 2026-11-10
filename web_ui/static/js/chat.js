@@ -80,7 +80,7 @@ const CUSTOM_TOPIC_GENRES = {
   tafsir: 'تفسير', fiqh: 'فقه', aqeeda: 'عقيدة', hadith: 'حديث', takhrij: 'حديث',
   usul: 'فقه', language: 'لغة', tarikh: 'تاريخ', sira: 'تاريخ', mudun: 'تاريخ', fatawa: 'فقه'
 };
-let customResearch = { books: [], categories: [], topics: [], yearFrom: '', yearTo: '', yearAny: true, length: 'mid' };
+let customResearch = { books: [], categories: [], topics: [], topicsOther: '', topicsOtherOn: false, yearFrom: '', yearTo: '', yearAny: true, length: 'mid' };
 try {
   const parsed = JSON.parse(localStorage.getItem(CUSTOM_RESEARCH_KEY) || 'null');
   if (parsed && typeof parsed === 'object') {
@@ -88,6 +88,8 @@ try {
       books: Array.isArray(parsed.books) ? parsed.books.filter(b => typeof b === 'string') : [],
       categories: Array.isArray(parsed.categories) ? parsed.categories.filter(c => typeof c === 'string') : [],
       topics: Array.isArray(parsed.topics) ? parsed.topics.filter(t => typeof t === 'string') : [],
+      topicsOther: typeof parsed.topicsOther === 'string' ? parsed.topicsOther : '',
+      topicsOtherOn: !!parsed.topicsOtherOn,
       yearFrom: parsed.yearFrom || '', yearTo: parsed.yearTo || '',
       yearAny: parsed.yearAny !== false,
       length: ['short', 'mid', 'long'].includes(parsed.length) ? parsed.length : 'mid'
@@ -148,9 +150,9 @@ function ensureCustomResearchPanel() {
     <div class="custom-research-sec">
       <div class="cr-fold-head">
         <h4>📚 الكتب — حدّد وانتقِ (فارغ = المكتبة كلها ضمن حدودك الأخرى)</h4>
-        <button type="button" class="cr-fold-btn" data-cr-fold="crBooksBody" title="طي/فتح قائمة الكتب">▾</button>
+        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crBooksBody" title="طي/فتح قائمة الكتب">▾</button>
       </div>
-      <div id="crBooksBody">
+      <div id="crBooksBody" hidden>
         <input type="search" class="custom-research-search" id="crBookSearch" placeholder="🔎 ابحث عن كتاب في مكتبة الشاملة وحدّده...">
         <div class="custom-research-row" style="margin-bottom:8px;">
           <button type="button" class="design-mini-btn" id="crBooksNone">🚫 إلغاء تحديد كل الكتب</button>
@@ -183,8 +185,15 @@ function ensureCustomResearchPanel() {
       </div>
     </div>
     <div class="custom-research-sec">
-      <h4>🧭 الحدود الموضوعية (فارغ = كل الموضوعات)</h4>
-      <div class="design-kind-grid" id="crTopics"></div>
+      <div class="cr-fold-head">
+        <h4>🧭 الحدود الموضوعية (<span id="crTopicsSummary">كل الموضوعات</span>)</h4>
+        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crGenresBody" title="فتح/طي الحدود الموضوعية">▾</button>
+      </div>
+      <div id="crGenresBody" hidden>
+        <div class="design-kind-grid" id="crTopics"></div>
+        <label class="design-kind-item" style="margin-top:8px; display:inline-flex;"><input type="checkbox" id="crTopicOtherChk"><span>✍️ أخرى — موضوعات أحدّدها بنفسي</span></label>
+        <input type="text" class="custom-research-search" id="crTopicOtherText" placeholder="مثال: البلاغة والبيان — سيُركّز البحث عليها ضمن موضوعاتك المحددة، أو عليها وحدها إن انفردت" hidden>
+      </div>
     </div>
     <div class="custom-research-sec">
       <div class="cr-fold-head">
@@ -200,6 +209,7 @@ function ensureCustomResearchPanel() {
       </div>
     </div>
     <div class="custom-research-actions">
+      <button type="button" class="design-mini-btn" id="crCancel">✕ إلغاء</button>
       <button type="button" class="design-send-btn" id="crApply">✓ اعتماد التخصيص</button>
     </div>
   </div>`;
@@ -209,6 +219,13 @@ function ensureCustomResearchPanel() {
   overlay.querySelector('#crApply').addEventListener('click', () => {
     overlay.hidden = true;
     if (typeof showToast === 'function') showToast('✓ اعتُمد تخصيصك — أرسل سؤالك ليُبحث في حدودك');
+    const input = document.getElementById('chatInputText');
+    if (input) input.focus();
+  });
+  overlay.querySelector('#crCancel').addEventListener('click', () => {
+    overlay.hidden = true;
+    // الإلغاء يعيد المحادثة إلى الوضع الحر الأصلي وتعود قائمة النماذج العلوية
+    setChatScenario('free');
     const input = document.getElementById('chatInputText');
     if (input) input.focus();
   });
@@ -294,8 +311,33 @@ function ensureCustomResearchPanel() {
   yearAny.addEventListener('change', syncYears);
   overlay.querySelector('#crYearFrom').addEventListener('input', syncYears);
   overlay.querySelector('#crYearTo').addEventListener('input', syncYears);
+  const updateCrTopicsSummary = () => {
+    const sum = overlay.querySelector('#crTopicsSummary');
+    if (!sum) return;
+    const other = customResearch.topicsOtherOn && (customResearch.topicsOther || '').trim();
+    const parts = [];
+    if (customResearch.topics.length) parts.push(customResearch.topics.length + ' محددًا');
+    if (other) parts.push('أخرى: ' + other);
+    sum.textContent = parts.length ? parts.join(' + ') : 'كل الموضوعات';
+  };
+  overlay._updateCrTopicsSummary = updateCrTopicsSummary;
   overlay.querySelector('#crTopics').addEventListener('change', () => {
     customResearch.topics = [...overlay.querySelectorAll('#crTopics input[type="checkbox"]:checked')].map(b => b.value);
+    updateCrTopicsSummary();
+    saveCustomResearch();
+  });
+  const otherChk = overlay.querySelector('#crTopicOtherChk');
+  const otherText = overlay.querySelector('#crTopicOtherText');
+  otherChk.addEventListener('change', () => {
+    customResearch.topicsOtherOn = otherChk.checked;
+    otherText.hidden = !otherChk.checked;
+    if (otherChk.checked) otherText.focus();
+    updateCrTopicsSummary();
+    saveCustomResearch();
+  });
+  otherText.addEventListener('input', () => {
+    customResearch.topicsOther = otherText.value;
+    updateCrTopicsSummary();
     saveCustomResearch();
   });
   overlay.querySelectorAll('input[name="crLength"]').forEach(radio => {
@@ -434,6 +476,17 @@ function openCustomResearchPanel() {
   overlay.querySelector('#crTopics').innerHTML = (SELECTION_RESEARCH_KINDS || []).map(kind =>
     `<label class="design-kind-item"><input type="checkbox" value="${kind.id}" ${customResearch.topics.includes(kind.id) ? 'checked' : ''}><span>${kind.icon} ${kind.label}</span></label>`
   ).join('');
+  const otherChk = overlay.querySelector('#crTopicOtherChk');
+  const otherText = overlay.querySelector('#crTopicOtherText');
+  if (otherChk) otherChk.checked = !!customResearch.topicsOtherOn;
+  if (otherText) { otherText.value = customResearch.topicsOther || ''; otherText.hidden = !customResearch.topicsOtherOn; }
+  if (typeof overlay._updateCrTopicsSummary === 'function') overlay._updateCrTopicsSummary();
+  // الأصل عند فتح لوحة التخصيص: كل أقسامها مطوية، يفتح الباحث ما يحتاجه بسهمه
+  overlay.querySelectorAll('[data-cr-fold]').forEach(btn => {
+    const body = overlay.querySelector('#' + btn.getAttribute('data-cr-fold'));
+    if (body) body.hidden = true;
+    btn.classList.add('is-folded');
+  });
   overlay.querySelector('#crYearAny').checked = customResearch.yearAny;
   overlay.querySelector('#crYearFrom').value = customResearch.yearFrom;
   overlay.querySelector('#crYearTo').value = customResearch.yearTo;
@@ -3015,6 +3068,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
   let sendIntentGenres = (typeof currentIntentGenres === 'function') ? currentIntentGenres() : null;
   let sendSelectedBooks = null;
   let sendSelectedCategories = null;
+  let sendFocusTopics = null;
   if (customMode) {
     sendWitnessLimit = CUSTOM_LENGTH_WITNESSES[customResearch.length] || 150;
     sendDeathMax = customResearch.yearAny ? null : (parseInt(customResearch.yearTo, 10) || null);
@@ -3022,6 +3076,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
     sendIntentGenres = customTopicGenres();
     sendSelectedBooks = customResearch.books.length ? [...customResearch.books] : null;
     sendSelectedCategories = customResearch.categories.length ? [...customResearch.categories] : null;
+    sendFocusTopics = (customResearch.topicsOtherOn && (customResearch.topicsOther || '').trim()) ? customResearch.topicsOther.trim() : null;
   }
 
   // اعتماد النموذج المختار صراحة من قبل المستخدم في ترويسة الشات الذكي
@@ -3104,6 +3159,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
         intent_genres: sendIntentGenres,
         selected_books: sendSelectedBooks,
         selected_categories: sendSelectedCategories,
+        custom_focus_topics: sendFocusTopics,
         research_command: freeMode ? null : ((options && options.researchCommand) || null),
         discussion_mode: (options && options.discussionMode) || (discussionState(session.id) === 'open' ? 'open' : null),
         risk_control: (options && options.riskControl && options.riskControl.length) ? { items: options.riskControl } : null,
