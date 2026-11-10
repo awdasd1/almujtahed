@@ -45,6 +45,7 @@ function setChatScenario(value) {
 function applyChatScenarioUI() {
   const full = chatScenario === 'expanded';
   const free = chatScenario === 'free';
+  const custom = chatScenario === 'custom';
   ['chatContextSelect', 'intentSelect', 'deathMaxSelect', 'witnessDdBtn'].forEach(id => {
     const el = document.getElementById(id);
     const wrap = el ? el.closest('.thinking-control') : null;
@@ -52,13 +53,21 @@ function applyChatScenarioUI() {
   });
   const groupsPicker = document.getElementById('chatAgentGroupPicker');
   if (groupsPicker) groupsPicker.style.display = full ? '' : 'none';
-  // قائمة النماذج العلوية وما يتبعها: في الحر فقط — ففي المخصص نموذج لوحة التخصيص، وفي الموسع نموذج مدير المشروع
+  // في البحث المخصص تختفي حاوية النموذج العلوية كلها وتوابعها (المزود والنموذج والتفكير والسياق...)
+  // لأن نموذج اللوحة وتفكيرها يقومان مقامها — لا مجرد قائمة النماذج
+  const modelBar = document.getElementById('chatModelControlsBar');
+  if (modelBar) modelBar.style.display = custom ? 'none' : '';
+  // في الموسع تُخفى قائمة النماذج وحدها (نموذجه مدير المشروع) وتبقى بقية الضوابط ظاهرة
   const modelWrap = document.getElementById('chatCustomModelWrapper');
   if (modelWrap) modelWrap.style.display = free ? '' : 'none';
   const modelLabel = document.getElementById('chatModelBarLabel');
   if (modelLabel) modelLabel.style.display = free ? '' : 'none';
   const modelSep = document.getElementById('chatModelBarSep');
   if (modelSep) modelSep.style.display = free ? '' : 'none';
+  // التفكير من توابع النموذج: يُدار من لوحة التخصيص في البحث المخصص فيختفي من الأعلى
+  const thinkEl = document.getElementById('chatThinkingSelect');
+  const thinkWrap = thinkEl ? thinkEl.closest('.thinking-control') : null;
+  if (thinkWrap) thinkWrap.style.display = custom ? 'none' : '';
 }
 
 // =============================================================================
@@ -116,10 +125,18 @@ function ensureCustomResearchPanel() {
     <div class="custom-research-sec">
       <h4>🧠 النموذج والتفكير</h4>
       <div class="custom-research-row">
-        <div class="custom-model-dropdown-menu cr-model-menu" id="crModelList"></div>
-      </div>
-      <div style="font-size:11.5px; color:var(--text-muted); margin:4px 0 8px;">مرّر فوق أي نموذج لتظهر بطاقته وتعريفه وأسعاره كما في قائمة نماذج المحادثة، وانقره لاعتماده.</div>
-      <div class="custom-research-row">
+        <div class="custom-model-dropdown-wrapper" id="crModelWrapper">
+          <button type="button" class="custom-model-dropdown-trigger" id="crModelTrigger" title="انقر لاختيار النموذج أو البحث فيه">
+            <span class="custom-model-trigger-text" id="crModelTriggerText">اختر النموذج</span>
+            <svg class="custom-model-trigger-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="custom-model-dropdown-menu" id="crModelMenu">
+            <div class="model-dropdown-search-box">
+              <input type="text" id="crModelSearch" class="model-dropdown-search-input" placeholder="تصفية سريعة: اكتب للبحث في النماذج..." autocomplete="off" spellcheck="false">
+            </div>
+            <div class="custom-model-options-list" id="crModelList"></div>
+          </div>
+        </div>
         <select id="crThinkingSelect" title="مستوى التفكير">
           <option value="low">تفكير منخفض · سريع</option>
           <option value="medium">تفكير متوسط · متزن</option>
@@ -129,18 +146,28 @@ function ensureCustomResearchPanel() {
       </div>
     </div>
     <div class="custom-research-sec">
-      <h4>📚 الكتب — حدّد وانتقِ (فارغ = المكتبة كلها ضمن حدودك الأخرى)</h4>
-      <input type="search" class="custom-research-search" id="crBookSearch" placeholder="🔎 ابحث عن كتاب — في القائمة المعتمدة أو في مكتبة الشاملة كلها...">
-      <div class="custom-research-row" style="margin-bottom:8px;">
-        <button type="button" class="design-mini-btn" id="crBooksNone">🚫 إلغاء تحديد كل الكتب</button>
-        <span style="font-size:12.5px; color:var(--text-muted);">المحدد: <b id="crBooksCount">0</b></span>
+      <div class="cr-fold-head">
+        <h4>📚 الكتب — حدّد وانتقِ (فارغ = المكتبة كلها ضمن حدودك الأخرى)</h4>
+        <button type="button" class="cr-fold-btn" data-cr-fold="crBooksBody" title="طي/فتح قائمة الكتب">▾</button>
       </div>
-      <div class="custom-research-chips" id="crBookChips"></div>
-      <div class="custom-research-list" id="crBookLibrary"></div>
+      <div id="crBooksBody">
+        <input type="search" class="custom-research-search" id="crBookSearch" placeholder="🔎 ابحث عن كتاب في مكتبة الشاملة وحدّده...">
+        <div class="custom-research-row" style="margin-bottom:8px;">
+          <button type="button" class="design-mini-btn" id="crBooksNone">🚫 إلغاء تحديد كل الكتب</button>
+          <span style="font-size:12.5px; color:var(--text-muted);">المحدد: <b id="crBooksCount">0</b></span>
+        </div>
+        <div class="custom-research-chips" id="crBookChips"></div>
+        <div class="custom-research-list" id="crBookLibrary"></div>
+      </div>
     </div>
     <div class="custom-research-sec">
-      <h4>🗂️ تصنيفات الشاملة الأساسية (فارغ = كل التصنيفات)</h4>
-      <div class="custom-research-list" id="crCategoryList">جارٍ جلب التصنيفات...</div>
+      <div class="cr-fold-head">
+        <h4>🗂️ حدود الموضوع — تصنيفات الشاملة الأساسية (<span id="crCatCount">0</span> محددًا)</h4>
+        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crTopicsBody" title="فتح/طي قائمة حدود الموضوع">▾</button>
+      </div>
+      <div id="crTopicsBody" hidden>
+        <div class="custom-research-list" id="crCategoryList">جارٍ جلب التصنيفات...</div>
+      </div>
     </div>
     <div class="custom-research-sec">
       <h4>🗓️ الحدود الزمانية (وفاة المؤلف، هجري)</h4>
@@ -175,6 +202,8 @@ function ensureCustomResearchPanel() {
     const input = document.getElementById('chatInputText');
     if (input) input.focus();
   });
+  const crModelWrapper = overlay.querySelector('#crModelWrapper');
+  const crModelTriggerText = overlay.querySelector('#crModelTriggerText');
   overlay.querySelector('#crModelList').addEventListener('click', (event) => {
     const item = event.target.closest('.custom-model-item');
     if (!item) return;
@@ -186,6 +215,43 @@ function ensureCustomResearchPanel() {
       if (main) { main.value = id; if (typeof handleChatModelChange === 'function') handleChatModelChange(id); }
     }
     overlay.querySelectorAll('#crModelList .custom-model-item').forEach(el => el.classList.toggle('active', el === item));
+    if (crModelTriggerText) { crModelTriggerText.textContent = name; crModelTriggerText.title = id; }
+    if (crModelWrapper) crModelWrapper.classList.remove('open');
+  });
+  const crModelTrigger = overlay.querySelector('#crModelTrigger');
+  if (crModelTrigger && crModelWrapper) {
+    crModelTrigger.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const opened = crModelWrapper.classList.toggle('open');
+      if (opened) {
+        const search = overlay.querySelector('#crModelSearch');
+        if (search) setTimeout(() => { search.focus(); search.select(); }, 40);
+      }
+    });
+  }
+  const crModelSearch = overlay.querySelector('#crModelSearch');
+  if (crModelSearch) {
+    crModelSearch.addEventListener('input', () => {
+      const q = crModelSearch.value.trim().toLowerCase();
+      overlay.querySelectorAll('#crModelList .custom-model-item').forEach(el => {
+        const hay = `${el.getAttribute('data-model-id') || ''} ${el.getAttribute('data-model-name') || ''}`.toLowerCase();
+        el.style.display = !q || hay.includes(q) ? 'flex' : 'none';
+      });
+    });
+    crModelSearch.addEventListener('click', (event) => event.stopPropagation());
+  }
+  document.addEventListener('click', (event) => {
+    if (crModelWrapper && crModelWrapper.classList.contains('open') && !crModelWrapper.contains(event.target)) {
+      crModelWrapper.classList.remove('open');
+    }
+  });
+  overlay.querySelectorAll('[data-cr-fold]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const body = overlay.querySelector('#' + btn.getAttribute('data-cr-fold'));
+      if (!body) return;
+      body.hidden = !body.hidden;
+      btn.classList.toggle('is-folded', body.hidden);
+    });
   });
   overlay.querySelector('#crCategoryList').addEventListener('change', (event) => {
     const box = event.target.closest('input[data-cr-cat]');
@@ -196,6 +262,8 @@ function ensureCustomResearchPanel() {
     } else {
       customResearch.categories = customResearch.categories.filter(c => c !== name);
     }
+    const cnt = overlay.querySelector('#crCatCount');
+    if (cnt) cnt.textContent = customResearch.categories.length;
     saveCustomResearch();
   });
   const thinkSel = overlay.querySelector('#crThinkingSelect');
@@ -292,6 +360,8 @@ async function renderCustomCategories() {
   list.innerHTML = _crCategoriesCache.map(c =>
     `<label class="design-kind-item"><input type="checkbox" data-cr-cat="${escapeHtml(c.name)}" ${customResearch.categories.includes(c.name) ? 'checked' : ''}><span>${escapeHtml(c.name)}</span></label>`
   ).join('');
+  const cnt = overlay.querySelector('#crCatCount');
+  if (cnt) cnt.textContent = customResearch.categories.length;
 }
 
 async function renderCustomLibrary() {
@@ -300,21 +370,21 @@ async function renderCustomLibrary() {
   const box = overlay.querySelector('#crBookLibrary');
   const query = (overlay.querySelector('#crBookSearch')?.value || '').trim();
   if (query.length < 2) { box.innerHTML = ''; return; }
-  box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة</div><div class="design-books-chips-empty">جارٍ البحث في المكتبة...</div>';
+  box.innerHTML = '<div class="design-books-chips-empty">جارٍ البحث في المكتبة...</div>';
   try {
     const resp = await fetch(`/api/books/search?q=${encodeURIComponent(query)}&limit=30`);
     const data = await resp.json().catch(() => ({}));
     const books = Array.isArray(data.books) ? data.books : [];
     if (!books.length) {
-      box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة</div><div class="design-books-chips-empty">لا نتائج في مكتبة الشاملة لهذا البحث</div>';
+      box.innerHTML = '<div class="design-books-chips-empty">لا نتائج في مكتبة الشاملة لهذا البحث</div>';
       return;
     }
-    box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة — حدّد كتابًا لإضافته <button type="button" class="design-mini-btn" data-cr-lib-all>☑️ تحديد الكل</button></div>' + books.map(b => {
+    box.innerHTML = '<div class="design-books-kind-head">📚 نتائج مكتبة الشاملة <button type="button" class="design-mini-btn" data-cr-lib-all>☑️ تحديد الكل</button></div>' + books.map(b => {
       const meta = [b.author, (b.death && b.death !== '—') ? `ت ${b.death}` : '', b.category_name].filter(Boolean).join(' — ');
       return `<label class="design-kind-item"><input type="checkbox" data-cr-book="${escapeHtml(b.title)}" ${customResearch.books.includes(b.title) ? 'checked' : ''}><span>${escapeHtml(b.title)}${meta ? ` <small style="color:var(--text-muted)">${escapeHtml(meta)}</small>` : ''}</span></label>`;
     }).join('');
   } catch (e) {
-    box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة</div><div class="design-books-chips-empty">تعذر البحث في المكتبة الآن</div>';
+    box.innerHTML = '<div class="design-books-chips-empty">تعذر البحث في المكتبة الآن</div>';
   }
 }
 
@@ -328,7 +398,18 @@ function openCustomResearchPanel() {
     modelList.innerHTML = options.length
       ? options.map(o => `<div class="custom-model-item ${o.value === current ? 'active' : ''}" data-model-id="${escapeHtml(o.value)}" data-model-name="${escapeHtml(o.textContent.trim())}"><span class="custom-model-item-name" title="${escapeHtml(o.value)}">${escapeHtml(o.textContent.trim())}</span></div>`).join('')
       : '<div class="design-books-chips-empty">جارٍ جلب النماذج...</div>';
+    const triggerText = overlay.querySelector('#crModelTriggerText');
+    if (triggerText) {
+      const topText = document.getElementById('chatCustomModelTriggerText');
+      const selected = options.find(o => o.value === current);
+      triggerText.textContent = (topText && topText.textContent.trim()) || (selected ? selected.textContent.trim() : 'اختر النموذج');
+      triggerText.title = current || '';
+    }
   }
+  const modelWrapper = overlay.querySelector('#crModelWrapper');
+  if (modelWrapper) modelWrapper.classList.remove('open');
+  const modelSearch = overlay.querySelector('#crModelSearch');
+  if (modelSearch) modelSearch.value = '';
   const thinkSel = overlay.querySelector('#crThinkingSelect');
   if (thinkSel) thinkSel.value = (typeof currentThinkingLevel !== 'undefined' ? currentThinkingLevel : 'medium');
   overlay.querySelector('#crTopics').innerHTML = (SELECTION_RESEARCH_KINDS || []).map(kind =>
