@@ -5423,6 +5423,8 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
         except Exception as error:  # نموذج متعثّر: جرّب البديل
             last_error = error
     if not summary:
+        if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 402:
+            raise HTTPException(status_code=402, detail="رصيد OpenRouter غير كافٍ لاختصار الإجابة؛ اشحن رصيد حسابك في OpenRouter ثم أعد المحاولة")
         raise HTTPException(status_code=502, detail=f"تعذر اختصار الإجابة للملخص الصوتي: {last_error}")
     summary = re.sub(r"[*#_>`\[\]()]+", "", summary)
     summary = re.sub(r"\s+", " ", summary).strip()
@@ -5451,7 +5453,10 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
                 break
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="ignore")[:300]
-            tts_error = RuntimeError(f"رفض نموذج الصوت الطلب ({error.code}): {detail}")
+            if error.code == 402:
+                tts_error = RuntimeError("رصيد OpenRouter غير كافٍ لتوليد الصوت؛ اشحن رصيد حسابك في OpenRouter ثم أعد المحاولة")
+            else:
+                tts_error = RuntimeError(f"رفض نموذج الصوت الطلب ({error.code}): {detail}")
             parts = []
         except Exception as error:
             tts_error = error
@@ -6301,7 +6306,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.422"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.423"},
         },
     })
     if opened.get("error"):
