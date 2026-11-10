@@ -5399,16 +5399,17 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
         lo, hi = max(300, int(src_len * 0.55)), max(400, int(src_len * 0.85))
     else:
         target = int(src_len * 0.35)
-        lo = max(1100, int(target * 0.8))
-        hi = min(6000, max(lo + 400, int(target * 1.15)))
-    minutes = max(1, round(hi / 850))
+        hi = min(12000, max(1400, int(target * 1.15)))
+        lo = min(max(1100, int(target * 0.8)), int(hi * 0.75))
+    minutes = max(1, round(hi / 580))
     system = (
         "أنت محرّر صوتي دقيق يختصر الإجابات العلمية للإسماع دون إخلال. اكتب ملخصًا صوتيًا وافيًا "
         "بالعربية الفصحى من صلب النص المُعطى وحده دون أي إضافة من خارجه: غطِّ كل نتيجة رئيسة في النص "
         "وأدلتها، ومواضع الخلاف والترجيح، والمصادر الواردة، فلا تُسقط فكرة جوهرية، واحذف فقط التكرار "
         "والتفريعات الثانوية والأمثلة الزائدة. تنبيه صارم: الملخص القصير المخلّ مرفوض، فلا تضغط النص "
         f"في فقرة واحدة. ليكن طول الملخص بين {lo} و{hi} حرف تقريبًا (مدة إسماع نحو {minutes} دقائق)، "
-        "ولا تنقص عن الحد الأدنى مهما بدا النص قابلًا للضغط. اكتب نصًا متصلًا قابلًا للنطق المباشر: "
+        "ولا تنقص عن الحد الأدنى مهما بدا النص قابلًا للضغط، واختم دائمًا بخاتمة تامة الجملة لا تنقطع "
+        "في وسطها. اكتب نصًا متصلًا قابلًا للنطق المباشر: "
         "لا عناوين، ولا تعداد ولا نجوم ولا رموز تنسيق ولا روابط ولا أقواس متكررة، وحوّل الإحالات "
         "والأرقام إلى صياغة منطوقة مفهومة، وابدأ بالمضمون مباشرة بلا مقدمات مثل «في هذا الملخص»."
     )
@@ -5416,7 +5417,7 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
     last_error: Optional[Exception] = None
     for model in AUDIO_SUMMARY_MODELS:
         try:
-            summary = await asyncio.to_thread(_openrouter_chat_text, key, model, system, text[:26000], 180, 4096)
+            summary = await asyncio.to_thread(_openrouter_chat_text, key, model, system, text[:60000], 240, 16384)
             if summary:
                 break
         except Exception as error:  # نموذج متعثّر: جرّب البديل
@@ -5430,6 +5431,11 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
         cut = summary[:cap]
         end = max(cut.rfind("."), cut.rfind("؟"), cut.rfind("!"))
         summary = (cut[: end + 1] if end > 400 else cut).strip()
+    # إن انقطع توليد الملخص وسط جملة (بلوغ حد الإخراج مثلًا) فارجع لآخر جملة تامة حتى لا يقف النطق فجأة
+    if summary and summary[-1] not in ".؟!…":
+        end = max(summary.rfind("."), summary.rfind("؟"), summary.rfind("!"))
+        if end > len(summary) * 0.6:
+            summary = summary[: end + 1].strip()
     # الملخص الوافي قد يطول: يُنطق على مقاطع متوازية (حدود جمل) ثم تُدمج في ملف واحد
     chunks = _split_tts_chunks(summary)
 
@@ -6295,7 +6301,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.421"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.422"},
         },
     })
     if opened.get("error"):
