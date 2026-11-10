@@ -220,6 +220,10 @@ function ensureCustomResearchPanel() {
         <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crTopicsBody" title="فتح/طي تحديد كتب أقسام معينة">▾</button>
       </div>
       <div id="crTopicsBody" hidden>
+        <div class="custom-research-row" style="margin-bottom:8px;">
+          <button type="button" class="design-mini-btn" id="crCatsAll">✔️ تحديد الكل</button>
+          <button type="button" class="design-mini-btn" id="crCatsNone">🚫 إلغاء الكل</button>
+        </div>
         <div class="custom-research-list" id="crCategoryList">جارٍ جلب التصنيفات...</div>
       </div>
     </div>
@@ -356,6 +360,17 @@ function ensureCustomResearchPanel() {
     if (cnt) cnt.textContent = customResearch.categories.length;
     saveCustomResearch();
   });
+  // تحديد كل تصنيفات الشاملة أو إلغاؤها دفعة واحدة
+  const setAllCustomCategories = (on) => {
+    const boxes = [...overlay.querySelectorAll('#crCategoryList input[data-cr-cat]')];
+    boxes.forEach(b => { b.checked = on; });
+    customResearch.categories = on ? boxes.map(b => b.getAttribute('data-cr-cat')) : [];
+    const cnt = overlay.querySelector('#crCatCount');
+    if (cnt) cnt.textContent = customResearch.categories.length;
+    saveCustomResearch();
+  };
+  overlay.querySelector('#crCatsAll')?.addEventListener('click', () => setAllCustomCategories(true));
+  overlay.querySelector('#crCatsNone')?.addEventListener('click', () => setAllCustomCategories(false));
   const thinkSel = overlay.querySelector('#crThinkingSelect');
   thinkSel.addEventListener('change', () => { if (typeof setThinkingLevel === 'function') setThinkingLevel(thinkSel.value); });
   const yearAny = overlay.querySelector('#crYearAny');
