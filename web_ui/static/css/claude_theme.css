@@ -2380,6 +2380,10 @@ select.graph-kind-select {
   color: var(--text-main);
 }
 
+/* أيقونة بحث الويب في شريط إدخال المحادثة: مضيئة بالأخضر مفعّلة، باهتة معطّلة */
+#chatWebSearchBtn { color: #1a9e6b; }
+#chatWebSearchBtn.is-off { color: var(--text-muted); opacity: 0.35; }
+
 .btn-send-chat {
   background: var(--accent-clay);
   color: #FFFFFF;

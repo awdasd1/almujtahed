@@ -1905,6 +1905,7 @@ class ChatRequest(BaseModel):
     semantic_enhanced: Optional[bool] = None # خيار معزّز: تشغيل قناة البحث الدلالي في مخزن المتجهات إن توفرت؛ تعطيله بحث لفظي فقط
     library_only: Optional[bool] = False # بحث مباشر في الشاملة من نص محدد، بلا وكلاء
     free_mode: bool = False # سيناريو البحث الحر: دردشة عامة بلا كتب ولا استرجاع ولا أي توجيه خفي — النموذج يجيب من ذاكرته
+    web_search: Optional[bool] = None # أداة بحث الويب (Tavily) بقرار الباحث في الحر والمخصص: مفعّلة يستدعيها النموذج عند عجز ذاكرته، معطّلة يعتذر ويطلب تفعيلها؛ None = لا شأن لها (الموسع عبر المشاريع)
     raw_mcp: bool = False # MCP خام مباشر: النموذج يقود أدوات المجتهد بنفسه، بلا وكلاء ولا توجيه ولا خط استرجاع
     selected_books: Optional[List[str]] = None
     selected_categories: Optional[List[str]] = None  # تصنيفات الشاملة الأساسية المختارة في البحث المخصص — نطاق تصنيفي للبحث
@@ -6112,7 +6113,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.406"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.407"},
         },
     })
     if opened.get("error"):
@@ -12621,31 +12622,113 @@ def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
         dialog[-1] = {**dialog[-1], "content": dialog[-1]["content"] + "\n\n" + "\n\n".join(att_texts)}
     if not dialog:
         return {**base, "reply": "⚠️ لا توجد رسائل للإرسال."}
+
+    # أداة بحث الويب (Tavily) بقرار الباحث: مفعّلة تكون أداة بيد النموذج
+    # يستدعيها متى لم تسعفه ذاكرته، ومعطّلة يعتذر إن عجزت ويطلب تفعيلها
+    web_on = bool(req.web_search)
+    base["web_search"] = web_on
+    base["web_used"] = False
+    base["web_sources"] = []
+    tavily_key = ""
+    if web_on:
+        try:
+            tavily_key = (load_provider_keys(current_owner_id(request)).get("tavily") or "").strip()
+        except Exception:
+            tavily_key = ""
+        if not tavily_key:
+            return {**base, "reply": "⚠️ فعّلتَ أداة بحث الويب (Tavily) لكن مفتاحها غير مضبوط في تبويب الخدمات — أضف المفتاح ثم أعد السؤال، أو عطّل الأداة (أيقونة الكرة الأرضية) لأجيبك من ذاكرتي."}
+    if web_on:
+        dialog = [{"role": "system", "content": (
+            "أنت مساعد يجيب من ذاكرته، وبيدك أداة بحث في الويب اسمها search_web (عبر Tavily) فعّلها صاحبك. "
+            "القاعدة: أجب أولًا من ذاكرتك إن كانت وافية وموثوقة. فإن لم تسعفك ذاكرتك بجواب موثوق، أو احتاج السؤال معلومة حديثة أو خارجية لا تحفظها، فاستدعِ الأداة بصياغة بحث دقيقة (وبلغتين إن أفاد)، ثم أجب معتمدًا نتائجها واذكر مصادرك بروابطها. "
+            "لا تستدعِ الأداة فيما تعرفه يقينًا، ولا تختلق معلومة بلا بحث.")}] + dialog
+    elif req.web_search is False:
+        dialog = [{"role": "system", "content": (
+            "أنت مساعد يجيب من ذاكرته، وأداة بحث الويب معطّلة بقرار صاحبك في هذه الجلسة. "
+            "أجب من ذاكرتك إن أسعفتك؛ فإن لم تسعفك بجواب موثوق فاعتذر صراحة وبيّن أن ذاكرتك لا تسعفك هنا، واطلب منه تفعيل أداة بحث الويب (أيقونة الكرة الأرضية بجانب أيقونة المرفقات) لتبحث له في الويب عن سؤاله. لا تختلق معلومة ولا تدّع بحثًا لم يجرِ.")}] + dialog
+
+    def _read(payload: dict) -> dict:
+        http_req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Free Chat"},
+            data=json.dumps(payload).encode("utf-8"))
+        with urllib.request.urlopen(http_req, timeout=300) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
     payload = {"model": model, "messages": dialog,
                "temperature": float(req.temperature if req.temperature is not None else 0.7),
                "max_tokens": min(int(req.max_tokens or 65536), 65536)}
-    http_req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Free Chat"},
-        data=json.dumps(payload).encode("utf-8"))
+    if web_on:
+        payload["tools"] = [{
+            "type": "function",
+            "function": {
+                "name": "search_web",
+                "description": "ابحث في الويب عبر Tavily عن معلومة لا تسعفك بها ذاكرتك أو تحتاج تحديثًا خارجيًا، وأعد أهم النتائج بمصادرها.",
+                "parameters": {"type": "object", "properties": {
+                    "query": {"type": "string", "description": "صياغة بحث دقيقة بالعربية أو الإنجليزية"},
+                    "max_results": {"type": "integer", "description": "عدد النتائج (1-8)", "default": 5}},
+                    "required": ["query"]},
+            },
+        }]
+        payload["tool_choice"] = "auto"
+    usage: Dict[str, Any] = {}
+    text = ""
     try:
-        with urllib.request.urlopen(http_req, timeout=300) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = _read(payload)
+        for _round in range(3):
+            if isinstance(data, dict) and data.get("error"):
+                return {**base, "reply": f"⚠️ خطأ المزود في البحث الحر: {str(data.get('error'))[:300]}"}
+            if isinstance(data.get("usage"), dict):
+                usage = data["usage"]
+            msg = ((data.get("choices") or [{}])[0].get("message") or {})
+            calls = msg.get("tool_calls") or []
+            if not calls:
+                text = (msg.get("content") or "").strip() or str(msg.get("reasoning") or "").strip()
+                break
+            dialog.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
+            for call in calls:
+                fn = (call.get("function") or {})
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except Exception:
+                    args = {}
+                query = str(args.get("query") or "").strip()
+                try:
+                    found = _tavily_search_sync(query, tavily_key, int(args.get("max_results") or 5))
+                    lines = []
+                    if found.get("answer"):
+                        lines.append(f"إجابة مركبة من Tavily: {str(found.get('answer'))[:1500]}")
+                    for r in (found.get("results") or []):
+                        title = str(r.get("title") or "")[:200]
+                        url = str(r.get("url") or "")
+                        content = str(r.get("content") or "")[:1200]
+                        lines.append(f"- {title}\n  {url}\n  {content}")
+                        if url and not any(s["url"] == url for s in base["web_sources"]):
+                            base["web_sources"].append({"title": title, "url": url})
+                    tool_content = "\n".join(lines) or "لا نتائج."
+                    base["web_used"] = True
+                except Exception as exc:
+                    tool_content = f"تعذر تنفيذ بحث الويب: {exc}"
+                dialog.append({"role": "tool", "tool_call_id": call.get("id") or "call_1", "content": tool_content})
+            payload = {**payload, "messages": dialog}
+            data = _read(payload)
+        else:
+            # أُنهكت جولات الأدوات: جواب أخير بلا أدوات مما جُمع
+            final = _read({k: v for k, v in payload.items() if k not in ("tools", "tool_choice")})
+            msg = ((final.get("choices") or [{}])[0].get("message") or {})
+            text = (msg.get("content") or "").strip() or str(msg.get("reasoning") or "").strip()
+            if isinstance(final.get("usage"), dict):
+                usage = final["usage"]
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="ignore")[:400]
         return {**base, "reply": f"⚠️ رفض النموذج الطلب في البحث الحر: {detail}"}
     except Exception as error:
         return {**base, "reply": f"⚠️ تعذر الاتصال بالنموذج في البحث الحر: {error}"}
-    if isinstance(data, dict) and data.get("error"):
-        return {**base, "reply": f"⚠️ خطأ المزود في البحث الحر: {str(data.get('error'))[:300]}"}
-    msg = ((data.get("choices") or [{}])[0].get("message") or {})
-    text = (msg.get("content") or "").strip()
-    if not text and msg.get("reasoning"):
-        text = str(msg.get("reasoning") or "").strip()
-    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-    return {**base, "reply": text or "⚠️ أرجع النموذج ردًا فارغًا.",
-            "usage": usage}
+    if text and base["web_sources"]:
+        src_lines = "\n".join(f"- [{s['title'] or s['url']}]({s['url']})" for s in base["web_sources"][:5])
+        text += f"\n\n🌐 مصادر بحث الويب (Tavily):\n{src_lines}"
+    return {**base, "reply": text or "⚠️ أرجع النموذج ردًا فارغًا.", "usage": usage}
 
 
 def _raw_mcp_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
@@ -14206,6 +14289,47 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         "\n[تركيز موضوعي إضافي حدّده الباحث بنفسه في تخصيص بحثه: «" + _focus_topic + "» — "
                         "أضف هذا الطلب إلى بحثك وركّز عليه: اجعله محورًا حاضرًا في تحريرك ضمن الموضوعات المحددة الأخرى إن وُجدت، "
                         "فإن انفرد بلا موضوعات أخرى فهو محور التركيز الأول بعد صلب السؤال، واستحضر شواهده وكتبه الخادمة له ما أمكن.]"
+                    )
+                # أداة بحث الويب (Tavily) بقرار الباحث في تخصيص بحثه — نفس توجيه
+                # البحث الحر تفعيلًا وتعطيلًا: مفعّلة تُجرى له وتنفع عند العجز،
+                # ومعطّلة يعتذر ويطلب تفعيلها من قسم «بحث في الويب» في التخصيص
+                if req.web_search is True:
+                    _tav_key = ""
+                    try:
+                        _tav_key = (load_provider_keys(current_owner_id(request)).get("tavily") or "").strip()
+                    except Exception:
+                        _tav_key = ""
+                    if not _tav_key:
+                        system_instruction += (
+                            "\n[فعّل الباحث أداة بحث الويب (Tavily) في تخصيص بحثه لكن مفتاحها غير مضبوط في تبويب الخدمات، فلم يُبحث في الويب. "
+                            "إن احتاج جوابك معلومة خارجية لا تسعفك بها الشواهد ولا ذاكرتك فنبّهه بذلك باختصار واطلب ضبط المفتاح.]"
+                        )
+                    else:
+                        _web_block = ""
+                        try:
+                            _tav = await asyncio.to_thread(
+                                _tavily_search_sync, (search_query or last_user_msg)[:400], _tav_key, 5)
+                            _lines = []
+                            if _tav.get("answer"):
+                                _lines.append(f"إجابة مركبة من Tavily: {str(_tav.get('answer'))[:1500]}")
+                            for _r in (_tav.get("results") or []):
+                                _lines.append(f"- {str(_r.get('title') or '')[:200]}\n  {str(_r.get('url') or '')}\n  {str(_r.get('content') or '')[:1000]}")
+                            _web_block = "\n".join(_lines)
+                        except Exception as _tav_err:
+                            print(f"🌐 [Custom Web Search] تعذر بحث Tavily: {_tav_err}", flush=True)
+                        if _web_block:
+                            system_instruction += (
+                                "\n[بحث ويب أجرته أداة Tavily لأن الباحث فعّل «بحث في الويب» في تخصيص بحثه — مادته:\n" + _web_block[:9000] + "\n"
+                                "اعتمد هذه المادة عندما لا تسعفك ذاكرتك ولا شواهد الشاملة المرفقة، واذكر مصادرك الويبية بروابطها، ولا تجعلها بديلًا عن الشاهد التراثي فيما له شاهد.]"
+                            )
+                        else:
+                            system_instruction += (
+                                "\n[فعّل الباحث أداة بحث الويب (Tavily) في تخصيص بحثه لكن البحث لم يُرجع مادة نافعة؛ اعتمد الشواهد وذاكرتك، وصرّح عند العجز بدل الاختلاق.]"
+                            )
+                elif req.web_search is False:
+                    system_instruction += (
+                        "\n[أداة بحث الويب معطّلة بقرار الباحث في تخصيص بحثه: لا تبحث في الويب ولا تدّع نتائجه. "
+                        "فإن لم تسعفك الشواهد المرفقة ولا ذاكرتك في جانب من السؤال فاعتذر صراحة عن ذلك الجانب واطلب منه تفعيل «بحث في الويب» من لوحة تخصيص البحث.]"
                     )
                 if _discussion in ("open", "finalize"):
                     _audit_ctx = ""

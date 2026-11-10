@@ -83,7 +83,43 @@ function applyChatScenarioUI() {
     topControl.style.display = free ? '' : 'none';
   }
   if (typeof refreshDirectorAuthorityUI === 'function') refreshDirectorAuthorityUI();
+  // أيقونة بحث الويب بجانب المرفقات للبحث الحر وحده؛ المخصص مفتاحه في لوحته، والموسع عبر مشاريعه
+  const webBtn = document.getElementById('chatWebSearchBtn');
+  if (webBtn) webBtn.style.display = free ? '' : 'none';
 }
+
+// =============================================================================
+// أداة بحث الويب (Tavily) في الحر والمخصص — قرار الباحث: مفعّلة يستدعيها
+// النموذج متى لم تسعفه ذاكرته، ومعطّلة يعتذر عند العجز ويطلب تفعيلها.
+// حالتها واحدة مشتركة: أيقونة الكرة في الحر وقسم «بحث في الويب» في اللوحة.
+// =============================================================================
+let chatWebSearchOn = true;
+try { chatWebSearchOn = localStorage.getItem('almujtahed_web_search_v1') !== '0'; } catch (e) {}
+
+function setChatWebSearch(on, silent) {
+  chatWebSearchOn = !!on;
+  try { localStorage.setItem('almujtahed_web_search_v1', chatWebSearchOn ? '1' : '0'); } catch (e) {}
+  const btn = document.getElementById('chatWebSearchBtn');
+  if (btn) {
+    btn.classList.toggle('is-off', !chatWebSearchOn);
+    btn.title = chatWebSearchOn
+      ? 'بحث الويب (Tavily) مفعّل: يستدعيه النموذج متى لم تسعفه ذاكرته — انقر للتعطيل'
+      : 'بحث الويب (Tavily) معطّل: يجيب النموذج من ذاكرته فقط ويعتذر إن عجز — انقر للتفعيل';
+  }
+  const chk = document.getElementById('crWebToggle');
+  if (chk) chk.checked = chatWebSearchOn;
+  const sum = document.getElementById('crWebSummary');
+  if (sum) sum.textContent = chatWebSearchOn ? 'مفعّل' : 'معطّل';
+  if (!silent && typeof showToast === 'function') {
+    showToast(chatWebSearchOn
+      ? '🌐 فُعّل بحث الويب (Tavily): يستدعيه النموذج متى لم تسعفه ذاكرته'
+      : '🌐 عُطّل بحث الويب: يجيب النموذج من ذاكرته فقط');
+  }
+}
+function toggleChatWebSearch() { setChatWebSearch(!chatWebSearchOn); }
+window.toggleChatWebSearch = toggleChatWebSearch;
+window.setChatWebSearch = setChatWebSearch;
+document.addEventListener('DOMContentLoaded', () => setChatWebSearch(chatWebSearchOn, true));
 
 // =============================================================================
 // النوع الثاني (أ): البحث المخصص — حدود الباحث: نموذج وكتب وزمان وموضوع وطول.
@@ -221,6 +257,16 @@ function ensureCustomResearchPanel() {
         </div>
       </div>
     </div>
+    <div class="custom-research-sec">
+      <div class="cr-fold-head">
+        <h4>🌐 بحث في الويب (<span id="crWebSummary">مفعّل</span>)</h4>
+        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crWebBody" title="فتح/طي بحث في الويب">▾</button>
+      </div>
+      <div id="crWebBody" hidden>
+        <label style="font-size:13.5px; display:flex; gap:8px; align-items:center;"><input type="checkbox" id="crWebToggle"> تفعيل أداة Tavily للبحث في الويب</label>
+        <div style="font-size:12px; color:var(--text-muted); line-height:1.9; margin-top:6px;">مفعّلة: يبحث النموذج في الويب متى لم تسعفه ذاكرته ولا الشواهد. معطّلة: يعتذر إن عجزت ذاكرته ويطلب منك تفعيلها.</div>
+      </div>
+    </div>
     <div class="custom-research-actions">
       <button type="button" class="design-send-btn" id="crApply">✓ اعتماد التخصيص</button>
       <button type="button" class="design-mini-btn" id="crCancel">✕ إلغاء</button>
@@ -356,6 +402,7 @@ function ensureCustomResearchPanel() {
     updateCrTopicsSummary();
     saveCustomResearch();
   });
+  overlay.querySelector('#crWebToggle').addEventListener('change', (event) => setChatWebSearch(event.target.checked));
   overlay.querySelectorAll('input[name="crLength"]').forEach(radio => {
     radio.addEventListener('change', () => {
       customResearch.length = radio.value;
@@ -513,6 +560,7 @@ function openCustomResearchPanel() {
   overlay.querySelectorAll('input[name="crLength"]').forEach(r => { r.checked = r.value === customResearch.length; });
   const lenSum = overlay.querySelector('#crLengthSummary');
   if (lenSum) lenSum.textContent = { short: 'مختصر — ٥٠ شاهدًا', mid: 'متوسط — ١٥٠ شاهدًا', long: 'طويل — ٣٠٠ شاهد' }[customResearch.length] || '';
+  setChatWebSearch(chatWebSearchOn, true);
   renderCustomBooks();
   renderCustomLibrary();
   renderCustomCategories();
@@ -3126,7 +3174,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
     typingMessage = `جارٍ ربط خوادم MCP: «<strong>${escapeHtml(mcpPayload.map(item => item.name).join('، '))}</strong>» مع «<strong>${escapeHtml(modelDisplayName)}</strong>»...`;
   }
   if (freeMode) {
-    typingMessage = `💬 بحث حر: جارٍ إرسال رسالتك إلى «<strong>${escapeHtml(modelDisplayName)}</strong>» ليجيب من ذاكرته مباشرة...`;
+    typingMessage = `💬 بحث حر: جارٍ إرسال رسالتك إلى «<strong>${escapeHtml(modelDisplayName)}</strong>» ليجيب من ذاكرته مباشرة...` + (chatWebSearchOn ? ' وأداة بحث الويب 🌐 بيده إن عجزت ذاكرته.' : '');
   }
   if (customMode) {
     typingMessage = `🔎 بحث مخصص عبر «<strong>${escapeHtml(modelDisplayName)}</strong>» في حدودك: ${customResearch.books.length ? customResearch.books.length + ' كتابًا مختارًا' : 'المكتبة كلها'}، وحتى ${CUSTOM_LENGTH_WITNESSES[customResearch.length] || 150} شاهدًا...`;
@@ -3174,6 +3222,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
         selected_books: sendSelectedBooks,
         selected_categories: sendSelectedCategories,
         custom_focus_topics: sendFocusTopics,
+        web_search: (freeMode || customMode) ? chatWebSearchOn : null,
         research_command: freeMode ? null : ((options && options.researchCommand) || null),
         discussion_mode: (options && options.discussionMode) || (discussionState(session.id) === 'open' ? 'open' : null),
         risk_control: (options && options.riskControl && options.riskControl.length) ? { items: options.riskControl } : null,
