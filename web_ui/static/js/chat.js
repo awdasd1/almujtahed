@@ -7,6 +7,38 @@ const CHAT_STORAGE_KEY = 'almojtahed_chat_sessions';
 
 let chatSessions = [];
 let activeSessionId = null;
+
+// =============================================================================
+// سيناريوهات البحوث — الأول: البحث الحر (الافتراضي): دردشة عامة من ذاكرة
+// النموذج بلا كتب ولا استرجاع ولا توجيه خفي، وتُخفى فيه ضوابط البحث التراثي
+// =============================================================================
+let chatScenario = 'free';
+try { chatScenario = localStorage.getItem('almujtahed_chat_scenario_v1') || 'free'; } catch (e) {}
+if (chatScenario !== 'free') chatScenario = 'free';
+
+function isFreeChatScenario() { return chatScenario === 'free'; }
+
+function setChatScenario(value) {
+  chatScenario = value === 'free' ? 'free' : 'free';
+  try { localStorage.setItem('almujtahed_chat_scenario_v1', chatScenario); } catch (e) {}
+  applyChatScenarioUI();
+  if (typeof showToast === 'function') {
+    showToast('💬 سيناريو البحث الحر: محادثة عامة من ذاكرة النموذج، بلا كتب ولا استرجاع ولا توجيه خفي');
+  }
+}
+
+function applyChatScenarioUI() {
+  const sel = document.getElementById('chatScenarioSelect');
+  if (sel) sel.value = chatScenario;
+  const free = isFreeChatScenario();
+  ['chatContextSelect', 'intentSelect', 'deathMaxSelect', 'witnessDdBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    const wrap = el ? el.closest('.thinking-control') : null;
+    if (wrap) wrap.style.display = free ? 'none' : '';
+  });
+  const groupsPicker = document.getElementById('chatAgentGroupPicker');
+  if (groupsPicker) groupsPicker.style.display = free ? 'none' : '';
+}
 let currentThinkingLevel = 'medium'; // 'low' | 'medium' | 'high'
 let currentAttachments = [];
 let isChatHybridSearchEnabled = true;
@@ -103,6 +135,7 @@ function updateChatHybridToggleUI() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initChatHistory();
+  applyChatScenarioUI();
   initChatHybridToggleState();
   initSemanticEnhancedState();
   populateChatAgentGroupsDropdown();
@@ -2483,6 +2516,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
   const assignedGroupPayload = builtGroup ? builtGroup.payload : null;
   const activeAgent = builtGroup ? builtGroup.activeAgent : null;
   const mcpPayload = buildChatMcpPayload();
+  const freeMode = isFreeChatScenario();
 
   // اعتماد النموذج المختار صراحة من قبل المستخدم في ترويسة الشات الذكي
   const customOn = !!currentSettings.modelParams?.customGeneration;
@@ -2516,6 +2550,9 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
   } else if (mcpPayload.length) {
     typingMessage = `جارٍ ربط خوادم MCP: «<strong>${escapeHtml(mcpPayload.map(item => item.name).join('، '))}</strong>» مع «<strong>${escapeHtml(modelDisplayName)}</strong>»...`;
   }
+  if (freeMode) {
+    typingMessage = `💬 بحث حر: جارٍ إرسال رسالتك إلى «<strong>${escapeHtml(modelDisplayName)}</strong>» ليجيب من ذاكرته مباشرة...`;
+  }
 
   typingBubble.innerHTML = `
     <div class="message-avatar">مج</div>
@@ -2544,7 +2581,8 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
         use_hybrid: isChatHybridSearchEnabled,
         semantic_enhanced: isSemanticEnhancedEnabled,
         messages: promptMessages,
-        system_prompt: executionPrompt || null,
+        free_mode: freeMode,
+        system_prompt: freeMode ? null : (executionPrompt || null),
         temperature: executionTemp,
         top_k: executionTopK,
         max_tokens: executionMaxTokens,
@@ -2554,13 +2592,13 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
         witness_limit: (typeof currentWitnessCount === 'function') ? currentWitnessCount() : 50,
         death_max: (typeof currentDeathMax === 'function') ? currentDeathMax() : null,
         intent_genres: (typeof currentIntentGenres === 'function') ? currentIntentGenres() : null,
-        research_command: (options && options.researchCommand) || null,
+        research_command: freeMode ? null : ((options && options.researchCommand) || null),
         discussion_mode: (options && options.discussionMode) || (discussionState(session.id) === 'open' ? 'open' : null),
         risk_control: (options && options.riskControl && options.riskControl.length) ? { items: options.riskControl } : null,
         semantic_enhanced: isSemanticEnhancedEnabled,
         providers: readProviderKeys(),
-        agent_group: window.chatRawMcp ? null : assignedGroupPayload,
-        mcp_servers: window.chatRawMcp ? [] : mcpPayload,
+        agent_group: freeMode ? null : (window.chatRawMcp ? null : assignedGroupPayload),
+        mcp_servers: freeMode ? [] : (window.chatRawMcp ? [] : mcpPayload),
         raw_mcp: !!window.chatRawMcp,
         mcp_for_agents: localStorage.getItem('almojtahed_mcp_for_agents') === '1',
         agent_dispatch_mode: window.chatAgentDispatchMode || 'parallel',
@@ -2587,7 +2625,8 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
       content: data.reply || 'عذراً، لم أتلقَّ استجابة واضحة من الخادم.',
       model: data.model || selectedModel,
       provider: data.provider || activeProvider,
-      agent_group: data.raw_mcp ? 'MCP خام مباشر' : (data.agent_group || [assignedGroupPayload ? assignedGroupPayload.name : '', mcpPayload.map(item => item.name).join(' + ')].filter(Boolean).join(' + ') || null),
+      agent_group: data.free_mode ? '💬 بحث حر' : (data.raw_mcp ? 'MCP خام مباشر' : (data.agent_group || [assignedGroupPayload ? assignedGroupPayload.name : '', mcpPayload.map(item => item.name).join(' + ')].filter(Boolean).join(' + ') || null)),
+      free_mode: !!data.free_mode,
       duration_ms: durationMs,
       thinking_effort: data.thinking_effort || '',
       thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : '',

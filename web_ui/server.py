@@ -1903,6 +1903,7 @@ class ChatRequest(BaseModel):
     risk_control: Optional[Dict[str, Any]] = None # 🏛 بنود ضبط مخاطر علّمها الباحث في المناقشة {items: [مؤشرات أحداث سجل مخاطر الحزمة]}؛ صياغة التوجيه القوية تُبنى خادميًا ولا تُعرض للباحث
     semantic_enhanced: Optional[bool] = None # خيار معزّز: تشغيل قناة البحث الدلالي في مخزن المتجهات إن توفرت؛ تعطيله بحث لفظي فقط
     library_only: Optional[bool] = False # بحث مباشر في الشاملة من نص محدد، بلا وكلاء
+    free_mode: bool = False # سيناريو البحث الحر: دردشة عامة بلا كتب ولا استرجاع ولا أي توجيه خفي — النموذج يجيب من ذاكرته
     raw_mcp: bool = False # MCP خام مباشر: النموذج يقود أدوات المجتهد بنفسه، بلا وكلاء ولا توجيه ولا خط استرجاع
     selected_books: Optional[List[str]] = None
     library_query: Optional[str] = None
@@ -6108,7 +6109,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.395"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.396"},
         },
     })
     if opened.get("error"):
@@ -12588,6 +12589,62 @@ RAW_MCP_CITATION_RULE = (
 )
 
 
+def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
+    """سيناريو البحث الحر: دردشة عامة حرة غير مرتبطة بأي كتاب — الرسائل كما هي
+    إلى النموذج بلا رسالة نظام وبلا استرجاع وبلا وكلاء وبلا أي توجيه خفي،
+    فيجيب النموذج من ذاكرته بطول ما يشاء وبمصادر ما يشاء أو بلا مصادر."""
+    base = {"model": req.model or "unknown", "provider": req.provider or "openrouter",
+            "thinking_level": req.thinking_level, "thinking_effort": None,
+            "agent_group": None, "witnesses": [], "free_mode": True}
+    key = owner_openrouter_key(request, req.api_key)
+    if not key:
+        return {**base, "reply": "⚠️ البحث الحر يحتاج مفتاح OpenRouter مضبوطًا في الخدمات."}
+    alias = {
+        "claude-3-7-sonnet": "anthropic/claude-3.7-sonnet",
+        "claude-3-5-sonnet": "anthropic/claude-3.5-sonnet",
+        "claude-3-5-haiku": "anthropic/claude-3.5-haiku",
+        "claude-3-opus": "anthropic/claude-3-opus",
+    }
+    model = alias.get(req.model or "", req.model)
+    base["model"] = model
+    dialog = [{"role": m.role, "content": m.content} for m in req.messages
+              if m.role in ("user", "assistant") and (m.content or "").strip()]
+    att_texts = []
+    for a in (req.attachments or []):
+        t = (a.get("extracted_text") or "").strip()
+        if t:
+            att_texts.append(f"[محتوى الملف المرفق: {a.get('filename', 'ملف')}]\n{t[:20000]}")
+    if att_texts and dialog and dialog[-1]["role"] == "user":
+        dialog[-1] = {**dialog[-1], "content": dialog[-1]["content"] + "\n\n" + "\n\n".join(att_texts)}
+    if not dialog:
+        return {**base, "reply": "⚠️ لا توجد رسائل للإرسال."}
+    payload = {"model": model, "messages": dialog,
+               "temperature": float(req.temperature if req.temperature is not None else 0.7),
+               "max_tokens": min(int(req.max_tokens or 65536), 65536)}
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Free Chat"},
+        data=json.dumps(payload).encode("utf-8"))
+    try:
+        with urllib.request.urlopen(http_req, timeout=300) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="ignore")[:400]
+        return {**base, "reply": f"⚠️ رفض النموذج الطلب في البحث الحر: {detail}"}
+    except Exception as error:
+        return {**base, "reply": f"⚠️ تعذر الاتصال بالنموذج في البحث الحر: {error}"}
+    if isinstance(data, dict) and data.get("error"):
+        return {**base, "reply": f"⚠️ خطأ المزود في البحث الحر: {str(data.get('error'))[:300]}"}
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    text = (msg.get("content") or "").strip()
+    if not text and msg.get("reasoning"):
+        text = str(msg.get("reasoning") or "").strip()
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    return {**base, "reply": text or "⚠️ أرجع النموذج ردًا فارغًا.",
+            "usage": usage}
+
+
 def _raw_mcp_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
     """وضع MCP الخام المباشر: النموذج المختار يقود أدوات خادم المجتهد بنفسه
     كما يفعل أي عميل MCP خارجي — بلا وكلاء، وبلا خط استرجاع، وبلا قواعد
@@ -12783,6 +12840,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
     def _mark(stage: str):
         _stage_marks.append((stage, round(time.time() - _chat_t0)))
+    if req.free_mode:
+        return await asyncio.to_thread(_free_chat_sync, req, request)
     if req.raw_mcp:
         return await asyncio.to_thread(_raw_mcp_chat_sync, req, request)
     last_user_msg = ""
