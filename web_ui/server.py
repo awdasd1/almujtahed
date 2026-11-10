@@ -6113,7 +6113,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.415"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.416"},
         },
     })
     if opened.get("error"):
@@ -15682,7 +15682,12 @@ async def get_openrouter_rankings(req: Dict[str, str], request: Request):
 
 
 openrouter_about_cache: Dict[str, str] = {}
-ABOUT_TRANSLATOR_MODEL = "google/gemini-2.5-flash-lite"
+# مترجم بطاقات النماذج: سلسلة بدائل سريعة ورخيصة؛ تعثّر أي نموذج (تباطؤ أو قيود) ينتقل لبديله فورًا
+ABOUT_TRANSLATOR_MODELS = (
+    "google/gemini-3.8-flash",
+    "~openai/gpt-luna-latest",
+    "google/gemini-2.5-flash-lite",
+)
 ABOUT_AR_CACHE_PATH = BASE_DIR / "model_about_ar_cache.json"
 
 def _load_about_ar_cache() -> None:
@@ -15742,7 +15747,7 @@ def _english_model_about(model_id: str) -> str:
     return description.strip()
 
 def _translate_model_about_to_arabic(english: str, api_key: str) -> str:
-    """ترجمة وصف النموذج بنموذج خفيف وسريع، دون إظهار خطوة الترجمة للمستخدم."""
+    """ترجمة وصف النموذج بسلسلة نماذج خفيفة سريعة: أي تعثّر ينتقل للبديل التالي فورًا."""
     system = (
         "أنت مترجم تعريفات تقنية إلى العربية الفصحى. "
         "ترجم الفقرة ترجمة احترافية طبيعية كما تُكتب في بطاقة تعريف النموذج. "
@@ -15751,38 +15756,45 @@ def _translate_model_about_to_arabic(english: str, api_key: str) -> str:
         "كلمة decode في وصف النماذج تعني توليد النص، فترجمها إلى «توليد» لا «فك التشفير»، وtokens إلى «رموز». "
         "لا تشرح، ولا تضف عنواناً، ولا تضع علامات اقتباس حول النص. أعد الفقرة العربية فقط."
     )
-    payload = {
-        "model": ABOUT_TRANSLATOR_MODEL,
-        "temperature": 0.1,
-        "max_tokens": 600,
-        "reasoning": {"enabled": False},
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": english}
-        ]
-    }
     key = (api_key or "").strip()
     if not key:
         raise RuntimeError("missing owner provider key")
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8085",
-            "X-Title": "Al-Mojtahed Sharia Engine"
-        },
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    )
-    with urllib.request.urlopen(req, timeout=25) as resp:
-        resp_data = json.loads(resp.read().decode("utf-8"))
-    content = ((resp_data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-    content = content.strip().strip("«»\"'`")
-    content = re.sub(r"^(الترجمة|النص المترجم)\s*:\s*", "", content).strip()
-    arabic_chars = len(re.findall(r"[\u0600-\u06FF]", content))
-    if arabic_chars < 20:
-        raise RuntimeError("translation was not Arabic")
-    return content
+    last_error: Exception | None = None
+    for model_id in ABOUT_TRANSLATOR_MODELS:
+        payload = {
+            "model": model_id,
+            "temperature": 0.1,
+            "max_tokens": 900,
+            "reasoning": {"enabled": False},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": english}
+            ]
+        }
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:8085",
+                "X-Title": "Al-Mojtahed Sharia Engine"
+            },
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=18) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+            content = ((resp_data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+            content = content.strip().strip("«»\"'`")
+            content = re.sub(r"^(الترجمة|النص المترجم)\s*:\s*", "", content).strip()
+            arabic_chars = len(re.findall(r"[\u0600-\u06FF]", content))
+            if arabic_chars < 20:
+                raise RuntimeError("translation was not Arabic")
+            return content
+        except Exception as e:
+            last_error = e
+            print(f"Model-about translator failed with {model_id}: {e}")
+    raise RuntimeError(f"all model-about translators failed: {last_error}")
 
 @app.get("/api/openrouter/model-about")
 async def get_openrouter_model_about(model_id: str, request: Request):
