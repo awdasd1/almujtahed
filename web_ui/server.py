@@ -5294,6 +5294,144 @@ def _design_title_from_prompt(prompt: str) -> str:
     return "تصميم المجتهد"
 
 
+class AudioSummaryRequest(BaseModel):
+    text: str
+    api_key: Optional[str] = None
+
+
+# الملخص الصوتي للإجابة المعتمدة: اختصار دقيق بـ Gemini Flash ثم نطق بنموذج TTS بصوت Algieba
+AUDIO_SUMMARY_MODELS = ("google/gemini-3.8-flash", "google/gemini-2.5-flash-lite")
+AUDIO_TTS_MODEL = "google/gemini-3.8-flash-lite-tts"
+AUDIO_TTS_VOICE = "Algieba"
+
+
+def _openrouter_chat_text(key: str, model: str, system: str, user: str, timeout: int = 150, max_tokens: int = 1400) -> str:
+    payload = {
+        "model": model,
+        "temperature": 0.3,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8085",
+            "X-Title": "Al-Mujtahed Audio Summary",
+        },
+        data=json.dumps(payload).encode("utf-8"),
+    )
+    with urllib.request.urlopen(http_req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+
+
+def _pcm16_to_wav(pcm: bytes, sample_rate: int = 24000) -> bytes:
+    import wave
+    buf = _io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm)
+    return buf.getvalue()
+
+
+def _openrouter_tts(key: str, text: str, with_instructions: bool) -> bytes:
+    payload = {
+        "model": AUDIO_TTS_MODEL,
+        "input": text,
+        "voice": AUDIO_TTS_VOICE,
+        "response_format": "pcm",
+    }
+    if with_instructions:
+        payload["instructions"] = "Read aloud in clear formal Arabic (Fusha), with a calm, measured and warm scholarly delivery, pausing naturally at sentence ends."
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/audio/speech",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8085",
+            "X-Title": "Al-Mujtahed Audio Summary",
+        },
+        data=json.dumps(payload).encode("utf-8"),
+    )
+    with urllib.request.urlopen(http_req, timeout=300) as resp:
+        return resp.read()
+
+
+@app.post("/api/chat/audio-summary")
+async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
+    """اختصار الإجابة المعتمدة اختصارًا دقيقًا غير مخلّ ثم تحويلها إلى ملف صوتي بصوت Algieba."""
+    text = (req.text or "").strip()
+    if len(text) < 80:
+        raise HTTPException(status_code=400, detail="الإجابة قصيرة جدًا لعمل ملخص صوتي")
+    key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    system = (
+        "أنت محرّر صوتي دقيق يختصر الإجابات العلمية للإسماع. اكتب ملخصًا صوتيًا بالعربية الفصحى "
+        "من صلب النص المُعطى وحده دون أي إضافة من خارجه، اختصارًا دقيقًا غير مخلّ: حافظ على أهم "
+        "النتائج والأدلة والمصادر كما وردت، واحذف التكرار والتفريعات الثانوية. الطول المستهدف نحو "
+        "ربع النص الأصلي وبحد أقصى 1300 حرف. اكتب نصًا متصلًا قابلًا للنطق المباشر: لا عناوين، "
+        "ولا تعداد ولا نجوم ولا رموز تنسيق ولا روابط ولا أقواس متكررة، وحوّل الإحالات والأرقام إلى "
+        "صياغة منطوقة مفهومة، وابدأ بالمضمون مباشرة بلا مقدمات مثل «في هذا الملخص»."
+    )
+    summary = ""
+    last_error: Optional[Exception] = None
+    for model in AUDIO_SUMMARY_MODELS:
+        try:
+            summary = await asyncio.to_thread(_openrouter_chat_text, key, model, system, text[:26000])
+            if summary:
+                break
+        except Exception as error:  # نموذج متعثّر: جرّب البديل
+            last_error = error
+    if not summary:
+        raise HTTPException(status_code=502, detail=f"تعذر اختصار الإجابة للملخص الصوتي: {last_error}")
+    summary = re.sub(r"[*#_>`\[\]()]+", "", summary)
+    summary = re.sub(r"\s+", " ", summary).strip()
+    if len(summary) > 1800:
+        cut = summary[:1800]
+        end = max(cut.rfind("."), cut.rfind("؟"), cut.rfind("!"))
+        summary = (cut[: end + 1] if end > 400 else cut).strip()
+    raw: Optional[bytes] = None
+    tts_error: Optional[Exception] = None
+    for with_instructions in (True, False):
+        try:
+            raw = await asyncio.to_thread(_openrouter_tts, key, summary, with_instructions)
+            if raw:
+                break
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="ignore")[:300]
+            tts_error = RuntimeError(f"رفض نموذج الصوت الطلب ({error.code}): {detail}")
+        except Exception as error:
+            tts_error = error
+    if not raw:
+        raise HTTPException(status_code=502, detail=f"تعذر توليد الملف الصوتي: {tts_error}")
+    if raw[:3] == b"ID3" or raw[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        blob, ext = raw, "mp3"
+    elif raw[:4] == b"RIFF":
+        blob, ext = raw, "wav"
+    else:  # PCM خام من Gemini TTS: غلّفه WAV بمعدل 24kHz أحادي 16-بت
+        blob, ext = _pcm16_to_wav(raw), "wav"
+    owner_id = current_owner_id(request)
+    audio_dir = UPLOADS_BUCKET_DIR / owner_id / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"audio-summary-{int(time.time())}.{ext}"
+    (audio_dir / filename).write_bytes(blob)
+    return {
+        "ok": True,
+        "audio_url": f"/uploads/{owner_id}/audio/{filename}",
+        "summary": summary,
+        "voice": AUDIO_TTS_VOICE,
+        "tts_model": AUDIO_TTS_MODEL,
+    }
+
+
 def _designs_dir(request: Request) -> Path:
     folder = UPLOADS_BUCKET_DIR / current_owner_id(request) / "designs"
     folder.mkdir(parents=True, exist_ok=True)
@@ -6113,7 +6251,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.419"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.420"},
         },
     })
     if opened.get("error"):

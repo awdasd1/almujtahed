@@ -2193,6 +2193,23 @@ function renderSessionMessages(sessionId, options) {
       </div>
     ` : '';
 
+    // الملخص الصوتي المرفق بالإجابة المعتمدة: مشغّل بجانب زمن الإجابة مع تنزيل ومشاركة ونص الملخص
+    const audioSummaryHtml = (!isUser && msg.audio_summary && msg.audio_summary.url) ? `
+      <div class="chat-audio-summary">
+        <div class="chat-audio-summary-head">
+          <span>🔊 ملخص صوتي للإجابة</span>
+          <span class="chat-audio-voice">بصوت ${escapeHtml(msg.audio_summary.voice || 'Algieba')}</span>
+        </div>
+        <audio controls preload="metadata" src="${escapeHtml(msg.audio_summary.url)}"></audio>
+        <div class="chat-audio-summary-actions">
+          <a class="btn-msg-export" href="${escapeHtml(msg.audio_summary.url)}" download="ملخص-صوتي-المجتهد.wav" title="تنزيل الملف الصوتي">⬇️ تنزيل</a>
+          <button type="button" class="btn-msg-export" onclick="shareAudioSummary(${idx})" title="مشاركة الملف الصوتي">🔗 مشاركة</button>
+          ${msg.audio_summary.text ? `<button type="button" class="btn-msg-export" onclick="toggleAudioSummaryText(${idx}, this)" title="عرض نص الملخص الصوتي أو إخفاؤه">📝 نص الملخص</button>` : ''}
+        </div>
+        ${msg.audio_summary.text ? `<div class="chat-audio-summary-text" id="audioSummaryText${idx}" hidden>${escapeHtml(msg.audio_summary.text)}</div>` : ''}
+      </div>
+    ` : '';
+
     const actionsBar = !isUser ? `
       <div class="chat-msg-actions-bar" style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px dashed var(--border-subtle); padding-top: 8px; flex-wrap: wrap;">
         ${msg.rewriting ? `<span class="chat-rewrite-status">جارٍ ${escapeHtml(msg.rewriting)}...</span>` : ''}
@@ -2203,6 +2220,9 @@ function renderSessionMessages(sessionId, options) {
              واستثناء مرسوم سلفًا: الطباعة تظهر عند إقفال المناقشة للإجابة المعتمدة النهائية وحدها -->
         ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="طباعة هذه النتيجة بحواشٍ لكل صفحة أو حفظها PDF">
           🖨️ طباعة
+        </button>` : ''}
+        ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="generateAudioSummary(${idx}, this)" title="اختصار هذه الإجابة المعتمدة بنموذج Gemini 3.8 Flash اختصارًا دقيقًا غير مخلّ، ثم تحويلها إلى ملف صوتي بصوت Algieba يُرفق بجانب زمن الإجابة لتسمعه وتنزّله وتشاركه">
+          🔊 ملخص صوتي
         </button>` : ''}
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
@@ -2270,6 +2290,7 @@ function renderSessionMessages(sessionId, options) {
           ${msg.tool_web ? `<div class="applied-tool-mount" data-tool-web="1" data-tool-index="${idx}"></div>` : ''}
           ${chatWitnessesHtml(msg, idx)}
           ${tagsHtml}
+          ${audioSummaryHtml}
           ${actionsBar}
         </div>
       </div>
@@ -2767,6 +2788,74 @@ function copyChatMessageText(idx) {
   if (!session || !session.messages[idx]) return;
   navigator.clipboard.writeText(session.messages[idx].content);
   showToast('تم نسخ نص النتيجة البحثية إلى الحافظة 📋');
+}
+
+// ملخص صوتي للإجابة المعتمدة: اختصار Gemini 3.8 Flash ثم نطق بصوت Algieba، يُحفظ في الرسالة ويُعرض بجانب زمنها
+async function generateAudioSummary(idx, btn) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  if (!msg) return;
+  if (msg.audio_summary && msg.audio_summary.url && !confirm('يوجد ملخص صوتي جاهز لهذه الإجابة. هل تريد إعادة توليده من جديد؟')) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ جارٍ تجهيز الملخص الصوتي...'; }
+  showToast('⏳ جارٍ تجهيز الملخص الصوتي: اختصار الإجابة ثم تحويلها إلى صوت، قد يستغرق حتى دقيقة...', 6000);
+  try {
+    const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+    const res = await fetch('/api/chat/audio-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.audio_url) throw new Error(data.detail || 'تعذر تجهيز الملخص الصوتي');
+    msg.audio_summary = {
+      url: data.audio_url,
+      text: data.summary || '',
+      voice: data.voice || 'Algieba',
+      created_at: new Date().toISOString(),
+    };
+    saveChatSessions();
+    renderSessionMessages(activeSessionId, { keepPosition: true });
+    showToast('✅ جهز الملخص الصوتي: تجده بجانب زمن الإجابة للاستماع والتنزيل والمشاركة');
+  } catch (e) {
+    showToast('❌ ' + (e.message || 'تعذر تجهيز الملخص الصوتي'), 6000);
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+}
+
+async function shareAudioSummary(idx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  const info = msg && msg.audio_summary;
+  if (!info || !info.url) return;
+  const absolute = new URL(info.url, window.location.origin).href;
+  try {
+    const resp = await fetch(info.url);
+    if (resp.ok) {
+      const blob = await resp.blob();
+      const file = new File([blob], 'ملخص-صوتي-المجتهد.wav', { type: blob.type || 'audio/wav' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'ملخص صوتي — المجتهد' });
+        return;
+      }
+    }
+  } catch (e) { /* تُجرَّب مشاركة الرابط بعدها */ }
+  if (navigator.share) {
+    try { await navigator.share({ title: 'ملخص صوتي — المجتهد', url: absolute }); return; } catch (e) { /* تُنسخ بعدها */ }
+  }
+  try {
+    await navigator.clipboard.writeText(absolute);
+    showToast('نُسخ رابط الملف الصوتي — الصقه أين تشاء لمشاركته 🔗');
+  } catch (e) {
+    showToast('تعذرت المشاركة تلقائيًا؛ نزّل الملف ثم شاركه يدويًا', 5000);
+  }
+}
+
+function toggleAudioSummaryText(idx, btn) {
+  const el = document.getElementById(`audioSummaryText${idx}`);
+  if (!el) return;
+  el.hidden = !el.hidden;
+  if (btn) btn.textContent = el.hidden ? '📝 نص الملخص' : '📝 إخفاء النص';
 }
 
 function cleanModelDisplayName(modelId) {
