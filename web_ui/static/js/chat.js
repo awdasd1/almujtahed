@@ -12,33 +12,355 @@ let activeSessionId = null;
 // سيناريوهات البحوث — الأول: البحث الحر (الافتراضي): دردشة عامة من ذاكرة
 // النموذج بلا كتب ولا استرجاع ولا توجيه خفي، وتُخفى فيه ضوابط البحث التراثي
 // =============================================================================
+const CHAT_SCENARIOS = ['free', 'custom', 'expanded'];
 let chatScenario = 'free';
 try { chatScenario = localStorage.getItem('almujtahed_chat_scenario_v1') || 'free'; } catch (e) {}
-if (chatScenario !== 'free') chatScenario = 'free';
+if (!CHAT_SCENARIOS.includes(chatScenario)) chatScenario = 'free';
 
 function isFreeChatScenario() { return chatScenario === 'free'; }
 
+const CHAT_SCENARIO_TOASTS = {
+  free: '💬 سيناريو البحث الحر: محادثة عامة من ذاكرة النموذج، بلا كتب ولا استرجاع ولا توجيه خفي',
+  custom: '🔎 سيناريو البحث المخصص: حدّد نموذجك وكتبك وحدودك الزمانية والموضوعية وطول بحثك',
+  expanded: '🌐 سيناريو البحث الموسع: السيناريو المعهود الكامل — المجموعات وكل ضوابط البحث ظاهرة'
+};
+
 function setChatScenario(value) {
-  chatScenario = value === 'free' ? 'free' : 'free';
+  chatScenario = CHAT_SCENARIOS.includes(value) ? value : 'free';
   try { localStorage.setItem('almujtahed_chat_scenario_v1', chatScenario); } catch (e) {}
   applyChatScenarioUI();
-  if (typeof showToast === 'function') {
-    showToast('💬 سيناريو البحث الحر: محادثة عامة من ذاكرة النموذج، بلا كتب ولا استرجاع ولا توجيه خفي');
-  }
+  if (typeof showToast === 'function') showToast(CHAT_SCENARIO_TOASTS[chatScenario]);
+  if (chatScenario === 'custom') openCustomResearchPanel();
 }
 
 function applyChatScenarioUI() {
   const sel = document.getElementById('chatScenarioSelect');
   if (sel) sel.value = chatScenario;
-  const free = isFreeChatScenario();
+  const full = chatScenario === 'expanded';
   ['chatContextSelect', 'intentSelect', 'deathMaxSelect', 'witnessDdBtn'].forEach(id => {
     const el = document.getElementById(id);
     const wrap = el ? el.closest('.thinking-control') : null;
-    if (wrap) wrap.style.display = free ? 'none' : '';
+    if (wrap) wrap.style.display = full ? '' : 'none';
   });
   const groupsPicker = document.getElementById('chatAgentGroupPicker');
-  if (groupsPicker) groupsPicker.style.display = free ? 'none' : '';
+  if (groupsPicker) groupsPicker.style.display = full ? '' : 'none';
+  const editBtn = document.getElementById('chatCustomEditBtn');
+  if (editBtn) editBtn.style.display = chatScenario === 'custom' ? '' : 'none';
 }
+
+// =============================================================================
+// النوع الثاني (أ): البحث المخصص — حدود الباحث: نموذج وكتب وزمان وموضوع وطول.
+// يُغذَّى بها مسار البحث المعهود نفسه وتوجيهه الخفي، فلا يتغير إلا نطاق الحدود.
+// =============================================================================
+const CUSTOM_RESEARCH_KEY = 'almujtahed_custom_research_v1';
+const CUSTOM_LENGTH_WITNESSES = { short: 50, mid: 150, long: 300 };
+const CUSTOM_TOPIC_GENRES = {
+  tafsir: 'تفسير', fiqh: 'فقه', aqeeda: 'عقيدة', hadith: 'حديث', takhrij: 'حديث',
+  usul: 'فقه', language: 'لغة', tarikh: 'تاريخ', sira: 'تاريخ', mudun: 'تاريخ', fatawa: 'فقه'
+};
+let customResearch = { books: [], topics: [], yearFrom: '', yearTo: '', yearAny: true, length: 'mid' };
+try {
+  const parsed = JSON.parse(localStorage.getItem(CUSTOM_RESEARCH_KEY) || 'null');
+  if (parsed && typeof parsed === 'object') {
+    customResearch = {
+      books: Array.isArray(parsed.books) ? parsed.books.filter(b => typeof b === 'string') : [],
+      topics: Array.isArray(parsed.topics) ? parsed.topics.filter(t => typeof t === 'string') : [],
+      yearFrom: parsed.yearFrom || '', yearTo: parsed.yearTo || '',
+      yearAny: parsed.yearAny !== false,
+      length: ['short', 'mid', 'long'].includes(parsed.length) ? parsed.length : 'mid'
+    };
+  }
+} catch (e) {}
+
+function saveCustomResearch() {
+  try { localStorage.setItem(CUSTOM_RESEARCH_KEY, JSON.stringify(customResearch)); } catch (e) {}
+}
+
+function customApprovedBooks() {
+  try { return [...new Set((SELECTION_RESEARCH_KINDS || []).flatMap(k => k.books || []))]; } catch (e) { return []; }
+}
+
+function customTopicGenres() {
+  const genres = [...new Set(customResearch.topics.map(id => CUSTOM_TOPIC_GENRES[id]).filter(Boolean))];
+  return genres.length ? genres : null;
+}
+
+function ensureCustomResearchPanel() {
+  let overlay = document.getElementById('customResearchOverlay');
+  if (overlay) return overlay;
+  overlay = document.createElement('div');
+  overlay.id = 'customResearchOverlay';
+  overlay.className = 'custom-research-overlay';
+  overlay.hidden = true;
+  overlay.innerHTML = `
+  <div class="custom-research-panel" role="dialog" aria-modal="true" aria-label="تخصيص البحث">
+    <div class="custom-research-head">
+      <h3>🔎 تخصيص البحث</h3>
+      <button type="button" class="custom-research-close" id="crClose" aria-label="إغلاق">×</button>
+    </div>
+    <div style="font-size:12.5px; color:var(--text-muted); line-height:1.9;">حدودك تسري على رسائلك التالية ما دام السيناريو «بحث مخصص» — وبنفس توجيه البحث المعهود، يتكيف فقط مع حدودك.</div>
+    <div class="custom-research-sec">
+      <h4>🧠 النموذج والتفكير</h4>
+      <div class="custom-research-row">
+        <select id="crModelSelect" title="نموذج المحادثة"></select>
+        <select id="crThinkingSelect" title="مستوى التفكير">
+          <option value="low">تفكير منخفض · سريع</option>
+          <option value="medium">تفكير متوسط · متزن</option>
+          <option value="high">تفكير عالٍ · أعمق</option>
+          <option value="max">تفكير أقصى · الأبطأ</option>
+        </select>
+      </div>
+    </div>
+    <div class="custom-research-sec">
+      <h4>📚 الكتب — حدّد وانتقِ (فارغ = المكتبة كلها ضمن حدودك الأخرى)</h4>
+      <input type="search" class="custom-research-search" id="crBookSearch" placeholder="🔎 ابحث عن كتاب — في القائمة المعتمدة أو في مكتبة الشاملة كلها...">
+      <div class="custom-research-row" style="margin-bottom:8px;">
+        <button type="button" class="design-mini-btn" id="crBooksAll">☑️ تحديد كل المعتمدة</button>
+        <button type="button" class="design-mini-btn" id="crBooksNone">🚫 إلغاء تحديد الكل</button>
+        <span style="font-size:12.5px; color:var(--text-muted);">المحدد: <b id="crBooksCount">0</b></span>
+      </div>
+      <div class="custom-research-chips" id="crBookChips"></div>
+      <div class="custom-research-list" id="crBookLibrary"></div>
+      <div class="custom-research-list" id="crBookList"></div>
+    </div>
+    <div class="custom-research-sec">
+      <h4>🗓️ الحدود الزمانية (وفاة المؤلف، هجري)</h4>
+      <div class="custom-research-row">
+        <label style="font-size:13px;"><input type="checkbox" id="crYearAny"> دون تحديد — كل القرون</label>
+        <span style="font-size:13px;">من عام <input type="number" id="crYearFrom" min="1" max="1500" style="width:90px;" placeholder="—"></span>
+        <span style="font-size:13px;">إلى عام <input type="number" id="crYearTo" min="1" max="1500" style="width:90px;" placeholder="—"></span>
+      </div>
+    </div>
+    <div class="custom-research-sec">
+      <h4>🧭 الحدود الموضوعية (فارغ = كل الموضوعات)</h4>
+      <div class="design-kind-grid" id="crTopics"></div>
+    </div>
+    <div class="custom-research-sec">
+      <h4>📏 طول البحث (عدد الشواهد في التوجيه)</h4>
+      <div class="custom-research-row">
+        <label style="font-size:13.5px;"><input type="radio" name="crLength" value="short"> مختصر — ٥٠ شاهدًا</label>
+        <label style="font-size:13.5px;"><input type="radio" name="crLength" value="mid"> متوسط — ١٥٠ شاهدًا</label>
+        <label style="font-size:13.5px;"><input type="radio" name="crLength" value="long"> طويل — ٣٠٠ شاهد</label>
+      </div>
+    </div>
+    <div class="custom-research-actions">
+      <button type="button" class="design-send-btn" id="crApply">✓ اعتماد التخصيص</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.hidden = true; });
+  overlay.querySelector('#crClose').addEventListener('click', () => { overlay.hidden = true; });
+  overlay.querySelector('#crApply').addEventListener('click', () => {
+    overlay.hidden = true;
+    if (typeof showToast === 'function') showToast('✓ اعتُمد تخصيصك — أرسل سؤالك ليُبحث في حدودك');
+    const input = document.getElementById('chatInputText');
+    if (input) input.focus();
+  });
+  const modelSel = overlay.querySelector('#crModelSelect');
+  modelSel.addEventListener('change', () => {
+    const main = document.getElementById('chatModelSelect');
+    if (main) { main.value = modelSel.value; if (typeof handleChatModelChange === 'function') handleChatModelChange(main.value); }
+  });
+  const thinkSel = overlay.querySelector('#crThinkingSelect');
+  thinkSel.addEventListener('change', () => { if (typeof setThinkingLevel === 'function') setThinkingLevel(thinkSel.value); });
+  const yearAny = overlay.querySelector('#crYearAny');
+  const syncYears = () => {
+    customResearch.yearAny = yearAny.checked;
+    customResearch.yearFrom = overlay.querySelector('#crYearFrom').value;
+    customResearch.yearTo = overlay.querySelector('#crYearTo').value;
+    overlay.querySelector('#crYearFrom').disabled = yearAny.checked;
+    overlay.querySelector('#crYearTo').disabled = yearAny.checked;
+    saveCustomResearch();
+  };
+  yearAny.addEventListener('change', syncYears);
+  overlay.querySelector('#crYearFrom').addEventListener('input', syncYears);
+  overlay.querySelector('#crYearTo').addEventListener('input', syncYears);
+  overlay.querySelector('#crTopics').addEventListener('change', () => {
+    customResearch.topics = [...overlay.querySelectorAll('#crTopics input[type="checkbox"]:checked')].map(b => b.value);
+    saveCustomResearch();
+  });
+  overlay.querySelectorAll('input[name="crLength"]').forEach(radio => {
+    radio.addEventListener('change', () => { customResearch.length = radio.value; saveCustomResearch(); });
+  });
+  const chips = overlay.querySelector('#crBookChips');
+  chips.addEventListener('click', (event) => {
+    const rm = event.target.closest('[data-cr-remove]');
+    if (rm) setCustomBookSelected(rm.getAttribute('data-cr-remove'), false);
+  });
+  overlay.querySelector('#crBookList').addEventListener('change', (event) => {
+    const box = event.target.closest('input[data-cr-book]');
+    if (box) setCustomBookSelected(box.getAttribute('data-cr-book'), box.checked);
+  });
+  const lib = overlay.querySelector('#crBookLibrary');
+  lib.addEventListener('change', (event) => {
+    const box = event.target.closest('input[data-cr-book]');
+    if (box) setCustomBookSelected(box.getAttribute('data-cr-book'), box.checked);
+  });
+  lib.addEventListener('click', (event) => {
+    if (event.target.closest('[data-cr-lib-all]')) {
+      [...lib.querySelectorAll('input[data-cr-book]')].forEach(b => setCustomBookSelected(b.getAttribute('data-cr-book'), true));
+    }
+  });
+  let libTimer = null;
+  overlay.querySelector('#crBookSearch').addEventListener('input', () => {
+    renderCustomBooks();
+    if (libTimer) clearTimeout(libTimer);
+    libTimer = setTimeout(renderCustomLibrary, 280);
+  });
+  overlay.querySelector('#crBooksAll').addEventListener('click', () => {
+    customResearch.books = [...new Set([...customResearch.books, ...customApprovedBooks()])];
+    saveCustomResearch(); renderCustomBooks();
+  });
+  overlay.querySelector('#crBooksNone').addEventListener('click', () => {
+    customResearch.books = [];
+    saveCustomResearch(); renderCustomBooks();
+  });
+  return overlay;
+}
+
+function setCustomBookSelected(book, selected) {
+  if (!book) return;
+  if (selected) {
+    if (!customResearch.books.includes(book)) customResearch.books.push(book);
+  } else {
+    customResearch.books = customResearch.books.filter(b => b !== book);
+  }
+  saveCustomResearch();
+  renderCustomBooks();
+}
+
+function renderCustomBooks() {
+  const overlay = document.getElementById('customResearchOverlay');
+  if (!overlay) return;
+  const query = (overlay.querySelector('#crBookSearch')?.value || '').trim();
+  const words = query.split(/\s+/).filter(Boolean).map(w => w.toLowerCase());
+  const match = (t) => !words.length || words.every(w => String(t).toLowerCase().includes(w));
+  const count = overlay.querySelector('#crBooksCount');
+  if (count) count.textContent = customResearch.books.length;
+  const chips = overlay.querySelector('#crBookChips');
+  chips.innerHTML = customResearch.books.length
+    ? customResearch.books.map(b => `<span class="design-book-sel-chip">${escapeHtml(b)}<button type="button" data-cr-remove="${escapeHtml(b)}" title="حذف" aria-label="حذف ${escapeHtml(b)}">×</button></span>`).join('')
+    : '<span class="design-books-chips-empty">لا كتب محددة — البحث في المكتبة كلها ضمن حدودك</span>';
+  const list = overlay.querySelector('#crBookList');
+  const approved = customApprovedBooks().filter(match);
+  list.innerHTML = '<div class="design-books-kind-head">📋 من القائمة المعتمدة</div>' + (approved.length
+    ? approved.map(b => `<label class="design-kind-item"><input type="checkbox" data-cr-book="${escapeHtml(b)}" ${customResearch.books.includes(b) ? 'checked' : ''}><span>${escapeHtml(b)}</span></label>`).join('')
+    : '<div class="design-books-chips-empty">لا نتائج مطابقة في القائمة المعتمدة</div>');
+}
+
+async function renderCustomLibrary() {
+  const overlay = document.getElementById('customResearchOverlay');
+  if (!overlay) return;
+  const box = overlay.querySelector('#crBookLibrary');
+  const query = (overlay.querySelector('#crBookSearch')?.value || '').trim();
+  if (query.length < 2) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة</div><div class="design-books-chips-empty">جارٍ البحث في المكتبة...</div>';
+  try {
+    const resp = await fetch(`/api/books/search?q=${encodeURIComponent(query)}&limit=30`);
+    const data = await resp.json().catch(() => ({}));
+    const books = Array.isArray(data.books) ? data.books : [];
+    if (!books.length) {
+      box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة</div><div class="design-books-chips-empty">لا نتائج في مكتبة الشاملة لهذا البحث</div>';
+      return;
+    }
+    box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة — حدّد كتابًا لإضافته <button type="button" class="design-mini-btn" data-cr-lib-all>☑️ تحديد الكل</button></div>' + books.map(b => {
+      const meta = [b.author, (b.death && b.death !== '—') ? `ت ${b.death}` : '', b.category_name].filter(Boolean).join(' — ');
+      return `<label class="design-kind-item"><input type="checkbox" data-cr-book="${escapeHtml(b.title)}" ${customResearch.books.includes(b.title) ? 'checked' : ''}><span>${escapeHtml(b.title)}${meta ? ` <small style="color:var(--text-muted)">${escapeHtml(meta)}</small>` : ''}</span></label>`;
+    }).join('');
+  } catch (e) {
+    box.innerHTML = '<div class="design-books-kind-head">📚 من مكتبة الشاملة</div><div class="design-books-chips-empty">تعذر البحث في المكتبة الآن</div>';
+  }
+}
+
+function openCustomResearchPanel() {
+  const overlay = ensureCustomResearchPanel();
+  const mainModel = document.getElementById('chatModelSelect');
+  const modelSel = overlay.querySelector('#crModelSelect');
+  if (mainModel && modelSel) {
+    modelSel.innerHTML = mainModel.innerHTML;
+    modelSel.value = mainModel.value;
+  }
+  const thinkSel = overlay.querySelector('#crThinkingSelect');
+  if (thinkSel) thinkSel.value = (typeof currentThinkingLevel !== 'undefined' ? currentThinkingLevel : 'medium');
+  overlay.querySelector('#crTopics').innerHTML = (SELECTION_RESEARCH_KINDS || []).map(kind =>
+    `<label class="design-kind-item"><input type="checkbox" value="${kind.id}" ${customResearch.topics.includes(kind.id) ? 'checked' : ''}><span>${kind.icon} ${kind.label}</span></label>`
+  ).join('');
+  overlay.querySelector('#crYearAny').checked = customResearch.yearAny;
+  overlay.querySelector('#crYearFrom').value = customResearch.yearFrom;
+  overlay.querySelector('#crYearTo').value = customResearch.yearTo;
+  overlay.querySelector('#crYearFrom').disabled = customResearch.yearAny;
+  overlay.querySelector('#crYearTo').disabled = customResearch.yearAny;
+  overlay.querySelectorAll('input[name="crLength"]').forEach(r => { r.checked = r.value === customResearch.length; });
+  renderCustomBooks();
+  renderCustomLibrary();
+  overlay.hidden = false;
+}
+window.openCustomResearchPanel = openCustomResearchPanel;
+
+// =============================================================================
+// النوع الثاني (ب): قائمة الباك سلاش في حقل المحادثة — خياران فقط:
+// بحث مخصص (يفتح لوحة التخصيص) وبحث موسع (السيناريو المعهود الكامل)
+// =============================================================================
+const SCENARIO_SLASH_ITEMS = [
+  { id: 'custom', label: 'بحث مخصص', icon: '🔎', desc: 'تخصيص النموذج والكتب والحدود الزمانية والموضوعية وطول البحث' },
+  { id: 'expanded', label: 'بحث موسع', icon: '🌐', desc: 'السيناريو المعهود الكامل: المجموعات وكل ضوابط البحث التراثي' }
+];
+let _scenarioSlashIdx = 0;
+
+function scenarioSlashEl() {
+  let el = document.getElementById('scenarioSlashMenu');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'scenarioSlashMenu';
+    el.className = 'slash-menu';
+    el.hidden = true;
+    const area = document.querySelector('.chat-input-area');
+    if (area) area.insertBefore(el, area.firstChild);
+  }
+  return el;
+}
+
+function closeScenarioSlash() {
+  const el = document.getElementById('scenarioSlashMenu');
+  if (el) el.hidden = true;
+}
+
+function renderScenarioSlash(filter) {
+  const el = scenarioSlashEl();
+  const f = (filter || '').trim();
+  const items = SCENARIO_SLASH_ITEMS.filter(c => !f || c.label.includes(f) || c.desc.includes(f));
+  if (!items.length) { el.hidden = true; return; }
+  _scenarioSlashIdx = Math.min(_scenarioSlashIdx, items.length - 1);
+  el.innerHTML = items.map((c, i) =>
+    `<button type="button" class="slash-item${i === _scenarioSlashIdx ? ' active' : ''}" data-scenario-pick="${c.id}">
+       <span class="slash-item-label">${c.icon} ${c.label}</span>
+       <span class="slash-item-desc">${c.desc}</span>
+     </button>`).join('');
+  el.querySelectorAll('[data-scenario-pick]').forEach(btn => {
+    btn.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickScenarioSlash(btn.getAttribute('data-scenario-pick')); });
+  });
+  el.hidden = false;
+}
+
+function pickScenarioSlash(id) {
+  const input = document.getElementById('chatInputText');
+  if (input) input.value = input.value.replace(/^\s*[/\\]\S*\s*/, '');
+  closeScenarioSlash();
+  setChatScenario(id);
+  if (input) input.focus();
+}
+
+function initScenarioSlash() {
+  const input = document.getElementById('chatInputText');
+  if (!input || input._scenarioSlashReady) return;
+  input._scenarioSlashReady = true;
+  input.addEventListener('input', () => {
+    const m = input.value.match(/^\s*[/\\](\S*)$/);
+    if (m) renderScenarioSlash(m[1]); else closeScenarioSlash();
+  });
+  input.addEventListener('blur', () => setTimeout(closeScenarioSlash, 180));
+}
+document.addEventListener('DOMContentLoaded', initScenarioSlash);
 let currentThinkingLevel = 'medium'; // 'low' | 'medium' | 'high'
 let currentAttachments = [];
 let isChatHybridSearchEnabled = true;
@@ -2265,6 +2587,16 @@ function initSlashCommands() {
 // قائمة السلاش (/) أُزيلت من الواجهة بطلب ما قبل النشر — لا تُهيَّأ ولا تظهر أبدًا
 
 function handleChatInputKey(e) {
+  const sMenu = document.getElementById('scenarioSlashMenu');
+  if (sMenu && !sMenu.hidden) {
+    const items = [...sMenu.querySelectorAll('[data-scenario-pick]')];
+    if (items.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); _scenarioSlashIdx = (_scenarioSlashIdx + 1) % items.length; renderScenarioSlash(document.getElementById('chatInputText').value.replace(/^\s*[/\\]/, '')); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); _scenarioSlashIdx = (_scenarioSlashIdx - 1 + items.length) % items.length; renderScenarioSlash(document.getElementById('chatInputText').value.replace(/^\s*[/\\]/, '')); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickScenarioSlash(items[_scenarioSlashIdx].getAttribute('data-scenario-pick')); return; }
+    }
+    if (e.key === 'Escape') { closeScenarioSlash(); return; }
+  }
   const menu = document.getElementById('slashCommandMenu');
   if (menu && !menu.hidden && _slashItems.length) {
     if (e.key === 'ArrowDown') { e.preventDefault(); _slashIdx = (_slashIdx + 1) % _slashItems.length; renderSlashMenu(document.getElementById('chatInputText').value.replace(/^\s*\//, '')); return; }
@@ -2517,6 +2849,19 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
   const activeAgent = builtGroup ? builtGroup.activeAgent : null;
   const mcpPayload = buildChatMcpPayload();
   const freeMode = isFreeChatScenario();
+  const customMode = chatScenario === 'custom';
+  let sendWitnessLimit = (typeof currentWitnessCount === 'function') ? currentWitnessCount() : 50;
+  let sendDeathMax = (typeof currentDeathMax === 'function') ? currentDeathMax() : null;
+  let sendDeathMin = null;
+  let sendIntentGenres = (typeof currentIntentGenres === 'function') ? currentIntentGenres() : null;
+  let sendSelectedBooks = null;
+  if (customMode) {
+    sendWitnessLimit = CUSTOM_LENGTH_WITNESSES[customResearch.length] || 150;
+    sendDeathMax = customResearch.yearAny ? null : (parseInt(customResearch.yearTo, 10) || null);
+    sendDeathMin = customResearch.yearAny ? null : (parseInt(customResearch.yearFrom, 10) || null);
+    sendIntentGenres = customTopicGenres();
+    sendSelectedBooks = customResearch.books.length ? [...customResearch.books] : null;
+  }
 
   // اعتماد النموذج المختار صراحة من قبل المستخدم في ترويسة الشات الذكي
   const customOn = !!currentSettings.modelParams?.customGeneration;
@@ -2552,6 +2897,9 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
   }
   if (freeMode) {
     typingMessage = `💬 بحث حر: جارٍ إرسال رسالتك إلى «<strong>${escapeHtml(modelDisplayName)}</strong>» ليجيب من ذاكرته مباشرة...`;
+  }
+  if (customMode) {
+    typingMessage = `🔎 بحث مخصص عبر «<strong>${escapeHtml(modelDisplayName)}</strong>» في حدودك: ${customResearch.books.length ? customResearch.books.length + ' كتابًا مختارًا' : 'المكتبة كلها'}، وحتى ${CUSTOM_LENGTH_WITNESSES[customResearch.length] || 150} شاهدًا...`;
   }
 
   typingBubble.innerHTML = `
@@ -2589,16 +2937,18 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
         repetition_penalty: executionRepPenalty,
         custom_generation: customOn,
         context_tokens: (typeof currentContextTokens === 'function') ? currentContextTokens() : 1048576,
-        witness_limit: (typeof currentWitnessCount === 'function') ? currentWitnessCount() : 50,
-        death_max: (typeof currentDeathMax === 'function') ? currentDeathMax() : null,
-        intent_genres: (typeof currentIntentGenres === 'function') ? currentIntentGenres() : null,
+        witness_limit: sendWitnessLimit,
+        death_max: sendDeathMax,
+        death_min: sendDeathMin,
+        intent_genres: sendIntentGenres,
+        selected_books: sendSelectedBooks,
         research_command: freeMode ? null : ((options && options.researchCommand) || null),
         discussion_mode: (options && options.discussionMode) || (discussionState(session.id) === 'open' ? 'open' : null),
         risk_control: (options && options.riskControl && options.riskControl.length) ? { items: options.riskControl } : null,
         semantic_enhanced: isSemanticEnhancedEnabled,
         providers: readProviderKeys(),
-        agent_group: freeMode ? null : (window.chatRawMcp ? null : assignedGroupPayload),
-        mcp_servers: freeMode ? [] : (window.chatRawMcp ? [] : mcpPayload),
+        agent_group: (freeMode || customMode) ? null : (window.chatRawMcp ? null : assignedGroupPayload),
+        mcp_servers: (freeMode || customMode) ? [] : (window.chatRawMcp ? [] : mcpPayload),
         raw_mcp: !!window.chatRawMcp,
         mcp_for_agents: localStorage.getItem('almojtahed_mcp_for_agents') === '1',
         agent_dispatch_mode: window.chatAgentDispatchMode || 'parallel',
@@ -2625,8 +2975,9 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
       content: data.reply || 'عذراً، لم أتلقَّ استجابة واضحة من الخادم.',
       model: data.model || selectedModel,
       provider: data.provider || activeProvider,
-      agent_group: data.free_mode ? '💬 بحث حر' : (data.raw_mcp ? 'MCP خام مباشر' : (data.agent_group || [assignedGroupPayload ? assignedGroupPayload.name : '', mcpPayload.map(item => item.name).join(' + ')].filter(Boolean).join(' + ') || null)),
+      agent_group: data.free_mode ? '💬 بحث حر' : (customMode ? '🔎 بحث مخصص' : (data.raw_mcp ? 'MCP خام مباشر' : (data.agent_group || [assignedGroupPayload ? assignedGroupPayload.name : '', mcpPayload.map(item => item.name).join(' + ')].filter(Boolean).join(' + ') || null))),
       free_mode: !!data.free_mode,
+      custom_mode: customMode,
       duration_ms: durationMs,
       thinking_effort: data.thinking_effort || '',
       thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : '',

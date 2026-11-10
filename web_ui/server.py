@@ -1884,6 +1884,7 @@ class ChatRequest(BaseModel):
     context_tokens: Optional[int] = 1048576
     witness_limit: Optional[int] = None
     death_max: Optional[int] = None  # سقف وفاة المؤلف (هـ) يحدده الباحث؛ بلا تحديد = بحث مفتوح بلا سقف زمني
+    death_min: Optional[int] = None  # حد وفاة أدنى (هـ) من تخصيص البحث المخصص: لا شواهد لمؤلفين توفوا قبله
     intent_genres: Optional[List[str]] = None  # فنون البحث المستهدفة التي يعلنها الباحث (فقه/حديث/تفسير...)؛ بلا إعلان = توزيع عام متوازن
     research_command: Optional[str] = None  # أمر بحثي من قائمة السلاش (بحث فقهي مطول...) يضبط القصد والهيكل والعمق دفعة واحدة
     repetition_penalty: Optional[float] = None
@@ -6109,7 +6110,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.396"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.397"},
         },
     })
     if opened.get("error"):
@@ -12990,6 +12991,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             search_query = library_query[:800]
         is_greeting = False
         is_study_discussion = False
+    elif req.selected_books:
+        # بحث مخصص بلا وكلاء: كتب الباحث المختارة بنفسه نطاقٌ للبحث في المسار الرئيس
+        target_books = [str(b).strip() for b in req.selected_books if str(b).strip()]
 
     retrieved_citations = []
     # أمر بحثي جاهز (سلاش) يضبط القصد والهيكل والعمق؛ وقصد الباحث الصريح أولى منه
@@ -13263,7 +13267,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "top_k": witness_limit if req.witness_limit else agent_top_k,
                 "pool_size": max(witness_limit * 4, 600) if req.witness_limit else agent_pool_size,
             })
-            honor_scope = bool(req.agent_group)
+            honor_scope = bool(req.agent_group) or (bool(target_books) and not req.library_only)
         if _reuse_package:
             _pkg: List[Dict[str, Any]] = []
             _seen_pkg = set()
@@ -13845,9 +13849,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
     elif search_query and not is_greeting and not req.graph_only and not req.table_only:
         retrieved_citations = (anchor_prefetch or {}).get("direct", [])
-        # حارس فترة الباحث: لا يعمل إلا إذا حدد الباحث سقف وفاة بنفسه؛ حينها لا شاهد
-        # بعد سقفه ولا من كتب الأحياء (99999) مهما كان مصدر ترشيحه
-        if req.death_max:
+        # حارس فترة الباحث: لا يعمل إلا إذا حدد الباحث حدود وفاة بنفسه؛ حينها لا شاهد
+        # بعد سقفه ولا من كتب الأحياء (99999) مهما كان مصدر ترشيحه، ولا قبل حدّه الأدنى
+        if req.death_max or req.death_min:
             try:
                 _db_h = get_db()
                 _death_map = {}
@@ -13862,10 +13866,16 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         _kept.append(_c)
                         continue
                     _d = _death_map.get(_bid)
-                    if _d is None or (_d != 99999 and _d <= int(req.death_max)):
+                    _ok_era = True
+                    if _d is not None:
+                        if req.death_max and not (_d != 99999 and _d <= int(req.death_max)):
+                            _ok_era = False
+                        if req.death_min and _d < int(req.death_min):
+                            _ok_era = False
+                    if _ok_era:
                         _kept.append(_c)
                     else:
-                        print(f"🛡 [Era Guard] حُجب شاهد خارج فترة الباحث: كتاب #{_bid} (ت{_d}) والسقف {req.death_max}")
+                        print(f"🛡 [Era Guard] حُجب شاهد خارج فترة الباحث: كتاب #{_bid} (ت{_d}) والحدود من {req.death_min} إلى {req.death_max}")
                 retrieved_citations = _kept
             except Exception as _hg_exc:
                 print(f"⚠ [Era Guard] {_hg_exc}")
