@@ -1293,13 +1293,6 @@ function initDesignsTab() {
     try { const savedModel = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); if (['gpt', 'muse', 'gemini', 'gpt54'].includes(savedModel)) modelSel.value = savedModel; } catch (e) {}
     modelSel.addEventListener('change', () => { try { localStorage.setItem(DESIGN_IMAGE_MODEL_KEY, modelSel.value); } catch (e) {} });
   }
-  const unlockBtn = document.getElementById('designTransferUnlock');
-  if (unlockBtn) unlockBtn.addEventListener('click', () => {
-    setDesignTransferLock(false);
-    const ideaInput = document.getElementById('designIdeaInput');
-    if (ideaInput) { ideaInput.value = ''; ideaInput.focus(); }
-    if (typeof showToast === 'function') showToast('أُلغي قفل النقل — يمكنك كتابة فكرة حرة وتحديد نطاق البحث والكتب');
-  });
   const form = document.getElementById('designComposer');
   if (form) form.addEventListener('submit', submitDesignIdea);
   const input = document.getElementById('designIdeaInput');
