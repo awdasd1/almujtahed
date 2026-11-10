@@ -5512,6 +5512,296 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
     }
 
 
+# ===== العروض التقديمية: عرض PowerPoint بصري صوتي من الإجابة المعتمدة =====
+
+class PresentationRequest(BaseModel):
+    text: str
+    api_key: Optional[str] = None
+
+
+PRESENTATION_JOBS: Dict[str, dict] = {}
+
+
+def _presentation_slide_count(src_len: int) -> int:
+    """عدد الشرائح تلقائيًا بحسب طول الإجابة: بين 6 و14 شريحة."""
+    return max(6, min(14, round(src_len / 2600)))
+
+
+def _parse_presentation_json(raw: str) -> Optional[dict]:
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL).strip()
+    data = None
+    try:
+        data = json.loads(text)
+    except Exception:
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+            except Exception:
+                data = None
+    if not isinstance(data, dict):
+        return None
+    slides = []
+    for item in data.get("slides") or []:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        bullets = [str(b).strip() for b in (item.get("bullets") or []) if str(b).strip()]
+        narration = str(item.get("narration") or "").strip()
+        image_prompt = str(item.get("image_prompt") or "").strip()
+        if not title:
+            continue
+        if not narration:
+            narration = title + ". " + "، ".join(bullets)
+        slides.append({
+            "title": title[:120],
+            "bullets": bullets[:5],
+            "narration": narration[:1600],
+            "image_prompt": image_prompt[:600] or "elegant Islamic scholarly library with manuscripts and warm light",
+        })
+    if len(slides) < 3:
+        return None
+    return {"deck_title": str(data.get("deck_title") or slides[0]["title"]).strip()[:140], "slides": slides}
+
+
+def _structure_presentation(key: str, text: str, slide_count: int) -> dict:
+    system = (
+        "أنت مصمّم عروض تقديمية أكاديمية. حوّل الإجابة العلمية المُعطاة إلى هيكل عرض تقديمي مركّز "
+        f"من {slide_count} شرائح بالضبط، وأعد JSON فقط دون أي شرح أو أسوار كود، بهذا الشكل: "
+        '{"deck_title": "عنوان العرض", "slides": [{"title": "عنوان الشريحة", "bullets": ["نقطة قصيرة"], '
+        '"narration": "نص التعليق الصوتي", "image_prompt": "وصف الصورة بالإنجليزية"}]}. '
+        "الشريحة الأولى شريحة عنوان: title هو عنوان العرض نفسه، وbullets سطر أو سطران تعريفيان، وnarration تقديم صوتي موجز. "
+        "كل شريحة تالية فكرة رئيسة واحدة من الإجابة بأمانة ودون إضافة من خارجها: bullets من ثلاث إلى أربع نقاط قصيرة "
+        "(كل نقطة بحد أقصى اثنتا عشرة كلمة)، وnarration نص منطوق متصل بالعربية الفصحى من ستين إلى مئة وعشر كلمات "
+        "يشرح نقاط الشريحة، بلا رموز ولا تعداد ولا عناوين. وimage_prompt وصف بصري إنجليزي لمشهد يعبّر عن مضمون الشريحة "
+        "(مكتبة تراثية، مخطوطات، عمارة إسلامية، طبيعة...) دون أي نص أو حروف في الصورة."
+    )
+    last_error: Optional[Exception] = None
+    for model in AUDIO_SUMMARY_MODELS:
+        try:
+            raw = _openrouter_chat_text(key, model, system, text[:120000], 300, 16384)
+            deck = _parse_presentation_json(raw)
+            if deck:
+                return deck
+            last_error = RuntimeError("أعاد النموذج هيكلًا غير صالح")
+        except Exception as error:
+            last_error = error
+    raise RuntimeError(f"تعذر هيكلة العرض: {last_error}")
+
+
+def _openrouter_image_bytes(key: str, prompt: str, model: str, size: str = "1536x1024") -> bytes:
+    payload = {"model": model, "prompt": prompt, "size": size, "response_format": "b64_json"}
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/images",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8085",
+            "X-Title": "Al-Mujtahed Presentation",
+        },
+        data=json.dumps(payload).encode("utf-8"),
+    )
+    with urllib.request.urlopen(http_req, timeout=300) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    for item in data.get("data") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("b64_json"):
+            return base64.b64decode(item["b64_json"])
+        if item.get("url"):
+            with urllib.request.urlopen(item["url"], timeout=120) as img_resp:
+                return img_resp.read()
+    raise RuntimeError("لم يُعد نموذج الصورة صورة قابلة للحفظ")
+
+
+def _slide_image_prompt(image_prompt: str) -> str:
+    return (
+        f"{image_prompt}. Elegant wide 16:9 presentation background, cinematic warm lighting, "
+        "rich scholarly Islamic atmosphere, absolutely no text, no letters, no words, no calligraphy, "
+        "no signs, leave a calmer darker area suitable for white text overlay."
+    )
+
+
+def _tts_pcm_sync(key: str, text: str) -> bytes:
+    """نطق نص كامل (على مقاطع عند الحاجة) وإرجاع الصوت مدمجًا كما أتى (PCM غالبًا)."""
+    parts = []
+    for chunk in _split_tts_chunks(text):
+        try:
+            parts.append(_openrouter_tts(key, chunk, True))
+        except Exception:
+            parts.append(_openrouter_tts(key, chunk, False))
+    if parts and all(p[:4] == b"RIFF" for p in parts):
+        parts = [p[44:] for p in parts]
+    return b"".join(parts)
+
+
+def _audio_blob_from_raw(raw: bytes):
+    """من صوت خام إلى (بايتات، امتداد): MP3 إن أمكن وإلا WAV."""
+    if raw[:3] == b"ID3" or raw[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return raw, "mp3"
+    mp3 = _pcm16_to_mp3(raw)
+    if mp3:
+        return mp3, "mp3"
+    return _pcm16_to_wav(raw), "wav"
+
+
+def _speaker_icon_png(path: Path) -> None:
+    from PIL import Image, ImageDraw
+    img = Image.new("RGBA", (240, 240), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([8, 8, 232, 232], radius=48, fill=(204, 120, 92, 255))
+    d.polygon([(70, 100), (105, 100), (145, 65), (145, 175), (105, 140), (70, 140)], fill="white")
+    for r in (28, 48, 68):
+        d.arc([140 - r // 2, 120 - r, 140 + r, 120 + r], start=-55, end=55, fill="white", width=9)
+    img.save(str(path))
+
+
+def _pptx_text(slide, x, y, w, h, lines, size, bold=False, color="FFFFFF") -> None:
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
+    from pptx.oxml.ns import qn
+    box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = box.text_frame
+    tf.word_wrap = True
+    for i, line in enumerate(lines):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.alignment = PP_ALIGN.RIGHT
+        p.get_or_add_pPr().set("rtl", "1")
+        run = p.add_run()
+        run.text = line
+        run.font.size = Pt(size)
+        run.font.bold = bold
+        run.font.color.rgb = RGBColor.from_string(color)
+        run.font.name = "Traditional Arabic"
+        rPr = run._r.get_or_add_rPr()
+        cs = rPr.find(qn("a:cs"))
+        if cs is None:
+            cs = rPr.makeelement(qn("a:cs"), {})
+            rPr.append(cs)
+        cs.set("typeface", "Traditional Arabic")
+
+
+def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: Path) -> None:
+    from pptx import Presentation
+    from pptx.util import Inches
+    from pptx.dml.color import RGBColor
+    from pptx.oxml.ns import qn
+
+    icon_path = folder / "speaker-icon.png"
+    _speaker_icon_png(icon_path)
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    blank = prs.slide_layouts[6]
+    for idx, (slide_data, asset) in enumerate(zip(deck["slides"], assets)):
+        slide = prs.slides.add_slide(blank)
+        slide.shapes.add_picture(str(asset["image"]), 0, 0, prs.slide_width, prs.slide_height)
+        overlay = slide.shapes.add_shape(1, 0, 0, prs.slide_width, prs.slide_height)
+        overlay.line.fill.background()
+        overlay.fill.solid()
+        overlay.fill.fore_color.rgb = RGBColor.from_string("0B0F1A")
+        clr = overlay.fill._xPr.find(qn("a:solidFill")).find(qn("a:srgbClr"))
+        alpha = clr.makeelement(qn("a:alpha"), {})
+        alpha.set("val", "52000")
+        clr.append(alpha)
+        overlay.shadow.inherit = False
+        if idx == 0:
+            _pptx_text(slide, 0.8, 2.2, 11.7, 1.6, [slide_data["title"]], 44, bold=True)
+            if slide_data["bullets"]:
+                _pptx_text(slide, 1.2, 4.0, 10.9, 1.6, slide_data["bullets"], 24, color="E8DFD3")
+        else:
+            _pptx_text(slide, 0.7, 0.5, 11.9, 1.1, [slide_data["title"]], 38, bold=True)
+            if slide_data["bullets"]:
+                _pptx_text(slide, 0.9, 1.95, 11.5, 4.4, ["• " + b for b in slide_data["bullets"]], 25)
+        mime = "audio/mpeg" if str(asset["audio"]).endswith(".mp3") else "audio/wav"
+        slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(6.55), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
+        slide.notes_slide.notes_text_frame.text = slide_data["narration"]
+    prs.save(str(out_path))
+
+
+async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str) -> None:
+    job = PRESENTATION_JOBS[job_id]
+    try:
+        job.update(stage="structuring", message="جارٍ هيكلة الشرائح من الإجابة...")
+        slide_count = _presentation_slide_count(len(text))
+        deck = await asyncio.to_thread(_structure_presentation, key, text, slide_count)
+        slides = deck["slides"]
+        folder_name = f"deck-{int(time.time())}"
+        folder = UPLOADS_BUCKET_DIR / owner_id / "presentations" / folder_name
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "slides.json").write_text(json.dumps(deck, ensure_ascii=False, indent=1), encoding="utf-8")
+        job.update(stage="creating", total=len(slides), done=0, message=f"جارٍ إنشاء الشرائح: 0 من {len(slides)}")
+
+        async def make_slide(i: int, slide_data: dict) -> dict:
+            img = await asyncio.to_thread(_openrouter_image_bytes, key, _slide_image_prompt(slide_data["image_prompt"]), DESIGN_IMAGE_MODEL)
+            img_path = folder / f"slide-{i:02d}.png"
+            img_path.write_bytes(img)
+            raw = await asyncio.to_thread(_tts_pcm_sync, key, slide_data["narration"])
+            blob, ext = _audio_blob_from_raw(raw)
+            aud_path = folder / f"slide-{i:02d}.{ext}"
+            aud_path.write_bytes(blob)
+            return {"image": img_path, "audio": aud_path}
+
+        assets: list = [None] * len(slides)
+        done = 0
+        for start in range(0, len(slides), 3):
+            batch = list(range(start, min(start + 3, len(slides))))
+            results = await asyncio.gather(*[make_slide(i + 1, slides[i]) for i in batch])
+            for i, asset in zip(batch, results):
+                assets[i] = asset
+            done += len(batch)
+            job.update(done=done, message=f"جارٍ إنشاء الشرائح: {done} من {len(slides)}")
+
+        job.update(stage="assembling", message="جارٍ تجميع ملف العرض التقديمي...")
+        pptx_name = f"presentation-{int(time.time())}.pptx"
+        await asyncio.to_thread(_build_presentation_pptx, deck, assets, folder, folder / pptx_name)
+        job.update(
+            status="done", stage="done", message="اكتمل إنشاء العرض",
+            pptx_url=f"/uploads/{owner_id}/presentations/{folder_name}/{pptx_name}",
+            deck_title=deck["deck_title"], slides=len(slides),
+        )
+    except urllib.error.HTTPError as error:
+        if error.code == 402:
+            job.update(status="error", message="رصيد OpenRouter غير كافٍ لإنشاء العرض؛ اشحن رصيد حسابك ثم أعد المحاولة")
+        else:
+            job.update(status="error", message=f"رفض المزود طلب إنشاء العرض ({error.code})")
+    except Exception as error:
+        job.update(status="error", message=f"تعذر إنشاء العرض: {error}")
+
+
+@app.post("/api/chat/presentation/start")
+async def presentation_start(req: PresentationRequest, request: Request):
+    """بدء وظيفة خلفية لإنشاء عرض PowerPoint بصري صوتي من الإجابة المعتمدة."""
+    text = (req.text or "").strip()
+    if len(text) < 200:
+        raise HTTPException(status_code=400, detail="الإجابة قصيرة جدًا لإنشاء عرض تقديمي")
+    key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    owner_id = current_owner_id(request)
+    if len(PRESENTATION_JOBS) > 30:
+        for old_id in sorted(PRESENTATION_JOBS, key=lambda j: PRESENTATION_JOBS[j].get("created", 0))[:10]:
+            PRESENTATION_JOBS.pop(old_id, None)
+    job_id = secrets.token_hex(6)
+    PRESENTATION_JOBS[job_id] = {
+        "status": "running", "stage": "queued", "done": 0, "total": 0,
+        "message": "جارٍ بدء إنشاء العرض...", "owner": owner_id, "created": time.time(),
+    }
+    asyncio.create_task(_run_presentation_job(job_id, owner_id, key, text))
+    return {"ok": True, "job_id": job_id}
+
+
+@app.get("/api/chat/presentation/status/{job_id}")
+async def presentation_status(job_id: str, request: Request):
+    job = PRESENTATION_JOBS.get(job_id)
+    if not job or job.get("owner") != current_owner_id(request):
+        raise HTTPException(status_code=404, detail="وظيفة العرض غير موجودة")
+    return {k: job.get(k) for k in ("status", "stage", "done", "total", "message", "pptx_url", "deck_title", "slides")}
+
+
 def _designs_dir(request: Request) -> Path:
     folder = UPLOADS_BUCKET_DIR / current_owner_id(request) / "designs"
     folder.mkdir(parents=True, exist_ok=True)
@@ -6331,7 +6621,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.425"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.426"},
         },
     })
     if opened.get("error"):

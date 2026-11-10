@@ -2210,6 +2210,20 @@ function renderSessionMessages(sessionId, options) {
       </div>
     ` : '';
 
+    // بطاقة العرض التقديمي الجاهز: تنزيل ومشاركة لملف PowerPoint بصري صوتي
+    const presentationHtml = (!isUser && msg.presentation && msg.presentation.url) ? `
+      <div class="chat-audio-summary chat-presentation">
+        <div class="chat-audio-summary-head">
+          <span>📊 العرض التقديمي${msg.presentation.title ? ` — ${escapeHtml(msg.presentation.title)}` : ''}</span>
+          <span class="chat-audio-voice">${msg.presentation.slides ? `${msg.presentation.slides} شريحة بصوت ${escapeHtml(msg.presentation.voice || 'Algieba')}` : 'PowerPoint بصري صوتي'}</span>
+        </div>
+        <div class="chat-audio-summary-actions">
+          <a class="btn-msg-export" href="${escapeHtml(msg.presentation.url)}" download="عرض-تقديمي-المجتهد.pptx" title="تنزيل ملف العرض التقديمي">⬇️ تنزيل العرض</a>
+          <button type="button" class="btn-msg-export" onclick="sharePresentation(${idx})" title="مشاركة ملف العرض التقديمي">🔗 مشاركة</button>
+        </div>
+      </div>
+    ` : '';
+
     const actionsBar = !isUser ? `
       <div class="chat-msg-actions-bar" style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px dashed var(--border-subtle); padding-top: 8px; flex-wrap: wrap;">
         ${msg.rewriting ? `<span class="chat-rewrite-status">جارٍ ${escapeHtml(msg.rewriting)}...</span>` : ''}
@@ -2223,6 +2237,9 @@ function renderSessionMessages(sessionId, options) {
         </button>` : ''}
         ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="generateAudioSummary(${idx}, this)" title="اختصار هذه الإجابة المعتمدة بنموذج Gemini 3.8 Flash اختصارًا دقيقًا غير مخلّ، ثم تحويلها إلى ملف صوتي بصوت Algieba يُرفق بجانب زمن الإجابة لتسمعه وتنزّله وتشاركه">
           🔊 ملخص صوتي
+        </button>` : ''}
+        ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="startPresentation(${idx}, this)" title="إنشاء عرض PowerPoint من هذه الإجابة المعتمدة: شرائح مرقّمة (٦–١٤ بحسب طول الإجابة) لكل شريحة صورة مولّدة وتعليق صوتي بصوت Algieba مدمج فيها، مع نص عربي قابل للتحرير وملاحظات للمحاضر">
+          📊 إنشاء عرض
         </button>` : ''}
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
@@ -2291,6 +2308,7 @@ function renderSessionMessages(sessionId, options) {
           ${chatWitnessesHtml(msg, idx)}
           ${tagsHtml}
           ${audioSummaryHtml}
+          ${presentationHtml}
           ${actionsBar}
         </div>
       </div>
@@ -2857,6 +2875,86 @@ function toggleAudioSummaryText(idx, btn) {
   if (!el) return;
   el.hidden = !el.hidden;
   if (btn) btn.textContent = el.hidden ? '📝 نص الملخص' : '📝 إخفاء النص';
+}
+
+// إنشاء عرض PowerPoint بصري صوتي من الإجابة المعتمدة: وظيفة خلفية خادمية مع استطلاع للتقدم
+async function startPresentation(idx, btn) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  if (!msg) return;
+  if (msg.presentation && msg.presentation.url && !confirm('يوجد عرض تقديمي جاهز لهذه الإجابة. هل تريد إنشاء عرض جديد؟')) return;
+  const original = btn ? btn.innerHTML : '';
+  const setLabel = (t) => { if (btn) { btn.disabled = true; btn.innerHTML = t; } };
+  const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = original; } };
+  setLabel('⏳ جارٍ بدء إنشاء العرض...');
+  try {
+    const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+    const res = await fetch('/api/chat/presentation/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء العرض');
+    showToast('⏳ بدأ إنشاء العرض التقديمي: هيكلة ثم صورة وصوت لكل شريحة، قد يستغرق بضع دقائق...', 7000);
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/chat/presentation/status/${data.job_id}`);
+        const st = await r.json().catch(() => ({}));
+        if (st.status === 'done') {
+          msg.presentation = {
+            url: st.pptx_url,
+            title: st.deck_title || '',
+            slides: st.slides || 0,
+            voice: 'Algieba',
+            created_at: new Date().toISOString(),
+          };
+          saveChatSessions();
+          renderSessionMessages(activeSessionId, { keepPosition: true });
+          showToast('✅ اكتمل العرض التقديمي: نزّله أو شاركه من بطاقته تحت الإجابة', 6000);
+          return;
+        }
+        if (st.status === 'error' || !r.ok) throw new Error(st.message || st.detail || 'تعذر إنشاء العرض');
+        setLabel(`⏳ ${st.message || 'جارٍ إنشاء العرض...'}`);
+        setTimeout(poll, 3000);
+      } catch (e) {
+        showToast('❌ ' + (e.message || 'تعذر إنشاء العرض'), 8000);
+        restore();
+      }
+    };
+    setTimeout(poll, 1500);
+  } catch (e) {
+    showToast('❌ ' + (e.message || 'تعذر إنشاء العرض'), 8000);
+    restore();
+  }
+}
+
+async function sharePresentation(idx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  const info = msg && msg.presentation;
+  if (!info || !info.url) return;
+  const absolute = new URL(info.url, window.location.origin).href;
+  try {
+    const resp = await fetch(info.url);
+    if (resp.ok) {
+      const blob = await resp.blob();
+      const file = new File([blob], 'عرض-تقديمي-المجتهد.pptx', { type: blob.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'عرض تقديمي — المجتهد' });
+        return;
+      }
+    }
+  } catch (e) { /* تُجرَّب مشاركة الرابط بعدها */ }
+  if (navigator.share) {
+    try { await navigator.share({ title: 'عرض تقديمي — المجتهد', url: absolute }); return; } catch (e) { /* تُنسخ بعدها */ }
+  }
+  try {
+    await navigator.clipboard.writeText(absolute);
+    showToast('نُسخ رابط ملف العرض — الصقه أين تشاء لمشاركته 🔗');
+  } catch (e) {
+    showToast('تعذرت المشاركة تلقائيًا؛ نزّل الملف ثم شاركه يدويًا', 5000);
+  }
 }
 
 function cleanModelDisplayName(modelId) {

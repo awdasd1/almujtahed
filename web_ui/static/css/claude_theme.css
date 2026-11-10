@@ -11021,3 +11021,6 @@ body::-webkit-scrollbar,
 .chat-audio-summary-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
 .chat-audio-summary-actions a.btn-msg-export { text-decoration: none; display: inline-flex; align-items: center; }
 .chat-audio-summary-text { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--border-subtle); border-radius: 10px; font-size: 13.5px; line-height: 1.9; white-space: pre-wrap; }
+
+/* بطاقة العرض التقديمي (PowerPoint بصري صوتي) تحت الإجابة المعتمدة */
+.chat-presentation { background: rgba(92, 120, 204, 0.08); }
