@@ -977,7 +977,7 @@ function toggleChatModelDropdown(event) {
 function closeChatModelDropdown() {
   const wrapper = document.getElementById('chatCustomModelWrapper');
   if (wrapper) wrapper.classList.remove('open');
-  hideModelHoverCard();
+  hideModelHoverCard(true);
 }
 
 // مسح حقل البحث في قائمة النماذج
@@ -1061,6 +1061,8 @@ function handleChatModelSearchKey(event) {
 let modelHoverItem = null;
 let modelHoverTimer = 0;
 let modelHoverHideTimer = 0;
+// المؤشر فوق البطاقة نفسها: تُثبَّت مكانًا ومحتوًى فلا يعيد تمريرُ القائمة تموضعَها ولا يُخفيها
+let modelHoverOnCard = false;
 // مهلة قبل إخفاء بطاقة النموذج: تتيح للباحث نقل المؤشر إلى البطاقة وتمرير الوصف الطويل داخلها
 const MODEL_HOVER_HIDE_DELAY = 2000;
 
@@ -1074,10 +1076,14 @@ function scheduleModelHoverHide() {
   modelHoverHideTimer = setTimeout(hideModelHoverCard, MODEL_HOVER_HIDE_DELAY);
 }
 
-function hideModelHoverCard() {
+function hideModelHoverCard(force) {
+  // الباحث فوق البطاقة يقرأ ويمرّر داخلها: لا يجوز لأي تمرير خارجي أو إغلاق قائمة أخرى
+  // أن يسقطها؛ لا تُخفى إلا بمغادرته إياها (أو بإخفاء قسري صريح عند إغلاق قائمتها)
+  if (modelHoverOnCard && !force) return;
   clearTimeout(modelHoverTimer);
   cancelModelHoverHide();
   modelHoverItem = null;
+  modelHoverOnCard = false;
   const card = document.getElementById('modelHoverCard');
   if (card) card.hidden = true;
 }
@@ -1089,9 +1095,11 @@ function ensureModelHoverCard() {
   card.id = 'modelHoverCard';
   card.className = 'model-hover-card';
   card.hidden = true;
-  // دخول المؤشر إلى البطاقة يُبقيها ظاهرة للقراءة والتمرير، وخروجه منها يؤجّل الإخفاء
-  card.addEventListener('mouseenter', cancelModelHoverHide);
-  card.addEventListener('mouseleave', scheduleModelHoverHide);
+  // دخول المؤشر إلى البطاقة يُبقيها ظاهرة ومثبّتة للقراءة والتمرير، وخروجه منها يؤجّل الإخفاء
+  card.addEventListener('mouseenter', () => { modelHoverOnCard = true; cancelModelHoverHide(); });
+  card.addEventListener('mouseleave', () => { modelHoverOnCard = false; scheduleModelHoverHide(); });
+  // تمرير العجلة فوق البطاقة لها وحدها: لا يتسلسل إلى القائمة خلفها فيحرّك عنصر النموذج ويُسقط البطاقة
+  card.addEventListener('wheel', (event) => { event.stopPropagation(); }, { passive: true });
   document.body.appendChild(card);
   return card;
 }
@@ -1112,13 +1120,15 @@ function moneyPerMillion(value) {
   return `$${number.toFixed(3)} / 1M`;
 }
 
-function placeModelHoverCard(item, card) {
+function placeModelHoverCard(item, card, fromScroll) {
   const rect = item.getBoundingClientRect();
   const menu = item.closest('.custom-model-dropdown-menu, .theme-select-menu, .compare-slot-menu');
   const menuRect = menu ? menu.getBoundingClientRect() : null;
   if (!menuRect || rect.bottom < menuRect.top || rect.top > menuRect.bottom) {
-    hideModelHoverCard();
-    return;
+    // خروج العنصر من مجال قائمته أثناء تمريرها يُسقط البطاقة؛ أما عند الإظهار الأول
+    // فقد تكون القائمة ما تزال تُفتح بحركة فلا تُخفَ البطاقة، وأثناء القراءة لا تُخفى أبدًا
+    if (fromScroll && !modelHoverOnCard) hideModelHoverCard();
+    if (fromScroll || modelHoverOnCard) return;
   }
   const width = 320;
   const gap = 10;
@@ -1147,6 +1157,8 @@ function fillModelHoverCard(item) {
   const about = local
     ? 'نموذج محلي يعمل على هذا الجهاز من ملف محفوظ، بلا تسعير سحابي.'
     : (modelAboutArCache[id] || '');
+  // احفظ موضع التمرير الحالي: وصول الوصف بعد الجلب لا يجوز أن يقفز بالباحث إلى أعلى البطاقة
+  const prevScrollTop = card.scrollTop;
   card.innerHTML = `
     <div class="model-hover-kicker">بطاقة النموذج</div>
     <div class="model-hover-title">${escapeHtml(name)}</div>
@@ -1159,7 +1171,9 @@ function fillModelHoverCard(item) {
       <div><span>طول السياق</span><strong>${escapeHtml(context)}</strong></div>
     </div>
   `;
-  placeModelHoverCard(item, card);
+  card.scrollTop = prevScrollTop;
+  // أثناء وجود المؤشر فوق البطاقة لا تُعَد تموضعتها: تبقى حيث يقرأ الباحث
+  if (!modelHoverOnCard) placeModelHoverCard(item, card);
   if (local || !id || modelAboutArCache[id]) return;
   clearTimeout(modelHoverTimer);
   modelHoverTimer = setTimeout(() => {
@@ -1212,10 +1226,11 @@ document.addEventListener('mouseout', (event) => {
 });
 
 document.addEventListener('scroll', (event) => {
-  if (!modelHoverItem) return;
+  // المؤشر فوق البطاقة: تمريرها الداخلي شأنها وحدها، لا إعادة تموضع ولا إخفاء
+  if (!modelHoverItem || modelHoverOnCard) return;
   const list = event.target && event.target.closest && event.target.closest('.custom-model-options-list, .theme-select-menu, .compare-slot-items, .compare-slot-menu');
   if (!list || !list.contains(modelHoverItem)) return;
-  placeModelHoverCard(modelHoverItem, ensureModelHoverCard());
+  placeModelHoverCard(modelHoverItem, ensureModelHoverCard(), true);
 }, true);
 
 // اختيار نموذج من القائمة المخصصة

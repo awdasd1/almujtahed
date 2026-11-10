@@ -5799,6 +5799,22 @@ input:checked+.slider-toggle:before {
 
 .model-hover-card[hidden] { display: none; }
 
+/* شريط تمرير ظاهر رفيع: البطاقة منزلقة لقراءة وصف النموذج الطويل */
+.model-hover-card {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-clay) transparent;
+}
+
+.model-hover-card::-webkit-scrollbar { width: 6px; }
+
+.model-hover-card::-webkit-scrollbar-thumb {
+  background: var(--accent-clay);
+  border-radius: 3px;
+}
+
+.model-hover-card::-webkit-scrollbar-track { background: transparent; }
+
 .model-hover-kicker {
   font-size: 11px;
   font-weight: 700;
