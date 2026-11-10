@@ -93,12 +93,14 @@ function applyChatScenarioUI() {
 // النموذج متى لم تسعفه ذاكرته، ومعطّلة يعتذر عند العجز ويطلب تفعيلها.
 // حالتها واحدة مشتركة: أيقونة الكرة في الحر وقسم «بحث في الويب» في اللوحة.
 // =============================================================================
-let chatWebSearchOn = true;
-try { chatWebSearchOn = localStorage.getItem('almujtahed_web_search_v1') !== '0'; } catch (e) {}
+// الافتراضي: الأداة معطّلة، ولا تعمل إلا بتفعيل صريح من الباحث (مفتاح تخزين
+// جديد حتى لا يرث تفعيلًا تلقائيًا سُجّل من إصدار سابق جعل الافتراضي تفعيلًا)
+let chatWebSearchOn = false;
+try { chatWebSearchOn = localStorage.getItem('almujtahed_web_search_v2') === '1'; } catch (e) {}
 
 function setChatWebSearch(on, silent) {
   chatWebSearchOn = !!on;
-  try { localStorage.setItem('almujtahed_web_search_v1', chatWebSearchOn ? '1' : '0'); } catch (e) {}
+  try { localStorage.setItem('almujtahed_web_search_v2', chatWebSearchOn ? '1' : '0'); } catch (e) {}
   const btn = document.getElementById('chatWebSearchBtn');
   if (btn) {
     btn.classList.toggle('is-off', !chatWebSearchOn);
@@ -259,7 +261,7 @@ function ensureCustomResearchPanel() {
     </div>
     <div class="custom-research-sec">
       <div class="cr-fold-head">
-        <h4>🌐 بحث في الويب (<span id="crWebSummary">مفعّل</span>)</h4>
+        <h4>🌐 بحث في الويب (<span id="crWebSummary">معطّل</span>)</h4>
         <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crWebBody" title="فتح/طي بحث في الويب">▾</button>
       </div>
       <div id="crWebBody" hidden>
