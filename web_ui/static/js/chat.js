@@ -49,16 +49,17 @@ function applyChatScenarioUI() {
   ['chatContextSelect', 'intentSelect', 'deathMaxSelect', 'witnessDdBtn'].forEach(id => {
     const el = document.getElementById(id);
     const wrap = el ? el.closest('.thinking-control') : null;
-    if (wrap) wrap.style.display = full ? '' : 'none';
+    if (wrap) wrap.style.display = 'none';
   });
   const groupsPicker = document.getElementById('chatAgentGroupPicker');
   if (groupsPicker) groupsPicker.style.display = full ? '' : 'none';
-  // في البحث المخصص تختفي حاوية النموذج العلوية كلها وتوابعها (المزود والنموذج والتفكير والسياق...)
-  // لأن نموذج اللوحة وتفكيرها يقومان مقامها — لا مجرد قائمة النماذج
+  // خيارات النموذج العلوية كلها (المزود والنموذج والتفكير والسياق ونوع البحث وسقف
+  // الوفاة والشواهد) لا تظهر إلا في البحث الحر: ففي المخصص تقوم لوحة التخصيص
+  // مقامها، وفي الموسع تختفي فور اختيار السيناريو نفسه — لا عند تحديد مجموعة —
+  // لأن قيادته للمجموعات ومديريها وتوجيهاتهم الخفية، وتبقى قيمها الافتراضية
+  // احتياطيًا صامتًا حيث لا مدير. فالشريط العلوي كله إذن للحر وحده.
   const modelBar = document.getElementById('chatModelControlsBar');
-  if (modelBar) modelBar.style.display = custom ? 'none' : '';
-  // في الموسع تختفي قائمة النموذج العلوية كاملة بحاويتها (المزود والنموذج معًا — نموذجه مدير المشروع)
-  // وتبقى بقية الضوابط (التفكير والسياق ونوع البحث...) ظاهرة كما هي
+  if (modelBar) modelBar.style.display = free ? '' : 'none';
   const providerSelector = document.getElementById('chatProviderModelSelector');
   if (providerSelector) providerSelector.style.display = free ? '' : 'none';
   const modelWrap = document.getElementById('chatCustomModelWrapper');
@@ -67,10 +68,9 @@ function applyChatScenarioUI() {
   if (modelLabel) modelLabel.style.display = free ? '' : 'none';
   const modelSep = document.getElementById('chatModelBarSep');
   if (modelSep) modelSep.style.display = free ? '' : 'none';
-  // التفكير من توابع النموذج: يُدار من لوحة التخصيص في البحث المخصص فيختفي من الأعلى
   const thinkEl = document.getElementById('chatThinkingSelect');
   const thinkWrap = thinkEl ? thinkEl.closest('.thinking-control') : null;
-  if (thinkWrap) thinkWrap.style.display = custom ? 'none' : '';
+  if (thinkWrap) thinkWrap.style.display = free ? '' : 'none';
   // تثبيت حاسم بفئات CSS على الحاوية العلوية: إخفاء فوري لا يلغيه أي تحديث لاحق
   // (تحديد مجموعة أو مزامنة نماذج أو غيرها) — في الموسع تختفي حاوية النموذج
   // سواء حدّد الباحث مجموعة أم لا، وفي الحر تعود نظيفة كما في الافتراضي
@@ -79,6 +79,8 @@ function applyChatScenarioUI() {
     topControl.classList.toggle('scenario-free', free);
     topControl.classList.toggle('scenario-custom', custom);
     topControl.classList.toggle('scenario-expanded', full);
+    // الشريط العلوي كله خيارات نموذج: يختفي بتمامه في المخصص والموسع فلا يبقى شريط فارغ
+    topControl.style.display = free ? '' : 'none';
   }
   if (typeof refreshDirectorAuthorityUI === 'function') refreshDirectorAuthorityUI();
 }
@@ -3409,10 +3411,12 @@ function refreshDirectorAuthorityUI() {
     if (found) el.title = 'القيادة لمدير المشروع داخل المجموعة';
   });
   if (chatScenario === 'expanded') {
+    // في الموسع خيارات النموذج العلوية مختفية أصلًا منذ اختيار السيناريو،
+    // بمدير وبلا مدير — فلا يعيدها غيابُ مدير ولا حضوره
     ['chatThinkingSelect', 'chatContextSelect', 'intentSelect', 'deathMaxSelect', 'witnessDdBtn'].forEach(id => {
       const el = document.getElementById(id);
       const wrap = el ? el.closest('.thinking-control') : null;
-      if (wrap) wrap.style.display = found ? 'none' : '';
+      if (wrap) wrap.style.display = 'none';
     });
   }
   const badge = document.getElementById('directorAuthorityBadge');
