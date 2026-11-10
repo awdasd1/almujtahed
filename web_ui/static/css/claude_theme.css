@@ -10825,6 +10825,10 @@ body::-webkit-scrollbar,
 .custom-research-list { max-height: 190px; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); padding: 8px 10px; margin-bottom: 8px; }
 .custom-research-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .custom-research-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+/* تثبيت حاوية النموذج العلوية بحسب السيناريو: تختفي فورًا في الموسع والمخصص ولا يلغيها تحديث لاحق */
+.chat-top-control.scenario-expanded #chatProviderModelSelector,
+.chat-top-control.scenario-custom #chatProviderModelSelector { display: none !important; }
+.chat-top-control.scenario-custom #chatModelControlsBar { display: none !important; }
 .cr-fold-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cr-fold-head > h4 { margin: 0 0 8px; font-size: 13.5px; color: var(--text-muted); }
 .cr-fold-btn { border: 1px solid var(--border-subtle); background: transparent; color: var(--text-main); width: 26px; height: 26px; border-radius: 50%; cursor: pointer; font-size: 13px; line-height: 1; transition: transform .15s; flex: none; }

@@ -71,6 +71,16 @@ function applyChatScenarioUI() {
   const thinkEl = document.getElementById('chatThinkingSelect');
   const thinkWrap = thinkEl ? thinkEl.closest('.thinking-control') : null;
   if (thinkWrap) thinkWrap.style.display = custom ? 'none' : '';
+  // تثبيت حاسم بفئات CSS على الحاوية العلوية: إخفاء فوري لا يلغيه أي تحديث لاحق
+  // (تحديد مجموعة أو مزامنة نماذج أو غيرها) — في الموسع تختفي حاوية النموذج
+  // سواء حدّد الباحث مجموعة أم لا، وفي الحر تعود نظيفة كما في الافتراضي
+  const topControl = document.querySelector('.chat-top-control');
+  if (topControl) {
+    topControl.classList.toggle('scenario-free', free);
+    topControl.classList.toggle('scenario-custom', custom);
+    topControl.classList.toggle('scenario-expanded', full);
+  }
+  if (typeof refreshDirectorAuthorityUI === 'function') refreshDirectorAuthorityUI();
 }
 
 // =============================================================================
@@ -126,7 +136,6 @@ function ensureCustomResearchPanel() {
       <h3>🔎 تخصيص البحث</h3>
       <button type="button" class="custom-research-close" id="crClose" aria-label="إغلاق">×</button>
     </div>
-    <div style="font-size:12.5px; color:var(--text-muted); line-height:1.9;">حدودك تسري على رسائلك التالية ما دام السيناريو «بحث مخصص» — وبنفس توجيه البحث المعهود، يتكيف فقط مع حدودك.</div>
     <div class="custom-research-sec">
       <h4>🧠 النموذج والتفكير</h4>
       <div class="custom-research-row">
@@ -167,8 +176,8 @@ function ensureCustomResearchPanel() {
     </div>
     <div class="custom-research-sec">
       <div class="cr-fold-head">
-        <h4>🗂️ حدود الموضوع — تصنيفات الشاملة الأساسية (<span id="crCatCount">0</span> محددًا)</h4>
-        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crTopicsBody" title="فتح/طي قائمة حدود الموضوع">▾</button>
+        <h4>🗂️ تحديد كتب أقسام معينة (<span id="crCatCount">0</span> محددًا)</h4>
+        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crTopicsBody" title="فتح/طي تحديد كتب أقسام معينة">▾</button>
       </div>
       <div id="crTopicsBody" hidden>
         <div class="custom-research-list" id="crCategoryList">جارٍ جلب التصنيفات...</div>
@@ -189,8 +198,8 @@ function ensureCustomResearchPanel() {
     </div>
     <div class="custom-research-sec">
       <div class="cr-fold-head">
-        <h4>🧭 تحديد كتب أقسام معينة (<span id="crTopicsSummary">كل الأقسام</span>)</h4>
-        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crGenresBody" title="فتح/طي تحديد كتب أقسام معينة">▾</button>
+        <h4>🧭 الحدود الموضوعية (<span id="crTopicsSummary">كل الموضوعات</span>)</h4>
+        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crGenresBody" title="فتح/طي الحدود الموضوعية">▾</button>
       </div>
       <div id="crGenresBody" hidden>
         <div class="design-kind-grid" id="crTopics"></div>
@@ -321,7 +330,7 @@ function ensureCustomResearchPanel() {
     const parts = [];
     if (customResearch.topics.length) parts.push(customResearch.topics.length + ' محددًا');
     if (other) parts.push('أخرى: ' + other);
-    sum.textContent = parts.length ? parts.join(' + ') : 'كل الأقسام';
+    sum.textContent = parts.length ? parts.join(' + ') : 'كل الموضوعات';
   };
   overlay._updateCrTopicsSummary = updateCrTopicsSummary;
   overlay.querySelector('#crTopics').addEventListener('change', () => {
@@ -3387,7 +3396,9 @@ function chatGroupDirector() {
 // نموذج المحادثة (نموذجه وتفكيره وسياقه وشواهده وسقف وفاته ونوع بحثه)
 // لئلا تتنازع قيادتان؛ وتعطيل المدير من قائمة الوكلاء يعيدها فورًا.
 function refreshDirectorAuthorityUI() {
-  const found = chatGroupDirector();
+  // سلطة المدير تعطّل أدوات النموذج العلوية في البحث الموسع فقط؛ أما في الحر
+  // (والمخصص) فالأدوات نظيفة مفعّلة كما في الافتراضي ولو بقيت مجموعة محددة
+  const found = chatScenario === 'expanded' ? chatGroupDirector() : null;
   ['chatModelSelect', 'chatThinkingSelect', 'chatContextSelect', 'intentSelect', 'deathMaxSelect', 'witnessDdBtn', 'btnToggleChatHybridSearch', 'chatCustomModelTrigger'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
