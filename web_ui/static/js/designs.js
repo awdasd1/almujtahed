@@ -605,17 +605,19 @@ async function runDirectDesignGeneration(idea, aspect, imageMode, imageModel) {
   loadDesignBalance();
 }
 
-function designSystemPrompt(imageMode) {
+function designSystemPrompt(imageMode, booksList) {
   const noLiving = imageMode === 'without';
   const textOnly = imageMode === 'none';
   loadDesignColors();
   const fonts = designColorsState.fonts;
   const customPalette = designColorsState.mode === 'custom';
   const [pc1, pc2, pc3] = designColorsState.img;
+  const bookNames = (Array.isArray(booksList) ? booksList : []).filter(Boolean);
   return [
     'أنت مهندس توجيهات صور (Prompt Engineer) لتبويب «تصاميم» في تطبيق المجتهد للبحث التراثي.',
     'مهمتك الوحيدة: تحويل فكرة المستخدم إلى توجيه توليد صورة واحد (Image Prompt) بالإنجليزية فقط، جاهز للإرسال مباشرة إلى نموذج توليد صور، مستندًا إلى الشواهد المرفقة من كتب التراث المعتمدة — لا تخترع وقائع أو أماكن أو تواريخ لا تدعمها الشواهد.',
-    'أخرج التوجيه وحده في فقرة واحدة متصلة، بلا مقدمة ولا شرح ولا عناوين ولا علامات تنقيط عربية.',
+    `قيد صارم لا يُتجاوز مطلقًا: لا تستعمل إلا الشواهد المرفقة المستخرجة من الكتب المحددة التالية حصرًا${bookNames.length ? ': ' + bookNames.join('؛ ') : ''}. ممنوع منعًا باتًا أي معلومة أو اسم علم أو مكان أو تاريخ من خارج هذه الشواهد أو من ذاكرتك ومعارفك العامة، وممنوع نسبة قول أو واقعة إلى كتاب غير وارد في هذه القائمة، فإن لم تسعفك الشواهد في تفصيل ما فاحذفه من التوجيه ولا تستكمله من عندك.`,
+    'أخرج التوجيه وحده في فقرة واحدة متصلة، بلا مقدمة ولا شرح ولا عناوين ولا علامات تنقيط عربية، ثم فقرة المصادر كما في نهاية هذه التعليمات.',
     'يجب أن يتضمن التوجيه حتمًا هذه العناصر:',
     textOnly
       ? '1) نوع العمل: ملصق طباعي نصي فاخر (Arabic typographic poster) يعتمد كليًا على الخط العربي وتوزيع النصوص والعناوين والزخارف الهندسية المسطحة — لا مشاهد ولا خرائط مرسومة ولا أي عناصر تصويرية، بل تكوين نصي أنيق بخلفية موحّدة اللون أو زخرفة هندسية خفيفة.'
@@ -630,8 +632,25 @@ function designSystemPrompt(imageMode) {
       ? '4) ممنوع منعًا باتًا ظهور أي كائن حي في التصميم: لا أشخاص ولا بشر ولا حيوانات ولا طيور ولا أي كائنات حية إطلاقًا — لا من الأمام ولا من الخلف ولا حتى ظلال أو صور ظلية (silhouettes) لكائنات حية. اعتمد فقط على الخرائط والعمارة والعناصر الجامدة والزخارف الهندسية والخط العربي، ويجب أن يتضمن التوجيه الإنجليزي حرفيًا عبارة بهذا المعنى: Absolutely no people, no human figures, no animals, no birds, no living beings of any kind, and no silhouettes of living creatures — only maps, architecture, inanimate objects, geometric ornament and Arabic calligraphy.'
       : '4) الأشخاص إن ظهروا: من الخلف تمامًا (strictly and entirely from the back)، بلا وجوه ولا ملامح جانبية، بملابس تاريخية موقرة.',
     '5) تفاصيل موثقة من الشواهد: أسماء الأماكن والأعلام والمسارات كما وردت، بمؤشرات جغرافية نظيفة وخطوط مسار مرجانية مضيئة عند الحاجة.',
-    '6) بلا أي شعارات أو علامات مائية داخل الصورة (الشعار يضيفه التطبيق لاحقًا)، وبلا نصوص إنجليزية داخل الصورة سوى أسماء الأماكن على الخريطة عند الحاجة.'
+    '6) بلا أي شعارات أو علامات مائية داخل الصورة (الشعار يضيفه التطبيق لاحقًا)، وبلا نصوص إنجليزية داخل الصورة سوى أسماء الأماكن على الخريطة عند الحاجة.',
+    `7) إلزام نموذج الرسم بذكر المصادر على التصميم نفسه: يجب أن يتضمن توجيهك الإنجليزي حرفيًا مطالبةَ نموذجِ الرسم بإظهار سطر مصادر في أسفل التصميم يبدأ بكلمة «المصادر:» متبوعة بأسماء الكتب التي أخذتَ منها معلومات التوجيه فعلًا — بأسمائها العربية كما وردت في الشواهد — بخط الأميري ولون النصوص، مثل أن تكتب في التوجيه: The poster must display at its bottom a clearly legible sources line in Arabic beginning with "المصادر:" followed by the exact Arabic titles of the books actually used.`,
+    'صيغة الإخراج الإلزامية: فقرة التوجيه الإنجليزية أولًا وحدها، ثم سطر فارغ، ثم سطر مستقل: «المصادر التي اعتمدتها:» ثم عدّد تحته بنقاط تبدأ بشرطة (-) كلَّ كتاب أخذتَ منه معلومة في التوجيه فعلًا، بصيغة: - «اسم الكتاب» — اسم المؤلف. لا تذكر في هذا التعداد كتابًا لم تستعمله ولو كان ضمن الكتب المحددة، ولا تكتب شيئًا بعد هذا القسم.'
   ].join('\n');
+}
+
+/* فصل فقرة توجيه الصورة عن قسم «المصادر التي اعتمدتها» المنقّط في رد نموذج الصياغة */
+function splitDesignPromptSources(raw) {
+  const text = String(raw || '');
+  const m = text.match(/\n\s*(?:📚\s*)?المصادر(?:\s+التي\s+اعتمدتها)?\s*[:：]?\s*\n/);
+  if (!m) return { promptText: text.trim(), sources: [] };
+  const head = text.slice(0, m.index).trim();
+  const tail = text.slice(m.index + m[0].length);
+  const sources = tail.split('\n')
+    .map(s => s.trim())
+    .filter(s => /^[-–•*·]/.test(s))
+    .map(s => s.replace(/^[-–•*·]\s*/, '').trim())
+    .filter(Boolean);
+  return { promptText: head, sources };
 }
 
 function loadDesignMessages() {
@@ -729,6 +748,7 @@ function renderDesignMessages() {
       </div>
       ${msg.image_url && !msg.collapsed ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المجتهد" loading="lazy" data-design-zoom="${idx}" title="انقر للتكبير">` : ''}
       ${books ? `<div class="design-books">📚 من كتب: ${books}</div>` : ''}
+      ${msg.sources && msg.sources.length ? `<div class="design-sources"><div class="design-sources-title">📚 المصادر التي اعتمدها نموذج الصياغة:</div><ul>${msg.sources.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>` : ''}
       ${msg.prompt ? `<details class="design-prompt"><summary>توجيه الصورة الذي أُرسل للنموذج</summary><p dir="ltr">${escapeHtml(msg.prompt)}</p></details>` : ''}
     </div></div>`;
   }).join('');
@@ -784,7 +804,7 @@ async function runDesignGeneration(idea, aspect, scope, imageMode, imageModel) {
       witness_limit: 10,
       context_tokens: 64000,
       messages: [{ role: 'user', content: `فكرة التصميم: ${idea}\nصِغ توجيه الصورة الآن وفق تعليماتك.` }],
-      system_prompt: designSystemPrompt(imageMode) + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز تفاصيل التوجيه الموثقة على هذه الزاوية.` : ''),
+      system_prompt: designSystemPrompt(imageMode, books) + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز تفاصيل التوجيه الموثقة على هذه الزاوية.` : ''),
       temperature: 0.3,
       providers: savedKeys,
       agent_group: null
@@ -792,7 +812,9 @@ async function runDesignGeneration(idea, aspect, scope, imageMode, imageModel) {
   });
   const chatData = await chatResp.json().catch(() => ({}));
   if (!chatResp.ok) throw new Error(chatData.detail || 'تعذرت صياغة التوجيه');
-  const prompt = String(chatData.reply || '').replace(/```[a-z]*|```/gi, '').trim();
+  const rawReply = String(chatData.reply || '').replace(/```[a-z]*|```/gi, '').trim();
+  // فقرة التوجيه وحدها تذهب لنموذج الرسم، وقسم المصادر المنقّط يُحفظ ويُعرض على البطاقة
+  const { promptText: prompt, sources: promptSources } = splitDesignPromptSources(rawReply);
   if (prompt.length < 40) throw new Error('جاء توجيه الصورة فارغًا أو قصيرًا — أعد المحاولة');
 
   const witnessBooks = [...new Set((chatData.witnesses || []).map(w => w.book_title || w.title || w.book || '').filter(Boolean))];
@@ -820,6 +842,7 @@ async function runDesignGeneration(idea, aspect, scope, imageMode, imageModel) {
     cost_usd: (typeof imgData.cost_usd === 'number') ? imgData.cost_usd : null,
     duration_s: (typeof imgData.duration_s === 'number') ? imgData.duration_s : null,
     collapsed: false,
+    sources: promptSources,
     books: witnessBooks
   });
   saveDesignMessages();

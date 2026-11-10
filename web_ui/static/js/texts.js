@@ -337,47 +337,69 @@ function initTextCharLimit() {
   sync();
 }
 
-function textSystemPrompt(charLimit) {
+function textSystemPrompt(charLimit, booksList) {
   const limit = charLimit || 250;
+  const bookNames = (Array.isArray(booksList) ? booksList : []).filter(Boolean);
   return [
     'أنت محرّر فوائد تراثية لقسم «النصوص» في تطبيق المجتهد للبحث التراثي.',
     'مهمتك الوحيدة: استخراج فائدة واحدة نفيسة حول موضوع المستخدم من الشواهد المرفقة من الكتب المحددة فقط — لا تخترع أقوالًا ولا تنسب قولًا لغير قائله ولا تخرج عن الشواهد.',
+    `قيد صارم لا يُتجاوز مطلقًا: لا تستعمل إلا الشواهد المرفقة المستخرجة من الكتب المحددة التالية حصرًا${bookNames.length ? ': ' + bookNames.join('؛ ') : ''}. ممنوع منعًا باتًا أي قول أو معلومة من خارج هذه الشواهد أو من ذاكرتك ومعارفك العامة، وممنوع نسبة قول إلى كتاب أو مؤلف غير وارد فيها.`,
     'أخرج النص جاهزًا للنشر في مواقع التواصل بهذا القالب حرفيًا، بلا أي مقدمة أو خاتمة من عندك:',
-    'القالب: [عنوان] ثم سطر فارغ ثم [متن الفائدة] ثم سطر فارغ ثم [📚 المصدر: ...] ثم [الوسوم].',
-    'تنبيه صارم: متن الفائدة المنقول أو المستفاد هو قلب النص — إياك أن تحذفه أو أن تكتفي بالعنوان والمصدر والوسوم؛ إخراج بلا متن مرفوض تمامًا.',
+    'القالب: [عنوان] ثم سطر فارغ ثم [متن الفائدة] ثم سطر فارغ ثم [📚 المصادر: تتبعها نقاط المصادر] ثم [الوسوم].',
+    'تنبيه صارم: متن الفائدة المنقول أو المستفاد هو قلب النص — إياك أن تحذفه أو أن تكتفي بالعنوان والمصادر والوسوم؛ إخراج بلا متن مرفوض تمامًا.',
     'السطر الأول: عنوان قصير جذاب للفائدة (٣-٧ كلمات) بلا كلمة «عنوان» وبلا ترقيم زخرفي.',
     'ثم فراغ سطر، ثم متن الفائدة: إن وجدت في الشواهد عبارة منقولة بعينها فانقلها حرفيًا بين علامتي تنصيص «...» ومسبوقة بنسبتها: قال فلان رحمه الله: «...». وإن كانت الفائدة معنى مستخلصًا فصُغه بأسلوبك الفصيح الموجز وصدّره بما يدل على الاستفادة مثل: ومما يُستفاد: ... مع نسبة المعنى لصاحبه إن عُرف.',
     'إيجاز صارم: متن الفائدة بين ٤٠ و٩٠ كلمة، لغة فصيحة راقية، جمل قصيرة مؤثرة صالحة للتداول.',
-    'ثم سطر مستقل: 📚 المصدر: «اسم الكتاب» — اسم المؤلف — والجزء والصفحة كما يظهران في الشاهد بصيغة (ج٢، ص١٤٥) متى توفّرا في الشاهد، وإياك أن تخترع جزءًا أو صفحة غير موجودين في الشاهد.',
-    `حد الحروف الصارم: النص كاملًا بكل سطوره — العنوان والمتن والمصدر والوسوم وفواصل الأسطر — لا يتجاوز ${limit} حرفًا أبدًا (لأن بعض المنصات كإكس ترفض ما زاد). عدّ الحروف قبل الإخراج، وإن طال الاقتباس اختر أقصر عبارة دالة أو لخّص المعنى بأسلوبك حتى تلتزم بالحد دون حذف النسبة والمصدر.`,
+    'ثم قسم المصادر معدودًا بنقاط: سطر مستقل «📚 المصادر:» ثم نقطة لكل كتاب أخذتَ منه الفائدة فعلًا، تبدأ بشرطة وبصيغة: - «اسم الكتاب» — اسم المؤلف — والجزء والصفحة كما يظهران في الشاهد بصيغة (ج٢، ص١٤٥) متى توفّرا في الشاهد. لا تذكر كتابًا لم تستعمله، وإياك أن تخترع جزءًا أو صفحة غير موجودين في الشاهد.',
+    `حد الحروف الصارم: النص كاملًا بكل سطوره — العنوان والمتن والمصادر والوسوم وفواصل الأسطر — لا يتجاوز ${limit} حرفًا أبدًا (لأن بعض المنصات كإكس ترفض ما زاد). عدّ الحروف قبل الإخراج، وإن طال الاقتباس اختر أقصر عبارة دالة أو لخّص المعنى بأسلوبك حتى تلتزم بالحد دون حذف النسبة والمصادر.`,
     'ثم سطر أخير: ٣ إلى ٥ وسوم عربية متصلة بالموضوع تبدأ بـ # ومفصولة بمسافات، مثل: #فائدة #تراث',
     'إن لم تجد في الشواهد فائدة مباشرة في الموضوع فاستخرج أقرب فائدة إليه وصرّح في متنها بأنها في معنى الموضوع، ولا تدّعِ غير ذلك.'
   ].join('\n');
 }
 
 function enrichTextSource(text, witnesses) {
-  /* تثبيت الجزء والصفحة في سطر المصدر من بيانات الشاهد الفعلية — لا من ذاكرة النموذج */
+  /* تثبيت الجزء والصفحة في نقاط المصادر من بيانات الشاهد الفعلية — لا من ذاكرة النموذج */
   const rows = (witnesses || []).filter(w => w && w.title);
   if (!rows.length) return text;
   const norm = (s) => normalizeDesignText(String(s || '')).replace(/[«»"()\-—–:]/g, ' ').replace(/\s+/g, ' ').trim();
-  const format = (w) => {
+  const bookText = (w) => {
     const parts = [`«${w.title}»`];
     if (w.author) parts.push(w.author + (w.death_year ? ` (ت ${w.death_year})` : ''));
     const loc = [];
     if (w.part) loc.push(`ج${w.part}`);
     if (w.page) loc.push(`ص${w.page}`);
     if (loc.length) parts.push(loc.join('، '));
-    return `📚 المصدر: ${parts.join(' — ')}`;
+    return parts.join(' — ');
+  };
+  const format = (w) => `📚 المصادر:\n- ${bookText(w)}`;
+  const matchWitness = (line) => {
+    const match = line.match(/«([^»]+)»/);
+    const wanted = norm(match ? match[1] : '');
+    return rows.find(w => { const t = norm(w.title); return wanted && (t.includes(wanted) || wanted.includes(t)); })
+      || rows.find(w => norm(line).includes(norm(w.title)));
   };
   const lines = String(text).split('\n');
   const srcIdx = lines.findIndex(l => l.includes('المصدر'));
   if (srcIdx >= 0) {
-    const match = lines[srcIdx].match(/«([^»]+)»/);
-    const wanted = norm(match ? match[1] : '');
-    let witness = rows.find(w => { const t = norm(w.title); return wanted && (t.includes(wanted) || wanted.includes(t)); });
-    if (!witness) witness = rows.find(w => norm(lines[srcIdx]).includes(norm(w.title)));
-    if (witness) lines[srcIdx] = format(witness);
-    return lines.join('\n');
+    // أسلوب النقاط: ثبّت كل نقطة من شاهدها المطابق
+    let i = srcIdx + 1;
+    let fixedAny = false;
+    while (i < lines.length) {
+      const trimmed = lines[i].trim();
+      if (!trimmed) { i++; continue; }
+      if (!/^[-–•*·]/.test(trimmed)) break;
+      const witness = matchWitness(trimmed);
+      if (witness) { lines[i] = `- ${bookText(witness)}`; fixedAny = true; }
+      i++;
+    }
+    if (fixedAny) return lines.join('\n');
+    // أسلوب السطر الواحد القديم: حوّله إلى عنوان ونقطة مثبّتة
+    const witness = matchWitness(lines[srcIdx]);
+    if (witness) {
+      lines[srcIdx] = format(witness);
+      return lines.join('\n');
+    }
+    return text;
   }
   const tagIdx = lines.findIndex(l => l.trim().startsWith('#'));
   if (tagIdx >= 0) lines.splice(tagIdx, 0, '', format(rows[0]));
@@ -419,7 +441,7 @@ function renderTextMessages() {
     const charCount = (msg.text || '').length;
     const overLimit = msg.char_limit && charCount > msg.char_limit;
     const charChip = `<span class="design-chip" ${overLimit ? 'style="color:#b3261e;border-color:#b3261e66;font-weight:700"' : ''}>🔢 ${charCount} حرفًا${msg.char_limit ? ` / حد ${msg.char_limit}` : ''}${overLimit ? ' — تجاوز الحد!' : ''}</span>`;
-    const bodyHtml = escapeHtml(msg.text || '').replace(/(📚 المصدر:[^\n]*)/g, '<span class="design-text-source">$1</span>');
+    const bodyHtml = escapeHtml(msg.text || '').replace(/(📚 المصادر?:[^\n]*)/g, '<span class="design-text-source">$1</span>');
     return `<div class="design-msg design-msg-assistant"><div class="design-card">
       <div class="design-card-head">
         <div class="design-card-info">
@@ -521,7 +543,7 @@ async function runTextGeneration(topic, scope) {
         witness_limit: 10,
         context_tokens: 64000,
         messages: [{ role: 'user', content: `موضوع الفائدة: ${topic}\nاستخرج الفائدة الآن وفق تعليماتك.${extraInstruction || ''}` }],
-        system_prompt: textSystemPrompt(limit) + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز اختيار الفائدة على هذه الزاوية.` : ''),
+        system_prompt: textSystemPrompt(limit, books) + (scope.angles ? `\nزاوية تركيز هذا الطلب بحسب فنّه المصنَّف (${scope.label}): ${scope.angles} — ركّز اختيار الفائدة على هذه الزاوية.` : ''),
         temperature: 0.3,
         providers: savedKeys,
         agent_group: null
@@ -538,7 +560,7 @@ async function runTextGeneration(topic, scope) {
   let result = await requestBenefit('');
   const problemsOf = (t) => {
     const probs = [];
-    if (!isValidBenefit(t)) probs.push('تنبيه إلزامي: لا تحذف متن الفائدة أبدًا؛ أخرج القالب كاملًا: عنوان، ثم متن الفائدة (المنقول حرفيًا بين «...» منسوبًا لقائله «قال فلان رحمه الله»)، ثم سطر المصدر بالجزء والصفحة، ثم الوسوم.');
+    if (!isValidBenefit(t)) probs.push('تنبيه إلزامي: لا تحذف متن الفائدة أبدًا؛ أخرج القالب كاملًا: عنوان، ثم متن الفائدة (المنقول حرفيًا بين «...» منسوبًا لقائله «قال فلان رحمه الله»)، ثم قسم «📚 المصادر:» منقّطًا بالكتب المستعملة فعلًا وبالجزء والصفحة، ثم الوسوم.');
     if (t.length > limit) probs.push(`تنبيه إلزامي: نصك السابق بلغ ${t.length} حرفًا والحد الأقصى ${limit} حرفًا للنص كاملًا — أعد الاستخراج أقصر: اختر عبارة منقولة أقصر أو لخّص المعنى، والتزم بالحد التزامًا صارمًا.`);
     return probs;
   };

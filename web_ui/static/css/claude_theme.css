@@ -10827,6 +10827,21 @@ body::-webkit-scrollbar,
 .design-download { font-size: 12.5px; font-weight: 700; color: var(--accent-clay); text-decoration: none; border: 1px solid var(--accent-clay); border-radius: var(--radius-pill, 6px); padding: 4px 12px; }
 .design-download:hover { background: var(--accent-subtle); }
 .design-books { font-size: 12.5px; color: var(--text-muted); line-height: 2; }
+
+/* مصادر التصميم المعدودة بنقاط كما حدّدها نموذج الصياغة */
+.design-sources {
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: var(--accent-subtle);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.design-sources-title { font-size: 12.5px; font-weight: 800; color: var(--accent-clay); }
+
+.design-sources ul { margin: 4px 0 0; padding-inline-start: 18px; }
+
+.design-sources li { font-size: 12.5px; line-height: 1.9; color: var(--text-main); }
 .design-book-chip { background: var(--accent-subtle); border-radius: var(--radius-pill, 6px); padding: 2px 9px; margin-inline-start: 5px; font-size: 11.5px; }
 .design-prompt summary { cursor: pointer; font-size: 12.5px; color: var(--text-muted); font-weight: 700; }
 .design-prompt p { font-size: 12.5px; line-height: 1.8; color: var(--text-muted); text-align: left; }
