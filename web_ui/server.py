@@ -5517,6 +5517,9 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
 class PresentationRequest(BaseModel):
     text: str
     api_key: Optional[str] = None
+    text_mode: Optional[str] = "editable"
+    image_model: Optional[str] = "gpt"
+    colors: Optional[dict] = None
 
 
 PRESENTATION_JOBS: Dict[str, dict] = {}
@@ -5624,6 +5627,63 @@ def _slide_image_prompt(image_prompt: str) -> str:
     )
 
 
+def _normalize_presentation_options(req: PresentationRequest) -> dict:
+    """تطبيع خيارات العرض من نافذة الخيارات: أسلوب النص (مدمج/قابل للتحرير) ونموذج الصورة والألوان."""
+    text_mode = "embedded" if (req.text_mode or "") == "embedded" else "editable"
+    image_model_id = DESIGN_IMAGE_MODELS.get((req.image_model or "gpt").strip(), DESIGN_IMAGE_MODEL)
+    colors = req.colors if isinstance(req.colors, dict) else {}
+
+    def hexv(value, fallback):
+        return value.lower() if isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value) else fallback
+
+    img_defaults = (("#16324a", 60), ("#2e7d74", 25), ("#e2725b", 15))
+    img_in = colors.get("img") if isinstance(colors.get("img"), list) else []
+    img = []
+    for i, (dhex, dpct) in enumerate(img_defaults):
+        item = img_in[i] if i < len(img_in) and isinstance(img_in[i], dict) else {}
+        try:
+            pct = max(0, min(100, int(item.get("pct"))))
+        except Exception:
+            pct = dpct
+        img.append({"hex": hexv(item.get("hex"), dhex), "pct": pct})
+    fonts_in = colors.get("fonts") if isinstance(colors.get("fonts"), dict) else {}
+    return {
+        "text_mode": text_mode,
+        "image_model_id": image_model_id,
+        "colors_mode": "custom" if colors.get("mode") == "custom" else "default",
+        "img": img,
+        "fonts": {
+            "title": hexv(fonts_in.get("title"), "#ffffff"),
+            "body": hexv(fonts_in.get("body"), "#ffffff"),
+        },
+    }
+
+
+def _palette_directive(options: dict) -> str:
+    """سطر لوحة الألوان الإنجليزي الموجّه لصانع صور الشرائح عند اختيار ألوان مخصصة."""
+    if options.get("colors_mode") != "custom":
+        return ""
+    a, b, c = options["img"]
+    return (
+        " Strictly use this user-defined color palette and honor its proportions across the whole image: "
+        f"dominant color {a['hex']} covering about {a['pct']}%, secondary color {b['hex']} covering about {b['pct']}%, "
+        f"accent color {c['hex']} covering about {c['pct']}%."
+    )
+
+
+def _slide_embedded_prompt(slide_data: dict, palette_directive: str) -> str:
+    """توجيه صورة شريحة كاملة بنصوص عربية مدمجة مرسومة داخل الصورة نفسها متوافقة مع تعليقها الصوتي."""
+    bullets = "؛ ".join(slide_data["bullets"])
+    return (
+        "Design a complete, elegant 16:9 presentation slide with Arabic typography integrated into the artwork. "
+        f"Render this Arabic title prominently, spelled exactly as written: «{slide_data['title']}». "
+        f"Render these Arabic bullet points clearly below it, spelled exactly as written: «{bullets}». "
+        "Beautiful legible Arabic typography with strong contrast, harmonious scholarly Islamic visual theme, "
+        "manuscripts and warm light, generous spacing, professional academic lecture slide."
+        + palette_directive
+    )
+
+
 def _tts_pcm_sync(key: str, text: str) -> bytes:
     """نطق نص كامل (على مقاطع عند الحاجة) وإرجاع الصوت مدمجًا كما أتى (PCM غالبًا)."""
     parts = []
@@ -5697,11 +5757,19 @@ def _pptx_text(slide, x, y, w, h, lines, size, bold=False, color="FFFFFF") -> No
         cs.set("typeface", "Traditional Arabic")
 
 
-def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: Path) -> None:
+def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: Path, options: Optional[dict] = None) -> None:
     from pptx import Presentation
     from pptx.util import Inches
     from pptx.dml.color import RGBColor
     from pptx.oxml.ns import qn
+
+    options = options or {}
+    embedded = options.get("text_mode") == "embedded"
+    custom_colors = options.get("colors_mode") == "custom"
+    overlay_rgb = options["img"][0]["hex"].lstrip("#").upper() if custom_colors else "0B0F1A"
+    title_rgb = options["fonts"]["title"].lstrip("#").upper() if custom_colors else "FFFFFF"
+    body_rgb = options["fonts"]["body"].lstrip("#").upper() if custom_colors else "FFFFFF"
+    sub_rgb = body_rgb if custom_colors else "E8DFD3"
 
     icon_path = folder / "speaker-icon.png"
     _speaker_icon_png(icon_path)
@@ -5712,31 +5780,39 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
     for idx, (slide_data, asset) in enumerate(zip(deck["slides"], assets)):
         slide = prs.slides.add_slide(blank)
         slide.shapes.add_picture(str(asset["image"]), 0, 0, prs.slide_width, prs.slide_height)
+        if embedded:
+            # النص مرسوم داخل الصورة نفسها: لا طبقة تعتيم ولا صناديق نص
+            mime = "audio/mpeg" if str(asset["audio"]).endswith(".mp3") else "audio/wav"
+            slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(6.55), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
+            slide.notes_slide.notes_text_frame.text = slide_data["narration"]
+            continue
         overlay = slide.shapes.add_shape(1, 0, 0, prs.slide_width, prs.slide_height)
         overlay.line.fill.background()
         overlay.fill.solid()
-        overlay.fill.fore_color.rgb = RGBColor.from_string("0B0F1A")
+        overlay.fill.fore_color.rgb = RGBColor.from_string(overlay_rgb)
         clr = overlay.fill._xPr.find(qn("a:solidFill")).find(qn("a:srgbClr"))
         alpha = clr.makeelement(qn("a:alpha"), {})
         alpha.set("val", "52000")
         clr.append(alpha)
         overlay.shadow.inherit = False
         if idx == 0:
-            _pptx_text(slide, 0.8, 2.2, 11.7, 1.6, [slide_data["title"]], 44, bold=True)
+            _pptx_text(slide, 0.8, 2.2, 11.7, 1.6, [slide_data["title"]], 44, bold=True, color=title_rgb)
             if slide_data["bullets"]:
-                _pptx_text(slide, 1.2, 4.0, 10.9, 1.6, slide_data["bullets"], 24, color="E8DFD3")
+                _pptx_text(slide, 1.2, 4.0, 10.9, 1.6, slide_data["bullets"], 24, color=sub_rgb)
         else:
-            _pptx_text(slide, 0.7, 0.5, 11.9, 1.1, [slide_data["title"]], 38, bold=True)
+            _pptx_text(slide, 0.7, 0.5, 11.9, 1.1, [slide_data["title"]], 38, bold=True, color=title_rgb)
             if slide_data["bullets"]:
-                _pptx_text(slide, 0.9, 1.95, 11.5, 4.4, ["• " + b for b in slide_data["bullets"]], 25)
+                _pptx_text(slide, 0.9, 1.95, 11.5, 4.4, ["• " + b for b in slide_data["bullets"]], 25, color=body_rgb)
         mime = "audio/mpeg" if str(asset["audio"]).endswith(".mp3") else "audio/wav"
         slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(6.55), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
         slide.notes_slide.notes_text_frame.text = slide_data["narration"]
     prs.save(str(out_path))
 
 
-async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str) -> None:
+async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str, options: Optional[dict] = None) -> None:
     job = PRESENTATION_JOBS[job_id]
+    options = options or _normalize_presentation_options(PresentationRequest(text=text))
+    palette = _palette_directive(options)
     try:
         job.update(stage="structuring", message="جارٍ هيكلة الشرائح من الإجابة...")
         slide_count = _presentation_slide_count(len(text))
@@ -5749,7 +5825,11 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str)
         job.update(stage="creating", total=len(slides), done=0, message=f"جارٍ إنشاء الشرائح: 0 من {len(slides)}")
 
         async def make_slide(i: int, slide_data: dict) -> dict:
-            img = await asyncio.to_thread(_openrouter_image_bytes, key, _slide_image_prompt(slide_data["image_prompt"]), DESIGN_IMAGE_MODEL)
+            if options["text_mode"] == "embedded":
+                prompt = _slide_embedded_prompt(slide_data, palette)
+            else:
+                prompt = _slide_image_prompt(slide_data["image_prompt"]) + palette
+            img = await asyncio.to_thread(_openrouter_image_bytes, key, prompt, options["image_model_id"])
             img_path = await asyncio.to_thread(_save_slide_image, img, folder, i)
             raw = await asyncio.to_thread(_tts_pcm_sync, key, slide_data["narration"])
             blob, ext = _audio_blob_from_raw(raw)
@@ -5769,7 +5849,7 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str)
 
         job.update(stage="assembling", message="جارٍ تجميع ملف العرض التقديمي...")
         pptx_name = f"presentation-{int(time.time())}.pptx"
-        await asyncio.to_thread(_build_presentation_pptx, deck, assets, folder, folder / pptx_name)
+        await asyncio.to_thread(_build_presentation_pptx, deck, assets, folder, folder / pptx_name, options)
         job.update(
             status="done", stage="done", message="اكتمل إنشاء العرض",
             pptx_url=f"/uploads/{owner_id}/presentations/{folder_name}/{pptx_name}",
@@ -5802,7 +5882,7 @@ async def presentation_start(req: PresentationRequest, request: Request):
         "status": "running", "stage": "queued", "done": 0, "total": 0,
         "message": "جارٍ بدء إنشاء العرض...", "owner": owner_id, "created": time.time(),
     }
-    asyncio.create_task(_run_presentation_job(job_id, owner_id, key, text))
+    asyncio.create_task(_run_presentation_job(job_id, owner_id, key, text, _normalize_presentation_options(req)))
     return {"ok": True, "job_id": job_id}
 
 
@@ -6633,7 +6713,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.427"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.428"},
         },
     })
     if opened.get("error"):

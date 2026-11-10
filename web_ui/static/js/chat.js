@@ -2877,12 +2877,146 @@ function toggleAudioSummaryText(idx, btn) {
   if (btn) btn.textContent = el.hidden ? '📝 نص الملخص' : '📝 إخفاء النص';
 }
 
-// إنشاء عرض PowerPoint بصري صوتي من الإجابة المعتمدة: وظيفة خلفية خادمية مع استطلاع للتقدم
+// خيارات العرض التقديمي: محفوظة، وتُبذر أول مرة من خيارات التصاميم (نموذج الصورة والألوان)
+const PRES_OPTIONS_KEY = 'almujtahed_presentation_options_v1';
+
+function loadPresentationOptions() {
+  const dflt = {
+    text_mode: 'editable',
+    image_model: 'gpt',
+    colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }], fonts: { title: '#ffffff', body: '#ffffff' } },
+  };
+  try {
+    const savedModel = localStorage.getItem('almujtahed_designs_imagemodel_v1');
+    if (['muse', 'gemini', 'gpt54'].includes(savedModel)) dflt.image_model = savedModel;
+    const dc = JSON.parse(localStorage.getItem('almujtahed_designs_colors_v1') || 'null');
+    if (dc) {
+      if (dc.mode === 'custom') dflt.colors.mode = 'custom';
+      if (Array.isArray(dc.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (dc.img[i] && dc.img[i].hex) || c.hex, pct: (dc.img[i] && dc.img[i].pct) || c.pct }));
+      if (dc.fonts) { dflt.colors.fonts.title = dc.fonts.title || dflt.colors.fonts.title; dflt.colors.fonts.body = dc.fonts.body || dflt.colors.fonts.body; }
+    }
+  } catch (e) { /* بذرة افتراضية */ }
+  try {
+    const p = JSON.parse(localStorage.getItem(PRES_OPTIONS_KEY) || 'null');
+    if (p) {
+      if (p.text_mode === 'embedded') dflt.text_mode = 'embedded';
+      if (['gpt', 'muse', 'gemini', 'gpt54'].includes(p.image_model)) dflt.image_model = p.image_model;
+      if (p.colors) {
+        if (p.colors.mode === 'custom') dflt.colors.mode = 'custom'; else if (p.colors.mode === 'default') dflt.colors.mode = 'default';
+        if (Array.isArray(p.colors.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (p.colors.img[i] && p.colors.img[i].hex) || c.hex, pct: (p.colors.img[i] && p.colors.img[i].pct) || c.pct }));
+        if (p.colors.fonts) { dflt.colors.fonts.title = p.colors.fonts.title || dflt.colors.fonts.title; dflt.colors.fonts.body = p.colors.fonts.body || dflt.colors.fonts.body; }
+      }
+    }
+  } catch (e) { /* بذرة افتراضية */ }
+  return dflt;
+}
+
+function savePresentationOptions(opts) {
+  try { localStorage.setItem(PRES_OPTIONS_KEY, JSON.stringify(opts)); } catch (e) {}
+}
+
+function openPresentationOptions(idx, btn) {
+  let modal = document.getElementById('presentationOptionsModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'presentationOptionsModal';
+    modal.className = 'pres-modal-overlay';
+    modal.innerHTML = `
+      <div class="pres-modal" role="dialog" aria-modal="true">
+        <div class="pres-modal-head">
+          <span>📊 خيارات العرض التقديمي</span>
+          <button type="button" class="pres-modal-close" onclick="closePresentationOptions()" aria-label="إغلاق">✕</button>
+        </div>
+        <div class="pres-modal-body">
+          <div class="pres-opt-label">أسلوب نص الشريحة</div>
+          <label class="pres-radio-card"><input type="radio" name="presTextMode" value="editable"> <span><b>نصوص قابلة للتحرير</b><small>نص عربي أصيل فوق صورة بلا حروف — تعدّله بنفسك داخل PowerPoint</small></span></label>
+          <label class="pres-radio-card"><input type="radio" name="presTextMode" value="embedded"> <span><b>نصوص مدمجة في الصورة</b><small>النموذج يرسم العنوان والنقاط داخل الصورة نفسها متوافقة مع التعليق الصوتي — قد لا يضبط إملاء العربية دائمًا</small></span></label>
+          <div class="pres-opt-label">نموذج الصورة</div>
+          <select id="presImageModel" class="pres-select">
+            <option value="gpt">🖼️ GPT Image — النموذج الحالي</option>
+            <option value="muse">✨ Meta Muse Image — meta/muse-image</option>
+            <option value="gemini">🌟 Gemini 3 Pro Image — google/gemini-3-pro-image-preview</option>
+            <option value="gpt54">🚀 GPT-5.4 Image 2 — openai/gpt-5.4-image-2</option>
+          </select>
+          <div class="pres-opt-label">ألوان الشريحة</div>
+          <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المجتهد الهادئة المعتمدة</small></span></label>
+          <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="custom"> <span><b>ألوان مخصصة</b><small>ثلاثة ألوان لصورة الشريحة بنسب سيادة، وألوان خطوط النص القابل للتحرير</small></span></label>
+          <div id="presCustomColors" class="pres-custom-colors" hidden>
+            ${[0, 1, 2].map(i => `<div class="pres-color-row"><span class="pres-color-name">لون ${['رئيسي', 'ثانوي', 'لمسة'][i]}</span><input type="color" id="presImgColor${i}"><input type="number" id="presImgPct${i}" class="pres-pct" min="0" max="100" step="5"><span>٪</span></div>`).join('')}
+            <div class="pres-color-row"><span class="pres-color-name">خط العناوين</span><input type="color" id="presFontTitle"></div>
+            <div class="pres-color-row"><span class="pres-color-name">خط النقاط</span><input type="color" id="presFontBody"></div>
+          </div>
+        </div>
+        <div class="pres-modal-foot">
+          <button type="button" class="btn-msg-export" onclick="closePresentationOptions()">إلغاء</button>
+          <button type="button" class="btn-msg-export pres-start-btn" onclick="confirmPresentationOptions()">📊 بدء الإنشاء</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closePresentationOptions(); });
+    modal.querySelectorAll('input[name="presColorsMode"]').forEach(r => r.addEventListener('change', syncPresCustomColorsVisibility));
+  }
+  const opts = loadPresentationOptions();
+  modal.querySelector(`input[name="presTextMode"][value="${opts.text_mode}"]`).checked = true;
+  modal.querySelector(`input[name="presColorsMode"][value="${opts.colors.mode}"]`).checked = true;
+  modal.querySelector('#presImageModel').value = opts.image_model;
+  opts.colors.img.forEach((c, i) => {
+    modal.querySelector(`#presImgColor${i}`).value = c.hex;
+    modal.querySelector(`#presImgPct${i}`).value = c.pct;
+  });
+  modal.querySelector('#presFontTitle').value = opts.colors.fonts.title;
+  modal.querySelector('#presFontBody').value = opts.colors.fonts.body;
+  syncPresCustomColorsVisibility();
+  window._presTarget = { idx, btn };
+  modal.hidden = false;
+}
+
+function syncPresCustomColorsVisibility() {
+  const modal = document.getElementById('presentationOptionsModal');
+  if (!modal) return;
+  const checked = modal.querySelector('input[name="presColorsMode"]:checked');
+  const box = modal.querySelector('#presCustomColors');
+  if (box) box.hidden = !(checked && checked.value === 'custom');
+}
+
+function closePresentationOptions() {
+  const modal = document.getElementById('presentationOptionsModal');
+  if (modal) modal.hidden = true;
+}
+
+function confirmPresentationOptions() {
+  const modal = document.getElementById('presentationOptionsModal');
+  const target = window._presTarget || {};
+  if (!modal) return;
+  const hex = (v, fb) => (/^#[0-9a-fA-F]{6}$/.test(v || '') ? v : fb);
+  const opts = {
+    text_mode: modal.querySelector('input[name="presTextMode"]:checked').value === 'embedded' ? 'embedded' : 'editable',
+    image_model: modal.querySelector('#presImageModel').value,
+    colors: {
+      mode: modal.querySelector('input[name="presColorsMode"]:checked').value === 'custom' ? 'custom' : 'default',
+      img: [0, 1, 2].map(i => ({ hex: hex(modal.querySelector(`#presImgColor${i}`).value, '#16324a'), pct: Math.max(0, Math.min(100, parseInt(modal.querySelector(`#presImgPct${i}`).value, 10) || 0)) })),
+      fonts: { title: hex(modal.querySelector('#presFontTitle').value, '#ffffff'), body: hex(modal.querySelector('#presFontBody').value, '#ffffff') },
+    },
+  };
+  savePresentationOptions(opts);
+  closePresentationOptions();
+  runPresentationJob(target.idx, target.btn, opts);
+}
+
+// إنشاء عرض PowerPoint بصري صوتي من الإجابة المعتمدة: يفتح نافذة الخيارات أولًا
 async function startPresentation(idx, btn) {
   const session = chatSessions.find(s => s.id === activeSessionId);
   const msg = session && session.messages && session.messages[idx];
   if (!msg) return;
   if (msg.presentation && msg.presentation.url && !confirm('يوجد عرض تقديمي جاهز لهذه الإجابة. هل تريد إنشاء عرض جديد؟')) return;
+  openPresentationOptions(idx, btn);
+}
+
+// تشغيل وظيفة إنشاء العرض بالخيارات المختارة مع استطلاع للتقدم
+async function runPresentationJob(idx, btn, options) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  if (!msg) return;
   const original = btn ? btn.innerHTML : '';
   const setLabel = (t) => { if (btn) { btn.disabled = true; btn.innerHTML = t; } };
   const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = original; } };
@@ -2892,7 +3026,7 @@ async function startPresentation(idx, btn) {
     const res = await fetch('/api/chat/presentation/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '' }),
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, image_model: options.image_model, colors: options.colors }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء العرض');

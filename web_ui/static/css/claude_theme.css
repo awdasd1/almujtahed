@@ -11024,3 +11024,22 @@ body::-webkit-scrollbar,
 
 /* بطاقة العرض التقديمي (PowerPoint بصري صوتي) تحت الإجابة المعتمدة */
 .chat-presentation { background: rgba(92, 120, 204, 0.08); }
+
+/* نافذة خيارات العرض التقديمي قبل الإنشاء */
+.pres-modal-overlay { position: fixed; inset: 0; background: rgba(10, 12, 20, 0.55); z-index: 10090; display: flex; align-items: center; justify-content: center; padding: 18px; }
+.pres-modal-overlay[hidden] { display: none; }
+.pres-modal { background: var(--bg-surface); color: inherit; border: 1px solid var(--border-subtle); border-radius: 16px; width: min(580px, 96vw); max-height: 92vh; overflow-y: auto; box-shadow: 0 24px 70px rgba(0,0,0,0.45); }
+.pres-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 10px; font-size: 17px; font-weight: 800; }
+.pres-modal-close { background: none; border: none; font-size: 17px; cursor: pointer; color: inherit; opacity: 0.7; }
+.pres-modal-body { padding: 4px 20px 8px; }
+.pres-opt-label { margin: 14px 0 8px; font-weight: 700; font-size: 14px; }
+.pres-radio-card { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+.pres-radio-card small { display: block; opacity: 0.75; font-size: 12px; margin-top: 3px; line-height: 1.6; }
+.pres-select { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border-subtle); background: var(--bg-surface); color: inherit; font-size: 14px; }
+.pres-custom-colors { border: 1px dashed var(--border-subtle); border-radius: 12px; padding: 10px 12px; margin-top: 4px; }
+.pres-color-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+.pres-color-name { min-width: 92px; }
+.pres-color-row input[type="color"] { width: 46px; height: 30px; border: 1px solid var(--border-subtle); border-radius: 8px; background: none; cursor: pointer; padding: 1px; }
+.pres-pct { width: 64px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-surface); color: inherit; }
+.pres-modal-foot { display: flex; justify-content: space-between; gap: 10px; padding: 14px 20px 18px; }
+.pres-start-btn { font-weight: 800; }
