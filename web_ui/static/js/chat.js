@@ -203,7 +203,6 @@ function ensureCustomResearchPanel() {
       </div>
       <div id="crGenresBody" hidden>
         <div class="design-kind-grid" id="crTopics"></div>
-        <label class="design-kind-item" style="margin-top:8px; display:inline-flex;"><input type="checkbox" id="crTopicOtherChk"><span>✍️ أخرى — موضوعات أحدّدها بنفسي</span></label>
         <input type="text" class="custom-research-search" id="crTopicOtherText" placeholder="مثال: البلاغة والبيان — سيُركّز البحث عليها ضمن موضوعاتك المحددة، أو عليها وحدها إن انفردت" hidden>
       </div>
     </div>
@@ -333,17 +332,18 @@ function ensureCustomResearchPanel() {
     sum.textContent = parts.length ? parts.join(' + ') : 'كل الموضوعات';
   };
   overlay._updateCrTopicsSummary = updateCrTopicsSummary;
-  overlay.querySelector('#crTopics').addEventListener('change', () => {
-    customResearch.topics = [...overlay.querySelectorAll('#crTopics input[type="checkbox"]:checked')].map(b => b.value);
-    updateCrTopicsSummary();
-    saveCustomResearch();
-  });
-  const otherChk = overlay.querySelector('#crTopicOtherChk');
   const otherText = overlay.querySelector('#crTopicOtherText');
-  otherChk.addEventListener('change', () => {
-    customResearch.topicsOtherOn = otherChk.checked;
-    otherText.hidden = !otherChk.checked;
-    if (otherChk.checked) otherText.focus();
+  overlay.querySelector('#crTopics').addEventListener('change', (event) => {
+    // «أخرى» عنصر أخير في شبكة الموضوعات نفسها (في صف فتاوى) لا عنصر خارجي مشوّه
+    if (event.target.id === 'crTopicOtherChk') {
+      customResearch.topicsOtherOn = event.target.checked;
+      otherText.hidden = !event.target.checked;
+      if (event.target.checked) otherText.focus();
+      updateCrTopicsSummary();
+      saveCustomResearch();
+      return;
+    }
+    customResearch.topics = [...overlay.querySelectorAll('#crTopics input[type="checkbox"]:checked')].filter(b => b.id !== 'crTopicOtherChk').map(b => b.value);
     updateCrTopicsSummary();
     saveCustomResearch();
   });
@@ -487,10 +487,8 @@ function openCustomResearchPanel() {
   if (thinkSel) thinkSel.value = (typeof currentThinkingLevel !== 'undefined' ? currentThinkingLevel : 'medium');
   overlay.querySelector('#crTopics').innerHTML = (SELECTION_RESEARCH_KINDS || []).map(kind =>
     `<label class="design-kind-item"><input type="checkbox" value="${kind.id}" ${customResearch.topics.includes(kind.id) ? 'checked' : ''}><span>${kind.icon} ${kind.label}</span></label>`
-  ).join('');
-  const otherChk = overlay.querySelector('#crTopicOtherChk');
+  ).join('') + `<label class="design-kind-item"><input type="checkbox" id="crTopicOtherChk" ${customResearch.topicsOtherOn ? 'checked' : ''}><span>✍️ أخرى — موضوعات أحدّدها بنفسي</span></label>`;
   const otherText = overlay.querySelector('#crTopicOtherText');
-  if (otherChk) otherChk.checked = !!customResearch.topicsOtherOn;
   if (otherText) { otherText.value = customResearch.topicsOther || ''; otherText.hidden = !customResearch.topicsOtherOn; }
   if (typeof overlay._updateCrTopicsSummary === 'function') overlay._updateCrTopicsSummary();
   // الأصل عند فتح لوحة التخصيص: كل أقسامها مطوية، يفتح الباحث ما يحتاجه بسهمه
