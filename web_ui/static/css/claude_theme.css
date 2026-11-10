@@ -10807,6 +10807,10 @@ body::-webkit-scrollbar,
 .design-prompt p { font-size: 12.5px; line-height: 1.8; color: var(--text-muted); text-align: left; }
 .design-status { color: var(--text-muted); font-size: 14px; padding: 10px 14px; border: 1px dashed var(--border-subtle); border-radius: var(--radius-lg, 6px); }
 .design-live-status { margin: 0 0 10px; }
+.design-transfer-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 9px 13px; font-size: 13px; line-height: 1.9; color: var(--text-main); background: var(--accent-subtle); border: 1px dashed var(--accent-clay); border-radius: var(--radius-lg, 6px); }
+.design-transfer-note[hidden] { display: none; }
+.designs-composer textarea.design-idea-locked { opacity: .8; background: var(--accent-subtle); }
+.design-kind-btn:disabled { opacity: .5; cursor: not-allowed; }
 .design-live-status .design-status { background: var(--accent-subtle); color: var(--text-main); border: 1px solid var(--accent-clay); font-weight: 600; }
 .design-status-error { color: #b3261e; border-color: #b3261e55; }
 .designs-composer { display: flex; gap: 10px; align-items: stretch; }

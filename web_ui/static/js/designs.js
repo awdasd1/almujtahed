@@ -401,6 +401,79 @@ function designImageModelChoice() {
   try { const saved = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); return ['muse', 'gemini', 'gpt54'].includes(saved) ? saved : 'gpt'; } catch (e) { return 'gpt'; }
 }
 
+let designTransferLocked = false;
+function setDesignTransferLock(locked) {
+  designTransferLocked = !!locked;
+  const input = document.getElementById('designIdeaInput');
+  if (input) {
+    input.readOnly = designTransferLocked;
+    input.classList.toggle('design-idea-locked', designTransferLocked);
+  }
+  ['designKindBtn', 'designBooksBtn'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = designTransferLocked;
+  });
+  if (designTransferLocked) {
+    const kindPanel = document.getElementById('designKindPanel');
+    if (kindPanel) kindPanel.hidden = true;
+    const booksPanel = document.getElementById('designBooksPanel');
+    if (booksPanel) booksPanel.hidden = true;
+  }
+  const note = document.getElementById('designTransferLockNote');
+  if (note) note.hidden = !designTransferLocked;
+}
+
+function buildDirectDesignPrompt(text, imageMode) {
+  const modeRule = imageMode === 'none'
+    ? 'Text-only Arabic typographic poster — absolutely no images, no illustrations, no photographs, no drawings, no icons, no scenery, no buildings, no maps, no people, no animals, no pictorial elements of any kind; only elegant Arabic calligraphy and typography, flat geometric ornament and solid color backgrounds.'
+    : imageMode === 'without'
+      ? 'Absolutely no people, no human figures, no animals, no birds, no living beings of any kind, and no silhouettes of living creatures — only maps, architecture, inanimate objects, geometric ornament and Arabic calligraphy.'
+      : 'Any people shown strictly and entirely from the back, no faces, no side profiles, in dignified historical clothing.';
+  return [
+    'Create a beautiful, highly detailed Arabic heritage infographic poster (editorial design, print quality).',
+    `The poster must display the following Arabic text prominently and render it exactly as written, character for character, with perfect legibility and no distorted characters:\n"""\n${text}\n"""`,
+    'Typography: the first line as the main title in bold Almarai (Google Fonts), ivory white with coral highlights; the remaining text and the source line in elegant Amiri (Google Fonts), crisp and perfectly readable.',
+    'Visual identity: Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use: deep ocean navy, muted teal, slate gray, ivory sand, and vibrant coral-orange accents. Absolutely avoid standard black-and-gold or dark vintage fantasy themes.',
+    modeRule,
+    'No logos, no watermarks, and no English text inside the image.'
+  ].join('\n');
+}
+
+async function runDirectDesignGeneration(idea, aspect, imageMode, imageModel) {
+  let savedKeys = {};
+  try { savedKeys = readProviderKeys(); } catch (e) {}
+  const apiKey = savedKeys.openrouter || '';
+  const prompt = buildDirectDesignPrompt(idea, imageMode);
+  startDesignTimer('نص منقول من محادثة — يُرسل مباشرة إلى نموذج الصورة دون صياغة توجيه وسيطة...');
+  const imgResp = await fetch('/api/designs/image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, aspect, api_key: apiKey, image_model: imageModel || 'gpt' })
+  });
+  const imgData = await imgResp.json().catch(() => ({}));
+  if (!imgResp.ok) throw new Error(imgData.detail || 'تعذر توليد الصورة');
+  designMessages.push({
+    role: 'assistant',
+    prompt,
+    image_url: imgData.image_url || '',
+    file_name: imgData.file_name || '',
+    title: imgData.title || '',
+    branded: !!imgData.branded,
+    aspect,
+    image_mode: ['without', 'none'].includes(imageMode) ? imageMode : 'with',
+    image_model: imgData.model || '',
+    discipline: '📌 منقول من المحادثة — إرسال مباشر',
+    cost_usd: (typeof imgData.cost_usd === 'number') ? imgData.cost_usd : null,
+    duration_s: (typeof imgData.duration_s === 'number') ? imgData.duration_s : null,
+    collapsed: false,
+    books: []
+  });
+  saveDesignMessages();
+  stopDesignTimer();
+  renderDesignMessages();
+  loadDesignBalance();
+}
+
 function designSystemPrompt(imageMode) {
   const noLiving = imageMode === 'without';
   const textOnly = imageMode === 'none';
@@ -627,27 +700,39 @@ async function submitDesignIdea(event) {
   const aspect = document.querySelector('input[name="designAspect"]:checked')?.value || '16:9';
   const imageMode = designImageMode();
   const imageModel = designImageModelChoice();
-  const scope = resolveDesignScope(idea);
-  if (!scope.books.length) {
-    if (typeof showToast === 'function') showToast('لا كتب في نطاق البحث — أضف كتابًا واحدًا على الأقل من «📚 تصفح الكتب»');
-    return;
+  const locked = designTransferLocked;
+  let scope = null;
+  if (!locked) {
+    scope = resolveDesignScope(idea);
+    if (!scope.books.length) {
+      if (typeof showToast === 'function') showToast('لا كتب في نطاق البحث — أضف كتابًا واحدًا على الأقل من «📚 تصفح الكتب»');
+      return;
+    }
   }
   const userMsg = { role: 'user', text: idea };
   designMessages.push(userMsg);
   saveDesignMessages();
   renderDesignMessages();
-  input.value = '';
+  if (!locked) input.value = '';
   designBusy = true;
   const btn = document.getElementById('designSendBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ جارٍ التوليد...'; }
   try {
-    await runDesignGeneration(idea, aspect, scope, imageMode, imageModel);
+    if (locked) {
+      await runDirectDesignGeneration(idea, aspect, imageMode, imageModel);
+    } else {
+      await runDesignGeneration(idea, aspect, scope, imageMode, imageModel);
+    }
     // بعد إنشاء الصورة بنجاح يُحذف طلب المستخدم تلقائيًا — تبقى البطاقة وحدها
     const reqIdx = designMessages.indexOf(userMsg);
     if (reqIdx >= 0) {
       designMessages.splice(reqIdx, 1);
       saveDesignMessages();
       renderDesignMessages();
+    }
+    if (locked) {
+      setDesignTransferLock(false);
+      input.value = '';
     }
   } catch (err) {
     stopDesignTimer();
@@ -1208,6 +1293,13 @@ function initDesignsTab() {
     try { const savedModel = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); if (['gpt', 'muse', 'gemini', 'gpt54'].includes(savedModel)) modelSel.value = savedModel; } catch (e) {}
     modelSel.addEventListener('change', () => { try { localStorage.setItem(DESIGN_IMAGE_MODEL_KEY, modelSel.value); } catch (e) {} });
   }
+  const unlockBtn = document.getElementById('designTransferUnlock');
+  if (unlockBtn) unlockBtn.addEventListener('click', () => {
+    setDesignTransferLock(false);
+    const ideaInput = document.getElementById('designIdeaInput');
+    if (ideaInput) { ideaInput.value = ''; ideaInput.focus(); }
+    if (typeof showToast === 'function') showToast('أُلغي قفل النقل — يمكنك كتابة فكرة حرة وتحديد نطاق البحث والكتب');
+  });
   const form = document.getElementById('designComposer');
   if (form) form.addEventListener('submit', submitDesignIdea);
   const input = document.getElementById('designIdeaInput');

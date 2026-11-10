@@ -7997,9 +7997,10 @@ function sendSelectionToDesign() {
   }
   input.value = text;
   input.dispatchEvent(new Event('input', { bubbles: true }));
+  if (typeof setDesignTransferLock === 'function') setDesignTransferLock(true);
   input.scrollIntoView({ behavior: 'smooth', block: 'center' });
   input.focus();
-  if (typeof showToast === 'function') showToast('نُقل النص مع مصدره إلى مربع فكرة التصميم — اختر الأبعاد ونوع التصميم ونموذج الصورة ثم اضغط «🎨 توليد التصميم»');
+  if (typeof showToast === 'function') showToast('نُقل النص مع مصدره إلى مربع التصميم مقفلًا — اختر الأبعاد ونوع التصميم ونموذج الصورة ثم اضغط «🎨 توليد التصميم» ليُرسل مباشرة إلى نموذج الصورة');
 }
 
 function publishSelectedText() {
