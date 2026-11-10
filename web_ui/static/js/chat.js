@@ -2229,7 +2229,7 @@ function initSlashCommands() {
   });
   input.addEventListener('blur', () => setTimeout(closeSlashMenu, 180));
 }
-document.addEventListener('DOMContentLoaded', initSlashCommands);
+// قائمة السلاش (/) أُزيلت من الواجهة بطلب ما قبل النشر — لا تُهيَّأ ولا تظهر أبدًا
 
 function handleChatInputKey(e) {
   const menu = document.getElementById('slashCommandMenu');
@@ -7356,7 +7356,9 @@ window.fitChatIsnad = fitChatIsnad;
 window.toggleChatCodeBlock = toggleChatCodeBlock;
 
 // نمط توزيع واستدعاء الوكلاء المساعدين في الشات الذكي (متوازي vs مباشر - حفظ خط الرجعة)
-window.chatRawMcp = localStorage.getItem('almojtahed_chat_raw_mcp') === '1';
+// وضع «MCP خام» أُزيل من الواجهة بطلب ما قبل النشر — يُطفأ قسرًا ولو كان مفعّلًا من قبل
+window.chatRawMcp = false;
+try { localStorage.removeItem('almojtahed_chat_raw_mcp'); } catch (e) {}
 
 window.toggleChatRawMcp = function() {
   window.chatRawMcp = !window.chatRawMcp;
