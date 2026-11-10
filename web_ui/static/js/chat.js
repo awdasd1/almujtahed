@@ -170,11 +170,16 @@ function ensureCustomResearchPanel() {
       </div>
     </div>
     <div class="custom-research-sec">
-      <h4>🗓️ الحدود الزمانية (وفاة المؤلف، هجري)</h4>
-      <div class="custom-research-row">
-        <label style="font-size:13px;"><input type="checkbox" id="crYearAny"> دون تحديد — كل القرون</label>
-        <span style="font-size:13px;">من عام <input type="number" id="crYearFrom" min="1" max="1500" style="width:90px;" placeholder="—"></span>
-        <span style="font-size:13px;">إلى عام <input type="number" id="crYearTo" min="1" max="1500" style="width:90px;" placeholder="—"></span>
+      <div class="cr-fold-head">
+        <h4>🗓️ الحدود الزمانية (<span id="crYearSummary">دون تحديد — كل القرون</span>)</h4>
+        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crYearsBody" title="فتح/طي الحدود الزمانية">▾</button>
+      </div>
+      <div id="crYearsBody" hidden>
+        <div class="custom-research-row">
+          <label style="font-size:13px;"><input type="checkbox" id="crYearAny"> دون تحديد — كل القرون</label>
+          <span style="font-size:13px;">وفاة المؤلف من عام <input type="number" id="crYearFrom" min="1" max="1500" style="width:90px;" placeholder="—"></span>
+          <span style="font-size:13px;">إلى عام <input type="number" id="crYearTo" min="1" max="1500" style="width:90px;" placeholder="—"></span>
+        </div>
       </div>
     </div>
     <div class="custom-research-sec">
@@ -182,11 +187,16 @@ function ensureCustomResearchPanel() {
       <div class="design-kind-grid" id="crTopics"></div>
     </div>
     <div class="custom-research-sec">
-      <h4>📏 طول البحث (عدد الشواهد في التوجيه)</h4>
-      <div class="custom-research-row">
-        <label style="font-size:13.5px;"><input type="radio" name="crLength" value="short"> مختصر — ٥٠ شاهدًا</label>
-        <label style="font-size:13.5px;"><input type="radio" name="crLength" value="mid"> متوسط — ١٥٠ شاهدًا</label>
-        <label style="font-size:13.5px;"><input type="radio" name="crLength" value="long"> طويل — ٣٠٠ شاهد</label>
+      <div class="cr-fold-head">
+        <h4>📏 طول البحث (<span id="crLengthSummary">متوسط — ١٥٠ شاهدًا</span>)</h4>
+        <button type="button" class="cr-fold-btn is-folded" data-cr-fold="crLengthBody" title="فتح/طي طول البحث">▾</button>
+      </div>
+      <div id="crLengthBody" hidden>
+        <div class="custom-research-row">
+          <label style="font-size:13.5px;"><input type="radio" name="crLength" value="short"> مختصر — ٥٠ شاهدًا</label>
+          <label style="font-size:13.5px;"><input type="radio" name="crLength" value="mid"> متوسط — ١٥٠ شاهدًا</label>
+          <label style="font-size:13.5px;"><input type="radio" name="crLength" value="long"> طويل — ٣٠٠ شاهد</label>
+        </div>
       </div>
     </div>
     <div class="custom-research-actions">
@@ -275,6 +285,10 @@ function ensureCustomResearchPanel() {
     customResearch.yearTo = overlay.querySelector('#crYearTo').value;
     overlay.querySelector('#crYearFrom').disabled = yearAny.checked;
     overlay.querySelector('#crYearTo').disabled = yearAny.checked;
+    const sum = overlay.querySelector('#crYearSummary');
+    if (sum) sum.textContent = customResearch.yearAny
+      ? 'دون تحديد — كل القرون'
+      : `وفاة المؤلف من ${customResearch.yearFrom || '؟'} إلى ${customResearch.yearTo || '؟'} هـ`;
     saveCustomResearch();
   };
   yearAny.addEventListener('change', syncYears);
@@ -285,7 +299,12 @@ function ensureCustomResearchPanel() {
     saveCustomResearch();
   });
   overlay.querySelectorAll('input[name="crLength"]').forEach(radio => {
-    radio.addEventListener('change', () => { customResearch.length = radio.value; saveCustomResearch(); });
+    radio.addEventListener('change', () => {
+      customResearch.length = radio.value;
+      const sum = overlay.querySelector('#crLengthSummary');
+      if (sum) sum.textContent = { short: 'مختصر — ٥٠ شاهدًا', mid: 'متوسط — ١٥٠ شاهدًا', long: 'طويل — ٣٠٠ شاهد' }[radio.value] || '';
+      saveCustomResearch();
+    });
   });
   const chips = overlay.querySelector('#crBookChips');
   chips.addEventListener('click', (event) => {
@@ -420,7 +439,13 @@ function openCustomResearchPanel() {
   overlay.querySelector('#crYearTo').value = customResearch.yearTo;
   overlay.querySelector('#crYearFrom').disabled = customResearch.yearAny;
   overlay.querySelector('#crYearTo').disabled = customResearch.yearAny;
+  const yearSum = overlay.querySelector('#crYearSummary');
+  if (yearSum) yearSum.textContent = customResearch.yearAny
+    ? 'دون تحديد — كل القرون'
+    : `وفاة المؤلف من ${customResearch.yearFrom || '؟'} إلى ${customResearch.yearTo || '؟'} هـ`;
   overlay.querySelectorAll('input[name="crLength"]').forEach(r => { r.checked = r.value === customResearch.length; });
+  const lenSum = overlay.querySelector('#crLengthSummary');
+  if (lenSum) lenSum.textContent = { short: 'مختصر — ٥٠ شاهدًا', mid: 'متوسط — ١٥٠ شاهدًا', long: 'طويل — ٣٠٠ شاهد' }[customResearch.length] || '';
   renderCustomBooks();
   renderCustomLibrary();
   renderCustomCategories();
@@ -429,10 +454,12 @@ function openCustomResearchPanel() {
 window.openCustomResearchPanel = openCustomResearchPanel;
 
 // =============================================================================
-// النوع الثاني (ب): قائمة الباك سلاش في حقل المحادثة — خياران فقط:
-// بحث مخصص (يفتح لوحة التخصيص) وبحث موسع (السيناريو المعهود الكامل)
+// النوع الثاني (ب): قائمة الباك سلاش في حقل المحادثة — ثلاثة خيارات:
+// بحث حر (الأصل الافتراضي، وتعود به قائمة النماذج العلوية) وبحث مخصص
+// (يفتح لوحة التخصيص) وبحث موسع (السيناريو المعهود الكامل)
 // =============================================================================
 const SCENARIO_SLASH_ITEMS = [
+  { id: 'free', label: 'بحث حر', icon: '💬', desc: 'الأصل الافتراضي: محادثة عامة من ذاكرة النموذج، وتعود قائمة النماذج إلى الأعلى' },
   { id: 'custom', label: 'بحث مخصص', icon: '🔎', desc: 'تخصيص النموذج والكتب والحدود الزمانية والموضوعية وطول البحث' },
   { id: 'expanded', label: 'بحث موسع', icon: '🌐', desc: 'السيناريو المعهود الكامل: المجموعات وكل ضوابط البحث التراثي' }
 ];
