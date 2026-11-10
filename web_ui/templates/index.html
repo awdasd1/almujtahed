@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.417">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.418">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.417 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.418 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -2304,6 +2304,54 @@
                             <div class="design-books-kind-head">📋 من القائمة المعتمدة</div>
                             <div class="design-books-list" id="designBooksList"></div>
                             <div class="design-kind-hint">احذف كتابًا من الأعلى أو ألغِ تحديده فلن يُبحث فيه، وحدّد أي كتاب — من القائمة المعتمدة أو من نتائج مكتبة الشاملة — فيُضاف دائمًا إلى نطاق البحث. تعديلاتك محفوظة وتسري فوق نطاق الفنون (التلقائي أو اليدوي).</div>
+                        </div>
+                    </div>
+                    <div class="design-kind-picker">
+                        <button type="button" class="design-kind-btn" id="designColorsBtn">🎨 الألوان: افتراضية</button>
+                        <div class="design-kind-panel design-colors-panel" id="designColorsPanel" hidden>
+                            <div class="design-colors-head">🖼️ ألوان الصورة</div>
+                            <label class="design-kind-item">
+                                <input type="radio" name="designImgColorMode" value="default" checked>
+                                <span>ألوان افتراضية — هوية المجتهد (كحلي محيطي عميق، فيروزي مكتوم، رمادي أردوازي، رملي عاجي، مرجاني زاهٍ)</span>
+                            </label>
+                            <label class="design-kind-item">
+                                <input type="radio" name="designImgColorMode" value="custom">
+                                <span>ألوان مخصصة — فعّلها ليُتاح اختيار الألوان الثلاثة ونسب سيادتها في الصورة</span>
+                            </label>
+                            <div id="designImgColorRows">
+                                <div class="design-color-row">
+                                    <span class="design-color-name">اللون الأول — السائد</span>
+                                    <input type="color" class="design-color-swatch" id="designImgColor1" value="#16324a" title="انقر لاختيار اللون الأول">
+                                    <input type="range" class="design-color-pct" id="designImgPct1" min="0" max="100" step="5" value="60" title="نسبة سيادة اللون الأول في الصورة">
+                                    <span class="design-color-pct-val" id="designImgPctVal1">60%</span>
+                                </div>
+                                <div class="design-color-row">
+                                    <span class="design-color-name">اللون الثاني</span>
+                                    <input type="color" class="design-color-swatch" id="designImgColor2" value="#2e7d74" title="انقر لاختيار اللون الثاني">
+                                    <input type="range" class="design-color-pct" id="designImgPct2" min="0" max="100" step="5" value="25" title="نسبة سيادة اللون الثاني في الصورة">
+                                    <span class="design-color-pct-val" id="designImgPctVal2">25%</span>
+                                </div>
+                                <div class="design-color-row">
+                                    <span class="design-color-name">اللون الثالث — التمييز</span>
+                                    <input type="color" class="design-color-swatch" id="designImgColor3" value="#e2725b" title="انقر لاختيار اللون الثالث">
+                                    <input type="range" class="design-color-pct" id="designImgPct3" min="0" max="100" step="5" value="15" title="نسبة سيادة اللون الثالث في الصورة">
+                                    <span class="design-color-pct-val" id="designImgPctVal3">15%</span>
+                                </div>
+                            </div>
+                            <div class="design-colors-head">✒️ ألوان الخطوط</div>
+                            <div class="design-color-row">
+                                <span class="design-color-name">لون العناوين الأساسية</span>
+                                <input type="color" class="design-color-swatch" id="designFontTitle" value="#f7f2e7" title="انقر لاختيار لون العناوين الأساسية">
+                            </div>
+                            <div class="design-color-row">
+                                <span class="design-color-name">لون العناوين الفرعية</span>
+                                <input type="color" class="design-color-swatch" id="designFontSub" value="#e2725b" title="انقر لاختيار لون العناوين الفرعية">
+                            </div>
+                            <div class="design-color-row">
+                                <span class="design-color-name">لون النصوص</span>
+                                <input type="color" class="design-color-swatch" id="designFontBody" value="#f7f2e7" title="انقر لاختيار لون النصوص">
+                            </div>
+                            <div class="design-kind-hint">اختياراتك محفوظة وتسري على كل تصميم جديد حتى تغيّرها، وتُمرَّر صراحة برموزها ونسبها إلى توجيه نموذج صانع الصور.</div>
                         </div>
                     </div>
                     </div>
@@ -5614,23 +5662,23 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.417"></script>
-    <script src="/static/js/search.js?v=1.10.417"></script>
-    <script src="/static/js/reader.js?v=1.10.417"></script>
-    <script src="/static/js/force3d.js?v=1.10.417"></script>
-    <script src="/static/js/share.js?v=1.10.417"></script>
-    <script src="/static/js/chat.js?v=1.10.417"></script>
-    <script src="/static/js/designs.js?v=1.10.417"></script>
-    <script src="/static/js/texts.js?v=1.10.417"></script>
-    <script src="/static/js/agents.js?v=1.10.417"></script>
-    <script src="/static/js/providers.js?v=1.10.417"></script>
-    <script src="/static/js/tools.js?v=1.10.417"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.417"></script>
-    <script src="/static/js/projects.js?v=1.10.417"></script>
-    <script src="/static/js/archive.js?v=1.10.417"></script>
-    <script src="/static/js/compare.js?v=1.10.417"></script>
-    <script src="/static/js/local_models.js?v=1.10.417"></script>
-    <script src="/static/js/changelog.js?v=1.10.417"></script>
+    <script src="/static/js/app.js?v=1.10.418"></script>
+    <script src="/static/js/search.js?v=1.10.418"></script>
+    <script src="/static/js/reader.js?v=1.10.418"></script>
+    <script src="/static/js/force3d.js?v=1.10.418"></script>
+    <script src="/static/js/share.js?v=1.10.418"></script>
+    <script src="/static/js/chat.js?v=1.10.418"></script>
+    <script src="/static/js/designs.js?v=1.10.418"></script>
+    <script src="/static/js/texts.js?v=1.10.418"></script>
+    <script src="/static/js/agents.js?v=1.10.418"></script>
+    <script src="/static/js/providers.js?v=1.10.418"></script>
+    <script src="/static/js/tools.js?v=1.10.418"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.418"></script>
+    <script src="/static/js/projects.js?v=1.10.418"></script>
+    <script src="/static/js/archive.js?v=1.10.418"></script>
+    <script src="/static/js/compare.js?v=1.10.418"></script>
+    <script src="/static/js/local_models.js?v=1.10.418"></script>
+    <script src="/static/js/changelog.js?v=1.10.418"></script>
 
     <script>
         window.refreshLucideIcons = function () {

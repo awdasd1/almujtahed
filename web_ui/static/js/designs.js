@@ -401,6 +401,133 @@ function designImageModelChoice() {
   try { const saved = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); return ['muse', 'gemini', 'gpt54'].includes(saved) ? saved : 'gpt'; } catch (e) { return 'gpt'; }
 }
 
+/* 🎨 ألوان التصاميم: ألوان صورة (افتراضية/مخصصة بثلاثة ألوان ونسب سيادة) وألوان خطوط،
+   محفوظة حتى يغيّرها المستخدم وتُمرَّر صراحة إلى توجيه صانع الصور */
+const DESIGN_COLORS_KEY = 'almujtahed_designs_colors_v1';
+const DESIGN_COLORS_DEFAULT = {
+  mode: 'default',
+  img: [
+    { hex: '#16324a', pct: 60 },
+    { hex: '#2e7d74', pct: 25 },
+    { hex: '#e2725b', pct: 15 }
+  ],
+  fonts: { title: '#f7f2e7', sub: '#e2725b', body: '#f7f2e7' }
+};
+let designColorsState = JSON.parse(JSON.stringify(DESIGN_COLORS_DEFAULT));
+
+function designHex(value, fallback) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(value || '')) ? String(value).toLowerCase() : fallback;
+}
+
+function loadDesignColors() {
+  try {
+    const raw = localStorage.getItem(DESIGN_COLORS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const d = DESIGN_COLORS_DEFAULT;
+      designColorsState = {
+        mode: parsed.mode === 'custom' ? 'custom' : 'default',
+        img: [0, 1, 2].map(i => ({
+          hex: designHex(parsed.img && parsed.img[i] && parsed.img[i].hex, d.img[i].hex),
+          pct: Math.min(100, Math.max(0, parseInt(parsed.img && parsed.img[i] && parsed.img[i].pct, 10) || 0))
+        })),
+        fonts: {
+          title: designHex(parsed.fonts && parsed.fonts.title, d.fonts.title),
+          sub: designHex(parsed.fonts && parsed.fonts.sub, d.fonts.sub),
+          body: designHex(parsed.fonts && parsed.fonts.body, d.fonts.body)
+        }
+      };
+    }
+  } catch (e) { /* حالة افتراضية */ }
+  return designColorsState;
+}
+
+function saveDesignColors() {
+  try { localStorage.setItem(DESIGN_COLORS_KEY, JSON.stringify(designColorsState)); } catch (e) {}
+}
+
+/* لوحة الألوان الإنجليزية الموجهة لصانع الصور: الافتراضية هي هوية المجتهد الثابتة */
+function designPaletteEn() {
+  loadDesignColors();
+  if (designColorsState.mode !== 'custom') {
+    return 'Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use: deep ocean navy, muted teal, slate gray, ivory sand, and vibrant coral-orange accents. Absolutely avoid standard black-and-gold or dark vintage fantasy themes.';
+  }
+  const [a, b, c] = designColorsState.img;
+  return 'Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use this user-defined color palette and honor its proportions across the whole design (backgrounds, shapes, ornaments and highlights): dominant color '
+    + `${a.hex} covering about ${a.pct}% of the design, secondary color ${b.hex} covering about ${b.pct}%, accent color ${c.hex} covering about ${c.pct}%. `
+    + 'Absolutely avoid standard black-and-gold or dark vintage fantasy themes.';
+}
+
+function updateDesignColorsButton() {
+  const btn = document.getElementById('designColorsBtn');
+  if (!btn) return;
+  btn.textContent = designColorsState.mode === 'custom' ? '🎨 الألوان: مخصصة' : '🎨 الألوان: افتراضية';
+}
+
+function initDesignColorsPicker() {
+  loadDesignColors();
+  const btn = document.getElementById('designColorsBtn');
+  const panel = document.getElementById('designColorsPanel');
+  if (!btn || !panel) return;
+  const rows = document.getElementById('designImgColorRows');
+  const syncFromState = () => {
+    panel.querySelectorAll('input[name="designImgColorMode"]').forEach(r => { r.checked = r.value === designColorsState.mode; });
+    designColorsState.img.forEach((c, i) => {
+      const sw = document.getElementById('designImgColor' + (i + 1));
+      const rg = document.getElementById('designImgPct' + (i + 1));
+      const val = document.getElementById('designImgPctVal' + (i + 1));
+      if (sw) sw.value = c.hex;
+      if (rg) rg.value = c.pct;
+      if (val) val.textContent = c.pct + '%';
+    });
+    const ft = document.getElementById('designFontTitle');
+    const fs = document.getElementById('designFontSub');
+    const fb = document.getElementById('designFontBody');
+    if (ft) ft.value = designColorsState.fonts.title;
+    if (fs) fs.value = designColorsState.fonts.sub;
+    if (fb) fb.value = designColorsState.fonts.body;
+    if (rows) rows.classList.toggle('is-disabled', designColorsState.mode !== 'custom');
+    updateDesignColorsButton();
+  };
+  syncFromState();
+  if (btn.dataset.wired) return;
+  btn.dataset.wired = '1';
+  btn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    panel.hidden = !panel.hidden;
+  });
+  panel.addEventListener('click', (event) => event.stopPropagation());
+  document.addEventListener('click', () => { panel.hidden = true; });
+  panel.querySelectorAll('input[name="designImgColorMode"]').forEach(r => {
+    r.addEventListener('change', () => {
+      designColorsState.mode = r.value === 'custom' ? 'custom' : 'default';
+      saveDesignColors();
+      syncFromState();
+    });
+  });
+  designColorsState.img.forEach((c, i) => {
+    const sw = document.getElementById('designImgColor' + (i + 1));
+    const rg = document.getElementById('designImgPct' + (i + 1));
+    if (sw) sw.addEventListener('input', () => {
+      designColorsState.img[i].hex = sw.value;
+      saveDesignColors();
+    });
+    if (rg) rg.addEventListener('input', () => {
+      designColorsState.img[i].pct = parseInt(rg.value, 10) || 0;
+      const val = document.getElementById('designImgPctVal' + (i + 1));
+      if (val) val.textContent = designColorsState.img[i].pct + '%';
+      saveDesignColors();
+    });
+  });
+  [['designFontTitle', 'title'], ['designFontSub', 'sub'], ['designFontBody', 'body']].forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => {
+      designColorsState.fonts[key] = el.value;
+      saveDesignColors();
+    });
+  });
+}
+
 let designTransferLocked = false;
 function setDesignTransferLock(locked) {
   designTransferLocked = !!locked;
@@ -409,7 +536,7 @@ function setDesignTransferLock(locked) {
     input.readOnly = designTransferLocked;
     input.classList.toggle('design-idea-locked', designTransferLocked);
   }
-  ['designKindBtn', 'designBooksBtn'].forEach(id => {
+  ['designKindBtn', 'designBooksBtn', 'designColorsBtn'].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = designTransferLocked;
   });
@@ -418,6 +545,8 @@ function setDesignTransferLock(locked) {
     if (kindPanel) kindPanel.hidden = true;
     const booksPanel = document.getElementById('designBooksPanel');
     if (booksPanel) booksPanel.hidden = true;
+    const colorsPanel = document.getElementById('designColorsPanel');
+    if (colorsPanel) colorsPanel.hidden = true;
   }
   const note = document.getElementById('designTransferLockNote');
   if (note) note.hidden = !designTransferLocked;
@@ -429,11 +558,13 @@ function buildDirectDesignPrompt(text, imageMode) {
     : imageMode === 'without'
       ? 'Absolutely no people, no human figures, no animals, no birds, no living beings of any kind, and no silhouettes of living creatures — only maps, architecture, inanimate objects, geometric ornament and Arabic calligraphy.'
       : 'Any people shown strictly and entirely from the back, no faces, no side profiles, in dignified historical clothing.';
+  loadDesignColors();
+  const fonts = designColorsState.fonts;
   return [
     'Create a beautiful, highly detailed Arabic heritage infographic poster (editorial design, print quality).',
     `The poster must display the following Arabic text prominently and render it exactly as written, character for character, with perfect legibility and no distorted characters:\n"""\n${text}\n"""`,
-    'Typography: the first line as the main title in bold Almarai (Google Fonts), ivory white with coral highlights; the remaining text and the source line in elegant Amiri (Google Fonts), crisp and perfectly readable.',
-    'Visual identity: Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use: deep ocean navy, muted teal, slate gray, ivory sand, and vibrant coral-orange accents. Absolutely avoid standard black-and-gold or dark vintage fantasy themes.',
+    `Typography: the first line as the main title in bold Almarai (Google Fonts) in the exact color ${fonts.title}; subheadings in bold Almarai in the exact color ${fonts.sub}; the remaining text and the source line in elegant Amiri (Google Fonts) in the exact color ${fonts.body}, crisp and perfectly readable.`,
+    'Visual identity: ' + designPaletteEn(),
     modeRule,
     'No logos, no watermarks, and no English text inside the image.'
   ].join('\n');
@@ -477,6 +608,10 @@ async function runDirectDesignGeneration(idea, aspect, imageMode, imageModel) {
 function designSystemPrompt(imageMode) {
   const noLiving = imageMode === 'without';
   const textOnly = imageMode === 'none';
+  loadDesignColors();
+  const fonts = designColorsState.fonts;
+  const customPalette = designColorsState.mode === 'custom';
+  const [pc1, pc2, pc3] = designColorsState.img;
   return [
     'أنت مهندس توجيهات صور (Prompt Engineer) لتبويب «تصاميم» في تطبيق المجتهد للبحث التراثي.',
     'مهمتك الوحيدة: تحويل فكرة المستخدم إلى توجيه توليد صورة واحد (Image Prompt) بالإنجليزية فقط، جاهز للإرسال مباشرة إلى نموذج توليد صور، مستندًا إلى الشواهد المرفقة من كتب التراث المعتمدة — لا تخترع وقائع أو أماكن أو تواريخ لا تدعمها الشواهد.',
@@ -485,8 +620,10 @@ function designSystemPrompt(imageMode) {
     textOnly
       ? '1) نوع العمل: ملصق طباعي نصي فاخر (Arabic typographic poster) يعتمد كليًا على الخط العربي وتوزيع النصوص والعناوين والزخارف الهندسية المسطحة — لا مشاهد ولا خرائط مرسومة ولا أي عناصر تصويرية، بل تكوين نصي أنيق بخلفية موحّدة اللون أو زخرفة هندسية خفيفة.'
       : '1) نوع العمل: highly detailed historical infographic / documentary illustration مناسب لموضوع الفكرة (خريطة رحلة، خط زمني، مشهد تاريخي موثق...) بحسب ما تدعمه الشواهد.',
-    '2) خطوط الصورة العربية: العنوان الرئيسي والعناوين الفرعية داخل الصورة بخط المراعي (Almarai — Google Fonts) بالوزن العريض، وبقية النصوص العربية (الشروح والتسميات والقوائم والتعليقات) بخط الأميري (Amiri — Google Fonts) الأنيق. اختر عنوانًا عربيًا دقيقًا للفكرة واكتبه في التوجيه بحروف عربية حرفيًا بين علامتي تنصيص، مثل: The main title reads clearly in Arabic: "رحلة الإمام البخاري لطلب الحديث", set in bold Almarai (Google Fonts), ivory white with coral highlights; all other Arabic text, labels and captions in Amiri (Google Fonts) — crisp, perfectly legible, with no distorted characters.',
-    '3) هوية المجتهد البصرية الثابتة: Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use: deep ocean navy, muted teal, slate gray, ivory sand, and vibrant coral-orange accents. Absolutely avoid standard black-and-gold or dark vintage fantasy themes.',
+    `2) خطوط الصورة العربية: العنوان الرئيسي والعناوين الفرعية داخل الصورة بخط المراعي (Almarai — Google Fonts) بالوزن العريض، وبقية النصوص العربية (الشروح والتسميات والقوائم والتعليقات) بخط الأميري (Amiri — Google Fonts) الأنيق. اختر عنوانًا عربيًا دقيقًا للفكرة واكتبه في التوجيه بحروف عربية حرفيًا بين علامتي تنصيص، مثل: The main title reads clearly in Arabic: "رحلة الإمام البخاري لطلب الحديث", set in bold Almarai (Google Fonts) in the exact color ${fonts.title}; subheadings in bold Almarai in the exact color ${fonts.sub}; all other Arabic text, labels and captions in Amiri (Google Fonts) in the exact color ${fonts.body} — crisp, perfectly legible, with no distorted characters.`,
+    customPalette
+      ? `3) لوحة ألوان مخصصة فرضها المستخدم ويلزم الالتزام بها حرفيًا في التوجيه الإنجليزي برموزها ونسبها: اللون السائد ${pc1.hex} بنسبة ${pc1.pct}٪ تقريبًا من مساحة التصميم (خلفيات وأشكال وزخارف)، واللون الثاني ${pc2.hex} بنسبة ${pc2.pct}٪، ولون التمييز ${pc3.hex} بنسبة ${pc3.pct}٪ — مع تجنب الأسود والذهبي القياسي وسمات الفانتازيا الداكنة.`
+      : '3) هوية المجتهد البصرية الثابتة: Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use: deep ocean navy, muted teal, slate gray, ivory sand, and vibrant coral-orange accents. Absolutely avoid standard black-and-gold or dark vintage fantasy themes.',
     textOnly
       ? '4) بلا صور مطلقًا: ممنوع أي عنصر تصويري مهما كان — لا رسوم ولا صور فوتوغرافية ولا أيقونات ولا مشاهد طبيعية ولا مبانٍ ولا خرائط مرسومة ولا أشخاص ولا حيوانات ولا أي كائنات أو أشياء مصوَّرة. التصميم نصي خالص: خط عربي وعناوين ونصوص موزعة ببراعة مع زخارف هندسية مسطحة وخلفية لونية، ويجب أن يتضمن التوجيه الإنجليزي حرفيًا عبارة بهذا المعنى: Text-only Arabic typographic poster — absolutely no images, no illustrations, no photographs, no drawings, no icons, no scenery, no buildings, no maps, no people, no animals, no pictorial elements of any kind; only elegant Arabic calligraphy and typography, flat geometric ornament and solid color backgrounds.'
       : noLiving
@@ -1242,6 +1379,7 @@ function initDesignsTab() {
   loadDesignBalance();
   initDesignKindPicker();
   initDesignBooksPicker();
+  initDesignColorsPicker();
   if (typeof initTextsTab === 'function') initTextsTab();
   if (designsInitDone) return;
   designsInitDone = true;

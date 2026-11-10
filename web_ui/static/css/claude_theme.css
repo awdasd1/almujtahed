@@ -10872,6 +10872,58 @@ body::-webkit-scrollbar,
 .design-kind-btn { font-family: 'Almarai', sans-serif; font-size: 13px; font-weight: 700; border: 1px solid var(--accent-clay); background: var(--accent-subtle); color: var(--text-main); border-radius: var(--radius-pill, 6px); padding: 7px 14px; cursor: pointer; }
 .design-kind-panel { position: absolute; top: calc(100% + 8px); inset-inline-start: 0; z-index: 60; width: min(430px, 92vw); background: var(--bg-surface); border: 1px solid var(--border-hover, var(--border-subtle)); border-radius: var(--radius-lg, 6px); box-shadow: 0 16px 44px rgba(0,0,0,0.25); padding: 12px; }
 .design-kind-panel[hidden] { display: none; }
+
+/* لوحة ألوان التصاميم: مربعات لون تنبثق منها نافذة الألوان + شرائط نسب السيادة */
+.design-colors-panel { width: min(470px, 94vw); }
+
+.design-colors-head {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--accent-clay);
+  margin: 10px 0 6px;
+}
+
+.design-colors-head:first-child { margin-top: 0; }
+
+.design-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 7px 0;
+}
+
+.design-color-name {
+  min-width: 128px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.design-color-swatch {
+  width: 40px;
+  height: 30px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.design-color-swatch::-webkit-color-swatch-wrapper { padding: 2px; }
+
+.design-color-swatch::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+.design-color-pct { flex: 1; accent-color: var(--accent-clay); cursor: pointer; }
+
+.design-color-pct-val {
+  min-width: 42px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+#designImgColorRows.is-disabled { opacity: 0.45; pointer-events: none; }
 .design-kind-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
 .design-kind-item { display: flex; align-items: center; gap: 8px; font-size: 13px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 6px); padding: 7px 10px; cursor: pointer; }
 .design-kind-item:has(input:checked) { border-color: var(--accent-clay); background: var(--accent-subtle); font-weight: 700; }
