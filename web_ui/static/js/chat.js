@@ -2239,6 +2239,7 @@ function renderSessionMessages(sessionId, options) {
         <div class="chat-audio-summary-actions">
           <a class="btn-msg-export" href="${escapeHtml(msg.presentation.url)}" download="عرض-تقديمي-المجتهد.pptx" title="تنزيل ملف العرض التقديمي">⬇️ تنزيل العرض</a>
           <button type="button" class="btn-msg-export" onclick="sharePresentation(${idx})" title="مشاركة ملف العرض التقديمي">🔗 مشاركة</button>
+          <button type="button" class="btn-msg-export" onclick="publishPresentationVideo(${idx}, this)" title="تحويل العرض إلى فيديو MP4 بشرائحه وأصواتها (٣٠ إطارًا/ثانية) ونشره في تيك توك وإكس وسائر المنصات">🎬 نشر كفيديو</button>
         </div>
       </div>
     ` : '';
@@ -3364,6 +3365,40 @@ async function sharePresentation(idx) {
     showToast('نُسخ رابط ملف العرض — الصقه أين تشاء لمشاركته 🔗');
   } catch (e) {
     showToast('تعذرت المشاركة تلقائيًا؛ نزّل الملف ثم شاركه يدويًا', 5000);
+  }
+}
+
+// نشر العرض التقديمي كفيديو: تحويل شرائحه بأصواتها إلى MP4 ثم فتح نافذة النشر بوضع الفيديو
+async function publishPresentationVideo(idx, btn) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  const info = msg && msg.presentation;
+  if (!info || !info.url) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ تجهيز الفيديو…'; }
+  try {
+    if (!info.video_url) {
+      if (typeof showToast === 'function') showToast('⏳ جارٍ تحويل العرض إلى فيديو: كل شريحة بصورتها وصوتها وبمدته، قد يستغرق دقيقة أو أكثر…', 8000);
+      const res = await fetch('/api/chat/presentation/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pptx_url: info.url }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.video_url) throw new Error(data.detail || 'تعذر تحويل العرض إلى فيديو');
+      info.video_url = data.video_url;
+      saveChatSessions();
+    }
+    const caption = [
+      `📊 ${info.title || 'عرض تقديمي'}`,
+      'عرض تقديمي بصري صوتي مولّد من بحوث «المجتهد» الموثّقة بالمكتبة الشاملة' + (info.slides ? ` — ${info.slides} شرائح` : '') + '.',
+    ].join('\n');
+    if (typeof window.openDesignVideoPublish === 'function') window.openDesignVideoPublish(info.video_url, caption);
+    else if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر تجهيز نشر العرض كفيديو'), 8000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
 }
 

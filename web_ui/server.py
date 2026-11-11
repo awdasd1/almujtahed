@@ -5732,6 +5732,107 @@ async def podcast_video(req: PodcastVideoRequest, request: Request):
     return {"ok": True, "video_url": f"/uploads/{owner_id}/audio/{out.name}"}
 
 
+class PresentationVideoRequest(BaseModel):
+    pptx_url: str
+
+
+def _media_duration(ffmpeg: str, path: Path) -> float:
+    """مدة ملف وسائط بثوانٍ من مخرجات ffmpeg (دون ffprobe)."""
+    try:
+        proc = subprocess.run([ffmpeg, "-i", str(path)], capture_output=True, text=True, timeout=60)
+        match = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", proc.stderr or "")
+        if match:
+            return int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
+    except Exception:
+        pass
+    return 0.0
+
+
+@app.post("/api/chat/presentation/video")
+async def presentation_video(req: PresentationVideoRequest, request: Request):
+    """تحويل عرض تقديمي مولّد إلى فيديو MP4: كل شريحة بصورتها وصوت تعليقها بمدته، لنشره في منصات الفيديو."""
+    ffmpeg = _ffmpeg_exe()
+    if not ffmpeg:
+        raise HTTPException(status_code=501, detail="محرك الفيديو (ffmpeg) غير متوفر في هذه البيئة")
+    owner_id = current_owner_id(request)
+    bucket = (UPLOADS_BUCKET_DIR / owner_id).resolve()
+    url_path = urllib.parse.unquote(req.pptx_url or "")
+    marker = f"/uploads/{owner_id}/"
+    rel = url_path.split(marker, 1)[-1] if marker in url_path else Path(url_path).name
+    pptx = (bucket / rel).resolve()
+    if not pptx.is_file() or not str(pptx).startswith(str(bucket)) or pptx.suffix.lower() != ".pptx":
+        raise HTTPException(status_code=404, detail="ملف العرض التقديمي غير موجود")
+    folder = pptx.parent
+    deck_path = folder / "slides.json"
+    slide_total = 0
+    if deck_path.is_file():
+        try:
+            slide_total = len(json.loads(deck_path.read_text(encoding="utf-8")).get("slides") or [])
+        except Exception:
+            slide_total = 0
+    if not slide_total:
+        slide_total = len(list(folder.glob("slide-*.jpg"))) + len(list(folder.glob("slide-*.png")))
+    if not slide_total:
+        raise HTTPException(status_code=404, detail="لا شرائح في هذا العرض لبناء الفيديو")
+    out = folder / f"presentation-video-{int(time.time())}.mp4"
+
+    def _build() -> float:
+        parts_dir = folder / "video_parts_tmp"
+        parts_dir.mkdir(exist_ok=True)
+        segments: list = []
+        total_dur = 0.0
+        try:
+            for idx in range(1, slide_total + 1):
+                img = next((folder / f"slide-{idx:02d}{ext}" for ext in (".jpg", ".jpeg", ".png")
+                            if (folder / f"slide-{idx:02d}{ext}").is_file()), None)
+                if img is None:
+                    continue
+                aud = next((folder / f"slide-{idx:02d}{ext}" for ext in (".mp3", ".wav", ".m4a", ".ogg")
+                            if (folder / f"slide-{idx:02d}{ext}").is_file()), None)
+                dur = _media_duration(ffmpeg, aud) if aud else 0.0
+                if dur <= 0:
+                    dur = 5.0
+                total_dur += dur
+                seg = parts_dir / f"seg-{idx:02d}.mp4"
+                cmd = [ffmpeg, "-y", "-loop", "1", "-framerate", "30", "-i", str(img)]
+                if aud:
+                    cmd += ["-i", str(aud)]
+                else:
+                    cmd += ["-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono"]
+                cmd += [
+                    "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-b:a", "160k",
+                    "-pix_fmt", "yuv420p",
+                    "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+                    "-t", f"{dur:.2f}", "-r", "30", str(seg),
+                ]
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+                if proc.returncode != 0 or not seg.is_file():
+                    raise RuntimeError((proc.stderr or "فشل بناء مقطع شريحة")[-300:])
+                segments.append(seg)
+            if not segments:
+                raise RuntimeError("لا شرائح صالحة لبناء الفيديو")
+            list_file = parts_dir / "list.txt"
+            list_file.write_text("".join(f"file '{seg.name}'\n" for seg in segments), encoding="utf-8")
+            proc = subprocess.run(
+                [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(list_file),
+                 "-c", "copy", "-movflags", "+faststart", str(out)],
+                capture_output=True, text=True, timeout=900)
+            if proc.returncode != 0 or not out.is_file():
+                raise RuntimeError((proc.stderr or "فشل تجميع الفيديو")[-300:])
+            return total_dur
+        finally:
+            shutil.rmtree(parts_dir, ignore_errors=True)
+
+    try:
+        total = await asyncio.to_thread(_build)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"تعذر تحويل العرض إلى فيديو: {error}")
+    rel_out = out.relative_to(bucket).as_posix()
+    return {"ok": True, "video_url": f"/uploads/{owner_id}/{rel_out}", "slides": slide_total, "duration": round(total, 1)}
+
+
 # ===== التشجير الذكي: فحص المحتوى واقتراح ما يقبل التشجير منه قبل أي توليد =====
 
 class TreeAnalyzeRequest(BaseModel):
@@ -7444,7 +7545,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.448"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.449"},
         },
     })
     if opened.get("error"):
