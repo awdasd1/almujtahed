@@ -7126,7 +7126,7 @@ function smartTreesHtml(msg, idx) {
     <div class="smart-tree-card" data-smart-tree-msg="${idx}" data-smart-tree-pos="${ti}">
       <div class="smart-tree-card-head">
         <span class="smart-tree-card-title">🌳 ${escapeHtml(t.kind_label || 'تشجير')}: ${escapeHtml(t.title || '')}</span>
-        <button type="button" class="btn-msg-export" onclick="expandSmartTreeCard(this)" title="تكبير هذا المشجّر">⛶ تكبير</button>
+        <button type="button" class="btn-msg-export" onclick="expandSmartTreeCard(this)" title="تكبير هذا المشجّر بكل أدواته">⛶ تكبير</button>
       </div>
       <div class="smart-tree-card-mount"></div>
     </div>`).join('')}</div>`;
@@ -7146,11 +7146,58 @@ function mountSmartTreeCards(container, session) {
       return;
     }
     const wrapper = document.createElement('div');
-    wrapper.className = 'force3d-render-wrapper smart-tree-force';
+    wrapper.className = 'force3d-render-wrapper isnad-render-wrapper smart-tree-force';
+    const title = tree.data.title || tree.title || 'مشجّر';
+    // مغلّف الرسم الكامل الأصلي بأدواته كلها (مثال، خط، حجم، مقاس، خلفية، لقطة، كود) —
+    // تُخفى بصريًا في الوضع المصغّر وتظهر عند التكبير، فيعمل التكبير بأدوات التشجير المعتادة
     wrapper.innerHTML = `
-      <div class="force3d-stage"></div>
-      <div class="force3d-stage force3d-g6" hidden></div>
-      <div class="force3d-detail"></div>`;
+        <div class="isnad-render-header">
+          <div class="isnad-render-title">
+            <span>🌳</span>
+            <span>${escapeHtml(title)}</span>
+          </div>
+          <div class="force3d-tools">
+            <button type="button" class="btn-chart-type" data-force3d-lib="cytoscape" style="background:var(--accent-clay);color:#fff">تشجير</button>
+            <button type="button" class="btn-chart-type" data-force3d-lib="g6">تشجير مفرغ</button>
+            <button type="button" class="btn-chart-type" data-force3d-share="1" title="مشاركة"><span>مشاركة</span></button>
+            <label class="force3d-example-label">
+              <span>المثال</span>
+              <select data-force3d-example dir="rtl">${force3dExampleOptions('tree')}</select>
+            </label>
+            <label class="force3d-example-label">
+              <span>الخط</span>
+              <select data-force3d-font dir="rtl">${FORCE3D_FONTS.map(([name, label]) => `<option value="${force3dEscape(name)}"${name === 'Amiri' ? ' selected' : ''}>${force3dEscape(label)}</option>`).join('')}</select>
+            </label>
+            <label class="force3d-example-label">
+              <span>الحجم</span>
+              <select data-force3d-size dir="rtl">${[12, 14, 16, 18, 20, 24, 28, 32].map((size) => `<option value="${size}"${size === 16 ? ' selected' : ''}>${size}</option>`).join('')}</select>
+            </label>
+            <label class="force3d-example-label">
+              <span>المقاس</span>
+              <select data-force3d-weight dir="rtl">
+                <option value="300">نحيف</option>
+                <option value="400">عادي</option>
+                <option value="500">متوسط</option>
+                <option value="700" selected>عريض</option>
+                <option value="800">ثقيل</option>
+              </select>
+            </label>
+            <label class="force3d-example-label">
+              <span>الخلفية</span>
+              <select data-force3d-bg dir="rtl">${FORCE3D_BACKGROUNDS.map(([color, label]) => `<option value="${color}" style="background:${color}"${color === '#f7f3ec' ? ' selected' : ''}>${force3dEscape(label)}</option>`).join('')}</select>
+            </label>
+            <button type="button" class="btn-chart-type" data-force3d-fit="1">ملاءمة</button>
+            <button type="button" class="btn-chart-type" data-force3d-reset="1">إعادة</button>
+            <button type="button" class="btn-chart-type force3d-shot" data-force3d-shot="1" title="لقطة للمشجر"><span>لقطة</span></button>
+            <button type="button" class="btn-chart-type" data-force3d-expand="1">تكبير</button>
+            <button type="button" class="btn-chart-type force3d-close" data-force3d-close="1">إغلاق</button>
+            <button type="button" class="btn-chart-type" data-force3d-code="1">الكود</button>
+          </div>
+        </div>
+        <div class="force3d-stage"></div>
+        <div class="force3d-stage force3d-g6" hidden></div>
+        <div class="force3d-detail"></div>
+        <div class="force3d-code" hidden><pre><code class="language-force3d">${escapeHtml(JSON.stringify(tree.data, null, 2))}</code></pre></div>`;
     mount.appendChild(wrapper);
     try {
       mountCytoscape(wrapper, tree.data, 'tree');

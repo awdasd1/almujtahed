@@ -11053,7 +11053,10 @@ body::-webkit-scrollbar,
 .smart-tree-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .smart-tree-card-title { font-size: 12.5px; font-weight: 700; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .smart-tree-card .force3d-stage { height: 210px; }
-.smart-tree-card .force3d-detail { display: none; }
+.smart-tree-force:not(.is-expanded) .force3d-tools { display: none; }
+.smart-tree-force:not(.is-expanded) .force3d-detail { display: none; }
+.smart-tree-force:not(.is-expanded) .isnad-render-header { padding: 2px 4px; }
+.smart-tree-force:not(.is-expanded) .isnad-render-title { font-size: 12px; }
 .smart-tree-card-fallback { padding: 18px 10px; font-size: 12.5px; opacity: 0.75; text-align: center; }
 .smart-tree-img { display: block; width: 100%; border-radius: 8px; border: 1px solid var(--border-subtle); cursor: zoom-in; }
 .tree-img-zoom { position: fixed; inset: 0; background: rgba(8, 10, 16, 0.9); z-index: 12000; display: flex; align-items: center; justify-content: center; padding: 18px; }
