@@ -2308,6 +2308,8 @@ function renderSessionMessages(sessionId, options) {
           ${tagsHtml}
           ${audioSummaryHtml}
           ${presentationHtml}
+          ${typeof smartTreesHtml === 'function' ? smartTreesHtml(msg, idx) : ''}
+          ${typeof treeImagesHtml === 'function' ? treeImagesHtml(msg, idx) : ''}
           ${actionsBar}
         </div>
       </div>
@@ -2324,6 +2326,9 @@ function renderSessionMessages(sessionId, options) {
   }
   mountChatAppliedWebTools(container, session);
   mountChatToolFigures(container, session);
+  if (typeof mountSmartTreeCards === 'function') {
+    try { mountSmartTreeCards(container, session); } catch (e) { console.warn('smart tree render error:', e); }
+  }
 
   // تفعيل التحقق من صحة المنقول وتصفح الكتاب الأصلي للإحالات
   if (typeof window.enhanceProjectCitationsWithBookReader === 'function') {
@@ -6983,9 +6988,9 @@ function renderSmartTreeProposals(proposals) {
     }
     return;
   }
-  body.innerHTML = `<div class="pres-opt-label">وجد النموذج في النتيجة ما يمكن تشجيره — اختر واحدًا</div>` + proposals.map((p, i) => `
-    <label class="pres-radio-card"><input type="radio" name="smartTreeProposal" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>${escapeHtml(p.kind_label || 'تشجير')}: ${escapeHtml(p.title || '')}</b><small>${escapeHtml(p.desc || '')}</small></span></label>`).join('');
-  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إلغاء</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmSmartTree()">🌳 إخراج التشجير المختار</button>`;
+  body.innerHTML = `<div class="pres-opt-label">وجد النموذج في النتيجة ما يمكن تشجيره — حدّد مسألة أو أكثر</div>` + proposals.map((p, i) => `
+    <label class="pres-radio-card"><input type="checkbox" name="smartTreeProposal" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>${escapeHtml(p.kind_label || 'تشجير')}: ${escapeHtml(p.title || '')}</b><small>${escapeHtml(p.desc || '')}</small></span></label>`).join('');
+  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إلغاء</button><button type="button" class="btn-msg-export" onclick="confirmSmartTreeImaged()">🎨 تشجير مصوّر</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmSmartTree()">🌳 تشجير نصي</button>`;
 }
 
 function renderSmartTreeFallback(message) {
@@ -6996,18 +7001,409 @@ function renderSmartTreeFallback(message) {
   foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إغلاق</button><button type="button" class="btn-msg-export" onclick="analyzeSmartTreeContent(false)">🔁 إعادة المحاولة</button>`;
 }
 
-function confirmSmartTree() {
+function smartTreeSelectedProposals() {
   const modal = document.getElementById('smartTreeModal');
-  const checked = modal && modal.querySelector('input[name="smartTreeProposal"]:checked');
-  const p = checked ? _smartTreeProposals[parseInt(checked.value, 10)] : null;
-  closeSmartTreeModal();
-  if (p) requestChatGraph(null, p);
+  if (!modal) return [];
+  return [...modal.querySelectorAll('input[name="smartTreeProposal"]:checked')]
+    .map(input => _smartTreeProposals[parseInt(input.value, 10)])
+    .filter(Boolean);
 }
+
+function confirmSmartTree() {
+  const selected = smartTreeSelectedProposals();
+  if (!selected.length) {
+    if (typeof showToast === 'function') showToast('حدّد مسألة واحدة على الأقل للتشجير');
+    return;
+  }
+  closeSmartTreeModal();
+  generateSmartTrees(selected);
+}
+
+function confirmSmartTreeImaged() {
+  const selected = smartTreeSelectedProposals();
+  if (!selected.length) {
+    if (typeof showToast === 'function') showToast('حدّد مسألة واحدة على الأقل للتصوير');
+    return;
+  }
+  closeSmartTreeModal();
+  openTreeImageOptions(selected);
+}
+
+// استخراج بيانات شجرة {title, nodes, links} من ردّ فيه كتلة force3d
+function extractForce3dData(reply) {
+  const match = String(reply || '').match(/```\s*force3d\s*([\s\S]*?)```/i);
+  if (!match) return null;
+  try {
+    const data = typeof parseForce3dBlock === 'function' ? parseForce3dBlock(match[1]) : JSON.parse(match[1]);
+    if (data && Array.isArray(data.nodes) && Array.isArray(data.links) && data.nodes.length >= 2 && data.links.length >= 1) return data;
+  } catch (e) { /* رد غير صالح */ }
+  return null;
+}
+
+async function fetchOneSmartTree(p, material, ctx) {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: ctx.model,
+      provider: ctx.provider,
+      api_key: ctx.keys[ctx.provider] || '',
+      thinking_level: typeof currentThinkingLevel !== 'undefined' ? currentThinkingLevel : undefined,
+      use_hybrid: false,
+      graph_only: true,
+      messages: [{ role: 'user', content: `النتيجة المراد تشجيرها:\n${material}` }],
+      system_prompt: smartTreeInstruction(p),
+      temperature: 0.2,
+      providers: ctx.keys,
+      agent_group: null,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || 'تعذر التشجير');
+  const treeData = extractForce3dData(data.reply);
+  if (!treeData) throw new Error('لم يُعد النموذج شجرة صالحة');
+  return { title: p.title, kind: p.kind, kind_label: p.kind_label || 'تشجير', data: treeData };
+}
+
+async function generateSmartTrees(selected) {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  if (!session) return;
+  const material = _smartTreeMaterial || '';
+  const container = document.getElementById('chatMessagesContainer');
+  const typingBubble = document.createElement('div');
+  typingBubble.className = 'message-bubble assistant';
+  typingBubble.innerHTML = `
+    <div class="message-avatar">مج</div>
+    <div class="message-content">
+      <span class="graph-wait-note" id="smartTreeProgress">جارٍ تشجير ${selected.length} ${selected.length === 1 ? 'مسألة' : 'مسائل'}: 0 من ${selected.length} — فضلاً انتظر</span>
+    </div>`;
+  if (container) {
+    container.appendChild(typingBubble);
+    if (typeof scrollToBottom === 'function') scrollToBottom();
+  }
+  const ctx = {
+    model: document.getElementById('chatModelSelect')?.value || localStorage.getItem('almojtahed_active_chat_model') || 'anthropic/claude-3.7-sonnet',
+    provider: localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter',
+    keys: {},
+  };
+  try { ctx.keys = readProviderKeys(); } catch (e) { /* مفتاح الخادم */ }
+  const trees = [];
+  const failures = [];
+  let doneCount = 0;
+  const note = document.getElementById('smartTreeProgress');
+  for (let start = 0; start < selected.length; start += 3) {
+    const batch = selected.slice(start, start + 3);
+    const settled = await Promise.allSettled(batch.map(p => fetchOneSmartTree(p, material, ctx)));
+    settled.forEach((result, i) => {
+      doneCount += 1;
+      if (result.status === 'fulfilled') trees.push(result.value);
+      else failures.push(batch[i].title + ': ' + (result.reason?.message || 'تعذر'));
+    });
+    if (note) note.textContent = `جارٍ تشجير ${selected.length} ${selected.length === 1 ? 'مسألة' : 'مسائل'}: ${doneCount} من ${selected.length} — فضلاً انتظر`;
+  }
+  if (typingBubble.parentNode) typingBubble.remove();
+  if (!trees.length) {
+    if (typeof showToast === 'function') showToast('❌ تعذر تشجير المسائل المحددة: ' + (failures[0] || 'خطأ غير معروف'), 8000);
+    return;
+  }
+  session.messages.push({
+    role: 'assistant',
+    content: `🌳 مشجّرات مولّدة من النتيجة (${trees.length}):\n` + trees.map(t => `• ${t.kind_label}: ${t.title}`).join('\n'),
+    tree_set: trees,
+    graph_kind: 'smart:multi',
+  });
+  saveChatSessions();
+  renderSessionMessages(activeSessionId);
+  if (failures.length && typeof showToast === 'function') showToast(`اكتملت ${trees.length} مشجّرات، وتعذرت ${failures.length}: ${failures[0]}`, 7000);
+}
+
+// شبكة المشجّرات النصية داخل رسالة: بطاقات مصغرة تقسم المساحة، وكل بطاقة تكبر بضغط زرها
+function smartTreesHtml(msg, idx) {
+  const trees = Array.isArray(msg.tree_set) ? msg.tree_set : [];
+  if (!trees.length) return '';
+  const cols = trees.length <= 2 ? trees.length : (trees.length <= 4 ? 2 : 3);
+  return `<div class="smart-trees-grid" style="--st-cols:${cols}">${trees.map((t, ti) => `
+    <div class="smart-tree-card" data-smart-tree-msg="${idx}" data-smart-tree-pos="${ti}">
+      <div class="smart-tree-card-head">
+        <span class="smart-tree-card-title">🌳 ${escapeHtml(t.kind_label || 'تشجير')}: ${escapeHtml(t.title || '')}</span>
+        <button type="button" class="btn-msg-export" onclick="expandSmartTreeCard(this)" title="تكبير هذا المشجّر">⛶ تكبير</button>
+      </div>
+      <div class="smart-tree-card-mount"></div>
+    </div>`).join('')}</div>`;
+}
+
+function mountSmartTreeCards(container, session) {
+  if (!container || !session) return;
+  container.querySelectorAll('.smart-tree-card[data-smart-tree-msg]').forEach(card => {
+    if (card.dataset.mounted === '1') return;
+    card.dataset.mounted = '1';
+    const msg = session.messages[parseInt(card.dataset.smartTreeMsg, 10)];
+    const tree = msg && Array.isArray(msg.tree_set) ? msg.tree_set[parseInt(card.dataset.smartTreePos, 10)] : null;
+    const mount = card.querySelector('.smart-tree-card-mount');
+    if (!tree || !mount) return;
+    if (typeof mountCytoscape !== 'function' || !window.cytoscape) {
+      mount.innerHTML = '<div class="smart-tree-card-fallback">تعذر تحميل محرك الرسم</div>';
+      return;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'force3d-render-wrapper smart-tree-force';
+    wrapper.innerHTML = `
+      <div class="force3d-stage"></div>
+      <div class="force3d-stage force3d-g6" hidden></div>
+      <div class="force3d-detail"></div>`;
+    mount.appendChild(wrapper);
+    try {
+      mountCytoscape(wrapper, tree.data, 'tree');
+    } catch (e) {
+      mount.innerHTML = '<div class="smart-tree-card-fallback">تعذر رسم هذا المشجّر</div>';
+    }
+  });
+}
+
+function expandSmartTreeCard(btn) {
+  const card = btn.closest('.smart-tree-card');
+  const wrapper = card && card.querySelector('.force3d-render-wrapper');
+  if (wrapper && typeof setForce3dExpanded === 'function') setForce3dExpanded(wrapper, true);
+}
+
+// ===== التشجير المصوّر: خيارات رسم (كنافذة العرض) ثم وظيفة خادمية ترسم صورة شرحية لكل مسألة =====
+const TREE_IMG_OPTIONS_KEY = 'almujtahed_tree_image_options_v1';
+let _treeImageSelected = [];
+
+function loadTreeImageOptions() {
+  const dflt = { image_model: 'gpt', explained_style: 'photos', colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }] } };
+  try {
+    const pres = loadPresentationOptions();
+    if (pres) {
+      dflt.image_model = pres.image_model || dflt.image_model;
+      dflt.explained_style = pres.explained_style || dflt.explained_style;
+      if (pres.colors) {
+        dflt.colors.mode = pres.colors.mode || 'default';
+        if (Array.isArray(pres.colors.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (pres.colors.img[i] && pres.colors.img[i].hex) || c.hex, pct: (pres.colors.img[i] && pres.colors.img[i].pct) || c.pct }));
+      }
+    }
+  } catch (e) { /* بذرة من العرض */ }
+  try {
+    const p = JSON.parse(localStorage.getItem(TREE_IMG_OPTIONS_KEY) || 'null');
+    if (p) {
+      if (['gpt', 'muse', 'gemini', 'gpt54'].includes(p.image_model)) dflt.image_model = p.image_model;
+      if (p.explained_style === 'icons') dflt.explained_style = 'icons';
+      if (p.colors) {
+        if (p.colors.mode === 'custom') dflt.colors.mode = 'custom'; else if (p.colors.mode === 'default') dflt.colors.mode = 'default';
+        if (Array.isArray(p.colors.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (p.colors.img[i] && p.colors.img[i].hex) || c.hex, pct: (p.colors.img[i] && p.colors.img[i].pct) || c.pct }));
+      }
+    }
+  } catch (e) { /* بذرة افتراضية */ }
+  return dflt;
+}
+
+function saveTreeImageOptions(opts) {
+  try { localStorage.setItem(TREE_IMG_OPTIONS_KEY, JSON.stringify(opts)); } catch (e) {}
+}
+
+function openTreeImageOptions(selected) {
+  _treeImageSelected = selected;
+  let modal = document.getElementById('treeImageOptionsModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'treeImageOptionsModal';
+    modal.className = 'pres-modal-overlay';
+    modal.innerHTML = `
+      <div class="pres-modal" role="dialog" aria-modal="true">
+        <div class="pres-modal-head">
+          <span>🎨 خيارات التشجير المصوّر</span>
+          <button type="button" class="pres-modal-close" onclick="closeTreeImageOptions()" aria-label="إغلاق">✕</button>
+        </div>
+        <div class="pres-modal-body">
+          <div class="pres-opt-label">المسائل التي ستُرسم صورة شرحية لكل منها (<span id="treeImgCount"></span>)</div>
+          <div class="pres-opt-hint" id="treeImgTitles"></div>
+          <div class="pres-opt-label">نموذج الصورة</div>
+          <select id="treeImgModel" class="pres-select">
+            <option value="gpt">🖼️ GPT Image — النموذج الحالي</option>
+            <option value="muse">✨ Meta Muse Image — meta/muse-image</option>
+            <option value="gemini">🌟 Gemini 3 Pro Image — google/gemini-3-pro-image-preview</option>
+            <option value="gpt54">🖼️ GPT-5.4 Image 2</option>
+          </select>
+          <div class="pres-opt-label">أسلوب الرسم الشرحي</div>
+          <label class="pres-radio-card"><input type="radio" name="treeImgStyle" value="photos"> <span><b>📷 بصور حقيقية</b><small>صور فوتوغرافية حقيقية مصغرة داخل عقد الرسم الشرحي توضح كل عنصر</small></span></label>
+          <label class="pres-radio-card"><input type="radio" name="treeImgStyle" value="icons"> <span><b>🔷 بأيقونات</b><small>أيقونات ورموز مسطحة بسيطة داخل العقد بدل الصور — رسم أنظف وأخف</small></span></label>
+          <div class="pres-opt-label">ألوان الرسم</div>
+          <label class="pres-radio-card"><input type="radio" name="treeImgColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المجتهد الهادئة المعتمدة</small></span></label>
+          <label class="pres-radio-card"><input type="radio" name="treeImgColorsMode" value="custom"> <span><b>ألوان مخصصة</b><small>ثلاثة ألوان لصورة الشرح بنسب سيادة</small></span></label>
+          <div id="treeImgCustomColors" class="pres-custom-colors" hidden>
+            ${[0, 1, 2].map(i => `<div class="pres-color-row"><span class="pres-color-name">لون ${['رئيسي', 'ثانوي', 'لمسة'][i]}</span><input type="color" id="treeImgColor${i}"><input type="number" id="treeImgPct${i}" class="pres-pct" min="0" max="100" step="5"><span>٪</span></div>`).join('')}
+          </div>
+        </div>
+        <div class="pres-modal-foot">
+          <button type="button" class="btn-msg-export" onclick="closeTreeImageOptions()">إلغاء</button>
+          <button type="button" class="btn-msg-export pres-start-btn" onclick="confirmTreeImageOptions()">🎨 بدء الإنشاء</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeTreeImageOptions(); });
+    modal.querySelectorAll('input[name="treeImgColorsMode"]').forEach(r => r.addEventListener('change', syncTreeImgCustomColorsVisibility));
+  }
+  const opts = loadTreeImageOptions();
+  modal.querySelector('#treeImgCount').textContent = String(selected.length);
+  modal.querySelector('#treeImgTitles').textContent = selected.map(p => `${p.kind_label || 'تشجير'}: ${p.title}`).join(' • ');
+  modal.querySelector('#treeImgModel').value = opts.image_model;
+  modal.querySelector(`input[name="treeImgStyle"][value="${opts.explained_style}"]`).checked = true;
+  modal.querySelector(`input[name="treeImgColorsMode"][value="${opts.colors.mode}"]`).checked = true;
+  opts.colors.img.forEach((c, i) => {
+    modal.querySelector(`#treeImgColor${i}`).value = c.hex;
+    modal.querySelector(`#treeImgPct${i}`).value = c.pct;
+  });
+  syncTreeImgCustomColorsVisibility();
+  modal.hidden = false;
+}
+
+function syncTreeImgCustomColorsVisibility() {
+  const modal = document.getElementById('treeImageOptionsModal');
+  if (!modal) return;
+  const checked = modal.querySelector('input[name="treeImgColorsMode"]:checked');
+  const box = modal.querySelector('#treeImgCustomColors');
+  if (box) box.hidden = !(checked && checked.value === 'custom');
+}
+
+function closeTreeImageOptions() {
+  const modal = document.getElementById('treeImageOptionsModal');
+  if (modal) modal.hidden = true;
+}
+
+function confirmTreeImageOptions() {
+  const modal = document.getElementById('treeImageOptionsModal');
+  if (!modal) return;
+  const hex = (v, fb) => (/^#[0-9a-fA-F]{6}$/.test(v || '') ? v : fb);
+  const options = {
+    image_model: modal.querySelector('#treeImgModel').value,
+    explained_style: modal.querySelector('input[name="treeImgStyle"]:checked').value === 'icons' ? 'icons' : 'photos',
+    colors: {
+      mode: modal.querySelector('input[name="treeImgColorsMode"]:checked').value === 'custom' ? 'custom' : 'default',
+      img: [0, 1, 2].map(i => ({ hex: hex(modal.querySelector(`#treeImgColor${i}`).value, '#16324a'), pct: Math.max(0, Math.min(100, parseInt(modal.querySelector(`#treeImgPct${i}`).value, 10) || 0)) })),
+    },
+  };
+  saveTreeImageOptions(options);
+  closeTreeImageOptions();
+  runTreeImageJob(_treeImageSelected, options);
+}
+
+async function runTreeImageJob(selected, options) {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  if (!session) return;
+  const container = document.getElementById('chatMessagesContainer');
+  const typingBubble = document.createElement('div');
+  typingBubble.className = 'message-bubble assistant';
+  typingBubble.innerHTML = `
+    <div class="message-avatar">مج</div>
+    <div class="message-content">
+      <span class="graph-wait-note" id="treeImageProgress">جارٍ بدء رسم ${selected.length} ${selected.length === 1 ? 'صورة شرحية' : 'صور شرحية'}...</span>
+    </div>`;
+  if (container) {
+    container.appendChild(typingBubble);
+    if (typeof scrollToBottom === 'function') scrollToBottom();
+  }
+  const note = document.getElementById('treeImageProgress');
+  const setNote = t => { if (note) note.textContent = t; };
+  try {
+    const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+    const res = await fetch('/api/chat/tree-image/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proposals: selected, api_key: keys.openrouter || '', image_model: options.image_model, explained_style: options.explained_style, colors: options.colors }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء التشجير المصور');
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/chat/tree-image/status/${data.job_id}`);
+        const st = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(st.detail || 'تعذر متابعة الرسم');
+        if (st.status === 'done') {
+          if (typingBubble.parentNode) typingBubble.remove();
+          const images = Array.isArray(st.images) ? st.images : [];
+          if (!images.length) throw new Error('لم تُرسم أي صورة');
+          session.messages.push({
+            role: 'assistant',
+            content: `🎨 مشجّرات مصوّرة مولّدة من النتيجة (${images.length}):\n` + images.map(im => `• ${im.kind_label}: ${im.title}`).join('\n'),
+            tree_images: images,
+            graph_kind: 'smart:imaged',
+          });
+          saveChatSessions();
+          renderSessionMessages(activeSessionId);
+          if (st.errors && st.errors.length && typeof showToast === 'function') showToast(`اكتملت ${images.length} صور، وتعذرت ${st.errors.length} مسائل`, 7000);
+          return;
+        }
+        if (st.status === 'error') throw new Error(st.message || 'تعذر التشجير المصور');
+        setNote(st.message || 'جارٍ رسم الصور الشرحية...');
+        setTimeout(poll, 3000);
+      } catch (e) {
+        if (typingBubble.parentNode) typingBubble.remove();
+        if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر التشجير المصور'), 8000);
+      }
+    };
+    setTimeout(poll, 1500);
+  } catch (e) {
+    if (typingBubble.parentNode) typingBubble.remove();
+    if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر التشجير المصور'), 8000);
+  }
+}
+
+// شبكة المشجّرات المصوّرة داخل رسالة: صور مصغرة تقسم المساحة، والضغط على أي صورة يكبّرها ملء الشاشة
+function treeImagesHtml(msg, idx) {
+  const images = Array.isArray(msg.tree_images) ? msg.tree_images : [];
+  if (!images.length) return '';
+  const cols = images.length <= 2 ? images.length : (images.length <= 4 ? 2 : 3);
+  return `<div class="smart-trees-grid" style="--st-cols:${cols}">${images.map((im, ti) => `
+    <div class="smart-tree-card">
+      <div class="smart-tree-card-head">
+        <span class="smart-tree-card-title">🎨 ${escapeHtml(im.kind_label || 'تشجير مصور')}: ${escapeHtml(im.title || '')}</span>
+        <button type="button" class="btn-msg-export" onclick="zoomTreeImage('${escapeHtml(im.url)}', this)" title="تكبير الصورة">⛶ تكبير</button>
+      </div>
+      <img class="smart-tree-img" src="${escapeHtml(im.url)}" alt="${escapeHtml(im.title || '')}" loading="lazy" onclick="zoomTreeImage('${escapeHtml(im.url)}', this)">
+    </div>`).join('')}</div>`;
+}
+
+function zoomTreeImage(url, el) {
+  let overlay = document.getElementById('treeImageZoomOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'treeImageZoomOverlay';
+    overlay.className = 'tree-img-zoom';
+    overlay.innerHTML = `
+      <div class="tree-img-zoom-box">
+        <div class="tree-img-zoom-head">
+          <span id="treeImageZoomTitle"></span>
+          <button type="button" class="pres-modal-close" onclick="closeTreeImageZoom()" aria-label="إغلاق">✕</button>
+        </div>
+        <img id="treeImageZoomImg" alt="مشجّر مصوّر مكبّر">
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeTreeImageZoom(); });
+  }
+  const card = el ? el.closest('.smart-tree-card') : null;
+  const titleEl = document.getElementById('treeImageZoomTitle');
+  if (titleEl) titleEl.textContent = card ? (card.querySelector('.smart-tree-card-title')?.textContent || '') : '';
+  const img = document.getElementById('treeImageZoomImg');
+  if (img) img.src = url;
+  overlay.hidden = false;
+}
+
+function closeTreeImageZoom() {
+  const overlay = document.getElementById('treeImageZoomOverlay');
+  if (overlay) overlay.hidden = true;
+}
+
+window.closeTreeImageOptions = closeTreeImageOptions;
+window.confirmTreeImageOptions = confirmTreeImageOptions;
+window.zoomTreeImage = zoomTreeImage;
+window.closeTreeImageZoom = closeTreeImageZoom;
 
 window.startSmartTree = startSmartTree;
 window.closeSmartTreeModal = closeSmartTreeModal;
 window.confirmSmartTree = confirmSmartTree;
+window.confirmSmartTreeImaged = confirmSmartTreeImaged;
 window.analyzeSmartTreeContent = analyzeSmartTreeContent;
+window.expandSmartTreeCard = expandSmartTreeCard;
 
 function tableInstruction() {
   return `جدول النتيجة السابقة فقط.

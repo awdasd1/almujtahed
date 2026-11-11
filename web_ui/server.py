@@ -6169,6 +6169,156 @@ async def presentation_status(job_id: str, request: Request):
     return {k: job.get(k) for k in ("status", "stage", "done", "total", "message", "pptx_url", "deck_title", "slides")}
 
 
+# ===== التشجير المصوّر: رسم شرحي مولّد بالصور لكل مسألة مختارة من مسح التشجير الذكي =====
+
+class TreeImageRequest(BaseModel):
+    proposals: list
+    api_key: Optional[str] = None
+    image_model: Optional[str] = "gpt"
+    explained_style: Optional[str] = "photos"
+    colors: Optional[dict] = None
+
+
+TREE_IMAGE_JOBS: Dict[str, dict] = {}
+
+
+def _tree_image_blueprints(key: str, proposals: list) -> dict:
+    """تحويل مقترحات المسح إلى مخططات رسم (image_prompt) تفصيلية بتسميات عربية داخل العقد."""
+    summary = "\n".join(
+        f"{i}. [{p.get('kind_label') or p.get('kind')}] {p.get('title')}\n   الجذر: {p.get('root') or p.get('title')}\n   العناصر: {p.get('desc')}\n   البنية: {p.get('hint')}"
+        for i, p in enumerate(proposals)
+    )
+    system = (
+        "أنت مصمّم مخططات رسوم شرحية تعليمية. ستصلك قائمة مسائل مرقمة مستخرجة من نص علمي، حوّل كل مسألة إلى "
+        "مخطط رسم تفصيلي يُرسم كإنفوجرافيك شرحي واحد متكامل. أعد JSON فقط دون أي شرح أو أسوار كود، بهذا الشكل: "
+        '{"blueprints": [{"i": 0, "image_prompt": "وصف إنجليزي تفصيلي"}]} — عنصر لكل مسألة بنفس ترقيمها. '
+        "image_prompt وصف إنجليزي دقيق للرسم الشرحي المطلوب: نوع البنية البصرية الأنسب (شجرة خلاف متفرعة من أصل "
+        "المسألة إلى الأقوال، أو سلسلة عقد متصلة، أو مواضع متقابلة قبل/بعد، أو أقسام متوازية، أو خطوات مرتبة)، "
+        "والجذر في الأعلى، والفروع وعناصرها مرتبة قراءةً من اليمين إلى اليسار، ونصوص التسميات العربية القصيرة داخل "
+        "العقد موضوعة حرفيًا بين علامتي «» مأخوذة من عناصر المسألة المذكورة، فتكون الشريحة رسمًا شرحيًا متكاملًا "
+        "بتسميات عربية مرسومة داخل الرسم لا خلفية عامة ولا نص أجنبي."
+    )
+    last_error: Optional[Exception] = None
+    for model in TREE_ANALYZE_MODELS:
+        try:
+            raw = _openrouter_chat_text(key, model, system, summary, 420, 7000)
+            parsed = _parse_loose_json(raw)
+            items = parsed.get("blueprints") if isinstance(parsed, dict) else None
+            out: dict = {}
+            for item in items if isinstance(items, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    idx = int(item.get("i"))
+                except Exception:
+                    continue
+                prompt = str(item.get("image_prompt") or "").strip()
+                if prompt:
+                    out[idx] = prompt[:1400]
+            if len(out) >= max(1, len(proposals) // 2):
+                return out
+            last_error = RuntimeError("مخططات ناقصة من نموذج التوجيه")
+        except Exception as error:
+            last_error = error
+    raise RuntimeError(f"تعذر صياغة مخططات الرسم: {last_error}")
+
+
+async def _run_tree_image_job(job_id: str, owner_id: str, key: str, proposals: list, options: dict) -> None:
+    job = TREE_IMAGE_JOBS[job_id]
+    try:
+        job.update(stage="directing", message="جارٍ صياغة مخططات الرسم من المسائل المختارة...")
+        blueprints = await asyncio.to_thread(_tree_image_blueprints, key, proposals)
+        folder_name = f"tree-{int(time.time())}"
+        folder = UPLOADS_BUCKET_DIR / owner_id / "trees" / folder_name
+        folder.mkdir(parents=True, exist_ok=True)
+        job.update(stage="drawing", total=len(proposals), done=0, message=f"جارٍ رسم الصور: 0 من {len(proposals)}")
+
+        async def draw_one(i: int, p: dict) -> dict:
+            blueprint = blueprints.get(i) or str(p.get("desc") or p.get("title") or "")
+            prompt = _slide_explained_prompt({"title": str(p.get("title") or ""), "image_prompt": blueprint}, options)
+            img = await asyncio.to_thread(_openrouter_image_bytes, key, prompt, options["image_model_id"])
+            path = await asyncio.to_thread(_save_slide_image, img, folder, i + 1)
+            return {
+                "title": str(p.get("title") or ""),
+                "kind": str(p.get("kind") or ""),
+                "kind_label": str(p.get("kind_label") or "تشجير مصور"),
+                "url": f"/uploads/{owner_id}/trees/{folder_name}/{path.name}",
+            }
+
+        images: list = []
+        errors: list = []
+        done = 0
+        for start in range(0, len(proposals), 3):
+            batch = list(range(start, min(start + 3, len(proposals))))
+            results = await asyncio.gather(*[draw_one(i, proposals[i]) for i in batch], return_exceptions=True)
+            for i, result in zip(batch, results):
+                done += 1
+                if isinstance(result, Exception):
+                    errors.append(f"{proposals[i].get('title')}: {result}")
+                else:
+                    images.append(result)
+            job.update(done=done, message=f"جارٍ رسم الصور: {done} من {len(proposals)}")
+        if not images:
+            raise RuntimeError("تعذر رسم أي صورة: " + (errors[0] if errors else "خطأ غير معروف"))
+        (folder / "tree-images.json").write_text(json.dumps({"images": images, "errors": errors}, ensure_ascii=False, indent=1), encoding="utf-8")
+        job.update(status="done", stage="done", done=done, message="اكتمل التشجير المصور", images=images, errors=errors)
+    except urllib.error.HTTPError as error:
+        if error.code == 402:
+            job.update(status="error", message="نفد رصيد OpenRouter — اشحنه ثم أعد المحاولة")
+        else:
+            job.update(status="error", message=f"رفض المزود طلب الرسم ({error.code})")
+    except Exception as error:
+        job.update(status="error", message=f"تعذر التشجير المصور: {error}")
+
+
+@app.post("/api/chat/tree-image/start")
+async def tree_image_start(req: TreeImageRequest, request: Request):
+    """بدء وظيفة خلفية لرسم صورة شرحية لكل مسألة مختارة من مسح التشجير الذكي."""
+    proposals = []
+    for p in req.proposals if isinstance(req.proposals, list) else []:
+        if not isinstance(p, dict) or not str(p.get("title") or "").strip():
+            continue
+        proposals.append({
+            "kind": str(p.get("kind") or "")[:30],
+            "kind_label": str(p.get("kind_label") or "")[:60],
+            "title": str(p.get("title") or "")[:120],
+            "desc": str(p.get("desc") or "")[:300],
+            "root": str(p.get("root") or p.get("title") or "")[:120],
+            "hint": str(p.get("hint") or "")[:400],
+        })
+    if not proposals:
+        raise HTTPException(status_code=400, detail="لا مسائل مختارة للتصوير")
+    if len(proposals) > 8:
+        proposals = proposals[:8]
+    key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    owner_id = current_owner_id(request)
+    if len(TREE_IMAGE_JOBS) > 30:
+        for old_id in sorted(TREE_IMAGE_JOBS, key=lambda j: TREE_IMAGE_JOBS[j].get("created", 0))[:10]:
+            TREE_IMAGE_JOBS.pop(old_id, None)
+    pres_req = PresentationRequest(
+        text="x", image_model=req.image_model, colors=req.colors,
+        design_mode="explained", explained_style=req.explained_style,
+    )
+    options = _normalize_presentation_options(pres_req)
+    job_id = secrets.token_hex(6)
+    TREE_IMAGE_JOBS[job_id] = {
+        "status": "running", "stage": "queued", "done": 0, "total": len(proposals),
+        "message": "جارٍ بدء التشجير المصور...", "owner": owner_id, "created": time.time(), "images": None, "errors": None,
+    }
+    asyncio.create_task(_run_tree_image_job(job_id, owner_id, key, proposals, options))
+    return {"ok": True, "job_id": job_id}
+
+
+@app.get("/api/chat/tree-image/status/{job_id}")
+async def tree_image_status(job_id: str, request: Request):
+    job = TREE_IMAGE_JOBS.get(job_id)
+    if not job or job.get("owner") != current_owner_id(request):
+        raise HTTPException(status_code=404, detail="وظيفة التشجير المصور غير موجودة")
+    return {k: job.get(k) for k in ("status", "stage", "done", "total", "message", "images", "errors")}
+
+
 def _designs_dir(request: Request) -> Path:
     folder = UPLOADS_BUCKET_DIR / current_owner_id(request) / "designs"
     folder.mkdir(parents=True, exist_ok=True)
@@ -6988,7 +7138,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.438"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.439"},
         },
     })
     if opened.get("error"):
