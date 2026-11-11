@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.466"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.467"},
         },
     })
     if opened.get("error"):
@@ -14138,6 +14138,13 @@ def _ms_agents_one(model: str, text: str, title: str, author: str, key: str) -> 
 def _ms_norm_simple(s: str) -> str:
     return "".join(ch for ch in (s or "") if ch not in _MS_DIACRITICS).replace("أ", "ا").replace("إ", "ا").replace("آ", "ا").replace("ى", "ي").replace("ة", "ه")
 
+_MS_QURAN_MARKS = "ۖۗۘۙۚۛۜ۝۞ۣ۟۠ۡۢۤۥۦۧۨ۩ࣰࣱࣲ۪ۭࣶࣹࣺ۫۬ࣳࣴࣵࣷࣸࣻࣼࣽࣾࣿ"
+
+def _ms_norm_quran(s: str) -> str:
+    """تجريد نص قرآني بالرسم العثماني: إسقاط العلامات القرآنية والألف الخنجرية."""
+    w = "".join(ch for ch in (s or "") if ch not in _MS_QURAN_MARKS and ch not in "﴿﴾")
+    return _ms_norm_simple(w.replace("ٱ", "ا").replace("ٰ", ""))
+
 def _ms_verify_suggestion(s: Dict[str, Any]) -> Dict[str, str]:
     """توثيق اقتراح تخريج من مكتبة الشاملة المحلية؛ غيره يبقى بلا توثيق آلي."""
     if s.get("kind") != "takhrij":
@@ -14146,34 +14153,60 @@ def _ms_verify_suggestion(s: Dict[str, Any]) -> Dict[str, str]:
     try:
         if s.get("surah") and s.get("ayah"):
             ref = shamela_local_mcp._ayah_text(int(s["surah"]), int(s["ayah"])) or ""
-            if ref and _ms_norm_simple(anchor)[:40] in _ms_norm_simple(ref) or (ref and _ms_norm_simple(ref)[:40] in _ms_norm_simple(anchor)):
-                return {"status": "verified", "detail": f"ثبتت الآية من نص المصحف (سورة {s['surah']} آية {s['ayah']})"}
+            if not ref:
+                return {"status": "unchecked", "detail": "تعذر جلب نص الآية المرجعي من المصحف المحلي"}
+            a_words = _ms_norm_quran(anchor).split()
+            r_words = set(_ms_norm_quran(ref).split())
+            if a_words:
+                overlap = sum(1 for w in a_words if w in r_words) / len(a_words)
+                if overlap >= 0.6:
+                    return {"status": "verified", "detail": f"ثبتت من نص المصحف (سورة {s['surah']} آية {s['ayah']}، تطابق {round(overlap*100)}٪)"}
             return {"status": "unchecked", "detail": f"ادُّعيت آية {s.get('surah')}:{s.get('ayah')} ولم تطابق عبارتها نصها — تُراجع"}
-        import library_search
-        idx = library_search.get_index()
-        loci = idx.hadith_loci(anchor, limit=4) or {}
+        # حديث/أثر: مواضع الحديث إن توفر فهرس FTS، وإلا مطابقة مباشرة في كتب الأصول
         hits = []
-        for grp, items in (loci.get("groups") or {}).items():
-            for h in (items or [])[:2]:
-                hits.append(h)
-        if not hits:
-            return {"status": "not_found", "detail": "لم يُعثر على العبارة في كتب السنة والشروح والتخريج عندنا — لا يُعتمد حتى يثبت"}
-        h0 = hits[0]
-        detail = f"وُجد في {len(hits)} موضعًا (أصول/شروح/تخريج)"
+        idx = None
         try:
-            meta = idx.meta.get(h0.get("book_id"), {}) if hasattr(idx, "meta") else {}
-            check = shamela_local_mcp.verify_quote(book=h0.get("book_id"),
-                                                   quote_text=anchor[:120],
-                                                   page_hint=int(h0.get("page_num") or 0))
-            status = check.get("match_status") or ""
-            title = meta.get("title") or h0.get("title") or "كتاب حديث"
-            if status.startswith("MATCH"):
-                return {"status": "verified",
-                        "detail": f"موثّق: طابق في «{title}» (ج {h0.get('part') or '—'} ص {h0.get('page_num') or '—'})، ومواضع أخرى {max(len(hits)-1,0)}"}
-            detail += f"؛ وأقرب موضع «{title}» ص {h0.get('page_num') or '—'} ({status or 'بلا مطابقة'})"
+            import library_search
+            idx = library_search.get_index()
+            loci = idx.hadith_loci(anchor, limit=4) or {}
+            for grp, items in (loci.get("groups") or {}).items():
+                for h in (items or [])[:2]:
+                    hits.append(h)
         except Exception:
-            pass
-        return {"status": "found", "detail": detail}
+            hits = []
+        if hits:
+            h0 = hits[0]
+            detail = f"وُجد في {len(hits)} موضعًا (أصول/شروح/تخريج)"
+            try:
+                meta = idx.meta.get(h0.get("book_id"), {}) if idx is not None and hasattr(idx, "meta") else {}
+                check = shamela_local_mcp.verify_quote(book=h0.get("book_id"),
+                                                       quote_text=anchor[:120],
+                                                       page_hint=int(h0.get("page_num") or 0))
+                status = check.get("match_status") or ""
+                title = meta.get("title") or h0.get("title") or "كتاب حديث"
+                if status.startswith("MATCH"):
+                    return {"status": "verified",
+                            "detail": f"موثّق: طابق في «{title}» (ج {h0.get('part') or '—'} ص {h0.get('page_num') or '—'})، ومواضع أخرى {max(len(hits)-1,0)}"}
+                detail += f"؛ وأقرب موضع «{title}» ص {h0.get('page_num') or '—'} ({status or 'بلا مطابقة'})"
+            except Exception:
+                pass
+            return {"status": "found", "detail": detail}
+        for book_name in ("صحيح مسلم", "صحيح البخاري", "سنن أبي داود", "جامع الترمذي",
+                          "سنن النسائي", "سنن ابن ماجه", "موطأ مالك", "مسند أحمد"):
+            try:
+                row = shamela_local_mcp.resolve_book(book_name)
+                if not row:
+                    continue
+                check = shamela_local_mcp.verify_quote(book=row.get("book_id") or book_name,
+                                                       quote_text=anchor[:160])
+                status = (check or {}).get("match_status") or ""
+                if status.startswith("MATCH"):
+                    cit = (check or {}).get("citation") or {}
+                    return {"status": "verified",
+                            "detail": f"موثّق: طابق ({status}) في «{book_name}»" + (f" — {cit}"[:120] if cit else "")}
+            except Exception:
+                continue
+        return {"status": "not_found", "detail": "لم يُعثر على العبارة في كتب الأصول عندنا — لا يُعتمد حتى يثبت"}
     except Exception as exc:
         return {"status": "unchecked", "detail": f"تعذر التوثيق الآلي: {str(exc)[:100]}"}
 
