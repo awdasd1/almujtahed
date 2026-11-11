@@ -178,6 +178,10 @@ function msOpenProject(id) {
     ${p.desc ? `<p class="ms-proj-desc">${msEsc(p.desc)}</p>` : ''}`;
   renderMsCopies();
   renderMsCollation();
+  renderMsAgents();
+  msRenderIndexes();
+  const introEl = document.getElementById('msIntroText');
+  if (introEl) introEl.value = p.intro || '';
 }
 
 function renderMsCopies() {
@@ -677,7 +681,272 @@ function msCloseWorkbench() {
   msWb = null;
 }
 
+// ---------- المرحلة ٣: فريق وكلاء التحقيق ----------
+const MS_AGENT_KINDS = { takhrij: 'تخريج', tarjama: 'ترجمة علم', lugha: 'لغة', dabt: 'ضبط/تصحيف' };
+
+function msVerifyBadge(v) {
+  if (!v) return '';
+  const map = { verified: ['✔ موثّق', '#2e7d5b'], found: ['◐ وُجد بلا مطابقة تامة', '#8a6414'],
+                not_found: ['✘ لم يُعثر عليه', '#b03a2e'], unchecked: ['؟ يحتاج توثيقًا', '#777'] };
+  const [label, color] = map[v.status] || map.unchecked;
+  return `<span style="color:${color};font-weight:700">${label}</span>${v.detail ? ` — ${msEsc(v.detail)}` : ''}`;
+}
+
+function renderMsAgents() {
+  const p = msCurrentProject();
+  const list = document.getElementById('msAgentsList');
+  if (!p || !list) return;
+  const sugs = p.agent_suggestions || [];
+  const pending = sugs.filter(s => s.status === 'pending');
+  const accepted = sugs.filter(s => s.status === 'accepted');
+  document.getElementById('msAgentsInfo').textContent =
+    sugs.length ? `${sugs.length} اقتراحًا (${accepted.length} في هامش التحقيق، ${pending.length} بانتظار الحسم)` : 'لم تُشغَّل الوكلاء بعد';
+  if (!pending.length) {
+    list.innerHTML = sugs.length ? '<div class="ms-disputes-none">لا اقتراحات بانتظار الحسم.</div>' : '';
+    return;
+  }
+  const byFolio = {};
+  pending.forEach(s => { (byFolio[s.folio] = byFolio[s.folio] || []).push(s); });
+  list.innerHTML = `<div class="ms-disputes-title">اقتراحات بانتظار حسم المحقق (${pending.length}) — الاعتماد يُلحقها بهامش تحقيق اللوحة:</div>` +
+    Object.keys(byFolio).map(folio => `
+      <div class="ms-collate-folio">
+        <div class="ms-collate-folio-title">لوحة (${msEsc(folio)})</div>
+        ${byFolio[folio].map(s => `
+          <div class="ms-dispute">
+            <span class="ms-dispute-a"><strong>[${msEsc(MS_AGENT_KINDS[s.kind] || s.kind)}]</strong> «${msEsc(s.anchor)}» — ${msEsc(s.body)}${s.source ? `<br>المصدر المقترح: ${msEsc(s.source)}` : ''}<br>${msVerifyBadge(s.verify)}</span>
+            <span>
+              <button type="button" class="ms-dispute-btn" onclick="msAgentDecision('${s.id}','accepted')">اعتماد في الهامش</button>
+              <button type="button" class="ms-dispute-dismiss" onclick="msAgentDecision('${s.id}','dismissed')">رفض</button>
+            </span>
+          </div>`).join('')}
+      </div>`).join('');
+}
+
+async function msRunAgents() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const base = msBaseCopy(p);
+  if (!base) { msToast('لا نسخة أم بعد'); return; }
+  const folios = (base.folios || []).filter(f => (f.text || '').trim());
+  if (!folios.length) { msToast('لا نص في لوحات الأم — انسخها أولًا'); return; }
+  const model = document.getElementById('msAgentModel').value;
+  let apiKey = '';
+  try { const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {}; apiKey = keys.openrouter || ''; } catch (e) {}
+  const btn = document.getElementById('msAgentsBtn');
+  btn.disabled = true;
+  const old = btn.textContent;
+  p.agent_suggestions = p.agent_suggestions || [];
+  let totalCost = 0, totalNew = 0;
+  try {
+    for (const f of folios) {
+      btn.textContent = `⏳ الوكلاء على لوحة (${f.label})...`;
+      const res = await fetch('/api/manuscripts/agents', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: apiKey }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'تعذر تشغيل الوكلاء');
+      totalCost += Number(data.cost) || 0;
+      (data.suggestions || []).forEach(s => {
+        p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending' });
+        totalNew++;
+      });
+      msSave(); renderMsAgents();
+    }
+    msToast(`أنهى الوكلاء: ${totalNew} اقتراحًا جديدًا على ${folios.length} لوحة (كلفة $${totalCost.toFixed(4)}). راجِع التوثيق قبل الاعتماد.`, 7000);
+  } catch (e) {
+    msToast('❌ ' + e.message, 7000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+function msAgentDecision(id, status) {
+  const p = msCurrentProject();
+  if (!p) return;
+  const s = (p.agent_suggestions || []).find(x => x.id === id);
+  if (!s) return;
+  s.status = status;
+  if (status === 'accepted') {
+    const base = msBaseCopy(p);
+    const f = base ? (base.folios || []).find(x => x.label === s.folio) : null;
+    if (f) {
+      const line = `[${MS_AGENT_KINDS[s.kind] || s.kind}] «${s.anchor}» — ${s.body}${s.source ? ` (${s.source})` : ''}${s.verify && s.verify.detail ? ` [توثيق: ${s.verify.detail}]` : ''}`;
+      f.ed_note = ((f.ed_note || '').trim() ? f.ed_note.trim() + '\n' : '') + line;
+    }
+  }
+  msSave(); renderMsAgents(); renderMsCollation();
+}
+
+// ---------- المرحلة ٤: الفهارس والمقدمة والإخراج ----------
+function msIndexGroups(p) {
+  const accepted = (p.agent_suggestions || []).filter(s => s.status === 'accepted');
+  const groups = { 'الآيات القرآنية': [], 'الأحاديث والأقوال': [], 'الأعلام': [], 'اللغة والضبط': [], 'مصادر التحقيق': [] };
+  const sources = new Set();
+  accepted.forEach(s => {
+    const item = `«${s.anchor}» — لوحة (${s.folio})`;
+    if (s.kind === 'takhrij' && s.surah) groups['الآيات القرآنية'].push(item);
+    else if (s.kind === 'takhrij') groups['الأحاديث والأقوال'].push(item);
+    else if (s.kind === 'tarjama') groups['الأعلام'].push(item);
+    else groups['اللغة والضبط'].push(item);
+    if (s.source) sources.add(s.source);
+    if (s.verify && s.verify.status === 'verified') sources.add(s.verify.detail);
+  });
+  groups['مصادر التحقيق'] = [...sources];
+  return groups;
+}
+
+function msBuildIndexes() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const accepted = (p.agent_suggestions || []).filter(s => s.status === 'accepted');
+  if (!accepted.length) { msToast('لا اقتراحات معتمدة بعد — شغّل الوكلاء واعتمد اقتراحات أولًا'); return; }
+  p.indexes = { at: new Date().toISOString(), groups: msIndexGroups(p) };
+  msSave(); msRenderIndexes();
+  msToast('وُلّدت الفهارس من الاقتراحات المعتمدة');
+}
+
+function msRenderIndexes() {
+  const p = msCurrentProject();
+  const box = document.getElementById('msIndexesBox');
+  if (!p || !box) return;
+  const groups = (p.indexes || {}).groups;
+  if (!groups) { box.innerHTML = ''; return; }
+  box.innerHTML = Object.keys(groups).map(name => `
+    <div class="ms-collate-folio">
+      <div class="ms-collate-folio-title">فهرس ${msEsc(name)} (${groups[name].length})</div>
+      ${groups[name].length ? groups[name].map(i => `<div class="ms-margin-entry">${msEsc(i)}</div>`).join('') : '<div class="ms-disputes-none">—</div>'}
+    </div>`).join('');
+}
+
+function msGenIntro() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const base = msBaseCopy(p);
+  const copies = p.copies || [];
+  const acceptedCount = ((base || {}).folios || []).filter(f => f.status === 'approved').length;
+  const colAcc = ((p.collation || {}).entries || []).filter(e => e.status === 'accepted').length;
+  const sigla = copies.map(c => `(${c.siglum}): ${[c.library, c.shelfmark ? 'رقم الحفظ ' + c.shelfmark : '', c.scribe ? 'ناسخها ' + c.scribe : '', c.date ? 'تاريخها ' + c.date : '', c.script ? 'خطها ' + c.script : ''].filter(Boolean).join('، ')}${base && c.id === base.id ? ' — وهي النسخة الأم المعتمدة أصلًا للنص' : ''}`).join('\n');
+  p.intro = `مقدمة المحقق
+الحمد لله رب العالمين، والصلاة والسلام على سيدنا محمد وعلى آله وصحبه أجمعين، أما بعد:
+
+أولًا: موضوع الكتاب وأهميته
+هذا تحقيق لكتاب «${p.title}»${p.author ? ` من تأليف ${p.author}` : ''}. [يُستكمل: فن الكتاب وموضوعه ومنزلته ومصنفاته وشروحه وطبعاته السابقة وما امتاز به هذا التحقيق.]
+
+ثانيًا: ترجمة المؤلف
+[تُستكمل من كتب التراجم: اسمه ونسبه ومولده وشيوخه وتلاميذه ومصنفاته ووفاته، موثّقة بمصادرها.]
+
+ثالثًا: وصف النسخ المعتمدة ورموزها
+اعتمدت في هذا التحقيق ${copies.length} نسخ:
+${sigla}
+
+رابعًا: منهج التحقيق
+نُسخت اللوحات بنماذج رؤية متعددة (قارئان مستقلان ومدقق يقابلهما على الصورة) واعتمد المحقق نص كل لوحة بعينه، ثم قوبلت النسخ على النسخة الأم ولوحاتها المرقمة، وصُنّفت الفروق (سقط/زيادة/تبديل/ضبط/رسم/بياض) في «هامش مقابلة» مستقل لا يدخله فرق إلا باعتماد المحقق. وخُرّجت الآيات والأحاديث والأشعار وتراجم الأعلام في «هامش تحقيق» مستقل، مع توثيق آلي من مكتبة الشاملة وتمييز ما ثبت بما لم يثبت. وحالة اللوحات المعتمدة حتى توليد هذه المسودة: ${acceptedCount} معتمدة من أصل ${((base || {}).folios || []).length} في الأم، وفروق مقابلة معتمدة: ${colAcc}. [يُستكمل: رموز الأقواس والاصطلاحات وطريقة ضبط النص.]`;
+  const ta = document.getElementById('msIntroText');
+  if (ta) ta.value = p.intro;
+  msSave();
+  msToast('وُلّدت مسودة مقدمة المحقق — راجعها وحرّر مواضع [الاستكمال]');
+}
+
+function msDocStructure(p) {
+  const base = msBaseCopy(p);
+  const sections = [];
+  sections.push({ h: `تحقيق «${p.title}»`, level: 'title' });
+  if (p.author) sections.push({ h: p.author, level: 'meta' });
+  if ((p.intro || '').trim()) {
+    sections.push({ h: 'مقدمة المحقق', level: 'h' });
+    p.intro.split('\n').forEach(l => sections.push({ h: l, level: 'p' }));
+  }
+  const accepted = ((p.collation || {}).entries || []).filter(e => e.status === 'accepted');
+  ((base || {}).folios || []).filter(f => (f.text || '').trim()).forEach(f => {
+    sections.push({ h: `لوحة (${f.label}) — نسخة (${base.siglum})`, level: 'h' });
+    f.text.split('\n').forEach(l => { if (l.trim()) sections.push({ h: l, level: 'p' }); });
+    const app = accepted.filter(e => e.folio === f.label);
+    if (app.length) {
+      sections.push({ h: 'هامش المقابلة', level: 'h' });
+      app.forEach((e, i) => sections.push({ h: `${i + 1}. ${msApparatusText(e)}`, level: 'p' }));
+    }
+    if ((f.ed_note || '').trim()) {
+      sections.push({ h: 'هامش التحقيق', level: 'h' });
+      f.ed_note.split('\n').forEach(l => { if (l.trim()) sections.push({ h: l, level: 'p' }); });
+    }
+  });
+  const groups = (p.indexes || {}).groups;
+  if (groups) {
+    sections.push({ h: 'الفهارس', level: 'h' });
+    Object.keys(groups).forEach(name => {
+      sections.push({ h: `فهرس ${name}`, level: 'h' });
+      groups[name].forEach(i => sections.push({ h: i, level: 'p' }));
+    });
+  }
+  return sections;
+}
+
+function msDownloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+}
+
+async function msExportDocx() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const sections = msDocStructure(p);
+  const blocks = sections.map(s => ({
+    kind: s.level === 'title' ? 'title' : (s.level === 'meta' ? 'meta' : (s.level === 'h' ? 'h' : 'p')),
+    runs: [{ t: s.h }],
+  }));
+  document.getElementById('msExportInfo').textContent = 'جارٍ توليد Word...';
+  try {
+    const res = await fetch('/api/projects/export-docx', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: p.title, styles: {}, blocks, footnotes: [] }),
+    });
+    if (!res.ok) throw new Error('فشل توليد الملف');
+    msDownloadBlob(await res.blob(), `${p.title}.docx`);
+    document.getElementById('msExportInfo').textContent = 'نُزّل ملف Word بالنص والهامشين والفهارس';
+  } catch (e) {
+    document.getElementById('msExportInfo').textContent = '❌ ' + e.message;
+  }
+}
+
+async function msExportPdf() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const sections = msDocStructure(p);
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><style>
+    body{font-family:'Amiri',serif;font-size:15px;line-height:2;margin:36px;color:#222}
+    h1{text-align:center;font-size:24px} .meta{text-align:center;color:#555} h2{font-size:18px;margin-top:26px;border-bottom:1px solid #ccc;padding-bottom:4px}
+    p{margin:4px 0;text-align:justify}</style></head><body>` +
+    sections.map(s => s.level === 'title' ? `<h1>${esc(s.h)}</h1>`
+      : s.level === 'meta' ? `<div class="meta">${esc(s.h)}</div>`
+      : s.level === 'h' ? `<h2>${esc(s.h)}</h2>` : `<p>${esc(s.h)}</p>`).join('') +
+    '</body></html>';
+  document.getElementById('msExportInfo').textContent = 'جارٍ توليد PDF...';
+  try {
+    const res = await fetch('/api/projects/export-pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: p.title, html }),
+    });
+    if (!res.ok) throw new Error('فشل توليد PDF');
+    msDownloadBlob(await res.blob(), `${p.title}.pdf`);
+    document.getElementById('msExportInfo').textContent = 'نُزّل ملف PDF بالنص والهامشين والفهارس';
+  } catch (e) {
+    document.getElementById('msExportInfo').textContent = '❌ ' + e.message;
+  }
+}
+
 document.addEventListener('input', (e) => {
+  if (e.target && e.target.id === 'msIntroText') {
+    const p = msCurrentProject();
+    if (p) { p.intro = e.target.value; msSave(); }
+    return;
+  }
   if (e.target && e.target.id === 'msWbEdNote' && msWb) {
     const ctx = msWbFolio();
     if (ctx && ctx.folio) { ctx.folio.ed_note = e.target.value; msSave(); }

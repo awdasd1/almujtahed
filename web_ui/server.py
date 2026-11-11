@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.465"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.466"},
         },
     })
     if opened.get("error"):
@@ -14064,6 +14064,142 @@ def _ms_collate_pair(base_text: str, other_text: str, siglum: str, limit: int = 
         if len(entries) >= limit:
             break
     return entries
+
+
+# ---------- المرحلة ٣: فريق وكلاء التحقيق ----------
+# وكلاء يقترحون في «هامش التحقيق»: تخريج (آيات/أحاديث/أشعار/أقوال)،
+# تراجم أعلام، لغة وضبط وتنبيه تصحيف. التخريج يُوثَّق آليًا من الشاملة
+# عندنا (مواضع حديث + مطابقة verify + نص الآية) ويُوسم؛ والباقي يُوسم
+# «يحتاج توثيقًا». لا يدخل اقتراح الهامش إلا باعتماد المحقق.
+MS_AGENTS_PROMPT = (
+    "أنت فريق تحقيق مخطوطات (تخريج وتراجم ولغة وضبط). حلل نص اللوحة الآتي من كتاب «{title}»"
+    " للمؤلف {author}، واقترح تعليقات تحقيق عليه.\n"
+    "أخرج JSON صالحًا فقط بهذا الشكل دون أي نص خارجه:\n"
+    '{{"suggestions":[{{"kind":"takhrij","anchor":"عبارة حرفية قصيرة من النص","title":"عنوان قصير",'
+    '"body":"الاقتراح","source":"المصدر المقترح","surah":null,"ayah":null}}]}}\n'
+    "أنواع الاقتراحات:\n"
+    "- takhrij: الآيات (املأ surah وayah رقميين واذكر اسم السورة في source) والأحاديث والأشعار والأقوال المأثورة، مع تخريج مقترح.\n"
+    "- tarjama: أعلام وردوا (راوٍ، عالم، ناسخ...) مع ترجمة موجزة من كتب التراجم.\n"
+    "- lugha: لفظ غريب أو مشكل يُشرح لغة، أو موضع يُحتاج ضبطه بالشكل.\n"
+    "- dabt: موضع ضبط بالشكل، أو احتمال تصحيف/تحريف يُنبَّه عليه مع وجه الترجيح من السياق.\n"
+    "بين 5 و14 اقتراحًا، وكل anchor عبارة حرفية موجودة في النص فعلًا، وbody موجز محدد. JSON فقط.\n\nنص اللوحة:\n{text}"
+)
+
+def _ms_parse_json(text: str):
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        if t.lower().startswith("json"):
+            t = t[4:]
+    i, j = t.find("{"), t.rfind("}")
+    if i < 0 or j <= i:
+        return None
+    try:
+        return json.loads(t[i:j + 1])
+    except Exception:
+        return None
+
+def _ms_agents_one(model: str, text: str, title: str, author: str, key: str) -> Dict[str, Any]:
+    prompt = MS_AGENTS_PROMPT.format(title=title or "مخطوط", author=author or "غير معروف",
+                                     text=(text or "")[:14000])
+    payload = {"model": model,
+               "messages": [{"role": "user", "content": prompt}],
+               "temperature": 0.2, "max_tokens": 8192}
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed MS Agents"},
+        data=json.dumps(payload).encode("utf-8"))
+    started = time.time()
+    with urllib.request.urlopen(http_req, timeout=420) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(str(data.get("error"))[:240])
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    parsed = _ms_parse_json(msg.get("content") or "")
+    suggestions = []
+    if parsed and isinstance(parsed.get("suggestions"), list):
+        for s in parsed["suggestions"][:16]:
+            if not isinstance(s, dict) or not str(s.get("anchor") or "").strip():
+                continue
+            suggestions.append({
+                "kind": str(s.get("kind") or "lugha")[:20],
+                "anchor": str(s.get("anchor"))[:220],
+                "title": str(s.get("title") or "")[:140],
+                "body": str(s.get("body") or "")[:900],
+                "source": str(s.get("source") or "")[:220],
+                "surah": s.get("surah") if isinstance(s.get("surah"), int) else None,
+                "ayah": s.get("ayah") if isinstance(s.get("ayah"), int) else None,
+            })
+    usage = data.get("usage") or {}
+    return {"model": model, "suggestions": suggestions,
+            "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
+
+def _ms_norm_simple(s: str) -> str:
+    return "".join(ch for ch in (s or "") if ch not in _MS_DIACRITICS).replace("أ", "ا").replace("إ", "ا").replace("آ", "ا").replace("ى", "ي").replace("ة", "ه")
+
+def _ms_verify_suggestion(s: Dict[str, Any]) -> Dict[str, str]:
+    """توثيق اقتراح تخريج من مكتبة الشاملة المحلية؛ غيره يبقى بلا توثيق آلي."""
+    if s.get("kind") != "takhrij":
+        return {"status": "unchecked", "detail": "يحتاج توثيقًا من كتب التراجم/اللغة"}
+    anchor = (s.get("anchor") or "").strip()
+    try:
+        if s.get("surah") and s.get("ayah"):
+            ref = shamela_local_mcp._ayah_text(int(s["surah"]), int(s["ayah"])) or ""
+            if ref and _ms_norm_simple(anchor)[:40] in _ms_norm_simple(ref) or (ref and _ms_norm_simple(ref)[:40] in _ms_norm_simple(anchor)):
+                return {"status": "verified", "detail": f"ثبتت الآية من نص المصحف (سورة {s['surah']} آية {s['ayah']})"}
+            return {"status": "unchecked", "detail": f"ادُّعيت آية {s.get('surah')}:{s.get('ayah')} ولم تطابق عبارتها نصها — تُراجع"}
+        import library_search
+        idx = library_search.get_index()
+        loci = idx.hadith_loci(anchor, limit=4) or {}
+        hits = []
+        for grp, items in (loci.get("groups") or {}).items():
+            for h in (items or [])[:2]:
+                hits.append(h)
+        if not hits:
+            return {"status": "not_found", "detail": "لم يُعثر على العبارة في كتب السنة والشروح والتخريج عندنا — لا يُعتمد حتى يثبت"}
+        h0 = hits[0]
+        detail = f"وُجد في {len(hits)} موضعًا (أصول/شروح/تخريج)"
+        try:
+            meta = idx.meta.get(h0.get("book_id"), {}) if hasattr(idx, "meta") else {}
+            check = shamela_local_mcp.verify_quote(book=h0.get("book_id"),
+                                                   quote_text=anchor[:120],
+                                                   page_hint=int(h0.get("page_num") or 0))
+            status = check.get("match_status") or ""
+            title = meta.get("title") or h0.get("title") or "كتاب حديث"
+            if status.startswith("MATCH"):
+                return {"status": "verified",
+                        "detail": f"موثّق: طابق في «{title}» (ج {h0.get('part') or '—'} ص {h0.get('page_num') or '—'})، ومواضع أخرى {max(len(hits)-1,0)}"}
+            detail += f"؛ وأقرب موضع «{title}» ص {h0.get('page_num') or '—'} ({status or 'بلا مطابقة'})"
+        except Exception:
+            pass
+        return {"status": "found", "detail": detail}
+    except Exception as exc:
+        return {"status": "unchecked", "detail": f"تعذر التوثيق الآلي: {str(exc)[:100]}"}
+
+def _ms_agents_sync(payload: dict, key: str) -> Dict[str, Any]:
+    text = str((payload or {}).get("text") or "")
+    if len(text.strip()) < 40:
+        raise ValueError("نص اللوحة قصير جدًا للتحليل")
+    model = str((payload or {}).get("model") or "google/gemini-3.1-pro-preview")
+    out = _ms_agents_one(model, text, str((payload or {}).get("title") or ""),
+                         str((payload or {}).get("author") or ""), key)
+    for s in out["suggestions"]:
+        s["verify"] = _ms_verify_suggestion(s)
+    return out
+
+@app.post("/api/manuscripts/agents")
+async def manuscript_agents(request: Request, payload: Any = Body(...)):
+    """تشغيل وكلاء التحقيق (م٣) على نص لوحة: اقتراحات موثّقة قدر الإمكان."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_agents_sync, payload or {}, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر تشغيل الوكلاء: {str(exc)[:200]}")
 
 
 @app.post("/api/manuscripts/collate")
