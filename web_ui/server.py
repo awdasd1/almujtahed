@@ -5523,6 +5523,7 @@ class PresentationRequest(BaseModel):
     design_mode: Optional[str] = "with"
     slide_count: Optional[int] = None
     voiceover: Optional[bool] = None
+    explained_style: Optional[str] = None
 
 
 PRESENTATION_JOBS: Dict[str, dict] = {}
@@ -5572,7 +5573,7 @@ def _parse_presentation_json(raw: str) -> Optional[dict]:
     return {"deck_title": str(data.get("deck_title") or slides[0]["title"]).strip()[:140], "slides": slides}
 
 
-def _structure_presentation(key: str, text: str, slide_count: int, design_mode: str = "with") -> dict:
+def _structure_presentation(key: str, text: str, slide_count: int, design_mode: str = "with", explained_style: str = "photos") -> dict:
     system = (
         "أنت مصمّم عروض تقديمية أكاديمية. حوّل الإجابة العلمية المُعطاة إلى هيكل عرض تقديمي مركّز "
         f"من {slide_count} شرائح بالضبط، وأعد JSON فقط دون أي شرح أو أسوار كود، بهذا الشكل: "
@@ -5585,12 +5586,17 @@ def _structure_presentation(key: str, text: str, slide_count: int, design_mode: 
         "(مكتبة تراثية، مخطوطات، عمارة إسلامية، طبيعة...) دون أي نص أو حروف في الصورة."
     )
     if design_mode == "explained":
+        visual_clause = (
+            "وصورة فوتوغرافية حقيقية مصغرة داخل كل عقدة توضح العنصر"
+            if explained_style != "icons"
+            else "وأيقونة رمزية مسطحة بسيطة داخل كل عقدة بدل أي صورة فوتوغرافية"
+        )
         system += (
             " وضع «الشرح المصور» مفعّل: لكل شريحة اختر أنسب بنية بصرية شرحية لمضمونها — شجرة خلاف متفرعة من أصل "
             "المسألة إلى الأقوال وأدلتها، أو سلسلة إسناد بعقد متصلة من الراوي إلى المصدر، أو خريطة رحلة بمحطات مرتبة، "
             "أو خط زمني بأحداث متسلسلة، أو مقارنة بصرية بين قولين، أو تسلسل أسباب ونتائج — واكتب image_prompt وصفًا "
             "إنجليزيًا تفصيليًا لهذه البنية: عناصرها وتفرعاتها وترتيب قراءتها من اليمين إلى اليسار، ونصوص التسميات "
-            "العربية القصيرة داخل العقد موضوعة بين علامتي «»، والأيقونات والصور المصغرة المناسبة لكل عنصر، بحيث تكون "
+            f"العربية القصيرة داخل العقد موضوعة بين علامتي «»، {visual_clause}، بحيث تكون "
             "الشريحة رسمًا شرحيًا متكاملًا لا خلفية عامة."
         )
     last_error: Optional[Exception] = None
@@ -5674,6 +5680,7 @@ def _normalize_presentation_options(req: PresentationRequest) -> dict:
         "design_mode": req.design_mode if req.design_mode in ("with", "without", "none", "explained") else "with",
         "slide_count": req.slide_count if req.slide_count in (6, 8, 10, 12, 14, 16) else None,
         "voiceover": req.voiceover is not False,
+        "explained_style": req.explained_style if req.explained_style in ("photos", "icons") else "photos",
     }
 
 
@@ -5724,6 +5731,17 @@ def _slide_embedded_prompt(slide_data: dict, options: Optional[dict] = None) -> 
 def _slide_explained_prompt(slide_data: dict, options: Optional[dict] = None) -> str:
     """توجيه شريحة شرح مصور: رسم إنفوجرافيك شرحي متكامل (تشجير/إسناد/خريطة) بتسميات عربية داخل الرسم."""
     options = options or {}
+    if options.get("explained_style") == "icons":
+        style_directive = (
+            "Each node carries one clean flat minimal vector-style icon or symbol illustrating its element. "
+            "Strictly no photographs, no photorealistic imagery, no photographic textures anywhere in the slide — "
+            "only flat icons, clean lines, geometric shapes and solid color fields in a modern flat infographic style."
+        )
+    else:
+        style_directive = (
+            "Each node carries a small real photographic image (a photorealistic miniature photograph) illustrating "
+            "its element, framed neatly inside the node; rich realistic photographic detail, not flat clip-art icons."
+        )
     return (
         "Create a detailed educational infographic presentation slide (16:9, Arabic, read right-to-left) that "
         "visually explains its topic with a clear structured diagram — such as a branching tree of opinions and "
@@ -5732,7 +5750,7 @@ def _slide_explained_prompt(slide_data: dict, options: Optional[dict] = None) ->
         f"{slide_data['image_prompt']}. "
         f"Place this slide title at the top, spelled exactly: «{slide_data['title']}». "
         "Render every Arabic node label exactly as specified in the blueprint, short and perfectly legible, with "
-        "connecting arrows, small meaningful icons and miniature illustrations for each element, balanced elegant "
+        f"connecting arrows. {style_directive} Balanced elegant "
         "composition, scholarly Islamic visual identity, strong hierarchy. Any people shown strictly and entirely "
         "from the back, no faces, no side profiles."
         + _palette_directive(options)
@@ -5873,7 +5891,7 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str,
     try:
         job.update(stage="structuring", message="جارٍ هيكلة الشرائح من الإجابة...")
         slide_count = options.get("slide_count") or _presentation_slide_count(len(text))
-        deck = await asyncio.to_thread(_structure_presentation, key, text, slide_count, options["design_mode"])
+        deck = await asyncio.to_thread(_structure_presentation, key, text, slide_count, options["design_mode"], options.get("explained_style", "photos"))
         slides = deck["slides"]
         folder_name = f"deck-{int(time.time())}"
         folder = UPLOADS_BUCKET_DIR / owner_id / "presentations" / folder_name
@@ -6774,7 +6792,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.431"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.432"},
         },
     })
     if opened.get("error"):

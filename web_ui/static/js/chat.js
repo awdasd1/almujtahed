@@ -2886,6 +2886,7 @@ function loadPresentationOptions() {
     image_model: 'gpt',
     slides: 'auto',
     design_mode: 'with',
+    explained_style: 'photos',
     colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }], fonts: { title: '#ffffff', body: '#ffffff' } },
   };
   try {
@@ -2908,6 +2909,7 @@ function loadPresentationOptions() {
       if (['gpt', 'muse', 'gemini', 'gpt54'].includes(p.image_model)) dflt.image_model = p.image_model;
       if (['auto', '6', '8', '10', '12', '14', '16'].includes(String(p.slides))) dflt.slides = String(p.slides);
       if (['without', 'none', 'explained'].includes(p.design_mode)) dflt.design_mode = p.design_mode;
+      if (p.explained_style === 'icons') dflt.explained_style = 'icons';
       if (p.colors) {
         if (p.colors.mode === 'custom') dflt.colors.mode = 'custom'; else if (p.colors.mode === 'default') dflt.colors.mode = 'default';
         if (Array.isArray(p.colors.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (p.colors.img[i] && p.colors.img[i].hex) || c.hex, pct: (p.colors.img[i] && p.colors.img[i].pct) || c.pct }));
@@ -2965,7 +2967,12 @@ function openPresentationOptions(idx, btn) {
             <option value="none">📝 بلا صور مطلقًا — خط عربي ونص فقط</option>
             <option value="explained">📊 شرح مصور — تشجير وهياكل بصرية شرحية</option>
           </select>
-          <div class="pres-opt-hint">«شرح مصور»: كل شريحة رسم شرحي متكامل (تشجير خلافات العلماء، سلاسل أسانيد، خرائط رحلات، خطوط زمنية...) بأيقونات وصور مصغرة، وتُرسم نصوصه داخل الرسم دائمًا، والأشخاص من الخلف فقط بلا وجوه.</div>
+          <div class="pres-opt-hint">«شرح مصور»: كل شريحة رسم شرحي متكامل (تشجير خلافات العلماء، سلاسل أسانيد، خرائط رحلات، خطوط زمنية...)، وتُرسم نصوصه داخل الرسم دائمًا، والأشخاص من الخلف فقط بلا وجوه.</div>
+          <div id="presExplainedStyleBox" hidden>
+            <div class="pres-opt-label">أسلوب الشرح المصور</div>
+            <label class="pres-radio-card"><input type="radio" name="presExplainedStyle" value="photos"> <span><b>📷 شرح مصور بصور حقيقية</b><small>صور فوتوغرافية حقيقية مصغرة داخل عقد الرسم الشرحي توضح كل عنصر</small></span></label>
+            <label class="pres-radio-card"><input type="radio" name="presExplainedStyle" value="icons"> <span><b>🔷 شرح مصور بأيقونات</b><small>أيقونات ورموز مسطحة بسيطة داخل العقد بدل الصور الفوتوغرافية — رسم أنظف وأخف</small></span></label>
+          </div>
           <div class="pres-opt-label">ألوان الشريحة</div>
           <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المجتهد الهادئة المعتمدة</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="custom"> <span><b>ألوان مخصصة</b><small>ثلاثة ألوان لصورة الشريحة بنسب سيادة، وألوان خطوط النص القابل للتحرير</small></span></label>
@@ -2983,6 +2990,7 @@ function openPresentationOptions(idx, btn) {
     document.body.appendChild(modal);
     modal.addEventListener('click', (e) => { if (e.target === modal) closePresentationOptions(); });
     modal.querySelectorAll('input[name="presColorsMode"]').forEach(r => r.addEventListener('change', syncPresCustomColorsVisibility));
+    modal.querySelector('#presDesignMode').addEventListener('change', syncPresExplainedStyleVisibility);
   }
   const opts = loadPresentationOptions();
   modal.querySelector(`input[name="presTextMode"][value="${opts.text_mode}"]`).checked = true;
@@ -2991,6 +2999,7 @@ function openPresentationOptions(idx, btn) {
   modal.querySelector('#presImageModel').value = opts.image_model;
   modal.querySelector('#presSlideCount').value = opts.slides;
   modal.querySelector('#presDesignMode').value = opts.design_mode;
+  modal.querySelector(`input[name="presExplainedStyle"][value="${opts.explained_style}"]`).checked = true;
   opts.colors.img.forEach((c, i) => {
     modal.querySelector(`#presImgColor${i}`).value = c.hex;
     modal.querySelector(`#presImgPct${i}`).value = c.pct;
@@ -2998,6 +3007,7 @@ function openPresentationOptions(idx, btn) {
   modal.querySelector('#presFontTitle').value = opts.colors.fonts.title;
   modal.querySelector('#presFontBody').value = opts.colors.fonts.body;
   syncPresCustomColorsVisibility();
+  syncPresExplainedStyleVisibility();
   window._presTarget = { idx, btn };
   modal.hidden = false;
 }
@@ -3008,6 +3018,14 @@ function syncPresCustomColorsVisibility() {
   const checked = modal.querySelector('input[name="presColorsMode"]:checked');
   const box = modal.querySelector('#presCustomColors');
   if (box) box.hidden = !(checked && checked.value === 'custom');
+}
+
+function syncPresExplainedStyleVisibility() {
+  const modal = document.getElementById('presentationOptionsModal');
+  if (!modal) return;
+  const sel = modal.querySelector('#presDesignMode');
+  const box = modal.querySelector('#presExplainedStyleBox');
+  if (box) box.hidden = !(sel && sel.value === 'explained');
 }
 
 function closePresentationOptions() {
@@ -3026,6 +3044,7 @@ function confirmPresentationOptions() {
     image_model: modal.querySelector('#presImageModel').value,
     slides: modal.querySelector('#presSlideCount').value,
     design_mode: modal.querySelector('#presDesignMode').value,
+    explained_style: modal.querySelector('input[name="presExplainedStyle"]:checked').value === 'icons' ? 'icons' : 'photos',
     colors: {
       mode: modal.querySelector('input[name="presColorsMode"]:checked').value === 'custom' ? 'custom' : 'default',
       img: [0, 1, 2].map(i => ({ hex: hex(modal.querySelector(`#presImgColor${i}`).value, '#16324a'), pct: Math.max(0, Math.min(100, parseInt(modal.querySelector(`#presImgPct${i}`).value, 10) || 0)) })),
@@ -3060,7 +3079,7 @@ async function runPresentationJob(idx, btn, options) {
     const res = await fetch('/api/chat/presentation/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء العرض');
