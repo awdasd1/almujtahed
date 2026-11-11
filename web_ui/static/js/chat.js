@@ -6719,9 +6719,11 @@ function setChatSendLocked(locked) {
   const chartSelect = document.querySelector('select.chat-echart-kind-fixed');
   const mapSelect = document.querySelector('select.chat-islamap-kind-fixed');
   const tableButton = document.getElementById('btnChatTable');
+  const treeButton = document.getElementById('btnChatSmartTree');
   if (button) button.disabled = !!locked;
   if (stop) stop.disabled = !locked;
   if (tableButton) tableButton.disabled = !!locked;
+  if (treeButton) treeButton.disabled = !!locked;
   if (select) select.disabled = !!locked;
   if (chartSelect) chartSelect.disabled = !!locked;
   if (mapSelect) mapSelect.disabled = !!locked;
@@ -6787,7 +6789,7 @@ function stripGraphFences(text) {
     .trim();
 }
 
-async function requestChatGraph(type) {
+async function requestChatGraph(type, smart) {
   if (chatGraphBusy) return;
   const session = chatSessions.find(item => item.id === activeSessionId);
   const source = session && [...session.messages].reverse().find(item => item.role === 'assistant' && stripGraphFences(item.content).length > 40);
@@ -6812,7 +6814,7 @@ async function requestChatGraph(type) {
     if (typeof scrollToBottom === 'function') scrollToBottom();
   }
 
-  const instruction = graphKindInstruction(type);
+  const instruction = smart ? smartTreeInstruction(smart) : graphKindInstruction(type);
   const material = stripGraphFences(source.content).slice(0, 24000);
   const selectedModel = document.getElementById('chatModelSelect')?.value
     || localStorage.getItem('almojtahed_active_chat_model')
@@ -6848,7 +6850,7 @@ async function requestChatGraph(type) {
       content: data.reply || 'تعذر إظهار التشجير.',
       model: data.model || selectedModel,
       provider: data.provider || activeProvider,
-      graph_kind: type
+      graph_kind: smart ? `smart:${smart.kind}` : type
     });
     saveChatSessions();
     renderSessionMessages(activeSessionId);
@@ -6861,6 +6863,142 @@ async function requestChatGraph(type) {
     endChatRun();
   }
 }
+
+// ===== التشجير الذكي: النموذج يفحص النتيجة ويقترح ما يقبل التشجير منها، والمستخدم يختار =====
+const SMART_TREE_CLASSIC = [
+  { type: 'graph_isnad', label: 'تشجير إسناد' },
+  { type: 'graph_ilmi', label: 'تشجير خلاف علمي' },
+  { type: 'graph_istidlal', label: 'تشجير استدلال' },
+  { type: 'graph_munaqasha', label: 'تشجير مناقشة' },
+  { type: 'graph_aam', label: 'تشجير خلاف عام' },
+];
+let _smartTreeToken = 0;
+let _smartTreeProposals = [];
+let _smartTreeMaterial = '';
+
+function smartTreeInstruction(p) {
+  const kindLabel = p.kind_label || 'تشجير';
+  return `شجّر من النتيجة السابقة شجرة واحدة فقط من نوع «${kindLabel}» وموضوعها تحديدًا: «${p.title}».
+العقدة الجذر في أعلى الشجرة هي: «${p.root}».
+بنية الشجرة المطلوبة: ${p.hint || 'الجذر ثم الفروع الرئيسة ثم تفريعات كل فرع كما ورد في النتيجة'}.
+العناصر التي يجب أن تضمها الشجرة من النتيجة: ${p.desc || p.title}.
+قواعد صارمة لا تتجاوزها:
+- لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء، وكل عقدة يجب أن تكون مذكورة في النتيجة أو مستخرجة منها مباشرة؛ لا تخترع اسمًا ولا قولًا ولا راويًا ولا نوعًا غير موجود فيها.
+- التزم بموضوع الشجرة المختار فقط، ولا تخلط به موضوعًا آخر ورد في النتيجة.
+- لا تكتب شرحًا قبل الشجرة ولا بعدها. أخرج كتلة force3d واحدة فقط وأغلق السياج قبل أي كلام آخر، ثم بعد السياج اكتب سطرًا واحدًا: ${kindLabel}: ${p.title}.
+- الصيغة داخل السياج إلزامية وفيها الوصلات من الأب إلى كل فرع، لا تكتفِ بقائمة عقد منفصلة:
+{"title":"${p.title}","nodes":[{"id":"1","name":"الاسم كما في النتيجة","role":"الدور"}],"links":[{"source":"1","target":"2","label":""}]}
+أسماء العقد قصيرة حرفيًا كما في النتيجة، وحقل role يبيّن دور كل عقدة بحسب نوع الشجرة (جذر، قول، قائل، دليل، نوع، قسم، راوٍ، طبقة، تعريف، سبب، نتيجة...).`;
+}
+
+function startSmartTree() {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const source = session && [...session.messages].reverse().find(item => item.role === 'assistant' && stripGraphFences(item.content).length > 40);
+  if (!source) {
+    if (typeof showToast === 'function') showToast('لا توجد نتيجة سابقة لتشجيرها');
+    return;
+  }
+  _smartTreeMaterial = stripGraphFences(source.content).slice(0, 24000);
+  openSmartTreeModal();
+  analyzeSmartTreeContent();
+}
+
+function openSmartTreeModal() {
+  let modal = document.getElementById('smartTreeModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'smartTreeModal';
+    modal.className = 'pres-modal-overlay';
+    modal.innerHTML = `
+      <div class="pres-modal" role="dialog" aria-modal="true">
+        <div class="pres-modal-head">
+          <span>🌳 تشجير ذكي من النتيجة</span>
+          <button type="button" class="pres-modal-close" onclick="closeSmartTreeModal()" aria-label="إغلاق">✕</button>
+        </div>
+        <div class="pres-modal-body" id="smartTreeBody"></div>
+        <div class="pres-modal-foot" id="smartTreeFoot"></div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeSmartTreeModal(); });
+  }
+  modal.hidden = false;
+}
+
+function closeSmartTreeModal() {
+  _smartTreeToken += 1;
+  const modal = document.getElementById('smartTreeModal');
+  if (modal) modal.hidden = true;
+}
+
+async function analyzeSmartTreeContent() {
+  const token = ++_smartTreeToken;
+  const body = document.getElementById('smartTreeBody');
+  const foot = document.getElementById('smartTreeFoot');
+  if (body) body.innerHTML = `<div class="smart-tree-wait"><span class="smart-tree-spinner"></span><div><b>جارٍ فحص المحتوى…</b><small>النموذج يقرأ النتيجة السابقة ويستخرج ما يقبل التشجير منها فعلًا، فضلاً انتظر قليلًا.</small></div></div>`;
+  if (foot) foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إلغاء</button>`;
+  try {
+    const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+    const res = await fetch('/api/chat/tree-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: _smartTreeMaterial, api_key: keys.openrouter || '' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (token !== _smartTreeToken) return;
+    if (!res.ok) throw new Error(data.detail || 'تعذر تحليل المحتوى');
+    renderSmartTreeProposals(Array.isArray(data.proposals) ? data.proposals : []);
+  } catch (e) {
+    if (token !== _smartTreeToken) return;
+    renderSmartTreeFallback(`تعذر فحص المحتوى: ${e.message || 'خطأ غير معروف'}`);
+  }
+}
+
+function smartTreeClassicButtonsHtml() {
+  return `<div class="pres-opt-label">أو اختر نوعًا كلاسيكيًا يدويًا</div><div class="smart-tree-classic-row">${SMART_TREE_CLASSIC.map(c => `<button type="button" class="btn-msg-export" onclick="pickClassicTree('${c.type}')">${c.label}</button>`).join('')}</div>`;
+}
+
+function renderSmartTreeProposals(proposals) {
+  _smartTreeProposals = proposals;
+  const body = document.getElementById('smartTreeBody');
+  const foot = document.getElementById('smartTreeFoot');
+  if (!body || !foot) return;
+  if (!proposals.length) {
+    body.innerHTML = `<div class="pres-opt-hint">لم يجد النموذج في هذه النتيجة عناصر واضحة قابلة للتشجير (لا خلافًا منظمًا ولا إسنادًا ولا أنواعًا أو أقسامًا صريحة).</div>` + smartTreeClassicButtonsHtml();
+    foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إغلاق</button>`;
+    return;
+  }
+  body.innerHTML = `<div class="pres-opt-label">وجد النموذج في النتيجة ما يمكن تشجيره — اختر واحدًا</div>` + proposals.map((p, i) => `
+    <label class="pres-radio-card"><input type="radio" name="smartTreeProposal" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>${escapeHtml(p.kind_label || 'تشجير')}: ${escapeHtml(p.title || '')}</b><small>${escapeHtml(p.desc || '')}</small></span></label>`).join('')
+    + smartTreeClassicButtonsHtml();
+  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إلغاء</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmSmartTree()">🌳 إخراج التشجير المختار</button>`;
+}
+
+function renderSmartTreeFallback(message) {
+  const body = document.getElementById('smartTreeBody');
+  const foot = document.getElementById('smartTreeFoot');
+  if (!body || !foot) return;
+  body.innerHTML = `<div class="pres-opt-hint">${escapeHtml(message || 'تعذر التحليل')}</div>` + smartTreeClassicButtonsHtml();
+  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إغلاق</button><button type="button" class="btn-msg-export" onclick="analyzeSmartTreeContent()">🔁 إعادة الفحص</button>`;
+}
+
+function pickClassicTree(type) {
+  closeSmartTreeModal();
+  requestChatGraph(type);
+}
+
+function confirmSmartTree() {
+  const modal = document.getElementById('smartTreeModal');
+  const checked = modal && modal.querySelector('input[name="smartTreeProposal"]:checked');
+  const p = checked ? _smartTreeProposals[parseInt(checked.value, 10)] : null;
+  closeSmartTreeModal();
+  if (p) requestChatGraph(null, p);
+}
+
+window.startSmartTree = startSmartTree;
+window.closeSmartTreeModal = closeSmartTreeModal;
+window.confirmSmartTree = confirmSmartTree;
+window.pickClassicTree = pickClassicTree;
+window.analyzeSmartTreeContent = analyzeSmartTreeContent;
 
 function tableInstruction() {
   return `جدول النتيجة السابقة فقط.

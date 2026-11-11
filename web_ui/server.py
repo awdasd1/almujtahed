@@ -5512,6 +5512,107 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
     }
 
 
+# ===== التشجير الذكي: فحص المحتوى واقتراح ما يقبل التشجير منه قبل أي توليد =====
+
+class TreeAnalyzeRequest(BaseModel):
+    text: str
+    api_key: Optional[str] = None
+
+
+TREE_PROPOSAL_KINDS = {
+    "khilaf": "خلاف بين العلماء",
+    "isnad": "شجرة إسناد حديث",
+    "madar": "مدار إسناد",
+    "anwaa": "أنواع",
+    "aqsam": "أقسام",
+    "taarif": "تعاريف وحدود",
+    "istidlal": "استدلال وأدلة",
+    "munaqasha": "مناقشة وردود",
+    "tasalsul": "تسلسل وخطوات",
+    "zaman": "خط زمني",
+    "muqarana": "مقارنة",
+    "asbab": "أسباب ونتائج",
+}
+
+
+def _analyze_tree_proposals(key: str, text: str) -> list:
+    """تحليل محتوى إجابة واستخراج ما يقبل التشجير منه فعلًا (لا اختراع من خارجه)."""
+    system = (
+        "أنت خبير في تحليل النصوص العلمية الشرعية وتحديد ما يقبل التمثيل الشجري منها. افحص النص المُعطى "
+        "فحصًا دقيقًا، واستخرج منه فقط العناصر الموجودة فيه فعلًا والقابلة للتشجير، ولا تخترع شيئًا غير موجود. "
+        "أعد JSON فقط دون أي شرح أو أسوار كود، بهذا الشكل: "
+        '{"proposals": [{"kind": "khilaf", "title": "عنوان محدد من النص", "desc": "ما ستتضمنه الشجرة", '
+        '"root": "تسمية العقدة الجذر", "hint": "تعليمة بنية قصيرة"}]}. '
+        "kind واحد من هذه القيم فقط: khilaf (خلاف بين العلماء في مسألة: أقوال وقائلوها)، "
+        "isnad (شجرة إسناد حديث معيّن: الرواة طبقة طبقة من المصدر إلى النبي أو الصحابي)، "
+        "madar (مدار إسناد: راوٍ يدور عليه الإسناد وتتفرع عنه الطرق)، "
+        "anwaa (أنواع شيء واحد كأنواع سجود السهو أو أنواع المياه)، "
+        "aqsam (أقسام وتفريعات شيء إلى أقسامه)، "
+        "taarif (تعاريف وحدود: تعريف مفهوم عند مذاهب أو علماء متعددين)، "
+        "istidlal (استدلال: حكم ودليله ووجه الدلالة)، "
+        "munaqasha (مناقشة وردود: إشكالات وأجوبة واعتراضات)، "
+        "tasalsul (تسلسل خطوات أو مراحل مرتبة زمنيًا أو إجرائيًا)، "
+        "zaman (خط زمني بأحداث مؤرخة)، "
+        "muqarana (مقارنة بين طرفين أو أكثر ببنود مقابلة)، "
+        "asbab (أسباب ونتائج وعلل وآثار). "
+        "لكل مقترح: title عنوان عربي محدد مأخوذ من النص نفسه لا عنوان عام، وdesc جملة واحدة تعدّد العناصر الفعلية "
+        "التي ستضمها الشجرة (الأقوال أو الرواة أو الأنواع بأسمائها كما في النص باختصار)، وroot تسمية العقدة الجذر "
+        "كما ستظهر أعلى الشجرة، وhint تعليمة بنية قصيرة للنموذج الذي سيرسم الشجرة: ما الجذر وما عقد المستوى الأول "
+        "والمستوى الثاني. اقترح من مقترحين إلى ستة مقترحات كحد أقصى مرتبة من الأهم والأغنى بالعناصر. "
+        "إن لم يكن في النص ما يقبل التشجير حقًا فأعد قائمة فارغة، ولا تقترح شجرة لا يسندها النص."
+    )
+    raw = ""
+    last_error: Optional[Exception] = None
+    for model in AUDIO_SUMMARY_MODELS:
+        try:
+            raw = _openrouter_chat_text(key, model, system, text[:24000], 300, 4096)
+            if raw:
+                break
+        except Exception as error:
+            last_error = error
+    if not raw:
+        if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 402:
+            raise RuntimeError("نفد رصيد OpenRouter — اشحنه ثم أعد المحاولة")
+        raise RuntimeError(f"تعذر تحليل المحتوى: {last_error}")
+    parsed = _parse_presentation_json(raw)
+    items = parsed.get("proposals") if isinstance(parsed, dict) else None
+    proposals: list = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").strip()
+        title = str(item.get("title") or "").strip()
+        if kind not in TREE_PROPOSAL_KINDS or not title:
+            continue
+        proposals.append({
+            "kind": kind,
+            "kind_label": TREE_PROPOSAL_KINDS[kind],
+            "title": title[:120],
+            "desc": str(item.get("desc") or "").strip()[:300],
+            "root": str(item.get("root") or title).strip()[:120],
+            "hint": str(item.get("hint") or "").strip()[:400],
+        })
+        if len(proposals) >= 6:
+            break
+    return proposals
+
+
+@app.post("/api/chat/tree-analyze")
+async def chat_tree_analyze(req: TreeAnalyzeRequest, request: Request):
+    """فحص محتوى الإجابة واقتراح ما يقبل التشجير منه فعلًا قبل أي توليد."""
+    text = (req.text or "").strip()
+    if len(text) < 120:
+        raise HTTPException(status_code=400, detail="المحتوى قصير جدًا لتحليله وتشجيره")
+    key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        proposals = await asyncio.to_thread(_analyze_tree_proposals, key, text)
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error))
+    return {"ok": True, "proposals": proposals}
+
+
 # ===== العروض التقديمية: عرض PowerPoint بصري صوتي من الإجابة المعتمدة =====
 
 class PresentationRequest(BaseModel):
@@ -6792,7 +6893,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.432"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.433"},
         },
     })
     if opened.get("error"):
