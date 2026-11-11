@@ -8552,9 +8552,16 @@ async function fetchOneDataItem(p, ctx) {
   if (!res.ok) throw new Error(data.detail || (charts ? 'تعذر إنشاء الرسم' : 'تعذر إنشاء الجدول'));
   const reply = String(data.reply || '');
   if (charts) {
-    const fence = reply.match(/```\s*echarts[\s\S]*?```/i);
-    if (!fence) throw new Error('لم يُعد النموذج رسمًا صالحًا');
-    return fence[0];
+    // استخراج متسامح: سياج echarts، أو سياج json، أو كائن JSON مجرد في الرد
+    const fenced = reply.match(/```\s*echarts\s*([\s\S]*?)```/i) || reply.match(/```\s*json\s*([\s\S]*?)```/i);
+    let jsonText = fenced ? fenced[1].trim() : '';
+    if (!jsonText) {
+      const start = reply.indexOf('{');
+      const end = reply.lastIndexOf('}');
+      if (start >= 0 && end > start && /grid3D|"series"/.test(reply)) jsonText = reply.slice(start, end + 1).trim();
+    }
+    if (!jsonText) throw new Error('لم يُعد النموذج رسمًا صالحًا');
+    return '```echarts\n' + jsonText + '\n```';
   }
   if (!reply.includes('|')) throw new Error('لم يُعد النموذج جدولًا صالحًا');
   return `### ${p.title}\n\n${reply.trim()}`;
