@@ -2905,7 +2905,7 @@ function loadPresentationOptions() {
       if (p.text_mode === 'embedded') dflt.text_mode = 'embedded';
       if (['gpt', 'muse', 'gemini', 'gpt54'].includes(p.image_model)) dflt.image_model = p.image_model;
       if (['auto', '6', '8', '10', '12', '14', '16'].includes(String(p.slides))) dflt.slides = String(p.slides);
-      if (['without', 'none'].includes(p.design_mode)) dflt.design_mode = p.design_mode;
+      if (['without', 'none', 'explained'].includes(p.design_mode)) dflt.design_mode = p.design_mode;
       if (p.colors) {
         if (p.colors.mode === 'custom') dflt.colors.mode = 'custom'; else if (p.colors.mode === 'default') dflt.colors.mode = 'default';
         if (Array.isArray(p.colors.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (p.colors.img[i] && p.colors.img[i].hex) || c.hex, pct: (p.colors.img[i] && p.colors.img[i].pct) || c.pct }));
@@ -2958,7 +2958,9 @@ function openPresentationOptions(idx, btn) {
             <option value="with">🖼️ تصميم بصور</option>
             <option value="without">🚫 تصميم بدون صور — بلا أي كائن حي</option>
             <option value="none">📝 بلا صور مطلقًا — خط عربي ونص فقط</option>
+            <option value="explained">📊 شرح مصور — تشجير وهياكل بصرية شرحية</option>
           </select>
+          <div class="pres-opt-hint">«شرح مصور»: كل شريحة رسم شرحي متكامل (تشجير خلافات العلماء، سلاسل أسانيد، خرائط رحلات، خطوط زمنية...) بأيقونات وصور مصغرة، وتُرسم نصوصه داخل الرسم دائمًا، والأشخاص من الخلف فقط بلا وجوه.</div>
           <div class="pres-opt-label">ألوان الشريحة</div>
           <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المجتهد الهادئة المعتمدة</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="custom"> <span><b>ألوان مخصصة</b><small>ثلاثة ألوان لصورة الشريحة بنسب سيادة، وألوان خطوط النص القابل للتحرير</small></span></label>

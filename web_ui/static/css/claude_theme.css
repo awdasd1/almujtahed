@@ -11036,6 +11036,7 @@ body::-webkit-scrollbar,
 .pres-radio-card { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
 .pres-radio-card small { display: block; opacity: 0.75; font-size: 12px; margin-top: 3px; line-height: 1.6; }
 .pres-select { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border-subtle); background: var(--bg-surface); color: inherit; font-size: 14px; }
+.pres-opt-hint { font-size: 12px; line-height: 1.7; opacity: 0.75; margin-top: 6px; }
 .pres-custom-colors { border: 1px dashed var(--border-subtle); border-radius: 12px; padding: 10px 12px; margin-top: 4px; }
 .pres-color-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
 .pres-color-name { min-width: 92px; }

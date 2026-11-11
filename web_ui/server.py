@@ -5571,7 +5571,7 @@ def _parse_presentation_json(raw: str) -> Optional[dict]:
     return {"deck_title": str(data.get("deck_title") or slides[0]["title"]).strip()[:140], "slides": slides}
 
 
-def _structure_presentation(key: str, text: str, slide_count: int) -> dict:
+def _structure_presentation(key: str, text: str, slide_count: int, design_mode: str = "with") -> dict:
     system = (
         "أنت مصمّم عروض تقديمية أكاديمية. حوّل الإجابة العلمية المُعطاة إلى هيكل عرض تقديمي مركّز "
         f"من {slide_count} شرائح بالضبط، وأعد JSON فقط دون أي شرح أو أسوار كود، بهذا الشكل: "
@@ -5583,6 +5583,15 @@ def _structure_presentation(key: str, text: str, slide_count: int) -> dict:
         "يشرح نقاط الشريحة، بلا رموز ولا تعداد ولا عناوين. وimage_prompt وصف بصري إنجليزي لمشهد يعبّر عن مضمون الشريحة "
         "(مكتبة تراثية، مخطوطات، عمارة إسلامية، طبيعة...) دون أي نص أو حروف في الصورة."
     )
+    if design_mode == "explained":
+        system += (
+            " وضع «الشرح المصور» مفعّل: لكل شريحة اختر أنسب بنية بصرية شرحية لمضمونها — شجرة خلاف متفرعة من أصل "
+            "المسألة إلى الأقوال وأدلتها، أو سلسلة إسناد بعقد متصلة من الراوي إلى المصدر، أو خريطة رحلة بمحطات مرتبة، "
+            "أو خط زمني بأحداث متسلسلة، أو مقارنة بصرية بين قولين، أو تسلسل أسباب ونتائج — واكتب image_prompt وصفًا "
+            "إنجليزيًا تفصيليًا لهذه البنية: عناصرها وتفرعاتها وترتيب قراءتها من اليمين إلى اليسار، ونصوص التسميات "
+            "العربية القصيرة داخل العقد موضوعة بين علامتي «»، والأيقونات والصور المصغرة المناسبة لكل عنصر، بحيث تكون "
+            "الشريحة رسمًا شرحيًا متكاملًا لا خلفية عامة."
+        )
     last_error: Optional[Exception] = None
     for model in AUDIO_SUMMARY_MODELS:
         try:
@@ -5661,7 +5670,7 @@ def _normalize_presentation_options(req: PresentationRequest) -> dict:
             "title": hexv(fonts_in.get("title"), "#ffffff"),
             "body": hexv(fonts_in.get("body"), "#ffffff"),
         },
-        "design_mode": req.design_mode if req.design_mode in ("with", "without", "none") else "with",
+        "design_mode": req.design_mode if req.design_mode in ("with", "without", "none", "explained") else "with",
         "slide_count": req.slide_count if req.slide_count in (6, 8, 10, 12, 14, 16) else None,
     }
 
@@ -5707,6 +5716,24 @@ def _slide_embedded_prompt(slide_data: dict, options: Optional[dict] = None) -> 
         "manuscripts and warm light, generous spacing, professional academic lecture slide."
         + _palette_directive(options)
         + _slide_mode_rule(options)
+    )
+
+
+def _slide_explained_prompt(slide_data: dict, options: Optional[dict] = None) -> str:
+    """توجيه شريحة شرح مصور: رسم إنفوجرافيك شرحي متكامل (تشجير/إسناد/خريطة) بتسميات عربية داخل الرسم."""
+    options = options or {}
+    return (
+        "Create a detailed educational infographic presentation slide (16:9, Arabic, read right-to-left) that "
+        "visually explains its topic with a clear structured diagram — such as a branching tree of opinions and "
+        "their evidences, a connected chain of narrators (isnad), a journey route map with ordered stops, a "
+        "timeline, a visual comparison, or a cause-and-effect flow — following this exact blueprint: "
+        f"{slide_data['image_prompt']}. "
+        f"Place this slide title at the top, spelled exactly: «{slide_data['title']}». "
+        "Render every Arabic node label exactly as specified in the blueprint, short and perfectly legible, with "
+        "connecting arrows, small meaningful icons and miniature illustrations for each element, balanced elegant "
+        "composition, scholarly Islamic visual identity, strong hierarchy. Any people shown strictly and entirely "
+        "from the back, no faces, no side profiles."
+        + _palette_directive(options)
     )
 
 
@@ -5790,7 +5817,8 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
     from pptx.oxml.ns import qn
 
     options = options or {}
-    embedded = options.get("text_mode") == "embedded"
+    # النصوص المدمجة والشرح المصور: الشريحة رسم كامل فلا طبقة نص فوقها
+    embedded = options.get("text_mode") == "embedded" or options.get("design_mode") == "explained"
     custom_colors = options.get("colors_mode") == "custom"
     overlay_rgb = options["img"][0]["hex"].lstrip("#").upper() if custom_colors else "0B0F1A"
     title_rgb = options["fonts"]["title"].lstrip("#").upper() if custom_colors else "FFFFFF"
@@ -5841,7 +5869,7 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str,
     try:
         job.update(stage="structuring", message="جارٍ هيكلة الشرائح من الإجابة...")
         slide_count = options.get("slide_count") or _presentation_slide_count(len(text))
-        deck = await asyncio.to_thread(_structure_presentation, key, text, slide_count)
+        deck = await asyncio.to_thread(_structure_presentation, key, text, slide_count, options["design_mode"])
         slides = deck["slides"]
         folder_name = f"deck-{int(time.time())}"
         folder = UPLOADS_BUCKET_DIR / owner_id / "presentations" / folder_name
@@ -5850,7 +5878,9 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str,
         job.update(stage="creating", total=len(slides), done=0, message=f"جارٍ إنشاء الشرائح: 0 من {len(slides)}")
 
         async def make_slide(i: int, slide_data: dict) -> dict:
-            if options["text_mode"] == "embedded":
+            if options["design_mode"] == "explained":
+                prompt = _slide_explained_prompt(slide_data, options)
+            elif options["text_mode"] == "embedded":
                 prompt = _slide_embedded_prompt(slide_data, options)
             else:
                 prompt = _slide_image_prompt(slide_data["image_prompt"], options)
@@ -6738,7 +6768,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.429"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.430"},
         },
     })
     if opened.get("error"):
