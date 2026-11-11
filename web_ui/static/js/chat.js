@@ -7763,17 +7763,20 @@ function smartTreesHtml(msg, idx) {
 
 function mountSmartTreeCards(container, session) {
   if (!container || !session) return;
-  container.querySelectorAll('.smart-tree-card[data-smart-tree-msg]').forEach(card => {
-    if (card.dataset.mounted === '1') return;
-    card.dataset.mounted = '1';
+  const pendingCards = [...container.querySelectorAll('.smart-tree-card[data-smart-tree-msg]')]
+    .filter(card => card.dataset.mounted !== '1');
+  if (!pendingCards.length) return;
+  const mountOneCard = (card) => {
     const msg = session.messages[parseInt(card.dataset.smartTreeMsg, 10)];
     const tree = msg && Array.isArray(msg.tree_set) ? msg.tree_set[parseInt(card.dataset.smartTreePos, 10)] : null;
     const mount = card.querySelector('.smart-tree-card-mount');
     if (!tree || !mount) return;
     if (typeof mountCytoscape !== 'function' || !window.cytoscape) {
-      mount.innerHTML = '<div class="smart-tree-card-fallback">تعذر تحميل محرك الرسم</div>';
+      // لا تختم البطاقة هنا: المحرك قد يكون في طريقه (تحميل كسول) فتُعاد المحاولة عند وصوله
+      mount.innerHTML = '<div class="smart-tree-card-fallback">جارٍ تحميل محرك الرسم…</div>';
       return;
     }
+    card.dataset.mounted = '1';
     const wrapper = document.createElement('div');
     wrapper.className = 'force3d-render-wrapper isnad-render-wrapper smart-tree-force';
     const title = tree.data.title || tree.title || 'مشجّر';
@@ -7834,7 +7837,24 @@ function mountSmartTreeCards(container, session) {
     } catch (e) {
       mount.innerHTML = '<div class="smart-tree-card-fallback">تعذر رسم هذا المشجّر</div>';
     }
-  });
+  };
+  if (typeof mountCytoscape === 'function' && window.cytoscape) {
+    pendingCards.forEach(mountOneCard);
+    return;
+  }
+  // محرك الرسم (Cytoscape) يُحمَّل كسولًا عند أول رسم خطي؛ بطاقات المشجّرات قد
+  // تصل قبله (بدء بارد عند فتح التطبيق على الجلسة مباشرة) — اطلب تحميله الآن
+  // ولا تعرض «تعذر التحميل» إلا إذا فشل التحميل فعليًا، ثم ركّب البطاقات
+  pendingCards.forEach(mountOneCard);
+  if (typeof ensureCytoscape === 'function') {
+    ensureCytoscape()
+      .then(() => pendingCards.forEach(mountOneCard))
+      .catch(() => pendingCards.forEach(card => {
+        if (card.dataset.mounted === '1') return;
+        const m = card.querySelector('.smart-tree-card-mount');
+        if (m) m.innerHTML = '<div class="smart-tree-card-fallback">تعذر تحميل محرك الرسم</div>';
+      }));
+  }
 }
 
 function expandSmartTreeCard(btn) {
