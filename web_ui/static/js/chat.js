@@ -2220,6 +2220,7 @@ function renderSessionMessages(sessionId, options) {
         <div class="chat-audio-summary-actions">
           <a class="btn-msg-export" href="${escapeHtml(msg.podcast.url)}" download="بودكاست-حواري-المجتهد.${escapeHtml(String(msg.podcast.url).split('.').pop() || 'mp3')}" title="تنزيل ملف البودكاست">⬇️ تنزيل</a>
           <button type="button" class="btn-msg-export" onclick="sharePodcast(${idx})" title="مشاركة ملف البودكاست">🔗 مشاركة</button>
+          <button type="button" class="btn-msg-export" onclick="publishPodcast(${idx}, this)" title="نشر الحلقة: غلاف مولّد بعنوانها ونص منشور جاهز بمصادرها في نافذة النشر">📤 نشر</button>
           ${Array.isArray(msg.podcast.script) && msg.podcast.script.length ? `<button type="button" class="btn-msg-export" onclick="togglePodcastText(${idx}, this)" title="عرض نص الحوار بالأدوار أو إخفاؤه">📝 نص الحوار</button>` : ''}
         </div>
         ${Array.isArray(msg.podcast.script) && msg.podcast.script.length ? `<div class="chat-audio-summary-text" id="podcastText${idx}" hidden>${msg.podcast.script.map(turn => `<div class="podcast-line"><b class="${turn.speaker === 'محمد' ? 'podcast-host' : 'podcast-guest'}">${escapeHtml(turn.speaker)} (${escapeHtml(turn.role || '')}):</b> ${escapeHtml(turn.text)}</div>`).join('')}</div>` : ''}
@@ -2920,6 +2921,7 @@ async function generatePodcast(idx, btn) {
     msg.podcast = {
       url: data.audio_url,
       title: data.title || '',
+      sources_text: data.sources_text || '',
       script: Array.isArray(data.script) ? data.script : [],
       voices: data.voices || {},
       created_at: new Date().toISOString(),
@@ -2959,6 +2961,78 @@ async function sharePodcast(idx) {
     showToast('نُسخ رابط البودكاست — الصقه أين تشاء لمشاركته 🔗');
   } catch (e) {
     showToast('تعذرت المشاركة تلقائيًا؛ نزّل الملف ثم شاركه يدويًا', 5000);
+  }
+}
+
+// غلاف حلقة مولّد محليًا (كانفس): تدرّج هادئ بهوية المجتهد وعنوان الحلقة — ليُنشر منشورًا مصوّرًا عن الحلقة
+function makePodcastCoverBlob(title) {
+  return new Promise((resolve, reject) => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1200;
+      canvas.height = 630;
+      const ctx = canvas.getContext('2d');
+      const grad = ctx.createLinearGradient(0, 0, 1200, 630);
+      grad.addColorStop(0, '#16324a');
+      grad.addColorStop(0.6, '#1f4d5a');
+      grad.addColorStop(1, '#7a4b21');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 1200, 630);
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      for (let i = 0; i < 5; i++) {
+        ctx.beginPath();
+        ctx.arc(1080 - i * 30, 80 + i * 14, 130 + i * 42, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.direction = 'rtl';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#f5d9a8';
+      ctx.font = '700 44px "Amiri", serif';
+      ctx.fillText('🎙️ بودكاست حواري', 600, 150);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 58px "Amiri", serif';
+      const words = String(title || 'حلقة علمية').split(/\s+/);
+      const lines = [];
+      let line = '';
+      for (const w of words) {
+        const trial = line ? line + ' ' + w : w;
+        if (ctx.measureText(trial).width > 980 && line) { lines.push(line); line = w; } else line = trial;
+      }
+      if (line) lines.push(line);
+      lines.slice(0, 3).forEach((l, i) => ctx.fillText(l, 600, 262 + i * 84));
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.font = '32px "Amiri", serif';
+      ctx.fillText('محمد يستضيف إبراهيم — من بحوث المجتهد الموثّقة', 600, 262 + Math.min(lines.length, 3) * 84 + 66);
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('تعذر توليد الغلاف'))), 'image/png');
+    } catch (e) { reject(e); }
+  });
+}
+
+async function publishPodcast(idx, btn) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  const info = msg && msg.podcast;
+  if (!info || !info.url) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ تجهيز النشر…'; }
+  try {
+    const cover = await makePodcastCoverBlob(info.title || 'بودكاست حواري');
+    const fd = new FormData();
+    fd.append('file', cover, 'podcast-cover.png');
+    const res = await fetch('/api/chat/upload', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.file_url) throw new Error(data.error || 'تعذر رفع غلاف الحلقة');
+    const caption = [
+      `🎙️ بودكاست حواري — ${info.title || 'حلقة علمية'}`,
+      'حلقة حوارية بين محمد المقدّم وإبراهيم الضيف، مولّدة من بحوث «المجتهد» الموثّقة بالمكتبة الشاملة.',
+      info.sources_text ? `\n📚 مصادر الحلقة:\n${String(info.sources_text).slice(0, 1100)}` : '',
+    ].filter(Boolean).join('\n');
+    if (typeof window.openDesignImagePublish === 'function') window.openDesignImagePublish(data.file_url, caption);
+    else if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر تجهيز نشر الحلقة'), 7000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
 }
 
