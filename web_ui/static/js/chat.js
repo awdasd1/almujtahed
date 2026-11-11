@@ -6737,6 +6737,7 @@ function renderEchartsBlocks(container) {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
             <span>مشاركة</span>
           </button>
+          <button type="button" class="btn-chart-type" data-echart-publish="1" title="نشر الرسم صورة في منصات التواصل (تيك توك وإكس وغيرها) عبر نافذة النشر">📤 <span>نشر</span></button>
           <button type="button" class="btn-chart-type" data-echart-fit="1">ملاءمة</button>
           <button type="button" class="btn-chart-type" data-echart-reset="1">إعادة</button>
           <button type="button" class="btn-chart-type force3d-shot" data-echart-shot="1" title="لقطة للرسم">
@@ -6774,6 +6775,59 @@ function renderEchartsBlocks(container) {
       console.warn('ECharts render error:', err);
     }
   });
+  groupSmartCharts(container);
+}
+
+// رسوم بيانية متعددة في رسالة واحدة (من المسح الذكي أو رسم متعدد) تُعرض
+// شبكة مصغّرات تقسم المساحة كشبكة التشجير، والضغط على أي رسم يكبّره
+// بكل أدواته (النوع والمثال والخط والحجم والخلفية واللقطة والنشر)
+function groupSmartCharts(container) {
+  if (!container) return;
+  container.querySelectorAll('.message-bubble').forEach((bubble) => {
+    const wrappers = [...bubble.querySelectorAll('.echart-render-wrapper:not(.is-expanded)')]
+      .filter((w) => !w.closest('.smart-charts-grid'));
+    if (wrappers.length < 2) return;
+    const grid = document.createElement('div');
+    grid.className = 'smart-charts-grid';
+    grid.style.setProperty('--st-cols', wrappers.length <= 2 ? wrappers.length : (wrappers.length <= 4 ? 2 : 3));
+    wrappers[0].parentNode.insertBefore(grid, wrappers[0]);
+    wrappers.forEach((w) => {
+      grid.appendChild(w);
+      const host = w.querySelector('.echart-host');
+      if (host && !host.dataset.zoomBound) {
+        host.dataset.zoomBound = '1';
+        host.title = 'اضغط لتكبير الرسم بكل أدواته';
+        host.addEventListener('click', () => { if (!w.classList.contains('is-expanded')) setEchartExpanded(w, true); });
+      }
+    });
+    setTimeout(() => wrappers.forEach((w) => { if (w._echart) w._echart.resize(); }), 90);
+  });
+}
+
+// نشر الرسم البياني صورة في منصات التواصل عبر نافذة النشر (كصور التشجير)
+async function publishEchartImage(wrapper) {
+  const chart = wrapper && wrapper._echart;
+  if (!chart) return;
+  if (typeof window.openDesignImagePublish !== 'function') {
+    if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
+    return;
+  }
+  try {
+    const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: wrapper._bg || '#f7f3ec' });
+    const blob = await (await fetch(url)).blob();
+    if (!blob) throw new Error('تعذر تجهيز صورة الرسم');
+    const title = echartVisualTitle(wrapper, 'رسم بياني');
+    const fd = new FormData();
+    fd.append('file', new File([blob], 'رسم-بياني-المجتهد.png', { type: 'image/png' }));
+    const upRes = await fetch('/api/chat/upload', { method: 'POST', body: fd });
+    const up = await upRes.json().catch(() => ({}));
+    if (!upRes.ok || !up.file_url) throw new Error(up.error || 'تعذر رفع صورة الرسم');
+    const kind = (typeof ECHART_KIND_LABELS !== 'undefined' && ECHART_KIND_LABELS[wrapper._kind]) || '';
+    const caption = [`📊 ${title}`, kind ? `رسم ${kind} مولّد بمسح ذكي من بحوث «المجتهد» الموثّقة بالمكتبة الشاملة.` : 'رسم بياني مولّد من بحوث «المجتهد» الموثّقة بالمكتبة الشاملة.'].join('\n');
+    window.openDesignImagePublish(up.file_url, caption);
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر تجهيز نشر الرسم'), 7000);
+  }
 }
 
 function setEchartExpanded(wrapper, expanded) {
@@ -6796,11 +6850,15 @@ function setEchartExpanded(wrapper, expanded) {
 if (!window._echartClicksBound) {
   window._echartClicksBound = true;
   document.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-echart-share], [data-echart-fit], [data-echart-reset], [data-echart-shot], [data-echart-expand], [data-echart-close], [data-echart-code]');
+    const button = event.target.closest('[data-echart-share], [data-echart-publish], [data-echart-fit], [data-echart-reset], [data-echart-shot], [data-echart-expand], [data-echart-close], [data-echart-code]');
     if (!button) return;
     const wrapper = button.closest('.echart-render-wrapper');
     if (!wrapper) return;
     event.preventDefault();
+    if (button.dataset.echartPublish) {
+      publishEchartImage(wrapper);
+      return;
+    }
     if (button.dataset.echartFit) {
       fitEchart(wrapper);
       return;
