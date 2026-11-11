@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.457"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.458"},
         },
     })
     if opened.get("error"):
@@ -13716,15 +13716,44 @@ def extract_text_from_file(file_path: Path, filename: str, mime_type: str) -> Tu
                 extracted_text = f"[تعذر استخراج مستند Word: {e}]"
 
         # 3. صور
-        elif ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"] or mime_type.startswith("image/"):
+        elif ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".heic", ".heif", ".tif", ".tiff"] or mime_type.startswith("image/"):
             is_image = True
             try:
                 import base64
                 with open(file_path, "rb") as img_f:
                     raw_bytes = img_f.read()
-                    b64_str = base64.b64encode(raw_bytes).decode("utf-8")
-                
                 img_mime = mime_type if mime_type and mime_type.startswith("image/") else f"image/{ext.replace('.', '')}"
+                if img_mime == "image/jpg":
+                    img_mime = "image/jpeg"
+                # نماذج الرؤية لا تقرأ HEIC/BMP/TIFF: حوّلها إلى PNG قبل التمرير
+                if img_mime not in ("image/png", "image/jpeg", "image/webp", "image/gif"):
+                    converted = None
+                    try:
+                        import io as _io
+                        from PIL import Image as _PILImage
+                        _im = _PILImage.open(_io.BytesIO(raw_bytes))
+                        _buf = _io.BytesIO()
+                        _im.convert("RGB").save(_buf, format="PNG")
+                        converted = _buf.getvalue()
+                    except Exception:
+                        converted = None
+                    if converted is None and sys.platform == "darwin" and ext in (".heic", ".heif"):
+                        try:
+                            import subprocess as _sp
+                            import tempfile as _tf
+                            with _tf.NamedTemporaryFile(suffix=".png", delete=False) as _tmp:
+                                _tmp_path = _tmp.name
+                            _sp.run(["sips", "-s", "format", "png", str(file_path), "--out", _tmp_path],
+                                    check=True, capture_output=True, timeout=60)
+                            with open(_tmp_path, "rb") as _cf:
+                                converted = _cf.read()
+                            os.unlink(_tmp_path)
+                        except Exception:
+                            converted = None
+                    if converted:
+                        raw_bytes = converted
+                        img_mime = "image/png"
+                b64_str = base64.b64encode(raw_bytes).decode("utf-8")
                 base64_data = f"data:{img_mime};base64,{b64_str}"
                 extracted_text = f"[صورة مرفقة محفوظة في المجلد: {filename} - الحجم: {len(raw_bytes):,} بايت]"
             except Exception as e:
@@ -14260,13 +14289,25 @@ def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
     base["model"] = model
     dialog = [{"role": m.role, "content": m.content} for m in req.messages
               if m.role in ("user", "assistant") and (m.content or "").strip()]
+    # المرفقات النصية تُلحق كنص، أما الصور فتُمرَّر بصريًا (image_url ببياناتها)
+    # إلى النموذج مع آخر رسالة مستخدم — دونها لا يرى النموذج إلا وصفًا نصيًا
+    # للملف (الاسم والحجم) فيعتذر عن قراءتها مهما كان داعمًا للرؤية.
     att_texts = []
+    image_parts = []
     for a in (req.attachments or []):
+        if a.get("has_image") and a.get("base64_data"):
+            image_parts.append({"type": "image_url",
+                                "image_url": {"url": a.get("base64_data")}})
+            continue
         t = (a.get("extracted_text") or "").strip()
         if t:
             att_texts.append(f"[محتوى الملف المرفق: {a.get('filename', 'ملف')}]\n{t[:20000]}")
     if att_texts and dialog and dialog[-1]["role"] == "user":
         dialog[-1] = {**dialog[-1], "content": dialog[-1]["content"] + "\n\n" + "\n\n".join(att_texts)}
+    if image_parts and dialog and dialog[-1]["role"] == "user":
+        last_text = dialog[-1]["content"]
+        dialog[-1] = {"role": "user", "content":
+                      [{"type": "text", "text": last_text}] + image_parts}
     if not dialog:
         return {**base, "reply": "⚠️ لا توجد رسائل للإرسال."}
 
@@ -14369,6 +14410,27 @@ def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
                 usage = final["usage"]
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="ignore")[:400]
+        if image_parts:
+            # نموذج لا يدعم الرؤية غالبًا: أعد المحاولة نصًا خالصًا ونبّه
+            # الباحث صراحة بدل تركه أمام اعتذار مضلل من النموذج.
+            try:
+                plain_dialog = []
+                for item in dialog:
+                    c = item.get("content")
+                    if isinstance(c, list):
+                        txt = " ".join(p.get("text", "") for p in c if p.get("type") == "text")
+                        plain_dialog.append({**item, "content": txt})
+                    else:
+                        plain_dialog.append(item)
+                plain_payload = {k: v for k, v in payload.items() if k not in ("tools", "tool_choice")}
+                plain_payload["messages"] = plain_dialog
+                data2 = _read(plain_payload)
+                msg2 = ((data2.get("choices") or [{}])[0].get("message") or {})
+                text2 = (msg2.get("content") or "").strip()
+                if text2:
+                    return {**base, "reply": text2 + "\n\n⚠️ ملاحظة: لم تصل الصورة إلى هذا النموذج لأنه لا يدعم الرؤية (أو رفض المزود تمريرها)، فأجاب من النص وحده. لقراءة الصور اختر نموذجًا داعمًا للرؤية مثل Gemini أو Claude أو GPT.", "usage": usage}
+            except Exception:
+                pass
         return {**base, "reply": f"⚠️ رفض النموذج الطلب في البحث الحر: {detail}"}
     except Exception as error:
         return {**base, "reply": f"⚠️ تعذر الاتصال بالنموذج في البحث الحر: {error}"}
@@ -16028,7 +16090,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     att_lines.append(f"• اسم الملف: {f_name}")
                     if f_type:
                         att_lines.append(f"  نوع الملف: {f_type}")
-                    if f_text and not f_text.startswith("[تعذر") and not f_text.startswith("[خطأ"):
+                    if att.get("has_image") and att.get("base64_data"):
+                        # الصورة تُمرَّر بصريًا مع آخر رسالة مستخدم؛ لا تُقدَّم
+                        # عبارة «صورة مرفقة» الوصفية كأنها نص مستخرج منها.
+                        att_lines.append("  هذا الملف صورة مرفقة بصريًا مع آخر رسالة مستخدم: انظر إليها بنفسك واستخرج نصها ومحتواها منها مباشرة.")
+                    elif f_text and not f_text.startswith("[تعذر") and not f_text.startswith("[خطأ"):
                         att_lines.append(f"  نص الملف مستخرج وجاهز، وأجب منه مباشرة:\n```text\n{f_text[:25000]}\n```")
                     elif att.get("has_image"):
                         att_lines.append("  ملاحظة: هذا الملف صورة تم تمريرها بصرياً إلى نموذج الرؤية لتحليلها واستخراج نصوصها.")
