@@ -6591,6 +6591,82 @@ function applyEchartKind(wrapper) {
   requestAnimationFrame(() => { if (wrapper._echart) wrapper._echart.resize(); });
 }
 
+// نزع دوال جافاسكربت (formatter ونحوها) من خيار رسم أعاده النموذج نصيًا،
+// بمسح متوازن الأقواس دون أي تنفيذ للكود — حتى يصلح الناتج لـ JSON.parse
+function stripJsFunctionsFromOption(src) {
+  let out = '';
+  let i = 0;
+  let inStr = '';
+  const skipBalanced = (start, open, close) => {
+    let depth = 0;
+    let j = start;
+    let str = '';
+    while (j < src.length) {
+      const ch = src[j];
+      if (str) {
+        if (ch === '\\') { j += 2; continue; }
+        if (ch === str) str = '';
+      } else if (ch === '"' || ch === "'" || ch === '`') str = ch;
+      else if (ch === open) depth += 1;
+      else if (ch === close) { depth -= 1; if (!depth) return j + 1; }
+      j += 1;
+    }
+    return j;
+  };
+  while (i < src.length) {
+    const ch = src[i];
+    if (inStr) {
+      out += ch;
+      if (ch === '\\' && i + 1 < src.length) { out += src[i + 1]; i += 2; continue; }
+      if (ch === inStr) inStr = '';
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; out += ch; i += 1; continue; }
+    if (src.startsWith('function', i) && /\W/.test(src[i - 1] || ' ') && /\W/.test(src[i + 8] || ' ')) {
+      let j = i + 8;
+      while (j < src.length && src[j] !== '(' && src[j] !== '{') j += 1;
+      if (src[j] === '(') j = skipBalanced(j, '(', ')');
+      while (j < src.length && /\s/.test(src[j])) j += 1;
+      if (src[j] === '{') j = skipBalanced(j, '{', '}');
+      out += 'null';
+      i = j;
+      continue;
+    }
+    if (ch === '(') {
+      const endParams = skipBalanced(i, '(', ')');
+      let j = endParams;
+      while (j < src.length && /\s/.test(src[j])) j += 1;
+      if (src.startsWith('=>', j)) {
+        j += 2;
+        while (j < src.length && /\s/.test(src[j])) j += 1;
+        if (src[j] === '{') j = skipBalanced(j, '{', '}');
+        else {
+          let depth = 0;
+          let str = '';
+          while (j < src.length) {
+            const c2 = src[j];
+            if (str) {
+              if (c2 === '\\') { j += 2; continue; }
+              if (c2 === str) str = '';
+            } else if (c2 === '"' || c2 === "'" || c2 === '`') str = c2;
+            else if (c2 === '(' || c2 === '[' || c2 === '{') depth += 1;
+            else if (c2 === ')' || c2 === ']' || c2 === '}') { if (!depth) break; depth -= 1; }
+            else if (c2 === ',' && !depth) break;
+            j += 1;
+          }
+        }
+        out += 'null';
+        i = j;
+        continue;
+      }
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 function renderEchartsBlocks(container) {
   if (!container || !window.echarts) return;
   container.querySelectorAll('pre code').forEach((codeEl, idx) => {
@@ -6599,10 +6675,16 @@ function renderEchartsBlocks(container) {
     const pre = codeEl.closest('pre');
     if (!pre || pre.dataset.renderedEcharts === '1') return;
     let option;
+    const rawOption = codeEl.innerText.trim().replace(/,\s*([}\]])/g, '$1');
     try {
-      option = JSON.parse(codeEl.innerText.trim().replace(/,\s*([}\]])/g, '$1'));
+      option = JSON.parse(rawOption);
     } catch (e) {
-      return;
+      // نماذج تضع دوال formatter جافاسكربت داخل الخيار: تُنزع بأمان ثم يُعاد التحليل
+      try {
+        option = JSON.parse(stripJsFunctionsFromOption(rawOption).replace(/,\s*([}\]])/g, '$1'));
+      } catch (e2) {
+        return;
+      }
     }
     if (!option || typeof option !== 'object') return;
     if (option.option && typeof option.option === 'object') option = option.option;
@@ -8135,6 +8217,7 @@ function echartInstruction(type) {
   return `${kindRule}
 لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء.
 لا تضف رقماً ولا اسماً ليس في النتيجة، ولا تنسخ مثالاً جاهزاً.
+ممنوع منعًا باتًا: دوال جافاسكربت (function أو أسهم =>) ووسوم HTML في أي موضع، فالناتج JSON نقي يصلح لـ JSON.parse كما هو، وبقوالب نصية مثل "{b}: {c}" عند الحاجة.
 لا تكتب أي كلمة خارج كتل echarts.
 كل كتلة خيار Apache ECharts صالح فيه title.text بالعربية وseries.`;
 }
@@ -8354,8 +8437,9 @@ function chartProposalInstruction(p) {
   const label = (typeof ECHART_KIND_LABELS !== 'undefined' && ECHART_KIND_LABELS[p.chart]) || 'الرسم';
   return `أخرج رسمًا بيانيًا واحدًا فقط من نوع «${label}» (series.type = "${p.chart}") عنوانه «${p.title}»، في كتلة \`\`\`echarts واحدة فقط.
 البيانات إلزامية من النتيجة الآتية وحدها، وبحسب استخراج المسح الذكي هذا حرفيًا: ${p.desc}
-حوّل القيم إلى أرقام (0-9) داخل series، وأظهر في تسميات كل نقطة قيمتها ونسبتها المئوية من المجموع متى ذكرها المسح أو أمكن اشتقاقها منه، وإن ذكر المسح «مؤشر:» فاجعله نصًّا بارزًا في title.subtext.
+حوّل القيم إلى أرقام (0-9) داخل series، وأظهر في تسميات كل نقطة قيمتها ونسبتها المئوية من المجموع متى ذكرها المسح أو أمكن اشتقاقها منه (بقوالب نصية مثل "{b}: {c}" لا بدوال)، وإن ذكر المسح «مؤشر:» فاجعله في title.subtext نصًا عاديًا بلا أي وسوم HTML.
 لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء، ولا تضف فئة ولا قيمة ليست في النتيجة أو في استخراج المسح، ولا تنسخ مثالًا جاهزًا.
+ممنوع منعًا باتًا: دوال جافاسكربت (function أو أسهم =>) في أي موضع، فالناتج JSON نقي يصلح لـ JSON.parse كما هو.
 لا تكتب أي كلمة خارج كتلة echarts. كل كتلة خيار Apache ECharts صالح فيه title.text بالعربية وseries.`;
 }
 
