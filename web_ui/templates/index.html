@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.451">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.452">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.451 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.452 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -348,24 +348,8 @@
                             <option value="cities">مدن ومراكز</option>
                             <option value="routes">غزوات وفتوحات ورحلات</option>
                         </select>
-                        <select class="btn-chat-tool-action chat-echart-kind-fixed" onchange="insertEchartKind(this)" title="اختر نوع الرسم ليُرسم من النتيجة السابقة">
-                            <option value="">نوع الرسم</option>
-                            <option value="multi">عدة رسوم مناسبة</option>
-                            <option value="bar">أعمدة</option>
-                            <option value="line">خطي</option>
-                            <option value="pie">دائري</option>
-                            <option value="scatter">نقطي</option>
-                            <option value="radar">رادار</option>
-                            <option value="heatmap">حراري</option>
-                            <option value="tree">شجرة</option>
-                            <option value="treemap">تريماب</option>
-                            <option value="sunburst">طبقات دائرية</option>
-                            <option value="sankey">سانكي</option>
-                            <option value="funnel">قمع</option>
-                            <option value="gauge">مقياس</option>
-                            <option value="graph">شبكة علاقات</option>
-                        </select>
-                        <button type="button" class="chat-table-request-btn" id="btnChatTable" onclick="requestChatTable()">جدولة</button>
+                        <button type="button" class="chat-table-request-btn" id="btnChatCharts" onclick="startDataScan('charts')" title="مسح ذكي: يفحص النموذج أرقام النتيجة السابقة وتوزيعاتها، يحسب نسبها ويقترح رسومًا بيانية ومؤشرات KPI، ثم تحدّد ما يُرسم">📊 رسوم بيانية</button>
+                        <button type="button" class="chat-table-request-btn" id="btnChatTable" onclick="startDataScan('tables')" title="مسح ذكي: يفحص النموذج بنية النتيجة السابقة (مقارنات وقوائم ذات خصائص متكررة) ويقترح جداولها، ثم تحدّد ما يُجدول">جدولة</button>
                         <!-- حاوية أزرار الأدوات المفعلة في المحادثة -->
                         <div class="chat-assistant-tools-list" id="chatAssistantToolsList">
                             <!-- يتم تعبئة أزرار الأدوات المفعلة في المحادثة ديناميكياً -->
@@ -5655,23 +5639,23 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.451"></script>
-    <script src="/static/js/search.js?v=1.10.451"></script>
-    <script src="/static/js/reader.js?v=1.10.451"></script>
-    <script src="/static/js/force3d.js?v=1.10.451"></script>
-    <script src="/static/js/share.js?v=1.10.451"></script>
-    <script src="/static/js/chat.js?v=1.10.451"></script>
-    <script src="/static/js/designs.js?v=1.10.451"></script>
-    <script src="/static/js/texts.js?v=1.10.451"></script>
-    <script src="/static/js/agents.js?v=1.10.451"></script>
-    <script src="/static/js/providers.js?v=1.10.451"></script>
-    <script src="/static/js/tools.js?v=1.10.451"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.451"></script>
-    <script src="/static/js/projects.js?v=1.10.451"></script>
-    <script src="/static/js/archive.js?v=1.10.451"></script>
-    <script src="/static/js/compare.js?v=1.10.451"></script>
-    <script src="/static/js/local_models.js?v=1.10.451"></script>
-    <script src="/static/js/changelog.js?v=1.10.451"></script>
+    <script src="/static/js/app.js?v=1.10.452"></script>
+    <script src="/static/js/search.js?v=1.10.452"></script>
+    <script src="/static/js/reader.js?v=1.10.452"></script>
+    <script src="/static/js/force3d.js?v=1.10.452"></script>
+    <script src="/static/js/share.js?v=1.10.452"></script>
+    <script src="/static/js/chat.js?v=1.10.452"></script>
+    <script src="/static/js/designs.js?v=1.10.452"></script>
+    <script src="/static/js/texts.js?v=1.10.452"></script>
+    <script src="/static/js/agents.js?v=1.10.452"></script>
+    <script src="/static/js/providers.js?v=1.10.452"></script>
+    <script src="/static/js/tools.js?v=1.10.452"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.452"></script>
+    <script src="/static/js/projects.js?v=1.10.452"></script>
+    <script src="/static/js/archive.js?v=1.10.452"></script>
+    <script src="/static/js/compare.js?v=1.10.452"></script>
+    <script src="/static/js/local_models.js?v=1.10.452"></script>
+    <script src="/static/js/changelog.js?v=1.10.452"></script>
 
     <script>
         window.refreshLucideIcons = function () {

@@ -7051,10 +7051,12 @@ function setChatSendLocked(locked) {
   const chartSelect = document.querySelector('select.chat-echart-kind-fixed');
   const mapSelect = document.querySelector('select.chat-islamap-kind-fixed');
   const tableButton = document.getElementById('btnChatTable');
+  const chartsButton = document.getElementById('btnChatCharts');
   const treeButton = document.getElementById('btnChatSmartTree');
   if (button) button.disabled = !!locked;
   if (stop) stop.disabled = !locked;
   if (tableButton) tableButton.disabled = !!locked;
+  if (chartsButton) chartsButton.disabled = !!locked;
   if (treeButton) treeButton.disabled = !!locked;
   if (select) select.disabled = !!locked;
   if (chartSelect) chartSelect.disabled = !!locked;
@@ -8217,6 +8219,251 @@ function insertEchartKind(select) {
 
 window.insertEchartKind = insertEchartKind;
 window.requestChatEcharts = requestChatEcharts;
+
+// ===== مسح ذكي للبيانات: النموذج يفحص النتيجة ويقترح رسومًا من أرقامها (نسب ومؤشرات)
+// أو جداول من بنيتها، والمستخدم يحدّد ما يُنشأ — بدل الرسم والجدولة الكلاسيكيين =====
+let _dataScanToken = 0;
+let _dataScanMode = 'charts';
+let _dataScanProposals = [];
+let _dataScanMaterial = '';
+
+function startDataScan(mode) {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const source = (typeof smartTreeSourceMessage === 'function') ? smartTreeSourceMessage(session) : null;
+  if (!source) {
+    if (typeof showToast === 'function') showToast('لا توجد نتيجة سابقة لمسح بياناتها');
+    return;
+  }
+  _dataScanMaterial = stripChartFences(stripGraphFences(source.content)).slice(0, 24000);
+  _dataScanMode = mode === 'tables' ? 'tables' : 'charts';
+  openDataScanModal();
+  analyzeDataContent();
+}
+
+window.startDataScan = startDataScan;
+
+function openDataScanModal() {
+  let modal = document.getElementById('dataScanModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'dataScanModal';
+    modal.className = 'pres-modal-overlay';
+    modal.innerHTML = `
+      <div class="pres-modal" role="dialog" aria-modal="true">
+        <div class="pres-modal-head">
+          <span id="dataScanTitle">📊 مسح ذكي للبيانات</span>
+          <button type="button" class="pres-modal-close" onclick="closeDataScanModal()" aria-label="إغلاق">✕</button>
+        </div>
+        <div class="pres-modal-body" id="dataScanBody"></div>
+        <div class="pres-modal-foot" id="dataScanFoot"></div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeDataScanModal(); });
+  }
+  modal.querySelector('#dataScanTitle').textContent = _dataScanMode === 'charts'
+    ? '📊 رسوم بيانية — مسح ذكي للأرقام والنسب والمؤشرات'
+    : '📋 جدولة — مسح ذكي للبنية القابلة للجدولة';
+  modal.hidden = false;
+}
+
+function closeDataScanModal() {
+  _dataScanToken += 1;
+  const modal = document.getElementById('dataScanModal');
+  if (modal) modal.hidden = true;
+}
+
+async function analyzeDataContent() {
+  const token = ++_dataScanToken;
+  const body = document.getElementById('dataScanBody');
+  const foot = document.getElementById('dataScanFoot');
+  const charts = _dataScanMode === 'charts';
+  if (body) body.innerHTML = `<div class="smart-tree-wait"><span class="smart-tree-spinner"></span><div><b>جارٍ مسح المحتوى…</b><small>${charts ? 'النموذج يجمع أعداد النتيجة وتوزيعاتها ويحسب نسبها ويقترح رسومها ومؤشراتها، فضلًا انتظر قليلًا.' : 'النموذج يستخرج مقارنات النتيجة وقوائمها ذات الخصائص المتكررة ويقترح جداولها، فضلًا انتظر قليلًا.'}</small></div></div>`;
+  if (foot) foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeDataScanModal()">إلغاء</button>`;
+  try {
+    const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+    const res = await fetch('/api/chat/data-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: _dataScanMaterial, api_key: keys.openrouter || '', mode: _dataScanMode }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (token !== _dataScanToken) return;
+    if (!res.ok) throw new Error(data.detail || 'تعذر مسح المحتوى');
+    renderDataProposals(Array.isArray(data.proposals) ? data.proposals : []);
+  } catch (e) {
+    if (token !== _dataScanToken) return;
+    const b = document.getElementById('dataScanBody');
+    const f = document.getElementById('dataScanFoot');
+    if (b) b.innerHTML = `<div class="pres-opt-hint">تعذر مسح المحتوى: ${escapeHtml(e.message || 'خطأ غير معروف')}</div>`;
+    if (f) f.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeDataScanModal()">إغلاق</button><button type="button" class="btn-msg-export" onclick="analyzeDataContent()">🔁 إعادة المحاولة</button>`;
+  }
+}
+
+function renderDataProposals(proposals) {
+  _dataScanProposals = proposals;
+  const body = document.getElementById('dataScanBody');
+  const foot = document.getElementById('dataScanFoot');
+  if (!body || !foot) return;
+  const charts = _dataScanMode === 'charts';
+  if (!proposals.length) {
+    body.innerHTML = `<div class="pres-opt-hint">${charts
+      ? 'لم يجد المسح في هذه النتيجة أعدادًا قابلة للتوزيع أو المقارنة أو الاشتقاق النسبي. الرسوم البيانية تحتاج مادة عددية: توزيعات على بلدان أو طبقات أو مذاهب، أو مقارنات مقادير، أو تسلسلات زمنية بأعداد — اطلب من النموذج إجابة غنية بالأعداد الموزعة ثم أعد المسح.'
+      : 'لم يجد المسح في هذه النتيجة بنية قابلة للجدولة بثقة (لا مقارنات ببنود متقابلة ولا قوائم ذات خصائص متكررة). جرّب جدولة إجابة فيها أقوال ومذاهب وأدلة أو رواة بخصائصهم.'}</div>`;
+    foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeDataScanModal()">إغلاق</button>`;
+    return;
+  }
+  body.innerHTML = `<div class="pres-opt-label">${charts ? 'وجد النموذج في النتيجة بيانات قابلة للرسم — حدّد رسمًا أو أكثر' : 'وجد النموذج في النتيجة بنى قابلة للجدولة — حدّد جدولًا أو أكثر'}</div>
+    <div class="smart-tree-select-row">
+      <button type="button" class="btn-msg-export" id="dataScanSelectAllBtn" onclick="dataScanToggleAll()">☑ تحديد الكل</button>
+      <span class="smart-tree-sel-count" id="dataScanSelCount"></span>
+    </div>` + proposals.map((p, i) => `
+    <label class="pres-radio-card"><input type="checkbox" name="dataScanProposal" value="${i}"${i === 0 ? ' checked' : ''} onchange="updateDataScanSelState()"> <span><b>${escapeHtml(p.kind_label || '')}: ${escapeHtml(p.title || '')}</b><small>${escapeHtml(p.columns ? `الأعمدة: ${p.columns} — ` : '')}${escapeHtml(p.desc || '')}</small></span></label>`).join('');
+  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeDataScanModal()">إلغاء</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmDataScan()">${charts ? '📊 إنشاء الرسوم المحددة' : '📋 إنشاء الجداول المحددة'}</button>`;
+  updateDataScanSelState();
+}
+
+function dataScanToggleAll() {
+  const modal = document.getElementById('dataScanModal');
+  if (!modal) return;
+  const boxes = [...modal.querySelectorAll('input[name="dataScanProposal"]')];
+  const allChecked = boxes.length > 0 && boxes.every(b => b.checked);
+  boxes.forEach(b => { b.checked = !allChecked; });
+  updateDataScanSelState();
+}
+
+function updateDataScanSelState() {
+  const modal = document.getElementById('dataScanModal');
+  if (!modal) return;
+  const boxes = [...modal.querySelectorAll('input[name="dataScanProposal"]')];
+  const checked = boxes.filter(b => b.checked).length;
+  const btn = document.getElementById('dataScanSelectAllBtn');
+  if (btn) btn.textContent = (boxes.length && checked === boxes.length) ? '☐ إلغاء تحديد الكل' : '☑ تحديد الكل';
+  const count = document.getElementById('dataScanSelCount');
+  if (count) count.textContent = boxes.length ? `المحدّد: ${checked} من ${boxes.length}` : '';
+}
+
+function dataScanSelectedProposals() {
+  const modal = document.getElementById('dataScanModal');
+  if (!modal) return [];
+  return [...modal.querySelectorAll('input[name="dataScanProposal"]:checked')]
+    .map(input => _dataScanProposals[parseInt(input.value, 10)])
+    .filter(Boolean);
+}
+
+function chartProposalInstruction(p) {
+  const label = (typeof ECHART_KIND_LABELS !== 'undefined' && ECHART_KIND_LABELS[p.chart]) || 'الرسم';
+  return `أخرج رسمًا بيانيًا واحدًا فقط من نوع «${label}» (series.type = "${p.chart}") عنوانه «${p.title}»، في كتلة \`\`\`echarts واحدة فقط.
+البيانات إلزامية من النتيجة الآتية وحدها، وبحسب استخراج المسح الذكي هذا حرفيًا: ${p.desc}
+حوّل القيم إلى أرقام (0-9) داخل series، وأظهر في تسميات كل نقطة قيمتها ونسبتها المئوية من المجموع متى ذكرها المسح أو أمكن اشتقاقها منه، وإن ذكر المسح «مؤشر:» فاجعله نصًّا بارزًا في title.subtext.
+لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء، ولا تضف فئة ولا قيمة ليست في النتيجة أو في استخراج المسح، ولا تنسخ مثالًا جاهزًا.
+لا تكتب أي كلمة خارج كتلة echarts. كل كتلة خيار Apache ECharts صالح فيه title.text بالعربية وseries.`;
+}
+
+function tableProposalInstruction(p) {
+  return `جدول النتيجة الآتية فقط، بحسب مقترح المسح الذكي هذا:
+العنوان: ${p.title}
+الأعمدة إلزامًا: ${p.columns || 'أعمدة تناسب المادة'}
+الصفوف والمحتوى: ${p.desc}
+لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء، ولا تضف صفًا ولا شاهدًا ليس في النتيجة، وما نقص في النص لصفّ يُكتب في خليته «غير مذكور في النص».
+أخرج جدول ماركداون واحدًا فقط بهذه الأعمدة، كل خلية مختصرة من النتيجة حرفيًا، بلا شرح قبل الجدول ولا بعده، ولا تضع علامة اقتباس داخل الخلايا، وأغلق الجدول كاملًا.`;
+}
+
+async function fetchOneDataItem(p, ctx) {
+  const charts = _dataScanMode === 'charts';
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: ctx.model,
+      provider: ctx.provider,
+      api_key: ctx.keys[ctx.provider] || '',
+      thinking_level: typeof currentThinkingLevel !== 'undefined' ? currentThinkingLevel : undefined,
+      use_hybrid: false,
+      graph_only: charts,
+      table_only: !charts,
+      messages: [{ role: 'user', content: `النتيجة المراد ${charts ? 'رسم بياناتها' : 'جدولتها'}:\n${_dataScanMaterial}` }],
+      system_prompt: charts ? chartProposalInstruction(p) : tableProposalInstruction(p),
+      temperature: 0.2,
+      providers: ctx.keys,
+      agent_group: null,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || (charts ? 'تعذر إنشاء الرسم' : 'تعذر إنشاء الجدول'));
+  const reply = String(data.reply || '');
+  if (charts) {
+    const fence = reply.match(/```\s*echarts[\s\S]*?```/i);
+    if (!fence) throw new Error('لم يُعد النموذج رسمًا صالحًا');
+    return fence[0];
+  }
+  if (!reply.includes('|')) throw new Error('لم يُعد النموذج جدولًا صالحًا');
+  return `### ${p.title}\n\n${reply.trim()}`;
+}
+
+function confirmDataScan() {
+  const selected = dataScanSelectedProposals();
+  if (!selected.length) {
+    if (typeof showToast === 'function') showToast(_dataScanMode === 'charts' ? 'حدّد رسمًا واحدًا على الأقل' : 'حدّد جدولًا واحدًا على الأقل');
+    return;
+  }
+  closeDataScanModal();
+  generateDataItems(selected);
+}
+
+async function generateDataItems(selected) {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  if (!session) return;
+  const charts = _dataScanMode === 'charts';
+  const prog = smartTreeProgressBubble(charts
+    ? `جارٍ إنشاء ${selected.length} ${selected.length === 1 ? 'رسم بياني' : 'رسوم بيانية'} من بيانات النتيجة الممسوحة: 0 من ${selected.length}...`
+    : `جارٍ إنشاء ${selected.length} ${selected.length === 1 ? 'جدول' : 'جداول'} من بنية النتيجة الممسوحة: 0 من ${selected.length}...`);
+  const ctx = {
+    model: document.getElementById('chatModelSelect')?.value || localStorage.getItem('almojtahed_active_chat_model') || 'anthropic/claude-3.7-sonnet',
+    provider: localStorage.getItem(ownerStorageKey('almojtahed_active_provider')) || 'openrouter',
+    keys: {},
+  };
+  try { ctx.keys = readProviderKeys(); } catch (e) { /* مفتاح الخادم */ }
+  const parts = [];
+  const failures = [];
+  let doneCount = 0;
+  for (let start = 0; start < selected.length; start += 3) {
+    const batch = selected.slice(start, start + 3);
+    const settled = await Promise.allSettled(batch.map(p => fetchOneDataItem(p, ctx)));
+    settled.forEach((result, i) => {
+      doneCount += 1;
+      if (result.status === 'fulfilled') parts.push(result.value);
+      else failures.push(batch[i].title + ': ' + (result.reason?.message || 'تعذر'));
+    });
+    prog.set(charts
+      ? `جارٍ إنشاء الرسوم: ${doneCount} من ${selected.length}...`
+      : `جارٍ إنشاء الجداول: ${doneCount} من ${selected.length}...`);
+  }
+  prog.remove();
+  if (!parts.length) {
+    if (typeof showToast === 'function') showToast('❌ تعذر الإنشاء: ' + (failures[0] || 'خطأ غير معروف'), 8000);
+    return;
+  }
+  if (charts) {
+    session.messages.push({
+      role: 'assistant',
+      content: parts.join('\n\n'),
+      model: ctx.model,
+      provider: ctx.provider,
+      chart_kind: 'smart',
+    });
+  } else {
+    session.messages.push({
+      role: 'assistant',
+      content: parts.join('\n\n'),
+      model: ctx.model,
+      provider: ctx.provider,
+      table_request: true,
+    });
+  }
+  saveChatSessions();
+  renderSessionMessages(activeSessionId);
+  if (failures.length && typeof showToast === 'function') showToast(`اكتملت ${parts.length}، وتعذرت ${failures.length}: ${failures[0]}`, 7000);
+}
 
 const ISLAMAP_KIND_LABELS = {
   distribution: 'توزيع جغرافي',

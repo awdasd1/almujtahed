@@ -6035,6 +6035,145 @@ async def chat_tree_analyze(req: TreeAnalyzeRequest, request: Request):
     return {"ok": True, "proposals": proposals}
 
 
+# ===== مسح ذكي للبيانات: ما يقبل الرسم البياني (أرقام ونسب ومؤشرات) وما يقبل الجدولة =====
+
+CHART_TYPE_LABELS = {
+    "bar": "أعمدة", "pie": "دائري", "line": "خطي", "radar": "رادار",
+    "treemap": "تريماب", "sunburst": "طبقات دائرية", "funnel": "قمع",
+    "gauge": "مقياس", "heatmap": "حراري", "scatter": "نقطي",
+    "sankey": "سانكي", "graph": "شبكة علاقات",
+}
+
+_DATA_CHARTS_SYSTEM = (
+    "أنت محلّل بيانات كمية في نصوص علمية شرعية وتاريخية. مهمتك اكتشاف كل ما يقبل التحويل إلى رسم بياني "
+    "أو مؤشر (KPI) من أرقام النص نفسه. اعمل على مرحلتين داخل ردّ واحد:\n"
+    "المرحلة الأولى (scan): امسح النص عددًا عددًا وسجّل: كل توزيع عددي على فئات (شيوخ أو رواة أو أحاديث أو "
+    "كتب أو مصنفات موزعة على بلدان أو طبقات أو مذاهب أو عصور)، وكل مقارنة عددية بين طرفين أو أكثر، وكل "
+    "تسلسل زمني مقترن بأعداد أو مقادير، وكل مجموع كلي تتفرع عنه أجزاء، وكل مقدار منسوب إلى حد أعلى "
+    "(نسبة من إجمالي معلوم).\n"
+    "المرحلة الثانية (proposals): حوّل أفضل ما وجدته إلى مقترحات رسوم، من مقترحين إلى ستة، مرتبة من الأغنى "
+    "بيانات. لكل مقترح اختر أنسب نوع رسم: bar للمقارنة بين فئات، pie لتوزيع أجزاء من كلّ واحد، line لتغيّر "
+    "عبر الزمن، radar لمقارنة طرفين أو ثلاثة على محاور متعددة، treemap أو sunburst لتوزيع متداخل المستويات، "
+    "funnel لتسلسل متناقص، gauge لنسبة واحدة من حد أعلى، heatmap لمصفوفة فئتين، scatter لعلاقة مقدارين.\n"
+    "قواعد صارمة: لا رقم ولا فئة من خارج النص؛ كل قيمة في desc تُذكر بفئتها كما في النص وبأرقام (0-9) "
+    "ليسهل رسمها، واحسب بنفسك النسبة المئوية لكل فئة من مجموع فئات مقترحها متى كان المجموع معلومًا من النص "
+    "واذكرها بين قوسين بعد القيمة؛ وإن وُجد مؤشر رئيس (KPI) جدير بالإبراز (إجمالي، أو أكبر فئة ونسبتها، أو "
+    "نسبة فئة محورية من الكل) فاذكره في آخر desc بصيغة «مؤشر: ...». لا تقترح رسمًا لفئة واحدة بلا مقارنة ولا "
+    "لتوزيع ناقص الفئات إلا بتصريح بالنقص في desc. لا تكرر التوزيع نفسه بصيغتين.\n"
+    "أعد JSON فقط دون أي شرح خارجي أو أسوار كود، بهذا الشكل: "
+    '{"scan": ["توزيع: فئاته وقيمه باختصار"], "proposals": [{"title": "عنوان محدد من النص", '
+    '"chart": "bar", "desc": "الفئات والقيم بأرقام (0-9) والنسب المحسوبة والمؤشر"}]}. '
+    "title عنوان عربي محدد مأخوذ من النص لا عنوان عام، وchart واحد من: bar, pie, line, radar, treemap, "
+    "sunburst, funnel, gauge, heatmap, scatter, sankey, graph. لا تُعد قائمة فارغة إلا إذا خلا النص حقًا "
+    "من أي عدد قابل للتوزيع أو المقارنة."
+)
+
+_DATA_TABLES_SYSTEM = (
+    "أنت محلّل بنية جدولة في نصوص علمية شرعية. مهمتك اكتشاف كل ما يقبل التحويل إلى جدول منظم من النص نفسه. "
+    "اعمل على مرحلتين داخل ردّ واحد:\n"
+    "المرحلة الأولى (scan): امسح النص وسجّل: كل مقارنة بين أقوال أو مذاهب أو علماء ببنود متقابلة، وكل قائمة "
+    "عناصر تتكرر لها خصائص ثابتة (رواة بطبقاتهم وبلدانهم ووفياتهم، كتب بمؤلفيها وعصورها، أحاديث بمصادرها "
+    "ودرجاتها)، وكل أحكام موزعة على حالات أو مواضع أو أسباب، وكل خطوات أو مراحل مرتبة، وكل تعريف لمفهوم "
+    "عند أكثر من قائل.\n"
+    "المرحلة الثانية (proposals): حوّل أفضل ما وجدته إلى مقترحات جداول، من مقترحين إلى ستة، مرتبة من الأغنى "
+    "صفوفًا. لكل مقترح: title عنوان محدد من النص، وcolumns أسماء الأعمدة الأنسب مفصولة بـ« | » (اخترها من "
+    "طبيعة المادة: القول | القائل/المذهب | الدليل | الحكم، أو الحالة | الحكم | الموضع | الدليل، أو الراوي | "
+    "الطبقة | البلد | الوفاة...)، وdesc تعدّد الصفوف الفعلية التي سيضمها الجدول بأسمائها كما في النص ومن أين "
+    "تؤخذ كل خلية باختصار.\n"
+    "قواعد صارمة: لا صف ولا عمود من خارج النص؛ لا تقترح جدولًا لعنصر واحد؛ لا تكرر المادة نفسها بجدولين "
+    "متقاربين؛ إن نقصت خاصية لبعض الصفوف في النص فاذكر في desc أنها تُترك «غير مذكورة في النص» ولا تُخترع.\n"
+    "أعد JSON فقط دون أي شرح خارجي أو أسوار كود، بهذا الشكل: "
+    '{"scan": ["بنية: صفوفها وأعمدتها باختصار"], "proposals": [{"title": "عنوان محدد من النص", '
+    '"columns": "عمود | عمود | عمود", "desc": "الصفوف الفعلية ومصدر الخلايا"}]}. '
+    "لا تُعد قائمة فارغة إلا إذا خلا النص حقًا من أي مقارنة أو قائمة ذات خصائص متكررة."
+)
+
+
+def _analyze_data_proposals(key: str, text: str, mode: str) -> list:
+    """مسح محتوى إجابة لاستخراج مقترحات رسوم بيانية من أرقامه أو جداول من بنيته، بلا اختراع من خارجه."""
+    system = _DATA_CHARTS_SYSTEM if mode == "charts" else _DATA_TABLES_SYSTEM
+    last_error: Optional[Exception] = None
+    empty_raw = ""
+    for _attempt in range(2):
+        for model in TREE_ANALYZE_MODELS:
+            try:
+                candidate = _openrouter_chat_text(key, model, system, text[:24000], 420, 6000)
+            except Exception as error:
+                last_error = error
+                continue
+            if not candidate:
+                continue
+            found = _extract_data_proposals(candidate, mode)
+            if found:
+                return found
+            empty_raw = candidate
+    if empty_raw:
+        return _extract_data_proposals(empty_raw, mode)
+    if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 402:
+        raise RuntimeError("نفد رصيد OpenRouter — اشحنه ثم أعد المحاولة")
+    raise RuntimeError(f"تعذر تحليل المحتوى: {last_error}")
+
+
+def _extract_data_proposals(raw: str, mode: str) -> list:
+    """تنظيف مقترحات مسح البيانات الخام: اعتماد الأنواع الصالحة ومنع التكرار والسقف."""
+    parsed = _parse_loose_json(raw)
+    items = parsed.get("proposals") if isinstance(parsed, dict) else None
+    proposals: list = []
+    seen: set = set()
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title or title in seen:
+            continue
+        seen.add(title)
+        if mode == "charts":
+            chart = str(item.get("chart") or "").strip()
+            if chart not in CHART_TYPE_LABELS:
+                chart = "bar"
+            proposals.append({
+                "kind": "chart",
+                "kind_label": f"رسم {CHART_TYPE_LABELS[chart]}",
+                "chart": chart,
+                "title": title[:120],
+                "desc": str(item.get("desc") or "").strip()[:600],
+            })
+        else:
+            proposals.append({
+                "kind": "table",
+                "kind_label": "جدول",
+                "title": title[:120],
+                "columns": str(item.get("columns") or "").strip()[:200],
+                "desc": str(item.get("desc") or "").strip()[:600],
+            })
+        if len(proposals) >= 6:
+            break
+    return proposals
+
+
+class DataAnalyzeRequest(BaseModel):
+    text: str
+    api_key: Optional[str] = None
+    mode: Optional[str] = "charts"
+
+
+@app.post("/api/chat/data-analyze")
+async def chat_data_analyze(req: DataAnalyzeRequest, request: Request):
+    """فحص محتوى الإجابة واقتراح رسوم بيانية من أرقامه أو جداول من بنيته قبل أي توليد."""
+    text = (req.text or "").strip()
+    if len(text) < 120:
+        raise HTTPException(status_code=400, detail="المحتوى قصير جدًا لمسحه وتحليله")
+    mode = "charts" if req.mode == "charts" else "tables"
+    key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        proposals = await asyncio.to_thread(_analyze_data_proposals, key, text, mode)
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error))
+    return {"ok": True, "mode": mode, "proposals": proposals}
+
+
 # ===== العروض التقديمية: عرض PowerPoint بصري صوتي من الإجابة المعتمدة =====
 
 class PresentationRequest(BaseModel):
@@ -7582,7 +7721,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.451"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.452"},
         },
     })
     if opened.get("error"):
