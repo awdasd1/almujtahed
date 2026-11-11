@@ -5581,6 +5581,8 @@ _TREE_ANALYZE_SYSTEM = (
     "(مثال: شجرة لأسباب السهو: نقص وزيادة وشك، وشجرة ثانية للنقص وحده: ركن وواجب وسنة وأثر كل قسم).\n"
     "- كل محور موضوعي في النص مرشّح لشجرة مستقلة: أسبابه، مواضعه، أوقاته، شروطه، أركانه، واجباته، آثاره، "
     "مسقطاته، مقداره — فلا تجعل شجرة الموضوع الكبرى تلغي أشجار المحاور الفرعية الغنية.\n"
+    "- لا تكرر محورًا واحدًا بصيغ أو عناوين متقاربة؛ كل مقترح محور مستقل مختلف عن إخوته، وإذا احتمل المحور "
+    "شجرتين فاختر الأغنى عناصر وادمج الأخرى فيها.\n"
     "مثال على العمق المطلوب: نصّ في سجود السهو يخفي أشجارًا كثيرة لا واحدة: أنواعه بحسب السبب (لنقص، لزيادة، "
     "لشك)، وموضعه (قبل السلام أو بعده) ومذاهب العلماء فيه، وحالات النقص بحسب المنقوص (ترك ركن، ترك واجب، ترك "
     "سنة) وأثر كل حالة، وأحكام الشك وصوره، ومتى يجب ومتى يندب — فاستخرجها كلها ما دامت في النص.\n"
@@ -5639,7 +5641,16 @@ def _analyze_tree_proposals(key: str, text: str, deep: bool = False) -> list:
         raise RuntimeError(f"تعذر تحليل المحتوى: {last_error}")
     parsed = _parse_loose_json(raw)
     items = parsed.get("proposals") if isinstance(parsed, dict) else None
+
+    def _proposal_fingerprint(title: str) -> str:
+        t = re.sub(r"[^\w\s]", " ", title)
+        for word in ("اختلاف", "خلاف", "العلماء", "الفقهاء", "في", "فيه", "على", "الى", "إلى", "من", "ما", "حكم", "أحكام", "ال", "ذي", "ذو"):
+            t = re.sub(rf"\b{word}\b", " ", t)
+        return " ".join(t.split())
+
     proposals: list = []
+    seen_fps: set = set()
+    seen_kind_roots: set = set()
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict):
             continue
@@ -5647,12 +5658,20 @@ def _analyze_tree_proposals(key: str, text: str, deep: bool = False) -> list:
         title = str(item.get("title") or "").strip()
         if kind not in TREE_PROPOSAL_KINDS or not title:
             continue
+        root = str(item.get("root") or title).strip()
+        fp = _proposal_fingerprint(title)
+        kind_root = (kind, _proposal_fingerprint(root))
+        # منع التكرار: عنوان شبه مكرر، أو نفس النوع على نفس الجذر
+        if fp in seen_fps or kind_root in seen_kind_roots:
+            continue
+        seen_fps.add(fp)
+        seen_kind_roots.add(kind_root)
         proposals.append({
             "kind": kind,
             "kind_label": TREE_PROPOSAL_KINDS[kind],
             "title": title[:120],
             "desc": str(item.get("desc") or "").strip()[:300],
-            "root": str(item.get("root") or title).strip()[:120],
+            "root": root[:120],
             "hint": str(item.get("hint") or "").strip()[:400],
         })
         if len(proposals) >= 8:
@@ -6956,7 +6975,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.436"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.437"},
         },
     })
     if opened.get("error"):

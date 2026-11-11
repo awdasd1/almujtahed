@@ -6870,16 +6870,23 @@ let _smartTreeProposals = [];
 let _smartTreeMaterial = '';
 let _smartTreeDeep = false;
 
-// مصدر تشجير موحّد للتحليل والتوليد: أحدث إجابة غنية (٥٠٠+ حرف) متجاوزًا الردود الختامية
-// القصيرة ورسائل الأشجار المولّدة، وإلا أطول إجابة في الجلسة
+// مصدر تشجير موحّد للتحليل والتوليد: الإجابة المعتمدة أولًا، ثم أحدث إجابة بحثية غنية،
+// متجاوزًا كل الرسائل المولّدة بالأدوات (أشجار ورسوم وجداول) والردود الختامية القصيرة
 function smartTreeSourceMessage(session) {
   if (!session || !Array.isArray(session.messages)) return null;
-  const usable = session.messages.filter(m => m && m.role === 'assistant' && !m.graph_kind && stripGraphFences(m.content || '').length > 40);
+  const cleanLen = m => stripGraphFences(m.content || '').length;
+  const usable = session.messages.filter(m => m && m.role === 'assistant' && !m.graph_kind
+    && !/```\s*(force3d|echarts|markmap)/i.test(m.content || '') && cleanLen(m) > 40);
   if (!usable.length) return null;
+  const newestFinal = [...usable].reverse().find(m => m.stage === 'final' && cleanLen(m) >= 500);
+  if (newestFinal) return newestFinal;
   for (let i = usable.length - 1; i >= 0; i--) {
-    if (stripGraphFences(usable[i].content || '').length >= 500) return usable[i];
+    if (cleanLen(usable[i]) >= 1500) return usable[i];
   }
-  return [...usable].sort((a, b) => stripGraphFences(b.content || '').length - stripGraphFences(a.content || '').length)[0];
+  for (let i = usable.length - 1; i >= 0; i--) {
+    if (cleanLen(usable[i]) >= 500) return usable[i];
+  }
+  return [...usable].sort((a, b) => cleanLen(b) - cleanLen(a))[0];
 }
 
 function smartTreeInstruction(p) {
