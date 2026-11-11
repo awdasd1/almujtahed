@@ -5,6 +5,55 @@
 // =============================================================================
 let msProjects = [];
 let msModels = { primary: '', checker: '' };
+// قياس م٠ الموسع (اللوحة السودانية): Gemini 2.5 Pro أقدر الخطوط الصعبة،
+// وQwen3-VL ثانيه بجزء يسير من كلفته؛ والقياسي أسرع وأرخص للخطوط المعتادة.
+const MS_MODEL_CHOICES = [
+  ['google/gemini-2.5-flash', 'Gemini 2.5 Flash — سريع اقتصادي'],
+  ['google/gemini-2.5-pro', 'Gemini 2.5 Pro — الأقدر على الخطوط الصعبة'],
+  ['qwen/qwen3-vl-235b-a22b-instruct', 'Qwen3-VL — قوي ورخيص'],
+  ['qwen/qwen2.5-vl-72b-instruct', 'Qwen2.5-VL — متوسط'],
+  ['~openai/gpt-luna-latest', 'GPT Luna — مدقق متحفظ'],
+  ['anthropic/claude-sonnet-5', 'Claude Sonnet 5 — غالٍ'],
+];
+const MS_MODEL_PRESETS = {
+  standard: { primary: 'google/gemini-2.5-flash', checker: '~openai/gpt-luna-latest' },
+  hard: { primary: 'google/gemini-2.5-pro', checker: 'qwen/qwen3-vl-235b-a22b-instruct' },
+};
+
+function msModelChoice() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('almujtahed_ms_models') || 'null');
+    if (saved && saved.primary && saved.checker) return saved;
+  } catch (e) { /* الافتراضي */ }
+  return { ...MS_MODEL_PRESETS.standard };
+}
+
+function msFillModelSelects() {
+  const choice = msModelChoice();
+  [['msPrimaryModel', choice.primary], ['msCheckerModel', choice.checker]].forEach(([id, val]) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = MS_MODEL_CHOICES.map(([v, label]) =>
+      `<option value="${v}"${v === val ? ' selected' : ''}>${label}</option>`).join('');
+  });
+}
+
+function msSaveModelChoice() {
+  const primary = document.getElementById('msPrimaryModel')?.value;
+  const checker = document.getElementById('msCheckerModel')?.value;
+  if (primary && checker) {
+    localStorage.setItem('almujtahed_ms_models', JSON.stringify({ primary, checker }));
+    msToast('حُفظ اختيار نموذجي النسخ');
+  }
+}
+
+function msPresetModels(name) {
+  const preset = MS_MODEL_PRESETS[name];
+  if (!preset) return;
+  localStorage.setItem('almujtahed_ms_models', JSON.stringify(preset));
+  msFillModelSelects();
+  msToast(name === 'hard' ? 'وضع الخطوط الصعبة: Gemini Pro + Qwen3-VL' : 'الوضع القياسي: Gemini Flash + Luna');
+}
 let msWb = null; // {projectId, copyId, folioId}
 let msSaveTimer = null;
 let msLoaded = false;
@@ -29,6 +78,7 @@ async function initManuscriptsTab() {
     if (data.models) msModels = data.models;
   } catch (e) { msProjects = []; }
   msLoaded = true;
+  msFillModelSelects();
   renderMsProjects();
 }
 
@@ -334,9 +384,13 @@ async function msTranscribeFolio() {
       const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
       apiKey = keys.openrouter || '';
     } catch (e) { /* مفتاح الخادم */ }
+    const choice = msModelChoice();
     const res = await fetch('/api/manuscripts/transcribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file_path: f.file_path, api_key: apiKey }),
+      body: JSON.stringify({
+        file_path: f.file_path, api_key: apiKey,
+        primary_model: choice.primary, checker_model: choice.checker,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذر النسخ');

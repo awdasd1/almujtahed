@@ -11165,3 +11165,6 @@ body::-webkit-scrollbar,
 .ms-dispute-warn { align-items: center; }
 .ms-dispute-flag { flex: 1; padding: 6px 8px; border: 1px dashed #d9a441; color: #8a6414; border-radius: 8px; font-size: 12.5px; }
 .ms-dispute-dismiss { padding: 6px 10px; border: 1px solid var(--border-subtle); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font-family: inherit; font-size: 12px; white-space: nowrap; }
+.ms-model-label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.ms-model-label select { padding: 7px 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-main, transparent); color: inherit; font-family: inherit; }
+.ms-models-note { font-size: 12px; opacity: .75; margin: 10px 0 0; line-height: 1.8; }
