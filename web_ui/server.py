@@ -5535,6 +5535,28 @@ TREE_PROPOSAL_KINDS = {
 }
 
 
+def _parse_loose_json(raw: str) -> Optional[dict]:
+    """استخراج أول كائن JSON من ردّ نموذج (مع أسوار كود محتملة) دون تخصيص لشكل معيّن."""
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL).strip()
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if match:
+        try:
+            data = json.loads(match.group(0))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            return None
+    return None
+
+
 def _analyze_tree_proposals(key: str, text: str) -> list:
     """تحليل محتوى إجابة واستخراج ما يقبل التشجير منه فعلًا (لا اختراع من خارجه)."""
     system = (
@@ -5574,7 +5596,7 @@ def _analyze_tree_proposals(key: str, text: str) -> list:
         if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 402:
             raise RuntimeError("نفد رصيد OpenRouter — اشحنه ثم أعد المحاولة")
         raise RuntimeError(f"تعذر تحليل المحتوى: {last_error}")
-    parsed = _parse_presentation_json(raw)
+    parsed = _parse_loose_json(raw)
     items = parsed.get("proposals") if isinstance(parsed, dict) else None
     proposals: list = []
     for item in items if isinstance(items, list) else []:
@@ -6893,7 +6915,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.433"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.434"},
         },
     })
     if opened.get("error"):
