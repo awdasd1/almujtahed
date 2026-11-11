@@ -7356,7 +7356,7 @@ async function runTreeImageJob(selected, options) {
     const res = await fetch('/api/chat/tree-image/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ proposals: selected, api_key: keys.openrouter || '', image_model: options.image_model, explained_style: options.explained_style, colors: options.colors }),
+      body: JSON.stringify({ proposals: selected, material: (typeof stripGraphFences === 'function' ? stripGraphFences((smartTreeSourceMessage(session) || {}).content || '') : '').slice(0, 12000), api_key: keys.openrouter || '', image_model: options.image_model, explained_style: options.explained_style, colors: options.colors }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء التشجير المصور');

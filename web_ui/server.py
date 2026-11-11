@@ -6173,6 +6173,7 @@ async def presentation_status(job_id: str, request: Request):
 
 class TreeImageRequest(BaseModel):
     proposals: list
+    material: Optional[str] = ""
     api_key: Optional[str] = None
     image_model: Optional[str] = "gpt"
     explained_style: Optional[str] = "photos"
@@ -6182,26 +6183,56 @@ class TreeImageRequest(BaseModel):
 TREE_IMAGE_JOBS: Dict[str, dict] = {}
 
 
-def _tree_image_blueprints(key: str, proposals: list) -> dict:
-    """تحويل مقترحات المسح إلى مخططات رسم (image_prompt) تفصيلية بتسميات عربية داخل العقد."""
+def _flatten_tree_nodes(nodes, depth: int = 0) -> list:
+    """تسطيح عقد شجرة (label/ruling/children) إلى سطور قائمة إلزامية للرسم."""
+    lines: list = []
+    for node in nodes if isinstance(nodes, list) else []:
+        if not isinstance(node, dict):
+            continue
+        label = str(node.get("label") or "").strip()
+        if not label:
+            continue
+        ruling = str(node.get("ruling") or "").strip()
+        line = "  " * depth + f"- «{label}»"
+        if ruling:
+            line += f" — الحكم/الأثر/الموضع: «{ruling}»"
+        lines.append(line)
+        lines.extend(_flatten_tree_nodes(node.get("children"), depth + 1))
+    return lines
+
+
+def _tree_image_blueprints(key: str, proposals: list, material: str = "") -> dict:
+    """تحويل مقترحات المسح إلى مخططات رسم تفصيلية مستخرجة من نص الإجابة نفسه، مع حكم كل فرع وموضعه."""
     summary = "\n".join(
         f"{i}. [{p.get('kind_label') or p.get('kind')}] {p.get('title')}\n   الجذر: {p.get('root') or p.get('title')}\n   العناصر: {p.get('desc')}\n   البنية: {p.get('hint')}"
         for i, p in enumerate(proposals)
     )
+    user = (
+        "النص العلمي الذي تُستخرج منه الشجرات (المصدر الوحيد، لا تستعمل ذاكرتك ولا تخترع):\n"
+        f"{(material or '')[:11000]}\n\n"
+        "المسائل المطلوب تصويرها:\n" + summary
+    )
     system = (
-        "أنت مصمّم مخططات رسوم شرحية تعليمية. ستصلك قائمة مسائل مرقمة مستخرجة من نص علمي، حوّل كل مسألة إلى "
-        "مخطط رسم تفصيلي يُرسم كإنفوجرافيك شرحي واحد متكامل. أعد JSON فقط دون أي شرح أو أسوار كود، بهذا الشكل: "
-        '{"blueprints": [{"i": 0, "image_prompt": "وصف إنجليزي تفصيلي"}]} — عنصر لكل مسألة بنفس ترقيمها. '
-        "image_prompt وصف إنجليزي دقيق للرسم الشرحي المطلوب: نوع البنية البصرية الأنسب (شجرة خلاف متفرعة من أصل "
-        "المسألة إلى الأقوال، أو سلسلة عقد متصلة، أو مواضع متقابلة قبل/بعد، أو أقسام متوازية، أو خطوات مرتبة)، "
-        "والجذر في الأعلى، والفروع وعناصرها مرتبة قراءةً من اليمين إلى اليسار، ونصوص التسميات العربية القصيرة داخل "
-        "العقد موضوعة حرفيًا بين علامتي «» مأخوذة من عناصر المسألة المذكورة، فتكون الشريحة رسمًا شرحيًا متكاملًا "
-        "بتسميات عربية مرسومة داخل الرسم لا خلفية عامة ولا نص أجنبي."
+        "أنت مصمّم مخططات رسوم شرحية تعليمية. ستصلك مسائل مرقمة ونص علمي أُخذت منه. مهمتك لكل مسألة: استخراج "
+        "شجرتها الكاملة من النص نفسه، ثم صياغة مخطط رسمها. أعد JSON فقط دون أي شرح أو أسوار كود، بهذا الشكل: "
+        '{"blueprints": [{"i": 0, "image_prompt": "وصف إنجليزي تفصيلي", "nodes": [{"label": "اسم الفرع", '
+        '"ruling": "حكمه وموضعه", "children": []}]}]} — عنصر لكل مسألة بنفس ترقيمها.\n'
+        "قواعد الاستخراج الصارمة (وهي قلب المهمة):\n"
+        "- كل فرع أو قسم أو قول أو حالة وردت في النص لهذه المسألة تكون عقدة في nodes، بترتيب النص وتفرّعه؛ "
+        "إن تفرّع الفرع إلى حالات فضعها في children ولا تسطّحها.\n"
+        "- ruling لكل عقدة إلزامي متى ذكره النص: حكم الفرع وأثره وموضعه بدقة النص مختصرًا (مثل: «يسجد بعد السلام»، "
+        "«يسجد قبل السلام»، «تبطل الصلاة»، «لا شيء عليه»، «يُغتفر لأنه ناسٍ»)؛ لا تترك عقدة لها حكم في النص بلا ruling، "
+        "ولا تجمع فرعين مختلفي الحكم في عقدة واحدة، ولا تختصر قسمًا له حكم وموضع مستقلان.\n"
+        "- التسميات (label) قصيرة حرفية من النص بين «» في image_prompt أيضًا.\n"
+        "image_prompt وصف إنجليزي دقيق لرسم شرحي واحد موحّد متكامل (لا مشهدين ولا صورتين منفصلتين): نوع البنية الأنسب "
+        "(شجرة متفرعة من جذر أعلى، مواضع متقابلة قبل/بعد، أقسام متوازية، سلسلة مرتبة)، الجذر في الأعلى، القراءة من "
+        "اليمين إلى اليسار، وتحت كل عقدة فرعية بطاقة صغيرة ملحقة مكتوب فيها حكمها وموضعها حرفيًا بالعربية بين «»، "
+        "فلا يظهر أي فرع مجردًا من حكمه."
     )
     last_error: Optional[Exception] = None
     for model in TREE_ANALYZE_MODELS:
         try:
-            raw = _openrouter_chat_text(key, model, system, summary, 420, 7000)
+            raw = _openrouter_chat_text(key, model, system, user, 420, 9000)
             parsed = _parse_loose_json(raw)
             items = parsed.get("blueprints") if isinstance(parsed, dict) else None
             out: dict = {}
@@ -6213,8 +6244,9 @@ def _tree_image_blueprints(key: str, proposals: list) -> dict:
                 except Exception:
                     continue
                 prompt = str(item.get("image_prompt") or "").strip()
-                if prompt:
-                    out[idx] = prompt[:1400]
+                checklist = "\n".join(_flatten_tree_nodes(item.get("nodes")))
+                if prompt or checklist:
+                    out[idx] = {"prompt": prompt[:1600], "checklist": checklist[:3500]}
             if len(out) >= max(1, len(proposals) // 2):
                 return out
             last_error = RuntimeError("مخططات ناقصة من نموذج التوجيه")
@@ -6223,19 +6255,30 @@ def _tree_image_blueprints(key: str, proposals: list) -> dict:
     raise RuntimeError(f"تعذر صياغة مخططات الرسم: {last_error}")
 
 
-async def _run_tree_image_job(job_id: str, owner_id: str, key: str, proposals: list, options: dict) -> None:
+async def _run_tree_image_job(job_id: str, owner_id: str, key: str, proposals: list, options: dict, material: str = "") -> None:
     job = TREE_IMAGE_JOBS[job_id]
     try:
         job.update(stage="directing", message="جارٍ صياغة مخططات الرسم من المسائل المختارة...")
-        blueprints = await asyncio.to_thread(_tree_image_blueprints, key, proposals)
+        blueprints = await asyncio.to_thread(_tree_image_blueprints, key, proposals, material)
         folder_name = f"tree-{int(time.time())}"
         folder = UPLOADS_BUCKET_DIR / owner_id / "trees" / folder_name
         folder.mkdir(parents=True, exist_ok=True)
         job.update(stage="drawing", total=len(proposals), done=0, message=f"جارٍ رسم الصور: 0 من {len(proposals)}")
 
         async def draw_one(i: int, p: dict) -> dict:
-            blueprint = blueprints.get(i) or str(p.get("desc") or p.get("title") or "")
+            bp = blueprints.get(i) or {}
+            blueprint = (bp.get("prompt") if isinstance(bp, dict) else "") or str(p.get("desc") or p.get("title") or "")
             prompt = _slide_explained_prompt({"title": str(p.get("title") or ""), "image_prompt": blueprint}, options)
+            checklist = (bp.get("checklist") or "") if isinstance(bp, dict) else ""
+            if checklist:
+                prompt += (
+                    "\nMANDATORY CONTENT CHECKLIST — this is the heart of the image and overrides any simplification: "
+                    "render ONE single unified connected diagram only; never split the content into two separate panels, "
+                    "two scenes or two disconnected halves. Every node listed below MUST appear, and the ruling/effect/"
+                    "position written after each node MUST be rendered verbatim in Arabic inside a small attached tag "
+                    "directly beneath that node; never draw a branch bare without its ruling, never merge two branches "
+                    "with different rulings, never omit or paraphrase any ruling:\n" + checklist
+                )
             img = await asyncio.to_thread(_openrouter_image_bytes, key, prompt, options["image_model_id"])
             path = await asyncio.to_thread(_save_slide_image, img, folder, i + 1)
             return {
@@ -6307,7 +6350,8 @@ async def tree_image_start(req: TreeImageRequest, request: Request):
         "status": "running", "stage": "queued", "done": 0, "total": len(proposals),
         "message": "جارٍ بدء التشجير المصور...", "owner": owner_id, "created": time.time(), "images": None, "errors": None,
     }
-    asyncio.create_task(_run_tree_image_job(job_id, owner_id, key, proposals, options))
+    material = str(req.material or "")[:14000]
+    asyncio.create_task(_run_tree_image_job(job_id, owner_id, key, proposals, options, material))
     return {"ok": True, "job_id": job_id}
 
 
@@ -7138,7 +7182,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.439"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.441"},
         },
     })
     if opened.get("error"):
