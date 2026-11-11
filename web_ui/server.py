@@ -5624,21 +5624,34 @@ TREE_ANALYZE_DEEP_MODELS = ("anthropic/claude-sonnet-5", "~openai/gpt-luna-lates
 
 
 def _analyze_tree_proposals(key: str, text: str, deep: bool = False) -> list:
-    """تحليل محتوى إجابة واستخراج ما يقبل التشجير منه فعلًا (لا اختراع من خارجه)."""
+    """تحليل محتوى إجابة واستخراج ما يقبل التشجير منه فعلًا (لا اختراع من خارجه). الالتقاط متقلب بين
+    المحاولات، فتُجرَّب سلسلة النماذج حتى مرتين ولا يُقبَل الصفر إلا بعد استنفادها."""
     system = _TREE_ANALYZE_SYSTEM + (_TREE_ANALYZE_DEEP_ADDENDUM if deep else "")
-    raw = ""
+    models = TREE_ANALYZE_DEEP_MODELS if deep else TREE_ANALYZE_MODELS
     last_error: Optional[Exception] = None
-    for model in TREE_ANALYZE_DEEP_MODELS if deep else TREE_ANALYZE_MODELS:
-        try:
-            raw = _openrouter_chat_text(key, model, system, text[:24000], 420, 6000)
-            if raw:
-                break
-        except Exception as error:
-            last_error = error
-    if not raw:
-        if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 402:
-            raise RuntimeError("نفد رصيد OpenRouter — اشحنه ثم أعد المحاولة")
-        raise RuntimeError(f"تعذر تحليل المحتوى: {last_error}")
+    empty_raw = ""
+    for _attempt in range(2):
+        for model in models:
+            try:
+                candidate = _openrouter_chat_text(key, model, system, text[:24000], 420, 6000)
+            except Exception as error:
+                last_error = error
+                continue
+            if not candidate:
+                continue
+            found = _extract_tree_proposals(candidate)
+            if found:
+                return found
+            empty_raw = candidate
+    if empty_raw:
+        return _extract_tree_proposals(empty_raw)
+    if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 402:
+        raise RuntimeError("نفد رصيد OpenRouter — اشحنه ثم أعد المحاولة")
+    raise RuntimeError(f"تعذر تحليل المحتوى: {last_error}")
+
+
+def _extract_tree_proposals(raw: str) -> list:
+    """تحويل ردّ نموذج التحليل الخام إلى قائمة مقترحات منظفة بلا مكررات."""
     parsed = _parse_loose_json(raw)
     items = parsed.get("proposals") if isinstance(parsed, dict) else None
 
@@ -6975,7 +6988,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.437"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.438"},
         },
     })
     if opened.get("error"):
