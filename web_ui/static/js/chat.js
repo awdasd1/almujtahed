@@ -3168,6 +3168,7 @@ function loadPresentationOptions() {
     slides: 'auto',
     design_mode: 'with',
     explained_style: 'photos',
+    orientation: 'landscape',
     colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }], fonts: { title: '#ffffff', body: '#ffffff' } },
   };
   try {
@@ -3191,6 +3192,7 @@ function loadPresentationOptions() {
       if (['auto', '6', '8', '10', '12', '14', '16'].includes(String(p.slides))) dflt.slides = String(p.slides);
       if (['without', 'none', 'explained'].includes(p.design_mode)) dflt.design_mode = p.design_mode;
       if (p.explained_style === 'icons') dflt.explained_style = 'icons';
+      if (p.orientation === 'portrait') dflt.orientation = 'portrait';
       if (p.colors) {
         if (p.colors.mode === 'custom') dflt.colors.mode = 'custom'; else if (p.colors.mode === 'default') dflt.colors.mode = 'default';
         if (Array.isArray(p.colors.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (p.colors.img[i] && p.colors.img[i].hex) || c.hex, pct: (p.colors.img[i] && p.colors.img[i].pct) || c.pct }));
@@ -3241,6 +3243,12 @@ function openPresentationOptions(idx, btn, scanCtx) {
             <option value="14">١٤ شريحة</option>
             <option value="16">١٦ شريحة</option>
           </select>
+          <div class="pres-opt-label">اتجاه الشريحة</div>
+          <select id="presOrientation" class="pres-select">
+            <option value="landscape">🖥️ أفقي 16:9 — للعرض على الشاشات</option>
+            <option value="portrait">📱 طولي 9:16 — للجوال ومنصات التواصل (تيك توك/ريلز/شورتس)</option>
+          </select>
+          <div class="pres-opt-hint">في الوضع الطولي تُرسم صور الشرائح طوليًا ويخرج ملف PowerPoint بمقاس طولي، وفيديو النشر منه طولي 720×1280 جاهز للمنصات.</div>
           <div class="pres-opt-label">نوع التصميم</div>
           <select id="presDesignMode" class="pres-select">
             <option value="with">🖼️ تصميم بصور</option>
@@ -3264,6 +3272,7 @@ function openPresentationOptions(idx, btn, scanCtx) {
           </div>
         </div>
         <div class="pres-modal-foot">
+          <button type="button" class="btn-msg-export" id="presBackToScanBtn" onclick="backToSmartTreeScan()" hidden>↩ رجوع إلى قائمة المسح</button>
           <button type="button" class="btn-msg-export" onclick="closePresentationOptions()">إلغاء</button>
           <button type="button" class="btn-msg-export pres-start-btn" onclick="confirmPresentationOptions()">📊 بدء الإنشاء</button>
         </div>
@@ -3279,6 +3288,8 @@ function openPresentationOptions(idx, btn, scanCtx) {
   modal.querySelector(`input[name="presColorsMode"][value="${opts.colors.mode}"]`).checked = true;
   modal.querySelector('#presImageModel').value = opts.image_model;
   modal.querySelector('#presSlideCount').value = opts.slides;
+  const presOrient = modal.querySelector('#presOrientation');
+  if (presOrient) presOrient.value = opts.orientation === 'portrait' ? 'portrait' : 'landscape';
   modal.querySelector('#presDesignMode').value = opts.design_mode;
   modal.querySelector(`input[name="presExplainedStyle"][value="${opts.explained_style}"]`).checked = true;
   opts.colors.img.forEach((c, i) => {
@@ -3290,6 +3301,9 @@ function openPresentationOptions(idx, btn, scanCtx) {
   syncPresCustomColorsVisibility();
   syncPresExplainedStyleVisibility();
   window._presTarget = { idx, btn, scan: scanCtx || null };
+  // زر الرجوع لقائمة المسح يظهر فقط حين فُتحت النافذة من مسح ذكي
+  const backBtn = modal.querySelector('#presBackToScanBtn');
+  if (backBtn) backBtn.hidden = !scanCtx;
   modal.hidden = false;
 }
 
@@ -3324,6 +3338,7 @@ function confirmPresentationOptions() {
     voiceover: modal.querySelector('input[name="presVoiceover"]:checked').value === 'on',
     image_model: modal.querySelector('#presImageModel').value,
     slides: modal.querySelector('#presSlideCount').value,
+    orientation: (modal.querySelector('#presOrientation') || {}).value === 'portrait' ? 'portrait' : 'landscape',
     design_mode: modal.querySelector('#presDesignMode').value,
     explained_style: modal.querySelector('input[name="presExplainedStyle"]:checked').value === 'icons' ? 'icons' : 'photos',
     colors: {
@@ -3361,7 +3376,7 @@ async function runPresentationJob(idx, btn, options) {
     const res = await fetch('/api/chat/presentation/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, orientation: options.orientation || 'landscape', slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء العرض');
@@ -3376,6 +3391,7 @@ async function runPresentationJob(idx, btn, options) {
             title: st.deck_title || '',
             slides: st.slides || 0,
             voice: options.voiceover === false ? '' : 'Algieba',
+            orientation: options.orientation || 'landscape',
             created_at: new Date().toISOString(),
           };
           saveChatSessions();
@@ -7260,6 +7276,16 @@ function closeSmartTreeModal() {
   if (modal) modal.hidden = true;
 }
 
+// رجوع من أي نافذة خيارات فُتحت من المسح (تشجير مصوّر/إنشاء شرائح) إلى
+// قائمة المسح نفسها: النافذة تُخفى ولا تُعاد كتابتها، فتعود المقترحات
+// وتحديدات المستخدم كما تركها دون إعادة مسح ولا كلفة جديدة
+function backToSmartTreeScan() {
+  if (typeof closeTreeImageOptions === 'function') closeTreeImageOptions();
+  if (typeof closePresentationOptions === 'function') closePresentationOptions();
+  const modal = document.getElementById('smartTreeModal');
+  if (modal) modal.hidden = false;
+}
+
 async function analyzeSmartTreeContent(deep) {
   _smartTreeDeep = !!deep;
   const token = ++_smartTreeToken;
@@ -7440,7 +7466,7 @@ async function runPresentationScanJob(options, scan) {
     const res = await fetch('/api/chat/presentation/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: scan.material, proposals: scan.proposals, api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
+      body: JSON.stringify({ text: scan.material, proposals: scan.proposals, api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, orientation: options.orientation || 'landscape', slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء الشرائح');
@@ -7461,6 +7487,7 @@ async function runPresentationScanJob(options, scan) {
               title: st.deck_title || '',
               slides: st.slides || 0,
               voice: options.voiceover === false ? '' : 'Algieba',
+              orientation: options.orientation || 'landscape',
               created_at: new Date().toISOString(),
             },
             graph_kind: 'smart:slides',
@@ -7675,12 +7702,13 @@ const TREE_IMG_OPTIONS_KEY = 'almujtahed_tree_image_options_v1';
 let _treeImageSelected = [];
 
 function loadTreeImageOptions() {
-  const dflt = { image_model: 'gpt', explained_style: 'photos', colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }] } };
+  const dflt = { image_model: 'gpt', explained_style: 'photos', orientation: 'landscape', colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }] } };
   try {
     const pres = loadPresentationOptions();
     if (pres) {
       dflt.image_model = pres.image_model || dflt.image_model;
       dflt.explained_style = pres.explained_style || dflt.explained_style;
+      if (pres.orientation === 'portrait') dflt.orientation = 'portrait';
       if (pres.colors) {
         dflt.colors.mode = pres.colors.mode || 'default';
         if (Array.isArray(pres.colors.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (pres.colors.img[i] && pres.colors.img[i].hex) || c.hex, pct: (pres.colors.img[i] && pres.colors.img[i].pct) || c.pct }));
@@ -7692,6 +7720,7 @@ function loadTreeImageOptions() {
     if (p) {
       if (['gpt', 'muse', 'gemini', 'gpt54'].includes(p.image_model)) dflt.image_model = p.image_model;
       if (p.explained_style === 'icons') dflt.explained_style = 'icons';
+      if (p.orientation === 'portrait') dflt.orientation = 'portrait'; else if (p.orientation === 'landscape') dflt.orientation = 'landscape';
       if (p.colors) {
         if (p.colors.mode === 'custom') dflt.colors.mode = 'custom'; else if (p.colors.mode === 'default') dflt.colors.mode = 'default';
         if (Array.isArray(p.colors.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (p.colors.img[i] && p.colors.img[i].hex) || c.hex, pct: (p.colors.img[i] && p.colors.img[i].pct) || c.pct }));
@@ -7731,6 +7760,11 @@ function openTreeImageOptions(selected) {
           <div class="pres-opt-label">أسلوب الرسم الشرحي</div>
           <label class="pres-radio-card"><input type="radio" name="treeImgStyle" value="photos"> <span><b>📷 بصور حقيقية</b><small>صور فوتوغرافية حقيقية مصغرة داخل عقد الرسم الشرحي توضح كل عنصر</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="treeImgStyle" value="icons"> <span><b>🔷 بأيقونات</b><small>أيقونات ورموز مسطحة بسيطة داخل العقد بدل الصور — رسم أنظف وأخف</small></span></label>
+          <div class="pres-opt-label">اتجاه الصورة</div>
+          <select id="treeImgOrientation" class="pres-select">
+            <option value="landscape">🖥️ أفقي — للشاشات العريضة</option>
+            <option value="portrait">📱 طولي — للجوال ومنصات التواصل</option>
+          </select>
           <div class="pres-opt-label">ألوان الرسم</div>
           <label class="pres-radio-card"><input type="radio" name="treeImgColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المجتهد الهادئة المعتمدة</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="treeImgColorsMode" value="custom"> <span><b>ألوان مخصصة</b><small>ثلاثة ألوان لصورة الشرح بنسب سيادة</small></span></label>
@@ -7739,6 +7773,7 @@ function openTreeImageOptions(selected) {
           </div>
         </div>
         <div class="pres-modal-foot">
+          <button type="button" class="btn-msg-export" onclick="backToSmartTreeScan()">↩ رجوع إلى قائمة المسح</button>
           <button type="button" class="btn-msg-export" onclick="closeTreeImageOptions()">إلغاء</button>
           <button type="button" class="btn-msg-export pres-start-btn" onclick="confirmTreeImageOptions()">🎨 بدء الإنشاء</button>
         </div>
@@ -7751,6 +7786,8 @@ function openTreeImageOptions(selected) {
   modal.querySelector('#treeImgCount').textContent = String(selected.length);
   modal.querySelector('#treeImgTitles').textContent = selected.map(p => `${p.kind_label || 'تشجير'}: ${p.title}`).join(' • ');
   modal.querySelector('#treeImgModel').value = opts.image_model;
+  const orientSel = modal.querySelector('#treeImgOrientation');
+  if (orientSel) orientSel.value = opts.orientation === 'portrait' ? 'portrait' : 'landscape';
   modal.querySelector(`input[name="treeImgStyle"][value="${opts.explained_style}"]`).checked = true;
   modal.querySelector(`input[name="treeImgColorsMode"][value="${opts.colors.mode}"]`).checked = true;
   opts.colors.img.forEach((c, i) => {
@@ -7780,6 +7817,7 @@ function confirmTreeImageOptions() {
   const hex = (v, fb) => (/^#[0-9a-fA-F]{6}$/.test(v || '') ? v : fb);
   const options = {
     image_model: modal.querySelector('#treeImgModel').value,
+    orientation: (modal.querySelector('#treeImgOrientation') || {}).value === 'portrait' ? 'portrait' : 'landscape',
     explained_style: modal.querySelector('input[name="treeImgStyle"]:checked').value === 'icons' ? 'icons' : 'photos',
     colors: {
       mode: modal.querySelector('input[name="treeImgColorsMode"]:checked').value === 'custom' ? 'custom' : 'default',
@@ -7813,7 +7851,7 @@ async function runTreeImageJob(selected, options) {
     const res = await fetch('/api/chat/tree-image/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ proposals: selected, material: (typeof stripGraphFences === 'function' ? stripGraphFences((smartTreeSourceMessage(session) || {}).content || '') : '').slice(0, 12000), api_key: keys.openrouter || '', image_model: options.image_model, explained_style: options.explained_style, colors: options.colors }),
+      body: JSON.stringify({ proposals: selected, material: (typeof stripGraphFences === 'function' ? stripGraphFences((smartTreeSourceMessage(session) || {}).content || '') : '').slice(0, 12000), api_key: keys.openrouter || '', image_model: options.image_model, explained_style: options.explained_style, orientation: options.orientation || 'landscape', colors: options.colors }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء التشجير المصور');

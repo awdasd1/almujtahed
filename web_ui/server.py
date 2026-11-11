@@ -5765,11 +5765,17 @@ async def presentation_video(req: PresentationVideoRequest, request: Request):
     folder = pptx.parent
     deck_path = folder / "slides.json"
     slide_total = 0
+    orientation = "landscape"
     if deck_path.is_file():
         try:
-            slide_total = len(json.loads(deck_path.read_text(encoding="utf-8")).get("slides") or [])
+            deck_data = json.loads(deck_path.read_text(encoding="utf-8"))
+            slide_total = len(deck_data.get("slides") or [])
+            if deck_data.get("orientation") == "portrait":
+                orientation = "portrait"
         except Exception:
             slide_total = 0
+    # العرض الطولي يخرج فيديو طوليًا 720×1280 للجوال والمنصات، والأفقي 1280×720
+    vw, vh = (720, 1280) if orientation == "portrait" else (1280, 720)
     if not slide_total:
         slide_total = len(list(folder.glob("slide-*.jpg"))) + len(list(folder.glob("slide-*.png")))
     if not slide_total:
@@ -5802,7 +5808,7 @@ async def presentation_video(req: PresentationVideoRequest, request: Request):
                 cmd += [
                     "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-b:a", "160k",
                     "-pix_fmt", "yuv420p",
-                    "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+                    "-vf", f"scale={vw}:{vh}:force_original_aspect_ratio=decrease,pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2",
                     "-t", f"{dur:.2f}", "-r", "30", str(seg),
                 ]
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
@@ -6042,6 +6048,7 @@ class PresentationRequest(BaseModel):
     slide_count: Optional[int] = None
     voiceover: Optional[bool] = None
     explained_style: Optional[str] = None
+    orientation: Optional[str] = None
 
 
 PRESENTATION_JOBS: Dict[str, dict] = {}
@@ -6170,8 +6177,12 @@ def _openrouter_image_bytes(key: str, prompt: str, model: str, size: str = "1536
 
 def _slide_image_prompt(image_prompt: str, options: Optional[dict] = None) -> str:
     options = options or {}
+    framing = (
+        "Elegant vertical 9:16 portrait presentation background (tall mobile/social format), "
+        if _is_portrait(options) else "Elegant wide 16:9 presentation background, "
+    )
     return (
-        f"{image_prompt}. Elegant wide 16:9 presentation background, cinematic warm lighting, "
+        f"{image_prompt}. {framing}cinematic warm lighting, "
         "rich scholarly Islamic atmosphere, absolutely no text, no letters, no words, no calligraphy, "
         "no signs, leave a calmer darker area suitable for white text overlay."
         + _palette_directive(options)
@@ -6212,7 +6223,17 @@ def _normalize_presentation_options(req: PresentationRequest) -> dict:
         "slide_count": req.slide_count if req.slide_count in (6, 8, 10, 12, 14, 16) else None,
         "voiceover": req.voiceover is not False,
         "explained_style": req.explained_style if req.explained_style in ("photos", "icons") else "photos",
+        "orientation": "portrait" if req.orientation == "portrait" else "landscape",
     }
+
+
+def _is_portrait(options: Optional[dict]) -> bool:
+    """الوضع الطولي 9:16 للجوال ومنصات التواصل، وما عداه أفقي 16:9."""
+    return bool(options) and options.get("orientation") == "portrait"
+
+
+def _image_size_for(options: Optional[dict]) -> str:
+    return "1024x1536" if _is_portrait(options) else "1536x1024"
 
 
 def _slide_mode_rule(options: dict) -> str:
@@ -6248,8 +6269,9 @@ def _slide_embedded_prompt(slide_data: dict, options: Optional[dict] = None) -> 
     """توجيه صورة شريحة كاملة بنصوص عربية مدمجة مرسومة داخل الصورة نفسها متوافقة مع تعليقها الصوتي."""
     options = options or {}
     bullets = "؛ ".join(slide_data["bullets"])
+    framing = "vertical 9:16 portrait presentation slide (tall mobile/social format)" if _is_portrait(options) else "16:9 presentation slide"
     return (
-        "Design a complete, elegant 16:9 presentation slide with Arabic typography integrated into the artwork. "
+        f"Design a complete, elegant {framing} with Arabic typography integrated into the artwork. "
         f"Render this Arabic title prominently, spelled exactly as written: «{slide_data['title']}». "
         f"Render these Arabic bullet points clearly below it, spelled exactly as written: «{bullets}». "
         "Beautiful legible Arabic typography with strong contrast, harmonious scholarly Islamic visual theme, "
@@ -6273,8 +6295,9 @@ def _slide_explained_prompt(slide_data: dict, options: Optional[dict] = None) ->
             "Each node carries a small real photographic image (a photorealistic miniature photograph) illustrating "
             "its element, framed neatly inside the node; rich realistic photographic detail, not flat clip-art icons."
         )
+    framing = "vertical 9:16 portrait, tall mobile/social format" if _is_portrait(options) else "16:9"
     return (
-        "Create a detailed educational infographic presentation slide (16:9, Arabic, read right-to-left) that "
+        f"Create a detailed educational infographic presentation slide ({framing}, Arabic, read right-to-left) that "
         "visually explains its topic with a clear structured diagram — such as a branching tree of opinions and "
         "their evidences, a connected chain of narrators (isnad), a journey route map with ordered stops, a "
         "timeline, a visual comparison, or a cause-and-effect flow — following this exact blueprint: "
@@ -6378,9 +6401,12 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
 
     icon_path = folder / "speaker-icon.png"
     _speaker_icon_png(icon_path)
+    # الوضع الطولي: شريحة 9:16 للجوال ومنصات التواصل، والأفقي 16:9 للشاشات
+    portrait = _is_portrait(options)
     prs = Presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
+    prs.slide_width = Inches(7.5 if portrait else 13.333)
+    prs.slide_height = Inches(13.333 if portrait else 7.5)
+    icon_y = 12.35 if portrait else 6.55
     blank = prs.slide_layouts[6]
     for idx, (slide_data, asset) in enumerate(zip(deck["slides"], assets)):
         slide = prs.slides.add_slide(blank)
@@ -6389,7 +6415,7 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
             # النص مرسوم داخل الصورة نفسها: لا طبقة تعتيم ولا صناديق نص
             if asset.get("audio"):
                 mime = "audio/mpeg" if str(asset["audio"]).endswith(".mp3") else "audio/wav"
-                slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(6.55), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
+                slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(icon_y), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
             slide.notes_slide.notes_text_frame.text = slide_data["narration"]
             continue
         overlay = slide.shapes.add_shape(1, 0, 0, prs.slide_width, prs.slide_height)
@@ -6401,7 +6427,16 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
         alpha.set("val", "52000")
         clr.append(alpha)
         overlay.shadow.inherit = False
-        if idx == 0:
+        if portrait:
+            if idx == 0:
+                _pptx_text(slide, 0.5, 4.4, 6.5, 2.2, [slide_data["title"]], 40, bold=True, color=title_rgb)
+                if slide_data["bullets"]:
+                    _pptx_text(slide, 0.7, 7.0, 6.1, 2.6, slide_data["bullets"], 22, color=sub_rgb)
+            else:
+                _pptx_text(slide, 0.45, 0.6, 6.6, 1.6, [slide_data["title"]], 32, bold=True, color=title_rgb)
+                if slide_data["bullets"]:
+                    _pptx_text(slide, 0.55, 2.5, 6.4, 8.8, ["• " + b for b in slide_data["bullets"]], 21, color=body_rgb)
+        elif idx == 0:
             _pptx_text(slide, 0.8, 2.2, 11.7, 1.6, [slide_data["title"]], 44, bold=True, color=title_rgb)
             if slide_data["bullets"]:
                 _pptx_text(slide, 1.2, 4.0, 10.9, 1.6, slide_data["bullets"], 24, color=sub_rgb)
@@ -6411,7 +6446,7 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
                 _pptx_text(slide, 0.9, 1.95, 11.5, 4.4, ["• " + b for b in slide_data["bullets"]], 25, color=body_rgb)
         if asset.get("audio"):
             mime = "audio/mpeg" if str(asset["audio"]).endswith(".mp3") else "audio/wav"
-            slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(6.55), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
+            slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(icon_y), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
         slide.notes_slide.notes_text_frame.text = slide_data["narration"]
     prs.save(str(out_path))
 
@@ -6427,7 +6462,7 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str,
         folder_name = f"deck-{int(time.time())}"
         folder = UPLOADS_BUCKET_DIR / owner_id / "presentations" / folder_name
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / "slides.json").write_text(json.dumps(deck, ensure_ascii=False, indent=1), encoding="utf-8")
+        (folder / "slides.json").write_text(json.dumps({**deck, "orientation": options.get("orientation", "landscape")}, ensure_ascii=False, indent=1), encoding="utf-8")
         job.update(stage="creating", total=len(slides), done=0, message=f"جارٍ إنشاء الشرائح: 0 من {len(slides)}")
 
         async def make_slide(i: int, slide_data: dict) -> dict:
@@ -6437,7 +6472,7 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str,
                 prompt = _slide_embedded_prompt(slide_data, options)
             else:
                 prompt = _slide_image_prompt(slide_data["image_prompt"], options)
-            img = await asyncio.to_thread(_openrouter_image_bytes, key, prompt, options["image_model_id"])
+            img = await asyncio.to_thread(_openrouter_image_bytes, key, prompt, options["image_model_id"], _image_size_for(options))
             img_path = await asyncio.to_thread(_save_slide_image, img, folder, i)
             aud_path = None
             if options["voiceover"]:
@@ -6525,6 +6560,7 @@ class TreeImageRequest(BaseModel):
     image_model: Optional[str] = "gpt"
     explained_style: Optional[str] = "photos"
     colors: Optional[dict] = None
+    orientation: Optional[str] = None
 
 
 TREE_IMAGE_JOBS: Dict[str, dict] = {}
@@ -6626,7 +6662,7 @@ async def _run_tree_image_job(job_id: str, owner_id: str, key: str, proposals: l
                     "directly beneath that node; never draw a branch bare without its ruling, never merge two branches "
                     "with different rulings, never omit or paraphrase any ruling:\n" + checklist
                 )
-            img = await asyncio.to_thread(_openrouter_image_bytes, key, prompt, options["image_model_id"])
+            img = await asyncio.to_thread(_openrouter_image_bytes, key, prompt, options["image_model_id"], _image_size_for(options))
             path = await asyncio.to_thread(_save_slide_image, img, folder, i + 1)
             return {
                 "title": str(p.get("title") or ""),
@@ -6690,6 +6726,7 @@ async def tree_image_start(req: TreeImageRequest, request: Request):
     pres_req = PresentationRequest(
         text="x", image_model=req.image_model, colors=req.colors,
         design_mode="explained", explained_style=req.explained_style,
+        orientation=req.orientation,
     )
     options = _normalize_presentation_options(pres_req)
     job_id = secrets.token_hex(6)
@@ -7545,7 +7582,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.450"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.451"},
         },
     })
     if opened.get("error"):
