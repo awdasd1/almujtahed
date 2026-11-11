@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.468"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.469"},
         },
     })
     if opened.get("error"):
@@ -14300,6 +14300,29 @@ def _ms_author_compare(model: str, phrase: str, parallels: list, key: str) -> Di
             "note": str(parsed.get("note") or "")[:700],
             "cost": usage.get("cost")}
 
+_MS_STOPWORDS = set("من في على الى ان ما لا لم لن هو هي كان يكون ذلك هذا هذه بعد عند غير بين اما نعم لقد قد لما اذا او ثم بل لكن كما له بها فيه منه عليها عنها".split())
+
+def _ms_norm_words(s: str):
+    s = shamela_local_mcp.clean_arabic_text(s or "")
+    s = s.replace("ئ", "ي").replace("ؤ", "و")
+    return [w.strip("،؛:.!؟?()«»\"'") for w in s.split() if len(w.strip("،؛:.!؟?()«»\"'")) > 1]
+
+def _ms_phrase_keys(phrase: str):
+    words = _ms_norm_words(phrase)
+    wins = []
+    for i in range(len(words) - 2):
+        w = words[i:i + 3]
+        if any(len(x) >= 4 and x not in _MS_STOPWORDS for x in w):
+            wins.append((sum(len(x) for x in w), " ".join(w)))
+    wins.sort(reverse=True)
+    keys = []
+    for _, k in wins:
+        if k not in keys:
+            keys.append(k)
+        if len(keys) >= 2:
+            break
+    return keys
+
 def _ms_author_agent_sync(payload: dict, key: str) -> Dict[str, Any]:
     import concurrent.futures as _cf
     text = str((payload or {}).get("text") or "")
@@ -14313,27 +14336,41 @@ def _ms_author_agent_sync(payload: dict, key: str) -> Dict[str, Any]:
     suggestions, total_cost, checks = [], 0.0, 0
 
     def check(args):
-        phrase, book = args
+        phrase, skey, book = args
         try:
-            r = shamela_local_mcp.verify_quote(book=book["book_id"], quote_text=phrase[:150])
-            if r and r.get("verified") and r.get("matches"):
-                m = r["matches"][0]
-                return {"phrase": phrase, "book": book["title"], "book_id": book["book_id"],
-                        "part": m.get("part"), "page": m.get("page_num"),
-                        "snippet": m.get("snippet") or "", "status": r.get("match_status")}
+            r = shamela_local_mcp.search_in_book(book["book_id"], skey, limit=2)
+            for hit in (r or {}).get("results") or []:
+                snippet = hit.get("snippet") or ""
+                pw = set(_ms_norm_words(phrase))
+                sw = set(_ms_norm_words(snippet))
+                overlap = (len(pw & sw) / len(pw)) if pw else 0
+                if overlap >= 0.34:
+                    return {"phrase": phrase, "book": book["title"], "book_id": book["book_id"],
+                            "part": hit.get("part"), "page": hit.get("page_num"),
+                            "snippet": snippet, "overlap": round(overlap, 2), "key": skey}
         except Exception:
             pass
         return None
 
-    jobs = [(ph, b) for ph in phrases for b in searchable[:12]][:40]
+    jobs = []
+    for ph in phrases:
+        for skey in _ms_phrase_keys(ph):
+            for b in searchable[:12]:
+                jobs.append((ph, skey, b))
+    jobs = jobs[:72]
     found = {}
     with _cf.ThreadPoolExecutor(max_workers=6) as pool:
         for hit in pool.map(check, jobs):
             checks += 1
             if hit:
-                found.setdefault(hit["phrase"], []).append(hit)
+                lst = found.setdefault(hit["phrase"], [])
+                old = next((x for x in lst if x["book_id"] == hit["book_id"]), None)
+                if old is None:
+                    lst.append(hit)
+                elif hit["overlap"] > old["overlap"]:
+                    old.update(hit)
     for phrase, parallels in found.items():
-        parallels = parallels[:3]
+        parallels = sorted(parallels, key=lambda x: -x["overlap"])[:4]
         cmp = {"relation": "", "note": "", "cost": 0}
         try:
             cmp = _ms_author_compare(model, phrase, parallels, key)
@@ -14347,8 +14384,9 @@ def _ms_author_agent_sync(payload: dict, key: str) -> Dict[str, Any]:
             "body": (cmp.get("note") or "وُجدت العبارة في كتب المؤلف الأخرى كما في المواضع.")[:800],
             "source": loci,
             "surah": None, "ayah": None,
-            "verify": {"status": "verified",
-                       "detail": f"ثبتت الموازاة آليًا بالمطابقة على نصوص الكتب ({len(parallels)} موضعًا)"},
+            "verify": {"status": "found",
+                       "detail": "مواضع مكتشفة ببحث كلمات مفتاحية داخل كتب المؤلف وتداخل ألفاظ ("
+                                 + "، ".join(f"{x['book']}: {int(x['overlap'] * 100)}٪" for x in parallels) + ")"},
         })
     return {"books": books, "phrases_checked": len(phrases), "checks": checks,
             "suggestions": suggestions, "cost": round(total_cost, 4)}
