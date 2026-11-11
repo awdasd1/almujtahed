@@ -5666,6 +5666,72 @@ async def chat_podcast(req: PodcastRequest, request: Request):
     }
 
 
+def _ffmpeg_exe() -> str:
+    """مسار ffmpeg: من حزمة imageio-ffmpeg إن وجدت، أو من النظام."""
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and Path(exe).is_file():
+            return exe
+    except Exception:
+        pass
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    for cand in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"):
+        if Path(cand).is_file():
+            return cand
+    return ""
+
+
+class PodcastVideoRequest(BaseModel):
+    audio_url: str
+    cover_url: str
+
+
+@app.post("/api/chat/podcast/video")
+async def podcast_video(req: PodcastVideoRequest, request: Request):
+    """تحويل بودكاست صوتي إلى فيديو MP4 (غلاف ثابت + الصوت) لنشره في منصات الفيديو كتيك توك."""
+    ffmpeg = _ffmpeg_exe()
+    if not ffmpeg:
+        raise HTTPException(status_code=501, detail="محرك الفيديو (ffmpeg) غير متوفر في هذه البيئة")
+    owner_id = current_owner_id(request)
+    bucket = (UPLOADS_BUCKET_DIR / owner_id).resolve()
+
+    def _resolve(url: str, suffixes: tuple) -> Path:
+        url_path = urllib.parse.unquote(url or "")
+        marker = f"/uploads/{owner_id}/"
+        rel = url_path.split(marker, 1)[-1] if marker in url_path else Path(url_path).name
+        cand = (bucket / rel).resolve()
+        if not cand.is_file() or not str(cand).startswith(str(bucket)) or cand.suffix.lower() not in suffixes:
+            raise HTTPException(status_code=404, detail="ملف البودكاست أو الغلاف غير موجود")
+        return cand
+
+    audio = _resolve(req.audio_url, (".mp3", ".wav", ".m4a", ".ogg"))
+    cover = _resolve(req.cover_url, (".png", ".jpg", ".jpeg"))
+    out = bucket / "audio" / f"podcast-video-{int(time.time())}.mp4"
+
+    def _build() -> None:
+        cmd = [
+            ffmpeg, "-y", "-loop", "1", "-framerate", "2", "-i", str(cover), "-i", str(audio),
+            "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage",
+            "-c:a", "aac", "-b:a", "160k", "-pix_fmt", "yuv420p",
+            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+            "-shortest", "-movflags", "+faststart", str(out),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        if proc.returncode != 0 or not out.is_file():
+            raise RuntimeError((proc.stderr or "فشل تحويل الفيديو")[-400:])
+
+    try:
+        await asyncio.to_thread(_build)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"تعذر تحويل البودكاست إلى فيديو: {error}")
+    return {"ok": True, "video_url": f"/uploads/{owner_id}/audio/{out.name}"}
+
+
 # ===== التشجير الذكي: فحص المحتوى واقتراح ما يقبل التشجير منه قبل أي توليد =====
 
 class TreeAnalyzeRequest(BaseModel):
@@ -6616,6 +6682,7 @@ def _ayrshare_call(path: str, key: str, payload: Optional[dict] = None, timeout:
 
 class DesignPublishRequest(BaseModel):
     image_url: str = ""
+    media_kind: Optional[str] = None
     text_only: bool = False
     caption: str = ""
     platforms: List[str] = []
@@ -6704,7 +6771,7 @@ def _publish_via_zernio(req: DesignPublishRequest, request: Request, target: Pat
     public_url = ""
     if not req.text_only:
         raw = target.read_bytes()
-        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}.get(target.suffix.lower(), "image/png")
+        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".mp4": "video/mp4"}.get(target.suffix.lower(), "image/png")
         presign = _zernio_call("POST", "/media/presign", key, {
             "filename": name, "contentType": mime, "size": len(raw),
         }, timeout=60)
@@ -6724,7 +6791,7 @@ def _publish_via_zernio(req: DesignPublishRequest, request: Request, target: Pat
         "platforms": targets,
     }
     if not req.text_only:
-        payload["mediaItems"] = [{"url": public_url, "type": "image"}]
+        payload["mediaItems"] = [{"url": public_url, "type": "video" if target.suffix.lower() == ".mp4" else "image"}]
     if req.schedule:
         payload["scheduledFor"] = req.schedule
         payload["timezone"] = "UTC"
@@ -6782,7 +6849,7 @@ def _publish_via_ayrshare(req: DesignPublishRequest, request: Request, target: P
         raw = target.read_bytes()
         if len(raw) > 28 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="الصورة أكبر من حد الرفع (30MB)")
-        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}.get(target.suffix.lower(), "image/png")
+        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".mp4": "video/mp4"}.get(target.suffix.lower(), "image/png")
         upload = _ayrshare_call("/media/upload", key, {
             "file": f"data:{mime};base64," + base64.b64encode(raw).decode("ascii"),
             "fileName": name,
@@ -6881,8 +6948,9 @@ async def designs_publish(req: DesignPublishRequest, request: Request):
             marker = f"/uploads/{current_owner_id(request)}/"
             rel = url_path.split(marker, 1)[-1] if marker in url_path else name
             candidate = (owner_bucket / rel).resolve()
+            allowed = (".mp4",) if str(req.media_kind or "").lower() == "video" else (".png", ".jpg", ".jpeg", ".webp")
             if (candidate.is_file() and str(candidate).startswith(str(owner_bucket))
-                    and candidate.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")):
+                    and candidate.suffix.lower() in allowed):
                 target = candidate
                 name = candidate.name
             else:
@@ -7376,7 +7444,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.446"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.447"},
         },
     })
     if opened.get("error"):

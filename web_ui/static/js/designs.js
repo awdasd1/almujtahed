@@ -1141,7 +1141,7 @@ function openDesignImagePublish(imageUrl, captionText, cb) {
   if (!imageUrl) return;
   ensureDesignPublishWired();
   designPublishTextJob = null;
-  designPublishImageJob = { image_url: String(imageUrl), cb: typeof cb === 'function' ? cb : null };
+  designPublishImageJob = { image_url: String(imageUrl), media_kind: 'image', cb: typeof cb === 'function' ? cb : null };
   designPublishIdx = -1;
   const overlay = document.getElementById('designPublishOverlay');
   if (!overlay) return;
@@ -1150,6 +1150,34 @@ function openDesignImagePublish(imageUrl, captionText, cb) {
   imgEl.src = designPublishImageJob.image_url;
   document.getElementById('designPublishCaption').value = String(captionText || '');
   document.getElementById('designPublishSubmit').textContent = '📤 نشر التصميم';
+  const savedProvider = localStorage.getItem(DESIGN_PUBLISH_PROVIDER_KEY) || 'zernio';
+  document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
+    radio.checked = radio.value === savedProvider;
+  });
+  const result = document.getElementById('designPublishResult');
+  result.hidden = true;
+  result.textContent = '';
+  overlay.hidden = false;
+  const isSchedule = document.querySelector('input[name="designPublishWhen"]:checked')?.value === 'schedule';
+  const panel = document.getElementById('designPublishSchedulePanel');
+  if (panel) panel.hidden = !isSchedule;
+  if (isSchedule) { ensureDesignScheduleDefaults(); refreshDesignPortalSync(); }
+  refreshDesignPublishTargets();
+}
+
+function openDesignVideoPublish(videoUrl, captionText, cb) {
+  if (!videoUrl) return;
+  ensureDesignPublishWired();
+  designPublishTextJob = null;
+  designPublishImageJob = { image_url: String(videoUrl), media_kind: 'video', cb: typeof cb === 'function' ? cb : null };
+  designPublishIdx = -1;
+  const overlay = document.getElementById('designPublishOverlay');
+  if (!overlay) return;
+  const imgEl = document.getElementById('designPublishImg');
+  imgEl.style.display = 'none';
+  imgEl.removeAttribute('src');
+  document.getElementById('designPublishCaption').value = String(captionText || '');
+  document.getElementById('designPublishSubmit').textContent = '📤 نشر الفيديو';
   const savedProvider = localStorage.getItem(DESIGN_PUBLISH_PROVIDER_KEY) || 'zernio';
   document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
     radio.checked = radio.value === savedProvider;
@@ -1199,7 +1227,7 @@ async function submitDesignPublish() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(textJob
         ? { text_only: true, image_url: '', caption, platforms, provider, account_ids: accountIds, schedule }
-        : { image_url: imageJob ? imageJob.image_url : msg.image_url, caption, platforms, provider, account_ids: accountIds, schedule })
+        : { image_url: imageJob ? imageJob.image_url : msg.image_url, media_kind: imageJob ? (imageJob.media_kind || 'image') : 'image', caption, platforms, provider, account_ids: accountIds, schedule })
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.detail || 'تعذر النشر');
@@ -1505,6 +1533,7 @@ window.initDesignsTab = initDesignsTab;
 window.submitDesignIdea = submitDesignIdea;
 window.openDesignTextPublish = openDesignTextPublish;
 window.openDesignImagePublish = openDesignImagePublish;
+window.openDesignVideoPublish = openDesignVideoPublish;
 
 // نافذة النشر مشتركة بين تبويبَي «نشر» و«المحادثات» (نشر التعليق المختصر) —
 // تُنقل إلى جذر الصفحة حتى لا يحجبها أي تبويب أو قسم مخفي

@@ -21,3 +21,4 @@ sentence-transformers>=3.0.0
 FlagEmbedding>=1.2.0
 peft>=0.10.0
 accelerate>=0.28.0
+imageio-ffmpeg>=0.5.1

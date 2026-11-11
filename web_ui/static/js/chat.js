@@ -3054,23 +3054,36 @@ async function publishPodcast(idx, btn) {
   const info = msg && msg.podcast;
   if (!info || !info.url) return;
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ تجهيز النشر…'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ تجهيز فيديو الحلقة…'; }
   try {
-    const cover = await makePodcastCoverBlob(info.title || 'بودكاست حواري');
-    const fd = new FormData();
-    fd.append('file', cover, 'podcast-cover.png');
-    const res = await fetch('/api/chat/upload', { method: 'POST', body: fd });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.file_url) throw new Error(data.error || 'تعذر رفع غلاف الحلقة');
+    // منصات كتيك توك لا تقبل الصور الصامتة: يُنشر البودكاست فيديو MP4 (غلاف + صوت الحلقة كاملًا)
+    if (!info.video_url) {
+      const cover = await makePodcastCoverBlob(info.title || 'بودكاست حواري');
+      const fd = new FormData();
+      fd.append('file', cover, 'podcast-cover.png');
+      const upRes = await fetch('/api/chat/upload', { method: 'POST', body: fd });
+      const up = await upRes.json().catch(() => ({}));
+      if (!upRes.ok || !up.file_url) throw new Error(up.error || 'تعذر رفع غلاف الحلقة');
+      if (typeof showToast === 'function') showToast('⏳ جارٍ تحويل الحلقة إلى فيديو بصوتها الكامل لنشره في منصات الفيديو…', 6000);
+      const vRes = await fetch('/api/chat/podcast/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio_url: info.url, cover_url: up.file_url }),
+      });
+      const vData = await vRes.json().catch(() => ({}));
+      if (!vRes.ok || !vData.video_url) throw new Error(vData.detail || 'تعذر تحويل الحلقة إلى فيديو');
+      info.video_url = vData.video_url;
+      saveChatSessions();
+    }
     const caption = [
       `🎙️ بودكاست حواري — ${info.title || 'حلقة علمية'}`,
       'حلقة حوارية بين محمد المقدّم وإبراهيم الضيف، مولّدة من بحوث «المجتهد» الموثّقة بالمكتبة الشاملة.',
       info.sources_text ? `\n📚 مصادر الحلقة:\n${String(info.sources_text).slice(0, 1100)}` : '',
     ].filter(Boolean).join('\n');
-    if (typeof window.openDesignImagePublish === 'function') window.openDesignImagePublish(data.file_url, caption);
+    if (typeof window.openDesignVideoPublish === 'function') window.openDesignVideoPublish(info.video_url, caption);
     else if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
   } catch (e) {
-    if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر تجهيز نشر الحلقة'), 7000);
+    if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر تجهيز نشر الحلقة'), 8000);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
