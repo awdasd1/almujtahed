@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.464"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.465"},
         },
     })
     if opened.get("error"):
@@ -13903,7 +13903,7 @@ MS_AUDIT_PROMPT = (
     "مهمتك: إنتاج النسخ المدقق النهائي بمقابلة النسختين على الصورة نفسها: حيث اختلف القارئان فاتبع ما تراه في الصورة، "
     "وحيث أخطأ كلاهما فصحح من الصورة، وحافظ على النسخ الحرفي (الإملاء والهمزات كما هي) بلا تحديث ولا شرح داخل النص، "
     "وما تعذرت قراءته فضع مكانه [غير مقروء]. "
-    "أخرج النص المدقق وحده أولًا، ثم سطرًا يبدأ بـ(تنبيهات:) تسرد فيه باختصار أهم المواضع التي حكمت فيها بين القارئين أو شككت بها."
+    "ابدأ بالنص المدقق مباشرة دون أي مقدمة أو عبارة تمهيدية، ثم سطرًا مستقلًا يبدأ بـ(تنبيهات:) تسرد فيه باختصار أهم المواضع التي حكمت فيها بين القارئين أو شككت بها."
 )
 
 
@@ -13935,10 +13935,18 @@ def _ms_audit_one(model: str, b64_url: str, text_a: str, text_b: str, key: str) 
     msg = ((data.get("choices") or [{}])[0].get("message") or {})
     raw = (msg.get("content") or "").strip()
     notes = ""
-    marker = raw.find("تنبيهات:")
-    if marker >= 0:
-        notes = raw[marker + len("تنبيهات:"):].strip()
-        raw = raw[:marker].strip()
+    # فصل التنبيهات: عنوان على أول سطر (لا كلمة عابرة في مقدمة النموذج)،
+    # وآخر وقوع له — فبعض النماذج تذكر «قسم التنبيهات» تمهيدًا فيلتبس الفصل.
+    marks = list(re.finditer(r"(?m)^[\s*#\-]*تنبيهات\s*[:：]", raw))
+    if marks:
+        m = marks[-1]
+        notes = raw[m.end():].strip()
+        raw = raw[:m.start()].strip()
+    # إسقاط أسطر تمهيدية وصفية قد يفتتح بها النموذج («إليك النص المدقق...»)
+    lines = raw.split("\n")
+    while lines and len(lines) > 3 and any(k in lines[0] for k in ("إليك النص", "النص المدقق", "بعد مقابلته", "يليه قسم")):
+        lines.pop(0)
+    raw = "\n".join(lines).strip()
     if len(raw) > 16000:
         raw = raw[:16000]
     usage = data.get("usage") or {}
@@ -14020,9 +14028,10 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
 _MS_DIACRITICS = "ًٌٍَُِّْٰٕٖٜٟٓٔٗ٘ٙٚٛٝٞـ"
 
 def _ms_skeleton(word: str) -> str:
-    """هيكل الكلمة بلا تشكيل ولا تطويل ولا همزات على الألف ولا تاء مربوطة/هاء:
+    """هيكل الكلمة بلا تشكيل ولا تطويل ولا ترقيم ولا همزات على الألف ولا تاء مربوطة/هاء:
     للتمييز بين اختلاف الضبط والرسم واختلاف اللفظ نفسه."""
     w = "".join(ch for ch in (word or "") if ch not in _MS_DIACRITICS)
+    w = "".join(ch for ch in w if ch not in ".,،؛;:!?؟«»()\"'")
     return (w.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
              .replace("ة", "ه").replace("ى", "ي").replace("ؤ", "و").replace("ئ", "ي"))
 
