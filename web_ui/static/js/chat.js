@@ -2197,7 +2197,7 @@ function renderSessionMessages(sessionId, options) {
     const audioSummaryHtml = (!isUser && msg.audio_summary && msg.audio_summary.url) ? `
       <div class="chat-audio-summary">
         <div class="chat-audio-summary-head">
-          <span>🔊 ملخص صوتي للإجابة</span>
+          <span>${escapeHtml(msg.audio_summary.title || '🔊 ملخص صوتي للإجابة')}</span>
         </div>
         <audio controls preload="metadata" src="${escapeHtml(msg.audio_summary.url)}"></audio>
         <div class="chat-audio-summary-actions">
@@ -2236,9 +2236,6 @@ function renderSessionMessages(sessionId, options) {
         </button>` : ''}
         ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="generateAudioSummary(${idx}, this)" title="اختصار هذه الإجابة المعتمدة بنموذج Gemini 3.8 Flash اختصارًا دقيقًا غير مخلّ، ثم تحويلها إلى ملف صوتي بصوت Algieba يُرفق بجانب زمن الإجابة لتسمعه وتنزّله وتشاركه">
           🔊 ملخص صوتي
-        </button>` : ''}
-        ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="startPresentation(${idx}, this)" title="إنشاء عرض PowerPoint من هذه الإجابة المعتمدة: شرائح مرقّمة (٦–١٤ بحسب طول الإجابة) لكل شريحة صورة مولّدة وتعليق صوتي بصوت Algieba مدمج فيها، مع نص عربي قابل للتحرير وملاحظات للمحاضر">
-          📊 إنشاء عرض
         </button>` : ''}
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
@@ -2929,7 +2926,7 @@ function savePresentationOptions(opts) {
   try { localStorage.setItem(PRES_OPTIONS_KEY, JSON.stringify(opts)); } catch (e) {}
 }
 
-function openPresentationOptions(idx, btn) {
+function openPresentationOptions(idx, btn, scanCtx) {
   let modal = document.getElementById('presentationOptionsModal');
   if (!modal) {
     modal = document.createElement('div');
@@ -3013,7 +3010,7 @@ function openPresentationOptions(idx, btn) {
   modal.querySelector('#presFontBody').value = opts.colors.fonts.body;
   syncPresCustomColorsVisibility();
   syncPresExplainedStyleVisibility();
-  window._presTarget = { idx, btn };
+  window._presTarget = { idx, btn, scan: scanCtx || null };
   modal.hidden = false;
 }
 
@@ -3058,7 +3055,8 @@ function confirmPresentationOptions() {
   };
   savePresentationOptions(opts);
   closePresentationOptions();
-  runPresentationJob(target.idx, target.btn, opts);
+  if (target.scan) runPresentationScanJob(opts, target.scan);
+  else runPresentationJob(target.idx, target.btn, opts);
 }
 
 // إنشاء عرض PowerPoint بصري صوتي من الإجابة المعتمدة: يفتح نافذة الخيارات أولًا
@@ -6931,7 +6929,7 @@ function openSmartTreeModal() {
     modal.innerHTML = `
       <div class="pres-modal" role="dialog" aria-modal="true">
         <div class="pres-modal-head">
-          <span>🌳 تشجير ذكي من النتيجة</span>
+          <span>🌳 تشجير ووسائط من النتيجة</span>
           <button type="button" class="pres-modal-close" onclick="closeSmartTreeModal()" aria-label="إغلاق">✕</button>
         </div>
         <div class="pres-modal-body" id="smartTreeBody"></div>
@@ -6994,7 +6992,7 @@ function renderSmartTreeProposals(proposals) {
       <span class="smart-tree-sel-count" id="smartTreeSelCount"></span>
     </div>` + proposals.map((p, i) => `
     <label class="pres-radio-card"><input type="checkbox" name="smartTreeProposal" value="${i}"${i === 0 ? ' checked' : ''} onchange="updateSmartTreeSelState()"> <span><b>${escapeHtml(p.kind_label || 'تشجير')}: ${escapeHtml(p.title || '')}</b><small>${escapeHtml(p.desc || '')}</small></span></label>`).join('');
-  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إلغاء</button><button type="button" class="btn-msg-export" onclick="confirmSmartTreeImaged()">🎨 تشجير مصوّر</button><button type="button" class="btn-msg-export" onclick="confirmSmartTree()">🌳 تشجير نصي</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmSmartTreeBoth()">🌳🎨 نصي ومصوّر معًا</button>`;
+  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إلغاء</button><button type="button" class="btn-msg-export" onclick="confirmSmartTreeImaged()">🎨 تشجير مصوّر</button><button type="button" class="btn-msg-export" onclick="confirmSmartTree()">🌳 تشجير نصي</button><button type="button" class="btn-msg-export" onclick="confirmSmartTreeVoice()">🎙️ تعليق صوتي</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmSmartTreeSlides()">📊 إنشاء شرائح</button>`;
   updateSmartTreeSelState();
 }
 
@@ -7054,15 +7052,124 @@ function confirmSmartTreeImaged() {
   openTreeImageOptions(selected);
 }
 
-function confirmSmartTreeBoth() {
+function smartTreeProgressBubble(initialText) {
+  const session = chatSessions.find(item => item.id === activeSessionId);
+  const container = document.getElementById('chatMessagesContainer');
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble assistant';
+  bubble.innerHTML = `
+    <div class="message-avatar">مج</div>
+    <div class="message-content">
+      <span class="graph-wait-note"></span>
+    </div>`;
+  const note = bubble.querySelector('.graph-wait-note');
+  note.textContent = initialText || 'جارٍ التجهيز...';
+  if (container) {
+    container.appendChild(bubble);
+    if (typeof scrollToBottom === 'function') scrollToBottom();
+  }
+  return {
+    session,
+    set(t) { note.textContent = t; },
+    remove() { if (bubble.parentNode) bubble.remove(); },
+  };
+}
+
+async function confirmSmartTreeVoice() {
   const selected = smartTreeSelectedProposals();
   if (!selected.length) {
-    if (typeof showToast === 'function') showToast('حدّد مسألة واحدة على الأقل');
+    if (typeof showToast === 'function') showToast('حدّد مسألة واحدة على الأقل للتعليق الصوتي');
     return;
   }
   closeSmartTreeModal();
-  generateSmartTrees(selected);
-  runTreeImageJob(selected, loadTreeImageOptions());
+  const prog = smartTreeProgressBubble(`جارٍ تجهيز التعليق الصوتي على ${selected.length} ${selected.length === 1 ? 'مسألة' : 'مسائل'}: صياغة مركّزة من المسح ثم نطقها...`);
+  try {
+    const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+    const focus = selected.map((p, i) => `${i + 1}. [${p.kind_label || p.kind || 'مسألة'}] ${p.title} — ${p.desc || ''}`).join('\n');
+    const res = await fetch('/api/chat/audio-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: _smartTreeMaterial, focus, api_key: keys.openrouter || '' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.audio_url) throw new Error(data.detail || 'تعذر تجهيز التعليق الصوتي');
+    prog.remove();
+    const session = chatSessions.find(item => item.id === activeSessionId);
+    if (!session) return;
+    session.messages.push({
+      role: 'assistant',
+      content: `🎙️ تعليق صوتي على مسائل مختارة من المسح الذكي (${selected.length}):\n` + selected.map(p => `• ${p.kind_label || 'مسألة'}: ${p.title}`).join('\n'),
+      audio_summary: { url: data.audio_url, text: data.summary || '', voice: data.voice || '', title: '🎙️ تعليق صوتي — مسائل مختارة من المسح' },
+      graph_kind: 'smart:voice',
+    });
+    saveChatSessions();
+    renderSessionMessages(activeSessionId);
+  } catch (e) {
+    prog.remove();
+    if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر تجهيز التعليق الصوتي'), 8000);
+  }
+}
+
+function confirmSmartTreeSlides() {
+  const selected = smartTreeSelectedProposals();
+  if (!selected.length) {
+    if (typeof showToast === 'function') showToast('حدّد مسألة واحدة على الأقل لإنشاء الشرائح');
+    return;
+  }
+  closeSmartTreeModal();
+  openPresentationOptions(-1, null, { proposals: selected, material: _smartTreeMaterial });
+}
+
+async function runPresentationScanJob(options, scan) {
+  const prog = smartTreeProgressBubble('جارٍ بدء إنشاء الشرائح من مسائل المسح...');
+  try {
+    const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+    const res = await fetch('/api/chat/presentation/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: scan.material, proposals: scan.proposals, api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء الشرائح');
+    if (typeof showToast === 'function') showToast('⏳ بدأ إنشاء الشرائح من مسائل المسح المختارة: هيكلة دقيقة بخطة المسح ثم صورة لكل شريحة...', 7000);
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/chat/presentation/status/${data.job_id}`);
+        const st = await r.json().catch(() => ({}));
+        if (st.status === 'done') {
+          prog.remove();
+          const session = chatSessions.find(item => item.id === activeSessionId);
+          if (!session) return;
+          session.messages.push({
+            role: 'assistant',
+            content: `📊 عرض تقديمي مبني على مسائل المسح الذكي (${scan.proposals.length}):\n` + scan.proposals.map(p => `• ${p.kind_label || 'مسألة'}: ${p.title}`).join('\n'),
+            presentation: {
+              url: st.pptx_url,
+              title: st.deck_title || '',
+              slides: st.slides || 0,
+              voice: options.voiceover === false ? '' : 'Algieba',
+              created_at: new Date().toISOString(),
+            },
+            graph_kind: 'smart:slides',
+          });
+          saveChatSessions();
+          renderSessionMessages(activeSessionId);
+          if (typeof showToast === 'function') showToast('✅ اكتمل العرض التقديمي من المسح: نزّله أو شاركه من بطاقته', 6000);
+          return;
+        }
+        if (st.status === 'error' || !r.ok) throw new Error(st.message || st.detail || 'تعذر إنشاء الشرائح');
+        prog.set(st.message || 'جارٍ إنشاء الشرائح...');
+        setTimeout(poll, 3000);
+      } catch (e) {
+        prog.remove();
+        if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر إنشاء الشرائح'), 8000);
+      }
+    };
+    setTimeout(poll, 1500);
+  } catch (e) {
+    prog.remove();
+    if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر إنشاء الشرائح'), 8000);
+  }
 }
 
 // استخراج بيانات شجرة {title, nodes, links} من ردّ فيه كتلة force3d
@@ -7566,7 +7673,8 @@ window.publishTreeImage = publishTreeImage;
 window.publishSmartTreeCard = publishSmartTreeCard;
 window.smartTreeToggleAll = smartTreeToggleAll;
 window.updateSmartTreeSelState = updateSmartTreeSelState;
-window.confirmSmartTreeBoth = confirmSmartTreeBoth;
+window.confirmSmartTreeVoice = confirmSmartTreeVoice;
+window.confirmSmartTreeSlides = confirmSmartTreeSlides;
 
 window.startSmartTree = startSmartTree;
 window.closeSmartTreeModal = closeSmartTreeModal;

@@ -5296,6 +5296,7 @@ def _design_title_from_prompt(prompt: str) -> str:
 
 class AudioSummaryRequest(BaseModel):
     text: str
+    focus: Optional[str] = None
     api_key: Optional[str] = None
 
 
@@ -5430,6 +5431,13 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
         "لا عناوين، ولا تعداد ولا نجوم ولا رموز تنسيق ولا روابط ولا أقواس متكررة، وحوّل الإحالات "
         "والأرقام إلى صياغة منطوقة مفهومة، وابدأ بالمضمون مباشرة بلا مقدمات مثل «في هذا الملخص»."
     )
+    focus_text = str(req.focus or "").strip()
+    if focus_text:
+        system += (
+            " تنبيه التركيز الصارم: هذا تعليق على مسائل مختارة من مسح ذكي للمحتوى، فركّز على المسائل التالية "
+            "وحدها بترتيبها، ومرّ عليها مسألةً مسألةً: خلاصتها، وحكمها، وأهم فروعها ومواضعها كما في النص، "
+            "ولا تتوسّع في غيرها مما في النص إلا بقدر ما يخدم فهمها: " + focus_text[:2400]
+        )
     summary = ""
     last_error: Optional[Exception] = None
     for model in AUDIO_SUMMARY_MODELS:
@@ -5712,6 +5720,7 @@ async def chat_tree_analyze(req: TreeAnalyzeRequest, request: Request):
 
 class PresentationRequest(BaseModel):
     text: str
+    proposals: Optional[list] = None
     api_key: Optional[str] = None
     text_mode: Optional[str] = "editable"
     image_model: Optional[str] = "gpt"
@@ -5769,7 +5778,7 @@ def _parse_presentation_json(raw: str) -> Optional[dict]:
     return {"deck_title": str(data.get("deck_title") or slides[0]["title"]).strip()[:140], "slides": slides}
 
 
-def _structure_presentation(key: str, text: str, slide_count: int, design_mode: str = "with", explained_style: str = "photos") -> dict:
+def _structure_presentation(key: str, text: str, slide_count: int, design_mode: str = "with", explained_style: str = "photos", proposals: Optional[list] = None) -> dict:
     system = (
         "أنت مصمّم عروض تقديمية أكاديمية. حوّل الإجابة العلمية المُعطاة إلى هيكل عرض تقديمي مركّز "
         f"من {slide_count} شرائح بالضبط، وأعد JSON فقط دون أي شرح أو أسوار كود، بهذا الشكل: "
@@ -5781,6 +5790,19 @@ def _structure_presentation(key: str, text: str, slide_count: int, design_mode: 
         "يشرح نقاط الشريحة، بلا رموز ولا تعداد ولا عناوين. وimage_prompt وصف بصري إنجليزي لمشهد يعبّر عن مضمون الشريحة "
         "(مكتبة تراثية، مخطوطات، عمارة إسلامية، طبيعة...) دون أي نص أو حروف في الصورة."
     )
+    if proposals:
+        plan = "\n".join(
+            f"- [{p.get('kind_label') or p.get('kind')}] {p.get('title')}: {p.get('desc')} (البنية: {p.get('hint')})"
+            for p in proposals if isinstance(p, dict) and str(p.get("title") or "").strip()
+        )
+        if plan:
+            system += (
+                " خطة إلزامية من مسح ذكي للمحتوى (وهي أدق من إعادة التحليل الحر، فالتزم بها): بعد شريحة العنوان، "
+                "خصّص لكل مسألة من المسائل التالية شريحة بعنوانها نفسه «نوعها: عنوانها»، نقاطها من عناصرها المذكورة "
+                "ومن أحكام فروعها ومواضعها كما في النص حرفيًا دون إسقاط حكم أو موضع، وتعليقها الصوتي يشرح تلك "
+                "الفروع وأحكامها؛ وإن زاد عدد المسائل على الشرائح المتاحة فادمج الأقرب موضوعًا في شريحة واحدة دون "
+                "حذف أي حكم، وإن قلّ فوسّع المسألة الواحدة على شريحتين بتفريعاتها. المسائل:\n" + plan
+            )
     if design_mode == "explained":
         visual_clause = (
             "وصورة فوتوغرافية حقيقية مصغرة داخل كل عقدة توضح العنصر"
@@ -6081,13 +6103,13 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
     prs.save(str(out_path))
 
 
-async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str, options: Optional[dict] = None) -> None:
+async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str, options: Optional[dict] = None, proposals: Optional[list] = None) -> None:
     job = PRESENTATION_JOBS[job_id]
     options = options or _normalize_presentation_options(PresentationRequest(text=text))
     try:
         job.update(stage="structuring", message="جارٍ هيكلة الشرائح من الإجابة...")
         slide_count = options.get("slide_count") or _presentation_slide_count(len(text))
-        deck = await asyncio.to_thread(_structure_presentation, key, text, slide_count, options["design_mode"], options.get("explained_style", "photos"))
+        deck = await asyncio.to_thread(_structure_presentation, key, text, slide_count, options["design_mode"], options.get("explained_style", "photos"), proposals)
         slides = deck["slides"]
         folder_name = f"deck-{int(time.time())}"
         folder = UPLOADS_BUCKET_DIR / owner_id / "presentations" / folder_name
@@ -6157,7 +6179,19 @@ async def presentation_start(req: PresentationRequest, request: Request):
         "status": "running", "stage": "queued", "done": 0, "total": 0,
         "message": "جارٍ بدء إنشاء العرض...", "owner": owner_id, "created": time.time(),
     }
-    asyncio.create_task(_run_presentation_job(job_id, owner_id, key, text, _normalize_presentation_options(req)))
+    proposals = []
+    for p in req.proposals if isinstance(req.proposals, list) else []:
+        if not isinstance(p, dict) or not str(p.get("title") or "").strip():
+            continue
+        proposals.append({
+            "kind": str(p.get("kind") or "")[:30],
+            "kind_label": str(p.get("kind_label") or "")[:60],
+            "title": str(p.get("title") or "")[:120],
+            "desc": str(p.get("desc") or "")[:300],
+            "root": str(p.get("root") or p.get("title") or "")[:120],
+            "hint": str(p.get("hint") or "")[:400],
+        })
+    asyncio.create_task(_run_presentation_job(job_id, owner_id, key, text, _normalize_presentation_options(req), proposals[:8] or None))
     return {"ok": True, "job_id": job_id}
 
 
@@ -7182,7 +7216,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.441"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.443"},
         },
     })
     if opened.get("error"):
