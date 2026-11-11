@@ -2209,6 +2209,23 @@ function renderSessionMessages(sessionId, options) {
       </div>
     ` : '';
 
+    // بطاقة البودكاست الحواري: محمد المقدّم يستضيف إبراهيم المجيب — مشغّل وتنزيل ومشاركة ونص الحوار بالأدوار
+    const podcastHtml = (!isUser && msg.podcast && msg.podcast.url) ? `
+      <div class="chat-audio-summary chat-podcast">
+        <div class="chat-audio-summary-head">
+          <span>🎙️ بودكاست حواري${msg.podcast.title ? ` — ${escapeHtml(msg.podcast.title)}` : ''}</span>
+          <span class="chat-audio-voice">محمد (المقدّم) × إبراهيم (الضيف)</span>
+        </div>
+        <audio controls preload="metadata" src="${escapeHtml(msg.podcast.url)}"></audio>
+        <div class="chat-audio-summary-actions">
+          <a class="btn-msg-export" href="${escapeHtml(msg.podcast.url)}" download="بودكاست-حواري-المجتهد.${escapeHtml(String(msg.podcast.url).split('.').pop() || 'mp3')}" title="تنزيل ملف البودكاست">⬇️ تنزيل</a>
+          <button type="button" class="btn-msg-export" onclick="sharePodcast(${idx})" title="مشاركة ملف البودكاست">🔗 مشاركة</button>
+          ${Array.isArray(msg.podcast.script) && msg.podcast.script.length ? `<button type="button" class="btn-msg-export" onclick="togglePodcastText(${idx}, this)" title="عرض نص الحوار بالأدوار أو إخفاؤه">📝 نص الحوار</button>` : ''}
+        </div>
+        ${Array.isArray(msg.podcast.script) && msg.podcast.script.length ? `<div class="chat-audio-summary-text" id="podcastText${idx}" hidden>${msg.podcast.script.map(turn => `<div class="podcast-line"><b class="${turn.speaker === 'محمد' ? 'podcast-host' : 'podcast-guest'}">${escapeHtml(turn.speaker)} (${escapeHtml(turn.role || '')}):</b> ${escapeHtml(turn.text)}</div>`).join('')}</div>` : ''}
+      </div>
+    ` : '';
+
     // بطاقة العرض التقديمي الجاهز: تنزيل ومشاركة لملف PowerPoint بصري صوتي
     const presentationHtml = (!isUser && msg.presentation && msg.presentation.url) ? `
       <div class="chat-audio-summary chat-presentation">
@@ -2236,6 +2253,9 @@ function renderSessionMessages(sessionId, options) {
         </button>` : ''}
         ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="generateAudioSummary(${idx}, this)" title="اختصار هذه الإجابة المعتمدة بنموذج Gemini 3.8 Flash اختصارًا دقيقًا غير مخلّ، ثم تحويلها إلى ملف صوتي بصوت Algieba يُرفق بجانب زمن الإجابة لتسمعه وتنزّله وتشاركه">
           🔊 ملخص صوتي
+        </button>` : ''}
+        ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="generatePodcast(${idx}, this)" title="تحويل هذه الإجابة المعتمدة إلى بودكاست حواري: محمد المقدّم (Iapetus) يحاور إبراهيم الضيف المجيب (Algieba)، يفتتح بالحمد والصلاة على النبي ﷺ والتعريف والترحيب، ويختم بالشكر وتوديع المستمعين">
+          🎙️ بودكاست حواري
         </button>` : ''}
         <button type="button" class="btn-msg-export" onclick="copyChatMessageText(${idx})" title="نسخ نص الإجابة كاملاً">
           📋 نسخ
@@ -2304,6 +2324,7 @@ function renderSessionMessages(sessionId, options) {
           ${chatWitnessesHtml(msg, idx)}
           ${tagsHtml}
           ${audioSummaryHtml}
+          ${podcastHtml}
           ${presentationHtml}
           ${typeof smartTreesHtml === 'function' ? smartTreesHtml(msg, idx) : ''}
           ${typeof treeImagesHtml === 'function' ? treeImagesHtml(msg, idx) : ''}
@@ -2876,6 +2897,76 @@ function toggleAudioSummaryText(idx, btn) {
   if (!el) return;
   el.hidden = !el.hidden;
   if (btn) btn.textContent = el.hidden ? '📝 نص الملخص' : '📝 إخفاء النص';
+}
+
+// بودكاست حواري من الإجابة المعتمدة: محمد المقدّم (Iapetus) يحاور إبراهيم المجيب (Algieba)
+async function generatePodcast(idx, btn) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  if (!msg) return;
+  if (msg.podcast && msg.podcast.url && !confirm('يوجد بودكاست حواري جاهز لهذه الإجابة. هل تريد إعادة توليده من جديد؟')) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ جارٍ تجهيز البودكاست...'; }
+  showToast('⏳ جارٍ تجهيز البودكاست الحواري: صياغة حوار محمد وإبراهيم ثم نطق كل دور بصوته، قد يستغرق بضع دقائق للبحوث الطويلة...', 8000);
+  try {
+    const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+    const res = await fetch('/api/chat/podcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.audio_url) throw new Error(data.detail || 'تعذر تجهيز البودكاست');
+    msg.podcast = {
+      url: data.audio_url,
+      title: data.title || '',
+      script: Array.isArray(data.script) ? data.script : [],
+      voices: data.voices || {},
+      created_at: new Date().toISOString(),
+    };
+    saveChatSessions();
+    renderSessionMessages(activeSessionId, { keepPosition: true });
+    showToast('✅ جهز البودكاست الحواري: استمع إليه أو نزّله أو شاركه من بطاقته بجانب الإجابة');
+  } catch (e) {
+    showToast('❌ ' + (e.message || 'تعذر تجهيز البودكاست'), 8000);
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+}
+
+async function sharePodcast(idx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  const info = msg && msg.podcast;
+  if (!info || !info.url) return;
+  const absolute = new URL(info.url, window.location.origin).href;
+  try {
+    const resp = await fetch(info.url);
+    if (resp.ok) {
+      const blob = await resp.blob();
+      const ext = (String(info.url).split('.').pop() || 'mp3').toLowerCase();
+      const file = new File([blob], `بودكاست-حواري-المجتهد.${ext}`, { type: blob.type || (ext === 'mp3' ? 'audio/mpeg' : 'audio/wav') });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'بودكاست حواري — المجتهد' });
+        return;
+      }
+    }
+  } catch (e) { /* تُجرَّب مشاركة الرابط بعدها */ }
+  if (navigator.share) {
+    try { await navigator.share({ title: 'بودكاست حواري — المجتهد', url: absolute }); return; } catch (e) { /* تُنسخ بعدها */ }
+  }
+  try {
+    await navigator.clipboard.writeText(absolute);
+    showToast('نُسخ رابط البودكاست — الصقه أين تشاء لمشاركته 🔗');
+  } catch (e) {
+    showToast('تعذرت المشاركة تلقائيًا؛ نزّل الملف ثم شاركه يدويًا', 5000);
+  }
+}
+
+function togglePodcastText(idx, btn) {
+  const el = document.getElementById(`podcastText${idx}`);
+  if (!el) return;
+  el.hidden = !el.hidden;
+  if (btn) btn.textContent = el.hidden ? '📝 نص الحوار' : '📝 إخفاء النص';
 }
 
 // خيارات العرض التقديمي: محفوظة، وتُبذر أول مرة من خيارات التصاميم (نموذج الصورة والألوان)

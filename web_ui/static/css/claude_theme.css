@@ -11066,6 +11066,10 @@ body::-webkit-scrollbar,
 .tree-img-zoom-head .pres-modal-close { color: #fff; }
 .tree-img-zoom-box img { max-width: 94vw; max-height: 86vh; border-radius: 12px; box-shadow: 0 24px 70px rgba(0,0,0,0.6); }
 .tree-img-zoom-actions { display: inline-flex; align-items: center; gap: 8px; }
+.podcast-line { margin: 0 0 8px; line-height: 1.9; }
+.podcast-line:last-child { margin-bottom: 0; }
+.podcast-host { color: var(--accent-clay, #b4552d); }
+.podcast-guest { color: #2e7d5b; }
 .smart-tree-select-row { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
 .smart-tree-sel-count { font-size: 12px; opacity: 0.75; }
 @media (max-width: 700px) { .smart-trees-grid { grid-template-columns: minmax(0, 1fr); } }

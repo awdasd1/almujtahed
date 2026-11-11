@@ -5359,15 +5359,15 @@ def _pcm16_to_mp3(pcm: bytes, sample_rate: int = 24000, bit_rate: int = 64) -> O
         return None
 
 
-def _openrouter_tts(key: str, text: str, with_instructions: bool) -> bytes:
+def _openrouter_tts(key: str, text: str, with_instructions: bool, voice: Optional[str] = None, instructions: Optional[str] = None) -> bytes:
     payload = {
         "model": AUDIO_TTS_MODEL,
         "input": text,
-        "voice": AUDIO_TTS_VOICE,
+        "voice": voice or AUDIO_TTS_VOICE,
         "response_format": "pcm",
     }
     if with_instructions:
-        payload["instructions"] = "Read aloud in clear formal Arabic (Fusha), with a calm, measured and warm scholarly delivery, pausing naturally at sentence ends."
+        payload["instructions"] = instructions or "Read aloud in clear formal Arabic (Fusha), with a calm, measured and warm scholarly delivery, pausing naturally at sentence ends."
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/audio/speech",
         headers={
@@ -5516,6 +5516,135 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
         "audio_url": f"/uploads/{owner_id}/audio/{filename}",
         "summary": summary,
         "voice": AUDIO_TTS_VOICE,
+        "tts_model": AUDIO_TTS_MODEL,
+    }
+
+
+# ===== البودكاست الحواري: محمد المقدّم (Iapetus) يستضيف إبراهيم المجيب (Algieba) =====
+
+class PodcastRequest(BaseModel):
+    text: str
+    api_key: Optional[str] = None
+
+
+PODCAST_VOICES = {"m": "Iapetus", "i": "Algieba"}
+PODCAST_INSTRUCTIONS = {
+    "m": "Read aloud in clear formal Arabic (Fusha) as a warm, engaging podcast host: confident, welcoming, measured pace with natural pauses and lively but dignified intonation.",
+    "i": "Read aloud in clear formal Arabic (Fusha) as a calm scholarly guest: measured, warm and authoritative delivery, pausing naturally at sentence ends.",
+}
+
+
+def _podcast_script(key: str, text: str) -> dict:
+    """صياغة سيناريو بودكاست حواري (محمد × إبراهيم) من الإجابة وحدها، بافتتاحية وختام ثابتين."""
+    src_len = len(text)
+    if src_len <= 1600:
+        lo, hi = max(500, int(src_len * 0.6)), max(700, int(src_len * 0.95))
+    else:
+        target = int(src_len * 0.35)
+        hi = min(36000, max(1600, int(target * 1.15)))
+        lo = min(max(1200, int(target * 0.8)), int(hi * 0.75))
+    system = (
+        "أنت كاتب بودكاست حواري علمي رصين. حوّل النص العلمي المُعطى إلى حلقة بودكاست حوارية بين شخصيتين ثابتتين: "
+        "«محمد» وهو المقدّم المحاور دائمًا (يفتتح ويسأل ويربط ويختم)، و«إبراهيم» وهو الضيف المجيب دائمًا (يشرح ويجيب). "
+        "أعد JSON فقط دون أي شرح أو أسوار كود، بهذا الشكل: "
+        '{"title": "عنوان الحلقة", "turns": [{"s": "m", "t": "نص الدور"}, {"s": "i", "t": "نص الدور"}]} '
+        "حيث s تساوي m لمحمد وi لإبراهيم.\n"
+        "بنية الحلقة إلزامية لا تتغير:\n"
+        "١) الافتتاحية (دور أول لمحمد حتمًا): يبدأ بحمد الله والثناء عليه ثم الصلاة والسلام على النبي محمد صلى الله "
+        "عليه وسلم بصياغة موجزة لائقة، ثم يعرّف بموضوع الحلقة تعريفًا مشوّقًا موجزًا، ثم يرحّب بضيفه إبراهيم بالاسم.\n"
+        "٢) يردّ إبراهيم التحية ويشكر المقدّم والمستمعين بعبارة وجيزة.\n"
+        "٣) الحوار: محمد يطرح أسئلة قصيرة ذكية متدرجة (من التعريف والتأصيل إلى الفروع والأحكام والأدلة ومواضع "
+        "الخلاف والترجيح والتطبيقات)، وإبراهيم يجيب إجابات وافية أمينة من النص المُعطى وحده دون أي إضافة من خارجه "
+        "ودون اختراع أقوال أو مصادر؛ يتدخل محمد بين الأجوبة الطويلة بأسئلة رابطة قصيرة («وماذا عن...؟»، «هل يتفرع "
+        "عن هذا...؟») فيبدو الحوار حيًّا طبيعيًا لا محاضرة مقسّمة.\n"
+        "٤) الختام (دور أخير لمحمد حتمًا): يشكر إبراهيم على إفادته، ويلخّص في جملتين أهم ما دار، ثم يحيّي المستمعين "
+        "ويشكرهم على حسن الإصغاء ويودّعهم إلى لقاء آخر قريب بإذن الله.\n"
+        f"ليكن مجموع حروف الأدوار بين {lo} و{hi} حرف تقريبًا موزعة على أدوار متعاقبة (سؤال ثم جواب غالبًا)، "
+        "كل دور فقرة منطوقة متصلة بلا عناوين ولا تعداد ولا رموز تنسيق ولا أقواس إحالات، تناسب النطق المباشر، "
+        "وبالعربية الفصحى السليمة، واختم كل دور بجملة تامة."
+    )
+    last_error: Optional[Exception] = None
+    for model in AUDIO_SUMMARY_MODELS:
+        try:
+            raw = _openrouter_chat_text(key, model, system, text[:160000], 600, 32768)
+            parsed = _parse_loose_json(raw)
+            turns = []
+            for item in (parsed.get("turns") if isinstance(parsed, dict) else []) or []:
+                if not isinstance(item, dict):
+                    continue
+                s = "m" if str(item.get("s") or "").lower().startswith("m") else "i"
+                t = re.sub(r"\s+", " ", str(item.get("t") or "")).strip()
+                if t:
+                    turns.append({"s": s, "t": t[:2400]})
+            if len(turns) >= 6 and turns[0]["s"] == "m":
+                return {"title": str(parsed.get("title") or "حلقة بودكاست").strip()[:140], "turns": turns[:40]}
+            last_error = RuntimeError("سيناريو بودكاست غير صالح")
+        except Exception as error:
+            last_error = error
+    raise RuntimeError(f"تعذر صياغة سيناريو البودكاست: {last_error}")
+
+
+@app.post("/api/chat/podcast")
+async def chat_podcast(req: PodcastRequest, request: Request):
+    """بودكاست حواري من الإجابة المعتمدة: سيناريو محمد × إبراهيم ثم نطق كل دور بصوت شخصيته."""
+    text = (req.text or "").strip()
+    if len(text) < 120:
+        raise HTTPException(status_code=400, detail="الإجابة قصيرة جدًا لعمل بودكاست حواري")
+    key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        script = await asyncio.to_thread(_podcast_script, key, text)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=str(error))
+    # مهام النطق: كل دور بصوت شخصيته وتعليمات أدائها، مقطّعًا على حدود الجمل عند الطول
+    synth_jobs: list = []
+    for turn in script["turns"]:
+        for chunk in _split_tts_chunks(turn["t"]):
+            synth_jobs.append((PODCAST_VOICES[turn["s"]], PODCAST_INSTRUCTIONS[turn["s"]], chunk))
+
+    async def _synth(voice: str, instructions: str, chunk_text: str, with_instructions: bool) -> bytes:
+        return await asyncio.to_thread(_openrouter_tts, key, chunk_text, with_instructions, voice, instructions)
+
+    parts: list = []
+    tts_error: Optional[Exception] = None
+    for with_instructions in (True, False):
+        try:
+            parts = []
+            for start in range(0, len(synth_jobs), 6):
+                batch = synth_jobs[start:start + 6]
+                parts.extend(await asyncio.gather(*[_synth(v, ins, c, with_instructions) for v, ins, c in batch]))
+            if parts and all(parts):
+                break
+        except urllib.error.HTTPError as error:
+            if error.code == 402:
+                raise HTTPException(status_code=402, detail="رصيد OpenRouter غير كافٍ لتوليد البودكاست؛ اشحن رصيد حسابك ثم أعد المحاولة")
+            tts_error = RuntimeError(f"رفض نموذج الصوت الطلب ({error.code})")
+            parts = []
+        except Exception as error:
+            tts_error = error
+            parts = []
+    if not parts:
+        raise HTTPException(status_code=502, detail=f"تعذر توليد صوت البودكاست: {tts_error}")
+    if all(p[:3] == b"ID3" or p[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2") for p in parts):
+        blob, ext = b"".join(parts), "mp3"
+    else:
+        pcm = b"".join(p[44:] if p[:4] == b"RIFF" else p for p in parts)
+        blob, ext = _audio_blob_from_raw(pcm)
+    owner_id = current_owner_id(request)
+    audio_dir = UPLOADS_BUCKET_DIR / owner_id / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"podcast-{int(time.time())}.{ext}"
+    (audio_dir / filename).write_bytes(blob)
+    return {
+        "ok": True,
+        "audio_url": f"/uploads/{owner_id}/audio/{filename}",
+        "title": script["title"],
+        "script": [
+            {"speaker": "محمد" if t["s"] == "m" else "إبراهيم", "role": "المقدّم" if t["s"] == "m" else "الضيف", "text": t["t"]}
+            for t in script["turns"]
+        ],
+        "voices": {"muhammad": PODCAST_VOICES["m"], "ibrahim": PODCAST_VOICES["i"]},
         "tts_model": AUDIO_TTS_MODEL,
     }
 
@@ -7216,7 +7345,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.443"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.444"},
         },
     })
     if opened.get("error"):
