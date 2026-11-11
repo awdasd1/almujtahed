@@ -11065,4 +11065,7 @@ body::-webkit-scrollbar,
 .tree-img-zoom-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #fff; font-weight: 700; font-size: 14px; }
 .tree-img-zoom-head .pres-modal-close { color: #fff; }
 .tree-img-zoom-box img { max-width: 94vw; max-height: 86vh; border-radius: 12px; box-shadow: 0 24px 70px rgba(0,0,0,0.6); }
+.tree-img-zoom-actions { display: inline-flex; align-items: center; gap: 8px; }
+.smart-tree-select-row { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
+.smart-tree-sel-count { font-size: 12px; opacity: 0.75; }
 @media (max-width: 700px) { .smart-trees-grid { grid-template-columns: minmax(0, 1fr); } }

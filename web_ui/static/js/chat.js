@@ -6988,9 +6988,34 @@ function renderSmartTreeProposals(proposals) {
     }
     return;
   }
-  body.innerHTML = `<div class="pres-opt-label">وجد النموذج في النتيجة ما يمكن تشجيره — حدّد مسألة أو أكثر</div>` + proposals.map((p, i) => `
-    <label class="pres-radio-card"><input type="checkbox" name="smartTreeProposal" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>${escapeHtml(p.kind_label || 'تشجير')}: ${escapeHtml(p.title || '')}</b><small>${escapeHtml(p.desc || '')}</small></span></label>`).join('');
-  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إلغاء</button><button type="button" class="btn-msg-export" onclick="confirmSmartTreeImaged()">🎨 تشجير مصوّر</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmSmartTree()">🌳 تشجير نصي</button>`;
+  body.innerHTML = `<div class="pres-opt-label">وجد النموذج في النتيجة ما يمكن تشجيره — حدّد مسألة أو أكثر</div>
+    <div class="smart-tree-select-row">
+      <button type="button" class="btn-msg-export" id="smartTreeSelectAllBtn" onclick="smartTreeToggleAll()">☑ تحديد الكل</button>
+      <span class="smart-tree-sel-count" id="smartTreeSelCount"></span>
+    </div>` + proposals.map((p, i) => `
+    <label class="pres-radio-card"><input type="checkbox" name="smartTreeProposal" value="${i}"${i === 0 ? ' checked' : ''} onchange="updateSmartTreeSelState()"> <span><b>${escapeHtml(p.kind_label || 'تشجير')}: ${escapeHtml(p.title || '')}</b><small>${escapeHtml(p.desc || '')}</small></span></label>`).join('');
+  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeSmartTreeModal()">إلغاء</button><button type="button" class="btn-msg-export" onclick="confirmSmartTreeImaged()">🎨 تشجير مصوّر</button><button type="button" class="btn-msg-export" onclick="confirmSmartTree()">🌳 تشجير نصي</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmSmartTreeBoth()">🌳🎨 نصي ومصوّر معًا</button>`;
+  updateSmartTreeSelState();
+}
+
+function smartTreeToggleAll() {
+  const modal = document.getElementById('smartTreeModal');
+  if (!modal) return;
+  const boxes = [...modal.querySelectorAll('input[name="smartTreeProposal"]')];
+  const allChecked = boxes.length > 0 && boxes.every(b => b.checked);
+  boxes.forEach(b => { b.checked = !allChecked; });
+  updateSmartTreeSelState();
+}
+
+function updateSmartTreeSelState() {
+  const modal = document.getElementById('smartTreeModal');
+  if (!modal) return;
+  const boxes = [...modal.querySelectorAll('input[name="smartTreeProposal"]')];
+  const checked = boxes.filter(b => b.checked).length;
+  const btn = document.getElementById('smartTreeSelectAllBtn');
+  if (btn) btn.textContent = (boxes.length && checked === boxes.length) ? '☐ إلغاء تحديد الكل' : '☑ تحديد الكل';
+  const count = document.getElementById('smartTreeSelCount');
+  if (count) count.textContent = boxes.length ? `المحدّد: ${checked} من ${boxes.length}` : '';
 }
 
 function renderSmartTreeFallback(message) {
@@ -7027,6 +7052,17 @@ function confirmSmartTreeImaged() {
   }
   closeSmartTreeModal();
   openTreeImageOptions(selected);
+}
+
+function confirmSmartTreeBoth() {
+  const selected = smartTreeSelectedProposals();
+  if (!selected.length) {
+    if (typeof showToast === 'function') showToast('حدّد مسألة واحدة على الأقل');
+    return;
+  }
+  closeSmartTreeModal();
+  generateSmartTrees(selected);
+  runTreeImageJob(selected, loadTreeImageOptions());
 }
 
 // استخراج بيانات شجرة {title, nodes, links} من ردّ فيه كتلة force3d
@@ -7160,6 +7196,7 @@ function mountSmartTreeCards(container, session) {
             <button type="button" class="btn-chart-type" data-force3d-lib="cytoscape" style="background:var(--accent-clay);color:#fff">تشجير</button>
             <button type="button" class="btn-chart-type" data-force3d-lib="g6">تشجير مفرغ</button>
             <button type="button" class="btn-chart-type" data-force3d-share="1" title="مشاركة"><span>مشاركة</span></button>
+            <button type="button" class="btn-chart-type" onclick="publishSmartTreeCard(this)" title="نشر لقطة هذا المشجّر في مواقع التواصل">📤 نشر</button>
             <label class="force3d-example-label">
               <span>المثال</span>
               <select data-force3d-example dir="rtl">${force3dExampleOptions('tree')}</select>
@@ -7410,6 +7447,8 @@ function treeImagesHtml(msg, idx) {
     </div>`).join('')}</div>`;
 }
 
+let _treeZoomImage = { url: '', title: '' };
+
 function zoomTreeImage(url, el) {
   let overlay = document.getElementById('treeImageZoomOverlay');
   if (!overlay) {
@@ -7420,7 +7459,12 @@ function zoomTreeImage(url, el) {
       <div class="tree-img-zoom-box">
         <div class="tree-img-zoom-head">
           <span id="treeImageZoomTitle"></span>
-          <button type="button" class="pres-modal-close" onclick="closeTreeImageZoom()" aria-label="إغلاق">✕</button>
+          <span class="tree-img-zoom-actions">
+            <button type="button" class="btn-msg-export" onclick="shareTreeImage()">🔗 مشاركة</button>
+            <button type="button" class="btn-msg-export" onclick="downloadTreeImage()">⬇ تحميل</button>
+            <button type="button" class="btn-msg-export" onclick="publishTreeImage()">📤 نشر</button>
+            <button type="button" class="pres-modal-close" onclick="closeTreeImageZoom()" aria-label="إغلاق">✕</button>
+          </span>
         </div>
         <img id="treeImageZoomImg" alt="مشجّر مصوّر مكبّر">
       </div>`;
@@ -7428,11 +7472,83 @@ function zoomTreeImage(url, el) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) closeTreeImageZoom(); });
   }
   const card = el ? el.closest('.smart-tree-card') : null;
+  const title = card ? (card.querySelector('.smart-tree-card-title')?.textContent || '').trim() : '';
+  _treeZoomImage = { url: url || '', title };
   const titleEl = document.getElementById('treeImageZoomTitle');
-  if (titleEl) titleEl.textContent = card ? (card.querySelector('.smart-tree-card-title')?.textContent || '') : '';
+  if (titleEl) titleEl.textContent = title;
   const img = document.getElementById('treeImageZoomImg');
   if (img) img.src = url;
   overlay.hidden = false;
+}
+
+async function shareTreeImage() {
+  const { url, title } = _treeZoomImage;
+  if (!url) return;
+  try {
+    const blob = await (await fetch(url)).blob();
+    const file = new File([blob], 'مشجر-مصور.png', { type: blob.type || 'image/png' });
+    if (typeof navigator.share === 'function' && (typeof navigator.canShare !== 'function' || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ files: [file], title: title || 'مشجّر مصوّر' });
+      return;
+    }
+    throw new Error('no-share');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    try {
+      await navigator.clipboard.writeText(new URL(url, location.href).href);
+      if (typeof showToast === 'function') showToast('نُسخ رابط الصورة — الصقه حيث تريد مشاركته');
+    } catch (_) {
+      downloadTreeImage();
+    }
+  }
+}
+
+function downloadTreeImage() {
+  const { url, title } = _treeZoomImage;
+  if (!url) return;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (title || 'مشجر-مصور').replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 80) + '.jpg';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function publishTreeImage() {
+  const { url, title } = _treeZoomImage;
+  if (!url) return;
+  closeTreeImageZoom();
+  if (typeof window.openDesignImagePublish === 'function') window.openDesignImagePublish(url, title || '');
+  else if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
+}
+
+async function publishSmartTreeCard(btn) {
+  const wrapper = btn ? btn.closest('.force3d-render-wrapper') : null;
+  if (!wrapper) return;
+  if (typeof captureForce3dImage !== 'function') {
+    if (typeof showToast === 'function') showToast('أداة اللقطة غير جاهزة — حدّث الصفحة');
+    return;
+  }
+  const title = (wrapper.querySelector('.isnad-render-title')?.textContent || 'مشجّر').trim();
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ تجهيز…';
+  try {
+    const blob = await captureForce3dImage(wrapper);
+    if (!blob || blob.size < 80) throw new Error('تعذر التقاط صورة المشجّر');
+    const fd = new FormData();
+    fd.append('file', blob, 'tree.png');
+    const res = await fetch('/api/chat/upload', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.file_url) throw new Error(data.error || 'تعذر رفع لقطة المشجّر');
+    if (typeof window.openDesignImagePublish === 'function') window.openDesignImagePublish(data.file_url, title);
+    else if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر تجهيز النشر'), 7000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
 }
 
 function closeTreeImageZoom() {
@@ -7444,6 +7560,13 @@ window.closeTreeImageOptions = closeTreeImageOptions;
 window.confirmTreeImageOptions = confirmTreeImageOptions;
 window.zoomTreeImage = zoomTreeImage;
 window.closeTreeImageZoom = closeTreeImageZoom;
+window.shareTreeImage = shareTreeImage;
+window.downloadTreeImage = downloadTreeImage;
+window.publishTreeImage = publishTreeImage;
+window.publishSmartTreeCard = publishSmartTreeCard;
+window.smartTreeToggleAll = smartTreeToggleAll;
+window.updateSmartTreeSelState = updateSmartTreeSelState;
+window.confirmSmartTreeBoth = confirmSmartTreeBoth;
 
 window.startSmartTree = startSmartTree;
 window.closeSmartTreeModal = closeSmartTreeModal;

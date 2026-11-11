@@ -940,6 +940,7 @@ const DESIGN_PUBLISH_ACCOUNTS_KEY = 'almujtahed_designs_accounts_v1';
 const DESIGN_PUBLISH_PROVIDER_KEY = 'almujtahed_designs_provider_v1';
 let designPublishIdx = -1;
 let designPublishTextJob = null;
+let designPublishImageJob = null;
 
 function designPublishProvider() {
   return document.querySelector('input[name="designPublishProvider"]:checked')?.value
@@ -1085,6 +1086,7 @@ async function openDesignPublish(idx) {
   if (!msg || !msg.image_url) return;
   ensureDesignPublishWired();
   designPublishTextJob = null;
+  designPublishImageJob = null;
   designPublishIdx = idx;
   const overlay = document.getElementById('designPublishOverlay');
   if (!overlay) return;
@@ -1111,6 +1113,7 @@ async function openDesignPublish(idx) {
 function openDesignTextPublish(text, cb) {
   ensureDesignPublishWired();
   designPublishTextJob = { text: String(text || ''), cb: typeof cb === 'function' ? cb : null };
+  designPublishImageJob = null;
   designPublishIdx = -1;
   const overlay = document.getElementById('designPublishOverlay');
   if (!overlay) return;
@@ -1134,10 +1137,39 @@ function openDesignTextPublish(text, cb) {
   refreshDesignPublishTargets();
 }
 
+function openDesignImagePublish(imageUrl, captionText, cb) {
+  if (!imageUrl) return;
+  ensureDesignPublishWired();
+  designPublishTextJob = null;
+  designPublishImageJob = { image_url: String(imageUrl), cb: typeof cb === 'function' ? cb : null };
+  designPublishIdx = -1;
+  const overlay = document.getElementById('designPublishOverlay');
+  if (!overlay) return;
+  const imgEl = document.getElementById('designPublishImg');
+  imgEl.style.display = '';
+  imgEl.src = designPublishImageJob.image_url;
+  document.getElementById('designPublishCaption').value = String(captionText || '');
+  document.getElementById('designPublishSubmit').textContent = '📤 نشر التصميم';
+  const savedProvider = localStorage.getItem(DESIGN_PUBLISH_PROVIDER_KEY) || 'zernio';
+  document.querySelectorAll('input[name="designPublishProvider"]').forEach(radio => {
+    radio.checked = radio.value === savedProvider;
+  });
+  const result = document.getElementById('designPublishResult');
+  result.hidden = true;
+  result.textContent = '';
+  overlay.hidden = false;
+  const isSchedule = document.querySelector('input[name="designPublishWhen"]:checked')?.value === 'schedule';
+  const panel = document.getElementById('designPublishSchedulePanel');
+  if (panel) panel.hidden = !isSchedule;
+  if (isSchedule) { ensureDesignScheduleDefaults(); refreshDesignPortalSync(); }
+  refreshDesignPublishTargets();
+}
+
 async function submitDesignPublish() {
   const textJob = designPublishTextJob;
-  const msg = textJob ? null : designMessages[designPublishIdx];
-  if (!textJob && !msg) return;
+  const imageJob = designPublishImageJob;
+  const msg = (textJob || imageJob) ? null : designMessages[designPublishIdx];
+  if (!textJob && !imageJob && !msg) return;
   const provider = designPublishProvider();
   const caption = document.getElementById('designPublishCaption').value;
   const checked = [...document.querySelectorAll('#designPublishPlatforms input[type="checkbox"]:checked')];
@@ -1167,7 +1199,7 @@ async function submitDesignPublish() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(textJob
         ? { text_only: true, image_url: '', caption, platforms, provider, account_ids: accountIds, schedule }
-        : { image_url: msg.image_url, caption, platforms, provider, account_ids: accountIds, schedule })
+        : { image_url: imageJob ? imageJob.image_url : msg.image_url, caption, platforms, provider, account_ids: accountIds, schedule })
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.detail || 'تعذر النشر');
@@ -1202,6 +1234,8 @@ async function submitDesignPublish() {
     }
     if (textJob) {
       if (textJob.cb) textJob.cb(publishObj);
+    } else if (imageJob) {
+      if (imageJob.cb) imageJob.cb(publishObj);
     } else if (msg) {
       msg.publish = publishObj;
       saveDesignMessages();
@@ -1470,6 +1504,7 @@ function initDesignsTab() {
 window.initDesignsTab = initDesignsTab;
 window.submitDesignIdea = submitDesignIdea;
 window.openDesignTextPublish = openDesignTextPublish;
+window.openDesignImagePublish = openDesignImagePublish;
 
 // نافذة النشر مشتركة بين تبويبَي «نشر» و«المحادثات» (نشر التعليق المختصر) —
 // تُنقل إلى جذر الصفحة حتى لا يحجبها أي تبويب أو قسم مخفي
