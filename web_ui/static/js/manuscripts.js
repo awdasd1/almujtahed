@@ -5,11 +5,14 @@
 // =============================================================================
 let msProjects = [];
 let msModels = { primary: '', checker: '' };
-// قياس م٠ الموسع (اللوحة السودانية): Gemini 2.5 Pro أقدر الخطوط الصعبة،
-// وQwen3-VL ثانيه بجزء يسير من كلفته؛ والقياسي أسرع وأرخص للخطوط المعتادة.
+// قياسات م٠ الموسعة (مغربية وسودانية): Gemini 3.1 Pro الأقوى قراءة للخطوط
+// الصعبة، وSonnet 5.5 دقيق وصادق حيث يشك فيصلح مدققًا وثانيًا، وMuse Wonder
+// رُفض (الأغلى والأخلط حرفيًا)، و2.5 Pro انهار في تشغيل (تسرّب تفكير) فلا يعتمد وحده.
 const MS_MODEL_CHOICES = [
+  ['google/gemini-3.1-pro-preview', 'Gemini 3.1 Pro — الأقوى قراءة للخطوط الصعبة (غالٍ بطيء)'],
+  ['anthropic/claude-sonnet-5.5', 'Claude Sonnet 5.5 — دقيق وصادق في مواضع الشك'],
   ['google/gemini-2.5-flash', 'Gemini 2.5 Flash — سريع اقتصادي'],
-  ['google/gemini-2.5-pro', 'Gemini 2.5 Pro — الأقدر على الخطوط الصعبة'],
+  ['google/gemini-2.5-pro', 'Gemini 2.5 Pro — قوي (تذبذب مرة)'],
   ['qwen/qwen3-vl-235b-a22b-instruct', 'Qwen3-VL — قوي ورخيص'],
   ['qwen/qwen2.5-vl-72b-instruct', 'Qwen2.5-VL — متوسط'],
   ['~openai/gpt-luna-latest', 'GPT Luna — مدقق متحفظ'],
@@ -17,7 +20,7 @@ const MS_MODEL_CHOICES = [
 ];
 const MS_MODEL_PRESETS = {
   standard: { primary: 'google/gemini-2.5-flash', checker: '~openai/gpt-luna-latest', auditor: 'qwen/qwen3-vl-235b-a22b-instruct' },
-  hard: { primary: 'google/gemini-2.5-pro', checker: 'qwen/qwen3-vl-235b-a22b-instruct', auditor: 'google/gemini-2.5-pro' },
+  hard: { primary: 'google/gemini-3.1-pro-preview', checker: 'anthropic/claude-sonnet-5.5', auditor: 'google/gemini-3.1-pro-preview' },
 };
 
 function msModelChoice() {
