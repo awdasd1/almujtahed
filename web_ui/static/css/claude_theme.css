@@ -11172,3 +11172,17 @@ body::-webkit-scrollbar,
 .ms-view-btn { padding: 4px 10px; font-size: 12px; }
 .ms-view-active { background: var(--accent-clay, #b4552d); color: #fff; border-color: transparent; }
 .ms-audit-notes { margin-top: 10px; padding: 10px 12px; border: 1px solid #d9a441; border-radius: 8px; font-size: 13px; line-height: 1.9; background: rgba(217,164,65,.07); }
+.ms-sigla { font-size: 12.5px; margin-top: 12px; padding: 8px 10px; border: 1px dashed var(--border-subtle); border-radius: 8px; line-height: 1.9; }
+.ms-collate-folio { margin-top: 10px; }
+.ms-collate-folio-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.ms-margins-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+@media (max-width: 800px) { .ms-margins-grid { grid-template-columns: 1fr; } }
+.ms-margin-box { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; }
+.ms-margin-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.ms-margin-entry { font-size: 12.5px; line-height: 1.9; padding: 6px 8px; border: 1px solid var(--border-subtle); border-radius: 8px; margin-bottom: 6px; }
+.ms-ed-note-label { display: block; margin-top: 12px; font-size: 12.5px; font-weight: 700; }
+.ms-ed-note-label textarea { margin-top: 6px; font-size: 13px; }
+.ms-folio-margin { margin-top: 10px; padding: 10px 12px; border: 1px solid #2e7d5b; border-radius: 8px; font-size: 13px; line-height: 1.9; background: rgba(46,125,91,.06); }
+.ms-collated-folio { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px; margin-top: 12px; }
+.ms-collated-text { white-space: pre-wrap; font-size: 15px; line-height: 2; }
+.ms-collated-app { margin-top: 10px; font-size: 12.5px; line-height: 1.9; border-top: 1px dashed var(--border-subtle); padding-top: 8px; }

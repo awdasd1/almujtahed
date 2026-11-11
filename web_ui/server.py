@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.463"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.464"},
         },
     })
     if opened.get("error"):
@@ -14011,6 +14011,72 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
             auditor = {"model": auditor_model, "text": "", "error": str(exc)[:240]}
     return {"primary": primary, "checker": checker, "auditor": auditor,
             "disputes": disputes, "agreement": agreement}
+
+
+# ---------- المرحلة ٢: محرك المقابلة بين النسخ ----------
+# يقابَل نص النسخة الأم بنص كل نسخة أخرى لوحةً لوحة (بنفس الترقيم)،
+# وتُصنَّف الفروق تصنيف المحققين: سقط، زيادة، تبديل، اختلاف ضبط/رسم،
+# وبياض/تعذر قراءة — لتدخل «هامش المقابلة» منفصلًا عن «هامش التحقيق».
+_MS_DIACRITICS = "ًٌٍَُِّْٰٕٖٜٟٓٔٗ٘ٙٚٛٝٞـ"
+
+def _ms_skeleton(word: str) -> str:
+    """هيكل الكلمة بلا تشكيل ولا تطويل ولا همزات على الألف ولا تاء مربوطة/هاء:
+    للتمييز بين اختلاف الضبط والرسم واختلاف اللفظ نفسه."""
+    w = "".join(ch for ch in (word or "") if ch not in _MS_DIACRITICS)
+    return (w.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+             .replace("ة", "ه").replace("ى", "ي").replace("ؤ", "و").replace("ئ", "ي"))
+
+def _ms_collate_pair(base_text: str, other_text: str, siglum: str, limit: int = 120):
+    import difflib
+    a = (base_text or "").split()
+    b = (other_text or "").split()
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    entries = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            continue
+        base_chunk = " ".join(a[i1:i2])[:220]
+        other_chunk = " ".join(b[j1:j2])[:220]
+        context = " ".join(a[max(0, i1 - 5):i1])[:120]
+        if "[غير مقروء]" in other_chunk and base_chunk:
+            kind = "متعذر في النسخة"
+        elif "[غير مقروء]" in base_chunk and other_chunk:
+            kind = "الأم متعذرة هنا"
+        elif tag == "delete":
+            kind = "سقط"
+        elif tag == "insert":
+            kind = "زيادة"
+        elif _ms_skeleton(base_chunk) == _ms_skeleton(other_chunk):
+            kind = "ضبط/رسم"
+        else:
+            kind = "تبديل"
+        entries.append({"siglum": siglum, "type": kind, "base": base_chunk,
+                        "other": other_chunk, "context": context})
+        if len(entries) >= limit:
+            break
+    return entries
+
+
+@app.post("/api/manuscripts/collate")
+async def collate_manuscripts(request: Request, payload: Any = Body(...)):
+    """مقابلة نصوص لوحات النسخ الأخرى بنص لوحات النسخة الأم (نفس الترقيم)."""
+    items = (payload or {}).get("items")
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="لا عناصر للمقابلة")
+    out = []
+    for item in items[:240]:
+        folio = str(item.get("folio") or "")
+        siglum = str(item.get("siglum") or "")
+        base_text = str(item.get("base_text") or "")[:16000]
+        other_text = item.get("other_text")
+        if other_text is None:
+            out.append({"folio": folio, "siglum": siglum, "type": "بياض/مفقود",
+                        "base": "", "other": "", "context": ""})
+            continue
+        for e in _ms_collate_pair(base_text, str(other_text)[:16000], siglum):
+            e["folio"] = folio
+            out.append(e)
+    return {"entries": out, "count": len(out)}
 
 
 def detect_book_page_request(msg: str) -> Optional[Dict[str, Any]]:

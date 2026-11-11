@@ -58,7 +58,7 @@ function msPresetModels(name) {
   if (!preset) return;
   localStorage.setItem('almujtahed_ms_models', JSON.stringify(preset));
   msFillModelSelects();
-  msToast(name === 'hard' ? 'وضع الخطوط الصعبة: Gemini Pro + Qwen3-VL، يدققه Gemini Pro' : 'الوضع القياسي: Flash + Luna، يدققه Qwen3-VL');
+  msToast(name === 'hard' ? 'وضع الخطوط الصعبة: Gemini 3.1 Pro أولًا، Sonnet 5.5 ثانيًا، يدققه Gemini 3.1 Pro' : 'الوضع القياسي: Flash + Luna، يدققه Qwen3-VL');
 }
 let msWb = null; // {projectId, copyId, folioId}
 let msSaveTimer = null;
@@ -177,6 +177,7 @@ function msOpenProject(id) {
     ${p.author ? `<div class="ms-proj-author">${msEsc(p.author)}</div>` : ''}
     ${p.desc ? `<p class="ms-proj-desc">${msEsc(p.desc)}</p>` : ''}`;
   renderMsCopies();
+  renderMsCollation();
 }
 
 function renderMsCopies() {
@@ -192,9 +193,12 @@ function renderMsCopies() {
   wrap.innerHTML = copies.map(c => {
     const pr = msFolioProgress(c);
     const meta = [c.library, c.shelfmark ? `رقم ${c.shelfmark}` : '', c.scribe, c.date, c.script].filter(Boolean).join(' · ');
+    const base = msBaseCopy(p);
+    const isBase = base && base.id === c.id;
     return `<div class="ms-copy-card">
       <div class="ms-copy-head">
         <strong>نسخة (${msEsc(c.siglum)})</strong>
+        ${isBase ? '<span class="ms-badge">الأم</span>' : `<button type="button" class="ms-btn" onclick="msSetBaseCopy('${c.id}')">اجعلها الأم</button>`}
         ${meta ? `<span class="ms-copy-meta">${msEsc(meta)}</span>` : ''}
         <span class="ms-copy-progress">${pr.total} لوحة · ✔ ${pr.approved} معتمدة</span>
         <span class="ms-copy-actions">
@@ -223,6 +227,7 @@ function msAddCopy() {
   const siglum = document.getElementById('msCopySiglum').value.trim();
   if (!siglum) { msToast('اكتب رمز النسخة أولًا (أ، ب...)'); return; }
   p.copies = p.copies || [];
+  if (p.copies.some(c => c.siglum === siglum)) { msToast(`الرمز (${siglum}) مستعمل لنسخة أخرى — الترميز يقتضي رمزًا واحدًا لكل نسخة`); return; }
   p.copies.push({
     id: msUid(), siglum,
     library: document.getElementById('msCopyLibrary').value.trim(),
@@ -235,7 +240,7 @@ function msAddCopy() {
   });
   ['msCopySiglum', 'msCopyLibrary', 'msCopyShelf', 'msCopyScribe', 'msCopyDate', 'msCopyScript', 'msCopyNotes']
     .forEach(i => { document.getElementById(i).value = ''; });
-  msSave(); renderMsCopies();
+  msSave(); renderMsCopies(); renderMsCollation();
 }
 
 function msDeleteCopy(pid, cid) {
@@ -243,7 +248,8 @@ function msDeleteCopy(pid, cid) {
   const c = msCopy(p, cid);
   if (!c || !confirm(`حذف نسخة (${c.siglum}) بكل لوحاتها ونصوصها؟`)) return;
   p.copies = p.copies.filter(x => x.id !== cid);
-  msSave(); renderMsCopies();
+  if (p.baseCopyId === cid) p.baseCopyId = '';
+  msSave(); renderMsCopies(); renderMsCollation();
   document.getElementById('msWorkbench').hidden = true;
   msWb = null;
 }
@@ -280,6 +286,170 @@ async function msUploadFolios(pid, cid, input) {
   msToast('اكتمل رفع اللوحات. اضغط أي لوحة لبدء نسخها.');
 }
 
+// ---------- المرحلة ٢: المقابلة بين النسخ بهامش مستقل ----------
+function msBaseCopy(p) {
+  const copies = (p && p.copies) || [];
+  if (!copies.length) return null;
+  return copies.find(c => c.id === p.baseCopyId) || copies[0];
+}
+
+function msCurrentProject() {
+  const view = document.getElementById('msProjectView');
+  return view ? msProject(view.dataset.projectId) : null;
+}
+
+function msSetBaseCopy(cid) {
+  const p = msCurrentProject();
+  if (!p) return;
+  p.baseCopyId = cid;
+  msSave(); renderMsCopies(); renderMsCollation();
+  const c = msCopy(p, cid);
+  msToast(`صارت نسخة (${c ? c.siglum : ''}) هي النسخة الأم للمقابلة`);
+}
+
+function msApparatusText(e) {
+  const s = `(${e.siglum})`;
+  const ctx = e.context ? ` بعد «${e.context}»` : '';
+  switch (e.type) {
+    case 'سقط': return `سقط من ${s}: «${e.base}»${ctx}`;
+    case 'زيادة': return `في ${s} زيادة: «${e.other}»${ctx}`;
+    case 'تبديل': return `في ${s}: «${e.other}» بدل «${e.base}»`;
+    case 'ضبط/رسم': return `في ${s} ضبطًا/رسمًا: «${e.other}» بدل «${e.base}»`;
+    case 'متعذر في النسخة': return `في ${s} موضع متعذر القراءة مقابل «${e.base}»`;
+    case 'الأم متعذرة هنا': return `الأم متعذرة هنا، وفي ${s}: «${e.other}»`;
+    case 'بياض/مفقود': return `اللوحة غير موجودة في ${s} (بياض/مفقودة)`;
+    default: return `${e.type} ${s}: «${e.other || e.base}»`;
+  }
+}
+
+function renderMsCollation() {
+  const p = msCurrentProject();
+  const sel = document.getElementById('msBaseCopy');
+  if (!p || !sel) return;
+  const copies = p.copies || [];
+  const base = msBaseCopy(p);
+  sel.innerHTML = copies.map(c =>
+    `<option value="${c.id}"${base && c.id === base.id ? ' selected' : ''}>(${msEsc(c.siglum)})${c.library ? ' — ' + msEsc(c.library) : ''}</option>`).join('');
+  const sigla = document.getElementById('msSiglaList');
+  sigla.innerHTML = copies.length
+    ? '<strong>رموز النسخ:</strong> ' + copies.map(c =>
+        `(${msEsc(c.siglum)}) = ${msEsc([c.library, c.shelfmark ? 'رقم ' + c.shelfmark : '', c.date].filter(Boolean).join('، ') || 'بدون بيانات')}${base && c.id === base.id ? ' — الأم' : ''}`).join(' · ')
+    : '';
+  const col = p.collation || { entries: [] };
+  const entries = col.entries || [];
+  const pending = entries.filter(e => e.status === 'pending');
+  const accepted = entries.filter(e => e.status === 'accepted');
+  document.getElementById('msCollateInfo').textContent =
+    entries.length ? `آخر مقابلة: ${col.at ? new Date(col.at).toLocaleString('ar') : ''} · ${entries.length} فرقًا (${accepted.length} معتمد في الهامش، ${pending.length} بانتظار الحسم)` : 'لم تُجرَ مقابلة بعد';
+  const res = document.getElementById('msCollateResults');
+  if (!pending.length) {
+    res.innerHTML = entries.length ? '<div class="ms-disputes-none">لا فروق بانتظار الحسم.</div>' : '';
+  } else {
+    const byFolio = {};
+    pending.forEach(e => { (byFolio[e.folio] = byFolio[e.folio] || []).push(e); });
+    res.innerHTML = `<div class="ms-disputes-title">فروق بانتظار حسم المحقق (${pending.length}) — «اعتماد» يدخلها هامش المقابلة:</div>` +
+      Object.keys(byFolio).map(folio => `
+        <div class="ms-collate-folio">
+          <div class="ms-collate-folio-title">لوحة (${msEsc(folio)})</div>
+          ${byFolio[folio].map(e => `
+            <div class="ms-dispute">
+              <span class="ms-dispute-a">${msEsc(msApparatusText(e))}</span>
+              <span>
+                <button type="button" class="ms-dispute-btn" onclick="msCollEntry('${e.id}','accepted')">اعتماد في الهامش</button>
+                <button type="button" class="ms-dispute-dismiss" onclick="msCollEntry('${e.id}','dismissed')">تجاهل</button>
+              </span>
+            </div>`).join('')}
+        </div>`).join('');
+  }
+  const mc = document.getElementById('msMarginCollation');
+  mc.innerHTML = accepted.length
+    ? accepted.map(e => `<div class="ms-margin-entry"><strong>(${msEsc(e.folio)})</strong> ${msEsc(msApparatusText(e))}
+        <button type="button" class="ms-dispute-dismiss" onclick="msCollEntry('${e.id}','pending')" title="إخراج من الهامش">↩</button></div>`).join('')
+    : '<div class="ms-disputes-none">فارغ — اعتمد فروقًا من قائمة المقابلة فتظهر هنا.</div>';
+  const me = document.getElementById('msMarginEd');
+  const edNotes = [];
+  if (base) (base.folios || []).forEach(f => { if ((f.ed_note || '').trim()) edNotes.push({ folio: f.label, text: f.ed_note.trim() }); });
+  me.innerHTML = edNotes.length
+    ? edNotes.map(n => `<div class="ms-margin-entry"><strong>(${msEsc(n.folio)})</strong> ${msEsc(n.text)}</div>`).join('')
+    : '<div class="ms-disputes-none">فارغ — اكتب تعليق التحقيق من منضدة اللوحة (أسفل نصها).</div>';
+}
+
+async function msRunCollation() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const base = msBaseCopy(p);
+  if (!base) { msToast('أضف نسخة أولًا'); return; }
+  const others = (p.copies || []).filter(c => c.id !== base.id);
+  if (!others.length) { msToast('المقابلة تحتاج نسخة أخرى على الأقل غير الأم'); return; }
+  const baseFolios = (base.folios || []).filter(f => (f.text || '').trim());
+  if (!baseFolios.length) { msToast('لا نص منسوخ في لوحات الأم بعد — انسخها واعتمدها أولًا'); return; }
+  const items = [];
+  baseFolios.forEach(bf => {
+    others.forEach(oc => {
+      const of = (oc.folios || []).find(x => x.label === bf.label);
+      items.push({ folio: bf.label, siglum: oc.siglum, base_text: bf.text || '',
+                   other_text: of ? (of.text || '') : null });
+    });
+  });
+  const btn = document.getElementById('msCollateBtn');
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '⏳ جارٍ مقابلة النسخ...';
+  try {
+    const res = await fetch('/api/manuscripts/collate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذرت المقابلة');
+    p.collation = {
+      at: new Date().toISOString(), baseCopyId: base.id,
+      entries: (data.entries || []).map(e => ({ ...e, id: msUid(), status: 'pending' })),
+    };
+    msSave(); renderMsCollation();
+    const missing = (data.entries || []).filter(e => e.type === 'بياض/مفقود').length;
+    msToast(`تمت المقابلة: ${data.count} فرقًا بانتظار حسمك${missing ? ` (منها ${missing} لوحة مفقودة في نسخ أخرى)` : ''}. الفروق وحدها لا تدخل الهامش حتى تعتمدها.`, 6000);
+  } catch (e) {
+    msToast('❌ ' + e.message, 7000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+function msCollEntry(id, status) {
+  const p = msCurrentProject();
+  if (!p || !p.collation) return;
+  const e = (p.collation.entries || []).find(x => x.id === id);
+  if (!e) return;
+  e.status = status;
+  msSave(); renderMsCollation();
+  if (msWb) msRenderWbState();
+}
+
+function msToggleCollatedText() {
+  const box = document.getElementById('msCollatedText');
+  if (!box) return;
+  if (!box.hidden) { box.hidden = true; return; }
+  const p = msCurrentProject();
+  const base = p ? msBaseCopy(p) : null;
+  if (!p || !base) { msToast('لا نسخة أم بعد'); return; }
+  const accepted = ((p.collation || {}).entries || []).filter(e => e.status === 'accepted');
+  const folios = (base.folios || []).filter(f => (f.text || '').trim());
+  if (!folios.length) { msToast('لا نص في لوحات الأم بعد'); return; }
+  box.innerHTML = folios.map(f => {
+    const app = accepted.filter(e => e.folio === f.label);
+    return `<div class="ms-collated-folio">
+      <div class="ms-collate-folio-title">لوحة (${msEsc(f.label)}) — (${msEsc(base.siglum)})</div>
+      <div class="ms-collated-text">${msEsc(f.text)}</div>
+      ${app.length ? `<div class="ms-collated-app"><strong>هامش المقابلة:</strong>${app.map((e, i) => `<div>${i + 1}. ${msEsc(msApparatusText(e))}</div>`).join('')}</div>` : ''}
+      ${(f.ed_note || '').trim() ? `<div class="ms-collated-app"><strong>هامش التحقيق:</strong><div>${msEsc(f.ed_note)}</div></div>` : ''}
+    </div>`;
+  }).join('');
+  box.hidden = false;
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // ---------- منضدة اللوحة ----------
 function msOpenFolio(pid, cid, fid) {
   const p = msProject(pid);
@@ -293,6 +463,8 @@ function msOpenFolio(pid, cid, fid) {
   document.getElementById('msWbImg').src = f.file_url;
   const ta = document.getElementById('msWbText');
   ta.value = f.text || f.audited_text || f.primary_text || '';
+  const ed = document.getElementById('msWbEdNote');
+  if (ed) ed.value = f.ed_note || '';
   msRenderWbState();
   wb.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -330,6 +502,23 @@ function msRenderWbState() {
   document.querySelectorAll('.ms-view-btn').forEach(b => {
     b.classList.toggle('ms-view-active', b.dataset.msView === (f._view || 'audited'));
   });
+  // هامش المقابلة المعتمد لهذه اللوحة (من قسم المقابلة بالمشروع)
+  const margin = document.getElementById('msWbFolioMargin');
+  if (margin && ctx.project) {
+    const p = ctx.project;
+    const base = msBaseCopy(p);
+    const isBase = base && ctx.copy && base.id === ctx.copy.id;
+    const accepted = (((p.collation || {}).entries) || [])
+      .filter(e => e.status === 'accepted' && e.folio === f.label && (isBase || e.siglum === (ctx.copy || {}).siglum));
+    if (accepted.length) {
+      margin.hidden = false;
+      margin.innerHTML = `<strong>هامش المقابلة — لوحة (${msEsc(f.label)}):</strong>` +
+        accepted.map(e => `<div>${msEsc(msApparatusText(e))}</div>`).join('');
+    } else {
+      margin.hidden = true;
+      margin.innerHTML = '';
+    }
+  }
   msRenderDisputes();
 }
 
@@ -482,13 +671,18 @@ function msCloseWorkbench() {
   if (ctx && ctx.folio) {
     ctx.folio.text = document.getElementById('msWbText').value;
     if (ctx.folio.status !== 'approved' && ctx.folio.text.trim()) ctx.folio.status = 'draft';
-    msSave(); renderMsCopies();
+    msSave(); renderMsCopies(); renderMsCollation();
   }
   document.getElementById('msWorkbench').hidden = true;
   msWb = null;
 }
 
 document.addEventListener('input', (e) => {
+  if (e.target && e.target.id === 'msWbEdNote' && msWb) {
+    const ctx = msWbFolio();
+    if (ctx && ctx.folio) { ctx.folio.ed_note = e.target.value; msSave(); }
+    return;
+  }
   if (e.target && e.target.id === 'msWbText' && msWb) {
     const ctx = msWbFolio();
     if (ctx && ctx.folio) {
