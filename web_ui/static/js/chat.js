@@ -2198,7 +2198,6 @@ function renderSessionMessages(sessionId, options) {
       <div class="chat-audio-summary">
         <div class="chat-audio-summary-head">
           <span>🔊 ملخص صوتي للإجابة</span>
-          <span class="chat-audio-voice">بصوت ${escapeHtml(msg.audio_summary.voice || 'Algieba')}</span>
         </div>
         <audio controls preload="metadata" src="${escapeHtml(msg.audio_summary.url)}"></audio>
         <div class="chat-audio-summary-actions">
@@ -2884,11 +2883,15 @@ function loadPresentationOptions() {
   const dflt = {
     text_mode: 'editable',
     image_model: 'gpt',
+    slides: 'auto',
+    design_mode: 'with',
     colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }], fonts: { title: '#ffffff', body: '#ffffff' } },
   };
   try {
     const savedModel = localStorage.getItem('almujtahed_designs_imagemodel_v1');
     if (['muse', 'gemini', 'gpt54'].includes(savedModel)) dflt.image_model = savedModel;
+    const savedMode = localStorage.getItem('almujtahed_designs_imagemode_v1');
+    if (['without', 'none'].includes(savedMode)) dflt.design_mode = savedMode;
     const dc = JSON.parse(localStorage.getItem('almujtahed_designs_colors_v1') || 'null');
     if (dc) {
       if (dc.mode === 'custom') dflt.colors.mode = 'custom';
@@ -2901,6 +2904,8 @@ function loadPresentationOptions() {
     if (p) {
       if (p.text_mode === 'embedded') dflt.text_mode = 'embedded';
       if (['gpt', 'muse', 'gemini', 'gpt54'].includes(p.image_model)) dflt.image_model = p.image_model;
+      if (['auto', '6', '8', '10', '12', '14', '16'].includes(String(p.slides))) dflt.slides = String(p.slides);
+      if (['without', 'none'].includes(p.design_mode)) dflt.design_mode = p.design_mode;
       if (p.colors) {
         if (p.colors.mode === 'custom') dflt.colors.mode = 'custom'; else if (p.colors.mode === 'default') dflt.colors.mode = 'default';
         if (Array.isArray(p.colors.img)) dflt.colors.img = dflt.colors.img.map((c, i) => ({ hex: (p.colors.img[i] && p.colors.img[i].hex) || c.hex, pct: (p.colors.img[i] && p.colors.img[i].pct) || c.pct }));
@@ -2938,6 +2943,22 @@ function openPresentationOptions(idx, btn) {
             <option value="gemini">🌟 Gemini 3 Pro Image — google/gemini-3-pro-image-preview</option>
             <option value="gpt54">🚀 GPT-5.4 Image 2 — openai/gpt-5.4-image-2</option>
           </select>
+          <div class="pres-opt-label">عدد الشرائح</div>
+          <select id="presSlideCount" class="pres-select">
+            <option value="auto">تلقائي — بحسب طول الإجابة (٦–١٤)</option>
+            <option value="6">٦ شرائح</option>
+            <option value="8">٨ شرائح</option>
+            <option value="10">١٠ شرائح</option>
+            <option value="12">١٢ شريحة</option>
+            <option value="14">١٤ شريحة</option>
+            <option value="16">١٦ شريحة</option>
+          </select>
+          <div class="pres-opt-label">نوع التصميم</div>
+          <select id="presDesignMode" class="pres-select">
+            <option value="with">🖼️ تصميم بصور</option>
+            <option value="without">🚫 تصميم بدون صور — بلا أي كائن حي</option>
+            <option value="none">📝 بلا صور مطلقًا — خط عربي ونص فقط</option>
+          </select>
           <div class="pres-opt-label">ألوان الشريحة</div>
           <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المجتهد الهادئة المعتمدة</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="custom"> <span><b>ألوان مخصصة</b><small>ثلاثة ألوان لصورة الشريحة بنسب سيادة، وألوان خطوط النص القابل للتحرير</small></span></label>
@@ -2960,6 +2981,8 @@ function openPresentationOptions(idx, btn) {
   modal.querySelector(`input[name="presTextMode"][value="${opts.text_mode}"]`).checked = true;
   modal.querySelector(`input[name="presColorsMode"][value="${opts.colors.mode}"]`).checked = true;
   modal.querySelector('#presImageModel').value = opts.image_model;
+  modal.querySelector('#presSlideCount').value = opts.slides;
+  modal.querySelector('#presDesignMode').value = opts.design_mode;
   opts.colors.img.forEach((c, i) => {
     modal.querySelector(`#presImgColor${i}`).value = c.hex;
     modal.querySelector(`#presImgPct${i}`).value = c.pct;
@@ -2992,6 +3015,8 @@ function confirmPresentationOptions() {
   const opts = {
     text_mode: modal.querySelector('input[name="presTextMode"]:checked').value === 'embedded' ? 'embedded' : 'editable',
     image_model: modal.querySelector('#presImageModel').value,
+    slides: modal.querySelector('#presSlideCount').value,
+    design_mode: modal.querySelector('#presDesignMode').value,
     colors: {
       mode: modal.querySelector('input[name="presColorsMode"]:checked').value === 'custom' ? 'custom' : 'default',
       img: [0, 1, 2].map(i => ({ hex: hex(modal.querySelector(`#presImgColor${i}`).value, '#16324a'), pct: Math.max(0, Math.min(100, parseInt(modal.querySelector(`#presImgPct${i}`).value, 10) || 0)) })),
@@ -3026,7 +3051,7 @@ async function runPresentationJob(idx, btn, options) {
     const res = await fetch('/api/chat/presentation/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, image_model: options.image_model, colors: options.colors }),
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء العرض');

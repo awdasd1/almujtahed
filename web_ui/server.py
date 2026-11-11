@@ -5520,6 +5520,8 @@ class PresentationRequest(BaseModel):
     text_mode: Optional[str] = "editable"
     image_model: Optional[str] = "gpt"
     colors: Optional[dict] = None
+    design_mode: Optional[str] = "with"
+    slide_count: Optional[int] = None
 
 
 PRESENTATION_JOBS: Dict[str, dict] = {}
@@ -5619,11 +5621,14 @@ def _openrouter_image_bytes(key: str, prompt: str, model: str, size: str = "1536
     raise RuntimeError("لم يُعد نموذج الصورة صورة قابلة للحفظ")
 
 
-def _slide_image_prompt(image_prompt: str) -> str:
+def _slide_image_prompt(image_prompt: str, options: Optional[dict] = None) -> str:
+    options = options or {}
     return (
         f"{image_prompt}. Elegant wide 16:9 presentation background, cinematic warm lighting, "
         "rich scholarly Islamic atmosphere, absolutely no text, no letters, no words, no calligraphy, "
         "no signs, leave a calmer darker area suitable for white text overlay."
+        + _palette_directive(options)
+        + _slide_mode_rule(options)
     )
 
 
@@ -5656,7 +5661,26 @@ def _normalize_presentation_options(req: PresentationRequest) -> dict:
             "title": hexv(fonts_in.get("title"), "#ffffff"),
             "body": hexv(fonts_in.get("body"), "#ffffff"),
         },
+        "design_mode": req.design_mode if req.design_mode in ("with", "without", "none") else "with",
+        "slide_count": req.slide_count if req.slide_count in (6, 8, 10, 12, 14, 16) else None,
     }
+
+
+def _slide_mode_rule(options: dict) -> str:
+    """قاعدة نوع التصميم (كما في تصاميم نشر) موجّهة لصانع صور الشرائح."""
+    mode = options.get("design_mode")
+    if mode == "without":
+        return (
+            " Absolutely no people, no human figures, no animals, no birds, no living beings of any kind, "
+            "and no silhouettes of living creatures — only architecture, inanimate objects, geometric ornament "
+            "and creature-free scenery."
+        )
+    if mode == "none":
+        return (
+            " Absolutely no pictorial imagery at all — no photographs, no illustrations, no scenery, no buildings: "
+            "only elegant flat geometric ornament, Arabic-style patterns and refined solid color fields."
+        )
+    return " Any people shown strictly and entirely from the back, no faces, no side profiles, in dignified historical clothing."
 
 
 def _palette_directive(options: dict) -> str:
@@ -5671,8 +5695,9 @@ def _palette_directive(options: dict) -> str:
     )
 
 
-def _slide_embedded_prompt(slide_data: dict, palette_directive: str) -> str:
+def _slide_embedded_prompt(slide_data: dict, options: Optional[dict] = None) -> str:
     """توجيه صورة شريحة كاملة بنصوص عربية مدمجة مرسومة داخل الصورة نفسها متوافقة مع تعليقها الصوتي."""
+    options = options or {}
     bullets = "؛ ".join(slide_data["bullets"])
     return (
         "Design a complete, elegant 16:9 presentation slide with Arabic typography integrated into the artwork. "
@@ -5680,7 +5705,8 @@ def _slide_embedded_prompt(slide_data: dict, palette_directive: str) -> str:
         f"Render these Arabic bullet points clearly below it, spelled exactly as written: «{bullets}». "
         "Beautiful legible Arabic typography with strong contrast, harmonious scholarly Islamic visual theme, "
         "manuscripts and warm light, generous spacing, professional academic lecture slide."
-        + palette_directive
+        + _palette_directive(options)
+        + _slide_mode_rule(options)
     )
 
 
@@ -5812,10 +5838,9 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
 async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str, options: Optional[dict] = None) -> None:
     job = PRESENTATION_JOBS[job_id]
     options = options or _normalize_presentation_options(PresentationRequest(text=text))
-    palette = _palette_directive(options)
     try:
         job.update(stage="structuring", message="جارٍ هيكلة الشرائح من الإجابة...")
-        slide_count = _presentation_slide_count(len(text))
+        slide_count = options.get("slide_count") or _presentation_slide_count(len(text))
         deck = await asyncio.to_thread(_structure_presentation, key, text, slide_count)
         slides = deck["slides"]
         folder_name = f"deck-{int(time.time())}"
@@ -5826,9 +5851,9 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str,
 
         async def make_slide(i: int, slide_data: dict) -> dict:
             if options["text_mode"] == "embedded":
-                prompt = _slide_embedded_prompt(slide_data, palette)
+                prompt = _slide_embedded_prompt(slide_data, options)
             else:
-                prompt = _slide_image_prompt(slide_data["image_prompt"]) + palette
+                prompt = _slide_image_prompt(slide_data["image_prompt"], options)
             img = await asyncio.to_thread(_openrouter_image_bytes, key, prompt, options["image_model_id"])
             img_path = await asyncio.to_thread(_save_slide_image, img, folder, i)
             raw = await asyncio.to_thread(_tts_pcm_sync, key, slide_data["narration"])
@@ -6713,7 +6738,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.428"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.429"},
         },
     })
     if opened.get("error"):
