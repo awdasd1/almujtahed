@@ -11111,3 +11111,54 @@ body::-webkit-scrollbar,
 .smart-tree-select-row { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
 .smart-tree-sel-count { font-size: 12px; opacity: 0.75; }
 @media (max-width: 700px) { .smart-trees-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ===== تحقيق المخطوطات ===== */
+.ms-wrap { max-width: 1180px; margin: 0 auto; padding: 18px 14px 40px; }
+.ms-title { margin: 0 0 6px; font-size: 22px; }
+.ms-sub { margin: 0 0 16px; opacity: .8; font-size: 13.5px; max-width: 760px; }
+.ms-create-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+.ms-create-title { font-weight: 800; margin-bottom: 10px; }
+.ms-form-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ms-form-row input { flex: 1 1 170px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-main, transparent); color: inherit; font-family: inherit; }
+.ms-btn { padding: 7px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface); color: inherit; cursor: pointer; font-family: inherit; font-size: 13px; }
+.ms-btn:hover { filter: brightness(1.05); }
+.ms-btn-primary { background: var(--accent-clay, #b4552d); color: #fff; border-color: transparent; }
+.ms-btn-danger { color: #b3261e; }
+.ms-btn[disabled] { opacity: .55; cursor: wait; }
+.ms-projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.ms-project-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px; }
+.ms-project-card-title { font-weight: 800; font-size: 16px; margin-bottom: 4px; }
+.ms-project-card-author { font-size: 13px; opacity: .85; }
+.ms-project-card-desc { font-size: 12.5px; opacity: .7; margin-top: 4px; }
+.ms-project-card-stats { font-size: 12px; margin: 10px 0; opacity: .85; }
+.ms-card-actions, .ms-copy-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ms-empty { padding: 18px; text-align: center; opacity: .65; border: 1px dashed var(--border-subtle); border-radius: 12px; }
+.ms-proj-title { margin: 14px 0 2px; font-size: 20px; }
+.ms-copy-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+.ms-copy-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.ms-copy-meta { font-size: 12px; opacity: .75; }
+.ms-copy-progress { font-size: 12px; margin-inline-start: auto; opacity: .85; }
+.ms-copy-notes { font-size: 12.5px; opacity: .75; margin-bottom: 8px; }
+.ms-upload-label { display: inline-flex; align-items: center; cursor: pointer; }
+.ms-folios-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.ms-folio { border: 2px solid var(--border-subtle); border-radius: 10px; overflow: hidden; cursor: pointer; background: #fff; }
+.ms-folio:hover { border-color: var(--accent-clay, #b4552d); }
+.ms-folio.is-draft { border-color: #d9a441; }
+.ms-folio.is-approved { border-color: #2e7d5b; }
+.ms-folio img { width: 100%; height: 120px; object-fit: cover; display: block; }
+.ms-folio-label { text-align: center; font-size: 12px; padding: 4px; }
+#msWorkbench { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px; margin-top: 8px; }
+.ms-wb-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ms-badge { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border-subtle); }
+.ms-wb-actions { margin-inline-start: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.ms-wb-meta { font-size: 12px; opacity: .8; margin: 8px 0; }
+.ms-wb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ms-wb-img img { width: 100%; border-radius: 8px; border: 1px solid var(--border-subtle); }
+.ms-wb-text textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 8px; font-family: inherit; font-size: 15px; line-height: 1.9; background: var(--bg-main, transparent); color: inherit; }
+.ms-disputes-title { font-size: 12.5px; font-weight: 700; margin: 10px 0 6px; }
+.ms-dispute { display: flex; gap: 8px; align-items: stretch; margin-bottom: 6px; font-size: 12.5px; }
+.ms-dispute-a { flex: 1; padding: 6px 8px; border: 1px solid var(--border-subtle); border-radius: 8px; opacity: .85; }
+.ms-dispute-btn { flex: 1; text-align: start; padding: 6px 8px; border: 1px solid #2e7d5b; color: #2e7d5b; border-radius: 8px; background: transparent; cursor: pointer; font-family: inherit; font-size: 12.5px; }
+.ms-dispute-btn:hover { background: rgba(46,125,91,.08); }
+.ms-disputes-none { font-size: 12.5px; color: #2e7d5b; margin-top: 10px; }
+@media (max-width: 800px) { .ms-wb-grid { grid-template-columns: 1fr; } }

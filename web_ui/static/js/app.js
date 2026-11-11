@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // استعادة التبويب النشط من الـ URL hash أو التخزين المحلي
   const hashTab = (window.location.hash || '').replace('#', '');
   const savedTab = hashTab || localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB) || 'search';
-  if (['search', 'chat', 'agents', 'projects', 'providers', 'tools', 'archive'].includes(savedTab)) {
+  if (['search', 'chat', 'agents', 'projects', 'manuscripts', 'providers', 'tools', 'archive'].includes(savedTab)) {
     switchMainTab(savedTab);
   }
 });
@@ -145,6 +145,14 @@ function switchMainTab(tabName) {
     if (btn) btn.classList.add('active');
     if (typeof initProjectsTab === 'function') {
       initProjectsTab();
+    }
+  } else if (tabName === 'manuscripts') {
+    const pane = document.getElementById('paneManuscripts');
+    if (pane) pane.classList.add('active');
+    const btn = document.getElementById('tabNavManuscripts');
+    if (btn) btn.classList.add('active');
+    if (typeof initManuscriptsTab === 'function') {
+      initManuscriptsTab();
     }
   } else if (tabName === 'designs') {
     const pane = document.getElementById('paneDesigns');

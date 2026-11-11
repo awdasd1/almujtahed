@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.458"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.459"},
         },
     })
     if opened.get("error"):
@@ -13829,6 +13829,131 @@ async def upload_chat_file(request: Request, file: UploadFile = File(...)):
     except Exception as err:
         print(f"Error uploading file: {err}")
         return JSONResponse(status_code=500, content={"success": False, "error": str(err)})
+
+
+# ===================== تحقيق المخطوطات =====================
+# قياس م٠ (لوحات مغربية ونسخ مصحفي وسودانية): Gemini 2.5 Flash أساسيًا
+# (أسرع وأرخص وأوسع تغطية) وGPT Luna مدققًا (متحفظ يعلّم مواضع الشك)،
+# واتفاق النموذجين على اللوحة مؤشر ثقة يعرض للمحقق، ومواضع اختلافهما
+# هي جدول الحسم الأول. النماذج كلها تنهار في الخطوط الشديدة الصعوبة
+# (السوداني) — لذا سقف إخراج وحارس تكرار وينبَّه المحقق ولا يُسلَّم وهم.
+MS_PRIMARY_MODEL = "google/gemini-2.5-flash"
+MS_CHECKER_MODEL = "~openai/gpt-luna-latest"
+MS_TRANSCRIBE_PROMPT = (
+    "أنت ناسخ مخطوطات محترف. انسخ نص اللوحة المخطوطة في الصورة المرفقة حرفيًا كما هو مكتوب، سطرًا بسطر، "
+    "مع الحفاظ على الإملاء والهمزات وعلامات الترقيم كما هي دون أي تصحيح أو تحديث أو شرح. "
+    "إن وردت عبارات في الهامش فاكتبها في آخر النسخ مسبوقة بـ(حاشية:). "
+    "وما تعذر عليك قراءته فضع مكانه [غير مقروء]. لا تكتب إلا النص المنسوخ وحده بلا مقدمة ولا تعليق."
+)
+
+
+def _ms_disputes(a_text: str, b_text: str, limit: int = 80):
+    """مواضع اختلاف نسختين على مستوى الكلمة + نسبة اتفاقهما."""
+    import difflib
+    a = (a_text or "").split()
+    b = (b_text or "").split()
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    out = []
+    equal = 0
+    total = 0
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        total += max(i2 - i1, j2 - j1)
+        if tag == "equal":
+            equal += (i2 - i1)
+        else:
+            out.append({"a": " ".join(a[i1:i2])[:220], "b": " ".join(b[j1:j2])[:220]})
+    ratio = round(100.0 * equal / max(total, 1), 1)
+    return out[:limit], ratio
+
+
+def _ms_transcribe_one(model: str, b64_url: str, key: str) -> Dict[str, Any]:
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": MS_TRANSCRIBE_PROMPT},
+            {"type": "image_url", "image_url": {"url": b64_url}},
+        ]}],
+        "temperature": 0.1,
+        "max_tokens": 8192,
+    }
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Manuscripts"},
+        data=json.dumps(payload).encode("utf-8"))
+    started = time.time()
+    with urllib.request.urlopen(http_req, timeout=420) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(str(data.get("error"))[:240])
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    text = (msg.get("content") or "").strip()
+    usage = data.get("usage") or {}
+    truncated = False
+    # حارس التكرار: نموذج تائه في خط صعب قد يدور في حلقة حتى سقف الإخراج
+    if len(text) > 16000:
+        text = text[:16000]
+        truncated = True
+    return {"model": model, "text": text, "seconds": round(time.time() - started, 1),
+            "cost": usage.get("cost"), "truncated": truncated}
+
+
+@app.get("/api/manuscripts")
+async def list_manuscripts(request: Request):
+    owner_id = current_owner_id(request)
+    return {"projects": _load_owned_list(owner_id, "manuscripts") or [],
+            "models": {"primary": MS_PRIMARY_MODEL, "checker": MS_CHECKER_MODEL}}
+
+
+@app.post("/api/manuscripts")
+async def save_manuscripts(request: Request, payload: Any = Body(...)):
+    owner_id = current_owner_id(request)
+    projects = (payload or {}).get("projects")
+    if not isinstance(projects, list):
+        raise HTTPException(status_code=400, detail="صيغة المشاريع غير صالحة")
+    _save_owned_list(owner_id, "manuscripts", projects)
+    return {"ok": True, "count": len(projects)}
+
+
+@app.post("/api/manuscripts/transcribe")
+async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)):
+    """نسخ لوحة بنموذجين متوازيين + مواضع اختلافهما ونسبة اتفاقهما."""
+    owner_id = current_owner_id(request)
+    raw_path = str((payload or {}).get("file_path") or "").strip()
+    if not raw_path:
+        raise HTTPException(status_code=400, detail="مسار اللوحة مفقود")
+    path = Path(raw_path).resolve()
+    root = (UPLOADS_BUCKET_DIR / owner_id).resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=400, detail="اللوحة خارج مجلد المرفوعات")
+    mime = "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+    _text, is_image, b64_url = extract_text_from_file(path, path.name, mime)
+    if not is_image or not b64_url:
+        raise HTTPException(status_code=400, detail="تعذر تجهيز صورة اللوحة")
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    primary_model = str((payload or {}).get("primary_model") or MS_PRIMARY_MODEL)
+    checker_model = str((payload or {}).get("checker_model") or MS_CHECKER_MODEL)
+    import concurrent.futures as _cf
+    results: Dict[str, Any] = {}
+    with _cf.ThreadPoolExecutor(max_workers=2) as pool:
+        futs = {pool.submit(_ms_transcribe_one, m, b64_url, key): slot
+                for slot, m in (("primary", primary_model), ("checker", checker_model))}
+        for fut in _cf.as_completed(futs):
+            slot = futs[fut]
+            try:
+                results[slot] = fut.result()
+            except Exception as exc:
+                results[slot] = {"model": primary_model if slot == "primary" else checker_model,
+                                 "text": "", "error": str(exc)[:240]}
+    primary = results.get("primary") or {}
+    checker = results.get("checker") or {}
+    disputes, agreement = ([], 0.0)
+    if primary.get("text") and checker.get("text"):
+        disputes, agreement = _ms_disputes(primary["text"], checker["text"])
+    return {"primary": primary, "checker": checker,
+            "disputes": disputes, "agreement": agreement}
 
 
 def detect_book_page_request(msg: str) -> Optional[Dict[str, Any]]:
