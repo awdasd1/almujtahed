@@ -6704,15 +6704,16 @@ def _publish_via_zernio(req: DesignPublishRequest, request: Request, target: Pat
     public_url = ""
     if not req.text_only:
         raw = target.read_bytes()
+        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}.get(target.suffix.lower(), "image/png")
         presign = _zernio_call("POST", "/media/presign", key, {
-            "filename": name, "contentType": "image/png", "size": len(raw),
+            "filename": name, "contentType": mime, "size": len(raw),
         }, timeout=60)
         upload_url = presign.get("uploadUrl")
         public_url = presign.get("publicUrl")
         if not upload_url or not public_url:
             raise HTTPException(status_code=502, detail="لم يعد Zernio رابط رفع صالحًا")
         put_req = urllib.request.Request(upload_url, data=raw, method="PUT",
-                                         headers={"Content-Type": "image/png"})
+                                         headers={"Content-Type": mime})
         try:
             with urllib.request.urlopen(put_req, timeout=300) as resp:
                 resp.read()
@@ -6781,8 +6782,9 @@ def _publish_via_ayrshare(req: DesignPublishRequest, request: Request, target: P
         raw = target.read_bytes()
         if len(raw) > 28 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="الصورة أكبر من حد الرفع (30MB)")
+        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}.get(target.suffix.lower(), "image/png")
         upload = _ayrshare_call("/media/upload", key, {
-            "file": "data:image/png;base64," + base64.b64encode(raw).decode("ascii"),
+            "file": f"data:{mime};base64," + base64.b64encode(raw).decode("ascii"),
             "fileName": name,
             "description": "تصميم المجتهد",
         }, timeout=180)
@@ -6869,10 +6871,22 @@ async def designs_publish(req: DesignPublishRequest, request: Request):
         name = ""
     else:
         folder = _designs_dir(request).resolve()
-        name = Path(urllib.parse.unquote(req.image_url or "")).name
+        url_path = urllib.parse.unquote(req.image_url or "")
+        name = Path(url_path).name
         target = (folder / name).resolve()
         if target.parent != folder or not target.is_file():
-            raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
+            # صور من خارج مجلد التصاميم (أغلفة بودكاست، مشجّرات مصوّرة، لقطات مشجّرات نصية):
+            # تُقبل من أي موضع داخل مجلد رفع المالك نفسه حصرًا وبامتداد صورة
+            owner_bucket = (UPLOADS_BUCKET_DIR / current_owner_id(request)).resolve()
+            marker = f"/uploads/{current_owner_id(request)}/"
+            rel = url_path.split(marker, 1)[-1] if marker in url_path else name
+            candidate = (owner_bucket / rel).resolve()
+            if (candidate.is_file() and str(candidate).startswith(str(owner_bucket))
+                    and candidate.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")):
+                target = candidate
+                name = candidate.name
+            else:
+                raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
     provider = (req.provider or "zernio").lower()
     scheduled_for_utc = None
     if req.schedule:
@@ -7362,7 +7376,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.445"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.446"},
         },
     })
     if opened.get("error"):

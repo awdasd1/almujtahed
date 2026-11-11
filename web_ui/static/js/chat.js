@@ -2203,6 +2203,7 @@ function renderSessionMessages(sessionId, options) {
         <div class="chat-audio-summary-actions">
           <a class="btn-msg-export" href="${escapeHtml(msg.audio_summary.url)}" download="ملخص-صوتي-المجتهد.${escapeHtml(String(msg.audio_summary.url).split('.').pop() || 'wav')}" title="تنزيل الملف الصوتي">⬇️ تنزيل</a>
           <button type="button" class="btn-msg-export" onclick="shareAudioSummary(${idx})" title="مشاركة الملف الصوتي">🔗 مشاركة</button>
+          ${msg.audio_summary.text ? `<button type="button" class="btn-msg-export" onclick="copyAudioSummaryText(${idx})" title="نسخ نص الملخص الصوتي كاملًا">📋 نسخ النص</button>` : ''}
           ${msg.audio_summary.text ? `<button type="button" class="btn-msg-export" onclick="toggleAudioSummaryText(${idx}, this)" title="عرض نص الملخص الصوتي أو إخفاؤه">📝 نص الملخص</button>` : ''}
         </div>
         ${msg.audio_summary.text ? `<div class="chat-audio-summary-text" id="audioSummaryText${idx}" hidden>${escapeHtml(msg.audio_summary.text)}</div>` : ''}
@@ -2221,6 +2222,7 @@ function renderSessionMessages(sessionId, options) {
           <a class="btn-msg-export" href="${escapeHtml(msg.podcast.url)}" download="بودكاست-حواري-المجتهد.${escapeHtml(String(msg.podcast.url).split('.').pop() || 'mp3')}" title="تنزيل ملف البودكاست">⬇️ تنزيل</a>
           <button type="button" class="btn-msg-export" onclick="sharePodcast(${idx})" title="مشاركة ملف البودكاست">🔗 مشاركة</button>
           <button type="button" class="btn-msg-export" onclick="publishPodcast(${idx}, this)" title="نشر الحلقة: غلاف مولّد بعنوانها ونص منشور جاهز بمصادرها في نافذة النشر">📤 نشر</button>
+          ${Array.isArray(msg.podcast.script) && msg.podcast.script.length ? `<button type="button" class="btn-msg-export" onclick="copyPodcastScript(${idx})" title="نسخ نص الحوار كاملًا بالأدوار">📋 نسخ الحوار</button>` : ''}
           ${Array.isArray(msg.podcast.script) && msg.podcast.script.length ? `<button type="button" class="btn-msg-export" onclick="togglePodcastText(${idx}, this)" title="عرض نص الحوار بالأدوار أو إخفاؤه">📝 نص الحوار</button>` : ''}
         </div>
         ${Array.isArray(msg.podcast.script) && msg.podcast.script.length ? `<div class="chat-audio-summary-text" id="podcastText${idx}" hidden>${msg.podcast.script.map(turn => `<div class="podcast-line"><b class="${turn.speaker === 'محمد' ? 'podcast-host' : 'podcast-guest'}">${escapeHtml(turn.speaker)} (${escapeHtml(turn.role || '')}):</b> ${escapeHtml(turn.text)}</div>`).join('')}</div>` : ''}
@@ -2891,6 +2893,44 @@ async function shareAudioSummary(idx) {
   } catch (e) {
     showToast('تعذرت المشاركة تلقائيًا؛ نزّل الملف ثم شاركه يدويًا', 5000);
   }
+}
+
+async function copyTextToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) {}
+    ta.remove();
+    return ok;
+  }
+}
+
+async function copyAudioSummaryText(idx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  const text = msg && msg.audio_summary && msg.audio_summary.text;
+  if (!text) return;
+  const ok = await copyTextToClipboard(text);
+  if (typeof showToast === 'function') showToast(ok ? 'نُسخ نص الملخص الصوتي كاملًا 📋' : 'تعذر النسخ التلقائي — افتح «نص الملخص» وانسخه يدويًا', 4000);
+}
+
+async function copyPodcastScript(idx) {
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  const msg = session && session.messages && session.messages[idx];
+  const info = msg && msg.podcast;
+  if (!info || !Array.isArray(info.script) || !info.script.length) return;
+  const lines = info.script.map(t => `${t.speaker} (${t.role || ''}): ${t.text}`);
+  const text = (info.title ? `🎙️ بودكاست حواري — ${info.title}\n\n` : '') + lines.join('\n\n');
+  const ok = await copyTextToClipboard(text);
+  if (typeof showToast === 'function') showToast(ok ? 'نُسخ نص الحوار كاملًا بالأدوار 📋' : 'تعذر النسخ التلقائي — افتح «نص الحوار» وانسخه يدويًا', 4000);
 }
 
 function toggleAudioSummaryText(idx, btn) {
