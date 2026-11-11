@@ -257,7 +257,7 @@ function msRenderWbState() {
   const meta = [];
   if (f.model_primary) meta.push(`الأساسي: ${f.model_primary}${f.primary_seconds != null ? ` (${f.primary_seconds}ث)` : ''}`);
   if (f.model_checker) meta.push(`المدقق: ${f.model_checker}${f.checker_seconds != null ? ` (${f.checker_seconds}ث)` : ''}`);
-  if (f.agreement != null) meta.push(`اتفاق النموذجين: ${f.agreement}٪`);
+  if (f.agreement != null) meta.push(`اتفاق النموذجين حرفيًا: ${f.agreement}٪`);
   if (f.cost != null) meta.push(`كلفة النسخ: $${Number(f.cost).toFixed(4)}`);
   document.getElementById('msWbMeta').textContent = meta.join(' · ');
   msRenderDisputes();
@@ -275,10 +275,29 @@ function msRenderDisputes() {
     return;
   }
   wrap.innerHTML = `<div class="ms-disputes-title">مواضع اختلاف النموذجين (${disputes.length}) — اضغط قراءة المدقق لاعتمادها في النص، أو عدّل النص يدويًا:</div>` +
-    disputes.map((d, i) => `<div class="ms-dispute">
-      <span class="ms-dispute-a">الأساسي: ${msEsc(d.a) || '∅'}</span>
-      <button type="button" class="ms-dispute-btn" onclick="msPickDispute(${i})" title="اعتماد قراءة المدقق">المدقق: ${msEsc(d.b) || '∅'}</button>
-    </div>`).join('');
+    disputes.map((d, i) => {
+      // عجز المدقق عن موضع ([غير مقروء] وحدها) ليس قراءة بديلة: تنبيه شك
+      // يُراجع على الصورة، ولا يُعرض زر يستبدل به النص المقروء خطأً.
+      const checkerBlank = !d.b || !d.b.replace(/\[غير مقروء\]/g, '').trim();
+      if (checkerBlank) {
+        return `<div class="ms-dispute ms-dispute-warn">
+          <span class="ms-dispute-a">الأساسي: ${msEsc(d.a) || '∅'}</span>
+          <span class="ms-dispute-flag">⚠️ المدقق عجز عن قراءة هذا الموضع — راجعه على الصورة</span>
+          <button type="button" class="ms-dispute-dismiss" onclick="msDismissDispute(${i})" title="أبقِ قراءة الأساسي وأزل التنبيه">إبقاء الأساسي ✔</button>
+        </div>`;
+      }
+      return `<div class="ms-dispute">
+        <span class="ms-dispute-a">الأساسي: ${msEsc(d.a) || '∅'}</span>
+        <button type="button" class="ms-dispute-btn" onclick="msPickDispute(${i})" title="اعتماد قراءة المدقق">المدقق: ${msEsc(d.b) || '∅'}</button>
+      </div>`;
+    }).join('');
+}
+
+function msDismissDispute(i) {
+  const ctx = msWbFolio();
+  if (!ctx || !ctx.folio) return;
+  ctx.folio.disputes.splice(i, 1);
+  msSave(); msRenderDisputes();
 }
 
 function msPickDispute(i) {

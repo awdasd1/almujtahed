@@ -11162,3 +11162,6 @@ body::-webkit-scrollbar,
 .ms-dispute-btn:hover { background: rgba(46,125,91,.08); }
 .ms-disputes-none { font-size: 12.5px; color: #2e7d5b; margin-top: 10px; }
 @media (max-width: 800px) { .ms-wb-grid { grid-template-columns: 1fr; } }
+.ms-dispute-warn { align-items: center; }
+.ms-dispute-flag { flex: 1; padding: 6px 8px; border: 1px dashed #d9a441; color: #8a6414; border-radius: 8px; font-size: 12.5px; }
+.ms-dispute-dismiss { padding: 6px 10px; border: 1px solid var(--border-subtle); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font-family: inherit; font-size: 12px; white-space: nowrap; }
