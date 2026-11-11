@@ -1277,44 +1277,89 @@ function scrollChatMessageTop(idx) {
 
 // =============================================================================
 // 🧵 خط زمني لإجابات الشات على يمين منطقة الرسائل: خط طولي عليه نقطة
-// عند رأس كل إجابة، وبجوار كل نقطة مستطيل صغير وسطه اسم مرحلة الإجابة
-// (أول إجابة: مسودة، وكل إجابة بعدها: مناقشة ١، ٢...، وإقفال
-// المناقشة واعتماد البحث: إجابة معتمدة)، والضغط عليها يقفز إلى رأسها.
+// عند رأس كل إجابة، وبجوار كل نقطة مستطيل صغير وسطه عنوان يدل على نوع
+// هذه الإجابة بعينه لا رقمها: أول إجابة بحثية «مسودة»، والحوار النصي
+// اللاحق مع النموذج «مناقشة»، وإقفال المناقشة «إجابة معتمدة»، وكل
+// منتج مطلوب بذاته له عنوانه: بودكاست، عرض شرائح، تلخيص صوتي، تعليق
+// صوتي، تشجير مصوّر، تشجير نصي، جدول، رسم بياني، خارطة... والمنتجات
+// الملحقة بالإجابة المعتمدة (ملخصها الصوتي وبودكاستها وعرضها) لها
+// نقاطها الخاصة تنقل إلى بطاقة المنتج داخل الإجابة نفسها.
 // الإقفال مختوم على الرسالة عند توليده (stage)، وللجلسات القديمة
 // يُستنتج: الجواب التالي لرسالة الإقفال 🔒 إجابة معتمدة حتمًا.
 // =============================================================================
 function chatAnswerStages(session) {
   const out = [];
   if (!session || !Array.isArray(session.messages)) return out;
-  const num = (n) => (typeof toArabicDigits === 'function' ? toArabicDigits(n) : String(n));
-  let mainCount = 0;
-  let discCount = 0;
-  let briefCount = 0;
+  const shortLine = (s, n) => String(s || '').replace(/[#>*`_]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n || 70);
+  let mainSeen = false;
   let prevFinalize = false;
+  let lastUserText = '';
   session.messages.forEach((msg, idx) => {
     if (!msg) return;
     if (msg.role === 'user') {
       if (String(msg.content || '').startsWith('🔒 أقفل جلسة المناقشة')) prevFinalize = true;
+      else lastUserText = String(msg.content || '');
       return;
     }
     if (msg.role !== 'assistant') return;
     if (idx === 0 && typeof isStoredOpening === 'function' && isStoredOpening(msg)) return;
     const text = String(msg.content || '');
-    if (!text.trim() || text.startsWith('⚠️ تعذر')) { prevFinalize = false; return; }
-    if (msg.stage === 'final' || prevFinalize) {
-      out.push({ idx, kind: 'final', label: 'إجابة معتمدة' });
-    } else if (msg.selection_research) {
-      briefCount += 1;
-      out.push({ idx, kind: 'brief', label: `تعليق مختصر ${num(briefCount)}` });
-    } else if (mainCount === 0) {
-      // أول إجابة في الجلسة هي المسودة، وكل إجابة بعدها مناقشة
-      // مرقمة حتى إقفال المناقشة بالإجابة المعتمدة
-      mainCount = 1;
-      out.push({ idx, kind: 'draft', label: 'مسودة' });
-    } else {
-      discCount += 1;
-      out.push({ idx, kind: 'discussion', label: `مناقشة ${num(discCount)}` });
+    const gk = String(msg.graph_kind || '');
+    const hasAudio = !!(msg.audio_summary && msg.audio_summary.url);
+    const hasPodcast = !!(msg.podcast && msg.podcast.url);
+    const hasPres = !!(msg.presentation && msg.presentation.url);
+    const hasTreeSet = Array.isArray(msg.tree_set) && msg.tree_set.length > 0;
+    const hasTreeImgs = Array.isArray(msg.tree_images) && msg.tree_images.length > 0;
+    if (!text.trim() && !hasAudio && !hasPodcast && !hasPres && !hasTreeSet && !hasTreeImgs) { prevFinalize = false; return; }
+    if (text.startsWith('⚠️ تعذر')) { prevFinalize = false; return; }
+    // رسالة منتج مستقلة بذاتها (من «تشجير ووسائط» أو أزرار الجدولة
+    // والرسم والخرائط أو تشجير مباشر): عنوانها هو نوع المنتج المطلوب
+    const isDedicated = gk.startsWith('smart:') || gk.startsWith('graph_')
+      || !!msg.table_request || !!msg.chart_kind || !!msg.map_kind || !!msg.tool_applied;
+    if (isDedicated) {
+      if (hasTreeImgs || gk === 'smart:imaged') {
+        const titles = (msg.tree_images || []).map((t) => t.title).filter(Boolean).join('، ');
+        out.push({ idx, kind: 'treeimg', label: 'تشجير مصوّر', detail: titles, anchor: '.smart-trees-grid' });
+      } else if (gk === 'smart:slides' || (hasPres && gk.startsWith('smart:'))) {
+        out.push({ idx, kind: 'slides', label: 'عرض شرائح', detail: (msg.presentation && msg.presentation.title) || '', anchor: '.chat-presentation' });
+      } else if (gk === 'smart:voice' || (hasAudio && gk.startsWith('smart:'))) {
+        out.push({ idx, kind: 'voice', label: 'تعليق صوتي', detail: (msg.audio_summary && msg.audio_summary.title) || '', anchor: '.chat-audio-summary' });
+      } else if (hasTreeSet || gk === 'smart:multi' || gk.startsWith('graph_') || gk.startsWith('smart:')) {
+        const titles = (msg.tree_set || []).map((t) => t.title).filter(Boolean).join('، ');
+        out.push({ idx, kind: 'treetext', label: 'تشجير نصي', detail: titles, anchor: '.smart-trees-grid' });
+      } else if (msg.table_request) {
+        out.push({ idx, kind: 'table', label: 'جدول' });
+      } else if (msg.chart_kind) {
+        out.push({ idx, kind: 'chart', label: 'رسم بياني' });
+      } else if (msg.map_kind) {
+        out.push({ idx, kind: 'map', label: 'خارطة' });
+      } else if (msg.tool_applied) {
+        out.push({ idx, kind: 'tool', label: 'ناتج أداة' });
+      }
+      prevFinalize = false;
+      return;
     }
+    // إجابة نصية رئيسة: مرحلتها في سير البحث والحوار
+    const heading = shortLine((text.match(/^#{1,3}\s+([^\n]+)/) || [])[1] || text.split('\n')[0], 70);
+    if (msg.stage === 'final' || prevFinalize) {
+      out.push({ idx, kind: 'final', label: 'إجابة معتمدة', detail: heading });
+    } else if (msg.selection_research) {
+      const kind = (typeof SELECTION_RESEARCH_KINDS !== 'undefined')
+        ? SELECTION_RESEARCH_KINDS.find((k) => k.id === msg.selection_research) : null;
+      out.push({ idx, kind: 'brief', label: 'تعليق مختصر', detail: kind ? kind.label : '' });
+    } else if (!mainSeen) {
+      // أول إجابة في الجلسة هي المسودة، وما بعدها حوار نصي مع النموذج
+      mainSeen = true;
+      out.push({ idx, kind: 'draft', label: 'مسودة', detail: heading });
+    } else {
+      out.push({ idx, kind: 'discussion', label: 'مناقشة', detail: shortLine(lastUserText, 70) || heading });
+    }
+    // منتجات ملحقة بهذه الإجابة: نقطة لكل منتج بعنوانه تنقل إلى بطاقته
+    if (hasAudio) out.push({ idx, kind: 'audio', label: 'تلخيص صوتي', detail: (msg.audio_summary && msg.audio_summary.title) || '', anchor: '.chat-audio-summary:not(.chat-podcast):not(.chat-presentation)' });
+    if (hasPodcast) out.push({ idx, kind: 'podcast', label: 'بودكاست', detail: (msg.podcast && msg.podcast.title) || '', anchor: '.chat-podcast' });
+    if (hasPres) out.push({ idx, kind: 'slides', label: 'عرض شرائح', detail: (msg.presentation && msg.presentation.title) || '', anchor: '.chat-presentation' });
+    if (hasTreeSet) out.push({ idx, kind: 'treetext', label: 'تشجير نصي', detail: (msg.tree_set || []).map((t) => t.title).filter(Boolean).join('، '), anchor: '.smart-trees-grid' });
+    if (hasTreeImgs) out.push({ idx, kind: 'treeimg', label: 'تشجير مصوّر', detail: (msg.tree_images || []).map((t) => t.title).filter(Boolean).join('، '), anchor: '.smart-trees-grid' });
     prevFinalize = false;
   });
   return out;
@@ -1325,11 +1370,16 @@ function isFinalApprovedAnswer(session, idx) {
   return chatAnswerStages(session).some((s) => s.idx === idx && s.kind === 'final');
 }
 
-function scrollToChatAnswer(idx) {
+function scrollToChatAnswer(idx, anchor) {
   const scroller = document.getElementById('chatMessagesContainer');
   const msg = document.getElementById(`chatMsg${idx}`);
   if (!scroller || !msg) return;
-  scroller.scrollTo({ top: Math.max(0, msg.offsetTop - scroller.offsetTop - 8), behavior: 'smooth' });
+  // نقطة منتج ملحق تنقل إلى بطاقة المنتج داخل الإجابة، ونقطة الإجابة
+  // نفسها تنقل إلى رأسها
+  const target = (anchor && msg.querySelector(anchor)) || msg;
+  const cRect = scroller.getBoundingClientRect();
+  const top = scroller.scrollTop + target.getBoundingClientRect().top - cRect.top - 8;
+  scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   msg.classList.remove('chat-timeline-flash');
   void msg.offsetWidth;
   msg.classList.add('chat-timeline-flash');
@@ -1385,7 +1435,8 @@ function buildChatTimeline(sessionArg) {
     btn.type = 'button';
     btn.className = `chat-timeline-item is-${st.kind}`;
     btn.dataset.msgIdx = String(st.idx);
-    btn.title = `الانتقال إلى رأس الإجابة: ${st.label}`;
+    if (st.anchor) btn.dataset.anchor = st.anchor;
+    btn.title = `الانتقال إلى: ${st.label}${st.detail ? ` — ${st.detail}` : ''}`;
     const dot = document.createElement('span');
     dot.className = 'chat-timeline-dot';
     const chip = document.createElement('span');
@@ -1393,7 +1444,7 @@ function buildChatTimeline(sessionArg) {
     chip.textContent = st.label;
     btn.appendChild(dot);
     btn.appendChild(chip);
-    btn.addEventListener('click', () => scrollToChatAnswer(st.idx));
+    btn.addEventListener('click', () => scrollToChatAnswer(st.idx, st.anchor || ''));
     (panel || rail).appendChild(btn);
   });
   rail.dataset.activeIdx = '';
@@ -1413,13 +1464,15 @@ function positionChatTimeline() {
     const msg = document.getElementById(`chatMsg${item.dataset.msgIdx}`);
     if (!msg) { item.style.display = 'none'; return; }
     item.style.display = '';
-    if (msg.getBoundingClientRect().top - cRect.top <= 110) activeItem = item;
+    // موضع النقطة بحسب بطاقة منتجها إن وجدت، وإلا رأس إجابتها
+    const target = (item.dataset.anchor && msg.querySelector(item.dataset.anchor)) || msg;
+    if (target.getBoundingClientRect().top - cRect.top <= 110) activeItem = item;
   });
   rail.querySelectorAll('.chat-timeline-item').forEach((item) => {
     item.classList.toggle('is-active', item === activeItem);
   });
   // عند كثرة المراحل تمرّر اللوحة داخليًا حتى يبقى الفعّال في وسطها
-  const activeKey = activeItem ? activeItem.dataset.msgIdx : '';
+  const activeKey = activeItem ? `${activeItem.dataset.msgIdx}|${activeItem.dataset.anchor || ''}` : '';
   if (activeItem && rail.dataset.activeIdx !== activeKey) {
     rail.dataset.activeIdx = activeKey;
     const panel = rail.querySelector('.chat-timeline-panel');
@@ -2149,7 +2202,12 @@ function renderSessionMessages(sessionId, options) {
   }
 
   let briefTitleCount = 0;
-  const stageByIdx = new Map(chatAnswerStages(session).map((s) => [s.idx, s.kind]));
+  // قد تحمل الإجابة الواحدة نقاطًا عدة في الخط الزمني (هي ومنتجاتها
+  // الملحقة)؛ مرحلتها هنا هي الأهم: المعتمدة أولًا ثم أول نقطة لها
+  const stageByIdx = new Map();
+  chatAnswerStages(session).forEach((s) => {
+    if (s.kind === 'final' || !stageByIdx.has(s.idx)) stageByIdx.set(s.idx, s.kind);
+  });
   container.innerHTML = session.messages.map((msg, idx) => {
     if (idx === 0 && isStoredOpening(msg)) return '';
     const isUser = msg.role === 'user';

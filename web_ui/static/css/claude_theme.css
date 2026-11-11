@@ -1987,7 +1987,7 @@ body:has(#paneChat.active) .main-content {
 .chat-timeline {
   position: absolute;
   right: 4px;
-  width: 132px;
+  width: 152px;
   z-index: 6;
   pointer-events: none;
 }
@@ -1997,7 +1997,7 @@ body:has(#paneChat.active) .main-content {
   top: 50%;
   transform: translateY(-50%) translateX(12px);
   right: 2px;
-  width: 128px;
+  width: 148px;
   max-height: calc(100% - 24px);
   overflow-y: auto;
   scrollbar-width: thin;
@@ -2113,7 +2113,7 @@ body:has(#paneChat.active) .main-content {
   border-radius: 6px;
   padding: 1px 7px;
   white-space: nowrap;
-  max-width: 84px;
+  max-width: 104px;
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: center;
@@ -2128,6 +2128,34 @@ body:has(#paneChat.active) .main-content {
 .chat-timeline-item.is-brief .chat-timeline-dot { border-color: #7c3aed; }
 .chat-timeline-item.is-brief .chat-timeline-chip { color: #7c3aed; }
 .chat-timeline-hint i.is-brief { border-color: #7c3aed; }
+/* ألوان نقاط المنتجات بحسب نوعها: صوتيات وشرائح وتشجير وجداول ورسوم */
+.chat-timeline-item.is-audio .chat-timeline-dot,
+.chat-timeline-item.is-voice .chat-timeline-dot { border-color: #0891b2; }
+.chat-timeline-item.is-audio .chat-timeline-chip,
+.chat-timeline-item.is-voice .chat-timeline-chip { color: #0891b2; }
+.chat-timeline-item.is-podcast .chat-timeline-dot { border-color: #db2777; }
+.chat-timeline-item.is-podcast .chat-timeline-chip { color: #db2777; }
+.chat-timeline-item.is-slides .chat-timeline-dot { border-color: #d97706; }
+.chat-timeline-item.is-slides .chat-timeline-chip { color: #d97706; }
+.chat-timeline-item.is-treetext .chat-timeline-dot { border-color: #16a34a; }
+.chat-timeline-item.is-treetext .chat-timeline-chip { color: #16a34a; }
+.chat-timeline-item.is-treeimg .chat-timeline-dot { border-color: #65a30d; }
+.chat-timeline-item.is-treeimg .chat-timeline-chip { color: #65a30d; }
+.chat-timeline-item.is-table .chat-timeline-dot,
+.chat-timeline-item.is-chart .chat-timeline-dot,
+.chat-timeline-item.is-map .chat-timeline-dot,
+.chat-timeline-item.is-tool .chat-timeline-dot { border-color: #9333ea; }
+.chat-timeline-item.is-table .chat-timeline-chip,
+.chat-timeline-item.is-chart .chat-timeline-chip,
+.chat-timeline-item.is-map .chat-timeline-chip,
+.chat-timeline-item.is-tool .chat-timeline-chip { color: #9333ea; }
+.chat-timeline-hint i.is-audio, .chat-timeline-hint i.is-voice { border-color: #0891b2; }
+.chat-timeline-hint i.is-podcast { border-color: #db2777; }
+.chat-timeline-hint i.is-slides { border-color: #d97706; }
+.chat-timeline-hint i.is-treetext { border-color: #16a34a; }
+.chat-timeline-hint i.is-treeimg { border-color: #65a30d; }
+.chat-timeline-hint i.is-table, .chat-timeline-hint i.is-chart,
+.chat-timeline-hint i.is-map, .chat-timeline-hint i.is-tool { border-color: #9333ea; }
 
 .brief-comment-title {
   display: flex;
