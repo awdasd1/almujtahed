@@ -3057,7 +3057,8 @@ async function publishPodcast(idx, btn) {
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ تجهيز فيديو الحلقة…'; }
   try {
     // منصات كتيك توك لا تقبل الصور الصامتة: يُنشر البودكاست فيديو MP4 (غلاف + صوت الحلقة كاملًا)
-    if (!info.video_url) {
+    // تيك توك يشترط ٢٣–٦٠ إطارًا/ثانية: أي فيديو محفوظ بمعدل أقدم يُعاد توليده بالمعدل الصحيح
+    if (!info.video_url || info.video_fps !== 30) {
       const cover = await makePodcastCoverBlob(info.title || 'بودكاست حواري');
       const fd = new FormData();
       fd.append('file', cover, 'podcast-cover.png');
@@ -3073,6 +3074,7 @@ async function publishPodcast(idx, btn) {
       const vData = await vRes.json().catch(() => ({}));
       if (!vRes.ok || !vData.video_url) throw new Error(vData.detail || 'تعذر تحويل الحلقة إلى فيديو');
       info.video_url = vData.video_url;
+      info.video_fps = 30;
       saveChatSessions();
     }
     const caption = [

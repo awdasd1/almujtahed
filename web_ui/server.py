@@ -5713,7 +5713,7 @@ async def podcast_video(req: PodcastVideoRequest, request: Request):
 
     def _build() -> None:
         cmd = [
-            ffmpeg, "-y", "-loop", "1", "-framerate", "2", "-i", str(cover), "-i", str(audio),
+            ffmpeg, "-y", "-loop", "1", "-framerate", "30", "-i", str(cover), "-i", str(audio),
             "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage",
             "-c:a", "aac", "-b:a", "160k", "-pix_fmt", "yuv420p",
             "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
@@ -7444,7 +7444,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.447"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.448"},
         },
     })
     if opened.get("error"):
