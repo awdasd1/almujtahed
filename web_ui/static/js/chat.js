@@ -1329,6 +1329,8 @@ function chatAnswerStages(session) {
         out.push({ idx, kind: 'treetext', label: 'تشجير نصي', detail: titles, anchor: '.smart-trees-grid' });
       } else if (msg.table_request) {
         out.push({ idx, kind: 'table', label: 'جدول' });
+      } else if (msg.chart_kind === 'smart3d') {
+        out.push({ idx, kind: 'chart', label: 'رسم ثلاثي الأبعاد' });
       } else if (msg.chart_kind) {
         out.push({ idx, kind: 'chart', label: 'رسم بياني' });
       } else if (msg.map_kind) {
@@ -7192,11 +7194,13 @@ function setChatSendLocked(locked) {
   const mapSelect = document.querySelector('select.chat-islamap-kind-fixed');
   const tableButton = document.getElementById('btnChatTable');
   const chartsButton = document.getElementById('btnChatCharts');
+  const charts3dButton = document.getElementById('btnChat3D');
   const treeButton = document.getElementById('btnChatSmartTree');
   if (button) button.disabled = !!locked;
   if (stop) stop.disabled = !locked;
   if (tableButton) tableButton.disabled = !!locked;
   if (chartsButton) chartsButton.disabled = !!locked;
+  if (charts3dButton) charts3dButton.disabled = !!locked;
   if (treeButton) treeButton.disabled = !!locked;
   if (select) select.disabled = !!locked;
   if (chartSelect) chartSelect.disabled = !!locked;
@@ -8376,7 +8380,7 @@ function startDataScan(mode) {
     return;
   }
   _dataScanMaterial = stripChartFences(stripGraphFences(source.content)).slice(0, 24000);
-  _dataScanMode = mode === 'tables' ? 'tables' : 'charts';
+  _dataScanMode = mode === 'tables' ? 'tables' : (mode === 'charts3d' ? 'charts3d' : 'charts');
   openDataScanModal();
   analyzeDataContent();
 }
@@ -8401,9 +8405,11 @@ function openDataScanModal() {
     document.body.appendChild(modal);
     modal.addEventListener('click', (e) => { if (e.target === modal) closeDataScanModal(); });
   }
-  modal.querySelector('#dataScanTitle').textContent = _dataScanMode === 'charts'
-    ? '📊 رسوم بيانية — مسح ذكي للأرقام والنسب والمؤشرات'
-    : '📋 جدولة — مسح ذكي للبنية القابلة للجدولة';
+  modal.querySelector('#dataScanTitle').textContent = _dataScanMode === 'charts3d'
+    ? '🧊 رسوم ثلاثية الأبعاد — مسح ذكي (ECharts GL)'
+    : (_dataScanMode === 'charts'
+      ? '📊 رسوم بيانية — مسح ذكي للأرقام والنسب والمؤشرات'
+      : '📋 جدولة — مسح ذكي للبنية القابلة للجدولة');
   modal.hidden = false;
 }
 
@@ -8417,8 +8423,8 @@ async function analyzeDataContent() {
   const token = ++_dataScanToken;
   const body = document.getElementById('dataScanBody');
   const foot = document.getElementById('dataScanFoot');
-  const charts = _dataScanMode === 'charts';
-  if (body) body.innerHTML = `<div class="smart-tree-wait"><span class="smart-tree-spinner"></span><div><b>جارٍ مسح المحتوى…</b><small>${charts ? 'النموذج يجمع أعداد النتيجة وتوزيعاتها ويحسب نسبها ويقترح رسومها ومؤشراتها، فضلًا انتظر قليلًا.' : 'النموذج يستخرج مقارنات النتيجة وقوائمها ذات الخصائص المتكررة ويقترح جداولها، فضلًا انتظر قليلًا.'}</small></div></div>`;
+  const charts = _dataScanMode !== 'tables';
+  if (body) body.innerHTML = `<div class="smart-tree-wait"><span class="smart-tree-spinner"></span><div><b>جارٍ مسح المحتوى…</b><small>${_dataScanMode === 'charts3d' ? 'النموذج يبحث في النتيجة عن توزيعات ثنائية المحور وثلاثيات عددية تصلح تمثيلًا ثلاثيًا يُدار بالفأرة، فضلًا انتظر قليلًا.' : (charts ? 'النموذج يجمع أعداد النتيجة وتوزيعاتها ويحسب نسبها ويقترح رسومها ومؤشراتها، فضلًا انتظر قليلًا.' : 'النموذج يستخرج مقارنات النتيجة وقوائمها ذات الخصائص المتكررة ويقترح جداولها، فضلًا انتظر قليلًا.')}</small></div></div>`;
   if (foot) foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeDataScanModal()">إلغاء</button>`;
   try {
     const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
@@ -8445,21 +8451,23 @@ function renderDataProposals(proposals) {
   const body = document.getElementById('dataScanBody');
   const foot = document.getElementById('dataScanFoot');
   if (!body || !foot) return;
-  const charts = _dataScanMode === 'charts';
+  const charts = _dataScanMode !== 'tables';
   if (!proposals.length) {
-    body.innerHTML = `<div class="pres-opt-hint">${charts
-      ? 'لم يجد المسح في هذه النتيجة أعدادًا قابلة للتوزيع أو المقارنة أو الاشتقاق النسبي. الرسوم البيانية تحتاج مادة عددية: توزيعات على بلدان أو طبقات أو مذاهب، أو مقارنات مقادير، أو تسلسلات زمنية بأعداد — اطلب من النموذج إجابة غنية بالأعداد الموزعة ثم أعد المسح.'
-      : 'لم يجد المسح في هذه النتيجة بنية قابلة للجدولة بثقة (لا مقارنات ببنود متقابلة ولا قوائم ذات خصائص متكررة). جرّب جدولة إجابة فيها أقوال ومذاهب وأدلة أو رواة بخصائصهم.'}</div>`;
+    body.innerHTML = `<div class="pres-opt-hint">${_dataScanMode === 'charts3d'
+      ? 'لم يجد المسح في هذه النتيجة توزيعًا ثنائي المحور ولا ثلاثيات عددية تصلح تمثيلًا ثلاثيًا. الرسم ثلاثي الأبعاد يحتاج بيانات على محورين معًا (كشيوخ موزعين على بلدان وعصور، أو قيم بين صفوف وأعمدة) — والتوزيعات أحادية المحور مكانها زر «📊 رسوم بيانية» المسطحة.'
+      : (charts
+        ? 'لم يجد المسح في هذه النتيجة أعدادًا قابلة للتوزيع أو المقارنة أو الاشتقاق النسبي. الرسوم البيانية تحتاج مادة عددية: توزيعات على بلدان أو طبقات أو مذاهب، أو مقارنات مقادير، أو تسلسلات زمنية بأعداد — اطلب من النموذج إجابة غنية بالأعداد الموزعة ثم أعد المسح.'
+        : 'لم يجد المسح في هذه النتيجة بنية قابلة للجدولة بثقة (لا مقارنات ببنود متقابلة ولا قوائم ذات خصائص متكررة). جرّب جدولة إجابة فيها أقوال ومذاهب وأدلة أو رواة بخصائصهم.')}</div>`;
     foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeDataScanModal()">إغلاق</button>`;
     return;
   }
-  body.innerHTML = `<div class="pres-opt-label">${charts ? 'وجد النموذج في النتيجة بيانات قابلة للرسم — حدّد رسمًا أو أكثر' : 'وجد النموذج في النتيجة بنى قابلة للجدولة — حدّد جدولًا أو أكثر'}</div>
+  body.innerHTML = `<div class="pres-opt-label">${_dataScanMode === 'charts3d' ? 'وجد النموذج بيانات تصلح تمثيلًا ثلاثيًا يُدار بالفأرة — حدّد رسمًا أو أكثر' : (charts ? 'وجد النموذج في النتيجة بيانات قابلة للرسم — حدّد رسمًا أو أكثر' : 'وجد النموذج في النتيجة بنى قابلة للجدولة — حدّد جدولًا أو أكثر')}</div>
     <div class="smart-tree-select-row">
       <button type="button" class="btn-msg-export" id="dataScanSelectAllBtn" onclick="dataScanToggleAll()">☑ تحديد الكل</button>
       <span class="smart-tree-sel-count" id="dataScanSelCount"></span>
     </div>` + proposals.map((p, i) => `
     <label class="pres-radio-card"><input type="checkbox" name="dataScanProposal" value="${i}"${i === 0 ? ' checked' : ''} onchange="updateDataScanSelState()"> <span><b>${escapeHtml(p.kind_label || '')}: ${escapeHtml(p.title || '')}</b><small>${escapeHtml(p.columns ? `الأعمدة: ${p.columns} — ` : '')}${escapeHtml(p.desc || '')}</small></span></label>`).join('');
-  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeDataScanModal()">إلغاء</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmDataScan()">${charts ? '📊 إنشاء الرسوم المحددة' : '📋 إنشاء الجداول المحددة'}</button>`;
+  foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="closeDataScanModal()">إلغاء</button><button type="button" class="btn-msg-export pres-start-btn" onclick="confirmDataScan()">${_dataScanMode === 'charts3d' ? '🧊 إنشاء الرسوم ثلاثية الأبعاد' : (charts ? '📊 إنشاء الرسوم المحددة' : '📋 إنشاء الجداول المحددة')}</button>`;
   updateDataScanSelState();
 }
 
@@ -8501,6 +8509,15 @@ function chartProposalInstruction(p) {
 لا تكتب أي كلمة خارج كتلة echarts. كل كتلة خيار Apache ECharts صالح فيه title.text بالعربية وseries.`;
 }
 
+function chart3dProposalInstruction(p) {
+  return `أخرج رسمًا ثلاثي الأبعاد واحدًا فقط من نوع «${p.chart}» (ECharts GL) عنوانه «${p.title}»، في كتلة \`\`\`echarts واحدة فقط.
+البنية إلزامية: كائن فيه title.text بالعربية يساوي «${p.title}»، وtooltip، وxAxis3D وyAxis3D و zAxis3D (بأسماء المحاور العربية وفئاتها كما في استخراج المسح)، وgrid3D فيه viewControl بهذه القيم حرفيًا: {"alpha": 24, "beta": 38, "distance": 210, "autoRotate": false, "rotateSensitivity": 1} حتى يُدار الرسم بالفأرة دورانًا وتقريبًا، وseries عنصر واحد type يساوي "${p.chart}" وdata ثلاثيات [x, y, z] بأرقام (0-9) وفهارس الفئات بحسب ترتيبها في المحورين، ومعها visualMap اختياري بألوان متدرجة بحسب القيمة.
+البيانات إلزامية من النتيجة الآتية وحدها وبحسب استخراج المسح الذكي هذا حرفيًا (المحاور والقيم): ${p.desc}
+لا تبحث من جديد، ولا تستدعِ الشاملة ولا الوكلاء، ولا تضف فئة ولا قيمة ليست في النتيجة أو في استخراج المسح.
+ممنوع منعًا باتًا: دوال جافاسكربت (function أو أسهم =>) ووسوم HTML في أي موضع، فالناتج JSON نقي يصلح لـ JSON.parse كما هو.
+لا تكتب أي كلمة خارج كتلة echarts.`;
+}
+
 function tableProposalInstruction(p) {
   return `جدول النتيجة الآتية فقط، بحسب مقترح المسح الذكي هذا:
 العنوان: ${p.title}
@@ -8511,7 +8528,8 @@ function tableProposalInstruction(p) {
 }
 
 async function fetchOneDataItem(p, ctx) {
-  const charts = _dataScanMode === 'charts';
+  const is3d = _dataScanMode === 'charts3d';
+  const charts = _dataScanMode !== 'tables';
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -8524,7 +8542,7 @@ async function fetchOneDataItem(p, ctx) {
       graph_only: charts,
       table_only: !charts,
       messages: [{ role: 'user', content: `النتيجة المراد ${charts ? 'رسم بياناتها' : 'جدولتها'}:\n${_dataScanMaterial}` }],
-      system_prompt: charts ? chartProposalInstruction(p) : tableProposalInstruction(p),
+      system_prompt: is3d ? chart3dProposalInstruction(p) : (charts ? chartProposalInstruction(p) : tableProposalInstruction(p)),
       temperature: 0.2,
       providers: ctx.keys,
       agent_group: null,
@@ -8545,7 +8563,7 @@ async function fetchOneDataItem(p, ctx) {
 function confirmDataScan() {
   const selected = dataScanSelectedProposals();
   if (!selected.length) {
-    if (typeof showToast === 'function') showToast(_dataScanMode === 'charts' ? 'حدّد رسمًا واحدًا على الأقل' : 'حدّد جدولًا واحدًا على الأقل');
+    if (typeof showToast === 'function') showToast(_dataScanMode === 'tables' ? 'حدّد جدولًا واحدًا على الأقل' : 'حدّد رسمًا واحدًا على الأقل');
     return;
   }
   closeDataScanModal();
@@ -8555,7 +8573,7 @@ function confirmDataScan() {
 async function generateDataItems(selected) {
   const session = chatSessions.find(item => item.id === activeSessionId);
   if (!session) return;
-  const charts = _dataScanMode === 'charts';
+  const charts = _dataScanMode !== 'tables';
   const prog = smartTreeProgressBubble(charts
     ? `جارٍ إنشاء ${selected.length} ${selected.length === 1 ? 'رسم بياني' : 'رسوم بيانية'} من بيانات النتيجة الممسوحة: 0 من ${selected.length}...`
     : `جارٍ إنشاء ${selected.length} ${selected.length === 1 ? 'جدول' : 'جداول'} من بنية النتيجة الممسوحة: 0 من ${selected.length}...`);
@@ -8591,7 +8609,7 @@ async function generateDataItems(selected) {
       content: parts.join('\n\n'),
       model: ctx.model,
       provider: ctx.provider,
-      chart_kind: 'smart',
+      chart_kind: _dataScanMode === 'charts3d' ? 'smart3d' : 'smart',
     });
   } else {
     session.messages.push({

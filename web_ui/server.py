@@ -6089,9 +6089,37 @@ _DATA_TABLES_SYSTEM = (
 )
 
 
+CHART3D_TYPE_LABELS = {
+    "bar3D": "أعمدة ثلاثية الأبعاد", "scatter3D": "نقاط ثلاثية الأبعاد",
+    "surface": "سطح ثلاثي الأبعاد", "line3D": "خطوط ثلاثية الأبعاد",
+}
+
+_DATA_CHARTS3D_SYSTEM = (
+    "أنت محلّل بيانات للتمثيل ثلاثي الأبعاد في نصوص علمية شرعية وتاريخية. مهمتك اكتشاف ما يصلح رسمه "
+    "ثلاثي الأبعاد (ECharts GL) من بيانات النص نفسه: تمثيل يُدار بالفأرة دورانًا وتقريبًا. اعمل على مرحلتين:\n"
+    "المرحلة الأولى (scan): امسح النص وسجّل: كل توزيع عددي على محورين فئويين معًا (شيوخ موزعون على بلدان "
+    "وعصور/طبقات، أحاديث على مصادر ودرجات، كتب على مذاهب وقرون، أقوال على مسائل ومذاهب بقيم أو أعداد)، "
+    "وكل ثلاثيات عددية مترابطة (سنة وعدد ونسبة)، وكل تسلسل زمني مقترن بفئات وقيم، وكل مصفوفة قيم بين "
+    "صفوف وأعمدة.\n"
+    "المرحلة الثانية (proposals): حوّل أفضل ما وجدته إلى مقترحات ثلاثية، من مقترح إلى أربعة. لكل مقترح "
+    "اختر النوع: bar3D لتوزيع قيم على محورين فئويين (الأعمدة ثلاثية)، scatter3D لثلاثيات عددية متناثرة، "
+    "surface لمصفوفة قيم منتظمة بين محورين، line3D لمسار زمني أو تسلسلي بثلاثة أبعاد. واكتب في desc: "
+    "محور س (فئاته)، ومحور ص (فئاته)، ومحور ع/القيمة، ثم أزواج/ثلاثيات البيانات كلها بأرقام (0-9) كما في "
+    "النص حرفيًا مفصولة بـ؛ — فهذا هو ما سيُرسم، لا تخترع خلية ولا قيمة.\n"
+    "قواعد صارمة: لا بيانات من خارج النص؛ لا مقترح بلا محورين على الأقل وقيم لهما؛ توزيع أحادي المحور "
+    "(فئات وقيم فقط) لا تقترحه إلا إن أمكن إغناؤه بمحور ثانٍ مذكور في النص (كعصر أو طبقة)، وإلا فدعه للرسوم "
+    "المسطحة ولا تقترحه هنا. لا تكرر التوزيع نفسه بنوعين.\n"
+    "أعد JSON فقط دون أي شرح خارجي أو أسوار كود، بهذا الشكل: "
+    '{"scan": ["توزيع ثنائي المحور: محاوره وقيمه"], "proposals": [{"title": "عنوان محدد من النص", '
+    '"chart": "bar3D", "desc": "محور س: ...؛ محور ص: ...؛ القيم: (س، ص، قيمة)؛ ..."}]}. '
+    "chart واحد من: bar3D, scatter3D, surface, line3D. لا تُعد قائمة فارغة إلا إذا خلا النص من أي توزيع "
+    "ثنائي المحور أو ثلاثيات عددية."
+)
+
+
 def _analyze_data_proposals(key: str, text: str, mode: str) -> list:
     """مسح محتوى إجابة لاستخراج مقترحات رسوم بيانية من أرقامه أو جداول من بنيته، بلا اختراع من خارجه."""
-    system = _DATA_CHARTS_SYSTEM if mode == "charts" else _DATA_TABLES_SYSTEM
+    system = {"charts": _DATA_CHARTS_SYSTEM, "charts3d": _DATA_CHARTS3D_SYSTEM}.get(mode, _DATA_TABLES_SYSTEM)
     last_error: Optional[Exception] = None
     empty_raw = ""
     for _attempt in range(2):
@@ -6127,7 +6155,18 @@ def _extract_data_proposals(raw: str, mode: str) -> list:
         if not title or title in seen:
             continue
         seen.add(title)
-        if mode == "charts":
+        if mode == "charts3d":
+            chart = str(item.get("chart") or "").strip()
+            if chart not in CHART3D_TYPE_LABELS:
+                chart = "bar3D"
+            proposals.append({
+                "kind": "chart3d",
+                "kind_label": CHART3D_TYPE_LABELS[chart],
+                "chart": chart,
+                "title": title[:120],
+                "desc": str(item.get("desc") or "").strip()[:900],
+            })
+        elif mode == "charts":
             chart = str(item.get("chart") or "").strip()
             if chart not in CHART_TYPE_LABELS:
                 chart = "bar"
@@ -6163,7 +6202,7 @@ async def chat_data_analyze(req: DataAnalyzeRequest, request: Request):
     text = (req.text or "").strip()
     if len(text) < 120:
         raise HTTPException(status_code=400, detail="المحتوى قصير جدًا لمسحه وتحليله")
-    mode = "charts" if req.mode == "charts" else "tables"
+    mode = req.mode if req.mode in ("charts", "charts3d") else "tables"
     key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
     if not key:
         raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
@@ -7721,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.454"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.455"},
         },
     })
     if opened.get("error"):

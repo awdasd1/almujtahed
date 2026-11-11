@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.454">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.455">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.454 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.455 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -341,13 +341,7 @@
                             </button>
                         </div>
                         <button type="button" class="chat-table-request-btn" id="btnChatSmartTree" onclick="startSmartTree()" title="يفحص النموذج النتيجة السابقة ويقترح مسائلها القابلة للتشجير، ثم تحدّد مسألة أو أكثر لتشجيرها نصيًا أو تصويرها أو التعليق عليها صوتيًا أو إنشاء شرائح منها">🌳 تشجير ووسائط</button>
-                        <select class="btn-chat-tool-action chat-islamap-kind-fixed" onchange="insertIslamapKind(this)" title="اختر نوع الخارطة ليُرسم من النتيجة السابقة">
-                            <option value="">نوع الخارطة</option>
-                            <option value="auto">الأنسب تلقائياً</option>
-                            <option value="distribution">توزيع جغرافي</option>
-                            <option value="cities">مدن ومراكز</option>
-                            <option value="routes">غزوات وفتوحات ورحلات</option>
-                        </select>
+                        <button type="button" class="chat-table-request-btn" id="btnChat3D" onclick="startDataScan('charts3d')" title="مسح ذكي ثلاثي الأبعاد (ECharts GL): يفحص النموذج بيانات النتيجة ويقترح ما يصلح تمثيلًا ثلاثيًا (أعمدة ونقاط وأسطح ثلاثية) تُدار بالفأرة دورانًا وتقريبًا وإزاحة">🧊 رسوم ثلاثية</button>
                         <button type="button" class="chat-table-request-btn" id="btnChatCharts" onclick="startDataScan('charts')" title="مسح ذكي: يفحص النموذج أرقام النتيجة السابقة وتوزيعاتها، يحسب نسبها ويقترح رسومًا بيانية ومؤشرات KPI، ثم تحدّد ما يُرسم">📊 رسوم بيانية</button>
                         <button type="button" class="chat-table-request-btn" id="btnChatTable" onclick="startDataScan('tables')" title="مسح ذكي: يفحص النموذج بنية النتيجة السابقة (مقارنات وقوائم ذات خصائص متكررة) ويقترح جداولها، ثم تحدّد ما يُجدول">جدولة</button>
                         <!-- حاوية أزرار الأدوات المفعلة في المحادثة -->
@@ -5633,29 +5627,30 @@
     <script src="/static/js/marked.min.js"></script>
     <script src="/static/js/chart.min.js"></script>
     <script src="/static/js/echarts.min.js"></script>
+    <script src="/static/js/echarts-gl.min.js"></script>
     <script src="/static/js/vis-network.min.js"></script>
     <script src="/static/js/d3.min.js"></script>
     <script src="/static/js/markmap-view.min.js"></script>
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.454"></script>
-    <script src="/static/js/search.js?v=1.10.454"></script>
-    <script src="/static/js/reader.js?v=1.10.454"></script>
-    <script src="/static/js/force3d.js?v=1.10.454"></script>
-    <script src="/static/js/share.js?v=1.10.454"></script>
-    <script src="/static/js/chat.js?v=1.10.454"></script>
-    <script src="/static/js/designs.js?v=1.10.454"></script>
-    <script src="/static/js/texts.js?v=1.10.454"></script>
-    <script src="/static/js/agents.js?v=1.10.454"></script>
-    <script src="/static/js/providers.js?v=1.10.454"></script>
-    <script src="/static/js/tools.js?v=1.10.454"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.454"></script>
-    <script src="/static/js/projects.js?v=1.10.454"></script>
-    <script src="/static/js/archive.js?v=1.10.454"></script>
-    <script src="/static/js/compare.js?v=1.10.454"></script>
-    <script src="/static/js/local_models.js?v=1.10.454"></script>
-    <script src="/static/js/changelog.js?v=1.10.454"></script>
+    <script src="/static/js/app.js?v=1.10.455"></script>
+    <script src="/static/js/search.js?v=1.10.455"></script>
+    <script src="/static/js/reader.js?v=1.10.455"></script>
+    <script src="/static/js/force3d.js?v=1.10.455"></script>
+    <script src="/static/js/share.js?v=1.10.455"></script>
+    <script src="/static/js/chat.js?v=1.10.455"></script>
+    <script src="/static/js/designs.js?v=1.10.455"></script>
+    <script src="/static/js/texts.js?v=1.10.455"></script>
+    <script src="/static/js/agents.js?v=1.10.455"></script>
+    <script src="/static/js/providers.js?v=1.10.455"></script>
+    <script src="/static/js/tools.js?v=1.10.455"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.455"></script>
+    <script src="/static/js/projects.js?v=1.10.455"></script>
+    <script src="/static/js/archive.js?v=1.10.455"></script>
+    <script src="/static/js/compare.js?v=1.10.455"></script>
+    <script src="/static/js/local_models.js?v=1.10.455"></script>
+    <script src="/static/js/changelog.js?v=1.10.455"></script>
 
     <script>
         window.refreshLucideIcons = function () {
