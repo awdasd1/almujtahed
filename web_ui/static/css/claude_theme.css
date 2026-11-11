@@ -11186,3 +11186,27 @@ body::-webkit-scrollbar,
 .ms-collated-folio { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px; margin-top: 12px; }
 .ms-collated-text { white-space: pre-wrap; font-size: 15px; line-height: 2; }
 .ms-collated-app { margin-top: 10px; font-size: 12.5px; line-height: 1.9; border-top: 1px dashed var(--border-subtle); padding-top: 8px; }
+.ms-sugg-kind-author { border-color: #7a5aa1; color: #7a5aa1; }
+.ms-verify-verified { color: #2e7d5b; } .ms-verify-found { color: #8a6414; }
+.ms-verify-not_found { color: #b03030; } .ms-verify-unchecked { color: #999; }
+.ms-book-chip { display: inline-block; margin: 2px 3px; padding: 3px 9px; border: 1px solid var(--border-subtle); border-radius: 999px; font-size: 12px; }
+.ms-img-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 12.5px; }
+.ms-img-tools input[type="range"] { width: 84px; vertical-align: middle; }
+.ms-img-tools .ms-btn { padding: 4px 10px; font-size: 12px; }
+.ms-img-tools .ms-btn.ms-mode-on { background: var(--accent-clay, #b4552d); color: #fff; border-color: transparent; }
+.ms-zoom-val { min-width: 44px; text-align: center; font-weight: 700; }
+.ms-wb-img { position: relative; }
+.ms-wb-img img { display: block; margin: 0 auto; }
+#msWbOverlay { position: absolute; pointer-events: none; }
+#msWbStage.ms-mode-active #msWbOverlay { pointer-events: auto; cursor: crosshair; }
+.ms-crop-box { margin-top: 10px; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; }
+.ms-crop-box img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border-subtle); margin-bottom: 8px; }
+.ms-crop-box textarea { width: 100%; margin-top: 8px; font-family: inherit; font-size: 13.5px; line-height: 1.9; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: transparent; color: inherit; }
+.ms-monitor-entry { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+.ms-monitor-entry.ms-mon-done { opacity: .55; }
+.ms-monitor-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; margin-bottom: 6px; }
+.ms-finding { font-size: 12.5px; line-height: 1.9; padding: 6px 8px; border: 1px solid var(--border-subtle); border-radius: 8px; margin-bottom: 6px; }
+.ms-sev-high { border-color: #b03030; color: #b03030; padding: 1px 8px; border-radius: 999px; border: 1px solid #b03030; font-size: 11px; }
+.ms-sev-med { border-color: #d9a441; color: #8a6414; padding: 1px 8px; border-radius: 999px; border: 1px solid #d9a441; font-size: 11px; }
+.ms-sev-low { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border-subtle); font-size: 11px; opacity: .8; }
+.ms-finding-ev { opacity: .75; font-size: 12px; }

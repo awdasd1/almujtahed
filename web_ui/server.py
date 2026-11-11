@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.467"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.468"},
         },
     })
     if opened.get("error"):
@@ -14233,6 +14233,192 @@ async def manuscript_agents(request: Request, payload: Any = Body(...)):
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذر تشغيل الوكلاء: {str(exc)[:200]}")
+
+
+# ---------- وكيل المؤلف المتخصص ----------
+# يعرض عبارات اللوحة (من كلام المؤلف نفسه لا الآيات والأحاديث) على سائر
+# كتب المؤلف عندنا: أين قالها أيضًا؟ هل باختصار أم إسهاب؟ وأي الألفاظ
+# أصح بقرينة أسلوبه؟ فيقترح على المحقق مواضع تقوّي قراءة أو تنبّه لتصحيف.
+def _ms_author_books(author: str):
+    raw = re.sub(r"\(.*?\)", "", str(author or "")).strip()
+    tokens = [t for t in re.split(r"\s+", raw) if len(t) > 2]
+    if not tokens:
+        return []
+    token = max(tokens, key=len)
+    try:
+        conn = shamela_local_mcp._books_conn()
+        if conn is None:
+            return []
+        rows = conn.execute(
+            "SELECT book_id, title_ar, main_author_name_ar, volume_count_observed FROM books "
+            "WHERE main_author_name_ar LIKE ? ORDER BY volume_count_observed ASC",
+            (f"%{token}%",)).fetchall()
+        conn.close()
+    except Exception:
+        return []
+    seen, out = set(), []
+    for r in rows:
+        title = str(r[1] or "")
+        stem = re.split(r"\s+[-–]\s+|\s+ت\s+|\s+ط\s+", title)[0].strip()
+        if stem in seen:
+            continue
+        seen.add(stem)
+        out.append({"book_id": r[0], "title": title, "author": r[2], "volumes": r[3]})
+        if len(out) >= 14:
+            break
+    return out
+
+def _ms_author_phrases(text: str):
+    parts = [p.strip() for p in re.split(r"[\n.!؟?؛]", text or "") if 30 <= len(p.strip()) <= 150]
+    voice = [p for p in parts if any(k in p for k in ("فرأيت", "فأردت", "أجمع", "أذكر", "أقول", "قصدت", "التزمت", "رجوت", "سألت", "أما بعد", "هذا كتاب", "مختصر"))]
+    rest = [p for p in parts if p not in voice]
+    return (voice + rest)[:5]
+
+def _ms_author_compare(model: str, phrase: str, parallels: list, key: str) -> Dict[str, Any]:
+    par_text = "\n".join(
+        f"- في «{x['book']}» (ج {x.get('part') or '—'} ص {x.get('page') or '—'}): {x['snippet'][:260]}"
+        for x in parallels)
+    prompt = (
+        "أنت وكيل متخصص في مؤلفات مؤلف واحد. العبارة الآتية من كلام المؤلف في الكتاب المحقَّق:\n"
+        f"«{phrase}»\n\nوُجدت عبارات مقابلة في سائر كتبه:\n{par_text}\n\n"
+        "قارن: هل كرر المؤلف عبارته بعينها أم باختصار أم بإسهاب؟ وأي اختلاف لفظي بين اللوحة وكتبه يؤثر في صحة قراءة اللوحة؟ "
+        "أخرج JSON فقط: {\"relation\":\"مطابقة|مختصرة هنا|مسهبة هنا|اختلاف ألفاظ\",\"note\":\"خلاصة مقارنة موجزة بأهم فرق لفظي\"}"
+    )
+    payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
+               "temperature": 0.2, "max_tokens": 1200}
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Author Agent"},
+        data=json.dumps(payload).encode("utf-8"))
+    with urllib.request.urlopen(http_req, timeout=300) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    parsed = _ms_parse_json(msg.get("content") or "") or {}
+    usage = data.get("usage") or {}
+    return {"relation": str(parsed.get("relation") or "")[:60],
+            "note": str(parsed.get("note") or "")[:700],
+            "cost": usage.get("cost")}
+
+def _ms_author_agent_sync(payload: dict, key: str) -> Dict[str, Any]:
+    import concurrent.futures as _cf
+    text = str((payload or {}).get("text") or "")
+    author = str((payload or {}).get("author") or "")
+    work = str((payload or {}).get("title") or "")
+    model = str((payload or {}).get("model") or "google/gemini-3.1-pro-preview")
+    books = _ms_author_books(author)
+    work_core = re.split(r"[\s—-]", work)[0] if work else ""
+    searchable = [b for b in books if work_core and work_core not in b["title"]] or books
+    phrases = _ms_author_phrases(text)
+    suggestions, total_cost, checks = [], 0.0, 0
+
+    def check(args):
+        phrase, book = args
+        try:
+            r = shamela_local_mcp.verify_quote(book=book["book_id"], quote_text=phrase[:150])
+            if r and r.get("verified") and r.get("matches"):
+                m = r["matches"][0]
+                return {"phrase": phrase, "book": book["title"], "book_id": book["book_id"],
+                        "part": m.get("part"), "page": m.get("page_num"),
+                        "snippet": m.get("snippet") or "", "status": r.get("match_status")}
+        except Exception:
+            pass
+        return None
+
+    jobs = [(ph, b) for ph in phrases for b in searchable[:12]][:40]
+    found = {}
+    with _cf.ThreadPoolExecutor(max_workers=6) as pool:
+        for hit in pool.map(check, jobs):
+            checks += 1
+            if hit:
+                found.setdefault(hit["phrase"], []).append(hit)
+    for phrase, parallels in found.items():
+        parallels = parallels[:3]
+        cmp = {"relation": "", "note": "", "cost": 0}
+        try:
+            cmp = _ms_author_compare(model, phrase, parallels, key)
+            total_cost += cmp.get("cost") or 0
+        except Exception:
+            pass
+        loci = "؛ ".join(f"«{x['book']}» ج {x.get('part') or '—'} ص {x.get('page') or '—'}" for x in parallels)
+        suggestions.append({
+            "kind": "author", "anchor": phrase[:200],
+            "title": f"موازاة في كتب المؤلف ({cmp.get('relation') or 'وجدت'})",
+            "body": (cmp.get("note") or "وُجدت العبارة في كتب المؤلف الأخرى كما في المواضع.")[:800],
+            "source": loci,
+            "surah": None, "ayah": None,
+            "verify": {"status": "verified",
+                       "detail": f"ثبتت الموازاة آليًا بالمطابقة على نصوص الكتب ({len(parallels)} موضعًا)"},
+        })
+    return {"books": books, "phrases_checked": len(phrases), "checks": checks,
+            "suggestions": suggestions, "cost": round(total_cost, 4)}
+
+@app.get("/api/manuscripts/author-books")
+async def manuscript_author_books(author: str = ""):
+    return {"books": await asyncio.to_thread(_ms_author_books, author)}
+
+@app.post("/api/manuscripts/author-agent")
+async def manuscript_author_agent(request: Request, payload: Any = Body(...)):
+    """وكيل المؤلف: عرض عبارات اللوحة على سائر كتب المؤلف ومقارنتها."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_author_agent_sync, payload or {}, key)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر وكيل المؤلف: {str(exc)[:200]}")
+
+
+# ---------- وكيل المراقبة والتدقيق ----------
+# مراقب مستقل (Muse Wonder افتراضيًا) يراجع مخرجات كل مرحلة ويُدوّن
+# الأخطاء والملاحظات في سجل مراقبة يساعد المحقق ولا يقرر عنه.
+MS_MONITOR_PROMPT = (
+    "أنت وكيل مراقبة وتدقيق مستقل في مشروع تحقيق مخطوطات. راجع مادة المرحلة «{phase}\" الآتية بعين ناقدة، "
+    "ودوّن الأخطاء والمخاطر والملاحظات التي ينبغي أن ينتبه لها المحقق: أخطاء نسخ محتملة، فروق مقابلة زائفة أو مفقودة، "
+    "اقتراحات تحقيق ضعيفة أو موثّقة خطأً، تناقضات داخلية، ومواضع تحتاج عين الإنسان على الصورة.\n"
+    "أخرج JSON فقط: {{\"findings\":[{{\"severity\":\"high|med|low\",\"area\":\"الموضع\",\"note\":\"الملاحظة\",\"evidence\":\"الدليل من المادة\"}}]}}\n"
+    "بين 3 و12 ملاحظة مرتبة بالأهمية، ولا تخترع أخطاء بلا دليل من المادة نفسها.\n\nالمادة:\n{context}"
+)
+
+def _ms_monitor_sync(payload: dict, key: str) -> Dict[str, Any]:
+    model = str((payload or {}).get("model") or "meta/muse-wonder")
+    prompt = MS_MONITOR_PROMPT.format(phase=str((payload or {}).get("phase") or "شاملة"),
+                                      context=str((payload or {}).get("context") or "")[:60000])
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2, "max_tokens": 6000}
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Monitor"},
+        data=json.dumps(body).encode("utf-8"))
+    started = time.time()
+    with urllib.request.urlopen(http_req, timeout=600) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(str(data.get("error"))[:240])
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    parsed = _ms_parse_json(msg.get("content") or "") or {}
+    findings = []
+    for f in (parsed.get("findings") or [])[:14]:
+        if isinstance(f, dict) and str(f.get("note") or "").strip():
+            findings.append({"severity": str(f.get("severity") or "low")[:8],
+                             "area": str(f.get("area") or "")[:140],
+                             "note": str(f.get("note"))[:800],
+                             "evidence": str(f.get("evidence") or "")[:400]})
+    usage = data.get("usage") or {}
+    return {"model": model, "findings": findings,
+            "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
+
+@app.post("/api/manuscripts/monitor")
+async def manuscript_monitor(request: Request, payload: Any = Body(...)):
+    """وكيل المراقبة: تدقيق مستقل لمخرجات مرحلة وتوليد سجل ملاحظات."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_monitor_sync, payload or {}, key)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر وكيل المراقبة: {str(exc)[:200]}")
 
 
 @app.post("/api/manuscripts/collate")

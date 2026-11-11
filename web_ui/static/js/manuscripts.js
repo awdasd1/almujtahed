@@ -179,6 +179,8 @@ function msOpenProject(id) {
   renderMsCopies();
   renderMsCollation();
   renderMsAgents();
+  renderMsAuthor();
+  renderMsMonitor();
   msRenderIndexes();
   const introEl = document.getElementById('msIntroText');
   if (introEl) introEl.value = p.intro || '';
@@ -465,6 +467,7 @@ function msOpenFolio(pid, cid, fid) {
   wb.hidden = false;
   document.getElementById('msWbTitle').textContent = `لوحة (${f.label}) — نسخة (${c.siglum}) من «${p.title}»`;
   document.getElementById('msWbImg').src = f.file_url;
+  if (typeof msImgReset === 'function') msImgReset();
   const ta = document.getElementById('msWbText');
   ta.value = f.text || f.audited_text || f.primary_text || '';
   const ed = document.getElementById('msWbEdNote');
@@ -682,7 +685,7 @@ function msCloseWorkbench() {
 }
 
 // ---------- المرحلة ٣: فريق وكلاء التحقيق ----------
-const MS_AGENT_KINDS = { takhrij: 'تخريج', tarjama: 'ترجمة علم', lugha: 'لغة', dabt: 'ضبط/تصحيف' };
+const MS_AGENT_KINDS = { takhrij: 'تخريج', tarjama: 'ترجمة علم', lugha: 'لغة', dabt: 'ضبط/تصحيف', author: 'وكيل المؤلف' };
 
 function msVerifyBadge(v) {
   if (!v) return '';
@@ -697,7 +700,7 @@ function renderMsAgents() {
   const list = document.getElementById('msAgentsList');
   if (!p || !list) return;
   const sugs = p.agent_suggestions || [];
-  const pending = sugs.filter(s => s.status === 'pending');
+  const pending = sugs.filter(s => s.status === 'pending' && s.kind !== 'author');
   const accepted = sugs.filter(s => s.status === 'accepted');
   document.getElementById('msAgentsInfo').textContent =
     sugs.length ? `${sugs.length} اقتراحًا (${accepted.length} في هامش التحقيق، ${pending.length} بانتظار الحسم)` : 'لم تُشغَّل الوكلاء بعد';
@@ -776,19 +779,413 @@ function msAgentDecision(id, status) {
       f.ed_note = ((f.ed_note || '').trim() ? f.ed_note.trim() + '\n' : '') + line;
     }
   }
-  msSave(); renderMsAgents(); renderMsCollation();
+  msSave(); renderMsAgents(); renderMsAuthor(); renderMsCollation();
 }
+
+// ---------- وكيل المؤلف المتخصص ----------
+function msApiKey() {
+  try { const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {}; return keys.openrouter || ''; } catch (e) { return ''; }
+}
+
+async function msShowAuthorBooks() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const box = document.getElementById('msAuthorBooks');
+  box.textContent = '⏳ جارٍ جمع كتب المؤلف من المكتبة...';
+  try {
+    const res = await fetch('/api/manuscripts/author-books?author=' + encodeURIComponent(p.author || ''));
+    const data = await res.json().catch(() => ({}));
+    const books = data.books || [];
+    box.innerHTML = books.length
+      ? `<strong>كتب «${msEsc(p.author || '')}» عندنا (${books.length}):</strong> ` + books.map(b => `<span class="ms-book-chip">${msEsc(b.title)}</span>`).join('')
+      : 'لم يُعثر على كتب لهذا المؤلف في الفهرس — تأكد من اسم المؤلف في بيانات المشروع.';
+  } catch (e) { box.textContent = 'تعذر جلب الكتب'; }
+}
+
+function renderMsAuthor() {
+  const p = msCurrentProject();
+  const list = document.getElementById('msAuthorList');
+  const info = document.getElementById('msAuthorInfo');
+  if (!p || !list) return;
+  const sugs = (p.agent_suggestions || []).filter(s => s.kind === 'author');
+  const pending = sugs.filter(s => s.status === 'pending');
+  const accepted = sugs.filter(s => s.status === 'accepted');
+  if (info) info.textContent = sugs.length ? `${accepted.length} موازاة في الهامش، ${pending.length} بانتظار الحسم` : 'لم يُعرَض النص على كتب المؤلف بعد';
+  if (!pending.length) { list.innerHTML = sugs.length ? '<div class="ms-disputes-none">لا موازيات بانتظار الحسم.</div>' : ''; return; }
+  const byFolio = {};
+  pending.forEach(s => { (byFolio[s.folio] = byFolio[s.folio] || []).push(s); });
+  list.innerHTML = `<div class="ms-disputes-title">موازيات وجدها وكيل المؤلف في سائر كتبه (${pending.length}):</div>` +
+    Object.keys(byFolio).map(folio => `
+      <div class="ms-collate-folio">
+        <div class="ms-collate-folio-title">لوحة (${msEsc(folio)})</div>
+        ${byFolio[folio].map(s => `
+          <div class="ms-dispute">
+            <span class="ms-dispute-a"><strong>[وكيل المؤلف]</strong> «${msEsc(s.anchor)}» — ${msEsc(s.body)}${s.source ? `<br>المواضع: ${msEsc(s.source)}` : ''}<br>${msVerifyBadge(s.verify)}</span>
+            <span>
+              <button type="button" class="ms-dispute-btn" onclick="msAgentDecision('${s.id}','accepted')">اعتماد في الهامش</button>
+              <button type="button" class="ms-dispute-dismiss" onclick="msAgentDecision('${s.id}','dismissed')">رفض</button>
+            </span>
+          </div>`).join('')}
+      </div>`).join('');
+}
+
+async function msRunAuthor() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const base = msBaseCopy(p);
+  if (!base) { msToast('لا نسخة أم بعد'); return; }
+  if (!(p.author || '').trim()) { msToast('أضف اسم المؤلف في بيانات المشروع أولًا'); return; }
+  const folios = (base.folios || []).filter(f => (f.text || '').trim());
+  if (!folios.length) { msToast('لا نص في لوحات الأم — انسخها أولًا'); return; }
+  const model = document.getElementById('msAuthorModel').value;
+  const btn = document.getElementById('msAuthorBtn');
+  btn.disabled = true;
+  const old = btn.textContent;
+  p.agent_suggestions = p.agent_suggestions || [];
+  let totalCost = 0, totalNew = 0, booksSeen = 0;
+  try {
+    for (const f of folios) {
+      btn.textContent = `⏳ وكيل المؤلف على لوحة (${f.label})...`;
+      const res = await fetch('/api/manuscripts/author-agent', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: msApiKey() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'تعذر وكيل المؤلف');
+      booksSeen = (data.books || []).length;
+      totalCost += Number(data.cost) || 0;
+      (data.suggestions || []).forEach(s => {
+        p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending' });
+        totalNew++;
+      });
+      msSave(); renderMsAuthor();
+    }
+    msToast(`وكيل المؤلف: فحص ${booksSeen} كتابًا للمؤلف فوجد ${totalNew} موازاة موثّقة (كلفة المقارنة $${totalCost.toFixed(4)}). حسمها في بطاقته.`, 8000);
+  } catch (e) {
+    msToast('❌ ' + e.message, 7000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+// ---------- وكيل المراقبة والتدقيق ----------
+function msMonitorContext(p, phase) {
+  const lines = [`المشروع: ${p.title} — المؤلف: ${p.author || '—'}`];
+  const want = (...names) => phase === 'شاملة' || names.includes(phase);
+  if (want('النسخ')) {
+    lines.push('\n== نصوص اللوحات وحالة النسخ ==');
+    (p.copies || []).forEach(c => (c.folios || []).forEach(f => {
+      if ((f.text || '').trim()) lines.push(`[${c.siglum} ${f.label}] حالة:${f.status} اتفاق قارئين:${f.agreement ?? '—'}٪ مواضع اختلاف محفوظة:${(f.disputes || []).length}\n${(f.text || '').slice(0, 800)}`);
+    }));
+  }
+  if (want('المقابلة')) {
+    const es = (p.collation || {}).entries || [];
+    lines.push(`\n== المقابلة: ${es.length} فرقًا ==`);
+    es.slice(0, 70).forEach(e => lines.push(`[${e.folio}/${e.siglum}/${e.type}/${e.status}] الأم:«${e.base}» الأخرى:«${e.other}» سياق:«${(e.context || '').slice(0, 100)}»`));
+  }
+  if (want('وكلاء التحقيق')) {
+    const ss = p.agent_suggestions || [];
+    lines.push(`\n== اقتراحات الوكلاء: ${ss.length} ==`);
+    ss.slice(0, 70).forEach(s => lines.push(`[${s.kind}/${s.folio}/${s.status}/توثيق:${(s.verify || {}).status || '—'}] «${s.anchor}» — ${s.title || ''}: ${s.body || ''}`));
+  }
+  return lines.join('\n').slice(0, 55000);
+}
+
+async function msRunMonitor() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const phase = document.getElementById('msMonitorPhase').value;
+  const model = document.getElementById('msMonitorModel').value;
+  const btn = document.getElementById('msMonitorBtn');
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '⏳ وكيل المراقبة يراجع... قد يستغرق دقيقة';
+  try {
+    const res = await fetch('/api/manuscripts/monitor', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phase, context: msMonitorContext(p, phase), model, api_key: msApiKey() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر وكيل المراقبة');
+    p.monitor_log = p.monitor_log || [];
+    p.monitor_log.unshift({ id: msUid(), phase, at: new Date().toISOString(), model: data.model || model,
+      findings: data.findings || [], status: 'open', cost: data.cost || 0, seconds: data.seconds || 0 });
+    msSave(); renderMsMonitor();
+    msToast(`دوّن وكيل المراقبة ${(data.findings || []).length} ملاحظة في سجل المشروع (كلفة $${Number(data.cost || 0).toFixed(4)}، ${data.seconds || '—'}ث). راجعها وعالج ما يلزم.`, 8000);
+  } catch (e) {
+    msToast('❌ ' + e.message, 8000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+function renderMsMonitor() {
+  const p = msCurrentProject();
+  const box = document.getElementById('msMonitorLog');
+  const info = document.getElementById('msMonitorInfo');
+  if (!p || !box) return;
+  const log = p.monitor_log || [];
+  if (info) info.textContent = log.length ? `${log.length} جلسة تدقيق في السجل` : 'لا تدقيق بعد';
+  if (!log.length) { box.innerHTML = ''; return; }
+  const sevLabel = { high: 'عالية', med: 'متوسطة', low: 'خفيفة' };
+  box.innerHTML = log.map(e => `
+    <div class="ms-monitor-entry ${e.status === 'done' ? 'ms-mon-done' : ''}">
+      <div class="ms-monitor-head">
+        <strong>تدقيق مرحلة: ${msEsc(e.phase)}</strong>
+        <span>${msEsc((e.model || '').split('/').pop() || '')}</span>
+        <span>${msEsc((e.at || '').slice(0, 16).replace('T', ' '))}</span>
+        <span>${(e.findings || []).length} ملاحظة — $${Number(e.cost || 0).toFixed(4)}</span>
+        <button type="button" class="ms-dispute-dismiss" onclick="msMonitorToggle('${e.id}')">${e.status === 'done' ? '↩ إعادة فتح' : '✔ عولجت/اطّلعت'}</button>
+      </div>
+      ${(e.findings || []).map(f => `
+        <div class="ms-finding"><span class="ms-sev-${msEsc(f.severity || 'low')}">${sevLabel[f.severity] || 'خفيفة'}</span>
+        <strong>${msEsc(f.area || '')}</strong> — ${msEsc(f.note || '')}${f.evidence ? `<div class="ms-finding-ev">الدليل: ${msEsc(f.evidence)}</div>` : ''}</div>`).join('')}
+    </div>`).join('');
+}
+
+function msMonitorToggle(id) {
+  const p = msCurrentProject();
+  if (!p) return;
+  const e = (p.monitor_log || []).find(x => x.id === id);
+  if (!e) return;
+  e.status = e.status === 'done' ? 'open' : 'done';
+  msSave(); renderMsMonitor();
+}
+
+// ---------- أدوات رسم اللوحة ومعالجتها ----------
+const MS_IMG = { zoom: 100, mode: null, cropBlob: null, drawing: false, startPt: null, lastPt: null };
+
+function msImgEl() { return document.getElementById('msWbImg'); }
+function msOvEl() { return document.getElementById('msWbOverlay'); }
+function msImgFilterCss() {
+  const c = document.getElementById('msImgContrast').value;
+  const s = document.getElementById('msImgSat').value;
+  const b = document.getElementById('msImgBright').value;
+  let f = `contrast(${c}%) saturate(${s}%) brightness(${b}%)`;
+  if (document.getElementById('msImgSharpen').checked) f += ' url(#msSharpenFilter)';
+  return f;
+}
+function msSyncOverlay() {
+  const img = msImgEl(), ov = msOvEl();
+  if (!img || !ov || !img.clientWidth) return;
+  ov.style.left = img.offsetLeft + 'px';
+  ov.style.top = img.offsetTop + 'px';
+  ov.style.width = img.clientWidth + 'px';
+  ov.style.height = img.clientHeight + 'px';
+  if (ov.width !== img.clientWidth || ov.height !== img.clientHeight) {
+    ov.width = img.clientWidth; ov.height = img.clientHeight;
+  }
+}
+function msApplyImgFilters() {
+  const img = msImgEl();
+  if (!img) return;
+  img.style.filter = msImgFilterCss();
+  img.style.width = MS_IMG.zoom + '%';
+  document.getElementById('msZoomVal').textContent = MS_IMG.zoom + '%';
+  requestAnimationFrame(msSyncOverlay);
+}
+function msImgZoom(d) {
+  MS_IMG.zoom = Math.min(400, Math.max(50, MS_IMG.zoom + d));
+  msApplyImgFilters();
+}
+function msImgSetMode(mode) {
+  MS_IMG.mode = MS_IMG.mode === mode ? null : mode;
+  document.getElementById('msWbStage').classList.toggle('ms-mode-active', !!MS_IMG.mode);
+  document.getElementById('msImgCropBtn').classList.toggle('ms-mode-on', MS_IMG.mode === 'crop');
+  document.getElementById('msImgPenBtn').classList.toggle('ms-mode-on', MS_IMG.mode === 'pen');
+  if (MS_IMG.mode) msToast(MS_IMG.mode === 'crop' ? 'اسحب على الصورة لتحديد الجزء الصعب' : 'ارسم بالقلم على الصورة لتعليم المواضع الصعبة', 4000);
+}
+function msImgClearDraw() {
+  const ov = msOvEl();
+  if (ov) ov.getContext('2d').clearRect(0, 0, ov.width, ov.height);
+}
+function msImgReset() {
+  MS_IMG.zoom = 100; MS_IMG.mode = null; MS_IMG.cropBlob = null;
+  ['msImgContrast', 'msImgSat', 'msImgBright'].forEach(id => { const el = document.getElementById(id); if (el) el.value = 100; });
+  const sh = document.getElementById('msImgSharpen'); if (sh) sh.checked = false;
+  const box = document.getElementById('msCropBox'); if (box) box.hidden = true;
+  const res = document.getElementById('msCropResult'); if (res) res.value = '';
+  const stage = document.getElementById('msWbStage'); if (stage) stage.classList.remove('ms-mode-active');
+  msImgClearDraw();
+  msApplyImgFilters();
+}
+function msOvPos(e) {
+  const ov = msOvEl();
+  const r = ov.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * (ov.width / r.width), y: (e.clientY - r.top) * (ov.height / r.height) };
+}
+function msSharpenCanvas(cv) {
+  const ctx = cv.getContext('2d');
+  const w = cv.width, h = cv.height;
+  if (!w || !h || w * h > 9000000) return;
+  const src = ctx.getImageData(0, 0, w, h);
+  const out = ctx.createImageData(w, h);
+  const d = src.data, o = out.data;
+  const k = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { o[i] = d[i]; o[i + 1] = d[i + 1]; o[i + 2] = d[i + 2]; o[i + 3] = d[i + 3]; continue; }
+    for (let ch = 0; ch < 3; ch++) {
+      let v = 0, ki = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) v += d[((y + dy) * w + (x + dx)) * 4 + ch] * k[ki++];
+      o[i + ch] = Math.max(0, Math.min(255, v));
+    }
+    o[i + 3] = d[i + 3];
+  }
+  ctx.putImageData(out, 0, 0);
+}
+function msDoCrop(rect) {
+  const img = msImgEl();
+  if (!img || !img.naturalWidth) return;
+  const sx = img.naturalWidth / img.clientWidth, sy = img.naturalHeight / img.clientHeight;
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(2, Math.round(rect.w * sx));
+  cv.height = Math.max(2, Math.round(rect.h * sy));
+  const ctx = cv.getContext('2d');
+  const c = document.getElementById('msImgContrast').value / 100;
+  const s = document.getElementById('msImgSat').value / 100;
+  const b = document.getElementById('msImgBright').value / 100;
+  try { ctx.filter = `contrast(${c}) saturate(${s}) brightness(${b})`; } catch (e) { /* متصفح قديم */ }
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(img, rect.x * sx, rect.y * sy, rect.w * sx, rect.h * sy, 0, 0, cv.width, cv.height);
+  try { ctx.filter = 'none'; } catch (e) {}
+  if (document.getElementById('msImgSharpen').checked) msSharpenCanvas(cv);
+  cv.toBlob(blob => {
+    MS_IMG.cropBlob = blob;
+    document.getElementById('msCropPreview').src = URL.createObjectURL(blob);
+    document.getElementById('msCropBox').hidden = false;
+    document.getElementById('msCropResult').value = '';
+    msImgSetMode(MS_IMG.mode);
+    msImgClearDraw();
+    msToast('قُصّ الجزء بالمعالجة الحالية — أعد نسخ موضعه الصعب بالنماذج');
+  }, 'image/png');
+}
+function msOvInit() {
+  const ov = msOvEl();
+  if (!ov || ov.dataset.msInit) return;
+  ov.dataset.msInit = '1';
+  ov.addEventListener('pointerdown', e => {
+    if (!MS_IMG.mode) return;
+    MS_IMG.drawing = true;
+    MS_IMG.startPt = msOvPos(e);
+    MS_IMG.lastPt = MS_IMG.startPt;
+    ov.setPointerCapture(e.pointerId);
+  });
+  ov.addEventListener('pointermove', e => {
+    if (!MS_IMG.drawing || !MS_IMG.mode) return;
+    const ctx = ov.getContext('2d');
+    const pt = msOvPos(e);
+    if (MS_IMG.mode === 'pen') {
+      ctx.strokeStyle = 'rgba(200,30,30,.85)';
+      ctx.lineWidth = Math.max(2, ov.width / 260);
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(MS_IMG.lastPt.x, MS_IMG.lastPt.y); ctx.lineTo(pt.x, pt.y); ctx.stroke();
+    } else if (MS_IMG.mode === 'crop') {
+      ctx.clearRect(0, 0, ov.width, ov.height);
+      ctx.strokeStyle = '#b4552d'; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
+      ctx.strokeRect(MS_IMG.startPt.x, MS_IMG.startPt.y, pt.x - MS_IMG.startPt.x, pt.y - MS_IMG.startPt.y);
+      ctx.setLineDash([]);
+    }
+    MS_IMG.lastPt = pt;
+  });
+  ov.addEventListener('pointerup', e => {
+    if (!MS_IMG.drawing) return;
+    MS_IMG.drawing = false;
+    if (MS_IMG.mode === 'crop' && MS_IMG.startPt) {
+      const pt = msOvPos(e);
+      const rect = { x: Math.min(MS_IMG.startPt.x, pt.x), y: Math.min(MS_IMG.startPt.y, pt.y),
+                     w: Math.abs(pt.x - MS_IMG.startPt.x), h: Math.abs(pt.y - MS_IMG.startPt.y) };
+      if (rect.w > 12 && rect.h > 12) msDoCrop(rect); else msImgClearDraw();
+    }
+    MS_IMG.startPt = null;
+  });
+}
+async function msRetranscribeCrop() {
+  if (!MS_IMG.cropBlob) { msToast('اصنع قصًا أولًا بوضع القصّ'); return; }
+  const btn = document.getElementById('msCropTranscribeBtn');
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '⏳ جارٍ رفع الجزء ونسخه بالنماذج...';
+  try {
+    const fd = new FormData();
+    fd.append('file', MS_IMG.cropBlob, 'ms-crop.png');
+    const up = await fetch('/api/chat/upload', { method: 'POST', body: fd });
+    const upData = await up.json().catch(() => ({}));
+    if (!up.ok || !upData.file_path) throw new Error(upData.detail || 'تعذر رفع الجزء');
+    const choice = msModelChoice();
+    const res = await fetch('/api/manuscripts/transcribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_path: upData.file_path, api_key: msApiKey(),
+        primary_model: choice.primary, checker_model: choice.checker, auditor_model: choice.auditor }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر نسخ الجزء');
+    const aud = data.auditor || {};
+    const pri = data.primary || {};
+    const txt = aud.text || pri.text || '';
+    if (!txt) throw new Error('لم ترجع النماذج قراءة للجزء');
+    document.getElementById('msCropResult').value = txt;
+    msToast('قُرئ الجزء المعالج — قارنه بعينك على الصورة قبل إلحاقه', 6000);
+  } catch (e) {
+    msToast('❌ ' + e.message, 7000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+function msAppendCropResult() {
+  const txt = document.getElementById('msCropResult').value.trim();
+  if (!txt) { msToast('لا قراءة في صندوق الجزء بعد'); return; }
+  const ta = document.getElementById('msWbText');
+  ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + txt;
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+  msToast('أُلحقت قراءة الجزء بنص اللوحة — راجع موضع الإلحاق وحرّره');
+}
+function msDownloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function msDownloadCrop() {
+  if (!MS_IMG.cropBlob) { msToast('لا جزء مقصوص بعد'); return; }
+  msDownloadBlob(MS_IMG.cropBlob, 'جزء-معالج.png');
+}
+function msDownloadAnnotated() {
+  const img = msImgEl(), ov = msOvEl();
+  if (!img || !img.clientWidth) return;
+  const cv = document.createElement('canvas');
+  cv.width = img.clientWidth; cv.height = img.clientHeight;
+  const ctx = cv.getContext('2d');
+  const c = document.getElementById('msImgContrast').value / 100;
+  const s = document.getElementById('msImgSat').value / 100;
+  const b = document.getElementById('msImgBright').value / 100;
+  try { ctx.filter = `contrast(${c}) saturate(${s}) brightness(${b})`; } catch (e) {}
+  ctx.drawImage(img, 0, 0, cv.width, cv.height);
+  try { ctx.filter = 'none'; } catch (e) {}
+  ctx.drawImage(ov, 0, 0);
+  cv.toBlob(blob => msDownloadBlob(blob, 'لقطة-مشروحة.png'), 'image/png');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const img = msImgEl();
+  if (img) img.addEventListener('load', () => { msSyncOverlay(); msOvInit(); });
+  window.addEventListener('resize', msSyncOverlay);
+});
 
 // ---------- المرحلة ٤: الفهارس والمقدمة والإخراج ----------
 function msIndexGroups(p) {
   const accepted = (p.agent_suggestions || []).filter(s => s.status === 'accepted');
-  const groups = { 'الآيات القرآنية': [], 'الأحاديث والأقوال': [], 'الأعلام': [], 'اللغة والضبط': [], 'مصادر التحقيق': [] };
+  const groups = { 'الآيات القرآنية': [], 'الأحاديث والأقوال': [], 'الأعلام': [], 'اللغة والضبط': [], 'موازيات المؤلف': [], 'مصادر التحقيق': [] };
   const sources = new Set();
   accepted.forEach(s => {
     const item = `«${s.anchor}» — لوحة (${s.folio})`;
     if (s.kind === 'takhrij' && s.surah) groups['الآيات القرآنية'].push(item);
     else if (s.kind === 'takhrij') groups['الأحاديث والأقوال'].push(item);
     else if (s.kind === 'tarjama') groups['الأعلام'].push(item);
+    else if (s.kind === 'author') groups['موازيات المؤلف'].push(`${item} — ${s.body}`);
     else groups['اللغة والضبط'].push(item);
     if (s.source) sources.add(s.source);
     if (s.verify && s.verify.status === 'verified') sources.add(s.verify.detail);

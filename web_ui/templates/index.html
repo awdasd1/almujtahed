@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.467">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.468">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.467 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.468 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1532,6 +1532,48 @@
                         <p class="ms-models-note">وكلاء: تخريج الآيات والأحاديث والأشعار، وتراجم الأعلام، واللغة والضبط وتنبيه التصحيف. التخريج يُوثَّق آليًا من مكتبة الشاملة عندنا (مواضع + مطابقة على الصفحة) ويظهر وسمه، وما لم يثبت يبقى موسومًا «يحتاج توثيقًا» أو «لم يُعثر عليه». لا يدخل اقتراحٌ هامشَ التحقيق إلا باعتمادك فيُلحق بتعليق لوحته — الوكلاء يقترحون والمحقق يعتمد.</p>
                         <div id="msAgentsList"></div>
                     </div>
+                    <div class="ms-create-card" id="msAuthorCard">
+                        <div class="ms-create-title">📚 وكيل المؤلف المتخصص</div>
+                        <div class="ms-form-row">
+                            <label class="ms-model-label">نموذج المقارنة
+                                <select id="msAuthorModel">
+                                    <option value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro — الأقوى</option>
+                                    <option value="anthropic/claude-sonnet-5.5">Claude Sonnet 5.5</option>
+                                    <option value="google/gemini-2.5-flash">Gemini 2.5 Flash — أرخص</option>
+                                </select>
+                            </label>
+                            <button type="button" class="ms-btn" onclick="msShowAuthorBooks()">كتب المؤلف عندنا</button>
+                            <button type="button" class="ms-btn ms-btn-primary" id="msAuthorBtn" onclick="msRunAuthor()">اعرض لوحات الأم على كتب المؤلف</button>
+                            <span id="msAuthorInfo" class="ms-wb-meta"></span>
+                        </div>
+                        <p class="ms-models-note">لدى هذا الوكيل سائر كتب المؤلف في مكتبتنا: يعرض عبارات كل لوحة — من كلام المؤلف نفسه لا الآيات والأحاديث — على كتبه الأخرى، فيكشف أين كرر عبارته باختصار أو بإسهاب، ويقارن الألفاظ لترجيح قراءة اللوحة أو التنبيه لتصحيف. تثبت المواضع آليًا بالمطابقة على نصوص الكتب، وتدخل الاقتراحات هامش التحقيق باعتمادك كسائر الوكلاء.</p>
+                        <div id="msAuthorBooks" class="ms-sigla"></div>
+                        <div id="msAuthorList"></div>
+                    </div>
+                    <div class="ms-create-card" id="msMonitorCard">
+                        <div class="ms-create-title">🛡️ وكيل المراقبة والتدقيق</div>
+                        <div class="ms-form-row">
+                            <label class="ms-model-label">المرحلة
+                                <select id="msMonitorPhase">
+                                    <option value="النسخ">النسخ</option>
+                                    <option value="المقابلة">المقابلة</option>
+                                    <option value="وكلاء التحقيق">وكلاء التحقيق</option>
+                                    <option value="شاملة">مراجعة شاملة</option>
+                                </select>
+                            </label>
+                            <label class="ms-model-label">نموذج المراقبة
+                                <select id="msMonitorModel">
+                                    <option value="meta/muse-wonder">Muse Wonder — عملاق المراقبة (مرشحك)</option>
+                                    <option value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
+                                    <option value="anthropic/claude-sonnet-5.5">Claude Sonnet 5.5</option>
+                                </select>
+                            </label>
+                            <button type="button" class="ms-btn ms-btn-primary" id="msMonitorBtn" onclick="msRunMonitor()">دقّق هذه المرحلة الآن</button>
+                            <span id="msMonitorInfo" class="ms-wb-meta"></span>
+                        </div>
+                        <p class="ms-models-note">مراقب مستقل يراجع مخرجات كل مرحلة بعين ناقدة ويدوّن الأخطاء والمخاطر والمواضع التي تحتاج عينك على الصورة — يساعدك ولا يقرر عنك. تُحفظ ملاحظاته في سجل المشروع، وعلّم ما عالجته منها ليبقى السجل وثيقة تتبع حية.</p>
+                        <div id="msMonitorLog"></div>
+                    </div>
                     <div class="ms-create-card" id="msExportCard">
                         <div class="ms-create-title">📚 الفهارس ومقدمة المحقق والإخراج (المرحلة ٤)</div>
                         <div class="ms-form-row">
@@ -1557,8 +1599,36 @@
                             </span>
                         </div>
                         <div id="msWbMeta" class="ms-wb-meta"></div>
+                        <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><filter id="msSharpenFilter"><feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -1 0 -1 5 -1 0 -1 0"/></filter></defs></svg>
                         <div class="ms-wb-grid">
-                            <div class="ms-wb-img"><img id="msWbImg" alt="لوحة مخطوط"></div>
+                            <div>
+                                <div class="ms-img-tools">
+                                    <span class="ms-it-label">أدوات اللوحة:</span>
+                                    <button type="button" class="ms-btn" onclick="msImgZoom(-25)">➖</button>
+                                    <span id="msZoomVal" class="ms-zoom-val">100%</span>
+                                    <button type="button" class="ms-btn" onclick="msImgZoom(25)">➕ تكبير</button>
+                                    <label>تباين <input type="range" id="msImgContrast" min="40" max="220" value="100" oninput="msApplyImgFilters()"></label>
+                                    <label>إشباع <input type="range" id="msImgSat" min="0" max="220" value="100" oninput="msApplyImgFilters()"></label>
+                                    <label>سطوع <input type="range" id="msImgBright" min="40" max="180" value="100" oninput="msApplyImgFilters()"></label>
+                                    <label><input type="checkbox" id="msImgSharpen" onchange="msApplyImgFilters()"> حدّة</label>
+                                    <button type="button" class="ms-btn" id="msImgCropBtn" onclick="msImgSetMode('crop')">✂️ وضع القصّ</button>
+                                    <button type="button" class="ms-btn" id="msImgPenBtn" onclick="msImgSetMode('pen')">🖊️ وضع القلم</button>
+                                    <button type="button" class="ms-btn" onclick="msImgClearDraw()">مسح الرسم</button>
+                                    <button type="button" class="ms-btn" onclick="msImgReset()">إعادة الضبط</button>
+                                </div>
+                                <div class="ms-wb-img" id="msWbStage"><img id="msWbImg" alt="لوحة مخطوط"><canvas id="msWbOverlay" width="10" height="10"></canvas></div>
+                                <div class="ms-crop-box" id="msCropBox" hidden>
+                                    <div class="ms-margin-title">الجزء المقصوص المعالَج — عالجه بالمنزلقات ثم أعد نسخ موضعه الصعب</div>
+                                    <img id="msCropPreview" alt="جزء مقصوص">
+                                    <div class="ms-form-row">
+                                        <button type="button" class="ms-btn ms-btn-primary" id="msCropTranscribeBtn" onclick="msRetranscribeCrop()">🔁 أعد نسخ هذا الجزء بالنماذج</button>
+                                        <button type="button" class="ms-btn" onclick="msDownloadCrop()">⬇ تنزيل الجزء</button>
+                                        <button type="button" class="ms-btn" onclick="msDownloadAnnotated()">⬇ تنزيل لقطة بالقلم</button>
+                                    </div>
+                                    <textarea id="msCropResult" rows="4" placeholder="تظهر هنا قراءة الجزء بعد إعادة نسخه — راجعها بعينك على الصورة ثم ألحق ما صحّ منها بالنص"></textarea>
+                                    <div class="ms-form-row"><button type="button" class="ms-btn" onclick="msAppendCropResult()">ألحق قراءة الجزء بنص اللوحة</button></div>
+                                </div>
+                            </div>
                             <div class="ms-wb-text">
                                 <div class="ms-wb-views">
                                     <span>عرض:</span>
@@ -5778,24 +5848,24 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.467"></script>
-    <script src="/static/js/search.js?v=1.10.467"></script>
-    <script src="/static/js/reader.js?v=1.10.467"></script>
-    <script src="/static/js/force3d.js?v=1.10.467"></script>
-    <script src="/static/js/share.js?v=1.10.467"></script>
-    <script src="/static/js/chat.js?v=1.10.467"></script>
-    <script src="/static/js/designs.js?v=1.10.467"></script>
-    <script src="/static/js/texts.js?v=1.10.467"></script>
-    <script src="/static/js/agents.js?v=1.10.467"></script>
-    <script src="/static/js/providers.js?v=1.10.467"></script>
-    <script src="/static/js/tools.js?v=1.10.467"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.467"></script>
-    <script src="/static/js/projects.js?v=1.10.467"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.467"></script>
-    <script src="/static/js/archive.js?v=1.10.467"></script>
-    <script src="/static/js/compare.js?v=1.10.467"></script>
-    <script src="/static/js/local_models.js?v=1.10.467"></script>
-    <script src="/static/js/changelog.js?v=1.10.467"></script>
+    <script src="/static/js/app.js?v=1.10.468"></script>
+    <script src="/static/js/search.js?v=1.10.468"></script>
+    <script src="/static/js/reader.js?v=1.10.468"></script>
+    <script src="/static/js/force3d.js?v=1.10.468"></script>
+    <script src="/static/js/share.js?v=1.10.468"></script>
+    <script src="/static/js/chat.js?v=1.10.468"></script>
+    <script src="/static/js/designs.js?v=1.10.468"></script>
+    <script src="/static/js/texts.js?v=1.10.468"></script>
+    <script src="/static/js/agents.js?v=1.10.468"></script>
+    <script src="/static/js/providers.js?v=1.10.468"></script>
+    <script src="/static/js/tools.js?v=1.10.468"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.468"></script>
+    <script src="/static/js/projects.js?v=1.10.468"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.468"></script>
+    <script src="/static/js/archive.js?v=1.10.468"></script>
+    <script src="/static/js/compare.js?v=1.10.468"></script>
+    <script src="/static/js/local_models.js?v=1.10.468"></script>
+    <script src="/static/js/changelog.js?v=1.10.468"></script>
 
     <script>
         window.refreshLucideIcons = function () {
