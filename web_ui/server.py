@@ -5522,6 +5522,7 @@ class PresentationRequest(BaseModel):
     colors: Optional[dict] = None
     design_mode: Optional[str] = "with"
     slide_count: Optional[int] = None
+    voiceover: Optional[bool] = None
 
 
 PRESENTATION_JOBS: Dict[str, dict] = {}
@@ -5672,6 +5673,7 @@ def _normalize_presentation_options(req: PresentationRequest) -> dict:
         },
         "design_mode": req.design_mode if req.design_mode in ("with", "without", "none", "explained") else "with",
         "slide_count": req.slide_count if req.slide_count in (6, 8, 10, 12, 14, 16) else None,
+        "voiceover": req.voiceover is not False,
     }
 
 
@@ -5836,8 +5838,9 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
         slide.shapes.add_picture(str(asset["image"]), 0, 0, prs.slide_width, prs.slide_height)
         if embedded:
             # النص مرسوم داخل الصورة نفسها: لا طبقة تعتيم ولا صناديق نص
-            mime = "audio/mpeg" if str(asset["audio"]).endswith(".mp3") else "audio/wav"
-            slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(6.55), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
+            if asset.get("audio"):
+                mime = "audio/mpeg" if str(asset["audio"]).endswith(".mp3") else "audio/wav"
+                slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(6.55), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
             slide.notes_slide.notes_text_frame.text = slide_data["narration"]
             continue
         overlay = slide.shapes.add_shape(1, 0, 0, prs.slide_width, prs.slide_height)
@@ -5857,8 +5860,9 @@ def _build_presentation_pptx(deck: dict, assets: list, folder: Path, out_path: P
             _pptx_text(slide, 0.7, 0.5, 11.9, 1.1, [slide_data["title"]], 38, bold=True, color=title_rgb)
             if slide_data["bullets"]:
                 _pptx_text(slide, 0.9, 1.95, 11.5, 4.4, ["• " + b for b in slide_data["bullets"]], 25, color=body_rgb)
-        mime = "audio/mpeg" if str(asset["audio"]).endswith(".mp3") else "audio/wav"
-        slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(6.55), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
+        if asset.get("audio"):
+            mime = "audio/mpeg" if str(asset["audio"]).endswith(".mp3") else "audio/wav"
+            slide.shapes.add_movie(str(asset["audio"]), Inches(0.45), Inches(6.55), Inches(0.62), Inches(0.62), str(icon_path), mime_type=mime)
         slide.notes_slide.notes_text_frame.text = slide_data["narration"]
     prs.save(str(out_path))
 
@@ -5886,10 +5890,12 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str,
                 prompt = _slide_image_prompt(slide_data["image_prompt"], options)
             img = await asyncio.to_thread(_openrouter_image_bytes, key, prompt, options["image_model_id"])
             img_path = await asyncio.to_thread(_save_slide_image, img, folder, i)
-            raw = await asyncio.to_thread(_tts_pcm_sync, key, slide_data["narration"])
-            blob, ext = _audio_blob_from_raw(raw)
-            aud_path = folder / f"slide-{i:02d}.{ext}"
-            aud_path.write_bytes(blob)
+            aud_path = None
+            if options["voiceover"]:
+                raw = await asyncio.to_thread(_tts_pcm_sync, key, slide_data["narration"])
+                blob, ext = _audio_blob_from_raw(raw)
+                aud_path = folder / f"slide-{i:02d}.{ext}"
+                aud_path.write_bytes(blob)
             return {"image": img_path, "audio": aud_path}
 
         assets: list = [None] * len(slides)
@@ -6768,7 +6774,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.430"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.431"},
         },
     })
     if opened.get("error"):

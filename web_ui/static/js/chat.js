@@ -2214,7 +2214,7 @@ function renderSessionMessages(sessionId, options) {
       <div class="chat-audio-summary chat-presentation">
         <div class="chat-audio-summary-head">
           <span>📊 العرض التقديمي${msg.presentation.title ? ` — ${escapeHtml(msg.presentation.title)}` : ''}</span>
-          <span class="chat-audio-voice">${msg.presentation.slides ? `${msg.presentation.slides} شريحة بصوت ${escapeHtml(msg.presentation.voice || 'Algieba')}` : 'PowerPoint بصري صوتي'}</span>
+          <span class="chat-audio-voice">${msg.presentation.slides ? `${msg.presentation.slides} شريحة${msg.presentation.voice ? ` بصوت ${escapeHtml(msg.presentation.voice)}` : ' — بلا شرح صوتي'}` : 'PowerPoint بصري صوتي'}</span>
         </div>
         <div class="chat-audio-summary-actions">
           <a class="btn-msg-export" href="${escapeHtml(msg.presentation.url)}" download="عرض-تقديمي-المجتهد.pptx" title="تنزيل ملف العرض التقديمي">⬇️ تنزيل العرض</a>
@@ -2882,6 +2882,7 @@ const PRES_OPTIONS_KEY = 'almujtahed_presentation_options_v1';
 function loadPresentationOptions() {
   const dflt = {
     text_mode: 'editable',
+    voiceover: true,
     image_model: 'gpt',
     slides: 'auto',
     design_mode: 'with',
@@ -2903,6 +2904,7 @@ function loadPresentationOptions() {
     const p = JSON.parse(localStorage.getItem(PRES_OPTIONS_KEY) || 'null');
     if (p) {
       if (p.text_mode === 'embedded') dflt.text_mode = 'embedded';
+      if (p.voiceover === false) dflt.voiceover = false;
       if (['gpt', 'muse', 'gemini', 'gpt54'].includes(p.image_model)) dflt.image_model = p.image_model;
       if (['auto', '6', '8', '10', '12', '14', '16'].includes(String(p.slides))) dflt.slides = String(p.slides);
       if (['without', 'none', 'explained'].includes(p.design_mode)) dflt.design_mode = p.design_mode;
@@ -2936,6 +2938,9 @@ function openPresentationOptions(idx, btn) {
           <div class="pres-opt-label">أسلوب نص الشريحة</div>
           <label class="pres-radio-card"><input type="radio" name="presTextMode" value="editable"> <span><b>نصوص قابلة للتحرير</b><small>نص عربي أصيل فوق صورة بلا حروف — تعدّله بنفسك داخل PowerPoint</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="presTextMode" value="embedded"> <span><b>نصوص مدمجة في الصورة</b><small>النموذج يرسم العنوان والنقاط داخل الصورة نفسها متوافقة مع التعليق الصوتي — قد لا يضبط إملاء العربية دائمًا</small></span></label>
+          <div class="pres-opt-label">الشرح الصوتي المصاحب للشرائح</div>
+          <label class="pres-radio-card"><input type="radio" name="presVoiceover" value="on"> <span><b>تفعيل</b><small>تعليق صوتي مدمج في كل شريحة يُسمع أثناء العرض</small></span></label>
+          <label class="pres-radio-card"><input type="radio" name="presVoiceover" value="off"> <span><b>تعطيل</b><small>شرائح بصرية فقط بلا أصوات — إنشاء أسرع وأرخص، ويبقى نص التعليق في ملاحظات المحاضر</small></span></label>
           <div class="pres-opt-label">نموذج الصورة</div>
           <select id="presImageModel" class="pres-select">
             <option value="gpt">🖼️ GPT Image — النموذج الحالي</option>
@@ -2981,6 +2986,7 @@ function openPresentationOptions(idx, btn) {
   }
   const opts = loadPresentationOptions();
   modal.querySelector(`input[name="presTextMode"][value="${opts.text_mode}"]`).checked = true;
+  modal.querySelector(`input[name="presVoiceover"][value="${opts.voiceover ? 'on' : 'off'}"]`).checked = true;
   modal.querySelector(`input[name="presColorsMode"][value="${opts.colors.mode}"]`).checked = true;
   modal.querySelector('#presImageModel').value = opts.image_model;
   modal.querySelector('#presSlideCount').value = opts.slides;
@@ -3016,6 +3022,7 @@ function confirmPresentationOptions() {
   const hex = (v, fb) => (/^#[0-9a-fA-F]{6}$/.test(v || '') ? v : fb);
   const opts = {
     text_mode: modal.querySelector('input[name="presTextMode"]:checked').value === 'embedded' ? 'embedded' : 'editable',
+    voiceover: modal.querySelector('input[name="presVoiceover"]:checked').value === 'on',
     image_model: modal.querySelector('#presImageModel').value,
     slides: modal.querySelector('#presSlideCount').value,
     design_mode: modal.querySelector('#presDesignMode').value,
@@ -3053,7 +3060,7 @@ async function runPresentationJob(idx, btn, options) {
     const res = await fetch('/api/chat/presentation/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء العرض');
@@ -3067,7 +3074,7 @@ async function runPresentationJob(idx, btn, options) {
             url: st.pptx_url,
             title: st.deck_title || '',
             slides: st.slides || 0,
-            voice: 'Algieba',
+            voice: options.voiceover === false ? '' : 'Algieba',
             created_at: new Date().toISOString(),
           };
           saveChatSessions();
