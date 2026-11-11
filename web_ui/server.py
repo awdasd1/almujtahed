@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.461"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.462"},
         },
     })
     if opened.get("error"):
@@ -13898,6 +13898,54 @@ def _ms_transcribe_one(model: str, b64_url: str, key: str) -> Dict[str, Any]:
             "cost": usage.get("cost"), "truncated": truncated}
 
 
+MS_AUDIT_PROMPT = (
+    "أنت مدقق مخطوطات خبير. أمامك صورة لوحة مخطوطة ونسختان مستقلتان لها من قارئين. "
+    "مهمتك: إنتاج النسخ المدقق النهائي بمقابلة النسختين على الصورة نفسها: حيث اختلف القارئان فاتبع ما تراه في الصورة، "
+    "وحيث أخطأ كلاهما فصحح من الصورة، وحافظ على النسخ الحرفي (الإملاء والهمزات كما هي) بلا تحديث ولا شرح داخل النص، "
+    "وما تعذرت قراءته فضع مكانه [غير مقروء]. "
+    "أخرج النص المدقق وحده أولًا، ثم سطرًا يبدأ بـ(تنبيهات:) تسرد فيه باختصار أهم المواضع التي حكمت فيها بين القارئين أو شككت بها."
+)
+
+
+def _ms_audit_one(model: str, b64_url: str, text_a: str, text_b: str, key: str) -> Dict[str, Any]:
+    user_text = (
+        MS_AUDIT_PROMPT
+        + "\n\n— نسخة القارئ الأول —\n" + (text_a or "[فشل نسخ القارئ الأول]")[:12000]
+        + "\n\n— نسخة القارئ الثاني —\n" + (text_b or "[فشل نسخ القارئ الثاني]")[:12000]
+    )
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": user_text},
+            {"type": "image_url", "image_url": {"url": b64_url}},
+        ]}],
+        "temperature": 0.1,
+        "max_tokens": 8192,
+    }
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Manuscripts Audit"},
+        data=json.dumps(payload).encode("utf-8"))
+    started = time.time()
+    with urllib.request.urlopen(http_req, timeout=420) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(str(data.get("error"))[:240])
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    raw = (msg.get("content") or "").strip()
+    notes = ""
+    marker = raw.find("تنبيهات:")
+    if marker >= 0:
+        notes = raw[marker + len("تنبيهات:"):].strip()
+        raw = raw[:marker].strip()
+    if len(raw) > 16000:
+        raw = raw[:16000]
+    usage = data.get("usage") or {}
+    return {"model": model, "text": raw, "notes": notes,
+            "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
+
+
 @app.get("/api/manuscripts")
 async def list_manuscripts(request: Request):
     owner_id = current_owner_id(request)
@@ -13952,7 +14000,16 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
     disputes, agreement = ([], 0.0)
     if primary.get("text") and checker.get("text"):
         disputes, agreement = _ms_disputes(primary["text"], checker["text"])
-    return {"primary": primary, "checker": checker,
+    # المدقق: يستلم الصورة والنسختين معًا فيحكّم بينهما بعينه على اللوحة
+    auditor_model = str((payload or {}).get("auditor_model") or "qwen/qwen3-vl-235b-a22b-instruct")
+    auditor: Dict[str, Any] = {}
+    if auditor_model and (primary.get("text") or checker.get("text")):
+        try:
+            auditor = _ms_audit_one(auditor_model, b64_url,
+                                    primary.get("text") or "", checker.get("text") or "", key)
+        except Exception as exc:
+            auditor = {"model": auditor_model, "text": "", "error": str(exc)[:240]}
+    return {"primary": primary, "checker": checker, "auditor": auditor,
             "disputes": disputes, "agreement": agreement}
 
 

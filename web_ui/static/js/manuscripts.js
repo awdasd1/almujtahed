@@ -16,21 +16,23 @@ const MS_MODEL_CHOICES = [
   ['anthropic/claude-sonnet-5', 'Claude Sonnet 5 — غالٍ'],
 ];
 const MS_MODEL_PRESETS = {
-  standard: { primary: 'google/gemini-2.5-flash', checker: '~openai/gpt-luna-latest' },
-  hard: { primary: 'google/gemini-2.5-pro', checker: 'qwen/qwen3-vl-235b-a22b-instruct' },
+  standard: { primary: 'google/gemini-2.5-flash', checker: '~openai/gpt-luna-latest', auditor: 'qwen/qwen3-vl-235b-a22b-instruct' },
+  hard: { primary: 'google/gemini-2.5-pro', checker: 'qwen/qwen3-vl-235b-a22b-instruct', auditor: 'google/gemini-2.5-pro' },
 };
 
 function msModelChoice() {
   try {
     const saved = JSON.parse(localStorage.getItem('almujtahed_ms_models') || 'null');
-    if (saved && saved.primary && saved.checker) return saved;
+    if (saved && saved.primary && saved.checker) {
+      return { primary: saved.primary, checker: saved.checker, auditor: saved.auditor || MS_MODEL_PRESETS.standard.auditor };
+    }
   } catch (e) { /* الافتراضي */ }
   return { ...MS_MODEL_PRESETS.standard };
 }
 
 function msFillModelSelects() {
   const choice = msModelChoice();
-  [['msPrimaryModel', choice.primary], ['msCheckerModel', choice.checker]].forEach(([id, val]) => {
+  [['msPrimaryModel', choice.primary], ['msCheckerModel', choice.checker], ['msAuditorModel', choice.auditor]].forEach(([id, val]) => {
     const sel = document.getElementById(id);
     if (!sel) return;
     sel.innerHTML = MS_MODEL_CHOICES.map(([v, label]) =>
@@ -41,9 +43,10 @@ function msFillModelSelects() {
 function msSaveModelChoice() {
   const primary = document.getElementById('msPrimaryModel')?.value;
   const checker = document.getElementById('msCheckerModel')?.value;
-  if (primary && checker) {
-    localStorage.setItem('almujtahed_ms_models', JSON.stringify({ primary, checker }));
-    msToast('حُفظ اختيار نموذجي النسخ');
+  const auditor = document.getElementById('msAuditorModel')?.value;
+  if (primary && checker && auditor) {
+    localStorage.setItem('almujtahed_ms_models', JSON.stringify({ primary, checker, auditor }));
+    msToast('حُفظ اختيار نماذج النسخ والتدقيق');
   }
 }
 
@@ -52,7 +55,7 @@ function msPresetModels(name) {
   if (!preset) return;
   localStorage.setItem('almujtahed_ms_models', JSON.stringify(preset));
   msFillModelSelects();
-  msToast(name === 'hard' ? 'وضع الخطوط الصعبة: Gemini Pro + Qwen3-VL' : 'الوضع القياسي: Gemini Flash + Luna');
+  msToast(name === 'hard' ? 'وضع الخطوط الصعبة: Gemini Pro + Qwen3-VL، يدققه Gemini Pro' : 'الوضع القياسي: Flash + Luna، يدققه Qwen3-VL');
 }
 let msWb = null; // {projectId, copyId, folioId}
 let msSaveTimer = null;
@@ -286,7 +289,7 @@ function msOpenFolio(pid, cid, fid) {
   document.getElementById('msWbTitle').textContent = `لوحة (${f.label}) — نسخة (${c.siglum}) من «${p.title}»`;
   document.getElementById('msWbImg').src = f.file_url;
   const ta = document.getElementById('msWbText');
-  ta.value = f.text || f.primary_text || '';
+  ta.value = f.text || f.audited_text || f.primary_text || '';
   msRenderWbState();
   wb.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -305,11 +308,25 @@ function msRenderWbState() {
   const statusEl = document.getElementById('msWbStatus');
   statusEl.textContent = f.status === 'approved' ? '✔ معتمدة' : (f.status === 'draft' ? '✎ مسودة نسخ' : 'لم تُنسخ بعد');
   const meta = [];
-  if (f.model_primary) meta.push(`الأساسي: ${f.model_primary}${f.primary_seconds != null ? ` (${f.primary_seconds}ث)` : ''}`);
-  if (f.model_checker) meta.push(`المدقق: ${f.model_checker}${f.checker_seconds != null ? ` (${f.checker_seconds}ث)` : ''}`);
-  if (f.agreement != null) meta.push(`اتفاق النموذجين حرفيًا: ${f.agreement}٪`);
-  if (f.cost != null) meta.push(`كلفة النسخ: $${Number(f.cost).toFixed(4)}`);
+  if (f.model_primary) meta.push(`القارئ الأول: ${f.model_primary}${f.primary_seconds != null ? ` (${f.primary_seconds}ث)` : ''}`);
+  if (f.model_checker) meta.push(`القارئ الثاني: ${f.model_checker}${f.checker_seconds != null ? ` (${f.checker_seconds}ث)` : ''}`);
+  if (f.model_auditor) meta.push(`المدقق: ${f.model_auditor}${f.auditor_seconds != null ? ` (${f.auditor_seconds}ث)` : ''}`);
+  if (f.agreement != null) meta.push(`اتفاق القارئين حرفيًا: ${f.agreement}٪`);
+  if (f.cost != null) meta.push(`كلفة النسخ والتدقيق: $${Number(f.cost).toFixed(4)}`);
   document.getElementById('msWbMeta').textContent = meta.join(' · ');
+  const notesEl = document.getElementById('msWbAuditNotes');
+  if (notesEl) {
+    if (f.audit_notes) {
+      notesEl.hidden = false;
+      notesEl.innerHTML = `<strong>تنبيهات المدقق:</strong> ${msEsc(f.audit_notes)}`;
+    } else {
+      notesEl.hidden = true;
+      notesEl.innerHTML = '';
+    }
+  }
+  document.querySelectorAll('.ms-view-btn').forEach(b => {
+    b.classList.toggle('ms-view-active', b.dataset.msView === (f._view || 'audited'));
+  });
   msRenderDisputes();
 }
 
@@ -370,6 +387,21 @@ function msPickDispute(i) {
   msSave(); msRenderDisputes();
 }
 
+function msShowText(view) {
+  const ctx = msWbFolio();
+  if (!ctx || !ctx.folio) return;
+  const f = ctx.folio;
+  const ta = document.getElementById('msWbText');
+  // احفظ تحرير المحقق الحالي قبل التنقل بين النسخ حتى لا يضيع
+  if (f._view === 'audited' || !f._view) f.text = ta.value;
+  f._view = view;
+  ta.value = view === 'audited' ? (f.text || f.audited_text || '')
+    : (view === 'primary' ? (f.primary_text || '') : (f.checker_text || ''));
+  document.querySelectorAll('.ms-view-btn').forEach(b => {
+    b.classList.toggle('ms-view-active', b.dataset.msView === view);
+  });
+}
+
 async function msTranscribeFolio() {
   const ctx = msWbFolio();
   if (!ctx || !ctx.folio) return;
@@ -390,24 +422,31 @@ async function msTranscribeFolio() {
       body: JSON.stringify({
         file_path: f.file_path, api_key: apiKey,
         primary_model: choice.primary, checker_model: choice.checker,
+        auditor_model: choice.auditor,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذر النسخ');
     const primary = data.primary || {};
     const checker = data.checker || {};
+    const auditor = data.auditor || {};
     if (primary.error && checker.error) throw new Error(primary.error);
-    if (!primary.text && !checker.text) throw new Error((primary.error || checker.error || 'لم يرجع النموذجان نصًا'));
+    if (!primary.text && !checker.text) throw new Error((primary.error || checker.error || 'لم يرجع القارئان نصًا'));
     f.primary_text = primary.text || '';
     f.checker_text = checker.text || '';
+    f.audited_text = auditor.text || '';
+    f.audit_notes = auditor.notes || '';
     f.model_primary = primary.model || msModels.primary;
     f.model_checker = checker.model || msModels.checker;
+    f.model_auditor = auditor.model || choice.auditor;
     f.primary_seconds = primary.seconds;
     f.checker_seconds = checker.seconds;
-    f.cost = (Number(primary.cost) || 0) + (Number(checker.cost) || 0);
+    f.auditor_seconds = auditor.seconds;
+    f.cost = (Number(primary.cost) || 0) + (Number(checker.cost) || 0) + (Number(auditor.cost) || 0);
     f.disputes = data.disputes || [];
     f.agreement = data.agreement;
-    f.text = f.primary_text;
+    f._view = 'audited';
+    f.text = f.audited_text || f.primary_text;
     f.status = 'draft';
     document.getElementById('msWbText').value = f.text;
     msSave(); msRenderWbState(); renderMsCopies();
@@ -450,7 +489,10 @@ document.addEventListener('input', (e) => {
   if (e.target && e.target.id === 'msWbText' && msWb) {
     const ctx = msWbFolio();
     if (ctx && ctx.folio) {
-      ctx.folio.text = e.target.value;
+      const f = ctx.folio;
+      if (f._view === 'primary') f.primary_text = e.target.value;
+      else if (f._view === 'checker') f.checker_text = e.target.value;
+      else f.text = e.target.value;
       msSave();
     }
   }

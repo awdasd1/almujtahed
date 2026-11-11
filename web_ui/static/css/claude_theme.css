@@ -11168,3 +11168,7 @@ body::-webkit-scrollbar,
 .ms-model-label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .ms-model-label select { padding: 7px 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-main, transparent); color: inherit; font-family: inherit; }
 .ms-models-note { font-size: 12px; opacity: .75; margin: 10px 0 0; line-height: 1.8; }
+.ms-wb-views { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12.5px; flex-wrap: wrap; }
+.ms-view-btn { padding: 4px 10px; font-size: 12px; }
+.ms-view-active { background: var(--accent-clay, #b4552d); color: #fff; border-color: transparent; }
+.ms-audit-notes { margin-top: 10px; padding: 10px 12px; border: 1px solid #d9a441; border-radius: 8px; font-size: 13px; line-height: 1.9; background: rgba(217,164,65,.07); }
