@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.478"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.479"},
         },
     })
     if opened.get("error"):
@@ -14021,6 +14021,74 @@ async def transcribe_manuscript_one(request: Request, payload: Any = Body(...)):
         return await asyncio.to_thread(_ms_transcribe_one, model, b64_url, key)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذر قراءة النموذج: {str(exc)[:200]}")
+
+def _ms_enhance_image_sync(src: Path, out: Path, contrast: float = 1.30,
+                           sharpness: float = 1.9, brightness: float = 1.04,
+                           separation: float = 55) -> Any:
+    """ترميم لوحة: تسطيح إضاءة الخلفية لفصل الحبر عنها + تباين وحدة، وتكبير اللوحات الصغيرة."""
+    from PIL import Image, ImageOps, ImageEnhance, ImageFilter
+    import numpy as np
+    im = ImageOps.exif_transpose(Image.open(src)).convert("RGB")
+    maxdim = max(im.size)
+    if maxdim < 2000:
+        scale = min(2.5, 2000 / maxdim)
+        im = im.resize((round(im.width * scale), round(im.height * scale)), Image.LANCZOS)
+    arr = np.asarray(im).astype(np.float32)
+    lum = arr.mean(axis=2)
+    sep = max(0.0, min(100.0, float(separation))) / 100.0
+    if sep > 0:
+        radius = max(12, int(max(im.size) // 36))
+        bg = np.asarray(
+            Image.fromarray(np.clip(lum, 0, 255).astype("uint8")).filter(
+                ImageFilter.GaussianBlur(radius))).astype(np.float32)
+        norm = np.clip(lum / np.maximum(bg, 1.0) * float(np.median(bg)), 0, 255)
+        lum2 = (1 - sep) * lum + sep * norm
+    else:
+        lum2 = lum
+    ratio = lum2 / np.maximum(lum, 1.0)
+    out_im = Image.fromarray(np.clip(arr * ratio[..., None], 0, 255).astype("uint8"))
+    out_im = ImageOps.autocontrast(out_im, cutoff=1)
+    out_im = ImageEnhance.Contrast(out_im).enhance(max(0.5, min(2.5, contrast)))
+    out_im = ImageEnhance.Brightness(out_im).enhance(max(0.6, min(1.5, brightness)))
+    out_im = ImageEnhance.Color(out_im).enhance(0.92)
+    out_im = ImageEnhance.Sharpness(out_im).enhance(max(0.0, min(4.0, sharpness)))
+    out_im.save(out, "JPEG", quality=92)
+    return out_im.size
+
+
+@app.post("/api/manuscripts/enhance")
+async def enhance_manuscript_folio(request: Request, payload: Any = Body(...)):
+    """معايرة وترميم آلي للوحة مرفوعة: ينتج نسخة مرمّمة بجانب الأصلية ليختار المحقق."""
+    owner_id = current_owner_id(request)
+    raw_path = str((payload or {}).get("file_path") or "").strip()
+    if not raw_path:
+        raise HTTPException(status_code=400, detail="مسار اللوحة مفقود")
+    path = Path(raw_path).resolve()
+    root = (UPLOADS_BUCKET_DIR / owner_id).resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=400, detail="اللوحة خارج مجلد المرفوعات")
+
+    def _f(name, default, lo, hi):
+        try:
+            return max(lo, min(hi, float((payload or {}).get(name, default))))
+        except Exception:
+            return default
+
+    params = {"contrast": _f("contrast", 1.30, 0.5, 2.5),
+              "sharpness": _f("sharpness", 1.9, 0.0, 4.0),
+              "brightness": _f("brightness", 1.04, 0.6, 1.5),
+              "separation": _f("separation", 55, 0, 100)}
+    out_path = path.with_name(f"{path.stem}_restored.jpg")
+    try:
+        width, height = await asyncio.to_thread(
+            _ms_enhance_image_sync, path, out_path,
+            params["contrast"], params["sharpness"], params["brightness"], params["separation"])
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر ترميم اللوحة: {str(exc)[:200]}")
+    return {"success": True, "file_path": str(out_path),
+            "file_url": f"/uploads/{owner_id}/{out_path.name}",
+            "width": width, "height": height, "params": params}
+
 
 @app.post("/api/manuscripts/transcribe")
 async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)):

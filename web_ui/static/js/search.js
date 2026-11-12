@@ -583,7 +583,8 @@ async function openSearchScopeModal(target = 'search') {
     modal.style.zIndex = '420';
   } else if (target === 'ms_style') {
     selectedBooksScope = [...(window._msStyleBookTitles || [])];
-    modal.style.zIndex = '6000';
+    // فوق كل النوافذ (توصية المدقق 4000 وقارئ الكتب 100500) رغم قاعدة CSS ذات !important
+    modal.style.setProperty('z-index', '200000', 'important');
   } else {
     selectedBooksScope = [...(window._searchTabBooks || selectedBooksScope || [])];
     modal.style.zIndex = '250';
@@ -627,6 +628,7 @@ function closeSearchScopeModal() {
   if (modal) {
     modal.style.display = 'none';
     modal.classList.remove('open');
+    modal.style.removeProperty('z-index');
     modal.style.zIndex = '250';
   }
   const applyLabel = document.getElementById('scopeApplyLabel');

@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.478">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.479">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.478 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.479 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1493,6 +1493,7 @@
                         <div class="ms-margins-grid">
                             <div class="ms-margin-box">
                                 <div class="ms-margin-title">هامش المقابلة (فروق النسخ المعتمدة)</div>
+                                <div class="ms-wb-meta" style="margin-bottom:6px;"><span class="ms-ok-check">✔</span> محسوم بقرار المحقق · <span class="ms-auto-check">◐</span> معتمد آليًا في التشغيل ولم يُحسم بعد</div>
                                 <div id="msMarginCollation"></div>
                             </div>
                             <div class="ms-margin-box">
@@ -1614,6 +1615,7 @@
                                     <button type="button" class="ms-btn" id="msImgPenBtn" onclick="msImgSetMode('pen')">🖊️ وضع القلم</button>
                                     <button type="button" class="ms-btn" onclick="msImgClearDraw()">مسح الرسم</button>
                                     <button type="button" class="ms-btn" onclick="msImgReset()">إعادة الضبط</button>
+                                    <button type="button" class="ms-btn" onclick="msOpenEnhanceCurrent()">🛠 معايرة وترميم اللوحة</button>
                                 </div>
                                 <div class="ms-wb-img" id="msWbStage"><img id="msWbImg" alt="لوحة مخطوط"><canvas id="msWbOverlay" width="10" height="10"></canvas></div>
                                 <div class="ms-crop-box" id="msCropBox" hidden>
@@ -1689,6 +1691,44 @@
                     </div>
                     <div class="ms-rec-meta" id="msRecMeta"></div>
                 </div>
+            </div>
+        </div>
+
+        <div class="ms-modal-overlay" id="msEnhModal" hidden>
+            <div class="ms-modal ms-enh-modal">
+                <div class="ms-modal-head">
+                    <strong>🛠 معايرة اللوحة وترميمها</strong>
+                    <button type="button" class="ms-btn" onclick="msCloseEnhance()">✕ إغلاق</button>
+                </div>
+                <div class="ms-modal-pos" id="msEnhInfo"></div>
+                <div class="ms-enh-grid">
+                    <div class="ms-enh-panel" id="msEnhPanelOrig">
+                        <div class="ms-enh-title">اللوحة الأصلية <span class="ms-enh-state" id="msEnhStateOrig"></span></div>
+                        <img id="msEnhOrigImg" alt="اللوحة الأصلية">
+                        <button type="button" class="ms-btn ms-btn-primary ms-enh-adopt" onclick="msAdoptEnhanced('original')">اعتمد هذه اللوحة</button>
+                    </div>
+                    <div class="ms-enh-panel" id="msEnhPanelRest">
+                        <div class="ms-enh-title">اللوحة المرمّمة <span class="ms-enh-state" id="msEnhStateRest"></span></div>
+                        <img id="msEnhRestImg" alt="اللوحة المرممة">
+                        <div class="ms-enh-tools">
+                            <label>فصل الخط عن الخلفية <span id="msEnhSepVal">55</span>
+                                <input type="range" id="msEnhSep" min="0" max="100" step="1" value="55" oninput="msEnhVal('msEnhSep','msEnhSepVal')"></label>
+                            <label>التباين <span id="msEnhConVal">1.30</span>
+                                <input type="range" id="msEnhCon" min="50" max="250" step="5" value="130" oninput="msEnhVal('msEnhCon','msEnhConVal',100)"></label>
+                            <label>السطوع <span id="msEnhBriVal">1.04</span>
+                                <input type="range" id="msEnhBri" min="60" max="150" step="2" value="104" oninput="msEnhVal('msEnhBri','msEnhBriVal',100)"></label>
+                            <label>الحدّة <span id="msEnhShaVal">1.90</span>
+                                <input type="range" id="msEnhSha" min="0" max="400" step="10" value="190" oninput="msEnhVal('msEnhSha','msEnhShaVal',100)"></label>
+                            <button type="button" class="ms-btn" id="msEnhApplyBtn" onclick="msApplyEnhance()">🔄 إعادة الترميم بهذه القيم</button>
+                        </div>
+                        <button type="button" class="ms-btn ms-btn-primary ms-enh-adopt" onclick="msAdoptEnhanced('restored')">اعتمد هذه اللوحة</button>
+                    </div>
+                </div>
+                <div class="ms-enh-trial-row">
+                    <button type="button" class="ms-btn ms-btn-primary" id="msEnhTrialBtn" onclick="msTrialReadEnhanced()">🧪 تجربة قراءة اللوحة</button>
+                    <span class="ms-wb-meta">يقرأ اللوحة المرمّمة بنموذج Gemini Pro Latest وحده لتجربتها قبل اعتمادها</span>
+                </div>
+                <div class="ms-enh-trial" id="msEnhTrial" hidden></div>
             </div>
         </div>
 
@@ -5890,24 +5930,24 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.478"></script>
-    <script src="/static/js/search.js?v=1.10.478"></script>
-    <script src="/static/js/reader.js?v=1.10.478"></script>
-    <script src="/static/js/force3d.js?v=1.10.478"></script>
-    <script src="/static/js/share.js?v=1.10.478"></script>
-    <script src="/static/js/chat.js?v=1.10.478"></script>
-    <script src="/static/js/designs.js?v=1.10.478"></script>
-    <script src="/static/js/texts.js?v=1.10.478"></script>
-    <script src="/static/js/agents.js?v=1.10.478"></script>
-    <script src="/static/js/providers.js?v=1.10.478"></script>
-    <script src="/static/js/tools.js?v=1.10.478"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.478"></script>
-    <script src="/static/js/projects.js?v=1.10.478"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.478"></script>
-    <script src="/static/js/archive.js?v=1.10.478"></script>
-    <script src="/static/js/compare.js?v=1.10.478"></script>
-    <script src="/static/js/local_models.js?v=1.10.478"></script>
-    <script src="/static/js/changelog.js?v=1.10.478"></script>
+    <script src="/static/js/app.js?v=1.10.479"></script>
+    <script src="/static/js/search.js?v=1.10.479"></script>
+    <script src="/static/js/reader.js?v=1.10.479"></script>
+    <script src="/static/js/force3d.js?v=1.10.479"></script>
+    <script src="/static/js/share.js?v=1.10.479"></script>
+    <script src="/static/js/chat.js?v=1.10.479"></script>
+    <script src="/static/js/designs.js?v=1.10.479"></script>
+    <script src="/static/js/texts.js?v=1.10.479"></script>
+    <script src="/static/js/agents.js?v=1.10.479"></script>
+    <script src="/static/js/providers.js?v=1.10.479"></script>
+    <script src="/static/js/tools.js?v=1.10.479"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.479"></script>
+    <script src="/static/js/projects.js?v=1.10.479"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.479"></script>
+    <script src="/static/js/archive.js?v=1.10.479"></script>
+    <script src="/static/js/compare.js?v=1.10.479"></script>
+    <script src="/static/js/local_models.js?v=1.10.479"></script>
+    <script src="/static/js/changelog.js?v=1.10.479"></script>
 
     <script>
         window.refreshLucideIcons = function () {

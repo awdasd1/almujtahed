@@ -263,13 +263,30 @@ function msDeleteCopy(pid, cid) {
   msWb = null;
 }
 
+const MS_ENH_DEFAULTS = { separation: 55, contrast: 1.30, brightness: 1.04, sharpness: 1.9 };
+
+async function msEnhanceFolioFile(folio, params) {
+  const src = folio.orig_file_path || folio.file_path;
+  const res = await fetch('/api/manuscripts/enhance', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_path: src, ...(params || MS_ENH_DEFAULTS) }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.file_path) throw new Error(data.detail || 'تعذر ترميم اللوحة');
+  folio.enhanced_file_path = data.file_path;
+  folio.enhanced_file_url = data.file_url;
+  folio.enhance_params = data.params || params || MS_ENH_DEFAULTS;
+  return data;
+}
+
 async function msUploadFolios(pid, cid, input) {
   const p = msProject(pid);
   const c = msCopy(p, cid);
   const files = Array.from(input.files || []);
   input.value = '';
   if (!c || !files.length) return;
-  msToast(`جارٍ رفع ${files.length} لوحة إلى البوكت...`);
+  msToast(`جارٍ رفع ${files.length} لوحة ومعايرتها وترميمها آليًا...`);
+  const uploaded = [];
   for (const file of files) {
     try {
       const form = new FormData();
@@ -281,18 +298,169 @@ async function msUploadFolios(pid, cid, input) {
       const num = Math.floor(pos / 2) + 1;
       const side = pos % 2 === 0 ? 'و' : 'ظ';
       c.folios = c.folios || [];
-      c.folios.push({
+      const folio = {
         id: msUid(), label: `${num}${side}`, name: data.filename,
         file_url: data.file_url, file_path: data.file_path,
+        orig_file_url: data.file_url, orig_file_path: data.file_path,
+        enhanced_file_url: '', enhanced_file_path: '', enhance_params: null,
+        adopted_image: 'original',
         status: 'pending', text: '', primary_text: '', checker_text: '',
         disputes: [], agreement: null,
-      });
+      };
+      c.folios.push(folio);
+      uploaded.push(folio);
+      try { await msEnhanceFolioFile(folio); }
+      catch (e) { msToast(`⚠ رُفعت لوحة (${folio.label}) وتعذر ترميمها آليًا: ${e.message}`, 5000); }
     } catch (e) {
       msToast(`❌ فشل رفع «${file.name}»: ${e.message}`, 5000);
     }
   }
   msSave(); renderMsCopies();
-  msToast('اكتمل رفع اللوحات. اضغط أي لوحة لبدء نسخها.');
+  if (uploaded.length) {
+    msToast('اكتمل الرفع والترميم. قارن الأصلية بالمرمّمة واعتمد إحداهما.');
+    msOpenEnhance(pid, cid, uploaded[0].id, uploaded.slice(1).map(f => f.id));
+  } else {
+    msToast('اكتمل رفع اللوحات. اضغط أي لوحة لبدء نسخها.');
+  }
+}
+
+// ---------- معايرة اللوحة وترميمها: أصلية ومرمّمة جنبًا إلى جنب ----------
+let MS_ENH = null; // {projectId, copyId, folioId, queue:[folioId]}
+
+function msEnhCtx() {
+  if (!MS_ENH) return null;
+  const p = msProject(MS_ENH.projectId);
+  const c = msCopy(p, MS_ENH.copyId);
+  const f = msFolio(c, MS_ENH.folioId);
+  return f ? { project: p, copy: c, folio: f } : null;
+}
+
+function msEnhVal(sliderId, labelId, div) {
+  const s = document.getElementById(sliderId);
+  const l = document.getElementById(labelId);
+  if (s && l) l.textContent = div ? (s.value / div).toFixed(2) : s.value;
+}
+
+function msEnhReadParams() {
+  return {
+    separation: Number(document.getElementById('msEnhSep').value),
+    contrast: Number(document.getElementById('msEnhCon').value) / 100,
+    brightness: Number(document.getElementById('msEnhBri').value) / 100,
+    sharpness: Number(document.getElementById('msEnhSha').value) / 100,
+  };
+}
+
+function msEnhSetSliders(params) {
+  const pr = params || MS_ENH_DEFAULTS;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  set('msEnhSep', pr.separation != null ? pr.separation : 65);
+  set('msEnhCon', Math.round((pr.contrast || 1.35) * 100));
+  set('msEnhBri', Math.round((pr.brightness || 1.04) * 100));
+  set('msEnhSha', Math.round((pr.sharpness || 2.0) * 100));
+  msEnhVal('msEnhSep', 'msEnhSepVal'); msEnhVal('msEnhCon', 'msEnhConVal', 100);
+  msEnhVal('msEnhBri', 'msEnhBriVal', 100); msEnhVal('msEnhSha', 'msEnhShaVal', 100);
+}
+
+async function msOpenEnhance(pid, cid, fid, queue) {
+  const p = msProject(pid);
+  const c = msCopy(p, cid);
+  const f = msFolio(c, fid);
+  if (!f) return;
+  if (!f.orig_file_path) { f.orig_file_path = f.file_path; f.orig_file_url = f.file_url; }
+  MS_ENH = { projectId: pid, copyId: cid, folioId: fid, queue: queue || [] };
+  const modal = document.getElementById('msEnhModal');
+  modal.hidden = false;
+  document.getElementById('msEnhInfo').innerHTML =
+    `<strong>لوحة (${msEsc(f.label)}) — نسخة (${msEsc(c.siglum)}) من «${msEsc(p.title)}»</strong><br>` +
+    'رُمّمت اللوحة آليًا (فصل الخط عن الخلفية + تباين وحدّة وتكبير). عدّل بقيم الترميم، وجرّب القراءة، ثم اعتمد الأصلية أو المرمّمة فتكون هي لوحة النسخ والمقابلة.';
+  document.getElementById('msEnhTrial').hidden = true;
+  document.getElementById('msEnhTrial').innerHTML = '';
+  msEnhSetSliders(f.enhance_params);
+  if (!f.enhanced_file_path) {
+    document.getElementById('msEnhRestImg').removeAttribute('src');
+    try { await msEnhanceFolioFile(f); msSave(); }
+    catch (e) { msToast(`⚠ تعذر الترميم الآلي: ${e.message}`, 5000); }
+  }
+  msRenderEnhance();
+}
+
+function msOpenEnhanceCurrent() {
+  if (!msWb) { msToast('افتح لوحة أولًا'); return; }
+  msOpenEnhance(msWb.projectId, msWb.copyId, msWb.folioId);
+}
+
+function msRenderEnhance() {
+  const ctx = msEnhCtx();
+  if (!ctx) return;
+  const f = ctx.folio;
+  const bust = `?v=${Date.now()}`;
+  document.getElementById('msEnhOrigImg').src = (f.orig_file_url || f.file_url);
+  document.getElementById('msEnhRestImg').src = f.enhanced_file_url ? f.enhanced_file_url + bust : '';
+  const adopted = f.adopted_image || 'original';
+  document.getElementById('msEnhStateOrig').textContent = adopted === 'original' ? '· المعتمدة الآن ✔' : '';
+  document.getElementById('msEnhStateRest').textContent = adopted === 'restored' ? '· المعتمدة الآن ✔' : '';
+  document.getElementById('msEnhPanelOrig').classList.toggle('ms-enh-adopted', adopted === 'original');
+  document.getElementById('msEnhPanelRest').classList.toggle('ms-enh-adopted', adopted === 'restored');
+}
+
+async function msApplyEnhance() {
+  const ctx = msEnhCtx();
+  if (!ctx) return;
+  const btn = document.getElementById('msEnhApplyBtn');
+  btn.disabled = true; btn.textContent = '⏳ جارٍ إعادة الترميم...';
+  try {
+    await msEnhanceFolioFile(ctx.folio, msEnhReadParams());
+    msSave(); msRenderEnhance();
+    msToast('أُعيد ترميم اللوحة بالقيم الجديدة');
+  } catch (e) { msToast(`❌ ${e.message}`, 5000); }
+  btn.disabled = false; btn.textContent = '🔄 إعادة الترميم بهذه القيم';
+}
+
+async function msTrialReadEnhanced() {
+  const ctx = msEnhCtx();
+  if (!ctx || !ctx.folio.enhanced_file_path) { msToast('لا لوحة مرمّمة بعد'); return; }
+  const btn = document.getElementById('msEnhTrialBtn');
+  const box = document.getElementById('msEnhTrial');
+  btn.disabled = true; btn.textContent = '⏳ Gemini Pro Latest يقرأ اللوحة المرمّمة...';
+  box.hidden = false; box.innerHTML = '<div class="ms-rec-loading">⏳ جارٍ تجربة القراءة...</div>';
+  try {
+    const res = await fetch('/api/manuscripts/transcribe-one', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_path: ctx.folio.enhanced_file_path, model: '~google/gemini-pro-latest', api_key: msApiKey() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذرت تجربة القراءة');
+    box.innerHTML = `<div class="ms-margin-title">نتيجة تجربة قراءة اللوحة المرمّمة — ${msEsc(data.model || '')}${data.seconds != null ? ` · ${data.seconds}ث` : ''}${data.cost != null ? ` · $${Number(data.cost).toFixed(4)}` : ''}</div><div class="ms-enh-trial-text">${msEsc(data.text || '(بلا نص)')}</div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="ms-rec-loading">❌ ${msEsc(e.message)}</div>`;
+  }
+  btn.disabled = false; btn.textContent = '🧪 تجربة قراءة اللوحة';
+}
+
+function msAdoptEnhanced(which) {
+  const ctx = msEnhCtx();
+  if (!ctx) return;
+  const f = ctx.folio;
+  if (which === 'restored') {
+    if (!f.enhanced_file_path) { msToast('لا لوحة مرمّمة لاعتمادها'); return; }
+    f.file_url = f.enhanced_file_url; f.file_path = f.enhanced_file_path;
+    f.adopted_image = 'restored';
+  } else {
+    f.file_url = f.orig_file_url || f.file_url; f.file_path = f.orig_file_path || f.file_path;
+    f.adopted_image = 'original';
+  }
+  msSave(); renderMsCopies(); msRenderEnhance();
+  if (msWb && msWb.folioId === f.id) msOpenFolio(MS_ENH.projectId, MS_ENH.copyId, f.id);
+  msToast(`✔ اعتُمدت اللوحة ${which === 'restored' ? 'المرمّمة' : 'الأصلية'} للوحة (${f.label}) — هي التي ستُنسخ وتُقابَل`);
+  const next = (MS_ENH.queue || []).shift();
+  if (next) msOpenEnhance(MS_ENH.projectId, MS_ENH.copyId, next, MS_ENH.queue);
+  else msCloseEnhance();
+}
+
+function msCloseEnhance() {
+  const modal = document.getElementById('msEnhModal');
+  if (modal) modal.hidden = true;
+  MS_ENH = null;
 }
 
 // ---------- المرحلة ٢: المقابلة بين النسخ بهامش مستقل ----------
@@ -374,7 +542,7 @@ function renderMsCollation() {
   }
   const mc = document.getElementById('msMarginCollation');
   mc.innerHTML = accepted.length
-    ? accepted.map(e => `<div class="ms-margin-entry"><span class="ms-ok-check" title="معتمد في الهامش">✔</span> <strong>(${msEsc(e.folio)})</strong> ${msEsc(msApparatusText(e))}
+    ? accepted.map(e => `<div class="ms-margin-entry">${msEntryMark(e)} <strong>(${msEsc(e.folio)})</strong> ${msEsc(msApparatusText(e))}
         <button type="button" class="ms-dispute-dismiss ms-rec-btn" onclick="msOpenRecommend('${e.id}')" title="طلب توصية المدقق الذكي لهذا الموضع">🧠</button>
         <button type="button" class="ms-dispute-dismiss" onclick="msCollEntry('${e.id}','pending')" title="إخراج من الهامش">↩</button></div>`).join('')
     : '<div class="ms-disputes-none">فارغ — اعتمد فروقًا من قائمة المقابلة فتظهر هنا.</div>';
@@ -435,8 +603,22 @@ function msCollEntry(id, status) {
   const e = (p.collation.entries || []).find(x => x.id === id);
   if (!e) return;
   e.status = status;
+  if (status === 'accepted') {
+    // الاعتماد بيد المحقق من القائمة حسمٌ موثّق يستحق العلامة الخضراء
+    e.rec = Object.assign({}, e.rec || {}, {
+      decision: 'اعتمد المحقق الفرق في الهامش بيده', by_editor: true,
+      at: new Date().toISOString(),
+    });
+  }
   msSave(); renderMsCollation();
   if (msWb) msRenderWbState();
+}
+
+// علامة الفرق: ✔ خضراء للمحسوم بقرار المحقق وحده، و◐ كهرمانية للمعتمد آليًا في التشغيل ولم يُحسم بعد
+function msEntryMark(e) {
+  return (e.rec && e.rec.decision)
+    ? '<span class="ms-ok-check" title="محسوم بقرار المحقق">✔</span>'
+    : '<span class="ms-auto-check" title="معتمد آليًا في التشغيل — لم يحسمه المحقق بعد">◐</span>';
 }
 
 // ---------- مسح أسلوب المؤلف: الأكثر استخدامًا في كتبه ----------
@@ -685,7 +867,7 @@ function msToggleCollatedText() {
     return `<div class="ms-collated-folio">
       <div class="ms-collate-folio-title">لوحة (${msEsc(f.label)}) — (${msEsc(base.siglum)})</div>
       <div class="ms-collated-text">${msEsc(f.text)}</div>
-      ${app.length ? `<div class="ms-collated-app"><strong>هامش المقابلة:</strong>${app.map((e, i) => `<div><span class="ms-ok-check" title="معتمد في الهامش">✔</span> ${i + 1}. ${msEsc(msApparatusText(e))}</div>`).join('')}</div>` : ''}
+      ${app.length ? `<div class="ms-collated-app"><strong>هامش المقابلة:</strong>${app.map((e, i) => `<div>${msEntryMark(e)} ${i + 1}. ${msEsc(msApparatusText(e))}</div>`).join('')}</div>` : ''}
       ${(f.ed_note || '').trim() ? `<div class="ms-collated-app"><strong>هامش التحقيق:</strong><div>${msEsc(f.ed_note)}</div></div>` : ''}
     </div>`;
   }).join('');
@@ -757,7 +939,7 @@ function msRenderWbState() {
     if (accepted.length) {
       margin.hidden = false;
       margin.innerHTML = `<strong>هامش المقابلة — لوحة (${msEsc(f.label)}):</strong>` +
-        accepted.map(e => `<div><span class="ms-ok-check" title="معتمد في الهامش">✔</span> ${msEsc(msApparatusText(e))}</div>`).join('');
+        accepted.map(e => `<div>${msEntryMark(e)} ${msEsc(msApparatusText(e))}</div>`).join('');
     } else {
       margin.hidden = true;
       margin.innerHTML = '';
