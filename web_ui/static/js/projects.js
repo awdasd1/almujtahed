@@ -7240,8 +7240,6 @@ function buildAcademicPaperHtml(runData, options) {
         quote: wordMeasureStyle(doc.querySelector('.quoted-text'))
       };
       var ctx = { callMap: new Map(), defMap: new Map() };
-      // إخراج تحقيق المخطوطات: ترقيم حواشٍ متصل بطلب صريح، وبحوث الشات على نسقها
-      if (doc.querySelector('.ms-sheet')) payload.footnote_restart = 'continuous';
       var pages = Array.from(doc.querySelectorAll('.pagedjs_page'));
       if (pages.length) {
         pages.forEach(function (page) {

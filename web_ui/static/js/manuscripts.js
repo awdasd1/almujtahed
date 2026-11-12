@@ -2042,23 +2042,64 @@ function msFlowParagraphs(text) {
     .filter(Boolean);
 }
 
+// صياغة الحاشية للمنشور: اختصار المحققين «الكلمة]» يُكتب «الكلمة» كامل القوسين
+function msApparatusPrint(e) {
+  let t = msApparatusText(e);
+  if (e.custom_apparatus) t = t.replace(/^([^:\n]{1,70}?)\]\s*/, '«$1» ');
+  return t;
+}
+
+// تطبيع رسم للإرساء فقط: تجريد التشكيل وتوحيد الهمزات والألف المقصورة
+// والواو والياء المهموزتين، فلا يفشل التطابق لاختلاف رسم النسخ
+function msNormAnchor(s) {
+  const rep = { 'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ٱ': 'ا', 'ى': 'ي', 'ؤ': 'و', 'ئ': 'ي', 'ة': 'ه' };
+  let norm = '', map = [];
+  const src = String(s || '');
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (/[ً-ٰٟـ]/.test(ch)) continue;
+    norm += rep[ch] || ch;
+    map.push(i);
+  }
+  return { norm, map };
+}
+
+// يقطّع فقرة المتن مقاطع مرسّاة: كل مقطع نصٌّ، وما اتصلت به حاشية أعقبه مقطع fn
+function msAnchorSegments(text, items, fnTextOf) {
+  const { norm, map } = msNormAnchor(text);
+  const usable = items
+    .filter(e => e.base && !e._anchored)
+    .map(e => ({ e, n: msNormAnchor(e.base).norm }))
+    .filter(x => x.n && norm.includes(x.n))
+    .sort((a, b) => norm.indexOf(a.n) - norm.indexOf(b.n));
+  const segs = [];
+  let posN = 0;
+  for (const { e, n } of usable) {
+    const idx = norm.indexOf(n, posN);
+    if (idx < 0) continue;
+    const oStart = posN === 0 ? 0 : map[posN];
+    const oEnd = map[idx + n.length - 1] + 1;
+    if (oEnd > oStart) segs.push({ text: text.slice(oStart, oEnd) });
+    segs.push({ text: '', fn: fnTextOf(e) });
+    e._anchored = true;
+    posN = idx + n.length;
+  }
+  const restStart = posN === 0 ? 0 : (map[posN] !== undefined ? map[posN] : text.length);
+  if (restStart < text.length) segs.push({ text: text.slice(restStart) });
+  return segs.length ? segs : [{ text }];
+}
+
 function msAnchoredRuns(line, entries, footnotes) {
   // يرسّي حواشي الفروق وتعليقات التحقيق داخل المتن عند عباراتها حيث وُجدت
   const runs = [];
-  let rest = line;
-  const usable = entries.filter(e => e.base && line.includes(e.base) && !e._anchored);
-  usable.sort((a, b) => line.indexOf(a.base) - line.indexOf(b.base));
-  for (const e of usable) {
-    const i = rest.indexOf(e.base);
-    if (i < 0) continue;
-    const before = rest.slice(0, i + e.base.length);
-    if (before) runs.push({ t: before });
-    footnotes.push({ runs: [{ t: e._ed ? e._text : msApparatusText(e) }] });
-    runs.push({ t: '', fn: footnotes.length - 1 });
-    e._anchored = true;
-    rest = rest.slice(i + e.base.length);
-  }
-  if (rest) runs.push({ t: rest });
+  msAnchorSegments(line, entries, e => e._ed ? e._text : msApparatusPrint(e)).forEach(seg => {
+    if (seg.fn !== undefined) {
+      footnotes.push({ runs: [{ t: seg.fn }] });
+      runs.push({ t: '', fn: footnotes.length - 1 });
+    } else if (seg.text) {
+      runs.push({ t: seg.text });
+    }
+  });
   return runs.length ? runs : [{ t: line }];
 }
 
@@ -2076,7 +2117,8 @@ function msFinalBlocks(p) {
   // متن الأم وحدها متدفقًا بلا عناوين لوحات: تُذكر اللوحة بعلامة صغيرة
   // في أول فقرتها، وسائر النسخ مكانها الحواشي لا المتن
   folios.forEach(f => {
-    const entries = f.entries.map(e => ({ ...e }));
+    // الزيادة لا عبارة أم لها: تُرسى عند لفظها المُدخل في المتن
+    const entries = f.entries.map(e => ({ ...e, base: e.base || (e.type === 'زيادة' ? e.other : '') }));
     const edItems = f.edLines.map(l => ({ base: msEdAnchorPhrase(l), _ed: true, _text: l }));
     const all = entries.concat(edItems);
     const paras = msFlowParagraphs(f.text);
@@ -2085,7 +2127,7 @@ function msFinalBlocks(p) {
       if (pi === paras.length - 1) {
         // ما تعذر إرساؤه عند عبارته يلحق بآخر فقرة اللوحة
         all.filter(e => !e._anchored).forEach(e => {
-          footnotes.push({ runs: [{ t: e._ed ? e._text : msApparatusText(e) }] });
+          footnotes.push({ runs: [{ t: e._ed ? e._text : msApparatusPrint(e) }] });
           runs.push({ t: '', fn: footnotes.length - 1 });
         });
       }
@@ -2111,7 +2153,7 @@ async function msExportDocx() {
   try {
     const res = await fetch('/api/projects/export-docx', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: p.title, styles: msPrintStyles(), blocks, footnotes, footnote_restart: 'continuous' }),
+      body: JSON.stringify({ title: p.title, styles: msPrintStyles(), blocks, footnotes }),
     });
     if (!res.ok) throw new Error('فشل توليد الملف');
     msDownloadBlob(await res.blob(), `${p.title}.docx`);
@@ -2149,24 +2191,15 @@ function msBuildPrintHtml(p) {
   // الصفحات (PagedConfig.after)، فلا أرقام مكتوبة في متن الحاشية نفسه
   const fnSpan = t => `<span class="fn">${esc(t)}</span>`;
   const folioHtml = f => {
-    const entries = f.entries.map(e => ({ ...e }));
+    const entries = f.entries.map(e => ({ ...e, base: e.base || (e.type === 'زيادة' ? e.other : '') }));
     const edItems = f.edLines.map(l => ({ base: msEdAnchorPhrase(l), _ed: true, _text: l }));
     const all = entries.concat(edItems);
     const paras = msFlowParagraphs(f.text);
     return paras.map((para, pi) => {
-      let built = '', rest = para;
-      const usable = all.filter(e => e.base && para.includes(e.base) && !e._anchored)
-        .sort((a, b) => para.indexOf(a.base) - para.indexOf(b.base));
-      for (const e of usable) {
-        const i = rest.indexOf(e.base);
-        if (i < 0) continue;
-        built += esc(rest.slice(0, i + e.base.length)) + fnSpan(e._ed ? e._text : msApparatusText(e));
-        e._anchored = true;
-        rest = rest.slice(i + e.base.length);
-      }
-      let htmlPara = built + esc(rest);
+      let htmlPara = msAnchorSegments(para, all, e => e._ed ? e._text : msApparatusPrint(e))
+        .map(seg => seg.fn !== undefined ? fnSpan(seg.fn) : esc(seg.text)).join('');
       if (pi === paras.length - 1) {
-        all.filter(e => !e._anchored).forEach(e => { htmlPara += fnSpan(e._ed ? e._text : msApparatusText(e)); });
+        all.filter(e => !e._anchored).forEach(e => { htmlPara += fnSpan(e._ed ? e._text : msApparatusPrint(e)); });
       }
       if (pi === 0) htmlPara = `<span class="ms-folio-mark">[${esc(f.label)}]</span> ` + htmlPara;
       return `<p>${htmlPara}</p>`;
@@ -2211,31 +2244,30 @@ ${extras.head || ''}
 <script>window.__paperBg = ${JSON.stringify(extras.bg || null).replace(/</g, '\\u003c')};
 window.PagedConfig = { auto: true, after: function () {
   window.__pagedDone = true;
-  // ترقيم الحواشي متصل عبر الصفحات كلها: روابط عربية مرقمة تسلسليًا
-  // من أول البحث إلى آخره بدل عدّادات الصفحات المتجددة
+  // ترقيم حواشي كل صفحة مستقل يبدأ من (١) في صفحته — نسق البحوث
+  // الشرعية المحكمة: روابط عربية مرقمة داخل الصفحة الواحدة
   try {
     var arabic = function (n) { return String(n).replace(/\\d/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[+d]; }); };
-    var gn = 0;
-    document.querySelectorAll('.pagedjs_page').forEach(function (page) {
+    document.querySelectorAll('.pagedjs_page').forEach(function (page, pi) {
       var calls = page.querySelectorAll('[data-footnote-call]');
       var markers = page.querySelectorAll('.pagedjs_footnote_area [data-footnote-marker]');
       calls.forEach(function (call, i) {
-        gn += 1;
+        var key = (pi + 1) + '-' + (i + 1);
         call.classList.add('pg-linked');
-        call.id = 'pgcall-' + gn;
+        call.id = 'pgcall-' + key;
         var a = document.createElement('a');
         a.className = 'pg-fn-call';
-        a.href = '#pgfn-' + gn;
-        a.textContent = '(' + arabic(gn) + ')';
+        a.href = '#pgfn-' + key;
+        a.textContent = '(' + arabic(i + 1) + ')';
         call.appendChild(a);
         var mk = markers[i];
         if (mk) {
           mk.classList.add('pg-linked-marker');
-          mk.id = 'pgfn-' + gn;
+          mk.id = 'pgfn-' + key;
           var b = document.createElement('a');
           b.className = 'pg-fn-marker';
-          b.href = '#pgcall-' + gn;
-          b.textContent = '(' + arabic(gn) + ')';
+          b.href = '#pgcall-' + key;
+          b.textContent = '(' + arabic(i + 1) + ')';
           mk.insertBefore(b, mk.firstChild);
           mk.insertBefore(document.createTextNode(' '), b.nextSibling);
         }
