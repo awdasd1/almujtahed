@@ -1258,10 +1258,16 @@ function msDoCrop(rect) {
   const img = msImgEl();
   if (!img || !img.naturalWidth) return;
   const sx = img.naturalWidth / img.clientWidth, sy = img.naturalHeight / img.clientHeight;
+  // تُحفظ القصاصة مكبّرة بحسب تكبير الباحث الحالي حتى يرى النموذج
+  // الحروف أكبر وأوضح مما في أصل الصورة الصغيرة.
+  const scale = Math.min(5, Math.max(2, Math.round(MS_IMG.zoom / 50)));
+  MS_IMG.cropScale = scale;
   const cv = document.createElement('canvas');
-  cv.width = Math.max(2, Math.round(rect.w * sx));
-  cv.height = Math.max(2, Math.round(rect.h * sy));
+  cv.width = Math.max(2, Math.round(rect.w * sx * scale));
+  cv.height = Math.max(2, Math.round(rect.h * sy * scale));
   const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   const c = document.getElementById('msImgContrast').value / 100;
   const s = document.getElementById('msImgSat').value / 100;
   const b = document.getElementById('msImgBright').value / 100;
@@ -1275,9 +1281,13 @@ function msDoCrop(rect) {
     document.getElementById('msCropPreview').src = URL.createObjectURL(blob);
     document.getElementById('msCropBox').hidden = false;
     document.getElementById('msCropResult').value = '';
+    document.getElementById('msCropReadMeta').textContent = '';
+    const si = document.getElementById('msCropScaleInfo');
+    if (si) si.textContent = `أُبقيت القصاصة مكبرة ×${scale} (تكبيرك الحالي ${MS_IMG.zoom}٪) ليراها النموذج أوضح`;
+    msLoadCropModels();
     msImgSetMode(MS_IMG.mode);
     msImgClearDraw();
-    msToast('قُصّ الجزء بالمعالجة الحالية — أعد نسخ موضعه الصعب بالنماذج');
+    msToast('قُصّ الجزء بالمعالجة الحالية ومكبرًا — اختر نموذج القراءة ثم أعد نسخه');
   }, 'image/png');
 }
 function msOvInit() {
@@ -1320,31 +1330,71 @@ function msOvInit() {
     MS_IMG.startPt = null;
   });
 }
+let MS_CROP_MODELS_LOADED = false;
+async function msLoadCropModels() {
+  const sel = document.getElementById('msCropModel');
+  if (!sel || MS_CROP_MODELS_LOADED) return;
+  MS_CROP_MODELS_LOADED = true;
+  try {
+    const res = await fetch('/api/manuscripts/models');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر جلب النماذج');
+    const vision = (data.models || []).filter(m => m.vision);
+    const textOnly = (data.models || []).filter(m => !m.vision);
+    const mk = m => `<option value="${msEsc(m.id)}">${msEsc(m.name)} — ${msEsc(m.id)}</option>`;
+    sel.innerHTML = '<option value="">الثلاثي الحالي (قارئان + مدقق)</option>' +
+      `<optgroup label="نماذج ترى الصور (${vision.length})">${vision.map(mk).join('')}</optgroup>` +
+      `<optgroup label="نماذج نصية — غالبًا لا تقرأ الصور (${textOnly.length})">${textOnly.map(mk).join('')}</optgroup>`;
+  } catch (e) {
+    MS_CROP_MODELS_LOADED = false;
+  }
+}
+function msCropModelInfo() {
+  const sel = document.getElementById('msCropModel');
+  const meta = document.getElementById('msCropReadMeta');
+  if (meta && sel) meta.textContent = sel.value ? `سيقرأ الجزء: ${sel.value}` : 'سيقرأ بالثلاثي الحالي';
+}
+
 async function msRetranscribeCrop() {
   if (!MS_IMG.cropBlob) { msToast('اصنع قصًا أولًا بوضع القصّ'); return; }
   const btn = document.getElementById('msCropTranscribeBtn');
   btn.disabled = true;
   const old = btn.textContent;
-  btn.textContent = '⏳ جارٍ رفع الجزء ونسخه بالنماذج...';
+  const model = document.getElementById('msCropModel').value;
+  btn.textContent = model ? `⏳ جارٍ رفع الجزء وقراءته بـ ${model}...` : '⏳ جارٍ رفع الجزء ونسخه بالثلاثي...';
   try {
     const fd = new FormData();
     fd.append('file', MS_IMG.cropBlob, 'ms-crop.png');
     const up = await fetch('/api/chat/upload', { method: 'POST', body: fd });
     const upData = await up.json().catch(() => ({}));
     if (!up.ok || !upData.file_path) throw new Error(upData.detail || 'تعذر رفع الجزء');
-    const choice = msModelChoice();
-    const res = await fetch('/api/manuscripts/transcribe', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file_path: upData.file_path, api_key: msApiKey(),
-        primary_model: choice.primary, checker_model: choice.checker, auditor_model: choice.auditor }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || 'تعذر نسخ الجزء');
-    const aud = data.auditor || {};
-    const pri = data.primary || {};
-    const txt = aud.text || pri.text || '';
-    if (!txt) throw new Error('لم ترجع النماذج قراءة للجزء');
+    let txt = '', meta = '';
+    if (model) {
+      const res = await fetch('/api/manuscripts/transcribe-one', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: upData.file_path, model, api_key: msApiKey() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'تعذر قراءة النموذج');
+      txt = data.text || '';
+      meta = `قرأها: ${data.model || model} · ${data.seconds ?? '—'}ث · $${Number(data.cost || 0).toFixed(4)} · قصاصة مكبرة ×${MS_IMG.cropScale || 1}`;
+    } else {
+      const choice = msModelChoice();
+      const res = await fetch('/api/manuscripts/transcribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: upData.file_path, api_key: msApiKey(),
+          primary_model: choice.primary, checker_model: choice.checker, auditor_model: choice.auditor }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'تعذر نسخ الجزء');
+      const aud = data.auditor || {};
+      const pri = data.primary || {};
+      txt = aud.text || pri.text || '';
+      meta = `قرأها الثلاثي: أول ${pri.model || ''} · ثانٍ ${(data.checker || {}).model || ''} · مدقق ${aud.model || ''} · قصاصة مكبرة ×${MS_IMG.cropScale || 1}`;
+    }
+    if (!txt) throw new Error('لم يرجع النموذج قراءة للجزء');
     document.getElementById('msCropResult').value = txt;
+    document.getElementById('msCropReadMeta').textContent = meta;
     msToast('قُرئ الجزء المعالج — قارنه بعينك على الصورة قبل إلحاقه', 6000);
   } catch (e) {
     msToast('❌ ' + e.message, 7000);

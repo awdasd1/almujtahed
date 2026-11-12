@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.474"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.476"},
         },
     })
     if opened.get("error"):
@@ -13970,6 +13970,57 @@ async def save_manuscripts(request: Request, payload: Any = Body(...)):
     _save_owned_list(owner_id, "manuscripts", projects)
     return {"ok": True, "count": len(projects)}
 
+
+@app.get("/api/manuscripts/models")
+async def manuscript_models(request: Request):
+    """كل نماذج OpenRouter المتاحة لاختيار المحقق (قراءة الأجزاء المشكلة)."""
+    key = owner_openrouter_key(request, None)
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    def fetch():
+        http_req = urllib.request.Request("https://openrouter.ai/api/v1/models", headers=headers)
+        with urllib.request.urlopen(http_req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    try:
+        data = await asyncio.to_thread(fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر جلب النماذج: {str(exc)[:160]}")
+    models = []
+    for m in (data or {}).get("data") or []:
+        arch = m.get("architecture") or {}
+        inputs = arch.get("input_modalities") or []
+        pricing = m.get("pricing") or {}
+        models.append({"id": m.get("id"), "name": m.get("name") or m.get("id"),
+                       "vision": "image" in inputs,
+                       "context": m.get("context_length"),
+                       "prompt_price": pricing.get("prompt"), "completion_price": pricing.get("completion")})
+    models.sort(key=lambda x: (not x["vision"], str(x["name"]).lower()))
+    return {"models": models, "count": len(models)}
+
+@app.post("/api/manuscripts/transcribe-one")
+async def transcribe_manuscript_one(request: Request, payload: Any = Body(...)):
+    """قراءة أحادية لنموذج واحد يختاره المحقق (لتجربة الأجزاء المشكلة)."""
+    owner_id = current_owner_id(request)
+    raw_path = str((payload or {}).get("file_path") or "").strip()
+    model = str((payload or {}).get("model") or "").strip()
+    if not raw_path or not model:
+        raise HTTPException(status_code=400, detail="مسار الجزء أو النموذج مفقود")
+    path = Path(raw_path).resolve()
+    root = (UPLOADS_BUCKET_DIR / owner_id).resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=400, detail="الجزء خارج مجلد المرفوعات")
+    mime = "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+    _text, is_image, b64_url = extract_text_from_file(path, path.name, mime)
+    if not is_image or not b64_url:
+        raise HTTPException(status_code=400, detail="تعذر تجهيز صورة الجزء")
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_transcribe_one, model, b64_url, key)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر قراءة النموذج: {str(exc)[:200]}")
 
 @app.post("/api/manuscripts/transcribe")
 async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)):
