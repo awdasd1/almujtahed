@@ -1999,9 +1999,21 @@ function msEdAnchorPhrase(line) {
 // أسطر النسخ أسطرٌ مادية في المخطوط؛ تُصهر في المنشور فقراتٍ متدفقة
 // (فواصل الأسطر الفارغة وحدها تفصل الفقرات) فينضبط السطر يمينًا وشمالًا
 function msFlowParagraphs(text) {
-  return (text || '').split(/\n\s*\n/)
-    .map(chunk => chunk.split('\n').map(s => s.trim()).filter(Boolean).join(' '))
-    .filter(Boolean);
+  // فقرات طبيعية كما في الكتب المحققة: تُصهر أسطر النسخ، وتُختم الفقرة
+  // عند تمام جملة بعد حد أدنى من الطول (وسطر فارغ يفصل حتمًا) — فلا
+  // فقرة عملاقة تمتد صفحات فيتصل ترقيم حواشيها ويتكدس ذيلها
+  const paras = [];
+  let cur = [];
+  const flush = () => { if (cur.length) { paras.push(cur.join(' ')); cur = []; } };
+  (text || '').split('\n').forEach(line => {
+    const t = line.trim();
+    if (!t) { flush(); return; }
+    cur.push(t);
+    const joinedLen = cur.join(' ').length;
+    if ((/[.!؟»؛:]\s*$/.test(t) && joinedLen >= 380) || joinedLen >= 750) flush();
+  });
+  flush();
+  return paras;
 }
 
 // صياغة الحاشية للمنشور: اختصار المحققين «الكلمة]» يُكتب «الكلمة» كامل القوسين
@@ -2028,23 +2040,35 @@ function msNormAnchor(s) {
 
 // يقطّع فقرة المتن مقاطع مرسّاة: كل مقطع نصٌّ، وما اتصلت به حاشية أعقبه مقطع fn
 function msAnchorSegments(text, items, fnTextOf) {
+  // كل حاشية تجد موضع عبارتها مستقلةً (عبارات مكررة أو متداخلة في مقطع
+  // طويل لا تُقصي بعضها)، ثم تُرتَّب النقاط بنهاياتها فتخرج المقاطع متسلسلة
   const { norm, map } = msNormAnchor(text);
-  const usable = items
-    .filter(e => e.base && !e._anchored)
-    .map(e => ({ e, n: msNormAnchor(e.base).norm }))
-    .filter(x => x.n && norm.includes(x.n))
-    .sort((a, b) => norm.indexOf(a.n) - norm.indexOf(b.n));
+  const anchors = [];
+  items.filter(e => e.base && !e._anchored).forEach((e, ord) => {
+    let n = msNormAnchor(e.base).norm;
+    let idx = n ? norm.indexOf(n) : -1;
+    // مقطع طويل لم يطابق كاملًا (سقط ممتد): يُرسى عند مطلع عبارته
+    if (idx < 0 && n && n.length > 30) {
+      const head = n.split(' ').slice(0, 6).join(' ');
+      if (head) {
+        const h = norm.indexOf(head);
+        if (h >= 0) { idx = h; n = head; }
+      }
+    }
+    if (idx < 0 || !n) return;
+    anchors.push({ e, ord, endN: idx + n.length });
+  });
+  anchors.sort((a, b) => a.endN - b.endN || a.ord - b.ord);
   const segs = [];
   let posN = 0;
-  for (const { e, n } of usable) {
-    const idx = norm.indexOf(n, posN);
-    if (idx < 0) continue;
+  for (const a of anchors) {
+    const oEnd = map[a.endN - 1] + 1;
     const oStart = posN === 0 ? 0 : map[posN];
-    const oEnd = map[idx + n.length - 1] + 1;
+    if (oEnd < oStart) continue;
     if (oEnd > oStart) segs.push({ text: text.slice(oStart, oEnd) });
-    segs.push({ text: '', fn: fnTextOf(e) });
-    e._anchored = true;
-    posN = idx + n.length;
+    segs.push({ text: '', fn: fnTextOf(a.e) });
+    a.e._anchored = true;
+    posN = a.endN;
   }
   const restStart = posN === 0 ? 0 : (map[posN] !== undefined ? map[posN] : text.length);
   if (restStart < text.length) segs.push({ text: text.slice(restStart) });
@@ -2114,7 +2138,14 @@ function msPaperRunData(p) {
   folios.forEach(f => {
     const entries = f.entries.map(e => ({ ...e, base: e.base || (e.type === 'زيادة' ? e.other : '') }));
     const edItems = f.edLines.map(l => ({ base: msEdAnchorPhrase(l), _ed: true, _text: l }));
-    const all = entries.concat(edItems);
+    // لا حاشيتين متماثلتين في لوحة واحدة (فروق مكررة من جولات مقابلة)
+    const seenFn = new Set();
+    const all = entries.concat(edItems).filter(e => {
+      const t = e._ed ? e._text : msApparatusPrint(e);
+      if (seenFn.has(t)) return false;
+      seenFn.add(t);
+      return true;
+    });
     const paras = msFlowParagraphs(f.text);
     paras.forEach((para, pi) => {
       const segs = msAnchorSegments(para, all, e => e._ed ? e._text : msApparatusPrint(e));
