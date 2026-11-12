@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.470"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.471"},
         },
     })
     if opened.get("error"):
@@ -14379,6 +14379,7 @@ def _ms_author_agent_sync(payload: dict, key: str) -> Dict[str, Any]:
             pass
         loci = "؛ ".join(f"«{x['book']}» ج {x.get('part') or '—'} ص {x.get('page') or '—'}" for x in parallels)
         suggestions.append({
+            "parallels": [{"book_id": x["book_id"], "book": x["book"], "part": x.get("part"), "page": x.get("page")} for x in parallels],
             "kind": "author", "anchor": phrase[:200],
             "title": f"موازاة في كتب المؤلف ({cmp.get('relation') or 'وجدت'})",
             "body": (cmp.get("note") or "وُجدت العبارة في كتب المؤلف الأخرى كما في المواضع.")[:800],
@@ -14522,6 +14523,59 @@ async def manuscript_recommend(request: Request, payload: Any = Body(...)):
         return await asyncio.to_thread(_ms_recommend_sync, payload or {}, key)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذرت التوصية: {str(exc)[:200]}")
+
+
+# ---------- مسح أسلوب المؤلف (الأكثر استخدامًا) ----------
+# يحصي عبارات متنافسة في كل كتب المؤلف عندنا ليعرف المحقق صيغة
+# مؤلفه الغالبة في مثل هذا الموضع (مقدمات/صياغات). عدّ آلي بلا نموذج.
+def _ms_author_style_sync(payload: dict) -> Dict[str, Any]:
+    import concurrent.futures as _cf
+    author = str((payload or {}).get("author") or "")
+    work = str((payload or {}).get("title") or "")
+    phrases = [str(x).strip() for x in ((payload or {}).get("phrases") or []) if str(x).strip()][:5]
+    books = _ms_author_books(author)
+    work_core = re.split(r"[\s—-]", work)[0] if work else ""
+    searchable = [b for b in books if work_core and work_core not in b["title"]] or books
+    searchable = searchable[:12]
+    if not phrases or not searchable:
+        return {"books": [b["title"] for b in searchable], "results": [], "dominant": None}
+
+    def check(args):
+        phrase, book = args
+        try:
+            r = shamela_local_mcp.search_in_book(book["book_id"], phrase, limit=400)
+            hits = (r or {}).get("results") or []
+            if hits:
+                h = hits[0]
+                return {"phrase": phrase, "book_id": book["book_id"], "book": book["title"],
+                        "count": len(hits), "capped": len(hits) >= 400,
+                        "part": h.get("part"), "page": h.get("page_num"),
+                        "snippet": (h.get("snippet") or "")[:220]}
+        except Exception:
+            pass
+        return None
+
+    jobs = [(ph, b) for ph in phrases for b in searchable]
+    agg = {ph: {"phrase": ph, "total": 0, "occurrences": []} for ph in phrases}
+    with _cf.ThreadPoolExecutor(max_workers=8) as pool:
+        for hit in pool.map(check, jobs):
+            if hit:
+                a = agg[hit["phrase"]]
+                a["total"] += hit["count"]
+                a["occurrences"].append({k: hit[k] for k in ("book_id", "book", "count", "capped", "part", "page", "snippet")})
+    results = sorted(agg.values(), key=lambda x: -x["total"])
+    for r in results:
+        r["occurrences"].sort(key=lambda x: -x["count"])
+    dominant = results[0]["phrase"] if results and results[0]["total"] > 0 else None
+    return {"books": [b["title"] for b in searchable], "results": results, "dominant": dominant}
+
+@app.post("/api/manuscripts/author-style")
+async def manuscript_author_style(payload: Any = Body(...)):
+    """مسح أسلوب المؤلف: إحصاء عبارات متنافسة عبر كل كتبه."""
+    try:
+        return await asyncio.to_thread(_ms_author_style_sync, payload or {})
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر مسح الأسلوب: {str(exc)[:200]}")
 
 
 @app.post("/api/manuscripts/collate")

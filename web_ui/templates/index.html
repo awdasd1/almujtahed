@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.470">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.471">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.470 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.471 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1549,6 +1549,16 @@
                         <p class="ms-models-note">لدى هذا الوكيل سائر كتب المؤلف في مكتبتنا: يعرض عبارات كل لوحة — من كلام المؤلف نفسه لا الآيات والأحاديث — على كتبه الأخرى، فيكشف أين كرر عبارته باختصار أو بإسهاب، ويقارن الألفاظ لترجيح قراءة اللوحة أو التنبيه لتصحيف. تثبت المواضع آليًا بالمطابقة على نصوص الكتب، وتدخل الاقتراحات هامش التحقيق باعتمادك كسائر الوكلاء.</p>
                         <div id="msAuthorBooks" class="ms-sigla"></div>
                         <div id="msAuthorList"></div>
+                        <div class="ms-style-tool">
+                            <div class="ms-margin-title">📊 مسح أسلوب المؤلف — أيّ صيغة هي الغالبة عنده؟</div>
+                            <p class="ms-models-note">ضع العبارات المتنافسة (كل عبارة في سطر، مثل: «تذكرة لذوي القلوب» / «تذكرة لأولي القلوب») فيحصيها المسح في كل كتب المؤلف عندنا وينبّهك للأكثر استخدامًا، مع تصفّح كل موضع بعينك قبل الحسم.</p>
+                            <textarea id="msStylePhrases" rows="3" placeholder="عبارة في كل سطر..."></textarea>
+                            <div class="ms-form-row">
+                                <button type="button" class="ms-btn" onclick="msAuthorStyleManual()">امسح كتب المؤلف</button>
+                                <span id="msStyleInfo" class="ms-wb-meta"></span>
+                            </div>
+                            <div id="msStyleResult"></div>
+                        </div>
                     </div>
                     <div class="ms-create-card" id="msMonitorCard">
                         <div class="ms-create-title">🛡️ وكيل المراقبة والتدقيق</div>
@@ -1669,7 +1679,9 @@
                         <textarea id="msRecComment" rows="3" placeholder="اكتب تعليقك إن أردت غير صياغة التوصية..."></textarea>
                     </label>
                     <label class="ms-rec-check"><input type="checkbox" id="msRecUseNote" checked> استخدم صياغة الهامش التي اقترحها Wonder عند إثبات الفرق</label>
+                    <div class="ms-rec-style" id="msRecStyle"></div>
                     <div class="ms-modal-btns">
+                        <button type="button" class="ms-btn" id="msRecStyleBtn" onclick="msAuthorStyleScan()">📊 مسح أسلوب المؤلف في هذا الموضع</button>
                         <button type="button" class="ms-btn ms-btn-primary" onclick="msRecApply('recommended')">✔ اعتماد التوصية وإثباتها</button>
                         <button type="button" class="ms-btn" onclick="msRecApply('chosen')">تطبيق الخيار المحدد أعلاه</button>
                         <button type="button" class="ms-btn ms-rec-ignore" onclick="msRecIgnore()">تجاهل التوصية</button>
@@ -5877,24 +5889,24 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.470"></script>
-    <script src="/static/js/search.js?v=1.10.470"></script>
-    <script src="/static/js/reader.js?v=1.10.470"></script>
-    <script src="/static/js/force3d.js?v=1.10.470"></script>
-    <script src="/static/js/share.js?v=1.10.470"></script>
-    <script src="/static/js/chat.js?v=1.10.470"></script>
-    <script src="/static/js/designs.js?v=1.10.470"></script>
-    <script src="/static/js/texts.js?v=1.10.470"></script>
-    <script src="/static/js/agents.js?v=1.10.470"></script>
-    <script src="/static/js/providers.js?v=1.10.470"></script>
-    <script src="/static/js/tools.js?v=1.10.470"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.470"></script>
-    <script src="/static/js/projects.js?v=1.10.470"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.470"></script>
-    <script src="/static/js/archive.js?v=1.10.470"></script>
-    <script src="/static/js/compare.js?v=1.10.470"></script>
-    <script src="/static/js/local_models.js?v=1.10.470"></script>
-    <script src="/static/js/changelog.js?v=1.10.470"></script>
+    <script src="/static/js/app.js?v=1.10.471"></script>
+    <script src="/static/js/search.js?v=1.10.471"></script>
+    <script src="/static/js/reader.js?v=1.10.471"></script>
+    <script src="/static/js/force3d.js?v=1.10.471"></script>
+    <script src="/static/js/share.js?v=1.10.471"></script>
+    <script src="/static/js/chat.js?v=1.10.471"></script>
+    <script src="/static/js/designs.js?v=1.10.471"></script>
+    <script src="/static/js/texts.js?v=1.10.471"></script>
+    <script src="/static/js/agents.js?v=1.10.471"></script>
+    <script src="/static/js/providers.js?v=1.10.471"></script>
+    <script src="/static/js/tools.js?v=1.10.471"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.471"></script>
+    <script src="/static/js/projects.js?v=1.10.471"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.471"></script>
+    <script src="/static/js/archive.js?v=1.10.471"></script>
+    <script src="/static/js/compare.js?v=1.10.471"></script>
+    <script src="/static/js/local_models.js?v=1.10.471"></script>
+    <script src="/static/js/changelog.js?v=1.10.471"></script>
 
     <script>
         window.refreshLucideIcons = function () {

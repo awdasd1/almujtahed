@@ -436,6 +436,88 @@ function msCollEntry(id, status) {
   if (msWb) msRenderWbState();
 }
 
+// ---------- مسح أسلوب المؤلف: الأكثر استخدامًا في كتبه ----------
+function msOpenStyleBook(bookId, part, page, highlight) {
+  if (typeof openBookReader !== 'function') { msToast('قارئ الكتب غير متاح في هذه الصفحة'); return; }
+  openBookReader({ book_id: bookId || '', part: part || '', page_num: page ? parseInt(page, 10) : null, highlight: highlight || '' });
+}
+
+function msRenderStyle(data) {
+  const results = data.results || [];
+  if (!results.length) return '<div class="ms-disputes-none">لا عبارات للمسح.</div>';
+  const maxTotal = Math.max(...results.map(r => r.total || 0));
+  return `<div class="ms-disputes-title">مسح أسلوب المؤلف عبر ${(data.books || []).length} كتابًا — الأكثر استخدامًا عنده يُعلَّم ⭐:</div>` +
+    results.map(r => `
+      <div class="ms-style-row ${r.total && r.total === maxTotal ? 'ms-style-dom' : ''}">
+        <span class="ms-style-phrase">«${msEsc(r.phrase)}»</span>
+        — <span class="ms-style-total">${r.total || 0} موضعًا</span> في ${(r.occurrences || []).length} كتابًا
+        ${r.total && r.total === maxTotal ? '<span class="ms-style-dom-badge">⭐ الأكثر استخدامًا لدى المؤلف</span>' : ''}
+        <div>${(r.occurrences || []).map(o => `
+          <span class="ms-occ-chip">${msEsc(o.book)} (${o.count}${o.capped ? '+' : ''} · ج ${msEsc(o.part || '—')} ص ${msEsc(o.page || '—')})
+            <button type="button" class="ms-occ-open" title="تصفح الموضع في الكتاب" onclick="msOpenStyleBook(${Number(o.book_id) || 0}, '${msEsc(o.part || '')}', ${Number(o.page) || 0}, '${msEsc(r.phrase)}')">📖</button>
+          </span>`).join('')}</div>
+      </div>`).join('');
+}
+
+async function msRunStyleScan(phrases, containerId, infoId) {
+  const p = msCurrentProject();
+  if (!p) return null;
+  const box = document.getElementById(containerId);
+  if (infoId) document.getElementById(infoId).textContent = '⏳ جارٍ إحصاء العبارات في كل كتب المؤلف...';
+  if (box) box.innerHTML = '<div class="ms-rec-loading">⏳ نمسح كتب المؤلف كلها ونعدّ المواضع...</div>';
+  try {
+    const res = await fetch('/api/manuscripts/author-style', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ author: p.author, title: p.title, phrases }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر مسح الأسلوب');
+    if (box) box.innerHTML = msRenderStyle(data);
+    if (infoId) document.getElementById(infoId).textContent =
+      data.dominant ? `الأكثر استخدامًا عند المؤلف: «${data.dominant}»` : 'لم تظهر العبارات في كتبه الأخرى';
+    return data;
+  } catch (e) {
+    if (box) box.innerHTML = `<div class="ms-rec-loading">❌ ${msEsc(e.message)}</div>`;
+    if (infoId) document.getElementById(infoId).textContent = '';
+    return null;
+  }
+}
+
+async function msAuthorStyleScan() {
+  const p = msCurrentProject();
+  if (!p || !MS_REC) return;
+  const e = (p.collation.entries || []).find(x => x.id === MS_REC.entryId);
+  if (!e || !e.base || !e.other) { msToast('هذا الموضع بلا قراءتين متنافستين للمسح'); return; }
+  const base = msBaseCopy(p);
+  const bf = base ? (base.folios || []).find(x => x.label === e.folio) : null;
+  const phrases = [];
+  const add = s => { s = (s || '').replace(/\s+/g, ' ').trim(); if (s && !phrases.includes(s) && phrases.length < 5) phrases.push(s); };
+  if (bf && bf.text && bf.text.includes(e.base)) {
+    const idx = bf.text.indexOf(e.base);
+    const words = bf.text.slice(Math.max(0, idx - 60), idx + e.base.length + 60).split(/\s+/).filter(Boolean);
+    const joined = words.join(' ');
+    const bi = joined.indexOf(e.base);
+    const segA = joined.slice(Math.max(0, bi - 28), bi + e.base.length + 28).trim();
+    add(segA);
+    add(segA.replace(e.base, e.other));
+    const bw = e.base.split(/\s+/).filter(Boolean);
+    const center = bw.length >= 3 ? bw.slice(0, 3).join(' ') : null;
+    if (center) { add(center); add(center.replace(e.base, e.other) === center ? center.replace(bw[0], e.other.split(/\s+/)[0]) : center.replace(e.base, e.other)); }
+  }
+  add(e.base); add(e.other);
+  const btn = document.getElementById('msRecStyleBtn');
+  btn.disabled = true;
+  const data = await msRunStyleScan(phrases, 'msRecStyle', null);
+  btn.disabled = false;
+  if (data) MS_REC.style = data;
+}
+
+async function msAuthorStyleManual() {
+  const phrases = document.getElementById('msStylePhrases').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 5);
+  if (phrases.length < 1) { msToast('ضع عبارة واحدة على الأقل (كل عبارة في سطر)'); return; }
+  await msRunStyleScan(phrases, 'msStyleResult', 'msStyleInfo');
+}
+
 // ---------- نافذة توصية Muse Wonder لكل موضع ----------
 let MS_REC = null; // {entryId, data}
 const MS_REC_ACTIONS = {
@@ -549,7 +631,9 @@ function msRecApply(kind) {
   }
   e.rec = { decision: kind === 'recommended' ? 'اعتمد توصية Wonder' : 'طبق خياره مع/دون تعليق',
             option, at: new Date().toISOString(), action: data.action,
-            model: data.model, confidence: data.confidence };
+            model: data.model, confidence: data.confidence,
+            style: MS_REC.style ? { dominant: MS_REC.style.dominant,
+              totals: (MS_REC.style.results || []).map(r => ({ phrase: r.phrase, total: r.total })) } : undefined };
   msSave(); renderMsCollation();
   if (msWb) { msRenderWbState(); const ta = document.getElementById('msWbText'); const ctx = msWbFolio(); if (ta && ctx && ctx.folio && ctx.folio.id === (bf && bf.id)) ta.value = ctx.folio.text || ta.value; }
   msRecClose();
@@ -947,7 +1031,7 @@ function renderMsAuthor() {
         <div class="ms-collate-folio-title">لوحة (${msEsc(folio)})</div>
         ${byFolio[folio].map(s => `
           <div class="ms-dispute">
-            <span class="ms-dispute-a"><strong>[وكيل المؤلف]</strong> «${msEsc(s.anchor)}» — ${msEsc(s.body)}${s.source ? `<br>المواضع: ${msEsc(s.source)}` : ''}<br>${msVerifyBadge(s.verify)}</span>
+            <span class="ms-dispute-a"><strong>[وكيل المؤلف]</strong> «${msEsc(s.anchor)}» — ${msEsc(s.body)}${s.source ? `<br>المواضع: ${msEsc(s.source)}` : ''}${(s.parallels || []).length ? `<br>تصفح المواضع: ${s.parallels.map(x => `<span class="ms-occ-chip">${msEsc(x.book)} ص ${msEsc(x.page || '—')}<button type="button" class="ms-occ-open" title="تصفح الموضع في الكتاب" onclick="msOpenStyleBook(${Number(x.book_id) || 0}, '${msEsc(x.part || '')}', ${Number(x.page) || 0}, '${msEsc(s.anchor)}')">📖</button></span>`).join('')}` : ''}<br>${msVerifyBadge(s.verify)}</span>
             <span>
               <button type="button" class="ms-dispute-btn" onclick="msAgentDecision('${s.id}','accepted')">اعتماد في الهامش</button>
               <button type="button" class="ms-dispute-dismiss" onclick="msAgentDecision('${s.id}','dismissed')">رفض</button>

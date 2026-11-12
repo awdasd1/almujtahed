@@ -11227,3 +11227,14 @@ body::-webkit-scrollbar,
 .ms-rec-ignore { color: #b03a2e; border-color: #b03a2e; }
 .ms-rec-meta { font-size: 11.5px; opacity: .7; margin-top: 8px; }
 .ms-rec-btn { color: #7a5aa1; border-color: #7a5aa1; }
+.ms-rec-style { margin-top: 10px; }
+.ms-style-row { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 9px 11px; margin-bottom: 8px; font-size: 13px; line-height: 1.9; }
+.ms-style-row.ms-style-dom { border-color: #b8892e; background: rgba(184,137,46,.08); }
+.ms-style-phrase { font-weight: 700; }
+.ms-style-total { font-weight: 700; color: #7a5aa1; }
+.ms-style-dom-badge { display: inline-block; padding: 1px 9px; border-radius: 999px; background: #b8892e; color: #fff; font-size: 11px; font-weight: 700; }
+.ms-occ-chip { display: inline-flex; align-items: center; gap: 4px; margin: 2px 3px; padding: 2px 6px 2px 9px; border: 1px solid var(--border-subtle); border-radius: 999px; font-size: 11.5px; }
+.ms-occ-open { border: none; background: transparent; cursor: pointer; font-size: 13px; padding: 0 2px; }
+.ms-occ-open:hover { transform: scale(1.2); }
+.ms-style-tool { margin-top: 14px; border-top: 1px dashed var(--border-subtle); padding-top: 10px; }
+.ms-style-tool textarea { width: 100%; font-family: inherit; font-size: 13.5px; line-height: 1.9; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: transparent; color: inherit; }
