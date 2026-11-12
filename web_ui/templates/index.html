@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.469">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.470">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.469 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.470 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1649,6 +1649,35 @@
                 </div>
             </div>
         </section>
+
+        <div class="ms-modal-overlay" id="msRecModal" hidden>
+            <div class="ms-modal">
+                <div class="ms-modal-head">
+                    <strong>🧠 توصية Muse Wonder لهذا الموضع</strong>
+                    <button type="button" class="ms-btn" onclick="msRecClose()">✕</button>
+                </div>
+                <div class="ms-modal-pos" id="msRecPos"></div>
+                <div id="msRecBody"><div class="ms-rec-loading">⏳ Muse Wonder يدرس الموضع وقراءتيه وسياقه...</div></div>
+                <div id="msRecActions" hidden>
+                    <div class="ms-rec-options">
+                        <label><input type="radio" name="msRecOption" value="keep_note"> إثبات الأم في المتن + إثبات الفرق في هامش المقابلة</label>
+                        <label><input type="radio" name="msRecOption" value="keep_drop"> إثبات الأم في المتن + تجاهل الفرق (لا يدخل الهامش)</label>
+                        <label><input type="radio" name="msRecOption" value="adopt_other"> اعتماد قراءة النسخة الأخرى في المتن + إثبات الفرق في الهامش</label>
+                        <label><input type="radio" name="msRecOption" value="comment_only"> تعليق فقط في هامش التحقيق، ويبقى الفرق معلّقًا بلا حسم</label>
+                    </div>
+                    <label class="ms-ed-note-label">تعليقك أنت في هذا الموضع (اختياري — يُحفظ في هامش التحقيق باسم المحقق)
+                        <textarea id="msRecComment" rows="3" placeholder="اكتب تعليقك إن أردت غير صياغة التوصية..."></textarea>
+                    </label>
+                    <label class="ms-rec-check"><input type="checkbox" id="msRecUseNote" checked> استخدم صياغة الهامش التي اقترحها Wonder عند إثبات الفرق</label>
+                    <div class="ms-modal-btns">
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="msRecApply('recommended')">✔ اعتماد التوصية وإثباتها</button>
+                        <button type="button" class="ms-btn" onclick="msRecApply('chosen')">تطبيق الخيار المحدد أعلاه</button>
+                        <button type="button" class="ms-btn ms-rec-ignore" onclick="msRecIgnore()">تجاهل التوصية</button>
+                    </div>
+                    <div class="ms-rec-meta" id="msRecMeta"></div>
+                </div>
+            </div>
+        </div>
 
         <section class="tab-pane" id="paneProviders">
             <div class="providers-container">
@@ -5848,24 +5877,24 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.469"></script>
-    <script src="/static/js/search.js?v=1.10.469"></script>
-    <script src="/static/js/reader.js?v=1.10.469"></script>
-    <script src="/static/js/force3d.js?v=1.10.469"></script>
-    <script src="/static/js/share.js?v=1.10.469"></script>
-    <script src="/static/js/chat.js?v=1.10.469"></script>
-    <script src="/static/js/designs.js?v=1.10.469"></script>
-    <script src="/static/js/texts.js?v=1.10.469"></script>
-    <script src="/static/js/agents.js?v=1.10.469"></script>
-    <script src="/static/js/providers.js?v=1.10.469"></script>
-    <script src="/static/js/tools.js?v=1.10.469"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.469"></script>
-    <script src="/static/js/projects.js?v=1.10.469"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.469"></script>
-    <script src="/static/js/archive.js?v=1.10.469"></script>
-    <script src="/static/js/compare.js?v=1.10.469"></script>
-    <script src="/static/js/local_models.js?v=1.10.469"></script>
-    <script src="/static/js/changelog.js?v=1.10.469"></script>
+    <script src="/static/js/app.js?v=1.10.470"></script>
+    <script src="/static/js/search.js?v=1.10.470"></script>
+    <script src="/static/js/reader.js?v=1.10.470"></script>
+    <script src="/static/js/force3d.js?v=1.10.470"></script>
+    <script src="/static/js/share.js?v=1.10.470"></script>
+    <script src="/static/js/chat.js?v=1.10.470"></script>
+    <script src="/static/js/designs.js?v=1.10.470"></script>
+    <script src="/static/js/texts.js?v=1.10.470"></script>
+    <script src="/static/js/agents.js?v=1.10.470"></script>
+    <script src="/static/js/providers.js?v=1.10.470"></script>
+    <script src="/static/js/tools.js?v=1.10.470"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.470"></script>
+    <script src="/static/js/projects.js?v=1.10.470"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.470"></script>
+    <script src="/static/js/archive.js?v=1.10.470"></script>
+    <script src="/static/js/compare.js?v=1.10.470"></script>
+    <script src="/static/js/local_models.js?v=1.10.470"></script>
+    <script src="/static/js/changelog.js?v=1.10.470"></script>
 
     <script>
         window.refreshLucideIcons = function () {

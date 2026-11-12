@@ -314,6 +314,7 @@ function msSetBaseCopy(cid) {
 }
 
 function msApparatusText(e) {
+  if (e.custom_apparatus) return e.custom_apparatus;
   const s = `(${e.siglum})`;
   const ctx = e.context ? ` بعد «${e.context}»` : '';
   switch (e.type) {
@@ -362,6 +363,7 @@ function renderMsCollation() {
               <span class="ms-dispute-a">${msEsc(msApparatusText(e))}</span>
               <span>
                 <button type="button" class="ms-dispute-btn" onclick="msCollEntry('${e.id}','accepted')">اعتماد في الهامش</button>
+                <button type="button" class="ms-dispute-btn ms-rec-btn" onclick="msOpenRecommend('${e.id}')">🧠 توصية Wonder</button>
                 <button type="button" class="ms-dispute-dismiss" onclick="msCollEntry('${e.id}','dismissed')">تجاهل</button>
               </span>
             </div>`).join('')}
@@ -370,6 +372,7 @@ function renderMsCollation() {
   const mc = document.getElementById('msMarginCollation');
   mc.innerHTML = accepted.length
     ? accepted.map(e => `<div class="ms-margin-entry"><strong>(${msEsc(e.folio)})</strong> ${msEsc(msApparatusText(e))}
+        <button type="button" class="ms-dispute-dismiss ms-rec-btn" onclick="msOpenRecommend('${e.id}')" title="طلب توصية Muse Wonder لهذا الموضع">🧠</button>
         <button type="button" class="ms-dispute-dismiss" onclick="msCollEntry('${e.id}','pending')" title="إخراج من الهامش">↩</button></div>`).join('')
     : '<div class="ms-disputes-none">فارغ — اعتمد فروقًا من قائمة المقابلة فتظهر هنا.</div>';
   const me = document.getElementById('msMarginEd');
@@ -431,6 +434,130 @@ function msCollEntry(id, status) {
   e.status = status;
   msSave(); renderMsCollation();
   if (msWb) msRenderWbState();
+}
+
+// ---------- نافذة توصية Muse Wonder لكل موضع ----------
+let MS_REC = null; // {entryId, data}
+const MS_REC_ACTIONS = {
+  keep_base_note: ['keep_note', 'إثبات الأم + إثبات الفرق في الهامش'],
+  keep_base_drop: ['keep_drop', 'إثبات الأم + تجاهل الفرق'],
+  adopt_other: ['adopt_other', 'اعتماد قراءة الأخرى في المتن + الهامش'],
+  needs_image: ['comment_only', 'تعليق الموضع لعين المحقق على الصورة'],
+};
+
+async function msOpenRecommend(id) {
+  const p = msCurrentProject();
+  if (!p || !p.collation) return;
+  const e = (p.collation.entries || []).find(x => x.id === id);
+  if (!e) return;
+  MS_REC = { entryId: id, data: null };
+  const modal = document.getElementById('msRecModal');
+  modal.hidden = false;
+  document.getElementById('msRecActions').hidden = true;
+  document.getElementById('msRecComment').value = '';
+  document.getElementById('msRecPos').innerHTML =
+    `<strong>لوحة (${msEsc(e.folio)}) — ${msEsc(e.type)} مع نسخة (${msEsc(e.siglum)})</strong><br>` +
+    `في الأم: «${msEsc(e.base || '—')}» · في الأخرى: «${msEsc(e.other || '—')}»` +
+    (e.rec && e.rec.decision ? `<br><em>حسم سابق: ${msEsc(e.rec.decision)}${e.rec.option ? ' — ' + msEsc(e.rec.option) : ''}</em>` : '');
+  const body = document.getElementById('msRecBody');
+  body.innerHTML = '<div class="ms-rec-loading">⏳ Muse Wonder يدرس الموضع وقراءتيه وسياقه...</div>';
+  // مقطع اللوحة حول الموضع من نص الأم
+  const base = msBaseCopy(p);
+  const bf = base ? (base.folios || []).find(x => x.label === e.folio) : null;
+  let excerpt = '';
+  if (bf && bf.text) {
+    const anchor = (e.context && bf.text.includes(e.context)) ? e.context : (e.base || '');
+    const idx = anchor ? bf.text.indexOf(anchor) : -1;
+    excerpt = idx >= 0 ? bf.text.slice(Math.max(0, idx - 700), idx + 900) : bf.text.slice(0, 1500);
+  }
+  try {
+    const res = await fetch('/api/manuscripts/recommend', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: p.title, author: p.author, folio: e.folio, type: e.type,
+        base: e.base, other: e.other, siglum: e.siglum, context: e.context, excerpt,
+        api_key: msApiKey() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذرت التوصية');
+    MS_REC.data = data;
+    const [opt, label] = MS_REC_ACTIONS[data.action] || MS_REC_ACTIONS.needs_image;
+    body.innerHTML = `
+      <div class="ms-rec-title">التوصية: ${msEsc(data.recommendation || '')}<span class="ms-rec-action">${msEsc(label)}</span></div>
+      ${(data.reasons || []).length ? `<ul class="ms-rec-reasons">${data.reasons.map(r => `<li>${msEsc(r)}</li>`).join('')}</ul>` : ''}
+      ${data.margin_note ? `<div class="ms-rec-margin"><strong>صياغة الهامش المقترحة:</strong> ${msEsc(data.margin_note)}</div>` : ''}`;
+    const radio = document.querySelector(`input[name="msRecOption"][value="${opt}"]`);
+    if (radio) radio.checked = true;
+    document.getElementById('msRecMeta').textContent =
+      `${(data.model || 'meta/muse-wonder')} · ثقة ${data.confidence ?? '—'}٪ · ${data.seconds ?? '—'}ث · $${Number(data.cost || 0).toFixed(4)} — التوصية استشارة، والقرار لك.`;
+    document.getElementById('msRecActions').hidden = false;
+  } catch (err) {
+    body.innerHTML = `<div class="ms-rec-loading">❌ ${msEsc(err.message)}</div>`;
+  }
+}
+
+function msRecClose() {
+  document.getElementById('msRecModal').hidden = true;
+  MS_REC = null;
+}
+
+function msRecSelectedOption() {
+  const r = document.querySelector('input[name="msRecOption"]:checked');
+  return r ? r.value : 'keep_note';
+}
+
+function msRecIgnore() {
+  const p = msCurrentProject();
+  if (p && MS_REC) {
+    const e = (p.collation.entries || []).find(x => x.id === MS_REC.entryId);
+    if (e) {
+      e.rec = { decision: 'ignored', at: new Date().toISOString(),
+                action: MS_REC.data ? MS_REC.data.action : '', model: MS_REC.data ? MS_REC.data.model : '' };
+      msSave();
+    }
+  }
+  msRecClose();
+  msToast('تجاهلتَ التوصية — بقي الموضع على حاله');
+}
+
+function msRecApply(kind) {
+  const p = msCurrentProject();
+  if (!p || !MS_REC || !MS_REC.data) return;
+  const e = (p.collation.entries || []).find(x => x.id === MS_REC.entryId);
+  if (!e) return;
+  const data = MS_REC.data;
+  const [recOpt] = MS_REC_ACTIONS[data.action] || MS_REC_ACTIONS.needs_image;
+  const option = kind === 'recommended' ? recOpt : msRecSelectedOption();
+  const comment = document.getElementById('msRecComment').value.trim();
+  const useNote = document.getElementById('msRecUseNote').checked;
+  const base = msBaseCopy(p);
+  const bf = base ? (base.folios || []).find(x => x.label === e.folio) : null;
+  let corrected = false;
+  if (option === 'keep_note' || option === 'adopt_other') {
+    e.status = 'accepted';
+    if (useNote && data.margin_note) e.custom_apparatus = data.margin_note;
+  } else if (option === 'keep_drop') {
+    e.status = 'dismissed';
+  }
+  if (option === 'adopt_other' && bf && e.base && e.other && (bf.text || '').includes(e.base)) {
+    bf.text = bf.text.replace(e.base, e.other);
+    if (bf._view === 'audited' || !bf._view) bf.audited_text = bf.text;
+    corrected = true;
+  }
+  if (comment && bf) {
+    const line = `[تعليق المحقق على موضع ({e.folio}) — {${e.type}} مع (${e.siglum})] ${comment}`;
+    bf.ed_note = ((bf.ed_note || '').trim() ? bf.ed_note.trim() + '\n' : '') + line;
+  }
+  e.rec = { decision: kind === 'recommended' ? 'اعتمد توصية Wonder' : 'طبق خياره مع/دون تعليق',
+            option, at: new Date().toISOString(), action: data.action,
+            model: data.model, confidence: data.confidence };
+  msSave(); renderMsCollation();
+  if (msWb) { msRenderWbState(); const ta = document.getElementById('msWbText'); const ctx = msWbFolio(); if (ta && ctx && ctx.folio && ctx.folio.id === (bf && bf.id)) ta.value = ctx.folio.text || ta.value; }
+  msRecClose();
+  msToast(option === 'adopt_other'
+    ? (corrected ? '✔ اعتمدت قراءة الأخرى في المتن وأُثبت الفرق في الهامش' : '⚠️ أُثبت الفرق في الهامش، لكن عبارة الأم لم توجد حرفيًا في النص — صحّح المتن يدويًا من منضدة اللوحة')
+    : option === 'keep_drop' ? '✔ أُثبتت الأم وتجاهلنا الفرق'
+    : option === 'comment_only' ? '✔ حُفظ تعليقك في هامش التحقيق وبقي الفرق معلقًا'
+    : '✔ اعتمدت التوصية وأُثبت الفرق في هامش المقابلة', 6000);
 }
 
 function msToggleCollatedText() {

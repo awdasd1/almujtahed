@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.469"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.470"},
         },
     })
     if opened.get("error"):
@@ -14457,6 +14457,71 @@ async def manuscript_monitor(request: Request, payload: Any = Body(...)):
         return await asyncio.to_thread(_ms_monitor_sync, payload or {}, key)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذر وكيل المراقبة: {str(exc)[:200]}")
+
+
+# ---------- وكيل التوصيات لكل موضع خلاف ----------
+# Muse Wonder يدرس موضعًا واحدًا (فرق مقابلة) ويقترح قرارًا مسبّبًا
+# على المحقق: إثبات الأم مع/دون هامش، أو اعتماد قراءة الأخرى، أو
+# تعليق الموضع لعين المحقق على الصورة. يقترح ولا يقرر.
+MS_RECOMMEND_PROMPT = (
+    "أنت محقق مخطوطات خبير مستشار (بقدرات Muse Wonder التحليلية). ادرس موضع الخلاف الآتي في تحقيق كتاب «{title}» لمؤلفه {author}، "
+    "واقترح على المحقق قرارًا واحدًا مسبّبًا.\n"
+    "اللوحة: ({folio}) — نوع الفرق: {etype}\n"
+    "قراءة النسخة الأم: «{base}»\n"
+    "قراءة النسخة ({siglum}): «{other}»\n"
+    "السياق في الأم: «{context}»\n"
+    "مقطع نص اللوحة حول الموضع:\n{excerpt}\n\n"
+    "راعِ أصول التحقيق: الأصل إثبات قراءة الأم ما لم تتعذر أو تخالف العربية والسياق، وفروق الضبط والرسم المحضة لا تُثقل الهامش، "
+    "والنصوص القرآنية والحديثية تُعامل بحذر خاص، وما تعذّر بلا صورة يُعلَّق ولا يُحسم.\n"
+    "أخرج JSON فقط: {{\"action\":\"keep_base_note|keep_base_drop|adopt_other|needs_image\","
+    "\"recommendation\":\"التوصية بجملة أو جملتين\",\"reasons\":[\"سبب\",\"سبب\"],"
+    "\"margin_note\":\"صياغة مقترحة لسطر هامش المقابلة إن أُثبت الفرق\",\"confidence\":75}}"
+)
+
+def _ms_recommend_sync(payload: dict, key: str) -> Dict[str, Any]:
+    model = str((payload or {}).get("model") or "meta/muse-wonder")
+    p = payload or {}
+    prompt = MS_RECOMMEND_PROMPT.format(
+        title=str(p.get("title") or "")[:120], author=str(p.get("author") or "")[:120],
+        folio=str(p.get("folio") or ""), etype=str(p.get("type") or ""),
+        base=str(p.get("base") or "")[:600], other=str(p.get("other") or "")[:600],
+        siglum=str(p.get("siglum") or ""), context=str(p.get("context") or "")[:400],
+        excerpt=str(p.get("excerpt") or "")[:2200])
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2, "max_tokens": 2500}
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Recommend"},
+        data=json.dumps(body).encode("utf-8"))
+    started = time.time()
+    with urllib.request.urlopen(http_req, timeout=600) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(str(data.get("error"))[:240])
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    parsed = _ms_parse_json(msg.get("content") or "") or {}
+    action = str(parsed.get("action") or "needs_image")
+    if action not in ("keep_base_note", "keep_base_drop", "adopt_other", "needs_image"):
+        action = "needs_image"
+    usage = data.get("usage") or {}
+    return {"model": model, "action": action,
+            "recommendation": str(parsed.get("recommendation") or "")[:700],
+            "reasons": [str(r)[:400] for r in (parsed.get("reasons") or []) if str(r).strip()][:6],
+            "margin_note": str(parsed.get("margin_note") or "")[:500],
+            "confidence": parsed.get("confidence"),
+            "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
+
+@app.post("/api/manuscripts/recommend")
+async def manuscript_recommend(request: Request, payload: Any = Body(...)):
+    """توصية Muse Wonder لموضع خلاف واحد: قرار مقترح مسبّب للمحقق."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_recommend_sync, payload or {}, key)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذرت التوصية: {str(exc)[:200]}")
 
 
 @app.post("/api/manuscripts/collate")

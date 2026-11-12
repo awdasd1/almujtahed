@@ -11210,3 +11210,20 @@ body::-webkit-scrollbar,
 .ms-sev-med { border-color: #d9a441; color: #8a6414; padding: 1px 8px; border-radius: 999px; border: 1px solid #d9a441; font-size: 11px; }
 .ms-sev-low { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border-subtle); font-size: 11px; opacity: .8; }
 .ms-finding-ev { opacity: .75; font-size: 12px; }
+.ms-modal-overlay { position: fixed; inset: 0; background: rgba(20,16,12,.55); z-index: 4000; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 12px; }
+.ms-modal-overlay[hidden] { display: none; }
+.ms-modal { background: var(--bg-paper, #fdfaf4); color: var(--ink, #2b2118); width: min(760px, 96vw); border-radius: 14px; padding: 18px 20px; box-shadow: 0 18px 60px rgba(0,0,0,.35); border: 1px solid var(--border-subtle); }
+.ms-modal-head { display: flex; justify-content: space-between; align-items: center; font-size: 16px; margin-bottom: 8px; }
+.ms-modal-pos { font-size: 13.5px; line-height: 1.9; padding: 8px 10px; border: 1px dashed var(--border-subtle); border-radius: 8px; margin-bottom: 10px; }
+.ms-rec-loading { font-size: 14px; padding: 18px 6px; text-align: center; }
+.ms-rec-title { font-size: 15px; font-weight: 700; line-height: 1.9; }
+.ms-rec-action { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1px solid #7a5aa1; color: #7a5aa1; font-size: 12px; font-weight: 700; margin-inline-start: 6px; }
+.ms-rec-reasons { font-size: 13px; line-height: 1.9; margin: 8px 0; padding-inline-start: 20px; }
+.ms-rec-margin { font-size: 13px; line-height: 1.9; padding: 8px 10px; border: 1px solid #2e7d5b; border-radius: 8px; background: rgba(46,125,91,.06); margin: 8px 0; }
+.ms-rec-options { display: grid; gap: 6px; font-size: 13.5px; margin: 12px 0 4px; }
+.ms-rec-options label { padding: 7px 9px; border: 1px solid var(--border-subtle); border-radius: 8px; cursor: pointer; }
+.ms-rec-check { display: block; font-size: 12.5px; margin: 8px 0; }
+.ms-modal-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.ms-rec-ignore { color: #b03a2e; border-color: #b03a2e; }
+.ms-rec-meta { font-size: 11.5px; opacity: .7; margin-top: 8px; }
+.ms-rec-btn { color: #7a5aa1; border-color: #7a5aa1; }
