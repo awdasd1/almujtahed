@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.477"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.478"},
         },
     })
     if opened.get("error"):
@@ -14594,6 +14594,24 @@ def _ms_author_style_sync(payload: dict) -> Dict[str, Any]:
     if not phrases or not searchable:
         return {"books": [b["title"] for b in searchable], "results": [], "dominant": None,
                 "method": "exact_contiguous"}
+    wanted = [str(x).strip() for x in ((payload or {}).get("book_titles") or []) if str(x).strip()][:24]
+    if wanted:
+        try:
+            conn = shamela_local_mcp._books_conn()
+            if conn is not None:
+                picked = []
+                for t in wanted:
+                    row = conn.execute("SELECT book_id, title_ar FROM books WHERE title_ar = ?",
+                                       (t,)).fetchone() or conn.execute(
+                        "SELECT book_id, title_ar FROM books WHERE title_ar LIKE ? LIMIT 1",
+                        (f"%{t}%",)).fetchone()
+                    if row:
+                        picked.append({"book_id": row[0], "title": row[1], "author": "", "volumes": None})
+                conn.close()
+                if picked:
+                    searchable = picked
+        except Exception:
+            pass
     phrase_norms = {ph: _ms_style_phrase_norm(ph) for ph in phrases}
 
     def scan_book(book):

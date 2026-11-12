@@ -366,7 +366,7 @@ function renderMsCollation() {
               <span class="ms-dispute-a">${msEsc(msApparatusText(e))}</span>
               <span>
                 <button type="button" class="ms-dispute-btn" onclick="msCollEntry('${e.id}','accepted')">اعتماد في الهامش</button>
-                <button type="button" class="ms-dispute-btn ms-rec-btn" onclick="msOpenRecommend('${e.id}')">🧠 توصية Wonder</button>
+                <button type="button" class="ms-dispute-btn ms-rec-btn" onclick="msOpenRecommend('${e.id}')">🧠 توصية المدقق الذكي</button>
                 <button type="button" class="ms-dispute-dismiss" onclick="msCollEntry('${e.id}','dismissed')">تجاهل</button>
               </span>
             </div>`).join('')}
@@ -374,8 +374,8 @@ function renderMsCollation() {
   }
   const mc = document.getElementById('msMarginCollation');
   mc.innerHTML = accepted.length
-    ? accepted.map(e => `<div class="ms-margin-entry"><strong>(${msEsc(e.folio)})</strong> ${msEsc(msApparatusText(e))}
-        <button type="button" class="ms-dispute-dismiss ms-rec-btn" onclick="msOpenRecommend('${e.id}')" title="طلب توصية Muse Wonder لهذا الموضع">🧠</button>
+    ? accepted.map(e => `<div class="ms-margin-entry"><span class="ms-ok-check" title="معتمد في الهامش">✔</span> <strong>(${msEsc(e.folio)})</strong> ${msEsc(msApparatusText(e))}
+        <button type="button" class="ms-dispute-dismiss ms-rec-btn" onclick="msOpenRecommend('${e.id}')" title="طلب توصية المدقق الذكي لهذا الموضع">🧠</button>
         <button type="button" class="ms-dispute-dismiss" onclick="msCollEntry('${e.id}','pending')" title="إخراج من الهامش">↩</button></div>`).join('')
     : '<div class="ms-disputes-none">فارغ — اعتمد فروقًا من قائمة المقابلة فتظهر هنا.</div>';
   const me = document.getElementById('msMarginEd');
@@ -462,16 +462,32 @@ function msRenderStyle(data) {
       </div>`).join('');
 }
 
-async function msRunStyleScan(phrases, containerId, infoId) {
+let MS_STYLE_BOOK_TITLES = [];
+
+function msOpenStyleBookPicker() {
+  if (typeof openSearchScopeModal === 'function') openSearchScopeModal('ms_style');
+  else msToast('نافذة انتقاء الكتب غير متاحة في هذه الصفحة');
+}
+
+window.onMsStyleBooks = function (titles) {
+  MS_STYLE_BOOK_TITLES = Array.isArray(titles) ? titles : [];
+  const label = document.getElementById('msStyleBooksLabel');
+  const cmp = document.getElementById('msStyleCompareBtn');
+  if (label) label.textContent = MS_STYLE_BOOK_TITLES.length
+    ? `النطاق: ${MS_STYLE_BOOK_TITLES.length} كتابًا محددًا` : 'النطاق: كل كتب المؤلف';
+  if (cmp) cmp.hidden = !MS_STYLE_BOOK_TITLES.length;
+};
+
+async function msRunStyleScan(phrases, containerId, infoId, bookTitles) {
   const p = msCurrentProject();
   if (!p) return null;
   const box = document.getElementById(containerId);
   if (infoId) document.getElementById(infoId).textContent = '⏳ جارٍ إحصاء العبارات في كل كتب المؤلف...';
-  if (box) box.innerHTML = '<div class="ms-rec-loading">⏳ نمسح كتب المؤلف كلها ونعدّ المواضع...</div>';
+  if (box) box.innerHTML = '<div class="ms-rec-loading">⏳ نمسح الكتب ونعدّ المواضع المتصلة...</div>';
   try {
     const res = await fetch('/api/manuscripts/author-style', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ author: p.author, title: p.title, phrases }),
+      body: JSON.stringify({ author: p.author, title: p.title, phrases, book_titles: (bookTitles && bookTitles.length) ? bookTitles : undefined }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذر مسح الأسلوب');
@@ -517,7 +533,7 @@ async function msAuthorStyleScan() {
   }
   const btn = document.getElementById('msRecStyleBtn');
   btn.disabled = true;
-  const data = await msRunStyleScan(phrases, 'msRecStyle', null);
+  const data = await msRunStyleScan(phrases, 'msRecStyle', null, MS_STYLE_BOOK_TITLES);
   btn.disabled = false;
   if (data) MS_REC.style = data;
 }
@@ -528,7 +544,7 @@ async function msAuthorStyleManual() {
   await msRunStyleScan(phrases, 'msStyleResult', 'msStyleInfo');
 }
 
-// ---------- نافذة توصية Muse Wonder لكل موضع ----------
+// ---------- نافذة توصية المدقق الذكي لكل موضع ----------
 let MS_REC = null; // {entryId, data}
 const MS_REC_ACTIONS = {
   keep_base_note: ['keep_note', 'إثبات الأم + إثبات الفرق في الهامش'],
@@ -552,7 +568,7 @@ async function msOpenRecommend(id) {
     `في الأم: «${msEsc(e.base || '—')}» · في الأخرى: «${msEsc(e.other || '—')}»` +
     (e.rec && e.rec.decision ? `<br><em>حسم سابق: ${msEsc(e.rec.decision)}${e.rec.option ? ' — ' + msEsc(e.rec.option) : ''}</em>` : '');
   const body = document.getElementById('msRecBody');
-  body.innerHTML = '<div class="ms-rec-loading">⏳ Muse Wonder يدرس الموضع وقراءتيه وسياقه...</div>';
+  body.innerHTML = '<div class="ms-rec-loading">⏳ المدقق الذكي يدرس الموضع وقراءتيه وسياقه...</div>';
   // مقطع اللوحة حول الموضع من نص الأم
   const base = msBaseCopy(p);
   const bf = base ? (base.folios || []).find(x => x.label === e.folio) : null;
@@ -639,7 +655,7 @@ function msRecApply(kind) {
     const line = `[تعليق المحقق على موضع ({e.folio}) — {${e.type}} مع (${e.siglum})] ${comment}`;
     bf.ed_note = ((bf.ed_note || '').trim() ? bf.ed_note.trim() + '\n' : '') + line;
   }
-  e.rec = { decision: kind === 'recommended' ? 'اعتمد توصية Wonder' : 'طبق خياره مع/دون تعليق',
+  e.rec = { decision: kind === 'recommended' ? 'اعتمد توصية المدقق الذكي' : 'طبق خياره مع/دون تعليق',
             option, at: new Date().toISOString(), action: data.action,
             model: data.model, confidence: data.confidence,
             style: MS_REC.style ? { dominant: MS_REC.style.dominant,
@@ -669,7 +685,7 @@ function msToggleCollatedText() {
     return `<div class="ms-collated-folio">
       <div class="ms-collate-folio-title">لوحة (${msEsc(f.label)}) — (${msEsc(base.siglum)})</div>
       <div class="ms-collated-text">${msEsc(f.text)}</div>
-      ${app.length ? `<div class="ms-collated-app"><strong>هامش المقابلة:</strong>${app.map((e, i) => `<div>${i + 1}. ${msEsc(msApparatusText(e))}</div>`).join('')}</div>` : ''}
+      ${app.length ? `<div class="ms-collated-app"><strong>هامش المقابلة:</strong>${app.map((e, i) => `<div><span class="ms-ok-check" title="معتمد في الهامش">✔</span> ${i + 1}. ${msEsc(msApparatusText(e))}</div>`).join('')}</div>` : ''}
       ${(f.ed_note || '').trim() ? `<div class="ms-collated-app"><strong>هامش التحقيق:</strong><div>${msEsc(f.ed_note)}</div></div>` : ''}
     </div>`;
   }).join('');
@@ -741,7 +757,7 @@ function msRenderWbState() {
     if (accepted.length) {
       margin.hidden = false;
       margin.innerHTML = `<strong>هامش المقابلة — لوحة (${msEsc(f.label)}):</strong>` +
-        accepted.map(e => `<div>${msEsc(msApparatusText(e))}</div>`).join('');
+        accepted.map(e => `<div><span class="ms-ok-check" title="معتمد في الهامش">✔</span> ${msEsc(msApparatusText(e))}</div>`).join('');
     } else {
       margin.hidden = true;
       margin.innerHTML = '';

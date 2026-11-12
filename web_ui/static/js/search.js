@@ -581,6 +581,9 @@ async function openSearchScopeModal(target = 'search') {
   } else if (target === 'selection_research') {
     selectedBooksScope = [...(window._selectionResearchBooks || [])];
     modal.style.zIndex = '420';
+  } else if (target === 'ms_style') {
+    selectedBooksScope = [...(window._msStyleBookTitles || [])];
+    modal.style.zIndex = '6000';
   } else {
     selectedBooksScope = [...(window._searchTabBooks || selectedBooksScope || [])];
     modal.style.zIndex = '250';
@@ -827,6 +830,16 @@ function applySearchScopeSelection() {
       window.onSelectionResearchBooks([...selectedBooksScope]);
     }
     closeSearchScopeModal();
+    return;
+  }
+
+  if (scopeModalTarget === 'ms_style') {
+    window._msStyleBookTitles = [...selectedBooksScope];
+    if (typeof window.onMsStyleBooks === 'function') {
+      window.onMsStyleBooks([...selectedBooksScope]);
+    }
+    closeSearchScopeModal();
+    showToast(selectedBooksScope.length ? `حُددت ${selectedBooksScope.length} كتب لمسح الأسلوب` : 'مسح الأسلوب في كل كتب المؤلف');
     return;
   }
 
