@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.484"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.485"},
         },
     })
     if opened.get("error"):
@@ -14296,7 +14296,7 @@ def _ms_resolve_extra_books(titles) -> list:
 def _ms_scan_book_phrase(book_id, phrase):
     """مسح صفحات كتاب عن عبارة متصلة (بعد تطبيع الرسم) — لتوثيق الشاهد في كتب المظان."""
     phrase_n = _ms_style_phrase_norm(phrase or "")
-    if len(phrase_n) < 8:
+    if len(phrase_n) < 4:
         return None
     try:
         b_dir = shamela_local_mcp.resolve_book_files(book_id)
