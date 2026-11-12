@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.486"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.487"},
         },
     })
     if opened.get("error"):
@@ -14861,6 +14861,118 @@ async def manuscript_author_style(payload: Any = Body(...)):
         return await asyncio.to_thread(_ms_author_style_sync, payload or {})
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذر مسح الأسلوب: {str(exc)[:200]}")
+
+
+def _ms_compare_edition_sync(payload: dict) -> Dict[str, Any]:
+    """محاذاة متننا المحقق بنص تحقيق منشور في الشاملة واستخراج جدول فروقات."""
+    import difflib
+    our_text = str((payload or {}).get("text") or "")
+    book_id = (payload or {}).get("book_id")
+    if not book_id:
+        card = shamela_local_mcp.resolve_book(str((payload or {}).get("book") or ""))
+        book_id = (card or {}).get("book_id")
+        book_title = (card or {}).get("title") if card else ""
+    else:
+        book_title = ""
+    if not book_id:
+        return {"found": False, "detail": "لم يُعثر على الكتاب المقارن في الشاملة"}
+    b_dir = shamela_local_mcp.resolve_book_files(book_id)
+    if not b_dir:
+        return {"found": False, "detail": "ملفات الكتاب المقارن غير متاحة"}
+    meta_file = b_dir / "book_metadata.json"
+    if meta_file.exists():
+        try:
+            book_title = json.loads(meta_file.read_text(encoding="utf-8")).get("title_ar") or book_title
+        except Exception:
+            pass
+    pages = []  # (norm_text, part, page, raw)
+    with open(b_dir / "pages.jsonl", "rb") as fh:
+        for line in fh:
+            pg = json.loads(line)
+            pages.append((_ms_style_phrase_norm(pg.get("body") or ""),
+                          pg.get("part"), pg.get("page_num"), pg.get("body") or ""))
+    joined, spans, pos = [], [], 0
+    for i, (nt, part, page, raw) in enumerate(pages):
+        joined.append(nt)
+        spans.append((pos, pos + len(nt), i))
+        pos += len(nt) + 1
+    book_n = "\n".join(joined)
+    our_n = _ms_style_phrase_norm(our_text)
+    our_words = our_n.split()
+    if len(our_words) < 20:
+        return {"found": False, "detail": "متننا قصير جدًا للمحاذاة"}
+    anchors = []
+    step = 10
+    for wi in range(0, len(our_words) - 8, step):
+        chunk = " ".join(our_words[wi:wi + 8])
+        j = book_n.find(chunk)
+        if j >= 0:
+            anchors.append((wi, j))
+    if len(anchors) < 2:
+        return {"found": False, "detail": "تعذرت محاذاة متننا على هذا الكتاب (لا مواضع مطابقة كافية)"}
+    anchors.sort(key=lambda x: x[1])
+    first_pos, last_pos = anchors[0][1], anchors[-1][1]
+
+    def page_at(p):
+        for s, e, i in spans:
+            if s <= p <= e:
+                return i
+        return spans[-1][2]
+
+    pi0, pi1 = page_at(first_pos), page_at(last_pos)
+    their_raw = "\n".join(pages[i][3] for i in range(pi0, min(pi1 + 1, len(pages))))[:26000]
+    bsm = their_raw.find("بسم")
+    if 0 < bsm < 2000:
+        their_raw = their_raw[bsm:]
+    # كلمات المقارنة بلا ترقيم طبعات ولا ألف مقصورة: فلا يمتلئ الجدول بفواصل المطبوع
+    _punct = "،,؛;:.-–—()[]{}«»\"'!؟?/\\|﴿﴾*"
+
+    def cmp_words(text_n):
+        out = []
+        for w in text_n.split():
+            w = w.strip(_punct).replace("ى", "ي")
+            if w:
+                out.append(w)
+        return out
+
+    our_words = cmp_words(our_n)
+    their_words = cmp_words(_ms_style_phrase_norm(their_raw))
+    sm = difflib.SequenceMatcher(None, our_words, their_words, autojunk=False)
+    rows = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            continue
+        a = " ".join(our_words[i1:i2])
+        b = " ".join(their_words[j1:j2])
+        if not a and not b:
+            continue
+        if tag == "replace":
+            kind = "ضبط/رسم" if _ms_skeleton(a.replace(" ", "")) == _ms_skeleton(b.replace(" ", "")) else "تبديل"
+        elif tag == "delete":
+            kind = "زيادة في تحقيقنا"
+        else:
+            kind = "زيادة في التحقيق المقارن"
+        ctx = " ".join(our_words[max(0, i1 - 6):i1])
+        rows.append({"type": kind, "ours": a[:300], "theirs": b[:300], "context": ctx})
+        if len(rows) >= 160:
+            break
+    from collections import Counter
+    return {"found": True,
+            "book": {"book_id": book_id, "title": book_title or str(book_id),
+                     "from": {"part": pages[pi0][1], "page": pages[pi0][2]},
+                     "to": {"part": pages[pi1][1], "page": pages[pi1][2]}},
+            "similarity": round(sm.ratio() * 100, 1),
+            "rows": rows, "counts": dict(Counter(r["type"] for r in rows)),
+            "their_text": their_raw, "anchors": len(anchors)}
+
+
+@app.post("/api/manuscripts/compare-edition")
+async def compare_manuscript_edition(request: Request, payload: Any = Body(...)):
+    """مقارنة متن الأم المحقق بتحقيق منشور: محاذاة وجدول فروقات."""
+    try:
+        return await asyncio.to_thread(_ms_compare_edition_sync, payload or {})
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذرت المقارنة: {str(exc)[:200]}")
 
 
 @app.post("/api/manuscripts/collate")

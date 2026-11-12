@@ -1866,23 +1866,148 @@ function msDownloadBlob(blob, name) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
 }
 
+let MS_COMPARE = null;
+
+async function msCompareEdition() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const base = msBaseCopy(p);
+  if (!base) { msToast('لا نسخة أم بعد'); return; }
+  const ourText = (base.folios || []).filter(f => (f.text || '').trim())
+    .map(f => f.text).join('\n');
+  if (!ourText.trim()) { msToast('لا متن محققًا في لوحات الأم بعد'); return; }
+  const book = document.getElementById('msCompareBook').value.trim();
+  if (!book) { msToast('اكتب اسم الكتاب المحقَّق المقارن في الشاملة'); return; }
+  const btn = document.getElementById('msCompareBtn');
+  const info = document.getElementById('msCompareInfo');
+  btn.disabled = true; info.textContent = '⏳ جارٍ محاذاة تحقيقنا على التحقيق المنشور واستخراج الفروق...';
+  try {
+    const res = await fetch('/api/manuscripts/compare-edition', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: ourText, book }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذرت المقارنة');
+    if (!data.found) throw new Error(data.detail || 'تعذرت المحاذاة');
+    MS_COMPARE = data;
+    info.textContent = `قورن بـ «${data.book.title}» (ج ${data.book.from.part || '—'} ص ${data.book.from.page || '—'} – ص ${data.book.to.page || '—'}) — نسبة التطابق ${data.similarity}٪ و${data.rows.length} فرقًا`;
+    const rows = data.rows.map((r, i) => `<tr><td>${i + 1}</td><td>${msEsc(r.type)}</td><td>${msEsc(r.ours || '—')}</td><td>${msEsc(r.theirs || '—')}</td><td>${msEsc(r.context || '')}</td></tr>`).join('');
+    document.getElementById('msCompareResult').innerHTML = `
+      <div class="ms-compare-grid">
+        <div class="ms-compare-col"><div class="ms-collate-folio-title">تحقيقنا (متن الأم كما اعتمدناه)</div><div class="ms-compare-text">${msEsc(ourText)}</div></div>
+        <div class="ms-compare-col"><div class="ms-collate-folio-title">التحقيق المقارن — ${msEsc(data.book.title)}</div><div class="ms-compare-text">${msEsc(data.their_text || '')}</div></div>
+      </div>
+      <div class="ms-disputes-title">جدول الفروقات الآلي (${data.rows.length}) — ${Object.entries(data.counts || {}).map(([k, v]) => `${msEsc(k)}: ${v}`).join(' · ')}</div>
+      <div class="ms-compare-tablewrap"><table class="ms-compare-table">
+        <thead><tr><th>#</th><th>النوع</th><th>تحقيقنا</th><th>التحقيق المقارن</th><th>السياق قبل الفرق</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5">لا فروق جوهرية — تطابق تام في المواضع المحاذاة</td></tr>'}</tbody>
+      </table></div>`;
+  } catch (e) {
+    info.textContent = '';
+    document.getElementById('msCompareResult').innerHTML = `<div class="ms-rec-loading">❌ ${msEsc(e.message)}</div>`;
+  }
+  btn.disabled = false;
+}
+
+// الإخراج النهائي للقارئ: صفحة عنوان، مقدمة، نص اللوحات بهوامش مرسّاة
+// (فروق المقابلة وتعليقات التحقيق حواشٍ سفلية حقيقية مرقمة في مواضعها)، وفهارس
+const MS_FINAL_STYLES = {
+  title: { font: 'Amiri', size: 22, weight: 700 },
+  meta: { font: 'Amiri', size: 13, weight: 400 },
+  h: { font: 'Amiri', size: 15, weight: 700 },
+  body: { font: 'Amiri', size: 13, weight: 400 },
+  fn: { font: 'Amiri', size: 9.5, weight: 400 },
+  biblio: { font: 'Amiri', size: 11.5, weight: 400 },
+};
+
+function msFinalParts(p) {
+  const base = msBaseCopy(p);
+  const accepted = ((p.collation || {}).entries || []).filter(e => e.status === 'accepted');
+  const folios = ((base || {}).folios || []).filter(f => (f.text || '').trim())
+    .map(f => ({
+      label: f.label, siglum: base.siglum, text: f.text || '',
+      apparatus: accepted.filter(e => e.folio === f.label).map(e => msApparatusText(e)),
+      entries: accepted.filter(e => e.folio === f.label),
+      edLines: (f.ed_note || '').trim() ? msEdNoteDisplay(f.ed_note).split('\n').filter(l => l.trim()) : [],
+    }));
+  const groups = (p.indexes || {}).groups || null;
+  return { base, folios, groups };
+}
+
+function msAnchoredRuns(line, entries, footnotes) {
+  // يرسّي حواشي فروق اللوحة داخل سطر المتن عند عبارة الأم حيث وُجدت
+  const runs = [];
+  let rest = line;
+  const usable = entries.filter(e => e.base && line.includes(e.base) && !e._anchored);
+  usable.sort((a, b) => line.indexOf(a.base) - line.indexOf(b.base));
+  for (const e of usable) {
+    const i = rest.indexOf(e.base);
+    if (i < 0) continue;
+    const before = rest.slice(0, i + e.base.length);
+    if (before) runs.push({ t: before });
+    footnotes.push({ runs: [{ t: msApparatusText(e) }] });
+    runs.push({ t: '', fn: footnotes.length - 1 });
+    e._anchored = true;
+    rest = rest.slice(i + e.base.length);
+  }
+  if (rest) runs.push({ t: rest });
+  return runs.length ? runs : [{ t: line }];
+}
+
+function msFinalBlocks(p) {
+  const { folios, groups } = msFinalParts(p);
+  const blocks = [], footnotes = [];
+  blocks.push({ kind: 'title', runs: [{ t: `تحقيق «${p.title}»` }] });
+  if (p.author) blocks.push({ kind: 'meta', runs: [{ t: p.author }] });
+  blocks.push({ kind: 'meta', runs: [{ t: 'تحقيق ودراسة' }] });
+  blocks.push({ kind: 'pageBreak', runs: [] });
+  if ((p.intro || '').trim()) {
+    blocks.push({ kind: 'h', runs: [{ t: 'مقدمة المحقق' }] });
+    p.intro.split('\n').forEach(l => { if (l.trim()) blocks.push({ kind: 'p', runs: [{ t: l }] }); });
+  }
+  folios.forEach(f => {
+    blocks.push({ kind: 'h', runs: [{ t: `لوحة (${f.label}) — نسخة (${f.siglum})` }] });
+    const entries = f.entries.map(e => ({ ...e }));
+    const lines = f.text.split('\n').filter(l => l.trim());
+    lines.forEach((line, li) => {
+      const runs = msAnchoredRuns(line, entries, footnotes);
+      if (li === lines.length - 1) {
+        // ما لم يُرسَّ في موضعه من الفروق، وكل تعليقات التحقيق: حواشٍ في ذيل اللوحة
+        entries.filter(e => !e._anchored).forEach(e => {
+          footnotes.push({ runs: [{ t: msApparatusText(e) }] });
+          runs.push({ t: '', fn: footnotes.length - 1 });
+        });
+        f.edLines.forEach(l => {
+          footnotes.push({ runs: [{ t: l }] });
+          runs.push({ t: '', fn: footnotes.length - 1 });
+        });
+      }
+      blocks.push({ kind: 'p', runs });
+    });
+  });
+  if (groups) {
+    blocks.push({ kind: 'biblioTitle', runs: [{ t: 'الفهارس' }] });
+    Object.keys(groups).forEach(name => {
+      blocks.push({ kind: 'h', runs: [{ t: `فهرس ${name}` }] });
+      groups[name].forEach(i => blocks.push({ kind: 'biblioItem', runs: [{ t: i }] }));
+    });
+  }
+  return { blocks, footnotes };
+}
+
 async function msExportDocx() {
   const p = msCurrentProject();
   if (!p) return;
-  const sections = msDocStructure(p);
-  const blocks = sections.map(s => ({
-    kind: s.level === 'title' ? 'title' : (s.level === 'meta' ? 'meta' : (s.level === 'h' ? 'h' : 'p')),
-    runs: [{ t: s.h }],
-  }));
-  document.getElementById('msExportInfo').textContent = 'جارٍ توليد Word...';
+  const { blocks, footnotes } = msFinalBlocks(p);
+  document.getElementById('msExportInfo').textContent = 'جارٍ توليد Word مضبوط الصف...';
   try {
     const res = await fetch('/api/projects/export-docx', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: p.title, styles: {}, blocks, footnotes: [] }),
+      body: JSON.stringify({ title: p.title, styles: MS_FINAL_STYLES, blocks, footnotes }),
     });
     if (!res.ok) throw new Error('فشل توليد الملف');
     msDownloadBlob(await res.blob(), `${p.title}.docx`);
-    document.getElementById('msExportInfo').textContent = 'نُزّل ملف Word بالنص والهامشين والفهارس';
+    document.getElementById('msExportInfo').textContent = 'نُزّل ملف Word النهائي: نص مرسّى الحواشي مضبوط الصف للطباعة (A4)';
   } catch (e) {
     document.getElementById('msExportInfo').textContent = '❌ ' + e.message;
   }
@@ -1891,17 +2016,58 @@ async function msExportDocx() {
 async function msExportPdf() {
   const p = msCurrentProject();
   if (!p) return;
-  const sections = msDocStructure(p);
-  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><style>
-    body{font-family:'Amiri',serif;font-size:15px;line-height:2;margin:36px;color:#222}
-    h1{text-align:center;font-size:24px} .meta{text-align:center;color:#555} h2{font-size:18px;margin-top:26px;border-bottom:1px solid #ccc;padding-bottom:4px}
-    p{margin:4px 0;text-align:justify}</style></head><body>` +
-    sections.map(s => s.level === 'title' ? `<h1>${esc(s.h)}</h1>`
-      : s.level === 'meta' ? `<div class="meta">${esc(s.h)}</div>`
-      : s.level === 'h' ? `<h2>${esc(s.h)}</h2>` : `<p>${esc(s.h)}</p>`).join('') +
+  const { folios, groups } = msFinalParts(p);
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const fnSpan = t => `<span class="fn">${esc(t)}</span>`;
+  const folioHtml = f => {
+    const entries = f.entries.map(e => ({ ...e }));
+    const lines = f.text.split('\n').filter(l => l.trim());
+    const paras = lines.map((line, li) => {
+      let htmlLine = esc(line);
+      const usable = entries.filter(e => e.base && line.includes(e.base) && !e._anchored)
+        .sort((a, b) => line.indexOf(a.base) - line.indexOf(b.base));
+      // مواضع الإرساء تُحسب على النص الخام ثم تُبنى بلا كسر للإحالات
+      let built = '', rest = line;
+      for (const e of usable) {
+        const i = rest.indexOf(e.base);
+        if (i < 0) continue;
+        built += esc(rest.slice(0, i + e.base.length)) + fnSpan(msApparatusText(e));
+        e._anchored = true;
+        rest = rest.slice(i + e.base.length);
+      }
+      htmlLine = built + esc(rest);
+      if (li === lines.length - 1) {
+        entries.filter(e => !e._anchored).forEach(e => { htmlLine += fnSpan(msApparatusText(e)); });
+        f.edLines.forEach(l => { htmlLine += fnSpan(l); });
+      }
+      return `<p>${htmlLine}</p>`;
+    }).join('');
+    return `<h2>لوحة (${esc(f.label)}) — نسخة (${esc(f.siglum)})</h2>${paras}`;
+  };
+  const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
+<script data-pagedjs src="/static/js/paged.polyfill.min.js"></script>
+<style>
+  @page { size: A4; margin: 22mm 18mm 20mm 18mm;
+    @bottom-center { content: counter(page); font-family: 'Amiri', serif; font-size: 10pt; color: #555; } }
+  body { font-family: 'Amiri', serif; font-size: 13pt; line-height: 2; color: #1c1c1c; }
+  h1 { text-align: center; font-size: 22pt; margin-top: 30mm; }
+  .meta { text-align: center; color: #555; font-size: 13pt; }
+  .cover { break-after: page; }
+  h2 { font-size: 15pt; margin-top: 22px; border-bottom: 1px solid #bbb; padding-bottom: 4px; page-break-after: avoid; }
+  p { margin: 4px 0; text-align: justify; }
+  .fn { float: footnote; font-size: 9.5pt; line-height: 1.8; }
+  ::footnote-call { content: "(" counter(footnote) ")"; font-size: 8pt; vertical-align: super; line-height: none; }
+  ::footnote-marker { content: "(" counter(footnote) ") "; font-size: 8pt; }
+</style></head><body>` +
+    `<div class="cover"><h1>تحقيق «${esc(p.title)}»</h1>` +
+    (p.author ? `<div class="meta">${esc(p.author)}</div>` : '') +
+    `<div class="meta">تحقيق ودراسة</div></div>` +
+    ((p.intro || '').trim() ? `<h2>مقدمة المحقق</h2>` + p.intro.split('\n').filter(l => l.trim()).map(l => `<p>${esc(l)}</p>`).join('') : '') +
+    folios.map(folioHtml).join('') +
+    (groups ? `<h2>الفهارس</h2>` + Object.keys(groups).map(name =>
+      `<h2>فهرس ${esc(name)}</h2>` + groups[name].map(i => `<p>${esc(i)}</p>`).join('')).join('') : '') +
     '</body></html>';
-  document.getElementById('msExportInfo').textContent = 'جارٍ توليد PDF...';
+  document.getElementById('msExportInfo').textContent = 'جارٍ توليد PDF مضبوط الصف...';
   try {
     const res = await fetch('/api/projects/export-pdf', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1909,7 +2075,7 @@ async function msExportPdf() {
     });
     if (!res.ok) throw new Error('فشل توليد PDF');
     msDownloadBlob(await res.blob(), `${p.title}.pdf`);
-    document.getElementById('msExportInfo').textContent = 'نُزّل ملف PDF بالنص والهامشين والفهارس';
+    document.getElementById('msExportInfo').textContent = 'نُزّل ملف PDF النهائي: صفحات A4 مرقمة بحواشٍ سفلية مرسّاة';
   } catch (e) {
     document.getElementById('msExportInfo').textContent = '❌ ' + e.message;
   }

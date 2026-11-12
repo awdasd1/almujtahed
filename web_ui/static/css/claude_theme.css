@@ -11258,3 +11258,11 @@ body::-webkit-scrollbar,
 .ms-enh-trial { margin-top: 10px; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; }
 .ms-enh-trial-text { white-space: pre-wrap; font-size: 13.5px; line-height: 2; }
 @media (max-width: 760px) { .ms-enh-grid { grid-template-columns: 1fr; } }
+.ms-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0; }
+.ms-compare-col { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; }
+.ms-compare-text { white-space: pre-wrap; font-size: 12.5px; line-height: 1.95; max-height: 420px; overflow-y: auto; }
+.ms-compare-tablewrap { overflow-x: auto; margin-top: 8px; }
+.ms-compare-table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 1.8; }
+.ms-compare-table th, .ms-compare-table td { border: 1px solid var(--border-subtle); padding: 5px 8px; text-align: right; vertical-align: top; }
+.ms-compare-table th { background: rgba(122,90,161,.08); }
+@media (max-width: 760px) { .ms-compare-grid { grid-template-columns: 1fr; } }

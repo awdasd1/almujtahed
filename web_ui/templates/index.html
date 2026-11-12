@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.486">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.487">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.486 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.487 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1584,8 +1584,20 @@
                         <p class="ms-models-note">مراقب مستقل يراجع مخرجات كل مرحلة بعين ناقدة ويدوّن الأخطاء والمخاطر والمواضع التي تحتاج عينك على الصورة — يساعدك ولا يقرر عنك. تُحفظ ملاحظاته في سجل المشروع، وعلّم ما عالجته منها ليبقى السجل وثيقة تتبع حية.</p>
                         <div id="msMonitorLog"></div>
                     </div>
+                    <div class="ms-create-card" id="msCompareCard">
+                        <div class="ms-create-title">⚖️ مقارنة تحقيقنا بتحقيق منشور</div>
+                        <div class="ms-form-row">
+                            <label class="ms-model-label">الكتاب المحقَّق المقارن (من الشاملة)
+                                <input type="text" id="msCompareBook" placeholder="مثال: رياض الصالحين - ت الرسالة الثاني (الأرنؤوط)" style="min-width:280px">
+                            </label>
+                            <button type="button" class="ms-btn ms-btn-primary" id="msCompareBtn" onclick="msCompareEdition()">قارن تحقيقنا به</button>
+                            <span id="msCompareInfo" class="ms-wb-meta"></span>
+                        </div>
+                        <p class="ms-models-note">يُحاذى متن الأم المحقَّق عندنا بنص التحقيق المنشور في الشاملة آليًا، فيُعرض النصان متجاورين ويُستخرج جدول فروقات (تبديل/زيادة عندنا/زيادة عندهم) لتنظر أين خالفنا المطبوع وأين وافقناه.</p>
+                        <div id="msCompareResult"></div>
+                    </div>
                     <div class="ms-create-card" id="msExportCard">
-                        <div class="ms-create-title">📚 الفهارس ومقدمة المحقق والإخراج (المرحلة ٤)</div>
+                        <div class="ms-create-title">📚 الفهارس ومقدمة المحقق والإخراج (المرحلة ٤) — الإخراج النهائي للقارئ</div>
                         <div class="ms-form-row">
                             <button type="button" class="ms-btn" onclick="msBuildIndexes()">توليد الفهارس</button>
                             <button type="button" class="ms-btn" onclick="msGenIntro()">مسودة مقدمة المحقق</button>
@@ -5940,24 +5952,24 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.486"></script>
-    <script src="/static/js/search.js?v=1.10.486"></script>
-    <script src="/static/js/reader.js?v=1.10.486"></script>
-    <script src="/static/js/force3d.js?v=1.10.486"></script>
-    <script src="/static/js/share.js?v=1.10.486"></script>
-    <script src="/static/js/chat.js?v=1.10.486"></script>
-    <script src="/static/js/designs.js?v=1.10.486"></script>
-    <script src="/static/js/texts.js?v=1.10.486"></script>
-    <script src="/static/js/agents.js?v=1.10.486"></script>
-    <script src="/static/js/providers.js?v=1.10.486"></script>
-    <script src="/static/js/tools.js?v=1.10.486"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.486"></script>
-    <script src="/static/js/projects.js?v=1.10.486"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.486"></script>
-    <script src="/static/js/archive.js?v=1.10.486"></script>
-    <script src="/static/js/compare.js?v=1.10.486"></script>
-    <script src="/static/js/local_models.js?v=1.10.486"></script>
-    <script src="/static/js/changelog.js?v=1.10.486"></script>
+    <script src="/static/js/app.js?v=1.10.487"></script>
+    <script src="/static/js/search.js?v=1.10.487"></script>
+    <script src="/static/js/reader.js?v=1.10.487"></script>
+    <script src="/static/js/force3d.js?v=1.10.487"></script>
+    <script src="/static/js/share.js?v=1.10.487"></script>
+    <script src="/static/js/chat.js?v=1.10.487"></script>
+    <script src="/static/js/designs.js?v=1.10.487"></script>
+    <script src="/static/js/texts.js?v=1.10.487"></script>
+    <script src="/static/js/agents.js?v=1.10.487"></script>
+    <script src="/static/js/providers.js?v=1.10.487"></script>
+    <script src="/static/js/tools.js?v=1.10.487"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.487"></script>
+    <script src="/static/js/projects.js?v=1.10.487"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.487"></script>
+    <script src="/static/js/archive.js?v=1.10.487"></script>
+    <script src="/static/js/compare.js?v=1.10.487"></script>
+    <script src="/static/js/local_models.js?v=1.10.487"></script>
+    <script src="/static/js/changelog.js?v=1.10.487"></script>
 
     <script>
         window.refreshLucideIcons = function () {
