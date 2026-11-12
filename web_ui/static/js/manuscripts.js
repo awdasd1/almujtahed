@@ -26,13 +26,9 @@ const MS_MODEL_PRESETS = {
   hard: { primary: 'google/gemini-3.1-pro-preview', checker: 'anthropic/claude-sonnet-5.5', auditor: 'google/gemini-3.1-pro-preview' },
 };
 
+// نماذج القراءة موحّدة بقرار المحقق (لا اختيار في الواجهة)، فلا يسري اختيار قديم محفوظ في المتصفح
 function msModelChoice() {
-  try {
-    const saved = JSON.parse(localStorage.getItem('almujtahed_ms_models_v2') || 'null');
-    if (saved && saved.primary && saved.checker) {
-      return { primary: saved.primary, checker: saved.checker, auditor: saved.auditor || MS_MODEL_PRESETS.standard.auditor };
-    }
-  } catch (e) { /* الافتراضي */ }
+  try { localStorage.removeItem('almujtahed_ms_models_v2'); } catch (e) { /* لا شيء */ }
   return { ...MS_MODEL_PRESETS.standard };
 }
 
