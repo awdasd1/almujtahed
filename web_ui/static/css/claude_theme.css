@@ -11238,3 +11238,4 @@ body::-webkit-scrollbar,
 .ms-occ-open:hover { transform: scale(1.2); }
 .ms-style-tool { margin-top: 14px; border-top: 1px dashed var(--border-subtle); padding-top: 10px; }
 .ms-style-tool textarea { width: 100%; font-family: inherit; font-size: 13.5px; line-height: 1.9; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: transparent; color: inherit; }
+#bookReaderModal { z-index: 100500; }
