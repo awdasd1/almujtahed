@@ -2157,8 +2157,38 @@ function msBuildPrintHtml(p) {
     }).join('');
     return `<h2>لوحة (${esc(f.label)}) — نسخة (${esc(f.siglum)})</h2>${paras}`;
   };
-  return `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
-<script data-pagedjs src="/static/js/paged.polyfill.min.js"></script>
+  return `<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 22mm 18mm 20mm 18mm;
+    @bottom-center { content: counter(page); font-family: 'Amiri', serif; font-size: 10pt; color: #555; } }
+  /* جذر LTR لمحرك التقسيم (اتجاه الجذر RTL يكسر قياسه) والعربية RTL داخل الورقة — كنسق ورقة الشات */
+  body { direction: ltr; font-family: 'Amiri', serif; font-size: 13pt; line-height: 2; color: #1c1c1c; }
+  .ms-sheet { direction: rtl; text-align: right; }
+  h1 { text-align: center; font-size: 22pt; margin-top: 30mm; }
+  .meta { text-align: center; color: #555; font-size: 13pt; }
+  .cover { break-after: page; }
+  h2 { font-size: 15pt; margin-top: 22px; border-bottom: 1px solid #bbb; padding-bottom: 4px; page-break-after: avoid; }
+  p { margin: 4px 0; text-align: justify; text-align-last: right; text-justify: inter-word; }
+  .fn { float: footnote; line-height: 1.8; text-align: justify; text-align-last: right; }
+  .ms-fn-call { font-size: 8.5pt; font-weight: 700; vertical-align: super; }
+  ::footnote-call { content: none; }
+  ::footnote-marker { content: none; }
+  [data-footnote-marker] { text-align: justify; text-align-last: right; }
+  .pagedjs_page { margin: 18px auto; background: #fff; box-shadow: 0 2px 16px rgba(0,0,0,.28); }
+  @media print { .pagedjs_page { margin: 0 auto; box-shadow: none; } }
+</style>
+${extras.head || ''}
+<style id="print-user-css">${extras.css || ''}</style>
+</head><body><div class="ms-sheet">` +
+    `<div class="cover"><h1 class="paper-main-title">تحقيق «${esc(p.title)}»</h1>` +
+    (p.author ? `<div class="meta">${esc(p.author)}</div>` : '') +
+    `<div class="meta">تحقيق ودراسة</div></div>` +
+    `<main class="academic-text-content">` +
+    ((p.intro || '').trim() ? `<h2>مقدمة المحقق</h2>` + p.intro.split('\n').filter(l => l.trim()).map(l => `<p>${esc(l)}</p>`).join('') : '') +
+    folios.map(folioHtml).join('') +
+    (groups ? `<h2>الفهارس</h2>` + Object.keys(groups).map(name =>
+      `<h2>فهرس ${esc(name)}</h2>` + groups[name].map(i => `<p>${esc(i)}</p>`).join('')).join('') : '') +
+    `</main></div>
 <script>window.__paperBg = ${JSON.stringify(extras.bg || null).replace(/</g, '\\u003c')};
 window.PagedConfig = { auto: true, after: function () {
   window.__pagedDone = true;
@@ -2190,33 +2220,8 @@ window.PagedConfig = { auto: true, after: function () {
     }
   } catch (e) {}
 } };</script>
-<style>
-  @page { size: A4; margin: 22mm 18mm 20mm 18mm;
-    @bottom-center { content: counter(page); font-family: 'Amiri', serif; font-size: 10pt; color: #555; } }
-  body { font-family: 'Amiri', serif; font-size: 13pt; line-height: 2; color: #1c1c1c; }
-  h1 { text-align: center; font-size: 22pt; margin-top: 30mm; }
-  .meta { text-align: center; color: #555; font-size: 13pt; }
-  .cover { break-after: page; }
-  h2 { font-size: 15pt; margin-top: 22px; border-bottom: 1px solid #bbb; padding-bottom: 4px; page-break-after: avoid; }
-  p { margin: 4px 0; text-align: justify; text-align-last: right; text-justify: inter-word; }
-  .fn { float: footnote; line-height: 1.8; text-align: justify; text-align-last: right; }
-  .ms-fn-call { font-size: 8.5pt; font-weight: 700; vertical-align: super; line-height: none; }
-  ::footnote-call { content: none; }
-  ::footnote-marker { content: none; }
-  [data-footnote-marker] { text-align: justify; text-align-last: right; }
-</style>
-${extras.head || ''}
-<style id="print-user-css">${extras.css || ''}</style>
-</head><body>` +
-    `<div class="cover"><h1 class="paper-main-title">تحقيق «${esc(p.title)}»</h1>` +
-    (p.author ? `<div class="meta">${esc(p.author)}</div>` : '') +
-    `<div class="meta">تحقيق ودراسة</div></div>` +
-    `<main class="academic-text-content">` +
-    ((p.intro || '').trim() ? `<h2>مقدمة المحقق</h2>` + p.intro.split('\n').filter(l => l.trim()).map(l => `<p>${esc(l)}</p>`).join('') : '') +
-    folios.map(folioHtml).join('') +
-    (groups ? `<h2>الفهارس</h2>` + Object.keys(groups).map(name =>
-      `<h2>فهرس ${esc(name)}</h2>` + groups[name].map(i => `<p>${esc(i)}</p>`).join('')).join('') : '') +
-    `</main></body></html>`;
+<script data-pagedjs src="/static/js/paged.polyfill.min.js"></script>
+</body></html>`;
 }
 
 function msPreviewPrint() {
