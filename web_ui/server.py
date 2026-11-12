@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.471"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.472"},
         },
     })
     if opened.get("error"):
@@ -14532,7 +14532,7 @@ def _ms_author_style_sync(payload: dict) -> Dict[str, Any]:
     import concurrent.futures as _cf
     author = str((payload or {}).get("author") or "")
     work = str((payload or {}).get("title") or "")
-    phrases = [str(x).strip() for x in ((payload or {}).get("phrases") or []) if str(x).strip()][:5]
+    phrases = [str(x).strip() for x in ((payload or {}).get("phrases") or []) if str(x).strip()][:6]
     books = _ms_author_books(author)
     work_core = re.split(r"[\s—-]", work)[0] if work else ""
     searchable = [b for b in books if work_core and work_core not in b["title"]] or books

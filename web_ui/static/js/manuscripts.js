@@ -491,20 +491,27 @@ async function msAuthorStyleScan() {
   const base = msBaseCopy(p);
   const bf = base ? (base.folios || []).find(x => x.label === e.folio) : null;
   const phrases = [];
-  const add = s => { s = (s || '').replace(/\s+/g, ' ').trim(); if (s && !phrases.includes(s) && phrases.length < 5) phrases.push(s); };
+  const add = s => { s = (s || '').replace(/\s+/g, ' ').trim(); if (s && s.split(' ').length >= 2 && !phrases.includes(s) && phrases.length < 6) phrases.push(s); };
   if (bf && bf.text && bf.text.includes(e.base)) {
-    const idx = bf.text.indexOf(e.base);
-    const words = bf.text.slice(Math.max(0, idx - 60), idx + e.base.length + 60).split(/\s+/).filter(Boolean);
-    const joined = words.join(' ');
-    const bi = joined.indexOf(e.base);
-    const segA = joined.slice(Math.max(0, bi - 28), bi + e.base.length + 28).trim();
-    add(segA);
-    add(segA.replace(e.base, e.other));
+    const words = bf.text.split(/\s+/).filter(Boolean);
     const bw = e.base.split(/\s+/).filter(Boolean);
-    const center = bw.length >= 3 ? bw.slice(0, 3).join(' ') : null;
-    if (center) { add(center); add(center.replace(e.base, e.other) === center ? center.replace(bw[0], e.other.split(/\s+/)[0]) : center.replace(e.base, e.other)); }
+    const ow = e.other.split(/\s+/).filter(Boolean);
+    let si = -1;
+    for (let i = 0; i + bw.length <= words.length; i++) {
+      if (words.slice(i, i + bw.length).join(' ') === e.base) { si = i; break; }
+    }
+    if (si >= 0) {
+      const ei = si + bw.length - 1;
+      const win = (from, to, repl) => {
+        const seg = words.slice(from, to + 1);
+        if (repl) seg.splice(si - from, bw.length, ...ow);
+        return seg.join(' ');
+      };
+      add(win(si - 1, ei, false)); add(win(si - 1, ei, true));
+      add(win(si, ei + 1, false)); add(win(si, ei + 1, true));
+      add(win(si - 1, ei + 1, false)); add(win(si - 1, ei + 1, true));
+    }
   }
-  add(e.base); add(e.other);
   const btn = document.getElementById('msRecStyleBtn');
   btn.disabled = true;
   const data = await msRunStyleScan(phrases, 'msRecStyle', null);
@@ -513,7 +520,7 @@ async function msAuthorStyleScan() {
 }
 
 async function msAuthorStyleManual() {
-  const phrases = document.getElementById('msStylePhrases').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 5);
+  const phrases = document.getElementById('msStylePhrases').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 6);
   if (phrases.length < 1) { msToast('ضع عبارة واحدة على الأقل (كل عبارة في سطر)'); return; }
   await msRunStyleScan(phrases, 'msStyleResult', 'msStyleInfo');
 }
