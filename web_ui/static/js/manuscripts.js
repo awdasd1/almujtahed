@@ -550,7 +550,7 @@ function renderMsCollation() {
   const edNotes = [];
   if (base) (base.folios || []).forEach(f => { if ((f.ed_note || '').trim()) edNotes.push({ folio: f.label, text: f.ed_note.trim() }); });
   me.innerHTML = edNotes.length
-    ? edNotes.map(n => `<div class="ms-margin-entry"><strong>(${msEsc(n.folio)})</strong> ${msEsc(n.text)}</div>`).join('')
+    ? edNotes.map(n => `<div class="ms-margin-entry"><strong>(${msEsc(n.folio)})</strong> ${msEsc(msEdNoteDisplay(n.text))}</div>`).join('')
     : '<div class="ms-disputes-none">فارغ — اكتب تعليق التحقيق من منضدة اللوحة (أسفل نصها).</div>';
 }
 
@@ -612,6 +612,26 @@ function msCollEntry(id, status) {
   }
   msSave(); renderMsCollation();
   if (msWb) msRenderWbState();
+}
+
+// وسم مصدر سطر هامش التحقيق: وكلاء التحقيق لما جاء منهم وقبله المحقق، وقرار المحقق لما حسَمه بنفسه
+const MS_ED_SOURCE_TAGS = [
+  [/^\[(تخريج|توثيق)\]/, '[وكيل التخريج]'],
+  [/^\[لغة\]/, '[وكيل اللغة]'],
+  [/^\[(ضبط\/تصحيف|ضبط|تصحيف)\]/, '[وكيل الضبط]'],
+  [/^\[(تراجم|ترجمة)\]/, '[وكيل التراجم]'],
+  [/^\[وكيل المؤلف\]/, '[وكيل المؤلف]'],
+  [/^\[تعليق المحقق/, '[قرار المحقق — تعليق'],
+  [/^\[(تنبيه المحقق|تصحيح المحقق)\]/, '[قرار المحقق]'],
+];
+function msEdNoteDisplay(text) {
+  return (text || '').split('\n').map(l => {
+    let out = l;
+    for (const [re, tag] of MS_ED_SOURCE_TAGS) {
+      if (re.test(out)) { out = out.replace(re, tag); break; }
+    }
+    return out;
+  }).join('\n');
 }
 
 // علامة الفرق: ✔ خضراء للمحسوم بقرار المحقق وحده، و◐ كهرمانية للمعتمد آليًا في التشغيل ولم يُحسم بعد
@@ -868,7 +888,7 @@ function msToggleCollatedText() {
       <div class="ms-collate-folio-title">لوحة (${msEsc(f.label)}) — (${msEsc(base.siglum)})</div>
       <div class="ms-collated-text">${msEsc(f.text)}</div>
       ${app.length ? `<div class="ms-collated-app"><strong>هامش المقابلة:</strong>${app.map((e, i) => `<div>${msEntryMark(e)} ${i + 1}. ${msEsc(msApparatusText(e))}</div>`).join('')}</div>` : ''}
-      ${(f.ed_note || '').trim() ? `<div class="ms-collated-app"><strong>هامش التحقيق:</strong><div>${msEsc(f.ed_note)}</div></div>` : ''}
+      ${(f.ed_note || '').trim() ? `<div class="ms-collated-app"><strong>هامش التحقيق:</strong><div>${msEsc(msEdNoteDisplay(f.ed_note))}</div></div>` : ''}
     </div>`;
   }).join('');
   box.hidden = false;
@@ -1194,7 +1214,7 @@ function msAgentDecision(id, status) {
     const base = msBaseCopy(p);
     const f = base ? (base.folios || []).find(x => x.label === s.folio) : null;
     if (f) {
-      const line = `[${MS_AGENT_KINDS[s.kind] || s.kind}] «${s.anchor}» — ${s.body}${s.source ? ` (${s.source})` : ''}${s.verify && s.verify.detail ? ` [توثيق: ${s.verify.detail}]` : ''}`;
+      const line = `[وكيل ${MS_AGENT_KINDS[s.kind] || s.kind}] «${s.anchor}» — ${s.body}${s.source ? ` (${s.source})` : ''}${s.verify && s.verify.detail ? ` [توثيق: ${s.verify.detail}]` : ''}`;
       f.ed_note = ((f.ed_note || '').trim() ? f.ed_note.trim() + '\n' : '') + line;
     }
   }
@@ -1735,7 +1755,7 @@ function msDocStructure(p) {
     }
     if ((f.ed_note || '').trim()) {
       sections.push({ h: 'هامش التحقيق', level: 'h' });
-      f.ed_note.split('\n').forEach(l => { if (l.trim()) sections.push({ h: l, level: 'p' }); });
+      msEdNoteDisplay(f.ed_note).split('\n').forEach(l => { if (l.trim()) sections.push({ h: l, level: 'p' }); });
     }
   });
   const groups = (p.indexes || {}).groups;
