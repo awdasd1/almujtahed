@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.487"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.488"},
         },
     })
     if opened.get("error"):
@@ -25516,6 +25516,7 @@ class ExportDocxRequest(BaseModel):
     styles: dict = {}
     blocks: list = []
     footnotes: list = []
+    footnote_restart: Optional[str] = None
 
 
 def _docx_esc(value) -> str:
@@ -25657,9 +25658,11 @@ def build_docx_bytes(payload: dict) -> bytes:
             para_parts.append(_docx_paragraph(b, styles, fn_count, page_break=pending_break))
         pending_break = False
     paras = "".join(para_parts)
+    # ترقيم الحواشي: كل صفحة افتراضيًا (سلوك بحوث الشات)، ومتصل بطلب صريح (تحقيق المخطوطات)
+    _restart = "continuous" if str(payload.get("footnote_restart") or "") == "continuous" else "eachPage"
     sect = (
         "<w:sectPr>"
-        '<w:footnotePr><w:numFmt w:val="arabic"/><w:numRestart w:val="eachPage"/></w:footnotePr>'
+        f'<w:footnotePr><w:numFmt w:val="arabic"/><w:numRestart w:val="{_restart}"/></w:footnotePr>'
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="1134" w:right="1020" w:bottom="1361" w:left="1020" w:header="720" w:footer="720" w:gutter="0"/>'
         '<w:docGrid w:linePitch="360"/>'
@@ -25766,7 +25769,7 @@ async def export_project_docx_endpoint(req: ExportDocxRequest):
     """تصدير البحث ملف وورد (DOCX) بنفس تنسيق ورقة الطباعة وبحواشٍ سفلية حقيقية"""
     safe_title = re.sub(r'[\s/\\:*?"<>|]', "_", (req.title or "almojtahed_report").strip()) or "almojtahed_report"
     try:
-        data = build_docx_bytes({"styles": req.styles, "blocks": req.blocks, "footnotes": req.footnotes})
+        data = build_docx_bytes({"styles": req.styles, "blocks": req.blocks, "footnotes": req.footnotes, "footnote_restart": req.footnote_restart})
     except ValueError:
         raise HTTPException(status_code=413, detail="حجم البحث أكبر من حد تصدير وورد")
     except Exception:

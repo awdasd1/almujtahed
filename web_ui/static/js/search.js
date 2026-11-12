@@ -588,6 +588,9 @@ async function openSearchScopeModal(target = 'search') {
     selectedBooksScope = [...(window._msStyleBookTitles || [])];
     // فوق كل النوافذ (توصية المدقق 4000 وقارئ الكتب 100500) رغم قاعدة CSS ذات !important
     modal.style.setProperty('z-index', '200000', 'important');
+  } else if (target === 'ms_compare') {
+    selectedBooksScope = window._msCompareBookTitle ? [window._msCompareBookTitle] : [];
+    modal.style.setProperty('z-index', '200000', 'important');
   } else {
     selectedBooksScope = [...(window._searchTabBooks || selectedBooksScope || [])];
     modal.style.zIndex = '250';
@@ -855,6 +858,15 @@ function applySearchScopeSelection() {
     }
     closeSearchScopeModal();
     showToast(selectedBooksScope.length ? `حُددت ${selectedBooksScope.length} كتب لمسح الأسلوب` : 'مسح الأسلوب في كل كتب المؤلف');
+    return;
+  }
+
+  if (scopeModalTarget === 'ms_compare') {
+    window._msCompareBookTitle = selectedBooksScope[0] || '';
+    if (typeof window.onMsCompareBook === 'function') {
+      window.onMsCompareBook(selectedBooksScope[0] || '', selectedBooksScope.length);
+    }
+    closeSearchScopeModal();
     return;
   }
 
