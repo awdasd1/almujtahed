@@ -1163,7 +1163,7 @@ function renderMsAgents() {
         <div class="ms-collate-folio-title">لوحة (${msEsc(folio)})</div>
         ${byFolio[folio].map(s => `
           <div class="ms-dispute">
-            <span class="ms-dispute-a"><strong>[${msEsc(MS_AGENT_KINDS[s.kind] || s.kind)}]</strong> «${msEsc(s.anchor)}» — ${msEsc(s.body)}${s.source ? `<br>المصدر المقترح: ${msEsc(s.source)}` : ''}<br>${msVerifyBadge(s.verify)}</span>
+            <span class="ms-dispute-a"><strong>[${msEsc(MS_AGENT_KINDS[s.kind] || s.kind)}]</strong> «${msEsc(s.anchor)}» — ${msEsc(s.body)}${s.source ? `<br>المصدر المقترح: ${msEsc(s.source)}` : ''}<br>اقترحها: وكيل ${msEsc(MS_AGENT_KINDS[s.kind] || s.kind)}${s.model ? ` · النموذج: ${msEsc(s.model)}` : ' · نموذج وكلاء التشغيل'}<br>${msVerifyBadge(s.verify)}</span>
             <span>
               ${(s.verify && s.verify.locus && s.verify.locus.book_id) ? `<button type="button" class="ms-dispute-btn" title="تصفح الشاهد في مصدره مظلَّلًا" onclick="msOpenStyleBook(${Number(s.verify.locus.book_id) || 0}, '${msEsc(s.verify.locus.part || '')}', ${Number(s.verify.locus.page) || 0}, '${msEsc(s.anchor || '')}')">📖 تصفح الشاهد</button>` : ''}
               <button type="button" class="ms-dispute-btn" onclick="msAgentDecision('${s.id}','accepted')">اعتماد في الهامش</button>
@@ -1189,6 +1189,72 @@ window.onMsAgentBooks = function (titles) {
   if (a) a.textContent = txt || 'المظان: كتب الأصول الافتراضية';
   if (b) b.textContent = txt || 'المظان: لا شيء مضاف';
 };
+
+function msToggleAgentSources() {
+  const box = document.getElementById('msAgentSources');
+  if (!box) return;
+  if (!box.hidden) { box.hidden = true; return; }
+  const p = msCurrentProject();
+  const sugs = p ? (p.agent_suggestions || []) : [];
+  const bySource = {};
+  sugs.forEach(s => {
+    const src = (s.source || '— بلا مصدر مقترح').trim();
+    const g = bySource[src] = bySource[src] || { count: 0, kinds: {}, verified: 0, proposers: {} };
+    g.count++;
+    g.kinds[MS_AGENT_KINDS[s.kind] || s.kind] = 1;
+    if (s.model) g.proposers[s.model] = 1;
+    if (s.verify && s.verify.status === 'verified') g.verified++;
+  });
+  const rows = Object.entries(bySource).sort((a, b) => b[1].count - a[1].count);
+  box.innerHTML = `<div class="ms-disputes-title">المصادر المقترحة من الوكلاء في هذا المشروع (${rows.length} مصدرًا من ${sugs.length} اقتراحًا) — «أضِف مظنة» يجعل الكتاب ضمن كتب البحث والمسح عند إعادة التوثيق:</div>` +
+    (rows.length ? rows.map(([src, g]) => `
+      <div class="ms-dispute">
+        <span class="ms-dispute-a"><strong>${msEsc(src)}</strong> — اقتُرح ${g.count} مرة (${Object.keys(g.kinds).join('، ')})${g.verified ? ` · موثّق منها ${g.verified}` : ''}${Object.keys(g.proposers).length ? `<br>اقترحها نموذج: ${msEsc(Object.keys(g.proposers).join('، '))}` : ''}</span>
+        <span><button type="button" class="ms-dispute-btn" onclick="msAddSourceAsMazanna('${msEsc(src)}')">أضِف مظنة</button></span>
+      </div>`).join('') : '<div class="ms-disputes-none">لا اقتراحات بعد.</div>');
+  box.hidden = false;
+}
+
+function msAddSourceAsMazanna(title) {
+  const t = (title || '').trim();
+  if (!t || t.startsWith('—')) { msToast('لا مصدر صالح للإضافة'); return; }
+  if (!MS_AGENT_BOOK_TITLES.includes(t)) MS_AGENT_BOOK_TITLES.push(t);
+  window._msAgentBookTitles = [...MS_AGENT_BOOK_TITLES];
+  if (typeof window.onMsAgentBooks === 'function') window.onMsAgentBooks([...MS_AGENT_BOOK_TITLES]);
+  msToast(`أُضيف «${t}» إلى كتب المظان — شغّل «إعادة توثيق الاقتراحات بالمظان» للبحث فيه`);
+}
+
+async function msReverifySuggestions() {
+  const p = msCurrentProject();
+  if (!p || !(p.agent_suggestions || []).length) { msToast('لا اقتراحات بعد'); return; }
+  const btn = document.getElementById('msReverifyBtn');
+  const info = document.getElementById('msReverifyInfo');
+  btn.disabled = true; info.textContent = '⏳ جارٍ إعادة التوثيق في المظان وكتب الأصول...';
+  try {
+    const res = await fetch('/api/manuscripts/verify-suggestions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        suggestions: p.agent_suggestions.map(s => ({ id: s.id, kind: s.kind, anchor: s.anchor, surah: s.surah, ayah: s.ayah })),
+        extra_books: MS_AGENT_BOOK_TITLES.length ? MS_AGENT_BOOK_TITLES : undefined,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذرت إعادة التوثيق');
+    let changed = 0, verified = 0;
+    p.agent_suggestions.forEach(s => {
+      const v = (data.results || {})[s.id];
+      if (v) { s.verify = v; changed++; if (v.status === 'verified') verified++; }
+    });
+    msSave(); renderMsAgents(); renderMsAuthor();
+    const box = document.getElementById('msAgentSources');
+    if (box && !box.hidden) { box.hidden = true; msToggleAgentSources(); }
+    info.textContent = `✔ أُعيد توثيق ${changed} اقتراحًا (${verified} موثّقًا)${(data.searched_books || []).length ? ' — بُحث في: ' + data.searched_books.join('، ') : ''}`;
+  } catch (e) {
+    info.textContent = '';
+    msToast('❌ ' + e.message, 6000);
+  }
+  btn.disabled = false;
+}
 
 async function msRunAgents() {
   const p = msCurrentProject();

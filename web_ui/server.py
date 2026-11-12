@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.482"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.483"},
         },
     })
     if opened.get("error"):
@@ -14421,8 +14421,27 @@ def _ms_agents_sync(payload: dict, key: str) -> Dict[str, Any]:
                          str((payload or {}).get("author") or ""), key)
     extra = _ms_resolve_extra_books((payload or {}).get("extra_books"))
     for s in out["suggestions"]:
+        s["model"] = model
         s["verify"] = _ms_verify_suggestion(s, extra)
     return out
+
+
+@app.post("/api/manuscripts/verify-suggestions")
+async def verify_manuscript_suggestions(request: Request, payload: Any = Body(...)):
+    """إعادة توثيق اقتراحات قائمة (بلا توليد جديد) مع كتب مظان يضيفها المحقق."""
+    extra = _ms_resolve_extra_books((payload or {}).get("extra_books"))
+
+    def run():
+        results = {}
+        for s in ((payload or {}).get("suggestions") or [])[:120]:
+            sid = str(s.get("id") or "")
+            if sid:
+                results[sid] = _ms_verify_suggestion(s, extra)
+        return results
+
+    results = await asyncio.to_thread(run)
+    return {"results": results,
+            "searched_books": [b["title"] for b in extra]}
 
 @app.post("/api/manuscripts/agents")
 async def manuscript_agents(request: Request, payload: Any = Body(...)):
