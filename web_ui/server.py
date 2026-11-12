@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.476"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.477"},
         },
     })
     if opened.get("error"):
@@ -13837,8 +13837,8 @@ async def upload_chat_file(request: Request, file: UploadFile = File(...)):
 # واتفاق النموذجين على اللوحة مؤشر ثقة يعرض للمحقق، ومواضع اختلافهما
 # هي جدول الحسم الأول. النماذج كلها تنهار في الخطوط الشديدة الصعوبة
 # (السوداني) — لذا سقف إخراج وحارس تكرار وينبَّه المحقق ولا يُسلَّم وهم.
-MS_PRIMARY_MODEL = "google/gemini-2.5-flash"
-MS_CHECKER_MODEL = "~openai/gpt-luna-latest"
+MS_PRIMARY_MODEL = "~google/gemini-pro-latest"
+MS_CHECKER_MODEL = "~google/gemini-flash-latest"
 MS_TRANSCRIBE_PROMPT = (
     "أنت ناسخ مخطوطات محترف. انسخ نص اللوحة المخطوطة في الصورة المرفقة حرفيًا كما هو مكتوب، سطرًا بسطر، "
     "مع الحفاظ على الإملاء والهمزات وعلامات الترقيم كما هي دون أي تصحيح أو تحديث أو شرح. "
@@ -14060,7 +14060,7 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
     if primary.get("text") and checker.get("text"):
         disputes, agreement = _ms_disputes(primary["text"], checker["text"])
     # المدقق: يستلم الصورة والنسختين معًا فيحكّم بينهما بعينه على اللوحة
-    auditor_model = str((payload or {}).get("auditor_model") or "qwen/qwen3-vl-235b-a22b-instruct")
+    auditor_model = str((payload or {}).get("auditor_model") or "google/gemini-4-argon")
     auditor: Dict[str, Any] = {}
     if auditor_model and (primary.get("text") or checker.get("text")):
         try:

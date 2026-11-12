@@ -9,7 +9,10 @@ let msModels = { primary: '', checker: '' };
 // الصعبة، وSonnet 5.5 دقيق وصادق حيث يشك فيصلح مدققًا وثانيًا، وMuse Wonder
 // رُفض (الأغلى والأخلط حرفيًا)، و2.5 Pro انهار في تشغيل (تسرّب تفكير) فلا يعتمد وحده.
 const MS_MODEL_CHOICES = [
-  ['google/gemini-3.1-pro-preview', 'Gemini 3.1 Pro — الأقوى قراءة للخطوط الصعبة (غالٍ بطيء)'],
+  ['~google/gemini-pro-latest', 'Gemini Pro Latest — القارئ الأول المعتمد (دقة)'],
+  ['~google/gemini-flash-latest', 'Gemini Flash Latest — القارئ الثاني المعتمد (سرعة ورخص)'],
+  ['google/gemini-4-argon', 'Gemini 4 Argon — المدقق المعتمد'],
+  ['google/gemini-3.1-pro-preview', 'Gemini 3.1 Pro — قوي قراءة للخطوط الصعبة (غالٍ بطيء)'],
   ['anthropic/claude-sonnet-5.5', 'Claude Sonnet 5.5 — دقيق وصادق في مواضع الشك'],
   ['google/gemini-2.5-flash', 'Gemini 2.5 Flash — سريع اقتصادي'],
   ['google/gemini-2.5-pro', 'Gemini 2.5 Pro — قوي (تذبذب مرة)'],
@@ -19,13 +22,13 @@ const MS_MODEL_CHOICES = [
   ['anthropic/claude-sonnet-5', 'Claude Sonnet 5 — غالٍ'],
 ];
 const MS_MODEL_PRESETS = {
-  standard: { primary: 'google/gemini-2.5-flash', checker: '~openai/gpt-luna-latest', auditor: 'qwen/qwen3-vl-235b-a22b-instruct' },
+  standard: { primary: '~google/gemini-pro-latest', checker: '~google/gemini-flash-latest', auditor: 'google/gemini-4-argon' },
   hard: { primary: 'google/gemini-3.1-pro-preview', checker: 'anthropic/claude-sonnet-5.5', auditor: 'google/gemini-3.1-pro-preview' },
 };
 
 function msModelChoice() {
   try {
-    const saved = JSON.parse(localStorage.getItem('almujtahed_ms_models') || 'null');
+    const saved = JSON.parse(localStorage.getItem('almujtahed_ms_models_v2') || 'null');
     if (saved && saved.primary && saved.checker) {
       return { primary: saved.primary, checker: saved.checker, auditor: saved.auditor || MS_MODEL_PRESETS.standard.auditor };
     }
@@ -48,7 +51,7 @@ function msSaveModelChoice() {
   const checker = document.getElementById('msCheckerModel')?.value;
   const auditor = document.getElementById('msAuditorModel')?.value;
   if (primary && checker && auditor) {
-    localStorage.setItem('almujtahed_ms_models', JSON.stringify({ primary, checker, auditor }));
+    localStorage.setItem('almujtahed_ms_models_v2', JSON.stringify({ primary, checker, auditor }));
     msToast('حُفظ اختيار نماذج النسخ والتدقيق');
   }
 }
@@ -56,9 +59,9 @@ function msSaveModelChoice() {
 function msPresetModels(name) {
   const preset = MS_MODEL_PRESETS[name];
   if (!preset) return;
-  localStorage.setItem('almujtahed_ms_models', JSON.stringify(preset));
+  localStorage.setItem('almujtahed_ms_models_v2', JSON.stringify(preset));
   msFillModelSelects();
-  msToast(name === 'hard' ? 'وضع الخطوط الصعبة: Gemini 3.1 Pro أولًا، Sonnet 5.5 ثانيًا، يدققه Gemini 3.1 Pro' : 'الوضع القياسي: Flash + Luna، يدققه Qwen3-VL');
+  msToast(name === 'hard' ? 'وضع الخطوط الصعبة: Gemini 3.1 Pro أولًا، Sonnet 5.5 ثانيًا، يدققه Gemini 3.1 Pro' : 'الوضع الموحّد المعتمد: Gemini Pro Latest أولًا، Gemini Flash Latest ثانيًا، يدققهما Gemini 4 Argon');
 }
 let msWb = null; // {projectId, copyId, folioId}
 let msSaveTimer = null;
