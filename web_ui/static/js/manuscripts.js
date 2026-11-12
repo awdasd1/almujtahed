@@ -1979,6 +1979,8 @@ function msEdNotePrint(text) {
     out = out.replace(/\(ثقة\s*[^)]*\)/g, '');
     out = out.replace(/\s*وفحص الشواهد بعينه/g, '');
     out = out.replace(/،?\s*مقابل صفر[^،؛.]*/g, '');
+    out = out.replace(/\s*\[(توثيق|تنبيه|مصدر|مراجعة)[^\]]*\]/g, '');
+    out = out.replace(/\s*\(ملاحظة محقق\)/g, '');
     return out.replace(/\s+/g, ' ').trim();
   }).filter(Boolean).join('\n');
 }
@@ -2026,8 +2028,22 @@ function msFinalParts(p) {
   return { base, folios, groups };
 }
 
+// عبارة الإرساء لتعليق تحقيق: أول عبارة مقوّسة «...» في مطلعه
+function msEdAnchorPhrase(line) {
+  const m = (line || '').match(/«([^»]{2,80})»/);
+  return m ? m[1] : '';
+}
+
+// أسطر النسخ أسطرٌ مادية في المخطوط؛ تُصهر في المنشور فقراتٍ متدفقة
+// (فواصل الأسطر الفارغة وحدها تفصل الفقرات) فينضبط السطر يمينًا وشمالًا
+function msFlowParagraphs(text) {
+  return (text || '').split(/\n\s*\n/)
+    .map(chunk => chunk.split('\n').map(s => s.trim()).filter(Boolean).join(' '))
+    .filter(Boolean);
+}
+
 function msAnchoredRuns(line, entries, footnotes) {
-  // يرسّي حواشي فروق اللوحة داخل سطر المتن عند عبارة الأم حيث وُجدت
+  // يرسّي حواشي الفروق وتعليقات التحقيق داخل المتن عند عباراتها حيث وُجدت
   const runs = [];
   let rest = line;
   const usable = entries.filter(e => e.base && line.includes(e.base) && !e._anchored);
@@ -2037,7 +2053,7 @@ function msAnchoredRuns(line, entries, footnotes) {
     if (i < 0) continue;
     const before = rest.slice(0, i + e.base.length);
     if (before) runs.push({ t: before });
-    footnotes.push({ runs: [{ t: msApparatusText(e) }] });
+    footnotes.push({ runs: [{ t: e._ed ? e._text : msApparatusText(e) }] });
     runs.push({ t: '', fn: footnotes.length - 1 });
     e._anchored = true;
     rest = rest.slice(i + e.base.length);
@@ -2057,23 +2073,23 @@ function msFinalBlocks(p) {
     blocks.push({ kind: 'h', runs: [{ t: 'مقدمة المحقق' }] });
     p.intro.split('\n').forEach(l => { if (l.trim()) blocks.push({ kind: 'p', runs: [{ t: l }] }); });
   }
+  // متن الأم وحدها متدفقًا بلا عناوين لوحات: تُذكر اللوحة بعلامة صغيرة
+  // في أول فقرتها، وسائر النسخ مكانها الحواشي لا المتن
   folios.forEach(f => {
-    blocks.push({ kind: 'h', runs: [{ t: `لوحة (${f.label}) — نسخة (${f.siglum})` }] });
     const entries = f.entries.map(e => ({ ...e }));
-    const lines = f.text.split('\n').filter(l => l.trim());
-    lines.forEach((line, li) => {
-      const runs = msAnchoredRuns(line, entries, footnotes);
-      if (li === lines.length - 1) {
-        // ما لم يُرسَّ في موضعه من الفروق، وكل تعليقات التحقيق: حواشٍ في ذيل اللوحة
-        entries.filter(e => !e._anchored).forEach(e => {
-          footnotes.push({ runs: [{ t: msApparatusText(e) }] });
-          runs.push({ t: '', fn: footnotes.length - 1 });
-        });
-        f.edLines.forEach(l => {
-          footnotes.push({ runs: [{ t: l }] });
+    const edItems = f.edLines.map(l => ({ base: msEdAnchorPhrase(l), _ed: true, _text: l }));
+    const all = entries.concat(edItems);
+    const paras = msFlowParagraphs(f.text);
+    paras.forEach((para, pi) => {
+      const runs = msAnchoredRuns(para, all, footnotes);
+      if (pi === paras.length - 1) {
+        // ما تعذر إرساؤه عند عبارته يلحق بآخر فقرة اللوحة
+        all.filter(e => !e._anchored).forEach(e => {
+          footnotes.push({ runs: [{ t: e._ed ? e._text : msApparatusText(e) }] });
           runs.push({ t: '', fn: footnotes.length - 1 });
         });
       }
+      if (pi === 0) runs.unshift({ t: `[${f.label}] ` });
       blocks.push({ kind: 'p', runs });
     });
   });
@@ -2129,33 +2145,32 @@ function msBuildPrintHtml(p) {
   // إعدادات قسم «الطباعة» في التطبيق (خطوط وأحجام وألوان وفاصل وخلفية) — مصدر الشات نفسه
   let extras = { head: '', css: '', bg: null };
   try { if (typeof paperPrintCss === 'function') extras = paperPrintCss(); } catch (e) {}
-  // ترقيم الحواشي متصل عبر البحث كله بأرقام صريحة، لا يتجدد مع الصفحات
-  let fnNo = 0;
-  const arabic = n => String(n).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
-  const fnSpan = t => { fnNo += 1; return `<span class="fn">(${arabic(fnNo)}) ${esc(t)}</span>`; };
-  const fnCall = () => `<sup class="ms-fn-call">(${arabic(fnNo)})</sup>`;
+  // مصدر ترقيم واحد: نداءات Paged تُعاد ترقيمها بعد التقسيم متصلةً عبر
+  // الصفحات (PagedConfig.after)، فلا أرقام مكتوبة في متن الحاشية نفسه
+  const fnSpan = t => `<span class="fn">${esc(t)}</span>`;
   const folioHtml = f => {
     const entries = f.entries.map(e => ({ ...e }));
-    const lines = f.text.split('\n').filter(l => l.trim());
-    const paras = lines.map((line, li) => {
-      let built = '', rest = line;
-      const usable = entries.filter(e => e.base && line.includes(e.base) && !e._anchored)
-        .sort((a, b) => line.indexOf(a.base) - line.indexOf(b.base));
+    const edItems = f.edLines.map(l => ({ base: msEdAnchorPhrase(l), _ed: true, _text: l }));
+    const all = entries.concat(edItems);
+    const paras = msFlowParagraphs(f.text);
+    return paras.map((para, pi) => {
+      let built = '', rest = para;
+      const usable = all.filter(e => e.base && para.includes(e.base) && !e._anchored)
+        .sort((a, b) => para.indexOf(a.base) - para.indexOf(b.base));
       for (const e of usable) {
         const i = rest.indexOf(e.base);
         if (i < 0) continue;
-        built += esc(rest.slice(0, i + e.base.length)) + fnSpan(msApparatusText(e)) + fnCall();
+        built += esc(rest.slice(0, i + e.base.length)) + fnSpan(e._ed ? e._text : msApparatusText(e));
         e._anchored = true;
         rest = rest.slice(i + e.base.length);
       }
-      let htmlLine = built + esc(rest);
-      if (li === lines.length - 1) {
-        entries.filter(e => !e._anchored).forEach(e => { htmlLine += fnSpan(msApparatusText(e)) + fnCall(); });
-        f.edLines.forEach(l => { htmlLine += fnSpan(l) + fnCall(); });
+      let htmlPara = built + esc(rest);
+      if (pi === paras.length - 1) {
+        all.filter(e => !e._anchored).forEach(e => { htmlPara += fnSpan(e._ed ? e._text : msApparatusText(e)); });
       }
-      return `<p>${htmlLine}</p>`;
+      if (pi === 0) htmlPara = `<span class="ms-folio-mark">[${esc(f.label)}]</span> ` + htmlPara;
+      return `<p>${htmlPara}</p>`;
     }).join('');
-    return `<h2>لوحة (${esc(f.label)}) — نسخة (${esc(f.siglum)})</h2>${paras}`;
   };
   return `<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8">
 <style>
@@ -2170,9 +2185,13 @@ function msBuildPrintHtml(p) {
   h2 { font-size: 15pt; margin-top: 22px; border-bottom: 1px solid #bbb; padding-bottom: 4px; page-break-after: avoid; }
   p { margin: 4px 0; text-align: justify; text-align-last: right; text-justify: inter-word; }
   .fn { float: footnote; line-height: 1.8; text-align: justify; text-align-last: right; }
-  .ms-fn-call { font-size: 8.5pt; font-weight: 700; vertical-align: super; }
-  ::footnote-call { content: none; }
-  ::footnote-marker { content: none; }
+  .ms-folio-mark { color: #8a6d1f; font-size: 0.82em; font-weight: 700; }
+  .pagedjs_area [data-footnote-call]::after { content: "(" counter(footnote) ")"; font-size: 9pt; font-weight: 700; }
+  [data-footnote-marker]::marker { content: "(" counter(footnote-marker) ") "; font-weight: 700; }
+  [data-footnote-call].pg-linked::after { content: none !important; }
+  [data-footnote-marker].pg-linked-marker::marker { content: none; }
+  .pg-fn-call, .pg-fn-marker { color: #1c4fd6; text-decoration: none; font-weight: 700; }
+  .pg-fn-call { vertical-align: super; font-size: 9.5pt; line-height: 0; }
   [data-footnote-marker] { text-align: justify; text-align-last: right; }
   .pagedjs_page { margin: 18px auto; background: #fff; box-shadow: 0 2px 16px rgba(0,0,0,.28); }
   @media print { .pagedjs_page { margin: 0 auto; box-shadow: none; } }
@@ -2192,6 +2211,37 @@ ${extras.head || ''}
 <script>window.__paperBg = ${JSON.stringify(extras.bg || null).replace(/</g, '\\u003c')};
 window.PagedConfig = { auto: true, after: function () {
   window.__pagedDone = true;
+  // ترقيم الحواشي متصل عبر الصفحات كلها: روابط عربية مرقمة تسلسليًا
+  // من أول البحث إلى آخره بدل عدّادات الصفحات المتجددة
+  try {
+    var arabic = function (n) { return String(n).replace(/\\d/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[+d]; }); };
+    var gn = 0;
+    document.querySelectorAll('.pagedjs_page').forEach(function (page) {
+      var calls = page.querySelectorAll('[data-footnote-call]');
+      var markers = page.querySelectorAll('.pagedjs_footnote_area [data-footnote-marker]');
+      calls.forEach(function (call, i) {
+        gn += 1;
+        call.classList.add('pg-linked');
+        call.id = 'pgcall-' + gn;
+        var a = document.createElement('a');
+        a.className = 'pg-fn-call';
+        a.href = '#pgfn-' + gn;
+        a.textContent = '(' + arabic(gn) + ')';
+        call.appendChild(a);
+        var mk = markers[i];
+        if (mk) {
+          mk.classList.add('pg-linked-marker');
+          mk.id = 'pgfn-' + gn;
+          var b = document.createElement('a');
+          b.className = 'pg-fn-marker';
+          b.href = '#pgcall-' + gn;
+          b.textContent = '(' + arabic(gn) + ')';
+          mk.insertBefore(b, mk.firstChild);
+          mk.insertBefore(document.createTextNode(' '), b.nextSibling);
+        }
+      });
+    });
+  } catch (e) {}
   try {
     var bg = window.__paperBg;
     if (bg && bg.url) {
