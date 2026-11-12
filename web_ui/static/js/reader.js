@@ -592,7 +592,14 @@ function highlightReaderPhrase(escaped, phrase) {
   const wanted = readerState.showTashkeel ? raw : removeTashkeel(raw);
   const words = wanted.split(/\s+/).filter(Boolean);
   if (words.length >= 2) {
-    const flexible = words.map(w => [...w].map(ch => escapeRegex(ch) + '[\\u064B-\\u065F\\u0670\\u0640]*').join('')).join('\\s+');
+    const charPat = ch => {
+      if ('يىئ'.includes(ch)) return '[يىئ]';
+      if ('اأإآٱ'.includes(ch)) return '[اأإآٱ]';
+      if ('وؤ'.includes(ch)) return '[وؤ]';
+      if ('ةه'.includes(ch)) return '[ةه]';
+      return escapeRegex(ch);
+    };
+    const flexible = words.map(w => [...w].map(ch => charPat(ch) + '[\\u064B-\\u065F\\u0670\\u0640]*').join('')).join('\\s+');
     try {
       const exact = new RegExp(`(${flexible})`, 'g');
       if (exact.test(escaped)) {
