@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.472"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.474"},
         },
     })
     if opened.get("error"):
@@ -14528,6 +14528,9 @@ async def manuscript_recommend(request: Request, payload: Any = Body(...)):
 # ---------- مسح أسلوب المؤلف (الأكثر استخدامًا) ----------
 # يحصي عبارات متنافسة في كل كتب المؤلف عندنا ليعرف المحقق صيغة
 # مؤلفه الغالبة في مثل هذا الموضع (مقدمات/صياغات). عدّ آلي بلا نموذج.
+def _ms_style_phrase_norm(s: str) -> str:
+    return shamela_local_mcp.clean_arabic_text(s or "").replace("ئ", "ي").replace("ؤ", "و")
+
 def _ms_author_style_sync(payload: dict) -> Dict[str, Any]:
     import concurrent.futures as _cf
     author = str((payload or {}).get("author") or "")
@@ -14538,36 +14541,65 @@ def _ms_author_style_sync(payload: dict) -> Dict[str, Any]:
     searchable = [b for b in books if work_core and work_core not in b["title"]] or books
     searchable = searchable[:12]
     if not phrases or not searchable:
-        return {"books": [b["title"] for b in searchable], "results": [], "dominant": None}
+        return {"books": [b["title"] for b in searchable], "results": [], "dominant": None,
+                "method": "exact_contiguous"}
+    phrase_norms = {ph: _ms_style_phrase_norm(ph) for ph in phrases}
 
-    def check(args):
-        phrase, book = args
+    def scan_book(book):
+        # مرور واحد على صفحات الكتاب وعدّ العبارات المتصلة فقط بعد
+        # التطبيع؛ الكلمات المتفرقة في الصفحة لا تُحسب شاهدًا أبدًا.
+        out = {ph: {"count": 0, "first": None} for ph in phrases}
         try:
-            r = shamela_local_mcp.search_in_book(book["book_id"], phrase, limit=400)
-            hits = (r or {}).get("results") or []
-            if hits:
-                h = hits[0]
-                return {"phrase": phrase, "book_id": book["book_id"], "book": book["title"],
-                        "count": len(hits), "capped": len(hits) >= 400,
-                        "part": h.get("part"), "page": h.get("page_num"),
-                        "snippet": (h.get("snippet") or "")[:220]}
+            b_dir = shamela_local_mcp.resolve_book_files(book["book_id"])
+            if not b_dir:
+                return book, out
+            idx = shamela_local_mcp.get_book_index(b_dir)
+            pages_file = b_dir / "pages.jsonl"
+            with open(pages_file, "rb") as fh:
+                for entry in idx["entries"]:
+                    fh.seek(entry["offset"])
+                    line = fh.readline()
+                    if not line:
+                        continue
+                    body = json.loads(line.decode("utf-8")).get("body", "")
+                    clean = _ms_style_phrase_norm(body)
+                    for ph, norm in phrase_norms.items():
+                        if not norm:
+                            continue
+                        n = clean.count(norm)
+                        if n:
+                            slot = out[ph]
+                            slot["count"] += n
+                            if slot["first"] is None:
+                                at = clean.find(norm)
+                                slot["first"] = {
+                                    "part": entry["part"], "page": entry["page_num"],
+                                    "snippet": clean[max(0, at - 110):at + len(norm) + 130],
+                                }
         except Exception:
             pass
-        return None
+        return book, out
 
-    jobs = [(ph, b) for ph in phrases for b in searchable]
     agg = {ph: {"phrase": ph, "total": 0, "occurrences": []} for ph in phrases}
-    with _cf.ThreadPoolExecutor(max_workers=8) as pool:
-        for hit in pool.map(check, jobs):
-            if hit:
-                a = agg[hit["phrase"]]
-                a["total"] += hit["count"]
-                a["occurrences"].append({k: hit[k] for k in ("book_id", "book", "count", "capped", "part", "page", "snippet")})
+    with _cf.ThreadPoolExecutor(max_workers=6) as pool:
+        for book, found in pool.map(scan_book, searchable):
+            for ph in phrases:
+                slot = found[ph]
+                if slot["count"]:
+                    agg[ph]["total"] += slot["count"]
+                    agg[ph]["occurrences"].append({
+                        "book_id": book["book_id"], "book": book["title"],
+                        "count": slot["count"], "capped": False,
+                        "part": slot["first"]["part"], "page": slot["first"]["page"],
+                        "snippet": slot["first"]["snippet"],
+                        "match": "exact",
+                    })
     results = sorted(agg.values(), key=lambda x: -x["total"])
     for r in results:
         r["occurrences"].sort(key=lambda x: -x["count"])
     dominant = results[0]["phrase"] if results and results[0]["total"] > 0 else None
-    return {"books": [b["title"] for b in searchable], "results": results, "dominant": dominant}
+    return {"books": [b["title"] for b in searchable], "results": results,
+            "dominant": dominant, "method": "exact_contiguous"}
 
 @app.post("/api/manuscripts/author-style")
 async def manuscript_author_style(payload: Any = Body(...)):

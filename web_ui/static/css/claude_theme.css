@@ -11239,3 +11239,5 @@ body::-webkit-scrollbar,
 .ms-style-tool { margin-top: 14px; border-top: 1px dashed var(--border-subtle); padding-top: 10px; }
 .ms-style-tool textarea { width: 100%; font-family: inherit; font-size: 13.5px; line-height: 1.9; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: transparent; color: inherit; }
 #bookReaderModal { z-index: 100500; }
+.ms-occ-snippet { font-size: 11.5px; opacity: .78; line-height: 1.8; margin: 2px 4px 6px; white-space: normal; }
+.reader-highlight { background: #ffe58a; color: inherit; padding: 0 2px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(184,137,46,.35); }

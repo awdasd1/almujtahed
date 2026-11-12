@@ -343,19 +343,13 @@ function renderReaderBodyText() {
   const paragraphs = text.split(/\r?\n\r?\n/).map(p => p.trim()).filter(Boolean);
   let html = paragraphs.map(p => {
     let pEscaped = escapeHtml(p);
-    // إبراز الكلمات أو النص إذا كان مفتوحاً من نتيجة بحث
-    if (readerState.highlightText) {
-      const words = readerState.highlightText.split(/\s+/).filter(w => w.length > 3).slice(0, 5);
-      words.forEach(w => {
-        const cleanW = readerState.showTashkeel ? w : removeTashkeel(w);
-        const reg = new RegExp(`(${escapeRegex(cleanW)})`, 'gi');
-        pEscaped = pEscaped.replace(reg, `<mark class="reader-highlight">$1</mark>`);
-      });
-    }
+    // إبراز الشاهد المتصل وتظليله إذا كان مفتوحاً من نتيجة بحث
+    if (readerState.highlightText) pEscaped = highlightReaderPhrase(pEscaped, readerState.highlightText);
     return `<p class="reader-paragraph">${pEscaped.replace(/\r?\n/g, '<br>')}</p>`;
   }).join('');
 
   bodyContainer.innerHTML = html || '<p style="color: var(--text-muted); text-align: center;">صفحة فارغة أو عنوان</p>';
+  scrollReaderToHighlight(bodyContainer);
 
   // عرض الحواشي إن وجدت
   if (readerState.footnotes) {
@@ -590,6 +584,39 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// تظليل الشاهد: مطابقة العبارة المتصلة أولًا (مع تجاوز الحركات داخل
+// الكلمات) والتمرير إليها، ولا نلجأ لكلمات متفرقة إلا عند غياب الشاهد.
+function highlightReaderPhrase(escaped, phrase) {
+  const raw = String(phrase || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return escaped;
+  const wanted = readerState.showTashkeel ? raw : removeTashkeel(raw);
+  const words = wanted.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    const flexible = words.map(w => [...w].map(ch => escapeRegex(ch) + '[\\u064B-\\u065F\\u0670\\u0640]*').join('')).join('\\s+');
+    try {
+      const exact = new RegExp(`(${flexible})`, 'g');
+      if (exact.test(escaped)) {
+        exact.lastIndex = 0;
+        return escaped.replace(exact, '<mark class="reader-highlight">$1</mark>');
+      }
+    } catch (e) { /* نعود للكلمات */ }
+  }
+  words.filter(w => w.length > 3).slice(0, 5).forEach(w => {
+    const cleanW = readerState.showTashkeel ? w : removeTashkeel(w);
+    const reg = new RegExp(`(${escapeRegex(cleanW)})`, 'gi');
+    escaped = escaped.replace(reg, '<mark class="reader-highlight">$1</mark>');
+  });
+  return escaped;
+}
+
+function scrollReaderToHighlight(container) {
+  if (!container) return;
+  setTimeout(() => {
+    const mark = container.querySelector('mark.reader-highlight');
+    if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 180);
+}
+
 // =============================================================================
 // استيفاء وتقليب باقة الصفحات المتتالية (-2 إلى +2) لكشف رأس المسألة أو الحولية
 // =============================================================================
@@ -784,14 +811,7 @@ async function loadSurroundingPagesView() {
       const pParas = text.split(/\r?\n\r?\n/).map(pr => pr.trim()).filter(Boolean);
       let pBodyHtml = pParas.map(pr => {
         let esc = escapeHtml(pr);
-        if (isTarget && readerState.highlightText) {
-          const words = readerState.highlightText.split(/\s+/).filter(w => w.length > 3).slice(0, 5);
-          words.forEach(w => {
-            const cleanW = readerState.showTashkeel ? w : removeTashkeel(w);
-            const reg = new RegExp(`(${escapeRegex(cleanW)})`, 'gi');
-            esc = esc.replace(reg, `<mark class="reader-highlight">$1</mark>`);
-          });
-        }
+        if (isTarget && readerState.highlightText) esc = highlightReaderPhrase(esc, readerState.highlightText);
         return `<p class="reader-paragraph">${esc.replace(/\r?\n/g, '<br>')}</p>`;
       }).join('');
 
@@ -825,14 +845,16 @@ async function loadSurroundingPagesView() {
     });
 
     bodyContainer.innerHTML = html;
-    
-    // التمرير التلقائي للصفحة المستهدفة
+
+    // التمرير التلقائي للشاهد المظلل، ثم للصفحة المستهدفة عند غيابه
+    scrollReaderToHighlight(bodyContainer);
     setTimeout(() => {
+      if (bodyContainer.querySelector('mark.reader-highlight')) return;
       const targetEl = bodyContainer.querySelector('.surrounding-page-card.target-page');
       if (targetEl) {
         targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
-    }, 120);
+    }, 260);
 
   } catch (err) {
     console.error('Surrounding pages error:', err);

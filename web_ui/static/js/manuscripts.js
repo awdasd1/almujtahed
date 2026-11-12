@@ -450,12 +450,12 @@ function msRenderStyle(data) {
     results.map(r => `
       <div class="ms-style-row ${r.total && r.total === maxTotal ? 'ms-style-dom' : ''}">
         <span class="ms-style-phrase">«${msEsc(r.phrase)}»</span>
-        — <span class="ms-style-total">${r.total || 0} موضعًا</span> في ${(r.occurrences || []).length} كتابًا
+        — <span class="ms-style-total">${r.total || 0} موضعًا متصلًا</span> في ${(r.occurrences || []).length} كتابًا
         ${r.total && r.total === maxTotal ? '<span class="ms-style-dom-badge">⭐ الأكثر استخدامًا لدى المؤلف</span>' : ''}
         <div>${(r.occurrences || []).map(o => `
-          <span class="ms-occ-chip">${msEsc(o.book)} (${o.count}${o.capped ? '+' : ''} · ج ${msEsc(o.part || '—')} ص ${msEsc(o.page || '—')})
-            <button type="button" class="ms-occ-open" title="تصفح الموضع في الكتاب" onclick="msOpenStyleBook(${Number(o.book_id) || 0}, '${msEsc(o.part || '')}', ${Number(o.page) || 0}, '${msEsc(r.phrase)}')">📖</button>
-          </span>`).join('')}</div>
+          <span class="ms-occ-chip">${msEsc(o.book)} (${o.count} متصل · ج ${msEsc(o.part || '—')} ص ${msEsc(o.page || '—')})
+            <button type="button" class="ms-occ-open" title="تصفح الشاهد مظلَّلًا في الكتاب" onclick="msOpenStyleBook(${Number(o.book_id) || 0}, '${msEsc(o.part || '')}', ${Number(o.page) || 0}, '${msEsc(r.phrase)}')">📖</button>
+          </span>${o.snippet ? `<div class="ms-occ-snippet">الشاهد: …${msEsc(o.snippet)}…</div>` : ''}`).join('')}</div>
       </div>`).join('');
 }
 
