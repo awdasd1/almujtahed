@@ -1959,15 +1959,6 @@ async function msCompareEdition() {
 
 // الإخراج النهائي للقارئ: صفحة عنوان، مقدمة، نص اللوحات بهوامش مرسّاة
 // (فروق المقابلة وتعليقات التحقيق حواشٍ سفلية حقيقية مرقمة في مواضعها)، وفهارس
-const MS_FINAL_STYLES = {
-  title: { font: 'Amiri', size: 22, weight: 700 },
-  meta: { font: 'Amiri', size: 13, weight: 400 },
-  h: { font: 'Amiri', size: 15, weight: 700 },
-  body: { font: 'Amiri', size: 13, weight: 400 },
-  fn: { font: 'Amiri', size: 9.5, weight: 400 },
-  biblio: { font: 'Amiri', size: 11.5, weight: 400 },
-};
-
 // صياغة الحواشي للمنشور الأكاديمي: داخل التطبيق تبقى النسبة موثقة ([وكيل]/[قرار المحقق])،
 // أما الإخراج النهائي فنظيف لا أسماء وكلاء فيه ولا عبارات آلية
 function msEdNotePrint(text) {
@@ -1983,35 +1974,6 @@ function msEdNotePrint(text) {
     out = out.replace(/\s*\(ملاحظة محقق\)/g, '');
     return out.replace(/\s+/g, ' ').trim();
   }).filter(Boolean).join('\n');
-}
-
-// أنماط الإخراج تُقرأ من قسم «الطباعة» في إعدادات التطبيق — مصدر النسخة المعتمدة في الشات نفسه
-function msPrintStyles() {
-  const fb = MS_FINAL_STYLES;
-  let s = {};
-  try { s = JSON.parse(localStorage.getItem('almojtahed_settings') || '{}') || {}; } catch (e) {}
-  const fam = (v, fallback) => {
-    if (!v) return fallback;
-    if (typeof stackForFontChoice === 'function') {
-      const m = stackForFontChoice(v).match(/'([^']+)'/);
-      if (m) return m[1];
-    }
-    return fallback;
-  };
-  const num = (v, d, min, max) => { const n = parseFloat(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d; };
-  const col = v => (/^#[0-9a-f]{6}$/i.test(v || '') ? v : undefined);
-  const mk = (fk, sk, wk, ck, f) => ({
-    font: fam(s[fk], f.font), size: num(s[sk], f.size, 7, 44),
-    weight: Math.round(num(s[wk], f.weight, 100, 900)), color: col(s[ck]),
-  });
-  return {
-    title: mk('printH1Font', 'printH1Size', 'printH1Weight', 'printH1Color', fb.title),
-    meta: fb.meta,
-    h: mk('printH2Font', 'printH2Size', 'printH2Weight', 'printH2Color', fb.h),
-    body: mk('printBodyFont', 'printBodySize', 'printBodyWeight', 'printBodyColor', fb.body),
-    fn: mk('printFnFont', 'printFnSize', 'printFnWeight', 'printFnColor', fb.fn),
-    biblio: fb.biblio,
-  };
 }
 
 function msFinalParts(p) {
@@ -2089,84 +2051,36 @@ function msAnchorSegments(text, items, fnTextOf) {
   return segs.length ? segs : [{ text }];
 }
 
-function msAnchoredRuns(line, entries, footnotes) {
-  // يرسّي حواشي الفروق وتعليقات التحقيق داخل المتن عند عباراتها حيث وُجدت
-  const runs = [];
-  msAnchorSegments(line, entries, e => e._ed ? e._text : msApparatusPrint(e)).forEach(seg => {
-    if (seg.fn !== undefined) {
-      footnotes.push({ runs: [{ t: seg.fn }] });
-      runs.push({ t: '', fn: footnotes.length - 1 });
-    } else if (seg.text) {
-      runs.push({ t: seg.text });
-    }
-  });
-  return runs.length ? runs : [{ t: line }];
-}
-
-function msFinalBlocks(p) {
-  const { folios, groups } = msFinalParts(p);
-  const blocks = [], footnotes = [];
-  blocks.push({ kind: 'title', runs: [{ t: `تحقيق «${p.title}»` }] });
-  if (p.author) blocks.push({ kind: 'meta', runs: [{ t: p.author }] });
-  blocks.push({ kind: 'meta', runs: [{ t: 'تحقيق ودراسة' }] });
-  blocks.push({ kind: 'pageBreak', runs: [] });
-  if ((p.intro || '').trim()) {
-    blocks.push({ kind: 'h', runs: [{ t: 'مقدمة المحقق' }] });
-    p.intro.split('\n').forEach(l => { if (l.trim()) blocks.push({ kind: 'p', runs: [{ t: l }] }); });
-  }
-  // متن الأم وحدها متدفقًا بلا عناوين لوحات: تُذكر اللوحة بعلامة صغيرة
-  // في أول فقرتها، وسائر النسخ مكانها الحواشي لا المتن
-  folios.forEach(f => {
-    // الزيادة لا عبارة أم لها: تُرسى عند لفظها المُدخل في المتن
-    const entries = f.entries.map(e => ({ ...e, base: e.base || (e.type === 'زيادة' ? e.other : '') }));
-    const edItems = f.edLines.map(l => ({ base: msEdAnchorPhrase(l), _ed: true, _text: l }));
-    const all = entries.concat(edItems);
-    const paras = msFlowParagraphs(f.text);
-    paras.forEach((para, pi) => {
-      const runs = msAnchoredRuns(para, all, footnotes);
-      if (pi === paras.length - 1) {
-        // ما تعذر إرساؤه عند عبارته يلحق بآخر فقرة اللوحة
-        all.filter(e => !e._anchored).forEach(e => {
-          footnotes.push({ runs: [{ t: e._ed ? e._text : msApparatusPrint(e) }] });
-          runs.push({ t: '', fn: footnotes.length - 1 });
-        });
-      }
-      if (pi === 0) runs.unshift({ t: `[${f.label}] ` });
-      blocks.push({ kind: 'p', runs });
-    });
-  });
-  if (groups) {
-    blocks.push({ kind: 'biblioTitle', runs: [{ t: 'الفهارس' }] });
-    Object.keys(groups).forEach(name => {
-      blocks.push({ kind: 'h', runs: [{ t: `فهرس ${name}` }] });
-      groups[name].forEach(i => blocks.push({ kind: 'biblioItem', runs: [{ t: i }] }));
-    });
-  }
-  return { blocks, footnotes };
-}
-
 async function msExportDocx() {
   const p = msCurrentProject();
   if (!p) return;
-  const { blocks, footnotes } = msFinalBlocks(p);
-  document.getElementById('msExportInfo').textContent = 'جارٍ توليد Word مضبوط الصف...';
-  try {
-    const res = await fetch('/api/projects/export-docx', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: p.title, styles: msPrintStyles(), blocks, footnotes }),
-    });
-    if (!res.ok) throw new Error('فشل توليد الملف');
-    msDownloadBlob(await res.blob(), `${p.title}.docx`);
-    document.getElementById('msExportInfo').textContent = 'نُزّل ملف Word النهائي: نص مرسّى الحواشي مضبوط الصف للطباعة (A4)';
-  } catch (e) {
-    document.getElementById('msExportInfo').textContent = '❌ ' + e.message;
-  }
+  const info = document.getElementById('msExportInfo');
+  // مسار وورد الأبحاث نفسه: من ورقة الطباعة المقسمة في إطار القراءة
+  // (exportWordFromDoc) فتتطابق الحواشي والترقيم والضبط مع المعاينة
+  msPreviewPrint();
+  info.textContent = 'جارٍ تجهيز Word من ورقة الطباعة المقسمة...';
+  const frame = document.getElementById('chatReadingFrame');
+  if (!frame) { info.textContent = '❌ تعذر فتح إطار القراءة'; return; }
+  const t0 = Date.now();
+  const timer = setInterval(async () => {
+    let done = false;
+    try { done = frame.contentWindow && frame.contentWindow.__pagedDone === true; } catch (e) {}
+    if (!done && Date.now() - t0 < 90000) return;
+    clearInterval(timer);
+    if (!done) { info.textContent = '❌ لم يكتمل تقسيم الصفحات لتصدير وورد'; return; }
+    try {
+      await exportWordFromDoc(frame.contentDocument);
+      info.textContent = 'نُزّل ملف Word النهائي بحواشٍ صفحية مرقمة من (١) في كل صفحة كما في الأبحاث';
+    } catch (e) {
+      info.textContent = '❌ ' + e.message;
+    }
+  }, 400);
 }
 
 async function msExportPdf() {
   const p = msCurrentProject();
   if (!p) return;
-  const html = msBuildPrintHtml(p);
+  const html = msBuildPrintHtml(p, { toolbar: false });
   document.getElementById('msExportInfo').textContent = 'جارٍ توليد PDF مضبوط الصف...';
   try {
     const res = await fetch('/api/projects/export-pdf', {
@@ -2181,129 +2095,66 @@ async function msExportPdf() {
   }
 }
 
-function msBuildPrintHtml(p) {
+// متن التحقيق يُبنى بسكربت إنتاج الأبحاث الشرعية في التطبيق نفسه
+// (buildAcademicPaperHtml): حواشٍ صفحية مرقمة من (١) في كل صفحة،
+// وضبط سطر، وخطوط وألوان من قسم الطباعة — بلا مُخرِج موازٍ
+function msArabicDigits(n) {
+  return String(n).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
+}
+
+function msPaperRunData(p) {
   const { folios, groups } = msFinalParts(p);
-  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  // إعدادات قسم «الطباعة» في التطبيق (خطوط وأحجام وألوان وفاصل وخلفية) — مصدر الشات نفسه
-  let extras = { head: '', css: '', bg: null };
-  try { if (typeof paperPrintCss === 'function') extras = paperPrintCss(); } catch (e) {}
-  // مصدر ترقيم واحد: نداءات Paged تُعاد ترقيمها بعد التقسيم متصلةً عبر
-  // الصفحات (PagedConfig.after)، فلا أرقام مكتوبة في متن الحاشية نفسه
-  const fnSpan = t => `<span class="fn">${esc(t)}</span>`;
-  const folioHtml = f => {
+  const escMd = s => String(s || '').replace(/([*_`])/g, '\\$1');
+  const footnoteTexts = [];
+  const refFor = t => {
+    footnoteTexts.push(t);
+    return `(${msArabicDigits(footnoteTexts.length)})`;
+  };
+  const bodyParas = [];
+  folios.forEach(f => {
     const entries = f.entries.map(e => ({ ...e, base: e.base || (e.type === 'زيادة' ? e.other : '') }));
     const edItems = f.edLines.map(l => ({ base: msEdAnchorPhrase(l), _ed: true, _text: l }));
     const all = entries.concat(edItems);
     const paras = msFlowParagraphs(f.text);
-    return paras.map((para, pi) => {
-      let htmlPara = msAnchorSegments(para, all, e => e._ed ? e._text : msApparatusPrint(e))
-        .map(seg => seg.fn !== undefined ? fnSpan(seg.fn) : esc(seg.text)).join('');
+    paras.forEach((para, pi) => {
+      const segs = msAnchorSegments(para, all, e => e._ed ? e._text : msApparatusPrint(e));
+      let md = segs.map(seg => seg.fn !== undefined ? escMd(seg.text) + refFor(seg.fn) : escMd(seg.text)).join('');
       if (pi === paras.length - 1) {
-        all.filter(e => !e._anchored).forEach(e => { htmlPara += fnSpan(e._ed ? e._text : msApparatusPrint(e)); });
+        all.filter(e => !e._anchored).forEach(e => { md += refFor(e._ed ? e._text : msApparatusPrint(e)); });
       }
-      if (pi === 0) htmlPara = `<span class="ms-folio-mark">[${esc(f.label)}]</span> ` + htmlPara;
-      return `<p>${htmlPara}</p>`;
-    }).join('');
-  };
-  return `<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8">
-<style>
-  @page { size: A4; margin: 22mm 18mm 20mm 18mm;
-    @bottom-center { content: counter(page); font-family: 'Amiri', serif; font-size: 10pt; color: #555; } }
-  /* جذر LTR لمحرك التقسيم (اتجاه الجذر RTL يكسر قياسه) والعربية RTL داخل الورقة — كنسق ورقة الشات */
-  body { direction: ltr; font-family: 'Amiri', serif; font-size: 13pt; line-height: 2; color: #1c1c1c; }
-  .ms-sheet { direction: rtl; text-align: right; }
-  h1 { text-align: center; font-size: 22pt; margin-top: 30mm; }
-  .meta { text-align: center; color: #555; font-size: 13pt; }
-  .cover { break-after: page; }
-  h2 { font-size: 15pt; margin-top: 22px; border-bottom: 1px solid #bbb; padding-bottom: 4px; page-break-after: avoid; }
-  p { margin: 4px 0; text-align: justify; text-align-last: right; text-justify: inter-word; }
-  .fn { float: footnote; line-height: 1.8; text-align: justify; text-align-last: right; }
-  .ms-folio-mark { color: #8a6d1f; font-size: 0.82em; font-weight: 700; }
-  .pagedjs_area [data-footnote-call]::after { content: "(" counter(footnote) ")"; font-size: 9pt; font-weight: 700; }
-  [data-footnote-marker]::marker { content: "(" counter(footnote-marker) ") "; font-weight: 700; }
-  [data-footnote-call].pg-linked::after { content: none !important; }
-  [data-footnote-marker].pg-linked-marker::marker { content: none; }
-  .pg-fn-call, .pg-fn-marker { color: #1c4fd6; text-decoration: none; font-weight: 700; }
-  .pg-fn-call { vertical-align: super; font-size: 9.5pt; line-height: 0; }
-  [data-footnote-marker] { text-align: justify; text-align-last: right; }
-  .pagedjs_page { margin: 18px auto; background: #fff; box-shadow: 0 2px 16px rgba(0,0,0,.28); }
-  @media print { .pagedjs_page { margin: 0 auto; box-shadow: none; } }
-</style>
-${extras.head || ''}
-<style id="print-user-css">${extras.css || ''}</style>
-</head><body><div class="ms-sheet">` +
-    `<div class="cover"><h1 class="paper-main-title">تحقيق «${esc(p.title)}»</h1>` +
-    (p.author ? `<div class="meta">${esc(p.author)}</div>` : '') +
-    `<div class="meta">تحقيق ودراسة</div></div>` +
-    `<main class="academic-text-content">` +
-    ((p.intro || '').trim() ? `<h2>مقدمة المحقق</h2>` + p.intro.split('\n').filter(l => l.trim()).map(l => `<p>${esc(l)}</p>`).join('') : '') +
-    folios.map(folioHtml).join('') +
-    (groups ? `<h2>الفهارس</h2>` + Object.keys(groups).map(name =>
-      `<h2>فهرس ${esc(name)}</h2>` + groups[name].map(i => `<p>${esc(i)}</p>`).join('')).join('') : '') +
-    `</main></div>
-<script>window.__paperBg = ${JSON.stringify(extras.bg || null).replace(/</g, '\\u003c')};
-window.PagedConfig = { auto: true, after: function () {
-  window.__pagedDone = true;
-  // ترقيم حواشي كل صفحة مستقل يبدأ من (١) في صفحته — نسق البحوث
-  // الشرعية المحكمة: روابط عربية مرقمة داخل الصفحة الواحدة
-  try {
-    var arabic = function (n) { return String(n).replace(/\\d/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[+d]; }); };
-    document.querySelectorAll('.pagedjs_page').forEach(function (page, pi) {
-      var calls = page.querySelectorAll('[data-footnote-call]');
-      var markers = page.querySelectorAll('.pagedjs_footnote_area [data-footnote-marker]');
-      calls.forEach(function (call, i) {
-        var key = (pi + 1) + '-' + (i + 1);
-        call.classList.add('pg-linked');
-        call.id = 'pgcall-' + key;
-        var a = document.createElement('a');
-        a.className = 'pg-fn-call';
-        a.href = '#pgfn-' + key;
-        a.textContent = '(' + arabic(i + 1) + ')';
-        call.appendChild(a);
-        var mk = markers[i];
-        if (mk) {
-          mk.classList.add('pg-linked-marker');
-          mk.id = 'pgfn-' + key;
-          var b = document.createElement('a');
-          b.className = 'pg-fn-marker';
-          b.href = '#pgcall-' + key;
-          b.textContent = '(' + arabic(i + 1) + ')';
-          mk.insertBefore(b, mk.firstChild);
-          mk.insertBefore(document.createTextNode(' '), b.nextSibling);
-        }
-      });
+      if (pi === 0) md = `[${f.label}] ` + md;
+      bodyParas.push(md);
     });
-  } catch (e) {}
-  try {
-    var bg = window.__paperBg;
-    if (bg && bg.url) {
-      document.querySelectorAll('.pagedjs_page').forEach(function (page) {
-        if (page.querySelector('.pg-bg-img, .pg-bg-tile')) return;
-        if (bg.mode === 'repeat') {
-          var tile = document.createElement('div');
-          tile.className = 'pg-bg-tile';
-          tile.style.backgroundImage = 'url("' + bg.url + '")';
-          tile.style.backgroundSize = bg.size + '% auto';
-          tile.style.opacity = String((bg.opacity || 15) / 100);
-          page.insertBefore(tile, page.firstChild);
-        } else {
-          var img = document.createElement('img');
-          img.className = 'pg-bg-img';
-          img.src = bg.url;
-          img.style.opacity = String((bg.opacity || 15) / 100);
-          if (bg.mode === 'center') {
-            img.style.cssText += ';inset:0;margin:auto;max-width:' + bg.size + '%;max-height:90%';
-          } else {
-            img.style.cssText += ';inset:0;width:100%;height:100%;object-fit:cover';
-          }
-          page.insertBefore(img, page.firstChild);
-        }
-      });
-    }
-  } catch (e) {}
-} };</script>
-<script data-pagedjs src="/static/js/paged.polyfill.min.js"></script>
-</body></html>`;
+  });
+  const escHtml = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  let body = bodyParas.join('\n\n');
+  if (footnoteTexts.length) {
+    body += '\n\n<ol>' + footnoteTexts.map((t, i) =>
+      `<li id="fn${i + 1}">(${msArabicDigits(i + 1)}) ${escHtml(t)}</li>`).join('') + '</ol>';
+  }
+  const rounds = [];
+  if (p.author) rounds.push({ name: '', output: `تأليف: ${p.author} — تحقيق ودراسة` });
+  if ((p.intro || '').trim()) {
+    rounds.push({ name: 'مقدمة المحقق', output: p.intro.split('\n').filter(l => l.trim()).join('\n\n') });
+  }
+  rounds.push({ name: '', output: body });
+  if (groups) {
+    const idxParts = [];
+    Object.keys(groups).forEach(name => {
+      idxParts.push(`**فهرس ${name}**`);
+      (groups[name] || []).forEach(i => idxParts.push(escMd(i)));
+    });
+    if (idxParts.length) rounds.push({ name: 'الفهارس', output: idxParts.join('\n\n') });
+  }
+  return { projectTitle: p.title, rounds, bibliography: [] };
+}
+
+function msBuildPrintHtml(p, options) {
+  if (typeof buildAcademicPaperHtml !== 'function') return '';
+  let html = buildAcademicPaperHtml(msPaperRunData(p), options || {});
+  // أرقام الحواشي العربية داخل روابطها باتجاه معزول فلا تنعكس (١٠ لا تظهر ٠١)
+  html = html.replace('</head>', '<style>.pg-fn-call,.pg-fn-marker{direction:ltr;unicode-bidi:isolate}</style></head>');
+  return html;
 }
 
 function msPreviewPrint() {
