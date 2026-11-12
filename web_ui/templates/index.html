@@ -1591,6 +1591,8 @@
                                 <input type="text" id="msCompareBook" placeholder="مثال: رياض الصالحين - ت الرسالة الثاني (الأرنؤوط)" style="min-width:280px">
                             </label>
                             <button type="button" class="ms-btn ms-btn-primary" id="msCompareBtn" onclick="msCompareEdition()">قارن تحقيقنا به</button>
+                            <button type="button" class="ms-btn" onclick="msOpenCompareBook()">📖 افتح التحقيق المقارن عند أول شاهد</button>
+                            <button type="button" class="ms-btn" onclick="msExportCompareTable()">⬇ تصدير جدول الفروق CSV</button>
                             <span id="msCompareInfo" class="ms-wb-meta"></span>
                         </div>
                         <p class="ms-models-note">يُحاذى متن الأم المحقَّق عندنا بنص التحقيق المنشور في الشاملة آليًا، فيُعرض النصان متجاورين ويُستخرج جدول فروقات (تبديل/زيادة عندنا/زيادة عندهم) لتنظر أين خالفنا المطبوع وأين وافقناه.</p>
@@ -1601,6 +1603,7 @@
                         <div class="ms-form-row">
                             <button type="button" class="ms-btn" onclick="msBuildIndexes()">توليد الفهارس</button>
                             <button type="button" class="ms-btn" onclick="msGenIntro()">مسودة مقدمة المحقق</button>
+                            <button type="button" class="ms-btn" onclick="msPreviewPrint()">👁 معاينة الطباعة النهائية</button>
                             <button type="button" class="ms-btn ms-btn-primary" onclick="msExportDocx()">⬇ تصدير Word</button>
                             <button type="button" class="ms-btn" onclick="msExportPdf()">⬇ تصدير PDF</button>
                             <span id="msExportInfo" class="ms-wb-meta"></span>

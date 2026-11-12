@@ -1868,6 +1868,37 @@ function msDownloadBlob(blob, name) {
 
 let MS_COMPARE = null;
 
+function msHighlightCompare(text, rows, side) {
+  const key = side === 'ours' ? 'ours' : 'theirs';
+  let out = msEsc(text || '');
+  const seen = {};
+  (rows || []).forEach(r => {
+    const ph = (r[key] || '').trim();
+    if (!ph || ph.length < 2 || seen[ph]) return;
+    seen[ph] = 1;
+    const cls = r.type === 'ضبط/رسم' ? 'ms-cmp-orth' : 'ms-cmp-diff';
+    const escPh = msEsc(ph);
+    out = out.split(escPh).join(`<mark class="${cls}" title="${msEsc(r.type)}">${escPh}</mark>`);
+  });
+  return out;
+}
+
+function msOpenCompareBook() {
+  if (!MS_COMPARE || !MS_COMPARE.book) { msToast('شغّل المقارنة أولًا'); return; }
+  const b = MS_COMPARE.book;
+  msOpenStyleBook(b.book_id, (b.from && b.from.part) || '', (b.from && b.from.page) || 0, '');
+}
+
+function msExportCompareTable() {
+  if (!MS_COMPARE) { msToast('شغّل المقارنة أولًا'); return; }
+  const rows = [['#', 'النوع', 'تحقيقنا', 'التحقيق المقارن', 'السياق']].concat(
+    (MS_COMPARE.rows || []).map((r, i) => [i + 1, r.type, r.ours || '', r.theirs || '', r.context || '']));
+  const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const name = (MS_COMPARE.book && MS_COMPARE.book.title) ? `فروق — ${MS_COMPARE.book.title}.csv` : 'فروق التحقيق.csv';
+  msDownloadBlob(blob, name);
+}
+
 async function msCompareEdition() {
   const p = msCurrentProject();
   if (!p) return;
@@ -1894,10 +1925,10 @@ async function msCompareEdition() {
     const rows = data.rows.map((r, i) => `<tr><td>${i + 1}</td><td>${msEsc(r.type)}</td><td>${msEsc(r.ours || '—')}</td><td>${msEsc(r.theirs || '—')}</td><td>${msEsc(r.context || '')}</td></tr>`).join('');
     document.getElementById('msCompareResult').innerHTML = `
       <div class="ms-compare-grid">
-        <div class="ms-compare-col"><div class="ms-collate-folio-title">تحقيقنا (متن الأم كما اعتمدناه)</div><div class="ms-compare-text">${msEsc(ourText)}</div></div>
-        <div class="ms-compare-col"><div class="ms-collate-folio-title">التحقيق المقارن — ${msEsc(data.book.title)}</div><div class="ms-compare-text">${msEsc(data.their_text || '')}</div></div>
+        <div class="ms-compare-col"><div class="ms-collate-folio-title">تحقيقنا (متن الأم كما اعتمدناه)</div><div class="ms-compare-text">${msHighlightCompare(ourText, data.rows, 'ours')}</div></div>
+        <div class="ms-compare-col"><div class="ms-collate-folio-title">التحقيق المقارن — ${msEsc(data.book.title)} (ص ${msEsc((data.book.from && data.book.from.page) || '—')}–${msEsc((data.book.to && data.book.to.page) || '—')})</div><div class="ms-compare-text">${msHighlightCompare(data.their_text || '', data.rows, 'theirs')}</div></div>
       </div>
-      <div class="ms-disputes-title">جدول الفروقات الآلي (${data.rows.length}) — ${Object.entries(data.counts || {}).map(([k, v]) => `${msEsc(k)}: ${v}`).join(' · ')}</div>
+      <div class="ms-disputes-title">جدول الفروقات الآلي (${data.rows.length}) — ${Object.entries(data.counts || {}).map(([k, v]) => `${msEsc(k)}: ${v}`).join(' · ')} — المظلَّل في النصين هو موضع الفرق</div>
       <div class="ms-compare-tablewrap"><table class="ms-compare-table">
         <thead><tr><th>#</th><th>النوع</th><th>تحقيقنا</th><th>التحقيق المقارن</th><th>السياق قبل الفرق</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="5">لا فروق جوهرية — تطابق تام في المواضع المحاذاة</td></tr>'}</tbody>
@@ -2016,6 +2047,22 @@ async function msExportDocx() {
 async function msExportPdf() {
   const p = msCurrentProject();
   if (!p) return;
+  const html = msBuildPrintHtml(p);
+  document.getElementById('msExportInfo').textContent = 'جارٍ توليد PDF مضبوط الصف...';
+  try {
+    const res = await fetch('/api/projects/export-pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: p.title, html }),
+    });
+    if (!res.ok) throw new Error('فشل توليد PDF');
+    msDownloadBlob(await res.blob(), `${p.title}.pdf`);
+    document.getElementById('msExportInfo').textContent = 'نُزّل ملف PDF النهائي: صفحات A4 مرقمة بحواشٍ سفلية مرسّاة';
+  } catch (e) {
+    document.getElementById('msExportInfo').textContent = '❌ ' + e.message;
+  }
+}
+
+function msBuildPrintHtml(p) {
   const { folios, groups } = msFinalParts(p);
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const fnSpan = t => `<span class="fn">${esc(t)}</span>`;
@@ -2023,11 +2070,9 @@ async function msExportPdf() {
     const entries = f.entries.map(e => ({ ...e }));
     const lines = f.text.split('\n').filter(l => l.trim());
     const paras = lines.map((line, li) => {
-      let htmlLine = esc(line);
+      let built = '', rest = line;
       const usable = entries.filter(e => e.base && line.includes(e.base) && !e._anchored)
         .sort((a, b) => line.indexOf(a.base) - line.indexOf(b.base));
-      // مواضع الإرساء تُحسب على النص الخام ثم تُبنى بلا كسر للإحالات
-      let built = '', rest = line;
       for (const e of usable) {
         const i = rest.indexOf(e.base);
         if (i < 0) continue;
@@ -2035,7 +2080,7 @@ async function msExportPdf() {
         e._anchored = true;
         rest = rest.slice(i + e.base.length);
       }
-      htmlLine = built + esc(rest);
+      let htmlLine = built + esc(rest);
       if (li === lines.length - 1) {
         entries.filter(e => !e._anchored).forEach(e => { htmlLine += fnSpan(msApparatusText(e)); });
         f.edLines.forEach(l => { htmlLine += fnSpan(l); });
@@ -2044,8 +2089,14 @@ async function msExportPdf() {
     }).join('');
     return `<h2>لوحة (${esc(f.label)}) — نسخة (${esc(f.siglum)})</h2>${paras}`;
   };
-  const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
+  return `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
 <script data-pagedjs src="/static/js/paged.polyfill.min.js"></script>
+<script>document.addEventListener('DOMContentLoaded', function () {
+  if (window.Paged && Paged.Handler) {
+    class Done extends Paged.Handler { afterPreview() { window.__pagedDone = true; } }
+    Paged.registerHandlers(Done);
+  } else { window.__pagedDone = true; }
+});</script>
 <style>
   @page { size: A4; margin: 22mm 18mm 20mm 18mm;
     @bottom-center { content: counter(page); font-family: 'Amiri', serif; font-size: 10pt; color: #555; } }
@@ -2067,17 +2118,19 @@ async function msExportPdf() {
     (groups ? `<h2>الفهارس</h2>` + Object.keys(groups).map(name =>
       `<h2>فهرس ${esc(name)}</h2>` + groups[name].map(i => `<p>${esc(i)}</p>`).join('')).join('') : '') +
     '</body></html>';
-  document.getElementById('msExportInfo').textContent = 'جارٍ توليد PDF مضبوط الصف...';
-  try {
-    const res = await fetch('/api/projects/export-pdf', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: p.title, html }),
-    });
-    if (!res.ok) throw new Error('فشل توليد PDF');
-    msDownloadBlob(await res.blob(), `${p.title}.pdf`);
-    document.getElementById('msExportInfo').textContent = 'نُزّل ملف PDF النهائي: صفحات A4 مرقمة بحواشٍ سفلية مرسّاة';
-  } catch (e) {
-    document.getElementById('msExportInfo').textContent = '❌ ' + e.message;
+}
+
+function msPreviewPrint() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const html = msBuildPrintHtml(p);
+  if (typeof openChatReadingOverlay === 'function') {
+    openChatReadingOverlay(html, true);
+    msToast('فُتحت معاينة الطباعة النهائية بنفس إطار إقفال الإجابة المعتمدة في الشات');
+  } else {
+    const w = window.open('', '_blank');
+    if (!w) { msToast('اسمح بالنوافذ المنبثقة لمعاينة الطباعة'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
   }
 }
 

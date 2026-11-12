@@ -14947,7 +14947,9 @@ def _ms_compare_edition_sync(payload: dict) -> Dict[str, Any]:
         if not a and not b:
             continue
         if tag == "replace":
-            kind = "ضبط/رسم" if _ms_skeleton(a.replace(" ", "")) == _ms_skeleton(b.replace(" ", "")) else "تبديل"
+            if _ms_skeleton(a.replace(" ", "")) == _ms_skeleton(b.replace(" ", "")):
+                continue  # قاعدة المحقق: ضبط/رسم محض لا يدخل جدول المقارنة
+            kind = "تبديل"
         elif tag == "delete":
             kind = "زيادة في تحقيقنا"
         else:

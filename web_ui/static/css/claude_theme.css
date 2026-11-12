@@ -11266,3 +11266,5 @@ body::-webkit-scrollbar,
 .ms-compare-table th, .ms-compare-table td { border: 1px solid var(--border-subtle); padding: 5px 8px; text-align: right; vertical-align: top; }
 .ms-compare-table th { background: rgba(122,90,161,.08); }
 @media (max-width: 760px) { .ms-compare-grid { grid-template-columns: 1fr; } }
+.ms-cmp-diff { background: #ffe08a; padding: 0 2px; border-radius: 3px; }
+.ms-cmp-orth { background: #e8e8e8; padding: 0 2px; border-radius: 3px; }
