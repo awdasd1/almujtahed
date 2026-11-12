@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.483"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.484"},
         },
     })
     if opened.get("error"):
@@ -14342,6 +14342,16 @@ def _ms_verify_suggestion(s: Dict[str, Any], extra_books=None) -> Dict[str, Any]
                 return {"status": "verified" if s.get("kind") == "takhrij" else "found",
                         "detail": f"وُجد متصلًا في كتاب مظنة أضافه المحقق «{hit['title']}» (ج {hit.get('part') or '—'} ص {hit.get('page') or '—'})",
                         "locus": hit}
+        # شاهد لفظي احتياطي: أطول كلمة مميزة في العبارة إن لم توجد متصلة
+        words = sorted(anchor.split(), key=len, reverse=True)
+        distinctive = next((w for w in words if len(w.strip('«»"')) >= 4), "")
+        if distinctive:
+            for b in extra_books:
+                hit = _ms_scan_book_phrase(b["book_id"], distinctive.strip('«»"'))
+                if hit:
+                    return {"status": "found",
+                            "detail": f"لم توجد العبارة متصلة في المظان، لكن وُجد لفظها المميز «{distinctive}» في «{hit['title']}» (ج {hit.get('part') or '—'} ص {hit.get('page') or '—'}) — شاهد لفظي يُراجع بعين المحقق",
+                            "locus": hit}
     if s.get("kind") != "takhrij":
         return {"status": "unchecked", "detail": "يحتاج توثيقًا من كتب التراجم/اللغة"}
     anchor = (s.get("anchor") or "").strip()
