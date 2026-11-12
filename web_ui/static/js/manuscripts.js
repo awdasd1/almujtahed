@@ -1165,12 +1165,30 @@ function renderMsAgents() {
           <div class="ms-dispute">
             <span class="ms-dispute-a"><strong>[${msEsc(MS_AGENT_KINDS[s.kind] || s.kind)}]</strong> «${msEsc(s.anchor)}» — ${msEsc(s.body)}${s.source ? `<br>المصدر المقترح: ${msEsc(s.source)}` : ''}<br>${msVerifyBadge(s.verify)}</span>
             <span>
+              ${(s.verify && s.verify.locus && s.verify.locus.book_id) ? `<button type="button" class="ms-dispute-btn" title="تصفح الشاهد في مصدره مظلَّلًا" onclick="msOpenStyleBook(${Number(s.verify.locus.book_id) || 0}, '${msEsc(s.verify.locus.part || '')}', ${Number(s.verify.locus.page) || 0}, '${msEsc(s.anchor || '')}')">📖 تصفح الشاهد</button>` : ''}
               <button type="button" class="ms-dispute-btn" onclick="msAgentDecision('${s.id}','accepted')">اعتماد في الهامش</button>
               <button type="button" class="ms-dispute-dismiss" onclick="msAgentDecision('${s.id}','dismissed')">رفض</button>
             </span>
           </div>`).join('')}
       </div>`).join('');
 }
+
+let MS_AGENT_BOOK_TITLES = [];
+
+function msOpenAgentBookPicker() {
+  if (typeof openSearchScopeModal === 'function') openSearchScopeModal('ms_agents');
+  else msToast('نافذة انتقاء الكتب غير متاحة في هذه الصفحة');
+}
+
+window.onMsAgentBooks = function (titles) {
+  MS_AGENT_BOOK_TITLES = Array.isArray(titles) ? titles : [];
+  const txt = MS_AGENT_BOOK_TITLES.length
+    ? `المظان: ${MS_AGENT_BOOK_TITLES.length} كتابًا مضافًا للبحث والمسح` : null;
+  const a = document.getElementById('msAgentBooksLabel');
+  const b = document.getElementById('msAuthorBooksLabel');
+  if (a) a.textContent = txt || 'المظان: كتب الأصول الافتراضية';
+  if (b) b.textContent = txt || 'المظان: لا شيء مضاف';
+};
 
 async function msRunAgents() {
   const p = msCurrentProject();
@@ -1192,7 +1210,7 @@ async function msRunAgents() {
       btn.textContent = `⏳ الوكلاء على لوحة (${f.label})...`;
       const res = await fetch('/api/manuscripts/agents', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: apiKey }),
+        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: apiKey, extra_books: MS_AGENT_BOOK_TITLES.length ? MS_AGENT_BOOK_TITLES : undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'تعذر تشغيل الوكلاء');
@@ -1295,7 +1313,7 @@ async function msRunAuthor() {
       btn.textContent = `⏳ وكيل المؤلف على لوحة (${f.label})...`;
       const res = await fetch('/api/manuscripts/author-agent', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: msApiKey() }),
+        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: msApiKey(), extra_books: MS_AGENT_BOOK_TITLES.length ? MS_AGENT_BOOK_TITLES : undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'تعذر وكيل المؤلف');

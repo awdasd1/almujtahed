@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.481"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.482"},
         },
     })
     if opened.get("error"):
@@ -14264,8 +14264,84 @@ def _ms_norm_quran(s: str) -> str:
     w = "".join(ch for ch in (s or "") if ch not in _MS_QURAN_MARKS and ch not in "﴿﴾")
     return _ms_norm_simple(w.replace("ٱ", "ا").replace("ٰ", ""))
 
-def _ms_verify_suggestion(s: Dict[str, Any]) -> Dict[str, str]:
+def _ms_resolve_extra_books(titles) -> list:
+    """حلّ عناوين كتب مظان أضافها المحقق إلى أرقامها في فهرس الشاملة."""
+    out = []
+    for t in [str(x).strip() for x in (titles or []) if str(x).strip()][:12]:
+        bid, title = None, t
+        try:
+            conn = shamela_local_mcp._books_conn()
+            if conn is not None:
+                row = conn.execute("SELECT book_id, title_ar FROM books WHERE title_ar = ?",
+                                   (t,)).fetchone() or conn.execute(
+                    "SELECT book_id, title_ar FROM books WHERE title_ar LIKE ? LIMIT 1",
+                    (f"%{t}%",)).fetchone()
+                conn.close()
+                if row:
+                    bid, title = row[0], row[1]
+        except Exception:
+            pass
+        if bid is None:
+            try:
+                card = shamela_local_mcp.resolve_book(t)
+                if card and card.get("book_id"):
+                    bid, title = card["book_id"], card.get("title") or t
+            except Exception:
+                pass
+        if bid is not None:
+            out.append({"book_id": bid, "title": title, "author": "", "volumes": None})
+    return out
+
+
+def _ms_scan_book_phrase(book_id, phrase):
+    """مسح صفحات كتاب عن عبارة متصلة (بعد تطبيع الرسم) — لتوثيق الشاهد في كتب المظان."""
+    phrase_n = _ms_style_phrase_norm(phrase or "")
+    if len(phrase_n) < 8:
+        return None
+    try:
+        b_dir = shamela_local_mcp.resolve_book_files(book_id)
+        if not b_dir:
+            return None
+        title = str(book_id)
+        meta_file = b_dir / "book_metadata.json"
+        if meta_file.exists():
+            try:
+                title = json.loads(meta_file.read_text(encoding="utf-8")).get("title_ar") or title
+            except Exception:
+                pass
+        with open(b_dir / "pages.jsonl", "rb") as fh:
+            for line in fh:
+                pg = json.loads(line)
+                body_n = _ms_style_phrase_norm(pg.get("body") or "")
+                i = body_n.find(phrase_n)
+                if i >= 0:
+                    raw = pg.get("body") or ""
+                    return {"book_id": book_id, "title": title,
+                            "part": pg.get("part"), "page": pg.get("page_num"),
+                            "snippet": " ".join(raw.split())[:220]}
+    except Exception:
+        return None
+    return None
+
+
+def _ms_verify_suggestion(s: Dict[str, Any], extra_books=None) -> Dict[str, Any]:
     """توثيق اقتراح تخريج من مكتبة الشاملة المحلية؛ غيره يبقى بلا توثيق آلي."""
+    anchor = (s.get("anchor") or "").strip()
+    # كتب المظان التي أضافها المحقق تُمسح أولًا لأي نوع اقتراح، وشاهدها قابل للتصفح
+    if extra_books and len(anchor) >= 8:
+        tries = [anchor[:110], anchor.split("…")[0].strip(),
+                 " ".join(anchor.split()[:6])]
+        for b in extra_books:
+            hit = None
+            for t in tries:
+                if len(t) >= 8:
+                    hit = _ms_scan_book_phrase(b["book_id"], t)
+                    if hit:
+                        break
+            if hit:
+                return {"status": "verified" if s.get("kind") == "takhrij" else "found",
+                        "detail": f"وُجد متصلًا في كتاب مظنة أضافه المحقق «{hit['title']}» (ج {hit.get('part') or '—'} ص {hit.get('page') or '—'})",
+                        "locus": hit}
     if s.get("kind") != "takhrij":
         return {"status": "unchecked", "detail": "يحتاج توثيقًا من كتب التراجم/اللغة"}
     anchor = (s.get("anchor") or "").strip()
@@ -14305,7 +14381,10 @@ def _ms_verify_suggestion(s: Dict[str, Any]) -> Dict[str, str]:
                 title = meta.get("title") or h0.get("title") or "كتاب حديث"
                 if status.startswith("MATCH"):
                     return {"status": "verified",
-                            "detail": f"موثّق: طابق في «{title}» (ج {h0.get('part') or '—'} ص {h0.get('page_num') or '—'})، ومواضع أخرى {max(len(hits)-1,0)}"}
+                            "detail": f"موثّق: طابق في «{title}» (ج {h0.get('part') or '—'} ص {h0.get('page_num') or '—'})، ومواضع أخرى {max(len(hits)-1,0)}",
+                            "locus": {"book_id": h0.get("book_id"), "title": title,
+                                      "part": h0.get("part"), "page": h0.get("page_num"),
+                                      "snippet": (check or {}).get("snippet") or ""}}
                 detail += f"؛ وأقرب موضع «{title}» ص {h0.get('page_num') or '—'} ({status or 'بلا مطابقة'})"
             except Exception:
                 pass
@@ -14321,8 +14400,12 @@ def _ms_verify_suggestion(s: Dict[str, Any]) -> Dict[str, str]:
                 status = (check or {}).get("match_status") or ""
                 if status.startswith("MATCH"):
                     cit = (check or {}).get("citation") or {}
+                    m0 = ((check or {}).get("matches") or [{}])[0]
                     return {"status": "verified",
-                            "detail": f"موثّق: طابق ({status}) في «{book_name}»" + (f" — {cit}"[:120] if cit else "")}
+                            "detail": f"موثّق: طابق ({status}) في «{book_name}»" + (f" — {cit}"[:120] if cit else ""),
+                            "locus": {"book_id": row.get("book_id"), "title": (check or {}).get("book_title") or book_name,
+                                      "part": m0.get("part"), "page": m0.get("page_num"),
+                                      "snippet": m0.get("snippet") or ""}}
             except Exception:
                 continue
         return {"status": "not_found", "detail": "لم يُعثر على العبارة في كتب الأصول عندنا — لا يُعتمد حتى يثبت"}
@@ -14336,8 +14419,9 @@ def _ms_agents_sync(payload: dict, key: str) -> Dict[str, Any]:
     model = str((payload or {}).get("model") or "google/gemini-3.1-pro-preview")
     out = _ms_agents_one(model, text, str((payload or {}).get("title") or ""),
                          str((payload or {}).get("author") or ""), key)
+    extra = _ms_resolve_extra_books((payload or {}).get("extra_books"))
     for s in out["suggestions"]:
-        s["verify"] = _ms_verify_suggestion(s)
+        s["verify"] = _ms_verify_suggestion(s, extra)
     return out
 
 @app.post("/api/manuscripts/agents")
@@ -14451,6 +14535,9 @@ def _ms_author_agent_sync(payload: dict, key: str) -> Dict[str, Any]:
     books = _ms_author_books(author)
     work_core = re.split(r"[\s—-]", work)[0] if work else ""
     searchable = [b for b in books if work_core and work_core not in b["title"]] or books
+    # كتب مظان أضافها المحقق تُمسح للموازيات أيضًا وتُوسم في العرض
+    for b in _ms_resolve_extra_books((payload or {}).get("extra_books")):
+        searchable.append({**b, "title": f"{b['title']} [مظنة المحقق]"})
     phrases = _ms_author_phrases(text)
     suggestions, total_cost, checks = [], 0.0, 0
 

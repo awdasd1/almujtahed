@@ -581,6 +581,9 @@ async function openSearchScopeModal(target = 'search') {
   } else if (target === 'selection_research') {
     selectedBooksScope = [...(window._selectionResearchBooks || [])];
     modal.style.zIndex = '420';
+  } else if (target === 'ms_agents') {
+    selectedBooksScope = [...(window._msAgentBookTitles || [])];
+    modal.style.setProperty('z-index', '200000', 'important');
   } else if (target === 'ms_style') {
     selectedBooksScope = [...(window._msStyleBookTitles || [])];
     // فوق كل النوافذ (توصية المدقق 4000 وقارئ الكتب 100500) رغم قاعدة CSS ذات !important
@@ -832,6 +835,16 @@ function applySearchScopeSelection() {
       window.onSelectionResearchBooks([...selectedBooksScope]);
     }
     closeSearchScopeModal();
+    return;
+  }
+
+  if (scopeModalTarget === 'ms_agents') {
+    window._msAgentBookTitles = [...selectedBooksScope];
+    if (typeof window.onMsAgentBooks === 'function') {
+      window.onMsAgentBooks([...selectedBooksScope]);
+    }
+    closeSearchScopeModal();
+    showToast(selectedBooksScope.length ? `حُددت ${selectedBooksScope.length} كتب مظان لبحث الوكلاء ومسحهم` : 'بحث الوكلاء في كتب الأصول وكتب المؤلف الافتراضية');
     return;
   }
 

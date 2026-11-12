@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.481">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.482">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.481 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.482 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1517,6 +1517,8 @@
                                 </select>
                             </label>
                             <button type="button" class="ms-btn ms-btn-primary" id="msAgentsBtn" onclick="msRunAgents()">شغّل الوكلاء على لوحات الأم</button>
+                            <button type="button" class="ms-btn" onclick="msOpenAgentBookPicker()">📚 إضافة كتب مظان للبحث والمسح</button>
+                            <span id="msAgentBooksLabel" class="ms-wb-meta">المظان: كتب الأصول الافتراضية</span>
                             <span id="msAgentsInfo" class="ms-wb-meta"></span>
                         </div>
                         <p class="ms-models-note">وكلاء: تخريج الآيات والأحاديث والأشعار، وتراجم الأعلام، واللغة والضبط وتنبيه التصحيف. التخريج يُوثَّق آليًا من مكتبة الشاملة عندنا (مواضع + مطابقة على الصفحة) ويظهر وسمه، وما لم يثبت يبقى موسومًا «يحتاج توثيقًا» أو «لم يُعثر عليه». لا يدخل اقتراحٌ هامشَ التحقيق إلا باعتمادك فيُلحق بتعليق لوحته — الوكلاء يقترحون والمحقق يعتمد.</p>
@@ -1534,6 +1536,8 @@
                             </label>
                             <button type="button" class="ms-btn" onclick="msShowAuthorBooks()">كتب المؤلف عندنا</button>
                             <button type="button" class="ms-btn ms-btn-primary" id="msAuthorBtn" onclick="msRunAuthor()">اعرض لوحات الأم على كتب المؤلف</button>
+                            <button type="button" class="ms-btn" onclick="msOpenAgentBookPicker()">📚 إضافة كتب مظان للمسح</button>
+                            <span id="msAuthorBooksLabel" class="ms-wb-meta">المظان: لا شيء مضاف</span>
                             <span id="msAuthorInfo" class="ms-wb-meta"></span>
                         </div>
                         <p class="ms-models-note">لدى هذا الوكيل سائر كتب المؤلف في مكتبتنا: يعرض عبارات كل لوحة — من كلام المؤلف نفسه لا الآيات والأحاديث — على كتبه الأخرى، فيكشف أين كرر عبارته باختصار أو بإسهاب، ويقارن الألفاظ لترجيح قراءة اللوحة أو التنبيه لتصحيف. تثبت المواضع آليًا بالمطابقة على نصوص الكتب، وتدخل الاقتراحات هامش التحقيق باعتمادك كسائر الوكلاء.</p>
@@ -5930,24 +5934,24 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.481"></script>
-    <script src="/static/js/search.js?v=1.10.481"></script>
-    <script src="/static/js/reader.js?v=1.10.481"></script>
-    <script src="/static/js/force3d.js?v=1.10.481"></script>
-    <script src="/static/js/share.js?v=1.10.481"></script>
-    <script src="/static/js/chat.js?v=1.10.481"></script>
-    <script src="/static/js/designs.js?v=1.10.481"></script>
-    <script src="/static/js/texts.js?v=1.10.481"></script>
-    <script src="/static/js/agents.js?v=1.10.481"></script>
-    <script src="/static/js/providers.js?v=1.10.481"></script>
-    <script src="/static/js/tools.js?v=1.10.481"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.481"></script>
-    <script src="/static/js/projects.js?v=1.10.481"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.481"></script>
-    <script src="/static/js/archive.js?v=1.10.481"></script>
-    <script src="/static/js/compare.js?v=1.10.481"></script>
-    <script src="/static/js/local_models.js?v=1.10.481"></script>
-    <script src="/static/js/changelog.js?v=1.10.481"></script>
+    <script src="/static/js/app.js?v=1.10.482"></script>
+    <script src="/static/js/search.js?v=1.10.482"></script>
+    <script src="/static/js/reader.js?v=1.10.482"></script>
+    <script src="/static/js/force3d.js?v=1.10.482"></script>
+    <script src="/static/js/share.js?v=1.10.482"></script>
+    <script src="/static/js/chat.js?v=1.10.482"></script>
+    <script src="/static/js/designs.js?v=1.10.482"></script>
+    <script src="/static/js/texts.js?v=1.10.482"></script>
+    <script src="/static/js/agents.js?v=1.10.482"></script>
+    <script src="/static/js/providers.js?v=1.10.482"></script>
+    <script src="/static/js/tools.js?v=1.10.482"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.482"></script>
+    <script src="/static/js/projects.js?v=1.10.482"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.482"></script>
+    <script src="/static/js/archive.js?v=1.10.482"></script>
+    <script src="/static/js/compare.js?v=1.10.482"></script>
+    <script src="/static/js/local_models.js?v=1.10.482"></script>
+    <script src="/static/js/changelog.js?v=1.10.482"></script>
 
     <script>
         window.refreshLucideIcons = function () {
