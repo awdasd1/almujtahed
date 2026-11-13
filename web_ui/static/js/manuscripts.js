@@ -3679,74 +3679,98 @@ async function msPrefetchBiblio(p) {
 
 // صياغة إحالة الحاشية بالمعيار القياسي للتطبيق نفسه (كما في البحوث
 // الشرعية المطبوعة): «انظر:» للنقل الحرفي و«ينظر:» للمعنوي أو متعدد
-// المصادر، ثم اسم الكتاب للمؤلف (جزء-صفحة) بأرقام لاتينية، وما لا
-// موضع موثّقًا له يُحذف فلا إحالة بلا شاهد
-function msFnPrint(t) {
-  let out = String(t || '').trim();
+// المصادر، ثم اسم الكتاب للمؤلف (جزء-صفحة). صرامة آلية: تُستخرج
+// الإحالات من أي موضع في الحاشية، وما لا موضع موثّقًا له (جزء وصفحة
+// أو صفحة) يُحذف حذفًا تامًا فلا تخرج إحالة عارية أبدًا
+const MS_DICT_RE = /لسان العرب|القاموس المحيط|تاج العروس|النهاية في غريب|المصباح المنير|مختار الصحاح|المعجم الوسيط/;
+function msCiteParts(citeStr) {
   const toLatin = s => String(s || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-  // تخريج حديث بقالب «أخرجه...»: متن الحاشية نفسه إحالتها، فلا يُلحق
-  // بها شاهد كتاب آخر ولا مرجع مصدر مكرر في ذيلها
-  if (/أخرجه|أخرجها|رواه/.test(out)) {
-    out = out.replace(/\s*\(شاهد:[^()]*\)\s*$/, '');
-    out = out.replace(/\s*\((?:صحيح|سنن|مسند|جامع)\s+([^()]{2,40}?)\s*\(([^()]{1,12})\)\)\s*$/, ' ($1، حديث رقم ($2))');
-    return out.replace(/\s+/g, ' ').trim();
-  }
-  let citeStr = null, base = out;
-  const anz = out.match(/\s+انظر:\s*([\s\S]+)$/);
-  if (anz) {
-    citeStr = anz[1].trim(); base = out.slice(0, anz.index).trimEnd();
-    // أقواس مصادر مداخلة بلا أجزاء ولا صفحات تُحذف متى قام مقامها الموضع الموثّق
-    if (/ج\s*[0-9٠-٩]/.test(citeStr)) {
-      base = base.replace(/\s*\([^()]*(?:\([^()]*\))[^()]*\)\s*$/, '');
-      base = base.replace(/\s*\((?![^()]*(?:،\s*ج|سورة|آية))[^()]*(?:تفسير|شرح|صحيح|كتاب|لسان|قاموس|تاج)[^()]*\)\s*$/, '');
-    }
-  } else {
-    let cite = null;
-    base = out.replace(/\s*\(شاهد:\s*([^()]+?،\s*ج\s*[^()]+)\)\s*$/, (m, c) => { cite = c.trim(); return ''; });
-    // مرجع مصدر بلا موضع موثق يُحذف متى وُجد شاهد موثّق يقوم مقامه
-    if (cite) {
-      base = base.replace(/\s*\([^()]*(?:\([^()]*\))[^()]*\)\s*$/, ''); // قوس متداخل الأقواس
-      base = base.replace(/\s*\((?![^()]*(?:،\s*ج|سورة|آية))[^()]*(?:تفسير|شرح|صحيح|كتاب|لسان|قاموس|تاج)[^()]*\)\s*$/, '');
-    }
-    const tailM = base.match(/\(([^()]*(?:،\s*ج|مادة|رقم)[^()]*)\)\s*$/);
-    if (tailM) {
-      const inner = tailM[1].trim();
-      base = base.slice(0, tailM.index).trimEnd();
-      citeStr = cite ? (inner + '؛ ' + cite) : inner;
-    } else if (cite) {
-      citeStr = cite;
-    }
-  }
-  if (!citeStr) return out.replace(/\s+/g, ' ').trim();
   const parts = [];
-  citeStr.split('؛').forEach(rawPart => {
-    let part = rawPart.trim().replace(/\((?![^)]*(?:ج\s|ص\s|مادة|رقم))[^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+  const seen = {};
+  String(citeStr || '').split('؛').forEach(rawPart => {
+    let part = String(rawPart || '').trim()
+      .replace(/^شاهد:\s*/, '').replace(/^و(?=[^\s،])/, '')
+      .replace(/\((?![^)]*(?:ج\s|ص\s|مادة|رقم|[0-9٠-٩]\s*-\s*[0-9٠-٩]))[^)]*\)/g, '')
+      .replace(/\s+/g, ' ').trim();
     if (!part) return;
-    const title = (part.split('،')[0] || '').trim();
-    const madda = (part.match(/مادة \(([^)]+)\)/) || [])[1] || '';
-    const jm = part.match(/ج\s*([0-9٠-٩]+)\s*ص\s*([0-9٠-٩]+)/);
+    const title = (part.split('،')[0] || '').trim()
+      .replace(/\s*\([0-9٠-٩]+-[0-9٠-٩]+\)\s*$/, '').trim();
+    if (!title) return;
+    let madda = (part.match(/مادة \(([^)]+)\)/) || [])[1] || '';
+    if (!madda) {
+      const sub = (part.match(/^[^(]+\(([^()]{1,24})\)/) || [])[1] || '';
+      if (sub && MS_DICT_RE.test(title) && !/^[0-9٠-٩\s-]+$/.test(sub)) madda = sub;
+    }
+    const jm = part.match(/ج\s*([0-9٠-٩]+)\s*[,،]?\s*ص\s*([0-9٠-٩]+)/)
+      || part.match(/\(([0-9٠-٩]+)-([0-9٠-٩]+)\)/);
+    const pg = jm ? null : (part.match(/ص\s*([0-9٠-٩]+)/) || [])[1];
+    if (!jm && !pg) return; // لا موضع موثّقًا: تُحذف الإحالة ولا تخرج عارية
     const meta = MS_BOOK_META[msBookKey(title)] || null;
     const author = meta && meta.author ? meta.author : '';
     const dispTitle = title.replace(/\s*[-–]\s*(ت|ط)\s.*$/, '').trim();
-    // لا يتكرر اسم المؤلف إن كان في العنوان نفسه («شرح السنة للبغوي»)
     const authorDup = author && dispTitle.includes(author.split(/[،\s]/)[0].replace(/^ال/, ''));
     const head = (author && !authorDup)
       ? `${dispTitle} ${author.startsWith('ال') ? 'ل' + author.slice(1) : 'لـ' + author}` : dispTitle;
-    if (jm) {
-      parts.push({ txt: `${head} (${toLatin(jm[1])}-${toLatin(jm[2])})${madda ? `، مادة (${madda})` : ''}`, ok: true });
-    } else if (madda) {
-      parts.push({ txt: `${head}، مادة (${madda})`, ok: false });
-    } else {
-      parts.push({ txt: head, ok: false });
+    const txt = (jm ? `${head} (${toLatin(jm[1])}-${toLatin(jm[2])})` : `${head} ص (${toLatin(pg)})`)
+      + (madda ? `، مادة (${madda})` : '');
+    const key = msBookKey(title);
+    // الكتاب الواحد بصيغتين («لسان العرب» و«لسان العرب لابن منظور») إحالة واحدة
+    const dupKey = Object.keys(seen).find(k => key === k || key.startsWith(k + ' ') || k.startsWith(key + ' '));
+    if (dupKey) {
+      if (madda && !/مادة/.test(seen[dupKey].txt)) seen[dupKey].txt += `، مادة (${madda})`;
+      return;
     }
+    seen[key] = { txt };
+    parts.push(seen[key]);
   });
-  const verified = parts.filter(x => x.ok);
-  const use = verified.length ? verified : parts;
-  if (!use.length) return base.replace(/\s+/g, ' ').trim();
-  const literal = /﴿/.test(out) || /نصًّا/.test(out);
-  const prefix = (use.length > 1 || !literal) ? 'ينظر: ' : 'انظر: ';
-  const joined = use.map((x, i) => (i === 0 ? x.txt : 'و' + x.txt)).join('؛ ');
-  return (base + ' ' + prefix + joined).replace(/\s+/g, ' ').trim();
+  return parts;
+}
+function msStandardCite(citeStr, literal) {
+  const parts = msCiteParts(citeStr);
+  if (!parts.length) return '';
+  const prefix = (parts.length > 1 || !literal) ? 'ينظر: ' : 'انظر: ';
+  return prefix + parts.map((x, i) => (i === 0 ? x.txt : 'و' + x.txt)).join('؛ ');
+}
+function msFnPrint(t) {
+  let out = String(t || '').trim();
+  // تخريج حديث: متن الحاشية نفسه إحالتها بقالب «أخرجه فلان، حديث رقم
+  // (N)، (ج-ص)» فلا يُلحق بها شاهد كتاب آخر ولا قوس كتب عارٍ في ذيلها
+  if (/أخرجه|أخرجها|رواه/.test(out)) {
+    out = out.replace(/\s*\(شاهد:[^()]*\)/g, '');
+    out = out.replace(/\s*\((?:صحيح|سنن|مسند|جامع|كتاب)\s+[^(]{2,50}\([^()]*\)[^()]*\)\s*$/, '');
+    out = out.replace(/\s*\((?:صحيح [^()]{2,40}|السلسلة الصحيحة|سنن [^()]{2,30}|مسند [^()]{2,30})(?:\s+و[^()]*)?\)\s*$/, '');
+    out = out.replace(/أخرجه (البخاري|مسلم|ابن حبان|ابن حبّان|أحمد|الترمذي|أبو داود|النسائي|ابن ماجه|الدارمي|مالك)\s*\(([0-9٠-٩]+)\)/g,
+      'أخرجه $1، حديث رقم ($2)');
+    out = out.replace(/(^|[؛.)])\s*و(مسلم|البخاري|أحمد|الترمذي)\s*\(([0-9٠-٩]+)\)/g, '$1 و$2، حديث رقم ($3)');
+    return out.replace(/\s+/g, ' ').replace(/\(\s*\)/g, '').trim();
+  }
+  const cites = [];
+  let base = out;
+  base = base.replace(/\(شاهد:\s*([^()]+)\)/g, (m, c) => { cites.push(c.trim()); return ' '; });
+  const anz = base.match(/\s+(?:انظر|ينظر):\s*([\s\S]+)$/);
+  if (anz) { cites.push(anz[1].trim()); base = base.slice(0, anz.index).trimEnd(); }
+  base = base.replace(/\(([^()]{3,90}?)\)/g, (m, inner) => {
+    if (/،\s*ج\s*[0-9٠-٩—-]+\s*[,،]?\s*ص\s*[0-9٠-٩]+/.test(inner) || /\([0-9٠-٩]+-[0-9٠-٩]+\)/.test(inner)) {
+      cites.push(inner.trim()); return ' ';
+    }
+    return m;
+  });
+  // قوس المصدر الختامي (كتاب (مادة/رقم)) أو اسم كتاب صريح بلا موضع:
+  // مرشح إحالة، فإن لم يكن له موضع في الشواهد حُذف ولا يخرج عاريًا
+  const bookish = /تفسير|صحيح|سنن|مسند|جامع|شرح|لسان العرب|قاموس|تاج العروس|نهاية|مصباح|مختار الصحاح|تاريخ|طبقات|أعلام|معجم|كشف الظنون|حلية|قوت القلوب|زاد المسير|محرر|لوامع|تدمرية|عقيدة|فتاوى|بداية ونهاية|شذرات|إيضاح|مطبوعات|سلسلة|دليل الفالحين/;
+  base = base.replace(/\s*\(([^()]{2,80}?)(?:\s*\(([^()]{1,24})\))?\)\s*$/, (m, bk, sub) => {
+    if (!bookish.test(bk) && !sub) return m;
+    if (/سورة|آية|حديث|قال|صلى/.test(bk) && !sub) return m;
+    cites.push(sub ? `${bk.trim()} (${sub.trim()})` : bk.trim());
+    return '';
+  });
+  const citeStr = cites.filter(Boolean).join('؛ ');
+  base = base.replace(/\(\s*\)/g, '').replace(/\s*(?:انظر|ينظر):\s*$/, '')
+    .replace(/[؛,،]\s*$/, '').replace(/\s+/g, ' ').trim();
+  if (!citeStr) return base;
+  const literal = /﴿/.test(out) || /«[^»]{8,}»/.test(out) || /نصًّا/.test(out);
+  const std = msStandardCite(citeStr, literal);
+  return std ? (base + ' ' + std).replace(/\s+/g, ' ').trim() : base;
 }
 
 function msPaperRunData(p) {
@@ -3761,15 +3785,17 @@ function msPaperRunData(p) {
   // كحواشي المتن تمامًا، وترقيمها يسبق ترقيم حواشي المتن لترتيب الورقة
   let introMd = (p.intro || '').trim();
   if (introMd) {
-    // عناوين الأقسام عناوين معرّضة دائمًا بنمط واحد (خط العناوين
-    // المضبوط في قسم الطباعة) فلا تخرج مرة ثخينة ومرة رقيقة
+    // هرمية عناوين صارمة: الأقسام الكبرى (أولًا/ثانيًا...) عناوين
+    // رئيسية بارزة بخط العناوين الكبرى، وتحت «ترجمة المؤلف» عناوين
+    // فرعية أصغر (اسمه، شيوخه...) فلا يستوي المهم بالأقل أهمية
     introMd = introMd.split('\n').map(l => {
-      const tx = l.trim();
-      if (/^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا|سادسًا|سابعًا|ثامنًا)[:：]/.test(tx) && !tx.startsWith('**')) return `**${tx}**`;
+      const tx = l.trim().replace(/^\*\*|\*\*$/g, '');
+      if (/^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا|سادسًا|سابعًا|ثامنًا)[:：]/.test(tx)) return `## ${tx}`;
       return l;
     }).join('\n');
+    // حواشي المقدمة بالمعيار القياسي نفسه: ينظر: كتاب للمؤلف (ج-ص)
     introMd = introMd.replace(/\(([^()]{3,140}?،\s*ج\s*[^()]+?ص\s*[٠-٩0-9]+[^()]*)\)/g,
-      (m, cite) => refFor(cite.trim()));
+      (m, cite) => refFor(msStandardCite(cite.trim(), false) || cite.trim()));
     // فاصل ختام المقدمة: ثلاث نجوم وسط الصفحة، ولا نجوم في غير موضعها
     introMd += '\n\n***';
   }
@@ -3847,6 +3873,9 @@ function msPaperRunData(p) {
 function msBuildPrintHtml(p, options) {
   if (typeof buildAcademicPaperHtml !== 'function') return '';
   let html = buildAcademicPaperHtml(msPaperRunData(p), options || {});
+  // الأقسام الكبرى في المقدمة تأخذ طراز عناوين الجولات الكبرى البارز
+  html = html.replace(/<h2>(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا|سادسًا|سابعًا|ثامنًا)/g,
+    '<h2 class="academic-round-title ms-main-head">$1');
   // لا نجوم متسربة من صياغة النماذج في المنشور، وفاصل ختام المقدمة وحده نجوم وسطى
   html = html.replace(/\*\*/g, '');
   html = html.replace(/<hr[^>]*>/g, '<p style="text-align:center;text-indent:0">***</p>');

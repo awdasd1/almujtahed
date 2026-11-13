@@ -2723,6 +2723,8 @@ function buildWordPayload(doc) {
       wordRunsFromNode(el, ctx, runs);
       const cleaned = wordCleanRuns(runs);
       if (!cleaned.length) return;
+      // «النص المحقق» في المخطوطات يبدأ صفحة جديدة في وورد أيضًا
+      if (el.classList.contains('ms-matn-start')) payload.blocks.push({ kind: 'pageBreak', runs: [] });
       payload.blocks.push({ kind, runs: cleaned });
     });
   });
