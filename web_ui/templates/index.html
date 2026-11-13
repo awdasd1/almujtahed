@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.493 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.494 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1452,6 +1452,10 @@
                 <div id="msProjectsView">
                     <div class="ms-create-card">
                         <div class="ms-create-title">مشروع تحقيق جديد</div>
+                        <div class="ms-mode-row">
+                            <button type="button" class="ms-mode-btn active" data-mode="auto" onclick="msSetNewMode('auto')">🤖 تحقيق آلي كامل<span class="ms-mode-btn-sub">يقوده المدقق الذكي Muse Wonder ويساعده Google Argon: نسخ واعتماد، مقابلة وحسم، تخريج ومقارنة ومراقبة، مقدمة وترجمة مؤلف، ثم نسخة نهائية PDF وWord</span></button>
+                            <button type="button" class="ms-mode-btn" data-mode="manual" onclick="msSetNewMode('manual')">👤 تحقيق بخطوات مراجعة بشرية<span class="ms-mode-btn-sub">كل خطوة بقرارك: تنسخ وتعتمد اللوحات، تحسم الفروق، تعتمد اقتراحات الوكلاء، ثم تصدر النسخة</span></button>
+                        </div>
                         <div class="ms-form-row">
                             <input type="text" id="msNewTitle" placeholder="عنوان الكتاب المخطوط *">
                             <input type="text" id="msNewAuthor" placeholder="المؤلف">
@@ -1478,6 +1482,16 @@
                         </div>
                     </div>
                     <div id="msCopiesList"></div>
+                    <div class="ms-create-card" id="msAutoCard" hidden>
+                        <div class="ms-create-title">🤖 التحقيق الآلي الكامل — بقيادة المدقق الذكي Muse Wonder ومساعدة Google Argon</div>
+                        <p class="ms-models-note">الخطوة الأولى عليك: أضف النسخ واوصفها وارفع لوحاتها في الأعلى (وحدّد كتاب التحقيق المرجعي في بطاقة المقارنة إن أردت المقارنة المرجعية). ثم اضغط «اعتمد التحقيق الآلي» فيتولى المدقق: نسخ اللوحات واعتمادها، المقابلة، حسم مواضع الخلاف، قيادة وكلاء التخريج اللغوي والأحاديث، الموازاة بمؤلفات المؤلف، المقارنة المرجعية، مراقبة الجودة، كتابة المقدمة وترجمة المؤلف من كتب التراجم، بناء الفهارس، وإصدار النسخة النهائية PDF وWord. كل قرار موثق وقابل لمراجعتك من البطاقات اليدوية بالأسفل.</p>
+                        <div class="ms-form-row">
+                            <button type="button" class="ms-btn ms-btn-primary" id="msAutoStartBtn" onclick="msAutoStart()">✅ اعتمد التحقيق الآلي</button>
+                            <button type="button" class="ms-btn ms-btn-danger" id="msAutoStopBtn" onclick="msAutoStop()" disabled>⏹ إيقاف</button>
+                            <button type="button" class="ms-btn" onclick="msPreviewPrint()">📄 معاينة النسخة النهائية</button>
+                        </div>
+                        <div id="msAutoBody"></div>
+                    </div>
                     <div class="ms-create-card" id="msCollateCard">
                         <div class="ms-create-title">⚖️ المقابلة بين النسخ (المرحلة ٢)</div>
                         <div class="ms-form-row">

@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.493"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.494"},
         },
     })
     if opened.get("error"):
@@ -14758,6 +14758,169 @@ async def manuscript_recommend(request: Request, payload: Any = Body(...)):
         return await asyncio.to_thread(_ms_recommend_sync, payload or {}, key)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذرت التوصية: {str(exc)[:200]}")
+
+
+# ---------- مقدمة التحقيق الآلية وترجمة المؤلف ----------
+# ترجمة مؤلف بين المختصرة والمتوسطة تُستقى شواهدها من كتب التراجم
+# في الشاملة (بحث لفظي باسم المؤلف في قائمة تراجم معتمدة)، ثم يحررها
+# Muse Wonder مع بقية أقسام مقدمة المحقق من بيانات المشروع الفعلية.
+_MS_TARAJIM_TITLES = [
+    "سير أعلام النبلاء", "وفيات الأعيان", "الوافي بالوفيات", "تاريخ الإسلام",
+    "شذرات الذهب", "البداية والنهاية", "طبقات الشافعية الكبرى", "الأعلام",
+    "معجم المؤلفين", "الدرر الكامنة", "إنباء الغمر", "بغية الوعاة",
+    "معجم الأدباء", "حسن المحاضرة",
+]
+
+def _ms_bio_evidence(author: str) -> Dict[str, Any]:
+    """شواهد ترجمة المؤلف: مسح عبارة اسمه متصلة في كتب تراجم معتمدة،
+    ثم نافذة من صفحة مدخله (وصفحتها التالية) حول موضع الاسم."""
+    raw = re.sub(r"\(.*?\)", "", str(author or "")).strip()
+    raw = re.sub(r"\s+", " ", raw).strip(" ،")
+    if not raw:
+        return {"snippets": [], "books": []}
+    tokens = [t for t in raw.split() if len(t) > 1]
+    # مداخل التراجم تكتب غالبًا بالاسم والنسب دون النسبة الأخيرة
+    # (يحيى بن شرف، لا: يحيى بن شرف النووي) — جرّب حذف الذيل تدريجيًا
+    variants = [raw]
+    t = list(tokens)
+    while len(t) > 2:
+        t = t[:-1]
+        variants.append(" ".join(t))
+    distinctive = tokens[-1] if tokens else raw
+    try:
+        conn = shamela_local_mcp._books_conn()
+        if conn is None:
+            return {"snippets": [], "books": []}
+        ids = []
+        for t in _MS_TARAJIM_TITLES:
+            rows = conn.execute(
+                "SELECT book_id, title_ar FROM books WHERE title_ar LIKE ? LIMIT 14",
+                (f"%{t}%",)).fetchall()
+            def _score(r):
+                ttl = (r[1] or "").strip()
+                if ttl == t: return (0, len(ttl))
+                if ttl.startswith(t): return (1, len(ttl))
+                return (2, len(ttl))
+            rows = sorted(rows, key=_score)
+            if rows and rows[0][0] not in ids:
+                ids.append(rows[0][0])
+        conn.close()
+    except Exception:
+        return {"snippets": [], "books": []}
+    snippets, books = [], []
+    for bid in ids[:9]:
+        hit = None
+        for v in variants:
+            hit = _ms_scan_book_phrase(bid, v)
+            if hit:
+                break
+        if not hit:
+            continue
+        text = ""
+        try:
+            for pg_off in (0, 1):
+                pg = shamela_local_mcp.get_page(bid, int(hit.get("page") or 0) + pg_off, hit.get("part"))
+                node = pg.get("page") if isinstance(pg.get("page"), dict) else pg
+                text += " " + str((node or {}).get("body") or (node or {}).get("text") or pg.get("text") or "")
+        except Exception:
+            text = ""
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) < 60:
+            text = str(hit.get("snippet") or "")
+        # لا شاهد إلا حيث وردت نسبة المؤلف نفسها في الصفحة (نووي/نواوي/نويري)
+        fam = [distinctive, distinctive.replace("النووي", "النواوي"), distinctive.replace("النووي", "النويري")]
+        i = -1
+        for cand in fam:
+            if cand and len(cand) >= 4:
+                i = text.find(cand)
+                if i >= 0:
+                    break
+        if i < 0:
+            continue
+        window = text[max(0, i - 120): i + 780]
+        if len(window) < 60:
+            continue
+        snippets.append({"book": hit.get("title") or "", "part": hit.get("part"),
+                         "page": hit.get("page"), "text": window})
+        if hit.get("title") and hit["title"] not in books:
+            books.append(hit["title"])
+        if len(snippets) >= 7:
+            break
+    return {"snippets": snippets, "books": books}
+
+MS_INTRO_PROMPT = (
+    "أنت محقق مخطوطات محترف (بقدرات Muse Wonder) تكتب مقدمة تحقيق كتاب «{title}» لمؤلفه {author} "
+    "للطبعة المحققة الآلية في هذا المشروع. اكتب مقدمة أكاديمية رصينة من الأقسام الآتية، كل قسم يبدأ بسطر عنوانه وحده، "
+    "وبين كل فقرة وأخرى سطر فارغ، بلا أي إشارة إلى ذكاء اصطناعي أو نماذج أو وكلاء:\n"
+    "أولًا: ترجمة المؤلف — ترجمة بين المختصرة والمتوسطة: اسمه ونسبه وكنيته ولقبه، مولده (المكان والسنة)، "
+    "نشأته وأبرز مواقف حياته العلمية، أبرز شيوخه، أبرز تلاميذه، وفاته (المكان والسنة). "
+    "التزم شواهد كتب التراجم المرفقة؛ وما لم يثبت فيها احذفه أو انسبه بصيغة (قيل/يُذكر) مع ذكر مصدره بين قوسين باسم الكتاب. "
+    "لا تخترع سنة ولا مكانًا ولا اسم شيخ أو تلميذ.\n"
+    "ثانيًا: الكتاب وأهميته — موضوعه ومنزلته بين كتب فنه وسبب شهرته وانتشاره باختصار موثق الحذر.\n"
+    "ثالثًا: النسخ المعتمدة — من بيانات النسخ المرفقة: الرمز والخزانة ورقم الحفظ والتاريخ والخط وما لُوحظ عليها، "
+    "وبيان النسخة الأم وسبب اعتمادها أصلًا.\n"
+    "رابعًا: منهج التحقيق — الخطوات المنجزة فعلًا كما في الملخص المرفق بلغة المحققين (إثبات قراءة الأم، إثبات الفروق المهمة "
+    "في هامش المقابلة، رد فروق الضبط والرسم المحضة، التخريج والتوثيق، الموازاة بمؤلفات المؤلف، والمقارنة المرجعية إن وُجدت نتيجتها).\n"
+    "خامسًا: الرموز والاصطلاحات — من الرموز المرفقة.\n\n"
+    "شواهد التراجم:\n{evidence}\n\nبيانات النسخ:\n{copies}\n\nملخص خطوات التحقيق المنجزة:\n{steps}\n\n"
+    "رموز النسخ: {sigla}\nمؤلفات المؤلف في المكتبة: {works}\n\n"
+    "أخرج نص المقدمة فقط بلا JSON وبلا تعليق خارجها."
+)
+
+def _ms_intro_sync(payload: dict, key: str) -> Dict[str, Any]:
+    p = payload or {}
+    title = str(p.get("title") or "")[:160]
+    author = str(p.get("author") or "")[:160]
+    bio = _ms_bio_evidence(author)
+    ev_lines = []
+    for s in bio["snippets"]:
+        ev_lines.append(f"[{s['book']} ج{s.get('part') or '—'} ص{s.get('page') or '—'}] {s['text']}")
+    copies_lines = []
+    for c in (p.get("copies") or [])[:8]:
+        bits = [f"({c.get('siglum') or '؟'})", str(c.get("library") or ""),
+                str(c.get("shelfmark") or ""), str(c.get("date") or ""),
+                str(c.get("script") or ""), str(c.get("notes") or "")]
+        copies_lines.append(" — ".join(b for b in bits if b))
+    works = [b.get("title") for b in _ms_author_books(author)][:10]
+    prompt = MS_INTRO_PROMPT.format(
+        title=title, author=author,
+        evidence="\n".join(ev_lines)[:7000] or "لا شواهد متاحة — اكتب الترجمة بحذر شديد مما هو مشهور من ترجمته مع نسبته بصيغة (يُذكر) وتجنب الجزم بسنوات أو أماكن بعينها.",
+        copies="\n".join(copies_lines)[:2500] or "—",
+        steps=str(p.get("steps") or "")[:2500] or "—",
+        sigla=str(p.get("sigla") or "")[:300] or "—",
+        works="، ".join(w for w in works if w)[:600] or "—")
+    model = str(p.get("model") or "meta/muse-wonder")
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3, "max_tokens": 6000}
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Auto Intro"},
+        data=json.dumps(body).encode("utf-8"))
+    started = time.time()
+    with urllib.request.urlopen(http_req, timeout=900) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(str(data.get("error"))[:240])
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    intro = str(msg.get("content") or "").strip()
+    if len(intro) < 200:
+        raise RuntimeError("جاءت المقدمة أقصر من المأمول")
+    usage = data.get("usage") or {}
+    return {"intro": intro[:30000], "model": model,
+            "bio_sources": bio["books"], "bio_snippets": len(bio["snippets"]),
+            "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
+
+@app.post("/api/manuscripts/intro")
+async def manuscript_intro(request: Request, payload: Any = Body(...)):
+    """مقدمة تحقيق آلية: ترجمة المؤلف من كتب التراجم + أقسام المقدمة (Muse Wonder)."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_intro_sync, payload or {}, key)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذرت كتابة المقدمة: {str(exc)[:200]}")
 
 
 # ---------- مسح أسلوب المؤلف (الأكثر استخدامًا) ----------
