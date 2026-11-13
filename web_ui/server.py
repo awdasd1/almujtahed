@@ -785,6 +785,56 @@ async def delete_print_background():
 
 app.mount("/print-background", StaticFiles(directory=str(PRINT_BG_DIR)), name="print-background")
 
+# خلفية تبويب تحقيق المخطوطات: صورة يرفعها المحقق من الإعدادات
+MS_BG_DIR = BASE_DIR / "ms_background"
+MS_BG_DIR.mkdir(parents=True, exist_ok=True)
+
+def _ms_bg_current():
+    for path in sorted(MS_BG_DIR.glob("background.*")):
+        if path.is_file() and path.suffix.lower() in PRINT_BG_EXTENSIONS:
+            return path
+    return None
+
+def _ms_bg_payload():
+    path = _ms_bg_current()
+    if not path:
+        return {"url": None}
+    return {"url": f"/ms-background/{path.name}?v={int(path.stat().st_mtime)}"}
+
+@app.get("/api/manuscripts/background")
+async def get_manuscript_background():
+    return _ms_bg_payload()
+
+@app.post("/api/manuscripts/background")
+async def upload_manuscript_background(file: UploadFile = File(...)):
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in PRINT_BG_EXTENSIONS or ext == ".svg":
+        raise HTTPException(status_code=400, detail="صيغة الصورة غير مدعومة (PNG أو JPG أو WEBP أو GIF)")
+    contents = await file.read()
+    if len(contents) < 32:
+        raise HTTPException(status_code=400, detail="ملف الصورة فارغ أو تالف")
+    if len(contents) > MAX_PRINT_BG_BYTES:
+        raise HTTPException(status_code=413, detail="حجم الصورة أكبر من 12 ميغابايت")
+    for old in MS_BG_DIR.glob("background.*"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    (MS_BG_DIR / f"background{ext}").write_bytes(contents)
+    return {"success": True, **_ms_bg_payload()}
+
+@app.delete("/api/manuscripts/background")
+async def delete_manuscript_background():
+    path = _ms_bg_current()
+    if path:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return {"success": True, "url": None}
+
+app.mount("/ms-background", StaticFiles(directory=str(MS_BG_DIR)), name="ms-background")
+
 # قوالب الطباعة: حزمة ZIP واحدة فيها الإعدادات والخطوط الخاصة والخلفية،
 # للتصدير والمشاركة والتحميل ثم الاستيراد والتنصيب الكامل
 import io as _io
@@ -7760,7 +7810,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.536"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.537"},
         },
     })
     if opened.get("error"):
