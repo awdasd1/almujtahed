@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.524"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.525"},
         },
     })
     if opened.get("error"):
@@ -14251,10 +14251,13 @@ MS_AGENTS_PROMPT = (
     "وتخريج الأحاديث بقالب التطبيق الصارم: في الصحاح والسنن والمصنفات المبوبة: «أخرجه البخاري، كتاب كذا، باب كذا، حديث رقم (N)، (ج-ص)»، "
     "وفي المسانيد: «أخرجه أحمد في المسند حديث رقم (N)، (ج-ص)»، وبعدهما درجة الحديث إن كان في غير الصحيحين؛ "
     "وما لم يظهر لك رقمه أو كتابه وبابه فاحذفه ولا تخترعه، والموضع (ج-ص) لا يسقط بحال. "
-    "وإن نقلت في body نصًّا حرفيًا من مصدر "
-    "فاجعله بين قوسي تنصيص ﴿ ﴾ واختم جملته بلفظ (نصًّا)، وإن كان شرحًا أو تلخيصًا بمعناك فابدأ "
-    "body بلفظ «أي:» ليُعلم أنه بالمعنى لا بالنص. وهذا شرط قبول لا اختيار: فالنقل الحرفي بلا علامة (نصًّا) "
-    "يُطبع على أنه بالمعنى، وكل إحالة لا تحمل (جزء، صفحة) من الشاملة تُحذف آليًا عند الطباعة فلا تكتب مصدرًا "
+    "استخدم الإحالة الصحيحة بدقة لفظية كما في البحوث الشرعية، ولا تستعمل «انظر» مكان «ينظر» ولا العكس: "
+    "إذا نقلت في body نصًّا حرفيًا — كلام المصدر بألفاظه أو آية بلفظها أو حديثًا بلفظه — "
+    "فاجعله بين قوسي تنصيص ﴿ ﴾ واختم جملته بلفظ (نصًّا) ليُطبع «انظر:». "
+    "وإذا نقلت بالمعنى — شرحًا أو تلخيصًا أو تقريرًا أو تعريفًا بصياغتك — "
+    "فابدأ body بلفظ «أي:» ليُطبع «ينظر:». "
+    "وهذا شرط قبول لا اختيار: فالنقل الحرفي بلا علامة (نصًّا) يُطبع على أنه بالمعنى، "
+    "وكل إحالة لا تحمل (جزء، صفحة) من الشاملة تُحذف آليًا عند الطباعة فلا تكتب مصدرًا "
     "لا تعرف موضعه، ولا تنسب قولًا لكتاب لم تقف عليه فيه.\n\nنص اللوحة:\n{text}"
 )
 
@@ -15600,6 +15603,70 @@ async def manuscript_discuss(request: Request, payload: Any = Body(...)):
         return await asyncio.to_thread(_ms_discuss_sync, payload or {}, key)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذر النقاش: {str(exc)[:200]}")
+
+
+MS_PRINT_AGENT_MODEL = "google/gemini-2.5-flash"
+MS_CITATION_LEAD_DIRECTIVE = (
+    "أنت وكيل الطباعة والإخراج الأكاديمي في البحوث الشرعية، ومنهجيتك في الإحالات ملزمة بحروفها:\n"
+    "استخدم الإحالة الصحيحة بدقة لفظية:\n"
+    "إذا نُقل نص حرفي — كلام المصدر بألفاظه بين تنصيص، أو آية بلفظها، أو حديث بلفظه، أو قول عالم منقول بنصه، "
+    "أو خُتمت الحاشية بلفظ (نصًّا) — فالحكم «انظر».\n"
+    "إذا نُقل بالمعنى — شرح أو تلخيص أو تقرير أو تعريف أو بيان مذهب أو وجه لغوي بصياغة الكاتب لا بألفاظ المصدر، "
+    "أو بُدئت الحاشية بلفظ «أي:» — فالحكم «ينظر».\n"
+    "ولا تستعمل «انظر» مكان «ينظر» ولا العكس.\n"
+    "كلمة المتن بين تنصيص في مطلع الحاشية هي اللفظ المشروح لا النقل. التخريج بقالب «أخرجه» حكمه «تخريج».\n"
+    "احكم على كل حاشية برقمها وأجب بمصفوفة JSON فقط بلا شرح: "
+    '[{"i":1,"h":"انظر"}]'
+)
+
+
+def _ms_citation_leads_sync(items: list, key: str) -> Dict[str, Any]:
+    """حكم وكيل الطباعة على انظر/ينظر قبل الإخراج، كما في البحوث الشرعية."""
+    lines = []
+    for n, text in enumerate(items[:80], start=1):
+        lines.append(f"{n}. {str(text or '')[:420]}")
+    if not lines:
+        return {"judgments": []}
+    raw = call_openrouter_raw(
+        MS_PRINT_AGENT_MODEL,
+        [{"role": "system", "content": MS_CITATION_LEAD_DIRECTIVE},
+         {"role": "user", "content": "\n".join(lines)}],
+        key, temperature=0, max_tokens=4000, timeout=180)
+    m = re.search(r"\[\s*\{.*\}\s*\]", raw or "", re.S)
+    judged = []
+    if m:
+        try:
+            judged = json.loads(m.group(0))
+        except Exception:
+            judged = []
+    out = []
+    for j in judged if isinstance(judged, list) else []:
+        if not isinstance(j, dict):
+            continue
+        h = str(j.get("h") or "")
+        if h not in ("انظر", "ينظر", "تخريج"):
+            continue
+        try:
+            i = int(j.get("i"))
+        except (TypeError, ValueError):
+            continue
+        out.append({"i": i, "h": h})
+    return {"judgments": out, "model": MS_PRINT_AGENT_MODEL}
+
+
+@app.post("/api/manuscripts/citation-leads")
+async def manuscript_citation_leads(request: Request, payload: Any = Body(...)):
+    """تحكيم انظر/ينظر بوكيل الطباعة الأكاديمي قبل تصدير المخطوط."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    items = (payload or {}).get("items")
+    if not isinstance(items, list):
+        raise HTTPException(status_code=400, detail="لا حواشي للتحكيم")
+    try:
+        return await asyncio.to_thread(_ms_citation_leads_sync, items, key)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر تحكيم الإحالات: {str(exc)[:200]}")
 
 
 @app.post("/api/manuscripts/bibliography")

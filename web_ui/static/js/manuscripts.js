@@ -3595,10 +3595,55 @@ function msAnchorSegments(text, items, fnTextOf) {
   return segs.length ? segs : [{ text }];
 }
 
+// قبل كل تصدير: وكيل الطباعة الأكاديمي نفسه (gemini-2.5-flash) يحكم
+// انظر/ينظر على ما لم يُحكم بعد، كما يُعاد تطبيق القاعدة عند إخراج البحوث
+async function msEnsureCitationJudgments(p) {
+  const locs = [];
+  const items = [];
+  (p.copies || []).forEach(c => (c.folios || []).forEach(f => {
+    String(f.ed_note || '').split('\n').forEach((line, i) => {
+      if (!line.trim() || /⟦[نم]⟧/.test(line)) return;
+      const clean = line.replace(/^\[[^\]]+\]\s*/, '')
+        .replace(/\s*\[توثيق:[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
+      if (clean.length < 25) return;
+      locs.push({ f, i });
+      items.push(clean.slice(0, 420));
+    });
+  }));
+  if (!items.length) return;
+  const info = document.getElementById('msExportInfo');
+  if (info) info.textContent = 'جارٍ تحكيم انظر وينظر بوكيل الطباعة...';
+  const mark = { 'انظر': '⟦ن⟧', 'ينظر': '⟦م⟧' };
+  for (let off = 0; off < items.length; off += 40) {
+    const slice = items.slice(off, off + 40);
+    let data = null;
+    try {
+      const res = await fetch('/api/manuscripts/citation-leads', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: slice, api_key: (typeof msApiKey === 'function' ? msApiKey() : '') }),
+      });
+      if (!res.ok) continue;
+      data = await res.json();
+    } catch (e) { continue; }
+    (data.judgments || []).forEach(j => {
+      const loc = locs[off + (Number(j.i) || 0) - 1];
+      const tag = mark[j.h];
+      if (!loc || !tag) return;
+      const lines = String(loc.f.ed_note || '').split('\n');
+      if (/⟦[نم]⟧/.test(lines[loc.i] || '')) return;
+      lines[loc.i] = lines[loc.i].replace(/^(\[[^\]]+\]\s*)/, `$1${tag} `);
+      if (!/⟦[نم]⟧/.test(lines[loc.i])) lines[loc.i] = `${tag} ${lines[loc.i]}`;
+      loc.f.ed_note = lines.join('\n');
+    });
+  }
+  msSave();
+}
+
 async function msExportDocx() {
   const p = msCurrentProject();
   if (!p) return;
   const info = document.getElementById('msExportInfo');
+  await msEnsureCitationJudgments(p);
   await msPrefetchBiblio(p);
   // مسار وورد الأبحاث نفسه: من ورقة الطباعة المقسمة في إطار القراءة
   // (exportWordFromDoc) فتتطابق الحواشي والترقيم والضبط مع المعاينة
@@ -3625,6 +3670,7 @@ async function msExportDocx() {
 async function msExportPdf() {
   const p = msCurrentProject();
   if (!p) return;
+  await msEnsureCitationJudgments(p);
   await msPrefetchBiblio(p);
   // ضبط الأبحاث الشرعية نفسه حرفيًا: forPdf بهوامش Paged الصفرية، وخطوط
   // وألوان ومقاسات وفواصل وخلفية من إعدادات طباعة المنظومة عبر paperPrintCss
