@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.526"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.527"},
         },
     })
     if opened.get("error"):
@@ -15673,6 +15673,159 @@ async def manuscript_citation_leads(request: Request, payload: Any = Body(...)):
         return await asyncio.to_thread(_ms_citation_leads_sync, items, key)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذر تحكيم الإحالات: {str(exc)[:200]}")
+
+
+MS_IDENTIFY_MODELS = ["~google/gemini-pro-latest", "google/gemini-4-carbon", "google/gemini-4-argon"]
+MS_IDENTIFY_PROMPT = (
+    "أمامك صورة لوحة من مخطوط عربي مجهول النسبة. أنت محقق مخطوطات خبير بالخطوط والمدارس النسخية. "
+    "أجب بـJSON صالح فقط بهذا الشكل دون أي نص خارجه:\n"
+    '{"book":"الكتاب المرجح أو فارغ","author":"المؤلف المرجح أو فارغ","confidence":0,'
+    '"evidence_quote":"عبارة مميزة واضحة القراءة من اللوحة حرفيًا بين ١٠ و٢٠ كلمة تصلح للبحث عنها في الكتاب",'
+    '"script":"وصف الخط فنيًا: نوعه وإعجامه وضبطه ومداده وعلامات النساخ في سطرين",'
+    '"autograph":"يستبعد أو يحتمل أو يرجح أو لا يجزم","autograph_reason":"قرائن الحكم على خط المؤلف باختصار",'
+    '"century":"القرن الهجري المرجح لنسخ اللوحة","dating_reason":"تعليل تقدير العصر من ملامح الخط والورق"}\n'
+    "رجّح نسبة اللوحة إلى كتابها وعالمها من نصها إن أمكن، واحكم هل يمكن أن تكون بخط المؤلف نفسه، "
+    "وفرّق في confidence بين يقينك وظنك، ولا تدّعِ ما لا تراه."
+)
+
+
+def _ms_vision_text(model: str, b64_url: str, prompt: str, key: str, max_tokens: int = 3000) -> str:
+    """نداء رؤية واحد: محتوى فارغ يُعاد مرة، ومعامل reasoning يُحذف عند رفضه."""
+    for with_reasoning in (True, False):
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": b64_url}},
+            ]}],
+            "temperature": 0.2, "max_tokens": max_tokens,
+        }
+        if with_reasoning:
+            payload["reasoning"] = {"enabled": False}
+        http_req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Identify"},
+            data=json.dumps(payload).encode("utf-8"))
+        try:
+            with urllib.request.urlopen(http_req, timeout=420) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            if getattr(exc, "code", None) == 400 and with_reasoning:
+                continue
+            raise
+        txt = str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        if txt:
+            return txt
+    return ""
+
+
+def _ms_identify_sync(payload: dict, key: str) -> Dict[str, Any]:
+    """تعرّف اللوحة ووصفها بثلاثة نماذج، ثم تأكيد النسبة بعبارة واضحة
+    تُبحث في الكتاب المرجّح نفسه داخل الشاملة فيُذكر جزؤها وصفحتها."""
+    paths = [str(x) for x in (payload.get("file_paths") or []) if str(x).strip()][:2]
+    if not paths:
+        raise ValueError("لا لوحات للتعرف")
+    b64_urls = []
+    for raw_path in paths:
+        fp = Path(raw_path).resolve()
+        if "uploads" not in fp.parts or not fp.is_file():
+            raise ValueError("لوحة خارج مجلد المرفوعات")
+        mime = "image/jpeg" if fp.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+        b64_urls.append(f"data:{mime};base64," + base64.b64encode(fp.read_bytes()).decode("ascii"))
+    reports = []
+    for model in MS_IDENTIFY_MODELS:
+        try:
+            txt = _ms_vision_text(model, b64_urls[0], MS_IDENTIFY_PROMPT, key)
+            parsed = _ms_parse_json(txt) or {}
+        except Exception as exc:
+            parsed = {"error": str(exc)[:160]}
+        reports.append({
+            "model": model,
+            "book": str(parsed.get("book") or "")[:160],
+            "author": str(parsed.get("author") or "")[:120],
+            "confidence": parsed.get("confidence") if isinstance(parsed.get("confidence"), (int, float)) else None,
+            "evidence_quote": str(parsed.get("evidence_quote") or "")[:300],
+            "script": str(parsed.get("script") or "")[:700],
+            "autograph": str(parsed.get("autograph") or "")[:40],
+            "autograph_reason": str(parsed.get("autograph_reason") or "")[:500],
+            "century": str(parsed.get("century") or "")[:60],
+            "dating_reason": str(parsed.get("dating_reason") or "")[:500],
+        })
+
+    def _majority(vals):
+        vals = [v for v in vals if v]
+        if not vals:
+            return ""
+        best, best_n = "", 0
+        for v in vals:
+            n = sum(1 for x in vals if x == v or v in x or x in v)
+            if n > best_n:
+                best, best_n = v, n
+        return best
+
+    consensus = {
+        "book": _majority([r["book"] for r in reports]),
+        "author": _majority([r["author"] for r in reports]),
+        "autograph": _majority([r["autograph"] for r in reports]),
+        "century": _majority([r["century"] for r in reports]),
+        "script": next((r["script"] for r in reversed(reports) if r["script"]), ""),
+        "autograph_reason": next((r["autograph_reason"] for r in reversed(reports) if r["autograph_reason"]), ""),
+        "dating_reason": next((r["dating_reason"] for r in reversed(reports) if r["dating_reason"]), ""),
+        "agree": len({r["book"] for r in reports if r["book"]}),
+    }
+    # التأكيد: عبارة متفق على قراءتها تُبحث في الكتاب المرجّح بعينه
+    phrases: list = []
+    for r in reports:
+        q = (r.get("evidence_quote") or "").strip()
+        if len(_ms_style_phrase_norm(q)) >= 10 and q not in phrases:
+            phrases.append(q)
+    text = str(payload.get("text") or "")
+    for seg in re.split(r"[.\n؛]", text):
+        seg = " ".join(seg.split()).strip()
+        if 40 <= len(seg) <= 110:
+            phrases.append(seg)
+    cand_books: list = []
+    seen_bid = set()
+    for r in reports:
+        if not r.get("book"):
+            continue
+        rb = _resolve_advisor_book(r["book"], r.get("author") or "")
+        if not rb:
+            try:
+                row = shamela_local_mcp.resolve_book(r["book"])
+                rb = {"book_id": int(row["book_id"]), "title": row.get("title") or r["book"]} if row and row.get("book_id") else None
+            except Exception:
+                rb = None
+        if rb and rb["book_id"] not in seen_bid:
+            seen_bid.add(rb["book_id"])
+            cand_books.append(rb)
+    confirmation = None
+    for cb in cand_books[:3]:
+        for ph in phrases[:4]:
+            hit = _ms_scan_book_phrase(cb["book_id"], ph[:110])
+            if hit:
+                confirmation = {"book_id": cb["book_id"], "title": hit.get("title") or cb["title"],
+                                "part": hit.get("part"), "page": hit.get("page"),
+                                "phrase": ph, "snippet": hit.get("snippet") or ""}
+                break
+        if confirmation:
+            break
+    return {"reports": reports, "consensus": consensus, "confirmation": confirmation}
+
+
+@app.post("/api/manuscripts/identify")
+async def manuscript_identify(request: Request, payload: Any = Body(...)):
+    """تعرّف اللوحة المجهولة ووصفها (برو وكربون وأرغون) وتأكيد نسبتها من الشاملة."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_identify_sync, payload or {}, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر التعرف على اللوحة: {str(exc)[:200]}")
 
 
 @app.post("/api/manuscripts/bibliography")

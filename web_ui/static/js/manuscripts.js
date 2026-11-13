@@ -2097,6 +2097,14 @@ function renderMsStage2() {
     </div>
     ${handed ? `
     <div class="ms-form-row">
+      <button type="button" class="ms-btn ms-btn-primary" id="msIdentifyBtn" onclick="msIdentify()">🔎 ٠٠) تعرّف اللوحة ووصفها (برو وكربون وأرغون) وتأكيد نسبتها من الشاملة</button>
+      <span class="ms-wb-meta">للمجهولات: ثلاثة نماذج ترجّح الكتاب والعالم وتصف الخط وتحكم في خط المؤلف والقرن، ثم تُبحث عبارة متفق على قراءتها في الكتاب المرجّح نفسه فيُذكر جزؤها وصفحتها</span>
+    </div>
+    ${p.identification ? `<div class="ms-margin-title">🔎 تعرّف اللوحة ووصفها — ترجيح النماذج الثلاثة وتأكيد الشاملة</div>
+      <div class="ms-group-books" style="white-space:pre-wrap">${msEsc(msIdentifyText(p))}</div>
+      <div class="ms-form-row"><button type="button" class="ms-btn" onclick="msIdentifyWriteIntro()">✍ كتابة «وصف اللوحة ونسبتها» في مقدمة التحقيق واعتماد المؤلف المرجّح</button></div>`
+    : '<div class="ms-hint">إن كان الكتاب أو مؤلفه مجهولًا فابدأ بالتعرّف: ترجيح النماذج يُعرض عليك، ولا يُكتب في المقدمة إلا باعتمادك.</div>'}
+    <div class="ms-form-row">
       <button type="button" class="ms-btn ms-btn-primary" id="msStage2AuthorBtn" onclick="msStage2AuthorProfile()">🪪 ٠) بناء بطاقة المؤلف وتصنيفه المذهبي والعقدي</button>
       <span class="ms-wb-meta">عصب المرحلة الثانية: الاسم الصحيح والمشهور وصيغ النساخ، والمذهب والعقيدة، وكتبه وتسلسلها وكتب طبقات مذهبه — تُبنى عليها الترجمة والمظان والموازاة</span>
     </div>
@@ -2126,6 +2134,73 @@ function renderMsStage2() {
     ${s2.manager_note ? `<div class="ms-margin-title">اعتماد مدير التحقيق</div><div class="ms-group-books" style="white-space:pre-wrap">${msEsc(s2.manager_note)}</div>` : ''}
     ` : '<div class="ms-hint">حين تكتمل المرحلة الأولى (نص الأم كاملًا بلا فروق معلقة) سلّم النسخة الجاهزة؛ فيتولى مدير التحقيق تحقيق النص تحقيقًا مختصرًا محكمًا بفريقه.</div>'}
     ${(s2.log || []).length ? `<div class="ms-auto-log">${s2.log.map(l => `<div><span class="ms-auto-log-at">${msEsc(l.at)}</span> ${msEsc(l.msg)}</div>`).join('')}</div>` : ''}`;
+}
+
+// تعرّف اللوحة المجهولة ووصفها: ترجيح برو وكربون وأرغون + تأكيد الشاملة
+function msIdentifyText(p) {
+  const idn = p.identification || {};
+  const c = idn.consensus || {};
+  const cf = idn.confirmation || null;
+  const lines = [];
+  lines.push(`الترجيح الجامع: الكتاب «${c.book || '—'}» · المؤلف «${c.author || '—'}» · خط المؤلف: ${c.autograph || '—'} · القرن: ${c.century || '—'}`);
+  if (cf) lines.push(`تأكيد الشاملة: وُجدت العبارة «${(cf.phrase || '').slice(0, 70)}» في «${cf.title}» (ج ${cf.part || '—'} ص ${cf.page || '—'})`);
+  else lines.push('تأكيد الشاملة: لم يُعثر على العبارة في الكتب المرجّحة — يبقى الترجيح ظنًا يحتاج قرائن أخرى.');
+  (idn.reports || []).forEach(r => {
+    lines.push(`— ${r.model}: «${r.book || '—'}» ل${r.author || '—'} (ثقة ${r.confidence ?? '—'}٪) · خط المؤلف: ${r.autograph || '—'} · القرن: ${r.century || '—'}`);
+    if (r.script) lines.push(`  الخط: ${r.script}`);
+    if (r.autograph_reason) lines.push(`  قرائن خط المؤلف: ${r.autograph_reason}`);
+    if (r.dating_reason) lines.push(`  تعليل العصر: ${r.dating_reason}`);
+  });
+  return lines.join('\n');
+}
+
+async function msIdentify() {
+  const p = msCurrentProject(); if (!p) return;
+  const base = msBaseCopy(p);
+  const folios = ((base || {}).folios || []).filter(f => f.file_path);
+  if (!folios.length) { msToast('لا لوحات في النسخة الأم بعد'); return; }
+  const btn = document.getElementById('msIdentifyBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ النماذج الثلاثة تفحص اللوحة وتؤكد نسبتها في الشاملة...'; }
+  try {
+    const f0 = folios[0];
+    const res = await fetch('/api/manuscripts/identify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_paths: [f0.file_path],
+        text: String(f0.audited_text || f0.text || '').slice(0, 6000),
+        api_key: msApiKey(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'تعذر التعرف');
+    p.identification = { ...data, at: new Date().toLocaleString('ar-SA') };
+    msSave(); renderMsStage2();
+    msStage2Log(p, `تعرّف اللوحة: رجّحت النماذج «${data.consensus?.book || '—'}» ل«${data.consensus?.author || '—'}»${data.confirmation ? `، وأكّدتها الشاملة في (ج ${data.confirmation.part || '—'} ص ${data.confirmation.page || '—'})` : '، بلا تأكيد من الشاملة'}.`);
+    msToast('✔ عُرض ترجيح النماذج الثلاثة وتأكيد الشاملة — راجعه واعتمده في المقدمة إن رضيت', 7000);
+  } catch (e) {
+    msToast('❌ ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '🔎 ٠٠) تعرّف اللوحة ووصفها (برو وكربون وأرغون) وتأكيد نسبتها من الشاملة'; }
+  }
+}
+
+function msIdentifyWriteIntro() {
+  const p = msCurrentProject(); if (!p || !p.identification) return;
+  const idn = p.identification, c = idn.consensus || {}, cf = idn.confirmation || null;
+  const sec = [
+    '**وصف اللوحة ونسبتها**',
+    `هذه اللوحة من نسخة محفوظة في ${msBaseCopy(p)?.library || '—'}، وهي مجهولة النسبة في بياناتها، فرُجّحت نسبتها بفحص صورتها ونصها: فهي من كتاب «${c.book || '—'}» لمؤلفه ${c.author || '—'}`
+      + (cf ? `، وقد تأكدت هذه النسبة بعبارة واضحة القراءة منها وُجدت بعينها في الكتاب نفسه داخل المكتبة الشاملة: «${(cf.phrase || '').slice(0, 80)}» في «${cf.title}» (ج ${cf.part || '—'} ص ${cf.page || '—'}).` : '، ولم يتيسر تأكيدها بعبارة مطابقة في الشاملة فتبقى ترجيحًا معلّلًا لا قطعًا.'),
+    `وخط اللوحة: ${c.script || '—'}`,
+    `وأما كونها بخط المؤلف نفسه فالحكم المرجّح: ${c.autograph || '—'}؛ ${c.autograph_reason || ''}`,
+    `ويُقدَّر عصر نسخها بـ${c.century || '—'}؛ ${c.dating_reason || ''}`,
+  ].join('\n\n');
+  const intro = String(p.intro || '');
+  p.intro = /\*\*وصف اللوحة ونسبتها\*\*/.test(intro)
+    ? intro.replace(/\*\*وصف اللوحة ونسبتها\*\*[\s\S]*?(?=\n\*\*|$)/, sec + '\n\n')
+    : (intro ? intro + '\n\n' + sec : sec);
+  if (c.author && (!p.author || /مجهول|غير معروف/.test(p.author))) p.author = c.author;
+  msSave(); renderMsStage2();
+  msToast('✔ كُتب «وصف اللوحة ونسبتها» في المقدمة' + (c.author ? ` واعتُمد المؤلف المرجّح «${c.author}» لبطاقة المؤلف` : ''), 7000);
 }
 
 // بطاقة المؤلف المصنّفة: عصب المرحلة الثانية (اسم صحيح/مشهور، مذهب، عقيدة، كتب)
