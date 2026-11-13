@@ -125,6 +125,8 @@ function renderMsProjects() {
       ${p.author ? `<div class="ms-project-card-author">${msEsc(p.author)}</div>` : ''}
       ${p.desc ? `<div class="ms-project-card-desc">${msEsc(p.desc)}</div>` : ''}
       <div class="ms-project-card-stats">${copies.length} نسخة · ${stats.total} لوحة · ✔ ${stats.approved} معتمدة</div>
+      ${(p.mode === 'auto' && p.auto && ['running', 'paused_network', 'interrupted'].includes(p.auto.status)) ? '<div class="ms-project-card-stats" style="color:#8a6414;font-weight:700">⏸ تحقيق آلي متوقف عند نقطة محفوظة — افتح المشروع ليستأنف ذاتيًا</div>' : ''}
+      ${(p.mode === 'auto' && p.auto && p.auto.status === 'done') ? '<div class="ms-project-card-stats" style="color:#2e7d5b;font-weight:700">✔ اكتمل التحقيق الآلي وصدرت النسخة النهائية</div>' : ''}
       <div class="ms-card-actions">
         <button type="button" class="ms-btn ms-btn-primary" onclick="msOpenProject('${p.id}')">فتح المشروع</button>
         <button type="button" class="ms-btn ms-btn-danger" onclick="msDeleteProject('${p.id}')">حذف</button>
@@ -195,6 +197,19 @@ function msOpenProject(id) {
   msRenderIndexes();
   const introEl = document.getElementById('msIntroText');
   if (introEl) introEl.value = p.intro || '';
+  // استئناف ذاتي عند فتح مشروع تحقيق آلي توقف بانقطاع أو إغلاق
+  if (p.mode === 'auto') {
+    const a = msAutoInit(p);
+    msAutoArmWatchdog();
+    if (!MS_AUTO_RUNNING && ['running', 'paused_network', 'interrupted'].includes(a.status)) {
+      if (a.status === 'running') {
+        a.status = 'interrupted';
+        msAutoLog(p, 'رُصد إغلاق أو انقطاع في جولة سابقة — يُستأنف ذاتيًا من نقطة الحفظ بعد لحظات.');
+        msSave(); renderMsAuto();
+      }
+      setTimeout(() => msAutoMaybeResume('فتح المشروع'), 1500);
+    }
+  }
 }
 
 function renderMsCopies() {
@@ -1786,17 +1801,20 @@ document.addEventListener('DOMContentLoaded', () => {
 // المدقق Muse Wonder يقود، وGoogle Argon يقرأ الصور ويدقق النسخ،
 // ووكلاء التحقيق يعملون تحت قراره: نسخ واعتماد، مقابلة، حسم، تخريج،
 // موازاة بمؤلفات المؤلف، مقارنة مرجعية، مقدمة وترجمة، فهارس، إصدار.
-const MS_WONDER_MODEL = 'meta/muse-wonder';
+const MS_WONDER_MODEL = 'meta/muse-wonder';   // القائد والمدقق: يحسم ويكتب المقدمة
+const MS_LUNA_MODEL = '~openai/gpt-luna-latest'; // المساعد التنفيذي: وكلاء وموازاة ورقابة
+const MS_ARGON_MODEL = 'google/gemini-4-argon';  // المعتمِد: يدقق الصور ويعتمد نهائيًا
 const MS_AUTO_STEPS = [
-  ['transcribe', 'نسخ كل اللوحات واعتمادها'],
+  ['transcribe', 'نسخ كل اللوحات واعتماد أرغون لها'],
   ['collate', 'المقابلة بين النسخ'],
-  ['decide', 'حسم مواضع الخلاف بقرار المدقق الذكي'],
-  ['agents', 'وكلاء التحقيق: تخريج ولغة وتراجم وضبط'],
+  ['decide', 'حسم مواضع الخلاف (Wonder، وما احتاج صورة حسمه أرغون منها)'],
+  ['agents', 'وكلاء التحقيق بمساعدة Luna: تخريج ولغة وتراجم وضبط'],
   ['author', 'الموازاة بمؤلفات المؤلف ومسح أسلوبه'],
-  ['monitor', 'مراقبة الجودة الشاملة'],
+  ['monitor', 'رقابة الجودة المساعدة (Luna)'],
   ['compare', 'المقارنة المرجعية بتحقيق منشور'],
   ['intro', 'كتابة مقدمة التحقيق وترجمة المؤلف'],
   ['indexes', 'بناء الفهارس'],
+  ['approve', 'اعتماد أرغون النهائي للجودة'],
   ['output', 'إصدار النسخة النهائية PDF وWord'],
 ];
 let MS_AUTO_RUNNING = false;
@@ -1838,22 +1856,28 @@ function renderMsAuto() {
     const st = a.steps[key] || { status: 'todo' };
     return `<div class="ms-auto-step"><span style="color:${colors[st.status] || '#999'};font-weight:800">${icons[st.status] || '○'}</span> ${msEsc(label)}${st.info ? `<span class="ms-auto-step-info">${msEsc(st.info)}</span>` : ''}</div>`;
   }).join('');
-  const statusText = { idle: 'ارفع النسخ ولوحاتها واوصفها، ثم اضغط «اعتمد التحقيق الآلي» فيقود المدقق الذكي التحقيق كاملًا حتى النسخة النهائية',
-    running: '⏳ التحقيق الآلي جارٍ الآن بقيادة المدقق الذكي...',
-    done: '✔ اكتمل التحقيق الآلي وصدرت النسخة النهائية', stopped: '⏸ أُوقف التحقيق الآلي — يمكنك استئنافه',
-    error: '✖ توقف التحقيق الآلي عند خطوة — راجع السجل' }[a.status] || a.status;
+  const statusText = { idle: 'ارفع النسخ ولوحاتها واوصفها، ثم اضغط «اعتمد التحقيق الآلي» فيجري التحقيق من بدايته إلى النسخة النهائية بلا أي تدخل بشري',
+    running: '⏳ التحقيق الآلي الذاتي جارٍ الآن — كل خطوة تُحفظ فور إنجازها...',
+    done: '✔ اكتمل التحقيق الآلي وصدرت النسخة النهائية', stopped: '⏸ أُوقف التحقيق الآلي بطلبك — محفوظ عند نقطة التوقف',
+    paused_network: '⏸ انقطع الاتصال — كل شيء محفوظ عند نقطة التوقف وسيستأنف تلقائيًا فور عودته، لا يحتاجك إلا في إعادة الاتصال',
+    interrupted: '⏸ توقف مفاجئ — محفوظ عند نقطة التوقف وسيستأنف ذاتيًا بعد قليل',
+    error: '✖ توقف التحقيق الآلي بعد محاولتين — راجع آخر سطر في السجل' }[a.status] || a.status;
+  const rolesLine = '<div class="ms-hint" style="margin:4px 0">القائد والمدقق: Muse Wonder · المساعد التنفيذي: GPT Luna · المعتمِد النهائي: Google Argon (يدقق الصور ويعتمد النسخ والجودة)</div>';
+  const ckpt = a.checkpoint ? `<div class="ms-hint">نقطة الحفظ الأخيرة: ${msEsc(a.checkpoint.step)} — ${msEsc(a.checkpoint.item || '')} · ${msEsc(new Date(a.checkpoint.at).toLocaleString('ar-EG'))}${a.resumes ? ` · استئنافات ذاتية: ${a.resumes}` : ''}</div>` : '';
   const r = a.report || {};
   const reportHtml = (a.status === 'done') ? `
     <div class="ms-auto-report">
       <div class="ms-disputes-title">تقرير التحقيق الآلي</div>
-      <div>لوحات منسوخة ومعتمدة في هذه الجولة: ${r.foliosTranscribed ?? 0} · مواضع خلاف حُسمت بقرار المدقق: ${r.decided ?? 0} (منها ${r.decidedAdopted ?? 0} اعتُمدت فيها قراءة النسخ الأخرى في المتن) · معلقة لعين المحقق: ${r.held ?? 0}</div>
-      <div>اقتراحات وكلاء أُثبتت في الهامش: ${r.agentsAccepted ?? 0} · موازيات مؤلف أُثبتت: ${r.authorAccepted ?? 0}</div>
+      <div>لوحات منسوخة ومعتمدة من أرغون: ${r.foliosTranscribed ?? 0} · مواضع خلاف حُسمت: ${r.decided ?? 0} (منها ${r.decidedAdopted ?? 0} اعتُمدت فيها قراءة النسخ الأخرى، و${r.imageDecided ?? 0} حسمها أرغون من الصورة) · بقيت بلا حسم: ${r.held ?? 0}</div>
+      <div>اقتراحات وكلاء أُثبتت في الهامش: ${r.agentsAccepted ?? 0} · موازيات مؤلف أُثبتت: ${r.authorAccepted ?? 0} · رُدت لعدم ثبوت توثيقها: ${r.autoDismissed ?? 0}</div>
+      ${r.approval ? `<div>اعتماد أرغون النهائي: ${msEsc(String(r.approval).slice(0, 220))}…</div>` : ''}
       <div>${r.compare ? `المقارنة المرجعية: تطابق ${r.compare.similarity}٪ مع «${msEsc(r.compare.book || '')}» و${r.compare.rows} فرقًا` : 'المقارنة المرجعية: لم يُحدد كتابها في بطاقة المقارنة'} · الفهارس: ${r.indexEntries ?? 0} مدخلًا</div>
       <div>${(r.bioSources || []).length ? `مصادر ترجمة المؤلف: ${r.bioSources.map(msEsc).join('، ')}` : 'ترجمة المؤلف: لم تُعثر شواهد كافية في كتب التراجم'}</div>
       <div class="ms-hint">كل قرارات المدقق موثقة في مواضعها وقابلة لمراجعتك وتعديلك في أي وقت من بطاقات المشروع اليدوية بالأسفل.</div>
     </div>` : '';
   document.getElementById('msAutoBody').innerHTML = `
     <div class="ms-auto-status">${msEsc(statusText)}${a.cost ? ` · كلفة الجولات: $${Number(a.cost).toFixed(4)}` : ''}</div>
+    ${rolesLine}${ckpt}
     <div class="ms-auto-steps">${stepsHtml}</div>
     ${reportHtml}
     <div class="ms-auto-log">${(a.log || []).slice(-60).map(l => `<div><span class="ms-auto-log-at">${msEsc(l.at)}</span> ${msEsc(l.msg)}</div>`).join('')}</div>`;
@@ -1862,7 +1886,7 @@ function renderMsAuto() {
   if (startBtn) {
     startBtn.disabled = MS_AUTO_RUNNING || !baseFolios;
     startBtn.textContent = a.status === 'done' ? '↻ إعادة تشغيل التحقيق الآلي الكامل'
-      : (a.status === 'stopped' || a.status === 'error') ? '▶ استئناف التحقيق الآلي' : '✅ اعتمد التحقيق الآلي';
+      : ['stopped', 'error', 'paused_network', 'interrupted'].includes(a.status) ? '▶ استئناف التحقيق الآلي الآن' : '✅ اعتمد التحقيق الآلي';
   }
   if (stopBtn) stopBtn.disabled = !MS_AUTO_RUNNING;
   const logBox = document.querySelector('#msAutoBody .ms-auto-log');
@@ -1875,12 +1899,43 @@ function msAutoStop() {
   if (p) { msAutoLog(p, 'طلب المحقق إيقاف التحقيق الآلي...'); renderMsAuto(); }
 }
 
+function msSleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// حفظ فوري غير مؤجل — يُستدعى عند كل نقطة توقف حتى لا يضيع عمل عند انقطاع
+async function msSaveNow() {
+  clearTimeout(msSaveTimer);
+  try {
+    await fetch('/api/manuscripts', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projects: msProjects }) });
+  } catch (e) { /* سيُستأنف الحفظ عند عودة الاتصال */ }
+}
+
+// طلب بخطوات التحقيق الآلي: محاولة أولى ثم محاولتان آليتان قبل أي استسلام،
+// وانقطاع الشبكة يُعلَّم .network ليتحول التشغيل إلى انتظار ذاتي الاستئناف
 async function msAutoFetch(url, body) {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body) });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || 'تعذر الطلب');
-  return data;
+  const tries = 3;
+  let lastErr = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = new Error(data.detail || ('HTTP ' + res.status));
+        err.status = res.status;
+        if (res.status >= 500 && i < tries - 1) { lastErr = err; await msSleep(5000 * (i + 1)); continue; }
+        throw err;
+      }
+      return data;
+    } catch (e) {
+      lastErr = e;
+      const isNet = (e instanceof TypeError) || /Failed to fetch|NetworkError|Load failed|network/i.test(e.message || '');
+      if (i < tries - 1) { await msSleep(isNet ? 7000 * (i + 1) : 5000 * (i + 1)); continue; }
+      if (isNet) { const ne = new Error('انقطع الاتصال بالشبكة'); ne.network = true; throw ne; }
+      throw e;
+    }
+  }
+  throw lastErr || new Error('تعذر الطلب');
 }
 
 async function msAutoRun(p) {
@@ -1889,18 +1944,25 @@ async function msAutoRun(p) {
   const R = a.report;
   const addCost = v => { a.cost = (Number(a.cost) || 0) + (Number(v) || 0); };
   const step = async (key, critical, fn) => {
-    msAutoStep(p, key, 'run'); msSave(); renderMsAuto();
+    const prevSt = a.steps[key];
+    if (prevSt && (prevSt.status === 'done' || prevSt.status === 'held')) {
+      msAutoLog(p, `⏭ خطوة «${key}» منجزة من نقطة حفظ سابقة — تُتخطى بلا إعادة كلفة.`);
+      return;
+    }
+    a.checkpoint = { step: key, item: '', at: new Date().toISOString() };
+    msAutoStep(p, key, 'run'); await msSaveNow(); renderMsAuto();
     try {
       await fn();
       const prev = a.steps[key] || {};
       msAutoStep(p, key, prev.heldInfo ? 'held' : 'done', prev.heldInfo || '');
+      a.checkpoint = { step: key, item: 'اكتملت', at: new Date().toISOString() };
     } catch (e) {
-      if (MS_AUTO_STOP || /أوقف المحقق/.test(e.message)) throw e;
+      if (MS_AUTO_STOP || e.network || /أوقف المحقق/.test(e.message || '')) throw e;
       msAutoStep(p, key, 'err', String(e.message || '').slice(0, 90));
       msAutoLog(p, `⚠️ تعثرت خطوة: ${e.message}`);
       if (critical) throw e;
     }
-    msSave(); renderMsAuto();
+    await msSaveNow(); renderMsAuto();
   };
   const base = msBaseCopy(p);
 
@@ -1928,6 +1990,8 @@ async function msAutoRun(p) {
         f.cost = (Number(primary.cost) || 0) + (Number(checker.cost) || 0) + (Number(auditor.cost) || 0);
         f.text = f.audited_text || f.primary_text;
         f.status = 'approved';
+        f.approver = choice.auditor; // اعتماد أرغون للنسخ المدقق على الصورة
+        a.checkpoint = { step: 'transcribe', item: `(${c.siglum}) ${f.label}`, at: new Date().toISOString() };
         done++; addCost(f.cost);
         msAutoLog(p, `✔ اعتُمدت لوحة (${f.label}) في (${c.siglum}) — اتفاق القارئين ${data.agreement ?? '—'}٪`);
         msSave(); renderMsAuto(); renderMsCopies();
@@ -1939,6 +2003,12 @@ async function msAutoRun(p) {
 
   // ٢) المقابلة بين النسخ على الأم
   await step('collate', true, async () => {
+    const prior = ((p.collation || {}).entries || []);
+    if (prior.length && prior.some(e => e.status !== 'pending' || e.rec)) {
+      R.collationEntries = prior.filter(e => e.status === 'pending').length;
+      msAutoLog(p, 'المقابلة محفوظة من جولة سابقة بقراراتها — لا تُعاد حتى لا تضيع الحُسوم.');
+      return;
+    }
     const others = (p.copies || []).filter(c => c.id !== base.id && (c.folios || []).some(f => (f.text || '').trim()));
     if (!others.length) { R.collationEntries = 0; msAutoLog(p, 'لا نسخ أخرى مكتملة النص — تُتخطى المقابلة ويُحقَّق النص من الأم وحدها.'); return; }
     const items = [];
@@ -1964,12 +2034,13 @@ async function msAutoRun(p) {
     renderMsCollation();
   });
 
-  // ٣) حسم مواضع الخلاف بقرار Muse Wonder
+  // ٣) حسم مواضع الخلاف: Wonder يقضي، وما احتاج صورة اعتمده أرغون منها بنفسه
   await step('decide', false, async () => {
     const entries = ((p.collation || {}).entries || []).filter(e => e.status === 'pending');
-    let decided = 0, adopted = 0, held = 0;
+    let decided = 0, adopted = 0, imageDecided = 0, failed = 0;
     for (const e of entries) {
       msAutoCheck(p);
+      a.checkpoint = { step: 'decide', item: `(${e.folio}) ${e.type} مع (${e.siglum})`, at: new Date().toISOString() };
       const bf = (base.folios || []).find(x => x.label === e.folio);
       let excerpt = '';
       if (bf && bf.text) {
@@ -1984,11 +2055,21 @@ async function msAutoRun(p) {
         addCost(data.cost);
         const [opt] = MS_REC_ACTIONS[data.action] || MS_REC_ACTIONS.needs_image;
         if (data.action === 'needs_image' || opt === 'comment_only') {
-          e.rec = { decision: 'علّقه المدقق لعين المحقق على صورة اللوحة', option: 'comment_only',
-                    action: data.action, model: data.model, confidence: data.confidence,
-                    auto: true, at: new Date().toISOString() };
-          held++;
-          msAutoLog(p, `⏸ لوحة (${e.folio}) ${e.type} مع (${e.siglum}): عُلّق لفحص الصورة بعينك.`);
+          // مساعدة ذاتية: أرغون المعتمِد يفحص صورة اللوحة ويحسم بنفسه
+          const imgPath = bf && (bf.enhanced_file_path || bf.file_path);
+          if (!imgPath) throw new Error('لا صورة للوحة الأم لهذا الموضع');
+          const verdict = await msAutoFetch('/api/manuscripts/image-decide', {
+            file_path: imgPath, title: p.title, author: p.author, folio: e.folio, type: e.type,
+            base: e.base, other: e.other, siglum: e.siglum, excerpt, api_key: msApiKey(), model: MS_ARGON_MODEL });
+          addCost(verdict.cost);
+          const opt2 = verdict.reading === 'other' ? 'adopt_other' : 'keep_note';
+          const corrected = msApplyRecommendation(p, e,
+            { action: verdict.reading === 'other' ? 'adopt_other' : 'keep_base_note', margin_note: '', model: MS_ARGON_MODEL, confidence: verdict.confidence },
+            opt2, { auto: true, useNote: false,
+              decisionLabel: `اعتماد أرغون من صورة اللوحة: ${verdict.reason || 'طابقت القراءة خط اللوحة'}` });
+          e.rec.approver = MS_ARGON_MODEL; e.rec.image_decided = true;
+          decided++; imageDecided++; if (corrected) adopted++;
+          msAutoLog(p, `حسم أرغون من الصورة لوحة (${e.folio}) ${e.type} مع (${e.siglum}): قراءة ${verdict.reading === 'other' ? 'النسخة الأخرى' : 'الأم'} — ${verdict.reason || ''}`);
         } else {
           const corrected = msApplyRecommendation(p, e, data, opt, { auto: true,
             decisionLabel: 'قرار التحقيق الآلي بقيادة المدقق الذكي' });
@@ -1996,24 +2077,35 @@ async function msAutoRun(p) {
           msAutoLog(p, `حُسمت لوحة (${e.folio}) ${e.type} مع (${e.siglum}): ${data.recommendation || opt}`);
         }
       } catch (err) {
-        held++;
-        msAutoLog(p, `⚠️ تعذر حسم موضع (${e.folio}) ${e.type}: ${err.message}`);
+        if (err.network || MS_AUTO_STOP) throw err;
+        failed++;
+        msAutoLog(p, `⚠️ تعذر حسم موضع (${e.folio}) ${e.type} آليًا: ${err.message} — سيُعاد في الاستئناف.`);
       }
-      if ((decided + held) % 3 === 0) { msSave(); renderMsAuto(); renderMsCollation(); }
+      await msSaveNow(); renderMsAuto(); renderMsCollation();
     }
-    R.decided = (R.decided || 0) + decided; R.decidedAdopted = (R.decidedAdopted || 0) + adopted; R.held = held;
-    if (held) a.steps.decide.heldInfo = `${held} موضعًا معلقًا لعينك`;
+    R.decided = (R.decided || 0) + decided; R.decidedAdopted = (R.decidedAdopted || 0) + adopted;
+    R.imageDecided = (R.imageDecided || 0) + imageDecided;
+    R.held = ((p.collation || {}).entries || []).filter(e => e.status === 'pending').length;
+    if (R.held) a.steps.decide.heldInfo = `${R.held} موضعًا ينتظر الاستئناف الآلي`;
   });
 
   // ٤) وكلاء التحقيق ثم اعتماد الموثّق واللغوي بقرار المدقق
   const decideSuggestions = (kinds, label) => {
-    let acc = 0, heldN = 0;
+    let acc = 0, dismissedN = 0;
     (p.agent_suggestions || []).filter(s => s.status === 'pending' && kinds.includes(s.kind)).forEach(s => {
       const v = (s.verify || {}).status || '';
-      if (v === 'verified' || v === 'found' || s.kind === 'lugha' || s.kind === 'dabt') { msAcceptSuggestion(p, s); acc++; }
-      else heldN++;
+      if (v === 'verified' || v === 'found' || s.kind === 'lugha' || s.kind === 'dabt'
+          || (s.kind === 'author' && (s.parallels || []).length)) {
+        msAcceptSuggestion(p, s); acc++;
+      } else {
+        // قاعدة الاعتماد الآلي: ما لم يثبت توثيقه لا يدخل الهامش — يُرد موثقًا لا يُعلَّق لبشري
+        s.status = 'dismissed';
+        s.auto_reason = 'رُد آليًا: لم يثبت توثيقه في المظان فلا يُثبت في هامش التحقيق';
+        dismissedN++;
+      }
     });
-    msAutoLog(p, `${label}: أُثبت ${acc} اقتراحًا في الهامش، وبقي ${heldN} بلا توثيق كافٍ معلقًا لمراجعتك.`);
+    R.autoDismissed = (R.autoDismissed || 0) + dismissedN;
+    msAutoLog(p, `${label}: أُثبت ${acc} اقتراحًا موثقًا في الهامش، ورُد ${dismissedN} لعدم ثبوت توثيقه.`);
     return acc;
   };
   await step('agents', false, async () => {
@@ -2023,7 +2115,7 @@ async function msAutoRun(p) {
       if ((p.agent_suggestions || []).some(s => s.folio === f.label && s.kind !== 'author')) continue;
       msAutoLog(p, `وكلاء التحقيق على لوحة (${f.label}): تخريج ولغة وتراجم وضبط...`);
       const data = await msAutoFetch('/api/manuscripts/agents', {
-        text: f.text, title: p.title, author: p.author, model: MS_WONDER_MODEL, api_key: msApiKey() });
+        text: f.text, title: p.title, author: p.author, model: MS_LUNA_MODEL, api_key: msApiKey() });
       addCost(data.cost);
       (data.suggestions || []).forEach(s => p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending' }));
       msSave(); renderMsAuto();
@@ -2040,7 +2132,7 @@ async function msAutoRun(p) {
       msAutoCheck(p);
       if ((p.agent_suggestions || []).some(s => s.folio === f.label && s.kind === 'author')) continue;
       const data = await msAutoFetch('/api/manuscripts/author-agent', {
-        text: f.text, title: p.title, author: p.author, model: MS_WONDER_MODEL, api_key: msApiKey() });
+        text: f.text, title: p.title, author: p.author, model: MS_LUNA_MODEL, api_key: msApiKey() });
       addCost(data.cost);
       (data.suggestions || []).forEach(s => p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending' }));
       msSave(); renderMsAuto();
@@ -2070,10 +2162,11 @@ async function msAutoRun(p) {
 
   // ٦) مراقبة الجودة الشاملة (Muse Wonder)
   await step('monitor', false, async () => {
+    if ((p.monitor_log || []).some(m => m.auto && m.phase === 'شاملة')) { msAutoLog(p, 'رقابة الجودة محفوظة من جولة سابقة.'); return; }
     msAutoCheck(p);
     const data = await msAutoFetch('/api/manuscripts/monitor', {
       project_title: p.title, author: p.author, phase: 'شاملة',
-      context: msMonitorContext(p, 'شاملة'), model: MS_WONDER_MODEL, api_key: msApiKey() });
+      context: msMonitorContext(p, 'شاملة'), model: MS_LUNA_MODEL, api_key: msApiKey() });
     addCost(data.cost);
     (p.monitor_log = p.monitor_log || []).push({ id: msUid(), phase: 'شاملة', at: new Date().toISOString(),
       model: data.model || MS_WONDER_MODEL, findings: data.findings || '', status: 'open',
@@ -2086,18 +2179,31 @@ async function msAutoRun(p) {
   // ٧) المقارنة المرجعية بتحقيق منشور (إن حُدّد كتابه)
   await step('compare', false, async () => {
     const bookEl = document.getElementById('msCompareBook');
-    const book = String(p.compareBook || (bookEl && bookEl.value) || '').trim();
-    if (!book) { msAutoLog(p, 'لم يُحدد كتاب التحقيق المرجعي في بطاقة المقارنة — تُتخطى هذه الخطوة.'); return; }
+    // مساعدة ذاتية: الكتاب المحدد، فإن لم يكن فعنوان الكتاب نفسه تحقيقًا منشورًا في الشاملة
+    const candidates = [String(p.compareBook || '').trim(), String((bookEl && bookEl.value) || '').trim(), String(p.title || '').trim()]
+      .filter((v, i, arr) => v && arr.indexOf(v) === i);
+    if (!candidates.length) { msAutoLog(p, 'لا مرشح للمقارنة المرجعية — تُتخطى.'); return; }
     const ourText = (base.folios || []).map(f => f.text || '').join('\n');
-    const data = await msAutoFetch('/api/manuscripts/compare-edition', { text: ourText, book });
-    if (!data.found) { msAutoLog(p, `المقارنة المرجعية بـ «${book}»: تعذرت المحاذاة — تُتخطى.`); return; }
-    MS_COMPARE = data; p.compareBook = book;
-    R.compare = { book: (data.book || {}).title || book, similarity: data.similarity, rows: (data.rows || []).length };
-    msAutoLog(p, `المقارنة المرجعية بـ «${R.compare.book}»: تطابق ${data.similarity}٪ و${R.compare.rows} فرقًا (التفاصيل في بطاقة المقارنة).`);
+    for (const book of candidates) {
+      msAutoCheck(p);
+      try {
+        const data = await msAutoFetch('/api/manuscripts/compare-edition', { text: ourText, book });
+        if (!data.found) { msAutoLog(p, `المقارنة بـ «${book}»: لا محاذاة — يُجرَّب مرشح آخر.`); continue; }
+        MS_COMPARE = data; p.compareBook = book;
+        R.compare = { book: (data.book || {}).title || book, similarity: data.similarity, rows: (data.rows || []).length };
+        msAutoLog(p, `المقارنة المرجعية بـ «${R.compare.book}»: تطابق ${data.similarity}٪ و${R.compare.rows} فرقًا (التفاصيل في بطاقة المقارنة).`);
+        return;
+      } catch (err) {
+        if (err.network || MS_AUTO_STOP) throw err;
+        msAutoLog(p, `المقارنة بـ «${book}» تعثرت: ${err.message}`);
+      }
+    }
+    msAutoLog(p, 'تعذرت المقارنة المرجعية بكل المرشحين — تُتخطى ولا توقف التحقيق.');
   });
 
   // ٨) مقدمة التحقيق وترجمة المؤلف من كتب التراجم
   await step('intro', false, async () => {
+    if (p.intro && a.introDone) { msAutoLog(p, 'المقدمة وترجمة المؤلف محفوظتان من جولة سابقة.'); return; }
     const stepsSummary = [
       `نُسخت لوحات ${(p.copies || []).length} نسخة بقارئين ومدقق على الصورة واعتُمدت.`,
       R.collationEntries != null ? `قوبلت النسخ على الأم؛ حُسم ${R.decided || 0} موضع خلاف بقرار المدقق، واعتُمدت قراءة النسخ في المتن ${R.decidedAdopted || 0} مرة، وعُلّق ${R.held || 0} موضعًا لعين المحقق.` : '',
@@ -2112,6 +2218,7 @@ async function msAutoRun(p) {
       steps: stepsSummary });
     addCost(data.cost);
     p.intro = data.intro;
+    a.introDone = true;
     R.bioSources = data.bio_sources || [];
     msAutoLog(p, `كُتبت مقدمة التحقيق وترجمة المؤلف من ${data.bio_snippets || 0} شاهدًا في كتب التراجم: ${(data.bio_sources || []).join('، ') || '—'}.`);
     const ta = document.getElementById('msIntroText'); if (ta) ta.value = p.intro;
@@ -2127,7 +2234,27 @@ async function msAutoRun(p) {
     msAutoLog(p, `بُنيت الفهارس: ${R.indexEntries} مدخلًا.`);
   });
 
-  // ١٠) إصدار النسخة النهائية PDF وWord بمسار الأبحاث نفسه
+  // ١٠) اعتماد أرغون النهائي للجودة قبل الإصدار
+  await step('approve', false, async () => {
+    if (a.approveDone) { msAutoLog(p, 'اعتماد أرغون النهائي محفوظ من جولة سابقة.'); return; }
+    msAutoCheck(p);
+    const ctx = msMonitorContext(p, 'شاملة')
+      + '\n\n== مقدمة التحقيق وترجمة المؤلف ==\n' + String(p.intro || '').slice(0, 4000)
+      + '\n\n== ملخص قرارات التحقيق الآلي ==\n' + JSON.stringify(R || {}).slice(0, 1600);
+    const data = await msAutoFetch('/api/manuscripts/monitor', {
+      project_title: p.title, author: p.author, phase: 'اعتماد أرغون النهائي',
+      context: ctx, model: MS_ARGON_MODEL, api_key: msApiKey() });
+    addCost(data.cost);
+    (p.monitor_log = p.monitor_log || []).push({ id: msUid(), phase: 'اعتماد أرغون', at: new Date().toISOString(),
+      model: data.model || MS_ARGON_MODEL, findings: data.findings || '', status: 'open',
+      cost: data.cost, seconds: data.seconds, auto: true, approver: true });
+    a.approveDone = true;
+    R.approval = String(data.findings || '').slice(0, 400);
+    msAutoLog(p, '✔ فحص أرغون النسخة كاملة واعتمدها اعتمادًا نهائيًا للجودة (ملاحظاته في بطاقة المراقبة).');
+    renderMsMonitor();
+  });
+
+  // ١١) إصدار النسخة النهائية PDF وWord بمسار الأبحاث نفسه
   await step('output', true, async () => {
     await msExportPdf();
     msAutoLog(p, '✔ نُزّل PDF النسخة النهائية المحققة.');
@@ -2155,40 +2282,73 @@ async function msAutoRun(p) {
   msAutoLog(p, 'اكتمل التحقيق الآلي: النسخة النهائية بين يديك PDF وWord، وكل القرارات موثقة قابلة لمراجعتك.');
 }
 
+// حارس الاستئناف الذاتي: يوقظ التشغيل المتوقف بالانقطاع أو بإغلاق التطبيق
+let MS_AUTO_WATCH = null;
+function msAutoArmWatchdog() {
+  if (MS_AUTO_WATCH) return;
+  MS_AUTO_WATCH = setInterval(() => msAutoMaybeResume('حارس الاستئناف'), 45000);
+  window.addEventListener('online', () => msAutoMaybeResume('عودة الاتصال'));
+}
+
+function msAutoMaybeResume(src) {
+  if (MS_AUTO_RUNNING) return;
+  const p = msCurrentProject();
+  if (!p || p.mode !== 'auto') return;
+  const a = msAutoInit(p);
+  if (a.status === 'paused_network' || a.status === 'interrupted') {
+    msAutoLog(p, `استئناف ذاتي (${src}) من نقطة الحفظ: ${a.checkpoint ? a.checkpoint.step + ' — ' + a.checkpoint.item : ''}`);
+    msAutoStart();
+  }
+}
+
+// تشغيل/استئناف التحقيق الآلي: من البداية إلى الإخراج بلا أي تدخل بشري.
+// كل خطوة وبند محفوظ فور إنجازه، فالانقطاع أو إعادة التشغيل تعود لنقطة الحفظ.
 async function msAutoStart() {
   const p = msCurrentProject();
   if (!p || MS_AUTO_RUNNING) return;
   const base = msBaseCopy(p);
   if (!base || !(base.folios || []).length) { msToast('ارفع لوحات النسخة الأم أولًا واوصف بقية النسخ ولوحاتها، ثم اضغط «اعتمد التحقيق الآلي»'); return; }
-  const allFolios = (p.copies || []).reduce((n, c) => n + (c.folios || []).length, 0);
-  const ok = confirm(
-    'سيتولى المدقق الذكي Muse Wonder قيادة التحقيق كاملًا، يساعده Google Argon في قراءة الصور وتدقيق النسخ:\n\n' +
-    `• نسخ ${allFolios} لوحة من ${(p.copies || []).length} نسخة واعتمادها بثلاثة نماذج\n` +
-    '• المقابلة بين النسخ وحسم كل مواضع الخلاف بقرارات المدقق الموثقة\n' +
-    '• وكلاء التخريج واللغة والتراجم والضبط، والموازاة بمؤلفات المؤلف ومسح أسلوبه\n' +
-    '• مراقبة الجودة، والمقارنة المرجعية إن حددت كتابها، وكتابة المقدمة وترجمة المؤلف من كتب التراجم\n' +
-    '• بناء الفهارس وإصدار النسخة النهائية PDF وWord\n\n' +
-    'يستهلك التشغيل رصيد OpenRouter (نسخ ثلاثي لكل لوحة + نداء مدقق لكل موضع خلاف). تبدأ؟');
-  if (!ok) return;
+  msAutoArmWatchdog();
   MS_AUTO_RUNNING = true; MS_AUTO_STOP = false;
   const a = msAutoInit(p);
-  a.status = 'running'; a.startedAt = new Date().toISOString(); a.steps = {}; a.report = {};
-  msAutoLog(p, 'بدأ التحقيق الآلي الكامل بقيادة المدقق الذكي Muse Wonder ومساعدة Google Argon في النسخ والتدقيق.');
-  msSave(); renderMsAuto();
+  const resumable = a.status && a.status !== 'done' && a.status !== 'idle'
+    && Object.keys(a.steps || {}).length;
+  if (resumable) {
+    a.resumes = (a.resumes || 0) + 1;
+    msAutoLog(p, `استئناف التحقيق الآلي من نقطة الحفظ (الاستئناف رقم ${a.resumes}) — الخطوات المنجزة لن تُعاد.`);
+  } else {
+    a.steps = {}; a.report = {}; a.failCount = 0; a.resumes = 0;
+    a.startedAt = new Date().toISOString();
+    msAutoLog(p, 'بدأ التحقيق الآلي الذاتي: القائد Muse Wonder، المساعد GPT Luna، المعتمِد Google Argon — من النسخ إلى الإخراج بلا تدخل بشري.');
+  }
+  a.status = 'running';
+  await msSaveNow(); renderMsAuto();
   try {
     await msAutoRun(p);
   } catch (e) {
-    if (MS_AUTO_STOP || /أوقف المحقق/.test(e.message)) {
+    if (MS_AUTO_STOP || /أوقف المحقق/.test(e.message || '')) {
       a.status = 'stopped';
-      msAutoLog(p, '⏸ أُوقف التحقيق الآلي بطلبك — ما أُنجز محفوظ، والاستئناف يكمل من حيث توقف.');
+      msAutoLog(p, '⏸ أُوقف التحقيق الآلي بطلبك — كل ما أُنجز محفوظ عند نقطة التوقف.');
+    } else if (e.network) {
+      a.status = 'paused_network';
+      msAutoLog(p, '⏸ انقطع الاتصال بعد المحاولة والمحاولتين الآليتين. كل شيء محفوظ عند نقطة التوقف، وسيستأنف التحقيق تلقائيًا فور عودة الاتصال — لا يحتاجك إلا في إعادة الاتصال نفسه إن طال انقطاعه.');
     } else {
-      a.status = 'error';
-      msAutoLog(p, '❌ توقف التحقيق الآلي: ' + e.message);
+      a.failCount = (a.failCount || 0) + 1;
+      if (a.failCount >= 2) {
+        a.status = 'error';
+        msAutoLog(p, '❌ توقف التحقيق الآلي بعد محاولتين عند: ' + e.message + ' — هذا وحده ما قد يحتاج نظرك.');
+      } else {
+        a.status = 'interrupted';
+        msAutoLog(p, '⚠️ توقف مفاجئ: ' + e.message + ' — محفوظ عند نقطة التوقف وسيستأنف ذاتيًا.');
+      }
     }
   }
   MS_AUTO_RUNNING = false;
-  msSave(); renderMsAuto();
+  await msSaveNow(); renderMsAuto();
   renderMsCopies(); renderMsCollation(); renderMsAgents(); renderMsAuthor(); renderMsMonitor();
+  if (a.status === 'interrupted' || a.status === 'paused_network') {
+    setTimeout(() => msAutoMaybeResume('محاولة لاحقة'), 20000);
+  }
 }
 
 // ---------- المرحلة ٤: الفهارس والمقدمة والإخراج ----------

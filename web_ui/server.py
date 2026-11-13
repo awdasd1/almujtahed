@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.494"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.495"},
         },
     })
     if opened.get("error"):
@@ -14747,6 +14747,79 @@ def _ms_recommend_sync(payload: dict, key: str) -> Dict[str, Any]:
             "margin_note": str(parsed.get("margin_note") or "")[:500],
             "confidence": parsed.get("confidence"),
             "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
+
+MS_IMAGE_DECIDE_PROMPT = (
+    "أنت معتمِد تحقيق مخطوطات (Google Argon) تفحص صورة لوحة من النسخة الأم لكتاب «{title}» للمؤلف {author}، "
+    "لوحة ({folio})، وعليها موضع خلاف من نوع «{type}» مع نسخة ({siglum}):\n"
+    "قراءة الأم المنسوخة: «{base}»\nقراءة النسخة الأخرى: «{other}»\n"
+    "سياق الموضع من نص الأم: «{excerpt}»\n\n"
+    "انظر في الصورة بعينك حرفًا حرفًا عند هذا الموضع، واحكم: أي القراءتين يطابق خط اللوحة فعلًا؟ "
+    "إن تعذر الجزم من الصورة فاختر \"base\" (الأصل إثبات ما في الأم).\n"
+    "أخرج JSON فقط بالمفاتيح: reading (\"base\" أو \"other\")، reason (سبب قصير بما رأيته في الصورة)، confidence (0-100)."
+)
+
+def _ms_image_decide_sync(payload: dict, key: str, b64_url: str) -> Dict[str, Any]:
+    p = payload or {}
+    prompt = MS_IMAGE_DECIDE_PROMPT.format(
+        title=str(p.get("title") or "")[:120], author=str(p.get("author") or "")[:120],
+        folio=str(p.get("folio") or "")[:40], type=str(p.get("type") or "")[:40],
+        siglum=str(p.get("siglum") or "")[:40], base=str(p.get("base") or "")[:400],
+        other=str(p.get("other") or "")[:400], excerpt=str(p.get("excerpt") or "")[:900])
+    model = str(p.get("model") or "google/gemini-4-argon")
+    body = {"model": model, "messages": [{"role": "user", "content": [
+        {"type": "text", "text": prompt},
+        {"type": "image_url", "image_url": {"url": b64_url}}]}],
+        "temperature": 0.1, "max_tokens": 900}
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Argon Approval"},
+        data=json.dumps(body).encode("utf-8"))
+    started = time.time()
+    with urllib.request.urlopen(http_req, timeout=600) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(str(data.get("error"))[:240])
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    raw = str(msg.get("content") or "").strip()
+    m = re.search(r"\{.*\}", raw, re.S)
+    parsed = {}
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+        except Exception:
+            parsed = {}
+    reading = str(parsed.get("reading") or "base")
+    if reading not in ("base", "other"):
+        reading = "base"
+    usage = data.get("usage") or {}
+    return {"reading": reading, "reason": str(parsed.get("reason") or "")[:400],
+            "confidence": parsed.get("confidence"), "model": model,
+            "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
+
+@app.post("/api/manuscripts/image-decide")
+async def manuscript_image_decide(request: Request, payload: Any = Body(...)):
+    """اعتماد أرغون: حسم موضع خلاف من صورة اللوحة نفسها (بلا تدخل بشري)."""
+    owner_id = current_owner_id(request)
+    raw_path = str((payload or {}).get("file_path") or "").strip()
+    if not raw_path:
+        raise HTTPException(status_code=400, detail="مسار اللوحة مفقود")
+    path = Path(raw_path).resolve()
+    root = (UPLOADS_BUCKET_DIR / owner_id).resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=400, detail="اللوحة خارج مجلد المرفوعات")
+    mime = "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+    _text, is_image, b64_url = extract_text_from_file(path, path.name, mime)
+    if not is_image or not b64_url:
+        raise HTTPException(status_code=400, detail="تعذر تجهيز صورة اللوحة")
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_image_decide_sync, payload or {}, key, b64_url)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر اعتماد أرغون من الصورة: {str(exc)[:200]}")
+
 
 @app.post("/api/manuscripts/recommend")
 async def manuscript_recommend(request: Request, payload: Any = Body(...)):
