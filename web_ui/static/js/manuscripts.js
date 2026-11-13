@@ -3205,7 +3205,7 @@ function msIndexGroups(p) {
       if (/شعر|أبيات|بيت شعر|قصيدة/.test(`${s.title || ''} ${s.source || ''}`)) groups['الأشعار'].push(item);
       else groups['الأحاديث والأقوال'].push(item);
     } else if (s.kind === 'tarjama') {
-      const nm = String(s.body || '').match(/(?:الإمام|الشيخ|العلامة|الحافظ|القاضي)\s+([^،؛(]{4,55})/);
+      const nm = String(s.body || '').match(/([ء-ي]{3,}\s+بن\s+[ء-ي]{3,}(?:\s+[ء-ي]{3,}){0,3})/);
       if (nm) groups['الأعلام'].push(`${nm[1].trim()} — لوحة (${s.folio})`);
     } else if (s.kind === 'lugha') {
       groups['اللغة'].push(item);
