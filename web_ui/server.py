@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.531"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.532"},
         },
     })
     if opened.get("error"):
@@ -14672,7 +14672,7 @@ def _ms_plan_sync(payload: dict, key: str) -> Dict[str, Any]:
     if len(text.strip()) < 120:
         raise ValueError("النص المُسلَّم قصير جدًا للتخطيط")
     planner_model = str((payload or {}).get("planner_model") or MS_PLANNER_MODEL)
-    manager_model = str((payload or {}).get("manager_model") or "google/gemini-4-argon")
+    manager_model = str((payload or {}).get("manager_model") or "google/gemini-4-hydrogen")
     _prompt = MS_PLANNER_PROMPT.format(
         title=title, author=author or "غير معروف", card=card or "—", text=text[:70000])
     plan = {}

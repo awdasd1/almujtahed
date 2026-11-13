@@ -1810,39 +1810,59 @@ document.addEventListener('DOMContentLoaded', () => {
 // نظام مجموعات الوكلاء نفسه، وتقرؤها خطوات التحقيق عند كل تشغيل.
 const MS_GROUP_ID = 'ms_tahqeeq_group_v1';
 const MS_GROUP_MODELS = [
-  ['meta/muse-wonder', 'Muse Wonder — قائد ومدقق'],
+  ['google/gemini-4-hydrogen', 'Gemini Hydrogen — مدير التحقيق'],
+  ['meta/muse-wonder', 'Muse Wonder — المراقب'],
   ['google/gemini-4-carbon', 'Gemini Carbon — مساعد مدير التحقيق'],
+  ['google/gemini-3.8-flash', 'Gemini 3.8 Flash — الوكلاء الباحثون والمخرّجون'],
   ['~openai/gpt-luna-latest', 'GPT Luna'],
-  ['google/gemini-4-argon', 'Google Argon — معتمِد الصور والجودة'],
+  ['google/gemini-4-argon', 'Google Argon'],
   ['~google/gemini-pro-latest', 'Gemini Pro Latest'],
   ['google/gemini-3.1-pro-preview', 'Gemini 3.1 Pro'],
   ['~anthropic/claude-sonnet-latest', 'Claude Sonnet Latest'],
   ['google/gemini-2.5-flash', 'Gemini 2.5 Flash'],
 ];
+// توزيع النماذج المعتمد بأمر المحقق: المدير Hydrogen، مساعده Carbon،
+// المراقب Muse Wonder، والوكلاء الباحثون والمخرّجون Gemini 3.8 Flash
+const MS_ROSTER = {
+  leader: 'google/gemini-4-hydrogen',
+  assistant: 'google/gemini-4-carbon',
+  approver: 'google/gemini-4-hydrogen',
+  monitor: 'meta/muse-wonder',
+  authorid: 'google/gemini-3.8-flash',
+  bio: 'google/gemini-3.8-flash',
+  ayat: 'google/gemini-3.8-flash',
+  hadith: 'google/gemini-3.8-flash',
+  tarajim: 'google/gemini-3.8-flash',
+  lugha: 'google/gemini-3.8-flash',
+  tafsir: 'google/gemini-3.8-flash',
+  aqeedah: 'google/gemini-3.8-flash',
+  authorworks: 'google/gemini-3.8-flash',
+};
 const MS_GROUP_DEFAULT_AGENTS = [
-  { key: 'leader', name: 'مدير التحقيق — المحقق القائد والمدقق', desc: 'مدير المرحلة الثانية: يستلم النسخة الجاهزة من مدير المرحلة الأولى، يستشير مجلس المستشارين، ينشئ الوكيل الذهبي، يشغّل المتخصصين، ويعتمد النص المحقق نهائيًا. ويحسم مواضع خلاف المرحلة الأولى ويقود النقاش والتصحيحات', model: 'meta/muse-wonder', books: [], stage: 2 },
-  { key: 'assistant', name: 'مساعد مدير التحقيق', desc: 'المساعد التنفيذي لمدير التحقيق (Gemini Carbon): يشغّل جولات المتخصصين والمسح والموازاة والرقابة المساعدة بأمر المدير وتحت مراجعته واعتماده', model: 'google/gemini-4-carbon', books: [], stage: 2 },
-  { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ، يحسم من الصورة، ويعتمد النسخة نهائيًا قبل الإصدار', model: 'google/gemini-4-argon', books: [], stage: 1 },
+  { key: 'leader', name: 'مدير التحقيق — المحقق القائد والمدقق', desc: 'مدير التحقيق (Gemini Hydrogen): يستلم النسخة الجاهزة، يستشير مجلس المستشارين، يعتمد خطة البحث ويحذف حشوها، يشغّل الباحثين، ويعتمد النص المحقق نهائيًا. ويحسم مواضع خلاف المرحلة الأولى ويقود النقاش والتصحيحات', model: 'google/gemini-4-hydrogen', books: [], stage: 2 },
+  { key: 'assistant', name: 'مساعد مدير التحقيق', desc: 'المساعد التنفيذي لمدير التحقيق (Gemini Carbon): يشغّل جولات الباحثين والمسح والموازاة والرقابة المساعدة بأمر المدير وتحت مراجعته واعتماده', model: 'google/gemini-4-carbon', books: [], stage: 2 },
+  { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ ويحسم من الصورة بنموذج المدير (Gemini Hydrogen)', model: 'google/gemini-4-hydrogen', books: [], stage: 1 },
+  { key: 'monitor', name: 'المراقب — مدقق الجودة الشامل', desc: 'المراقب (Muse Wonder): رقابة الجودة الشاملة على النص المحقق وهوامشه وملاحظات الاعتماد، يدوّن ملاحظاته ولا يحسم ولا يعدّل بنفسه', model: 'meta/muse-wonder', books: [], stage: 2 },
   { key: 'advisor_sonnet', name: 'عضو مجلس المستشارين — Sonnet', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: '~anthropic/claude-sonnet-latest', books: [], stage: 2, advisor: true },
   { key: 'advisor_argon', name: 'عضو مجلس المستشارين — Gemini Argon', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'google/gemini-4-argon', books: [], stage: 2, advisor: true },
   { key: 'advisor_wonder', name: 'عضو مجلس المستشارين — Muse Wonder', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'meta/muse-wonder', books: [], stage: 2, advisor: true },
-  { key: 'authorid', name: 'وكيل بطاقة المؤلف وتصنيفه المذهبي والعقدي', desc: 'يبني بطاقة المؤلف عصبَ المرحلة الثانية: اسمه الصحيح والمشهور وصيغ النساخ (كاملًا ومختصرًا وبشهرته)، ومذهبه الفقهي وعقيدته بدقة، وكتبه وتسلسلها، وكتب طبقات مذهبه وتراجمه المرشحة — فعليها تُبنى الترجمة واختيار المظان والموازاة بكتبه بدقة', model: 'meta/muse-wonder', stage: 2,
+  { key: 'authorid', name: 'وكيل بطاقة المؤلف وتصنيفه المذهبي والعقدي', desc: 'يبني بطاقة المؤلف عصبَ المرحلة الثانية: اسمه الصحيح والمشهور وصيغ النساخ (كاملًا ومختصرًا وبشهرته)، ومذهبه الفقهي وعقيدته بدقة، وكتبه وتسلسلها، وكتب طبقات مذهبه وتراجمه المرشحة — فعليها تُبنى الترجمة واختيار المظان والموازاة بكتبه بدقة', model: 'google/gemini-3.8-flash', stage: 2,
     books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'الأعلام', 'معجم المؤلفين', 'طبقات الشافعية الكبرى', 'طبقات الحنابلة', 'الديباج المذهب', 'الجواهر المضية في طبقات الحنفية', 'حسن المحاضرة', 'الدرر الكامنة', 'كشف الظنون عن أسامي الكتب والفنون', 'إيضاح المكنون', 'هدية العارفين', 'الفهرست لابن النديم', 'مفتاح السعادة ومصباح السيادة', 'أبجد العلوم'] },
-  { key: 'bio', name: 'وكيل ترجمة المؤلف', desc: 'يبني ترجمة المؤلف بين المختصرة والمتوسطة من كتب التراجم المعتمدة: مولد ووفاة ومواقف وشيوخ وتلاميذ', model: 'meta/muse-wonder', stage: 2,
+  { key: 'bio', name: 'وكيل ترجمة المؤلف', desc: 'يبني ترجمة المؤلف بين المختصرة والمتوسطة من كتب التراجم المعتمدة: مولد ووفاة ومواقف وشيوخ وتلاميذ', model: 'google/gemini-3.8-flash', stage: 2,
     books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'شذرات الذهب', 'البداية والنهاية', 'طبقات الشافعية الكبرى', 'الأعلام', 'معجم المؤلفين', 'الدرر الكامنة', 'بغية الوعاة', 'حسن المحاضرة'] },
-  { key: 'ayat', name: 'وكيل تخريج الآيات', desc: 'يعزو الآيات إلى سورها وأرقامها ويضبط لفظها على المصحف، ويستعين بكتب التفسير والإعراب', model: 'google/gemini-4-carbon', stage: 2,
+  { key: 'ayat', name: 'وكيل تخريج الآيات', desc: 'يعزو الآيات إلى سورها وأرقامها ويضبط لفظها على المصحف، ويستعين بكتب التفسير والإعراب', model: 'google/gemini-3.8-flash', stage: 2,
     books: ['تفسير الطبري', 'تفسير ابن كثير', 'الدر المنثور', 'فتح القدير للشوكاني', 'إعراب القرآن', 'معاني القرآن'] },
-  { key: 'hadith', name: 'وكيل التخريج', desc: 'يخرّج الأحاديث والآثار باختصار المحققين: عزو للمصدر والرقم ودرجة مختصرة من كتب التخريج المعتمدة (التلخيص الحبير، نصب الراية، إرواء الغليل، سلسلتا الألباني) — لا سرد أسانيد، والصحيحان يُكتفى بعزوهما', model: 'google/gemini-4-carbon', stage: 2,
+  { key: 'hadith', name: 'وكيل التخريج', desc: 'يخرّج الأحاديث والآثار باختصار المحققين: عزو للمصدر والرقم ودرجة مختصرة من كتب التخريج المعتمدة (التلخيص الحبير، نصب الراية، إرواء الغليل، سلسلتا الألباني) — لا سرد أسانيد، والصحيحان يُكتفى بعزوهما', model: 'google/gemini-3.8-flash', stage: 2,
     books: ['صحيح البخاري', 'صحيح مسلم', 'سنن أبي داود', 'سنن الترمذي', 'سنن النسائي', 'سنن ابن ماجه', 'موطأ مالك', 'مسند الإمام أحمد', 'التلخيص الحبير', 'نصب الراية', 'إرواء الغليل', 'سلسلة الأحاديث الصحيحة', 'سلسلة الأحاديث الضعيفة', 'فتح الباري', 'شرح النووي على صحيح مسلم'] },
-  { key: 'tarajim', name: 'وكيل السير والتراجم', desc: 'يعرّف بأعلام المتن باختصار شديد لا يتجاوز ٤-٥ أسطر: تعريف بالمترجم له ومذهبه وعقيدته وأهم شيوخه وتلاميذه ومؤلفاته وسنة وفاته — من كتب التراجم والطبقات، وما لم يثبت لا يُذكر أو يُنسب بقيل', model: 'google/gemini-4-carbon', stage: 2,
+  { key: 'tarajim', name: 'وكيل السير والتراجم', desc: 'يعرّف بأعلام المتن باختصار شديد لا يتجاوز ٤-٥ أسطر: تعريف بالمترجم له ومذهبه وعقيدته وأهم شيوخه وتلاميذه ومؤلفاته وسنة وفاته — من كتب التراجم والطبقات، وما لم يثبت لا يُذكر أو يُنسب بقيل', model: 'google/gemini-3.8-flash', stage: 2,
     books: ['سير أعلام النبلاء', 'تهذيب الكمال', 'تهذيب التهذيب', 'تقريب التهذيب', 'الإصابة في تمييز الصحابة', 'أسد الغابة', 'ميزان الاعتدال', 'لسان الميزان', 'الوافي بالوفيات', 'الأعلام'] },
-  { key: 'lugha', name: 'وكيل اللغة والأشعار', desc: 'يستخرج غريب الألفاظ من لسان العرب والقاموس المحيط وتاج العروس، ويضبط المشكل ويكشف التصحيف، ويعزو الأبيات الشعرية الواردة في المتن إلى قائليها من كتب الأدب والدواوين', model: 'google/gemini-4-carbon', stage: 2,
+  { key: 'lugha', name: 'وكيل اللغة والأشعار', desc: 'يستخرج غريب الألفاظ من لسان العرب والقاموس المحيط وتاج العروس، ويضبط المشكل ويكشف التصحيف، ويعزو الأبيات الشعرية الواردة في المتن إلى قائليها من كتب الأدب والدواوين', model: 'google/gemini-3.8-flash', stage: 2,
     books: ['لسان العرب', 'القاموس المحيط', 'تاج العروس', 'الصحاح', 'النهاية في غريب الحديث', 'المصباح المنير', 'مختار الصحاح', 'الأغاني', 'خزانة الأدب', 'المفضليات'] },
-  { key: 'tafsir', name: 'وكيل التفسير', desc: 'حين يكون المخطوط في التفسير أو يذكر المؤلف آية فيفسرها أو يستدل بها: يبين معناها ووجه الاستدلال باختصار من أمهات كتب التفسير المعتمدة', model: 'google/gemini-4-carbon', stage: 2,
+  { key: 'tafsir', name: 'وكيل التفسير', desc: 'حين يكون المخطوط في التفسير أو يذكر المؤلف آية فيفسرها أو يستدل بها: يبين معناها ووجه الاستدلال باختصار من أمهات كتب التفسير المعتمدة', model: 'google/gemini-3.8-flash', stage: 2,
     books: ['تفسير الطبري', 'تفسير ابن كثير', 'الجامع لأحكام القرآن للقرطبي', 'الدر المنثور', 'فتح القدير للشوكاني', 'روح المعاني', 'التحرير والتنوير'] },
-  { key: 'aqeedah', name: 'وكيل العقيدة', desc: 'حيث يذكر المؤلف في ثنايا بحثه موضوعًا أو كلامًا في الاعتقاد: يبين باختصار موثّق هل هو مذهب أهل السنة والجماعة أو خلافه، من كتب الاعتقاد المعتمدة — بلا توسع ولا تكفير ولا تبديع لأعيان', model: 'google/gemini-4-carbon', stage: 2,
+  { key: 'aqeedah', name: 'وكيل العقيدة', desc: 'حيث يذكر المؤلف في ثنايا بحثه موضوعًا أو كلامًا في الاعتقاد: يبين باختصار موثّق هل هو مذهب أهل السنة والجماعة أو خلافه، من كتب الاعتقاد المعتمدة — بلا توسع ولا تكفير ولا تبديع لأعيان', model: 'google/gemini-3.8-flash', stage: 2,
     books: ['شرح العقيدة الطحاوية لابن أبي العز', 'شرح السنة للبغوي', 'الشريعة للآجري', 'الإبانة لابن بطة', 'شرح أصول اعتقاد أهل السنة والجماعة للالكائي', 'درء تعارض العقل والنقل', 'منهاج السنة النبوية'] },
-  { key: 'authorworks', name: 'وكيل مقارنة أقوال المؤلف بكتبه', desc: 'متغير بحسب صاحب كل مخطوط: تُحلّ كتب المؤلف نفسه آليًا من المكتبة عند كل مشروع، وما تضيفه هنا مظان إضافية ثابتة', model: 'google/gemini-4-carbon', books: [], stage: 2 },
+  { key: 'authorworks', name: 'وكيل مقارنة أقوال المؤلف بكتبه', desc: 'متغير بحسب صاحب كل مخطوط: تُحلّ كتب المؤلف نفسه آليًا من المكتبة عند كل مشروع، وما تضيفه هنا مظان إضافية ثابتة', model: 'google/gemini-3.8-flash', books: [], stage: 2 },
 ];
 // كتب تُستكمل في المجموعة الحية القائمة بلا مساس بضبط المحقق القائم
 const MS_GROUP_BOOK_UPGRADES = {
@@ -1873,6 +1893,9 @@ async function msLoadGroup() {
       }
       if (['ayat', 'hadith', 'tarajim', 'lugha', 'tafsir', 'aqeedah', 'authorworks'].includes(a.ms_key)
           && a.model === '~openai/gpt-luna-latest') { a.model = 'google/gemini-4-carbon'; changed = true; }
+      // توزيع النماذج المعتمد بأمر المحقق يُفرض على المجموعة الحية
+      const rosterModel = MS_ROSTER[a.ms_key];
+      if (rosterModel && a.model !== rosterModel) { a.model = rosterModel; changed = true; }
     });
     MS_GROUP.agents = MS_GROUP.agents || [];
     MS_GROUP_DEFAULT_AGENTS.forEach(d => {
@@ -1910,7 +1933,7 @@ function msApplyGroupModelDefaults() {
   };
   set('msAgentModel', 'hadith');
   set('msAuthorModel', 'authorworks');
-  set('msMonitorModel', 'leader');
+  set('msMonitorModel', 'monitor');
 }
 
 function msGroupAgent(key) { return MS_GROUP ? (MS_GROUP.agents || []).find(a => a.ms_key === key) || null : null; }
@@ -2255,7 +2278,7 @@ async function msStage2AuthorProfile() {
       body: JSON.stringify({
         author: p.author, title: p.title, desc: p.desc || '',
         text: (s2.text_snapshot || msStageText(p)).slice(0, 3500),
-        model: msGroupModel('authorid', MS_WONDER_MODEL),
+        model: msGroupModel('authorid', MS_FLASH_MODEL),
         tarajim_books: [...new Set([...msGroupBookTitles('authorid'), ...msGroupBookTitles('bio')])],
         api_key: msApiKey(),
       }),
@@ -2305,7 +2328,7 @@ async function msStage2Consult() {
         sigla: (p.copies || []).map(c => `(${c.siglum}) = ${c.library || ''} ${c.shelfmark || ''}`).join('؛ '),
         text: s2.text_snapshot || msStageText(p), apparatus: s2.apparatus_snapshot || msStageApparatus(p),
         author_card: msAuthorCardText(p),
-        advisors, specialists, director_model: msGroupModel('leader', MS_WONDER_MODEL), api_key: msApiKey(),
+        advisors, specialists, director_model: msGroupModel('leader', MS_DIRECTOR_MODEL), api_key: msApiKey(),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -2346,7 +2369,7 @@ async function msStage2Golden() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: p.title, author: p.author, text: s2.text_snapshot || msStageText(p),
-        books, anchors: s2.anchors || [], model: msGroupModel('leader', MS_WONDER_MODEL), api_key: msApiKey(),
+        books, anchors: s2.anchors || [], model: msGroupModel('leader', MS_DIRECTOR_MODEL), api_key: msApiKey(),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -2402,12 +2425,12 @@ async function msStage2Specialists() {
         const doneKey = f.label + ':' + key;
         if (s2.done[doneKey]) continue;
         const extra = [...new Set([...msGroupBookTitles(key), ...councilBooks])];
-        msStage2Log(p, `${label} على لوحة (${f.label}) بنموذج ${msGroupModel(key, MS_LUNA_MODEL)}...`);
+        msStage2Log(p, `${label} على لوحة (${f.label}) بنموذج ${msGroupModel(key, MS_FLASH_MODEL)}...`);
         renderMsStage2();
         const res = await fetch('/api/manuscripts/agents', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: f.text, title: p.title, author: p.author,
-            model: msGroupModel(key, MS_LUNA_MODEL), api_key: msApiKey(),
+            model: msGroupModel(key, MS_FLASH_MODEL), api_key: msApiKey(),
             extra_books: extra.length ? extra : undefined, agent_focus: focus }),
         });
         const data = await res.json().catch(() => ({}));
@@ -2462,7 +2485,7 @@ async function msStage2Approve() {
         project_title: p.title, author: p.author, phase: 'اعتماد مدير التحقيق (المرحلة الثانية)',
         context: msMonitorContext(p, 'شاملة')
           + `\n\n== المرحلة الثانية ==\nاستُشير المجلس: ${(s2.advisors || []).length} عضوًا، كتب مطابقة: ${(s2.books || []).filter(b => b.resolved).length}، مراسٍ: ${(s2.anchors || []).length}. أُثبت في الهامش ${s2.accepted || 0} تعليقًا موثقًا ورُد ${s2.dismissed || 0}. المطلوب: اعتمادك مديرًا للتحقيق — هل النص المحقق بصورته الحالية صالح للإصدار الأكاديمي؟ وما أهم ما يجب تنبيه المحقق إليه باختصار؟`,
-        model: msGroupModel('leader', MS_WONDER_MODEL), api_key: msApiKey(),
+        model: msGroupModel('leader', MS_DIRECTOR_MODEL), api_key: msApiKey(),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -2553,24 +2576,29 @@ async function msStage2ExecutePlan() {
   if (btn) { btn.disabled = false; btn.textContent = '⚡ ٢) تنفيذ الباحثين السريعين (Gemini 3.8 Flash) على الخطة المعتمدة'; }
 }
 
-// ---------- التحقيق الآلي الكامل بقيادة المدقق الذكي ----------
-// المدقق Muse Wonder يقود، وGoogle Argon يقرأ الصور ويدقق النسخ،
-// ووكلاء التحقيق يعملون تحت قراره: نسخ واعتماد، مقابلة، حسم، تخريج،
-// موازاة بمؤلفات المؤلف، مقارنة مرجعية، مقدمة وترجمة، فهارس، إصدار.
-const MS_WONDER_MODEL = 'meta/muse-wonder';   // القائد والمدقق: يحسم ويكتب المقدمة
-const MS_LUNA_MODEL = 'google/gemini-4-carbon'; // مساعد مدير التحقيق التنفيذي (Gemini Carbon): وكلاء وموازاة ورقابة مساعدة
-const MS_ARGON_MODEL = 'google/gemini-4-argon';  // المعتمِد: يدقق الصور ويعتمد نهائيًا
+// ---------- التحقيق الآلي الكامل بتوزيع النماذج المعتمد ----------
+// مدير التحقيق Gemini Hydrogen يقود ويحسم ويعتمد، ومساعده Gemini Carbon،
+// والمراقب Muse Wonder يراقب الجودة، والوكلاء الباحثون والمخرّجون
+// Gemini 3.8 Flash يمسحون ويستخرجون بسرعة تحت خطة يعتمدها المدير:
+// نسخ واعتماد، تعرّف ووصف وترجيح وتأكيد، مقابلة، حسم، بحث موجَّه،
+// موازاة بمؤلفات المؤلف، رقابة، مقارنة مرجعية، مقدمة وترجمة، فهارس، إصدار.
+const MS_WONDER_MODEL = 'meta/muse-wonder';   // المراقب: رقابة الجودة الشاملة
+const MS_DIRECTOR_MODEL = 'google/gemini-4-hydrogen'; // مدير التحقيق: يحسم ويعتمد ويقود
+const MS_LUNA_MODEL = 'google/gemini-4-carbon'; // مساعد مدير التحقيق التنفيذي (Gemini Carbon)
+const MS_FLASH_MODEL = 'google/gemini-3.8-flash'; // الوكلاء الباحثون والمخرّجون: مسح واستخراج سريع
+const MS_ARGON_MODEL = 'google/gemini-4-argon';  // نموذج رؤية احتياطي لخطوة التعرّف
 const MS_AUTO_STEPS = [
-  ['transcribe', 'نسخ كل اللوحات واعتماد أرغون لها'],
+  ['transcribe', 'نسخ كل اللوحات واعتماد المدير (Hydrogen) لها على الصورة'],
+  ['identify', 'تعرّف اللوحة ووصفها وترجيح نسبتها وتأكيدها من الشاملة وكتابتها في المقدمة'],
   ['collate', 'المقابلة بين النسخ'],
-  ['decide', 'حسم مواضع الخلاف (Wonder، وما احتاج صورة حسمه أرغون منها)'],
-  ['agents', 'وكلاء التحقيق بمساعدة مساعد مدير التحقيق (Gemini Carbon): تخريج وسير ولغة وأشعار وتفسير وعقيدة'],
+  ['decide', 'حسم مواضع الخلاف (المدير Hydrogen، وما احتاج صورة حسمه منها بنفسه)'],
+  ['agents', 'خطة المخطِّط العبقري المعتمدة من المدير وتنفيذ الباحثين السريعين (Flash): تخريج وسير ولغة وأشعار وتفسير وعقيدة'],
   ['author', 'الموازاة بمؤلفات المؤلف ومسح أسلوبه'],
-  ['monitor', 'رقابة القائد الشاملة'],
+  ['monitor', 'رقابة المراقب الشاملة (Muse Wonder)'],
   ['compare', 'المقارنة المرجعية بتحقيق منشور'],
   ['intro', 'كتابة مقدمة التحقيق وترجمة المؤلف'],
   ['indexes', 'بناء الفهارس'],
-  ['approve', 'اعتماد أرغون النهائي للجودة'],
+  ['approve', 'اعتماد المدير النهائي للجودة'],
   ['output', 'إصدار النسخة النهائية PDF وWord'],
 ];
 let MS_AUTO_RUNNING = false;
@@ -2728,10 +2756,11 @@ async function msAutoRun(p) {
   const base = msBaseCopy(p);
   // المرجع المعتمد: مجموعة تحقيق المخطوطات بنماذج وكلائها وكتبهم
   await msLoadGroup();
-  const LEADER = msGroupModel('leader', MS_WONDER_MODEL);
-  const APPROVER = msGroupModel('approver', MS_ARGON_MODEL);
+  const LEADER = msGroupModel('leader', MS_DIRECTOR_MODEL);
+  const APPROVER = msGroupModel('approver', MS_DIRECTOR_MODEL);
+  const MONITOR = msGroupModel('monitor', MS_WONDER_MODEL);
   R.group = MS_GROUP ? MS_GROUP.name : 'غير معتمدة — افتراضي خطة الجودة';
-  msAutoLog(p, `المرجع المعتمد لهذا التشغيل: ${R.group} (القائد ${LEADER}، المعتمِد ${APPROVER}).`);
+  msAutoLog(p, `المرجع المعتمد لهذا التشغيل: ${R.group} (المدير ${LEADER}، المراقب ${MONITOR}، الباحثون ${MS_FLASH_MODEL}).`);
 
   // ١) النسخ والاعتماد بثلاثة النماذج (المعتمِد مدققًا على الصورة)
   await step('transcribe', true, async () => {
@@ -2771,6 +2800,29 @@ async function msAutoRun(p) {
     }
     R.foliosTranscribed = done;
     if (!done && !(base.folios || []).some(f => (f.text || '').trim())) throw new Error('لا نصوص معتمدة في أي نسخة');
+  });
+
+  // ١.٥) تعرّف اللوحة ووصفها وترجيح نسبتها وتأكيدها من الشاملة
+  await step('identify', false, async () => {
+    const f0 = (base.folios || []).find(f => f.file_path);
+    if (!f0) { msAutoLog(p, 'لا صورة لوحة في الأم — تُتخطى خطوة التعرّف.'); return; }
+    if (p.identification && p.identification.consensus && p.identification.consensus.book
+        && !/مجهول|غير معروف/.test(String(p.title || ''))) {
+      msAutoLog(p, `التعرّف محفوظ من جولة سابقة: «${p.identification.consensus.book}» — يُستفاد منه في المقدمة والمقارنة.`);
+      return;
+    }
+    msAutoLog(p, 'تعرّف اللوحة: نماذج الرؤية ترجّح الكتاب والمؤلف وتصف الخط وتحكم في خط المؤلف والعصر، ثم التأكيد من الشاملة...');
+    const data = await msAutoFetch('/api/manuscripts/identify', {
+      file_paths: [f0.file_path],
+      text: String(f0.audited_text || f0.text || '').slice(0, 6000), api_key: msApiKey() });
+    p.identification = { ...data, at: new Date().toISOString() };
+    if (p.intro) msIdentifyWriteIntro();
+    const c = data.consensus || {};
+    if (c.book && (!p.title || /مجهول|غير معروف/.test(p.title))) p.title = c.book;
+    if (c.author && (!p.author || /مجهول|غير معروف/.test(p.author))) p.author = c.author;
+    R.identification = { book: c.book || '', author: c.author || '', autograph: c.autograph || '', century: c.century || '',
+      confirmed: data.confirmation ? `«${data.confirmation.title}» (ج ${data.confirmation.part || '—'} ص ${data.confirmation.page || '—'})` : '' };
+    msAutoLog(p, `الترجيح: «${c.book || '—'}» للمؤلف ${c.author || '—'} — خط المؤلف: ${c.autograph || '—'}، العصر: ${c.century || '—'}${data.confirmation ? `؛ وأكّدته الشاملة بعبارة من اللوحة في «${data.confirmation.title}» (ج ${data.confirmation.part || '—'} ص ${data.confirmation.page || '—'})` : '؛ ولم يتيسر تأكيد بعبارة مطابقة في الشاملة فيبقى ترجيحًا معلّلًا'}. وسيُكتب «وصف اللوحة ونسبتها» في مقدمة التحقيق.`);
   });
 
   // ٢) المقابلة بين النسخ على الأم
@@ -2837,10 +2889,10 @@ async function msAutoRun(p) {
           addCost(verdict.cost);
           const opt2 = verdict.reading === 'other' ? 'adopt_other' : 'keep_note';
           const corrected = msApplyRecommendation(p, e,
-            { action: verdict.reading === 'other' ? 'adopt_other' : 'keep_base_note', margin_note: '', model: MS_ARGON_MODEL, confidence: verdict.confidence },
+            { action: verdict.reading === 'other' ? 'adopt_other' : 'keep_base_note', margin_note: '', model: APPROVER, confidence: verdict.confidence },
             opt2, { auto: true, useNote: false,
               decisionLabel: `اعتماد أرغون من صورة اللوحة: ${verdict.reason || 'طابقت القراءة خط اللوحة'}` });
-          e.rec.approver = MS_ARGON_MODEL; e.rec.image_decided = true;
+          e.rec.approver = APPROVER; e.rec.image_decided = true;
           decided++; imageDecided++; if (corrected) adopted++;
           msAutoLog(p, `حسم أرغون من الصورة لوحة (${e.folio}) ${e.type} مع (${e.siglum}): قراءة ${verdict.reading === 'other' ? 'النسخة الأخرى' : 'الأم'} — ${verdict.reason || ''}`);
         } else {
@@ -2884,7 +2936,34 @@ async function msAutoRun(p) {
   await step('agents', false, async () => {
     p.agent_suggestions = p.agent_suggestions || [];
     a.agentDone = a.agentDone || {};
-    // وكلاء المجموعة المعتمدة المتخصصون: لكلٍّ نموذجه وكتبه وتركيزه
+    // المسار الموجَّه أولًا: مخطِّط عبقري يختار المهم ومدير يعتمد وباحثون
+    // سريعون (Flash) ينفّذون — فإن تعذر فمتخصصو المجموعة لكل لوحة احتياطًا
+    let directedDone = !!a.planDone;
+    if (!directedDone) {
+      try {
+        const s2 = msInitStage2(p);
+        msAutoLog(p, 'المسار الموجَّه: المخطِّط العبقري (Sonnet) يمسح النص كاملًا فيحدد ما يجب بحثه، ومدير التحقيق يعتمد الخطة ويحذف حشوها...');
+        const plan = await msAutoFetch('/api/manuscripts/research-plan', {
+          title: p.title, author: p.author,
+          author_card: p.author_profile ? msAuthorCardText(p) : '',
+          text: (base.folios || []).map(f => f.text || '').join('\n').slice(0, 70000),
+          api_key: msApiKey() });
+        s2.plan = { overview: plan.overview || '', items: plan.items || [], dropped: plan.dropped || [],
+          manager_note: plan.manager_note || '', planner_model: plan.planner_model, manager_model: plan.manager_model,
+          at: new Date().toISOString() };
+        msAutoLog(p, `خطة البحث المعتمدة: ${s2.plan.items.length} موضعًا فقط (حذف المدير ${(plan.dropped || []).length}) — الباحثون السريعون (${MS_FLASH_MODEL}) يبحثون ويستخرجون من الشاملة...`);
+        const out = await msAutoFetch('/api/manuscripts/execute-plan', {
+          title: p.title, author: p.author, items: s2.plan.items, api_key: msApiKey() });
+        (out.suggestions || []).filter(s => String(s.body || '').trim() || (s.verify || {}).locus).forEach(s =>
+          p.agent_suggestions.push({ ...s, id: msUid(),
+            folio: (base.folios || []).find(f => (f.text || '').includes((s.anchor || '').slice(0, 24)))?.label || '',
+            status: 'pending', agent: 'flash' }));
+        a.planDone = true; directedDone = true;
+      } catch (e) {
+        msAutoLog(p, `تعذر المسار الموجَّه (${String(e.message || '').slice(0, 80)}) — يُستكمل بمتخصصي المجموعة لكل لوحة.`);
+      }
+    }
+    if (!directedDone) {
     // متخصصو المرحلة الثانية الستة المختصرون (التعريف الموحد في MS_STAGE2_JOBS)
     const JOBS = MS_STAGE2_JOBS;
     for (const f of (base.folios || []).filter(x => (x.text || '').trim())) {
@@ -2893,10 +2972,10 @@ async function msAutoRun(p) {
         const doneKey = f.label + ':' + key;
         if (a.agentDone[doneKey]) continue;
         a.checkpoint = { step: 'agents', item: `${label} — لوحة (${f.label})`, at: new Date().toISOString() };
-        msAutoLog(p, `${label} (نموذج ${msGroupModel(key, MS_LUNA_MODEL)}) على لوحة (${f.label})...`);
+        msAutoLog(p, `${label} (نموذج ${msGroupModel(key, MS_FLASH_MODEL)}) على لوحة (${f.label})...`);
         const data = await msAutoFetch('/api/manuscripts/agents', {
           text: f.text, title: p.title, author: p.author,
-          model: msGroupModel(key, MS_LUNA_MODEL), api_key: msApiKey(),
+          model: msGroupModel(key, MS_FLASH_MODEL), api_key: msApiKey(),
           extra_books: msGroupBookTitles(key).length ? msGroupBookTitles(key) : undefined,
           agent_focus: focus });
         addCost(data.cost);
@@ -2906,7 +2985,8 @@ async function msAutoRun(p) {
         await msSaveNow(); renderMsAuto();
       }
     }
-    R.agentsAccepted = decideSuggestions(['takhrij', 'tarjama', 'lugha', 'dabt', 'tafsir', 'aqeedah'], 'متخصصو المرحلة الثانية');
+    }
+    R.agentsAccepted = decideSuggestions(['takhrij', 'tarjama', 'lugha', 'dabt', 'tafsir', 'aqeedah'], directedDone ? 'المسار الموجَّه (خطة معتمدة + باحثون سريعون)' : 'متخصصو المرحلة الثانية');
     renderMsAgents();
   });
 
@@ -2920,7 +3000,7 @@ async function msAutoRun(p) {
       msAutoLog(p, `وكيل مقارنة أقوال المؤلف بكتبه (متغير بحسب «${p.author}») على لوحة (${f.label})...`);
       const data = await msAutoFetch('/api/manuscripts/author-agent', {
         text: f.text, title: p.title, author: msAuthorName(p),
-        model: msGroupModel('authorworks', MS_LUNA_MODEL), api_key: msApiKey(),
+        model: msGroupModel('authorworks', MS_FLASH_MODEL), api_key: msApiKey(),
         extra_books: msGroupBookTitles('authorworks').length ? msGroupBookTitles('authorworks') : undefined });
       addCost(data.cost);
       (data.suggestions || []).forEach(s => p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending' }));
@@ -2955,7 +3035,7 @@ async function msAutoRun(p) {
     msAutoCheck(p);
     const data = await msAutoFetch('/api/manuscripts/monitor', {
       project_title: p.title, author: p.author, phase: 'شاملة',
-      context: msMonitorContext(p, 'شاملة'), model: LEADER, api_key: msApiKey() });
+      context: msMonitorContext(p, 'شاملة'), model: MONITOR, api_key: msApiKey() });
     addCost(data.cost);
     (p.monitor_log = p.monitor_log || []).push({ id: msUid(), phase: 'شاملة', at: new Date().toISOString(),
       model: data.model || MS_WONDER_MODEL, findings: data.findings || '', status: 'open',
@@ -3017,7 +3097,7 @@ async function msAutoRun(p) {
         p.author_profile.aqeedah ? `العقيدة: ${p.author_profile.aqeedah}` : '',
         p.author_profile.classification_basis ? `قرينة التصنيف: ${p.author_profile.classification_basis}` : '',
       ].filter(Boolean).join('\n') || undefined : undefined,
-      model: msGroupModel('bio', LEADER),
+      model: msGroupModel('bio', MS_FLASH_MODEL),
       bio_books: msGroupBookTitles('bio').length ? msGroupBookTitles('bio') : undefined,
       copies: (p.copies || []).map(c => ({ siglum: c.siglum, library: c.library, shelfmark: c.shelfmark,
         date: c.date, script: c.script, notes: c.notes })),
@@ -3025,6 +3105,11 @@ async function msAutoRun(p) {
       steps: stepsSummary });
     addCost(data.cost);
     p.intro = data.intro;
+    // وصف اللوحة ونسبتها من خطوة التعرّف يُكتب في المقدمة بنفسه
+    if (p.identification && (p.identification.consensus || {}).book) {
+      msIdentifyWriteIntro();
+      msAutoLog(p, 'كُتب «وصف اللوحة ونسبتها» في مقدمة التحقيق: الترجيح وتأكيد الشاملة ووصف الخط وحكم خط المؤلف والعصر.');
+    }
     a.introDone = true;
     R.bioSources = data.bio_sources || [];
     msAutoLog(p, `كُتبت مقدمة التحقيق وترجمة المؤلف من ${data.bio_snippets || 0} شاهدًا في كتب التراجم: ${(data.bio_sources || []).join('، ') || '—'}.`);
@@ -3053,7 +3138,7 @@ async function msAutoRun(p) {
       context: ctx, model: APPROVER, api_key: msApiKey() });
     addCost(data.cost);
     (p.monitor_log = p.monitor_log || []).push({ id: msUid(), phase: 'اعتماد أرغون', at: new Date().toISOString(),
-      model: data.model || MS_ARGON_MODEL, findings: data.findings || '', status: 'open',
+      model: data.model || MS_DIRECTOR_MODEL, findings: data.findings || '', status: 'open',
       cost: data.cost, seconds: data.seconds, auto: true, approver: true });
     a.approveDone = true;
     R.approval = String(data.findings || '').slice(0, 400);
@@ -3126,7 +3211,7 @@ async function msAutoStart() {
   } else {
     a.steps = {}; a.report = {}; a.failCount = 0; a.resumes = 0;
     a.startedAt = new Date().toISOString();
-    msAutoLog(p, 'بدأ التحقيق الآلي الذاتي: مدير التحقيق Muse Wonder، مساعده Gemini Carbon، المعتمِد Google Argon — من النسخ إلى الإخراج بلا تدخل بشري.');
+    msAutoLog(p, 'بدأ التحقيق الآلي الذاتي: مدير التحقيق Gemini Hydrogen، مساعده Gemini Carbon، المراقب Muse Wonder، الباحثون Gemini 3.8 Flash — من النسخ إلى الإخراج بلا تدخل بشري.');
   }
   a.status = 'running';
   await msSaveNow(); renderMsAuto();
@@ -3313,7 +3398,7 @@ async function msDiscussSend() {
   try {
     const data = await msAutoFetch('/api/manuscripts/discuss', {
       context: msDiscussContext(p), history, message: text,
-      api_key: msApiKey(), model: msGroupModel('leader', MS_WONDER_MODEL) });
+      api_key: msApiKey(), model: msGroupModel('leader', MS_DIRECTOR_MODEL) });
     let reply = data.reply || '';
     let apply = null;
     const start = reply.lastIndexOf('{"apply"');
@@ -3341,7 +3426,7 @@ function msDiscussApply(i) {
   const option = ['adopt_other', 'keep_note', 'keep_drop'].includes(prop.option) ? prop.option : 'keep_note';
   msApplyRecommendation(p, e,
     { action: option === 'adopt_other' ? 'adopt_other' : (option === 'keep_drop' ? 'keep_base_drop' : 'keep_base_note'),
-      margin_note: prop.apparatus || '', model: msGroupModel('leader', MS_WONDER_MODEL) },
+      margin_note: prop.apparatus || '', model: msGroupModel('leader', MS_DIRECTOR_MODEL) },
     option, { useNote: !!prop.apparatus,
       decisionLabel: 'تصحيح باتفاق النقاش مع المحقق الآلي' + (prop.reason ? ': ' + prop.reason : '') });
   e.rec.discussion = true;
