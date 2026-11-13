@@ -1810,7 +1810,8 @@ document.addEventListener('DOMContentLoaded', () => {
 const MS_GROUP_ID = 'ms_tahqeeq_group_v1';
 const MS_GROUP_MODELS = [
   ['meta/muse-wonder', 'Muse Wonder — قائد ومدقق'],
-  ['~openai/gpt-luna-latest', 'GPT Luna — مساعد تنفيذي'],
+  ['google/gemini-4-carbon', 'Gemini Carbon — مساعد مدير التحقيق'],
+  ['~openai/gpt-luna-latest', 'GPT Luna'],
   ['google/gemini-4-argon', 'Google Argon — معتمِد الصور والجودة'],
   ['~google/gemini-pro-latest', 'Gemini Pro Latest'],
   ['google/gemini-3.1-pro-preview', 'Gemini 3.1 Pro'],
@@ -1819,25 +1820,26 @@ const MS_GROUP_MODELS = [
 ];
 const MS_GROUP_DEFAULT_AGENTS = [
   { key: 'leader', name: 'مدير التحقيق — المحقق القائد والمدقق', desc: 'مدير المرحلة الثانية: يستلم النسخة الجاهزة من مدير المرحلة الأولى، يستشير مجلس المستشارين، ينشئ الوكيل الذهبي، يشغّل المتخصصين، ويعتمد النص المحقق نهائيًا. ويحسم مواضع خلاف المرحلة الأولى ويقود النقاش والتصحيحات', model: 'meta/muse-wonder', books: [], stage: 2 },
+  { key: 'assistant', name: 'مساعد مدير التحقيق', desc: 'المساعد التنفيذي لمدير التحقيق (Gemini Carbon): يشغّل جولات المتخصصين والمسح والموازاة والرقابة المساعدة بأمر المدير وتحت مراجعته واعتماده', model: 'google/gemini-4-carbon', books: [], stage: 2 },
   { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ، يحسم من الصورة، ويعتمد النسخة نهائيًا قبل الإصدار', model: 'google/gemini-4-argon', books: [], stage: 1 },
   { key: 'advisor_sonnet', name: 'عضو مجلس المستشارين — Sonnet', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: '~anthropic/claude-sonnet-latest', books: [], stage: 2, advisor: true },
-  { key: 'advisor_astra', name: 'عضو مجلس المستشارين — Astra Pro', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'openai/gpt-6-astra-pro', books: [], stage: 2, advisor: true },
+  { key: 'advisor_argon', name: 'عضو مجلس المستشارين — Gemini Argon', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'google/gemini-4-argon', books: [], stage: 2, advisor: true },
   { key: 'advisor_wonder', name: 'عضو مجلس المستشارين — Muse Wonder', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'meta/muse-wonder', books: [], stage: 2, advisor: true },
   { key: 'bio', name: 'وكيل ترجمة المؤلف', desc: 'يبني ترجمة المؤلف بين المختصرة والمتوسطة من كتب التراجم المعتمدة: مولد ووفاة ومواقف وشيوخ وتلاميذ', model: 'meta/muse-wonder', stage: 2,
     books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'شذرات الذهب', 'البداية والنهاية', 'طبقات الشافعية الكبرى', 'الأعلام', 'معجم المؤلفين', 'الدرر الكامنة', 'بغية الوعاة', 'حسن المحاضرة'] },
-  { key: 'ayat', name: 'وكيل تخريج الآيات', desc: 'يعزو الآيات إلى سورها وأرقامها ويضبط لفظها على المصحف، ويستعين بكتب التفسير والإعراب', model: '~openai/gpt-luna-latest', stage: 2,
+  { key: 'ayat', name: 'وكيل تخريج الآيات', desc: 'يعزو الآيات إلى سورها وأرقامها ويضبط لفظها على المصحف، ويستعين بكتب التفسير والإعراب', model: 'google/gemini-4-carbon', stage: 2,
     books: ['تفسير الطبري', 'تفسير ابن كثير', 'الدر المنثور', 'فتح القدير للشوكاني', 'إعراب القرآن', 'معاني القرآن'] },
-  { key: 'hadith', name: 'وكيل التخريج', desc: 'يخرّج الأحاديث والآثار باختصار المحققين: عزو للمصدر والرقم ودرجة مختصرة من كتب التخريج المعتمدة (التلخيص الحبير، نصب الراية، إرواء الغليل، سلسلتا الألباني) — لا سرد أسانيد، والصحيحان يُكتفى بعزوهما', model: '~openai/gpt-luna-latest', stage: 2,
+  { key: 'hadith', name: 'وكيل التخريج', desc: 'يخرّج الأحاديث والآثار باختصار المحققين: عزو للمصدر والرقم ودرجة مختصرة من كتب التخريج المعتمدة (التلخيص الحبير، نصب الراية، إرواء الغليل، سلسلتا الألباني) — لا سرد أسانيد، والصحيحان يُكتفى بعزوهما', model: 'google/gemini-4-carbon', stage: 2,
     books: ['صحيح البخاري', 'صحيح مسلم', 'سنن أبي داود', 'سنن الترمذي', 'سنن النسائي', 'سنن ابن ماجه', 'موطأ مالك', 'مسند الإمام أحمد', 'التلخيص الحبير', 'نصب الراية', 'إرواء الغليل', 'سلسلة الأحاديث الصحيحة', 'سلسلة الأحاديث الضعيفة', 'فتح الباري', 'شرح النووي على صحيح مسلم'] },
-  { key: 'tarajim', name: 'وكيل السير والتراجم', desc: 'يعرّف بأعلام المتن باختصار شديد لا يتجاوز ٤-٥ أسطر: تعريف بالمترجم له ومذهبه وعقيدته وأهم شيوخه وتلاميذه ومؤلفاته وسنة وفاته — من كتب التراجم والطبقات، وما لم يثبت لا يُذكر أو يُنسب بقيل', model: '~openai/gpt-luna-latest', stage: 2,
+  { key: 'tarajim', name: 'وكيل السير والتراجم', desc: 'يعرّف بأعلام المتن باختصار شديد لا يتجاوز ٤-٥ أسطر: تعريف بالمترجم له ومذهبه وعقيدته وأهم شيوخه وتلاميذه ومؤلفاته وسنة وفاته — من كتب التراجم والطبقات، وما لم يثبت لا يُذكر أو يُنسب بقيل', model: 'google/gemini-4-carbon', stage: 2,
     books: ['سير أعلام النبلاء', 'تهذيب الكمال', 'تهذيب التهذيب', 'تقريب التهذيب', 'الإصابة في تمييز الصحابة', 'أسد الغابة', 'ميزان الاعتدال', 'لسان الميزان', 'الوافي بالوفيات', 'الأعلام'] },
-  { key: 'lugha', name: 'وكيل اللغة والأشعار', desc: 'يستخرج غريب الألفاظ من لسان العرب والقاموس المحيط وتاج العروس، ويضبط المشكل ويكشف التصحيف، ويعزو الأبيات الشعرية الواردة في المتن إلى قائليها من كتب الأدب والدواوين', model: '~openai/gpt-luna-latest', stage: 2,
+  { key: 'lugha', name: 'وكيل اللغة والأشعار', desc: 'يستخرج غريب الألفاظ من لسان العرب والقاموس المحيط وتاج العروس، ويضبط المشكل ويكشف التصحيف، ويعزو الأبيات الشعرية الواردة في المتن إلى قائليها من كتب الأدب والدواوين', model: 'google/gemini-4-carbon', stage: 2,
     books: ['لسان العرب', 'القاموس المحيط', 'تاج العروس', 'الصحاح', 'النهاية في غريب الحديث', 'المصباح المنير', 'مختار الصحاح', 'الأغاني', 'خزانة الأدب', 'المفضليات'] },
-  { key: 'tafsir', name: 'وكيل التفسير', desc: 'حين يكون المخطوط في التفسير أو يذكر المؤلف آية فيفسرها أو يستدل بها: يبين معناها ووجه الاستدلال باختصار من أمهات كتب التفسير المعتمدة', model: '~openai/gpt-luna-latest', stage: 2,
+  { key: 'tafsir', name: 'وكيل التفسير', desc: 'حين يكون المخطوط في التفسير أو يذكر المؤلف آية فيفسرها أو يستدل بها: يبين معناها ووجه الاستدلال باختصار من أمهات كتب التفسير المعتمدة', model: 'google/gemini-4-carbon', stage: 2,
     books: ['تفسير الطبري', 'تفسير ابن كثير', 'الجامع لأحكام القرآن للقرطبي', 'الدر المنثور', 'فتح القدير للشوكاني', 'روح المعاني', 'التحرير والتنوير'] },
-  { key: 'aqeedah', name: 'وكيل العقيدة', desc: 'حيث يذكر المؤلف في ثنايا بحثه موضوعًا أو كلامًا في الاعتقاد: يبين باختصار موثّق هل هو مذهب أهل السنة والجماعة أو خلافه، من كتب الاعتقاد المعتمدة — بلا توسع ولا تكفير ولا تبديع لأعيان', model: '~openai/gpt-luna-latest', stage: 2,
+  { key: 'aqeedah', name: 'وكيل العقيدة', desc: 'حيث يذكر المؤلف في ثنايا بحثه موضوعًا أو كلامًا في الاعتقاد: يبين باختصار موثّق هل هو مذهب أهل السنة والجماعة أو خلافه، من كتب الاعتقاد المعتمدة — بلا توسع ولا تكفير ولا تبديع لأعيان', model: 'google/gemini-4-carbon', stage: 2,
     books: ['شرح العقيدة الطحاوية لابن أبي العز', 'شرح السنة للبغوي', 'الشريعة للآجري', 'الإبانة لابن بطة', 'شرح أصول اعتقاد أهل السنة والجماعة للالكائي', 'درء تعارض العقل والنقل', 'منهاج السنة النبوية'] },
-  { key: 'authorworks', name: 'وكيل مقارنة أقوال المؤلف بكتبه', desc: 'متغير بحسب صاحب كل مخطوط: تُحلّ كتب المؤلف نفسه آليًا من المكتبة عند كل مشروع، وما تضيفه هنا مظان إضافية ثابتة', model: '~openai/gpt-luna-latest', books: [], stage: 2 },
+  { key: 'authorworks', name: 'وكيل مقارنة أقوال المؤلف بكتبه', desc: 'متغير بحسب صاحب كل مخطوط: تُحلّ كتب المؤلف نفسه آليًا من المكتبة عند كل مشروع، وما تضيفه هنا مظان إضافية ثابتة', model: 'google/gemini-4-carbon', books: [], stage: 2 },
 ];
 // كتب تُستكمل في المجموعة الحية القائمة بلا مساس بضبط المحقق القائم
 const MS_GROUP_BOOK_UPGRADES = {
@@ -1858,6 +1860,16 @@ async function msLoadGroup() {
     // في المجموعة القائمة، بلا مساس بنماذج المحقق وكتبه المضبوطة بيده
     let changed = false;
     if (MS_GROUP.name === 'مجموعة تحقيق المخطوطات') { MS_GROUP.name = 'تحقيق المخطوطات'; changed = true; }
+    // استبعاد Astra Pro من المجلس لغلائه واستبدال Gemini Argon به، ومساعد المدير Gemini Carbon
+    (MS_GROUP.agents || []).forEach(a => {
+      if (a.ms_key === 'advisor_astra' || /astra/i.test(String(a.model || '')) || /Astra/.test(String(a.name || ''))) {
+        a.ms_key = 'advisor_argon'; a.id = 'msag_advisor_argon';
+        a.name = 'عضو مجلس المستشارين — Gemini Argon'; a.model = 'google/gemini-4-argon';
+        changed = true;
+      }
+      if (['ayat', 'hadith', 'tarajim', 'lugha', 'tafsir', 'aqeedah', 'authorworks'].includes(a.ms_key)
+          && a.model === '~openai/gpt-luna-latest') { a.model = 'google/gemini-4-carbon'; changed = true; }
+    });
     MS_GROUP.agents = MS_GROUP.agents || [];
     MS_GROUP_DEFAULT_AGENTS.forEach(d => {
       if (!MS_GROUP.agents.some(a => a.ms_key === d.key)) {
@@ -2297,15 +2309,15 @@ async function msStage2Approve() {
 // ووكلاء التحقيق يعملون تحت قراره: نسخ واعتماد، مقابلة، حسم، تخريج،
 // موازاة بمؤلفات المؤلف، مقارنة مرجعية، مقدمة وترجمة، فهارس، إصدار.
 const MS_WONDER_MODEL = 'meta/muse-wonder';   // القائد والمدقق: يحسم ويكتب المقدمة
-const MS_LUNA_MODEL = '~openai/gpt-luna-latest'; // المساعد التنفيذي: وكلاء وموازاة ورقابة
+const MS_LUNA_MODEL = 'google/gemini-4-carbon'; // مساعد مدير التحقيق التنفيذي (Gemini Carbon): وكلاء وموازاة ورقابة مساعدة
 const MS_ARGON_MODEL = 'google/gemini-4-argon';  // المعتمِد: يدقق الصور ويعتمد نهائيًا
 const MS_AUTO_STEPS = [
   ['transcribe', 'نسخ كل اللوحات واعتماد أرغون لها'],
   ['collate', 'المقابلة بين النسخ'],
   ['decide', 'حسم مواضع الخلاف (Wonder، وما احتاج صورة حسمه أرغون منها)'],
-  ['agents', 'وكلاء التحقيق بمساعدة Luna: تخريج ولغة وتراجم وضبط'],
+  ['agents', 'وكلاء التحقيق بمساعدة مساعد مدير التحقيق (Gemini Carbon): تخريج وسير ولغة وأشعار وتفسير وعقيدة'],
   ['author', 'الموازاة بمؤلفات المؤلف ومسح أسلوبه'],
-  ['monitor', 'رقابة الجودة المساعدة (Luna)'],
+  ['monitor', 'رقابة القائد الشاملة'],
   ['compare', 'المقارنة المرجعية بتحقيق منشور'],
   ['intro', 'كتابة مقدمة التحقيق وترجمة المؤلف'],
   ['indexes', 'بناء الفهارس'],
@@ -2357,7 +2369,7 @@ function renderMsAuto() {
     paused_network: '⏸ انقطع الاتصال — كل شيء محفوظ عند نقطة التوقف وسيستأنف تلقائيًا فور عودته، لا يحتاجك إلا في إعادة الاتصال',
     interrupted: '⏸ توقف مفاجئ — محفوظ عند نقطة التوقف وسيستأنف ذاتيًا بعد قليل',
     error: '✖ توقف التحقيق الآلي بعد محاولتين — راجع آخر سطر في السجل' }[a.status] || a.status;
-  const rolesLine = '<div class="ms-hint" style="margin:4px 0">القائد والمدقق: Muse Wonder · المساعد التنفيذي: GPT Luna · المعتمِد النهائي: Google Argon (يدقق الصور ويعتمد النسخ والجودة)</div>';
+  const rolesLine = '<div class="ms-hint" style="margin:4px 0">مدير التحقيق والقائد: Muse Wonder · مساعد مدير التحقيق: Gemini Carbon · المعتمِد النهائي: Google Argon (يدقق الصور ويعتمد النسخ والجودة)</div>';
   const ckpt = a.checkpoint ? `<div class="ms-hint">نقطة الحفظ الأخيرة: ${msEsc(a.checkpoint.step)} — ${msEsc(a.checkpoint.item || '')} · ${msEsc(new Date(a.checkpoint.at).toLocaleString('ar-EG'))}${a.resumes ? ` · استئنافات ذاتية: ${a.resumes}` : ''}</div>` : '';
   const r = a.report || {};
   const reportHtml = (a.status === 'done') ? `
@@ -2854,7 +2866,7 @@ async function msAutoStart() {
   } else {
     a.steps = {}; a.report = {}; a.failCount = 0; a.resumes = 0;
     a.startedAt = new Date().toISOString();
-    msAutoLog(p, 'بدأ التحقيق الآلي الذاتي: القائد Muse Wonder، المساعد GPT Luna، المعتمِد Google Argon — من النسخ إلى الإخراج بلا تدخل بشري.');
+    msAutoLog(p, 'بدأ التحقيق الآلي الذاتي: مدير التحقيق Muse Wonder، مساعده Gemini Carbon، المعتمِد Google Argon — من النسخ إلى الإخراج بلا تدخل بشري.');
   }
   a.status = 'running';
   await msSaveNow(); renderMsAuto();
@@ -3488,7 +3500,9 @@ async function msExportDocx() {
 async function msExportPdf() {
   const p = msCurrentProject();
   if (!p) return;
-  const html = msBuildPrintHtml(p, { toolbar: false });
+  // ضبط الأبحاث الشرعية نفسه حرفيًا: forPdf بهوامش Paged الصفرية، وخطوط
+  // وألوان ومقاسات وفواصل وخلفية من إعدادات طباعة المنظومة عبر paperPrintCss
+  const html = msBuildPrintHtml(p, { toolbar: false, forPdf: true });
   document.getElementById('msExportInfo').textContent = 'جارٍ توليد PDF مضبوط الصف...';
   try {
     const res = await fetch('/api/projects/export-pdf', {

@@ -59,10 +59,10 @@
     "kind": "advisor"
    },
    {
-    "id": "adv_fiqh_astra",
-    "name": "عضو مجلس المستشارين — Astra Pro",
+    "id": "adv_fiqh_argon",
+    "name": "عضو مجلس المستشارين — Gemini Argon",
     "desc": "عضو مجلس مستشارين: تصله المسألة كاملة كإخوانه بلا تقسيم، فيقترح مظانّها ومراسيها للمدير",
-    "model": "google/gemini-3.8-flash",
+    "model": "google/gemini-4-argon",
     "enabled": true,
     "active": true,
     "is_director": false,
@@ -897,9 +897,9 @@
    },
    {
     "id": "adv_mazann",
-    "name": "عضو مجلس المستشارين — Astra Pro",
+    "name": "عضو مجلس المستشارين — Gemini Argon",
     "desc": "عضو مجلس مستشارين: تصله المسألة كاملة كإخوانه بلا تقسيم، فيقترح مظانّها ومراسيها للمدير",
-    "model": "google/gemini-3.8-flash",
+    "model": "google/gemini-4-argon",
     "enabled": true,
     "active": true,
     "books": [],
