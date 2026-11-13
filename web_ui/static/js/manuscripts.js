@@ -10,7 +10,8 @@ let msModels = { primary: '', checker: '' };
 // رُفض (الأغلى والأخلط حرفيًا)، و2.5 Pro انهار في تشغيل (تسرّب تفكير) فلا يعتمد وحده.
 const MS_MODEL_CHOICES = [
   ['~google/gemini-pro-latest', 'Gemini Pro Latest — القارئ الأول المعتمد (دقة)'],
-  ['~google/gemini-flash-latest', 'Gemini Flash Latest — القارئ الثاني المعتمد (سرعة ورخص)'],
+  ['google/gemini-4-carbon', 'Gemini Carbon — القارئ الثاني المعتمد (ثبت في اللوحات)'],
+  ['~google/gemini-flash-latest', 'Gemini Flash Latest — يرجع فارغًا غالبًا في اللوحات، لا يُعتمد قارئًا'],
   ['google/gemini-4-argon', 'Gemini 4 Argon — المدقق المعتمد'],
   ['google/gemini-3.1-pro-preview', 'Gemini 3.1 Pro — قوي قراءة للخطوط الصعبة (غالٍ بطيء)'],
   ['anthropic/claude-sonnet-5.5', 'Claude Sonnet 5.5 — دقيق وصادق في مواضع الشك'],
@@ -22,7 +23,7 @@ const MS_MODEL_CHOICES = [
   ['anthropic/claude-sonnet-5', 'Claude Sonnet 5 — غالٍ'],
 ];
 const MS_MODEL_PRESETS = {
-  standard: { primary: '~google/gemini-pro-latest', checker: '~google/gemini-flash-latest', auditor: 'google/gemini-4-argon' },
+  standard: { primary: '~google/gemini-pro-latest', checker: 'google/gemini-4-carbon', auditor: 'google/gemini-4-argon' },
   hard: { primary: 'google/gemini-3.1-pro-preview', checker: 'anthropic/claude-sonnet-5.5', auditor: 'google/gemini-3.1-pro-preview' },
 };
 
@@ -2499,7 +2500,11 @@ async function msAutoRun(p) {
           file_path: f.file_path, api_key: msApiKey(),
           primary_model: choice.primary, checker_model: choice.checker, auditor_model: choice.auditor });
         const primary = data.primary || {}, checker = data.checker || {}, auditor = data.auditor || {};
-        if (!primary.text && !checker.text) throw new Error(`لوحة (${f.label}) في (${c.siglum}): لم يرجع القارئان نصًا`);
+        // توثيق سقوط أي قارئ وإسناده الاحتياطي في اللوحة والسجل — لا نجاح صامت بنصف فريق
+        f.reader_notes = [primary, checker].filter(r => r.fallback || r.error || r.fallback_error).map(r =>
+          `${r.requested_model || r.model || 'قارئ'}: ${r.fallback ? `سقط (${r.first_error || 'رد فارغ'}) فأُسند احتياطيًا إلى ${r.model} وقرأ اللوحة` : (r.error || r.fallback_error || '')}`);
+        if (f.reader_notes.length) msAutoLog(p, `⚠️ لوحة (${f.label}) في (${c.siglum}): ${f.reader_notes.join('؛ ')}`);
+        if (!primary.text && !checker.text) throw new Error(`لوحة (${f.label}) في (${c.siglum}): لم يرجع القارئان نصًا حتى بعد الإسناد الاحتياطي — تُحفظ وتُستأنف`);
         f.primary_text = primary.text || ''; f.checker_text = checker.text || '';
         f.audited_text = auditor.text || ''; f.audit_notes = auditor.notes || '';
         f.model_primary = primary.model || choice.primary; f.model_checker = checker.model || choice.checker;
@@ -2707,7 +2712,7 @@ async function msAutoRun(p) {
     (p.monitor_log = p.monitor_log || []).push({ id: msUid(), phase: 'شاملة', at: new Date().toISOString(),
       model: data.model || MS_WONDER_MODEL, findings: data.findings || '', status: 'open',
       cost: data.cost, seconds: data.seconds, auto: true });
-    R.monitorFindings = ((data.findings || '').match(/^\s*[-•*\d]/gm) || []).length || (data.findings ? 1 : 0);
+    R.monitorFindings = (String(data.findings || '').match(/^\s*[-•*\d]/gm) || []).length || (data.findings ? 1 : 0);
     msAutoLog(p, `المراقبة الشاملة: دوّن المدقق ملاحظاته في بطاقة المراقبة (${data.seconds ?? '—'}ث).`);
     renderMsMonitor();
   });

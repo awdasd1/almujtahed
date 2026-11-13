@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.500"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.501"},
         },
     })
     if opened.get("error"):
@@ -13838,7 +13838,9 @@ async def upload_chat_file(request: Request, file: UploadFile = File(...)):
 # هي جدول الحسم الأول. النماذج كلها تنهار في الخطوط الشديدة الصعوبة
 # (السوداني) — لذا سقف إخراج وحارس تكرار وينبَّه المحقق ولا يُسلَّم وهم.
 MS_PRIMARY_MODEL = "~google/gemini-pro-latest"
-MS_CHECKER_MODEL = "~google/gemini-flash-latest"
+# القارئ الثاني كان ~google/gemini-flash-latest: يرجع ردًا فارغًا بنجاح ظاهري
+# في أغلب اللوحات (تفكير مخفي يحرق الإخراج) — المعتمد الآن Gemini Carbon
+MS_CHECKER_MODEL = "google/gemini-4-carbon"
 MS_TRANSCRIBE_PROMPT = (
     "أنت ناسخ مخطوطات محترف. انسخ نص اللوحة المخطوطة في الصورة المرفقة حرفيًا كما هو مكتوب، سطرًا بسطر، "
     "مع الحفاظ على الإملاء والهمزات وعلامات الترقيم كما هي دون أي تصحيح أو تحديث أو شرح. "
@@ -13875,6 +13877,9 @@ def _ms_transcribe_one(model: str, b64_url: str, key: str) -> Dict[str, Any]:
         ]}],
         "temperature": 0.1,
         "max_tokens": 8192,
+        # نسخ حرفي لا يحتاج تفكيرًا مخفيًا: نماذج «الأحدث» (flash-latest) كانت
+        # تحرق سقف الإخراج في reasoning خفي وترجع محتوى فارغًا بنجاح ظاهري
+        "reasoning": {"enabled": False},
     }
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -13888,6 +13893,10 @@ def _ms_transcribe_one(model: str, b64_url: str, key: str) -> Dict[str, Any]:
         raise RuntimeError(str(data.get("error"))[:240])
     msg = ((data.get("choices") or [{}])[0].get("message") or {})
     text = (msg.get("content") or "").strip()
+    if not text:
+        # رد فارغ بنجاح ظاهري (لوحظ في ~google/gemini-flash-latest: ٥٣ ثانية
+        # وكلفة بلا حرف واحد) — فشل معلن يستدعي الإسناد الاحتياطي، لا نجاح صامت
+        raise RuntimeError(f"أرجع النموذج {model} ردًا فارغًا بلا نص")
     usage = data.get("usage") or {}
     truncated = False
     # حارس التكرار: نموذج تائه في خط صعب قد يدور في حلقة حتى سقف الإخراج
@@ -14122,6 +14131,25 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
             except Exception as exc:
                 results[slot] = {"model": primary_model if slot == "primary" else checker_model,
                                  "text": "", "error": str(exc)[:240]}
+    # إسناد احتياطي: قارئ سقط (خطأ أو رد فارغ) يُعاد بنموذج الاحتياط المعتمد
+    # مرة واحدة، ويُوثَّق السقوط والاحتياط في النتيجة نفسها لا يُخفى
+    MS_READER_FALLBACK = "google/gemini-4-carbon"
+    for slot in ("primary", "checker"):
+        r = results.get(slot) or {}
+        if (r.get("text") or "").strip():
+            continue
+        want = primary_model if slot == "primary" else checker_model
+        if want == MS_READER_FALLBACK:
+            continue
+        try:
+            fb = _ms_transcribe_one(MS_READER_FALLBACK, b64_url, key)
+            fb["requested_model"] = want
+            fb["fallback"] = True
+            fb["first_error"] = str(r.get("error") or "رد فارغ")[:200]
+            results[slot] = fb
+        except Exception as exc:
+            r["fallback_error"] = str(exc)[:200]
+            results[slot] = r
     primary = results.get("primary") or {}
     checker = results.get("checker") or {}
     disputes, agreement = ([], 0.0)
