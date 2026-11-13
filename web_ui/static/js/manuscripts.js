@@ -3192,19 +3192,34 @@ function msDiscussApply(i) {
 // ---------- المرحلة ٤: الفهارس والمقدمة والإخراج ----------
 function msIndexGroups(p) {
   const accepted = (p.agent_suggestions || []).filter(s => s.status === 'accepted');
-  const groups = { 'الآيات القرآنية': [], 'الأحاديث والأقوال': [], 'الأعلام': [], 'اللغة والضبط': [], 'موازيات المؤلف': [], 'مصادر التحقيق': [] };
+  // فهارس لصيقة بالمتن وحده: آيات وأحاديث وأشعار وأعلام ولغة، وموازيات
+  // المؤلف حواشي في مواضعها لا فهرس، وما لا فائدة لصيقة فيه لا يُفهرس
+  const groups = { 'الآيات القرآنية': [], 'الأحاديث والأقوال': [], 'الأشعار': [], 'الأعلام': [], 'اللغة': [], 'مصادر ومراجع التحقيق': [] };
   const sources = new Set();
+  const trimA = a => { const t = String(a || '').trim(); return t.length > 70 ? t.slice(0, 70) + '…' : t; };
   accepted.forEach(s => {
-    const item = `«${s.anchor}» — لوحة (${s.folio})`;
-    if (s.kind === 'takhrij' && s.surah) groups['الآيات القرآنية'].push(item);
-    else if (s.kind === 'takhrij') groups['الأحاديث والأقوال'].push(item);
-    else if (s.kind === 'tarjama') groups['الأعلام'].push(item);
-    else if (s.kind === 'author') groups['موازيات المؤلف'].push(`${item} — ${s.body}`);
-    else groups['اللغة والضبط'].push(item);
-    if (s.source) sources.add(s.source);
-    if (s.verify && s.verify.status === 'verified') sources.add(s.verify.detail);
+    const item = `«${trimA(s.anchor)}» — لوحة (${s.folio})`;
+    if (s.kind === 'takhrij' && s.surah) {
+      groups['الآيات القرآنية'].push(`«${trimA(s.anchor)}» (${s.source || ('سورة ' + s.surah)}، الآية ${s.ayah || '—'}) — لوحة (${s.folio})`);
+    } else if (s.kind === 'takhrij') {
+      if (/شعر|أبيات|بيت شعر|قصيدة/.test(`${s.title || ''} ${s.source || ''}`)) groups['الأشعار'].push(item);
+      else groups['الأحاديث والأقوال'].push(item);
+    } else if (s.kind === 'tarjama') {
+      const nm = String(s.body || '').match(/(?:الإمام|الشيخ|العلامة|الحافظ|القاضي)\s+([^،؛(]{4,55})/);
+      if (nm) groups['الأعلام'].push(`${nm[1].trim()} — لوحة (${s.folio})`);
+    } else if (s.kind === 'lugha') {
+      groups['اللغة'].push(item);
+    }
+    const bookOf = str => {
+      const m = String(str || '').match(/^([^()،]{3,60})/);
+      return m ? m[1].trim() : '';
+    };
+    if (s.source) { const b = bookOf(s.source); if (b) sources.add(b); }
+    if (s.verify && s.verify.locus && s.verify.locus.title) sources.add(s.verify.locus.title);
   });
-  groups['مصادر التحقيق'] = [...sources];
+  groups['مصادر ومراجع التحقيق'] = [...sources]
+    .sort((a, b) => (typeof compareBiblioTitles === 'function' ? compareBiblioTitles(a, b) : String(a).localeCompare(String(b), 'ar')));
+  Object.keys(groups).forEach(k => { if (!groups[k].length) delete groups[k]; });
   return groups;
 }
 
@@ -3477,7 +3492,14 @@ function msEdNotePrint(text) {
 function msFinalParts(p) {
   const base = msBaseCopy(p);
   const accepted = ((p.collation || {}).entries || []).filter(e => e.status === 'accepted');
-  const folios = ((base || {}).folios || []).filter(f => (f.text || '').trim())
+  const rawFolios = ((base || {}).folios || []).filter(f => (f.text || '').trim());
+  // النص المحقق يبدأ بلوحة الافتتاح (البسملة والحمدلة) ثم بقية اللوحات
+  // بترتيبها، ولو اختلف ترتيب إدخال اللوحات أو ترقيمها في المشروع
+  const openIdx = rawFolios.findIndex(f => /بسم الله/.test((f.text || '').slice(0, 160)));
+  const orderedFolios = openIdx > 0
+    ? [rawFolios[openIdx], ...rawFolios.filter((_, i) => i !== openIdx)]
+    : rawFolios;
+  const folios = orderedFolios
     .map(f => ({
       label: f.label, siglum: base.siglum, text: f.text || '',
       apparatus: accepted.filter(e => e.folio === f.label).map(e => msApparatusText(e)),
@@ -3744,7 +3766,8 @@ function msPaperRunData(p) {
   if (groups) {
     const idxParts = [];
     Object.keys(groups).forEach(name => {
-      idxParts.push(`**فهرس ${name}**`);
+      if (!(groups[name] || []).length) return;
+      idxParts.push(name === 'مصادر ومراجع التحقيق' ? '**المصادر والمراجع**' : `**فهرس ${name}**`);
       (groups[name] || []).forEach(i => idxParts.push(escMd(i)));
     });
     if (idxParts.length) rounds.push({ name: 'الفهارس', output: idxParts.join('\n\n') });
