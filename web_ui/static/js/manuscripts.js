@@ -728,7 +728,7 @@ async function msRunStyleScan(phrases, containerId, infoId, bookTitles) {
   try {
     const res = await fetch('/api/manuscripts/author-style', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ author: p.author, title: p.title, phrases, book_titles: (bookTitles && bookTitles.length) ? bookTitles : undefined }),
+      body: JSON.stringify({ author: msAuthorName(p), title: p.title, phrases, book_titles: (bookTitles && bookTitles.length) ? bookTitles : undefined }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذر مسح الأسلوب');
@@ -1373,7 +1373,7 @@ async function msShowAuthorBooks() {
   const box = document.getElementById('msAuthorBooks');
   box.textContent = '⏳ جارٍ جمع كتب المؤلف من المكتبة...';
   try {
-    const res = await fetch('/api/manuscripts/author-books?author=' + encodeURIComponent(p.author || ''));
+    const res = await fetch('/api/manuscripts/author-books?author=' + encodeURIComponent(msAuthorName(p) || ''));
     const data = await res.json().catch(() => ({}));
     const books = data.books || [];
     box.innerHTML = books.length
@@ -1428,7 +1428,7 @@ async function msRunAuthor() {
       btn.textContent = `⏳ وكيل المؤلف على لوحة (${f.label})...`;
       const res = await fetch('/api/manuscripts/author-agent', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: msApiKey(), extra_books: msManualExtraBooks(['authorworks']) }),
+        body: JSON.stringify({ text: f.text, title: p.title, author: msAuthorName(p), model, api_key: msApiKey(), extra_books: msManualExtraBooks(['authorworks']) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'تعذر وكيل المؤلف');
@@ -1826,6 +1826,8 @@ const MS_GROUP_DEFAULT_AGENTS = [
   { key: 'advisor_sonnet', name: 'عضو مجلس المستشارين — Sonnet', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: '~anthropic/claude-sonnet-latest', books: [], stage: 2, advisor: true },
   { key: 'advisor_argon', name: 'عضو مجلس المستشارين — Gemini Argon', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'google/gemini-4-argon', books: [], stage: 2, advisor: true },
   { key: 'advisor_wonder', name: 'عضو مجلس المستشارين — Muse Wonder', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'meta/muse-wonder', books: [], stage: 2, advisor: true },
+  { key: 'authorid', name: 'وكيل بطاقة المؤلف وتصنيفه المذهبي والعقدي', desc: 'يبني بطاقة المؤلف عصبَ المرحلة الثانية: اسمه الصحيح والمشهور وصيغ النساخ (كاملًا ومختصرًا وبشهرته)، ومذهبه الفقهي وعقيدته بدقة، وكتبه وتسلسلها، وكتب طبقات مذهبه وتراجمه المرشحة — فعليها تُبنى الترجمة واختيار المظان والموازاة بكتبه بدقة', model: 'meta/muse-wonder', stage: 2,
+    books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'الأعلام', 'معجم المؤلفين', 'طبقات الشافعية الكبرى', 'طبقات الحنابلة', 'الديباج المذهب', 'الجواهر المضية في طبقات الحنفية', 'حسن المحاضرة', 'الدرر الكامنة'] },
   { key: 'bio', name: 'وكيل ترجمة المؤلف', desc: 'يبني ترجمة المؤلف بين المختصرة والمتوسطة من كتب التراجم المعتمدة: مولد ووفاة ومواقف وشيوخ وتلاميذ', model: 'meta/muse-wonder', stage: 2,
     books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'شذرات الذهب', 'البداية والنهاية', 'طبقات الشافعية الكبرى', 'الأعلام', 'معجم المؤلفين', 'الدرر الكامنة', 'بغية الوعاة', 'حسن المحاضرة'] },
   { key: 'ayat', name: 'وكيل تخريج الآيات', desc: 'يعزو الآيات إلى سورها وأرقامها ويضبط لفظها على المصحف، ويستعين بكتب التفسير والإعراب', model: 'google/gemini-4-carbon', stage: 2,
@@ -2094,6 +2096,15 @@ function renderMsStage2() {
     </div>
     ${handed ? `
     <div class="ms-form-row">
+      <button type="button" class="ms-btn ms-btn-primary" id="msStage2AuthorBtn" onclick="msStage2AuthorProfile()">🪪 ٠) بناء بطاقة المؤلف وتصنيفه المذهبي والعقدي</button>
+      <span class="ms-wb-meta">عصب المرحلة الثانية: الاسم الصحيح والمشهور وصيغ النساخ، والمذهب والعقيدة، وكتبه وتسلسلها وكتب طبقات مذهبه — تُبنى عليها الترجمة والمظان والموازاة</span>
+    </div>
+    ${p.author_profile ? `<div class="ms-margin-title">🪪 بطاقة المؤلف وتصنيفه — عصب المرحلة الثانية</div>
+      <div class="ms-group-books" style="white-space:pre-wrap">${msEsc(msAuthorCardText(p))}</div>
+      ${(p.author_profile.works || []).length ? `<div class="ms-group-books"><strong>مؤلفاته وتسلسلها:</strong> ${p.author_profile.works.map(w => `<span class="ms-book-chip">${msEsc(w.title)}${w.in_shamela ? ' ✔ في الشاملة' : ''}</span>`).join('')}</div>` : ''}
+      ${s2.author_verdict && s2.author_verdict.famous ? `<div class="ms-hint">حكم مجلس المستشارين على الاسم والتصنيف: الصحيح «${msEsc(s2.author_verdict.correct || '—')}» · المشهور «${msEsc(s2.author_verdict.famous)}» · ${msEsc(s2.author_verdict.madhhab || '')} · ${msEsc(s2.author_verdict.aqeedah || '')}</div>` : ''}`
+    : '<div class="ms-hint">ابدأ ببطاقة المؤلف قبل المجلس: فتصنيفه مذهبيًا وعقديًا يوجّه اختيار كتب الطبقات والتراجم، واسمه المشهور يفتح كتبه للموازاة الدقيقة.</div>'}
+    <div class="ms-form-row">
       <button type="button" class="ms-btn ms-btn-primary" id="msStage2ConsultBtn" onclick="msStage2Consult()">🧭 ١) استشارة مجلس المستشارين (كلٌّ تصله النسخة كاملة)</button>
       <button type="button" class="ms-btn ms-btn-primary" id="msStage2GoldenBtn" onclick="msStage2Golden()" ${adv.length ? '' : 'disabled'}>🥇 ٢) إنشاء الوكيل الذهبي وتشغيله في كتب المجلس</button>
       <button type="button" class="ms-btn ms-btn-primary" id="msStage2RunBtn" onclick="msStage2Specialists()" ${adv.length ? '' : 'disabled'}>🔍 ٣) تشغيل المتخصصين المختصرين (تخريج/لغة وأشعار/سير/تفسير/عقيدة)</button>
@@ -2114,6 +2125,55 @@ function renderMsStage2() {
     ${s2.manager_note ? `<div class="ms-margin-title">اعتماد مدير التحقيق</div><div class="ms-group-books" style="white-space:pre-wrap">${msEsc(s2.manager_note)}</div>` : ''}
     ` : '<div class="ms-hint">حين تكتمل المرحلة الأولى (نص الأم كاملًا بلا فروق معلقة) سلّم النسخة الجاهزة؛ فيتولى مدير التحقيق تحقيق النص تحقيقًا مختصرًا محكمًا بفريقه.</div>'}
     ${(s2.log || []).length ? `<div class="ms-auto-log">${s2.log.map(l => `<div><span class="ms-auto-log-at">${msEsc(l.at)}</span> ${msEsc(l.msg)}</div>`).join('')}</div>` : ''}`;
+}
+
+// بطاقة المؤلف المصنّفة: عصب المرحلة الثانية (اسم صحيح/مشهور، مذهب، عقيدة، كتب)
+function msAuthorName(p) {
+  const pr = (p && p.author_profile) || {};
+  return pr.famous_name || pr.correct_name || (p && p.author) || '';
+}
+
+function msAuthorCardText(p) {
+  const pr = (p && p.author_profile) || null;
+  if (!pr) return '';
+  return [
+    `الاسم كما كُتب: ${pr.written || p.author || '—'}`,
+    `الاسم الصحيح: ${pr.correct_name || '—'} · المشهور: ${pr.famous_name || '—'}`,
+    `صيغ الاسم في النسخ والتراجم: ${(pr.variants || []).join('، ') || '—'}`,
+    `المذهب الفقهي: ${pr.madhhab || '—'} · العقيدة: ${pr.aqeedah || '—'} · العصر: ${pr.era || '—'} · الوفاة: ${pr.death || '—'}`,
+    pr.classification_basis ? `قرينة التصنيف: ${pr.classification_basis}` : '',
+    (pr.works_in_shamela || []).length ? `كتبه الموجودة في الشاملة (للموازاة بدقة): ${pr.works_in_shamela.join('، ')}` : '',
+    (pr.tarajim_candidates || []).filter(c => c.resolved).length ? `كتب طبقات مذهبه وتراجمه المرشحة المطابقة: ${pr.tarajim_candidates.filter(c => c.resolved).map(c => c.resolved_title || c.title).join('، ')}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+async function msStage2AuthorProfile() {
+  const p = msCurrentProject();
+  if (!p) return;
+  if (!String(p.author || '').trim()) { msToast('اكتب اسم المؤلف كما ورد في بيانات المشروع أولًا (كما كتبه النساخ)'); return; }
+  await msLoadGroup();
+  const btn = document.getElementById('msStage2AuthorBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ وكيل بطاقة المؤلف يصنّفه ويتحقق في الشاملة...'; }
+  const s2 = msInitStage2(p);
+  try {
+    const res = await fetch('/api/manuscripts/author-profile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        author: p.author, title: p.title, desc: p.desc || '',
+        text: (s2.text_snapshot || msStageText(p)).slice(0, 3500),
+        model: msGroupModel('authorid', MS_WONDER_MODEL),
+        tarajim_books: [...new Set([...msGroupBookTitles('authorid'), ...msGroupBookTitles('bio')])],
+        api_key: msApiKey(),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذرت بطاقة المؤلف');
+    p.author_profile = data;
+    msStage2Log(p, `بُنيت بطاقة المؤلف: الصحيح «${data.correct_name || '—'}» والمشهور «${data.famous_name || '—'}» — المذهب: ${data.madhhab || '—'}، العقيدة: ${data.aqeedah || '—'}؛ كتبه في الشاملة ${(data.works_in_shamela || []).length} بصيغة «${data.works_form || '—'}»، وشواهد ترجمته ${data.bio_snippets || 0} في ${(data.bio_books || []).join('، ') || '—'}.`);
+    msSave(); renderMsStage2();
+    msToast('✔ بُنيت بطاقة المؤلف وتصنيفه — ستغذي المجلس والمتخصصين والمقدمة والموازاة', 7000);
+  } catch (e) { msToast('❌ ' + e.message, 7000); }
+  if (btn) { btn.disabled = false; btn.textContent = '🪪 ٠) بناء بطاقة المؤلف وتصنيفه المذهبي والعقدي'; }
 }
 
 function msStage2Handover() {
@@ -2149,12 +2209,23 @@ async function msStage2Consult() {
         title: p.title, author: p.author, desc: p.desc || '',
         sigla: (p.copies || []).map(c => `(${c.siglum}) = ${c.library || ''} ${c.shelfmark || ''}`).join('؛ '),
         text: s2.text_snapshot || msStageText(p), apparatus: s2.apparatus_snapshot || msStageApparatus(p),
+        author_card: msAuthorCardText(p),
         advisors, specialists, director_model: msGroupModel('leader', MS_WONDER_MODEL), api_key: msApiKey(),
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذرت الاستشارة');
     s2.advisors = data.advisors || [];
+    s2.author_verdict = data.author_verdict || null;
+    if (s2.author_verdict && s2.author_verdict.famous) {
+      msStage2Log(p, `حكم المجلس على اسم المؤلف وتصنيفه: المشهور «${s2.author_verdict.famous}» — ${s2.author_verdict.madhhab || ''} · ${s2.author_verdict.aqeedah || ''}.`);
+      if (p.author_profile) {
+        ['correct_name|correct', 'famous_name|famous', 'madhhab|madhhab', 'aqeedah|aqeedah'].forEach(pair => {
+          const [mine, theirs] = pair.split('|');
+          if (s2.author_verdict[theirs]) p.author_profile[mine] = s2.author_verdict[theirs];
+        });
+      }
+    }
     s2.anchors = data.anchors || [];
     s2.books = data.books || [];
     s2.missing = data.missing || [];
@@ -2221,8 +2292,18 @@ async function msStage2Specialists() {
   // كتب المجلس المطابقة تُطعَّم في مظان كل متخصص بحسب إسناد المستشارين
   const councilBooks = (s2.books || []).filter(b => b.resolved).map(b => b.resolved_title || b.title);
   try {
+    // بطاقة المؤلف المصنّفة توجّه متخصصي السير والعقيدة والتفسير في مواضعهم
+    const cardCtx = p.author_profile
+      ? ` — بطاقة المؤلف: «${msAuthorName(p)}» مذهبه ${p.author_profile.madhhab || '—'} وعقيدته ${p.author_profile.aqeedah || '—'}`
+      : '';
+    const FOCUS_CTX = {
+      tarajim: cardCtx + '؛ راعِ في التراجم طبقةَ المؤلف ومذهبه وعصره وكتبَ طبقات مذهبه',
+      aqeedah: cardCtx + '؛ والمؤلف نفسه على هذا التصنيف، فبيّن موافقة كلامه لمذهب أهل السنة أو مخالفته مع مراعاة مسلك مذهبه العقدي في التأويل من غير إسقاط حكم معاصر',
+      tafsir: cardCtx,
+    };
     for (const f of folios) {
-      for (const [key, label, pred, focus] of MS_STAGE2_JOBS) {
+      for (const [key, label, pred, focus0] of MS_STAGE2_JOBS) {
+        const focus = focus0 + (FOCUS_CTX[key] || '');
         const doneKey = f.label + ':' + key;
         if (s2.done[doneKey]) continue;
         const extra = [...new Set([...msGroupBookTitles(key), ...councilBooks])];
@@ -2671,7 +2752,7 @@ async function msAutoRun(p) {
       if ((p.agent_suggestions || []).some(s => s.folio === f.label && s.kind === 'author')) continue;
       msAutoLog(p, `وكيل مقارنة أقوال المؤلف بكتبه (متغير بحسب «${p.author}») على لوحة (${f.label})...`);
       const data = await msAutoFetch('/api/manuscripts/author-agent', {
-        text: f.text, title: p.title, author: p.author,
+        text: f.text, title: p.title, author: msAuthorName(p),
         model: msGroupModel('authorworks', MS_LUNA_MODEL), api_key: msApiKey(),
         extra_books: msGroupBookTitles('authorworks').length ? msGroupBookTitles('authorworks') : undefined });
       addCost(data.cost);
@@ -2761,7 +2842,7 @@ async function msAutoRun(p) {
       (R.compare && R.compare.length) ? `قورن النص بتحقيقات مرجعية: ${R.compare.map(c => `«${c.book}» (تطابق ${c.similarity}٪)`).join('، ')}.` : '',
     ].filter(Boolean).join('\n');
     const data = await msAutoFetch('/api/manuscripts/intro', {
-      title: p.title, author: p.author, api_key: msApiKey(),
+      title: p.title, author: msAuthorName(p), api_key: msApiKey(),
       model: msGroupModel('bio', LEADER),
       bio_books: msGroupBookTitles('bio').length ? msGroupBookTitles('bio') : undefined,
       copies: (p.copies || []).map(c => ({ siglum: c.siglum, library: c.library, shelfmark: c.shelfmark,

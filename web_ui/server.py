@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.501"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.502"},
         },
     })
     if opened.get("error"):
@@ -14510,7 +14510,9 @@ MS_STAGE2_ADVISOR_SYSTEM = (
     "المطلوب JSON حصرًا بلا أي نص خارجه:\n"
     '{"analysis":"تحليل موجز: فن الكتاب وموضوعه وأبرز ما في هذا النص مما يحتاج تحقيقًا (أحاديث، أعلام، غريب، آيات، مسائل اعتقاد، أشعار...)",'
     '"books":[{"title":"العنوان المشهور","author":"المؤلف","why":"لم هو مظنة هذا النص","assign_to":"اسم الوكيل المختص"}],'
-    '"anchors":["عبارة أو مصطلح أو علم بارز في النص 2-6 كلمات"]}\n'
+    '"anchors":["عبارة أو مصطلح أو علم بارز في النص 2-6 كلمات"],'
+    '"author_names":{"correct":"الاسم الصحيح الكامل للمؤلف","famous":"اسمه المشهور في كتب التراجم","madhhab":"مذهبه الفقهي","aqeedah":"عقيدته"}}\n'
+    "ودقّق اسم المؤلف تصحيحًا: فالنساخ يختلفون في ضبط أسماء المؤلفين (كاملًا ومختصرًا وبشهرته)، وحدّد الصحيح والمشهور ومذهبه وعقيدته — فعلى تصنيفه تُبنى ترجمته واختيار كتب طبقات مذهبه.\n"
     "الكتب: أمهات مظانّ تحقيق هذا النص بعينه التي إن غابت ضاع أصل التحقيق (لا شروح نازلة تغني عنها الأصول)، 5 إلى 9 كتب.\n"
     "المراسي: أعلام ومصطلحات وعبارات مفتاحية من متن النص نفسه لا صياغة معاصرة، 6 إلى 12 مرساة.\n"
     "لا تختلق رقم كتاب ولا موضعًا؛ ترشيحك يُطابَق آليًا في قاعدة الشاملة ويُرفض ما لم يوجد بمؤلفه."
@@ -14530,6 +14532,7 @@ def _ms_stage2_consult_sync(payload: dict, key: str) -> Dict[str, Any]:
     director_model = str((payload or {}).get("director_model") or "")
     user_blob = (
         f"المخطوط: «{title}» للمؤلف {author or 'غير معروف'}"
+        + (f"\n\n== بطاقة المؤلف وتصنيفه (من وكيل بطاقة المؤلف — ابنِ عليها ودقّقها) ==\n{str((payload or {}).get('author_card') or '')[:1800]}" if (payload or {}).get("author_card") else "")
         + (f"\nفن الكتاب ووصفه: {str((payload or {}).get('desc') or '')[:300]}" if (payload or {}).get("desc") else "")
         + (f"\nالنسخ ورموزها: {str((payload or {}).get('sigla') or '')[:400]}" if (payload or {}).get("sigla") else "")
         + f"\n\n== نص النسخة الجاهزة (من المرحلة الأولى) ==\n{text[:10000]}"
@@ -14546,7 +14549,10 @@ def _ms_stage2_consult_sync(payload: dict, key: str) -> Dict[str, Any]:
                 api_key=key, temperature=0.2, max_tokens=12000, timeout=300,
                 thinking_level="high") or ""
             parsed = _ms_parse_json(raw) or {}
+            an = parsed.get("author_names") if isinstance(parsed.get("author_names"), dict) else {}
             return {"name": str(ag.get("name") or "مستشار"), "model": str(ag.get("model") or ""),
+                    "author_names": {"correct": str(an.get("correct") or "")[:160], "famous": str(an.get("famous") or "")[:120],
+                                     "madhhab": str(an.get("madhhab") or "")[:80], "aqeedah": str(an.get("aqeedah") or "")[:80]},
                     "analysis": str(parsed.get("analysis") or "")[:1500],
                     "anchors": [str(x).strip() for x in (parsed.get("anchors") or []) if str(x).strip()][:14],
                     "books": [{"title": str(b.get("title") or "").strip(), "author": str(b.get("author") or "").strip(),
@@ -14586,7 +14592,18 @@ def _ms_stage2_consult_sync(payload: dict, key: str) -> Dict[str, Any]:
         if len(books_out) >= 14:
             break
     anchors_out = [a for a, _ in sorted(anchor_votes.items(), key=lambda kv: -kv[1])][:16]
-    return {"advisors": results, "books": books_out, "anchors": anchors_out, "missing": missing}
+    # حكم المجلس على اسم المؤلف وتصنيفه بأغلبية الأصوات (المدير يثبّته في البطاقة)
+    def _top(field):
+        votes: Dict[str, int] = {}
+        for r in results:
+            v = str((r.get("author_names") or {}).get(field) or "").strip()
+            if v:
+                votes[v] = votes.get(v, 0) + 1
+        return max(votes.items(), key=lambda kv: kv[1])[0] if votes else ""
+    author_verdict = {"correct": _top("correct"), "famous": _top("famous"),
+                      "madhhab": _top("madhhab"), "aqeedah": _top("aqeedah")}
+    return {"advisors": results, "books": books_out, "anchors": anchors_out, "missing": missing,
+            "author_verdict": author_verdict}
 
 
 @app.post("/api/manuscripts/stage2-consult")
@@ -14628,6 +14645,107 @@ def _ms_stage2_golden_sync(payload: dict, key: str) -> Dict[str, Any]:
         s["verify"] = _ms_verify_suggestion(s, extra)
     return {"golden_prompt": golden_prompt, "suggestions": out["suggestions"],
             "model": model, "scope_books": [b["title"] for b in extra], "cost": out.get("cost")}
+
+
+MS_AUTHOR_PROFILE_SYSTEM = (
+    "أنت وكيل متخصص في بطاقات المؤلفين وتصنيفهم — عصب التحقيق العلمي. أمامك مؤلف مخطوط كما كُتب اسمه "
+    "(وقد يختلف النساخ في ضبط أسماء المؤلفين: بعضهم يذكره كاملًا وبعضهم مختصرًا وبعضهم بشهرته، مثل يحيى شرف الدين / يحيى بن شرف / النووي).\n"
+    "المطلوب JSON حصرًا بلا أي نص خارجه:\n"
+    '{"correct_name":"الاسم الصحيح الكامل بالنسب والكنية واللقب","famous_name":"الاسم المشهور الذي يُعرف به في كتب التراجم",'
+    '"variants":["صيغ الاسم كما قد ترد في النسخ والتراجم"],'
+    '"madhhab":"مذهبه الفقهي بدقة (شافعي/حنفي/مالكي/حنبلي/ظاهري...) أو لا مذهبي معللًا",'
+    '"aqeedah":"عقيدته بدقة (أثري/أشعري/ماتريدي...) مع قرينة التصنيف",'
+    '"era":"عصره وقرنه","birth":"مولده إن ثبت","death":"وفاته إن ثبتت",'
+    '"classification_basis":"بم صنّفته مذهبيًا وعقديًا: كتبه وطبقته وشيوخه",'
+    '"works":[{"title":"من مؤلفاته مرتبة كما يغلب تسلسلها","note":"أهميته في فنّه"}],'
+    '"tarajim_candidates":[{"title":"كتاب تراجم/طبقات هو مظنة ترجمته بحسب مذهبه وعصره","author":"مؤلفه","why":"لم هو مظنته"}]}\n'
+    "دقّق التصنيف: فبه تُختار كتب الطبقات في المذاهب وكتب العقائد والسير للبحث في ترجمته، وتُبنى الموازاة بكتبه. "
+    "ما لم يثبت عندك فصرّح بعدم ثبوته في حقله ولا تخترع سنة ولا كتابًا."
+)
+
+def _ms_author_profile_sync(payload: dict, key: str) -> Dict[str, Any]:
+    written = str((payload or {}).get("author") or "").strip()
+    title = str((payload or {}).get("title") or "")
+    if not written:
+        raise ValueError("اسم المؤلف كما كُتب مفقود — اكتبه في بيانات المشروع أولًا")
+    model = str((payload or {}).get("model") or "meta/muse-wonder")
+    user_blob = (
+        f"المؤلف كما كُتب: {written}\nالكتاب المخطوط: «{title}»"
+        + (f"\nفن الكتاب ووصفه: {str((payload or {}).get('desc') or '')[:300]}" if (payload or {}).get("desc") else "")
+        + (f"\n\nمن متن المخطوط (قد يتضمن حمدلة المؤلف وتصريحه باسمه أو مذهبه):\n{str((payload or {}).get('text') or '')[:3500]}" if (payload or {}).get("text") else "")
+    )
+    raw = call_openrouter_raw(
+        model_id=normalize_model_id(model),
+        messages=[{"role": "system", "content": MS_AUTHOR_PROFILE_SYSTEM},
+                  {"role": "user", "content": user_blob}],
+        api_key=key, temperature=0.15, max_tokens=8000, timeout=300, thinking_level="high") or ""
+    prof = _ms_parse_json(raw) or {}
+    if not prof.get("correct_name") and not prof.get("famous_name"):
+        raise ValueError("لم تصل بطاقة مؤلف صالحة من الوكيل")
+    forms = []
+    for f in [prof.get("correct_name"), prof.get("famous_name"), written] + list(prof.get("variants") or []):
+        f = str(f or "").strip()
+        if f and f not in forms:
+            forms.append(f)
+    # تحقق برمجي: كتب المؤلف في الشاملة بصيغ الاسم حتى توجد، وشواهد ترجمته
+    works_found, works_form = [], ""
+    for f in forms:
+        got = _ms_author_books(f)
+        if got:
+            works_found, works_form = got, f
+            break
+    cand_titles = [str(b.get("title") or "").strip() for b in (prof.get("tarajim_candidates") or []) if isinstance(b, dict)]
+    extra_titles = [str(x).strip() for x in ((payload or {}).get("tarajim_books") or []) if str(x).strip()]
+    bio, bio_form = {"snippets": [], "books": []}, ""
+    for f in forms:
+        b = _ms_bio_evidence(f, list(dict.fromkeys(cand_titles + extra_titles)) or None)
+        if b.get("snippets"):
+            bio, bio_form = b, f
+            break
+        if not bio.get("snippets") and b.get("books"):
+            bio = b
+    cands = []
+    for b in (prof.get("tarajim_candidates") or [])[:8]:
+        if not isinstance(b, dict) or not str(b.get("title") or "").strip():
+            continue
+        hit = _resolve_advisor_book(str(b["title"]), str(b.get("author") or ""))
+        cands.append({"title": str(b["title"]), "author": str(b.get("author") or ""),
+                      "why": str(b.get("why") or "")[:200], "resolved": bool(hit),
+                      "resolved_title": (hit or {}).get("title") or "", "book_id": (hit or {}).get("book_id")})
+    found_titles = [w.get("title") or "" for w in works_found]
+    works = []
+    for w in (prof.get("works") or [])[:14]:
+        if not isinstance(w, dict) or not str(w.get("title") or "").strip():
+            continue
+        t = str(w["title"]).strip()
+        stem = re.split(r"\s+[-–]\s+|\s+ت\s+", t)[0].strip()
+        hit = next((ft for ft in found_titles if stem and (stem in ft or ft.split(" - ")[0].strip() in t)), "")
+        works.append({"title": t, "note": str(w.get("note") or "")[:200], "in_shamela": bool(hit), "shamela_title": hit})
+    return {
+        "written": written, "correct_name": str(prof.get("correct_name") or ""), "famous_name": str(prof.get("famous_name") or ""),
+        "variants": forms, "madhhab": str(prof.get("madhhab") or ""), "aqeedah": str(prof.get("aqeedah") or ""),
+        "era": str(prof.get("era") or ""), "birth": str(prof.get("birth") or ""), "death": str(prof.get("death") or ""),
+        "classification_basis": str(prof.get("classification_basis") or "")[:700],
+        "works": works, "works_in_shamela": found_titles[:14], "works_form": works_form,
+        "tarajim_candidates": cands, "bio_snippets": len(bio.get("snippets") or []),
+        "bio_books": bio.get("books") or [], "bio_form": bio_form, "model": model,
+    }
+
+
+@app.post("/api/manuscripts/author-profile")
+async def manuscript_author_profile(request: Request, payload: Any = Body(...)):
+    """بطاقة المؤلف وتصنيفه المذهبي والعقدي: الاسم الصحيح والمشهور وصيغ النساخ،
+    والمذهب والعقيدة وكتبه وتسلسلها وكتب طبقات مذهبه المرشحة — متحققًا منها
+    في الشاملة (كتبه الموجودة وشواهد ترجمته)، لتكون عصب المرحلة الثانية."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_author_profile_sync, payload or {}, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذرت بطاقة المؤلف: {str(exc)[:200]}")
 
 
 @app.post("/api/manuscripts/stage2-golden")
