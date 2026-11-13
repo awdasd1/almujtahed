@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.527"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.528"},
         },
     })
     if opened.get("error"):
@@ -14358,11 +14358,19 @@ def _ms_resolve_extra_books(titles) -> list:
     return out
 
 
-def _ms_scan_book_phrase(book_id, phrase):
-    """مسح صفحات كتاب عن عبارة متصلة (بعد تطبيع الرسم) — لتوثيق الشاهد في كتب المظان."""
-    phrase_n = _ms_style_phrase_norm(phrase or "")
+def _ms_scan_book_phrase(book_id, phrase, fuzzy=False):
+    """مسح صفحات كتاب عن عبارة متصلة (بعد تطبيع الرسم) — لتوثيق الشاهد في كتب المظان.
+    fuzzy: مطابقة كلمات متتابعة تتسامح في كلمة واحدة مخالفة (اختلاف قراءة
+    اللوحة عن طبعة الشاملة، كواو/لا)، مع حذف أرقام الحواشي من المتنين."""
+    def _clean(s):
+        s = re.sub(r"\(\s*[0-9٠-٩]+\s*\)", " ", str(s or ""))
+        s = re.sub(r"[0-9٠-٩]+", " ", s)
+        return _ms_style_phrase_norm(s)
+
+    phrase_n = _clean(phrase or "")
     if len(phrase_n) < 4:
         return None
+    ptoks = phrase_n.split()
     try:
         b_dir = shamela_local_mcp.resolve_book_files(book_id)
         if not b_dir:
@@ -14377,13 +14385,38 @@ def _ms_scan_book_phrase(book_id, phrase):
         with open(b_dir / "pages.jsonl", "rb") as fh:
             for line in fh:
                 pg = json.loads(line)
-                body_n = _ms_style_phrase_norm(pg.get("body") or "")
+                body_n = _clean(pg.get("body") or "")
                 i = body_n.find(phrase_n)
                 if i >= 0:
                     raw = pg.get("body") or ""
                     return {"book_id": book_id, "title": title,
                             "part": pg.get("part"), "page": pg.get("page_num"),
                             "snippet": " ".join(raw.split())[:220]}
+                if fuzzy and len(ptoks) >= 5:
+                    # مرساة خماسية مطابقة حرفيًا، ثم تشابه رمزي يتحمل
+                    # إدراج كلمة أو حذفها بين قراءة اللوحة وطبعة الشاملة
+                    from difflib import SequenceMatcher
+                    grams = [" ".join(ptoks[k:k + 5]) for k in range(0, len(ptoks) - 4, 3)]
+                    btoks = body_n.split()
+                    n = len(ptoks)
+                    for gram in grams:
+                        pos = body_n.find(gram)
+                        if pos < 0:
+                            continue
+                        s_tok = len(body_n[:pos].split())
+                        hit_ratio = 0.0
+                        for s0 in range(max(0, s_tok - 3), s_tok + 2):
+                            for wlen in (n, n + 2, n - 2):
+                                if wlen < 5 or s0 + wlen > len(btoks):
+                                    continue
+                                ratio = SequenceMatcher(None, ptoks, btoks[s0:s0 + wlen]).ratio()
+                                hit_ratio = max(hit_ratio, ratio)
+                        if hit_ratio >= 0.78:
+                            ctx = " ".join(btoks[max(0, s_tok - 6):s_tok + n + 8])
+                            return {"book_id": book_id, "title": title,
+                                    "part": pg.get("part"), "page": pg.get("page_num"),
+                                    "snippet": ctx[:220], "fuzzy": True}
+                        break
     except Exception:
         return None
     return None
@@ -15774,17 +15807,29 @@ def _ms_identify_sync(payload: dict, key: str) -> Dict[str, Any]:
         "dating_reason": next((r["dating_reason"] for r in reversed(reports) if r["dating_reason"]), ""),
         "agree": len({r["book"] for r in reports if r["book"]}),
     }
-    # التأكيد: عبارة متفق على قراءتها تُبحث في الكتاب المرجّح بعينه
+    # التأكيد: عبارة متفق على قراءتها تُبحث في الكتاب المرجّح بعينه؛
+    # وتُجرَّب أيضًا نوافذ أقصر منها ومن النص، فاختلاف رسم كلمة واحدة
+    # في نسخة الشاملة لا يُسقط المطابقة كلها
     phrases: list = []
     for r in reports:
         q = (r.get("evidence_quote") or "").strip()
         if len(_ms_style_phrase_norm(q)) >= 10 and q not in phrases:
             phrases.append(q)
+            words = q.split()
+            for wlen in (8, 6, 5):
+                for start in (0, max(0, len(words) // 2 - 2)):
+                    win = " ".join(words[start:start + wlen])
+                    if len(_ms_style_phrase_norm(win)) >= 10 and win not in phrases:
+                        phrases.append(win)
     text = str(payload.get("text") or "")
     for seg in re.split(r"[.\n؛]", text):
         seg = " ".join(seg.split()).strip()
         if 40 <= len(seg) <= 110:
             phrases.append(seg)
+            words = seg.split()
+            win = " ".join(words[:7])
+            if len(_ms_style_phrase_norm(win)) >= 10 and win not in phrases:
+                phrases.append(win)
     cand_books: list = []
     seen_bid = set()
     for r in reports:
@@ -15802,8 +15847,8 @@ def _ms_identify_sync(payload: dict, key: str) -> Dict[str, Any]:
             cand_books.append(rb)
     confirmation = None
     for cb in cand_books[:3]:
-        for ph in phrases[:4]:
-            hit = _ms_scan_book_phrase(cb["book_id"], ph[:110])
+        for ph in phrases[:12]:
+            hit = _ms_scan_book_phrase(cb["book_id"], ph[:110], fuzzy=True)
             if hit:
                 confirmation = {"book_id": cb["book_id"], "title": hit.get("title") or cb["title"],
                                 "part": hit.get("part"), "page": hit.get("page"),
