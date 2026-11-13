@@ -253,6 +253,8 @@ function renderMsCopies() {
       </div>
     </div>`;
   }).join('');
+  // أي تغير في النسخ/اللوحات يعيد حساب إتاحة زر التحقيق الآلي فورًا
+  renderMsAuto();
 }
 
 function msAddCopy() {
@@ -2054,6 +2056,8 @@ function renderMsAuto() {
   const stopBtn = document.getElementById('msAutoStopBtn');
   if (startBtn) {
     startBtn.disabled = MS_AUTO_RUNNING || !baseFolios;
+    startBtn.title = MS_AUTO_RUNNING ? 'التحقيق الآلي جارٍ الآن'
+      : (!baseFolios ? 'لن يُتاح الاعتماد حتى ترفع لوحة واحدة على الأقل في النسخة الأم وتتحقق منها' : 'يبدأ التحقيق الآلي الكامل من النسخ حتى النسخة النهائية');
     startBtn.textContent = a.status === 'done' ? '↻ إعادة تشغيل التحقيق الآلي الكامل'
       : ['stopped', 'error', 'paused_network', 'interrupted'].includes(a.status) ? '▶ استئناف التحقيق الآلي الآن' : '✅ اعتمد التحقيق الآلي';
   }

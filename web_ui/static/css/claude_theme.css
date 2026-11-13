@@ -11144,7 +11144,7 @@ body::-webkit-scrollbar,
 .ms-btn:hover { filter: brightness(1.05); }
 .ms-btn-primary { background: var(--accent-clay, #b4552d); color: #fff; border-color: transparent; }
 .ms-btn-danger { color: #b3261e; }
-.ms-btn[disabled] { opacity: .55; cursor: wait; }
+.ms-btn[disabled] { opacity: .55; cursor: not-allowed; }
 .ms-projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .ms-project-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px; }
 .ms-project-card-title { font-weight: 800; font-size: 16px; margin-bottom: 4px; }
