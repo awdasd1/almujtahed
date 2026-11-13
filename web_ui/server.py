@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.529"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.530"},
         },
     })
     if opened.get("error"):
@@ -14673,14 +14673,16 @@ def _ms_plan_sync(payload: dict, key: str) -> Dict[str, Any]:
         raise ValueError("النص المُسلَّم قصير جدًا للتخطيط")
     planner_model = str((payload or {}).get("planner_model") or MS_PLANNER_MODEL)
     manager_model = str((payload or {}).get("manager_model") or "google/gemini-4-argon")
-    raw = call_openrouter_raw(planner_model, [{"role": "user", "content": MS_PLANNER_PROMPT.format(
-        title=title, author=author or "غير معروف", card=card or "—", text=text[:70000])}],
-        key, temperature=0.2, max_tokens=8000, timeout=420)
-    if not raw.strip():
-        raw = call_openrouter_raw(planner_model, [{"role": "user", "content": MS_PLANNER_PROMPT.format(
-            title=title, author=author or "غير معروف", card=card or "—", text=text[:70000])}],
-            key, temperature=0.2, max_tokens=8000, timeout=420)
-    plan = _ms_parse_json(raw) or {}
+    _prompt = MS_PLANNER_PROMPT.format(
+        title=title, author=author or "غير معروف", card=card or "—", text=text[:70000])
+    plan = {}
+    for _attempt in range(2):
+        raw = call_openrouter_raw(planner_model, [{"role": "user", "content": _prompt}],
+                                  key, temperature=0.2, max_tokens=16000, timeout=420)
+        plan = _ms_parse_json(raw) or {}
+        if plan.get("items"):
+            break
+    raw = ""
     items = []
     for it in (plan.get("items") or [])[:40]:
         if not isinstance(it, dict) or not str(it.get("anchor") or "").strip():
@@ -14705,7 +14707,7 @@ def _ms_plan_sync(payload: dict, key: str) -> Dict[str, Any]:
         mraw = call_openrouter_raw(manager_model, [{"role": "user", "content": MS_MANAGER_PLAN_PROMPT.format(
             title=title, author=author or "غير معروف", n_chars=len(text), cap=cap,
             plan=json.dumps({"overview": plan.get("overview") or "", "items": items}, ensure_ascii=False))}],
-            key, temperature=0.1, max_tokens=8000, timeout=420)
+            key, temperature=0.1, max_tokens=16000, timeout=420)
         mp = _ms_parse_json(mraw) or {}
         approved = []
         for it in (mp.get("items") or [])[:cap]:
