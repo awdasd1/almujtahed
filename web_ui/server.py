@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.530"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.531"},
         },
     })
     if opened.get("error"):
@@ -14823,6 +14823,9 @@ def _ms_execute_item(item: dict, title: str, author: str, key: str, extra_books:
                                        "snippet": str(h0.get("snippet") or "")[:220]}}
             return sug
     sug["verify"] = _ms_verify_suggestion(sug, extra_books)
+    if not sug["body"] and (sug["verify"] or {}).get("status") in ("verified", "found"):
+        # توثيق آلي بلا صياغة باحث: نص التوثيق نفسه مسودة التعليق لاعتماد المحقق
+        sug["body"] = str((sug["verify"] or {}).get("detail") or "")[:900]
     return sug
 
 
@@ -14834,8 +14837,13 @@ def _ms_execute_plan_sync(payload: dict, key: str) -> Dict[str, Any]:
     if not items:
         raise ValueError("لا بنود في الخطة لتنفيذها")
     extra = _ms_resolve_extra_books((payload or {}).get("extra_books"))
+    try:
+        import library_search
+        library_search.get_index()
+    except Exception:
+        pass
     suggestions: list = []
-    with _cf.ThreadPoolExecutor(max_workers=6) as ex:
+    with _cf.ThreadPoolExecutor(max_workers=3) as ex:
         futs = [ex.submit(_ms_execute_item, it, title, author, key, extra) for it in items]
         for f in futs:
             try:
