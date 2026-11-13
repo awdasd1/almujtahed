@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.502"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.503"},
         },
     })
     if opened.get("error"):
@@ -14687,23 +14687,29 @@ def _ms_author_profile_sync(payload: dict, key: str) -> Dict[str, Any]:
         f = str(f or "").strip()
         if f and f not in forms:
             forms.append(f)
-    # تحقق برمجي: كتب المؤلف في الشاملة بصيغ الاسم حتى توجد، وشواهد ترجمته
+    # تحقق برمجي: كتب المؤلف في الشاملة بصيغ الاسم — لا تُقبل كتب إلا ما كان
+    # مؤلفها حاملًا نسبة المؤلف المميزة (النووي...)؛ فصيغة النسب الطويلة قد
+    # تلتقط بكلمة «الحوراني» كتبًا ليست له. وشواهد الترجمة بأغنى صيغة لا أولها
+    nisba = ""
+    for src in (prof.get("famous_name"), written, prof.get("correct_name")):
+        toks = [t for t in re.split(r"\s+", re.sub(r"\(.*?\)", "", str(src or ""))) if len(t) >= 4]
+        if toks:
+            nisba = toks[-1]
+            break
+    ordered = forms
     works_found, works_form = [], ""
-    for f in forms:
-        got = _ms_author_books(f)
+    for f in ordered:
+        got = [b for b in _ms_author_books(f) if not nisba or nisba in str(b.get("author") or "")]
         if got:
             works_found, works_form = got, f
             break
     cand_titles = [str(b.get("title") or "").strip() for b in (prof.get("tarajim_candidates") or []) if isinstance(b, dict)]
     extra_titles = [str(x).strip() for x in ((payload or {}).get("tarajim_books") or []) if str(x).strip()]
     bio, bio_form = {"snippets": [], "books": []}, ""
-    for f in forms:
+    for f in ordered:
         b = _ms_bio_evidence(f, list(dict.fromkeys(cand_titles + extra_titles)) or None)
-        if b.get("snippets"):
+        if len(b.get("snippets") or []) > len(bio.get("snippets") or []):
             bio, bio_form = b, f
-            break
-        if not bio.get("snippets") and b.get("books"):
-            bio = b
     cands = []
     for b in (prof.get("tarajim_candidates") or [])[:8]:
         if not isinstance(b, dict) or not str(b.get("title") or "").strip():
