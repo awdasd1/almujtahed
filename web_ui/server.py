@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.510"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.511"},
         },
     })
     if opened.get("error"):
@@ -14375,6 +14375,39 @@ def _ms_scan_book_phrase(book_id, phrase):
     return None
 
 
+def _ms_dict_locus(book_id, madda):
+    """موضع مادة معجمية في كتابها: أول ورود مستقل للفظ المادة في متن
+    الكتاب (تُتخطى صفحات المقدمات) — مرجع (جزء/صفحة) قابل للمراجعة."""
+    madda_n = _ms_style_phrase_norm(madda or "")
+    if len(madda_n) < 3:
+        return None
+    try:
+        b_dir = shamela_local_mcp.resolve_book_files(book_id)
+        if not b_dir:
+            return None
+        title = str(book_id)
+        meta_file = b_dir / "book_metadata.json"
+        if meta_file.exists():
+            try:
+                title = json.loads(meta_file.read_text(encoding="utf-8")).get("title_ar") or title
+            except Exception:
+                pass
+        pat = re.compile(r"(?:^|[\s«»:,؛()\[\]])"+re.escape(madda_n)+r"(?:[\s«».,:؛()\[\]]|$)")
+        with open(b_dir / "pages.jsonl", "rb") as fh:
+            for line in fh:
+                pg = json.loads(line)
+                if int(pg.get("page_num") or 0) < 10:
+                    continue
+                body_n = _ms_style_phrase_norm(pg.get("body") or "")
+                if pat.search(body_n):
+                    raw = pg.get("body") or ""
+                    return {"book_id": book_id, "title": title,
+                            "part": pg.get("part"), "page": pg.get("page_num"),
+                            "snippet": " ".join(raw.split())[:220]}
+    except Exception:
+        return None
+    return None
+
 def _ms_verify_suggestion(s: Dict[str, Any], extra_books=None) -> Dict[str, Any]:
     """توثيق اقتراح تخريج من مكتبة الشاملة المحلية؛ غيره يبقى بلا توثيق آلي."""
     anchor = (s.get("anchor") or "").strip()
@@ -14419,7 +14452,7 @@ def _ms_verify_suggestion(s: Dict[str, Any], extra_books=None) -> Dict[str, Any]
                         conn.close()
                     rows = sorted(rows, key=lambda r: (0 if (r[1] or "").strip() == book_name else 1, len(r[1] or "")))
                     if rows:
-                        hit = _ms_scan_book_phrase(rows[0][0], madda)
+                        hit = _ms_dict_locus(rows[0][0], madda) or _ms_scan_book_phrase(rows[0][0], madda)
                         if hit:
                             return {"status": "found",
                                     "detail": f"وُجدت المادة في «{hit['title']}» (ج {hit.get('part') or '—'} ص {hit.get('page') or '—'})",
