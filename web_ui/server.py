@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.507"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.508"},
         },
     })
     if opened.get("error"):
@@ -15273,7 +15273,7 @@ def _ms_bio_evidence(author: str, titles=None) -> Dict[str, Any]:
             continue
         text = ""
         try:
-            for pg_off in (0, 1):
+            for pg_off in (0, 1, 2):
                 pg = shamela_local_mcp.get_page(bid, int(hit.get("page") or 0) + pg_off, hit.get("part"))
                 node = pg.get("page") if isinstance(pg.get("page"), dict) else pg
                 text += " " + str((node or {}).get("body") or (node or {}).get("text") or pg.get("text") or "")
@@ -15372,7 +15372,7 @@ def _ms_intro_sync(payload: dict, key: str) -> Dict[str, Any]:
     title_clean = re.sub(r"^مشروع\s+", "", title).strip() or title
     prompt = MS_INTRO_PROMPT.format(
         title=title_clean, author=author,
-        evidence="\n".join(ev_lines)[:9500] or "لا شواهد متاحة — اكتب الترجمة مما هو مشهور ثابت من ترجمته بصيغة الجزم، وتجنب ادعاء سنوات أو أماكن لا تثق بها.",
+        evidence="\n".join(ev_lines)[:12500] or "لا شواهد متاحة — اكتب الترجمة مما هو مشهور ثابت من ترجمته بصيغة الجزم، وتجنب ادعاء سنوات أو أماكن لا تثق بها.",
         attribution="\n".join(att_lines)[:2500] or "—",
         copies="\n".join(copies_lines)[:2500] or "—",
         steps=str(p.get("steps") or "")[:2500] or "—",
