@@ -3728,7 +3728,10 @@ function msFnPrint(t) {
     const meta = MS_BOOK_META[msBookKey(title)] || null;
     const author = meta && meta.author ? meta.author : '';
     const dispTitle = title.replace(/\s*[-–]\s*(ت|ط)\s.*$/, '').trim();
-    const head = author ? `${dispTitle} ل${author}` : dispTitle;
+    // لا يتكرر اسم المؤلف إن كان في العنوان نفسه («شرح السنة للبغوي»)
+    const authorDup = author && dispTitle.includes(author.split(/[،\s]/)[0]);
+    const head = (author && !authorDup)
+      ? `${dispTitle} ${author.startsWith('ال') ? 'ل' + author : 'لـ' + author}` : dispTitle;
     if (jm) {
       parts.push({ txt: `${head} (${toLatin(jm[1])}-${toLatin(jm[2])})${madda ? `، مادة (${madda})` : ''}`, ok: true });
     } else if (madda) {
@@ -3845,6 +3848,7 @@ function msBuildPrintHtml(p, options) {
   if (typeof buildAcademicPaperHtml !== 'function') return '';
   let html = buildAcademicPaperHtml(msPaperRunData(p), options || {});
   // لا نجوم متسربة من صياغة النماذج في المنشور، وفاصل ختام المقدمة وحده نجوم وسطى
+  html = html.replace(/<hr[^>]*>/g, '<p style="text-align:center;text-indent:0">***</p>');
   html = html.replace(/<p[^>]*>\*\*\*<\/p>/g, '<p style="text-align:center;text-indent:0">***</p>');
   html = html.replace(/\*\*/g, '');
   // «النص المحقق» عنوان وسطي في مطلع صفحة جديدة بعد مقدمة التحقيق
