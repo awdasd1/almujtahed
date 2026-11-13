@@ -3725,19 +3725,23 @@ function msCiteParts(citeStr) {
   });
   return parts;
 }
-function msStandardCite(citeStr, literal) {
+function msStandardCite(citeStr, literal, judgedLiteral) {
   const parts = msCiteParts(citeStr);
   if (!parts.length) return '';
-  const prefix = (parts.length > 1 || !literal) ? 'ينظر: ' : 'انظر: ';
+  // حكم الوكيل بالنقل الحرفي يُقدَّم ولو تعددت المواضع، فالمنقول نصًا
+  // يبقى «انظر»؛ وتعدد المصادر بلا حكم صريح يبقى «ينظر» كما في البحوث
+  const prefix = ((judgedLiteral ? false : parts.length > 1) || !literal) ? 'ينظر: ' : 'انظر: ';
   return prefix + parts.map((x, i) => (i === 0 ? x.txt : 'و' + x.txt)).join('؛ ');
 }
 function msFnPrint(t) {
   let out = String(t || '').trim();
   // حكم وكيل الطباعة الأكاديمي نفسه (بتوجيه بحوث التطبيق): ⟦ن⟧ نقل
-  // حرفي و⟦م⟧ نقل بالمعنى — يُحترم كما هو ولا تخمّن القاعدة الآلية فوقه
+  // حرفي و⟦م⟧ نقل بالمعنى — يُحترم كما هو ولو تعددت مواضع الإحالة،
+  // ولا تخمّن القاعدة الآلية فوقه، وتُحذف علامته من المطبوع
   let judged = null;
-  const jm0 = out.match(/^⟦([نم])⟧\s*/);
-  if (jm0) { judged = jm0[1] === 'ن' ? 'literal' : 'meaning'; out = out.slice(jm0[0].length); }
+  if (/⟦ن⟧/.test(out)) judged = 'literal';
+  else if (/⟦م⟧/.test(out)) judged = 'meaning';
+  out = out.replace(/⟦[نم]⟧\s*/g, '');
   // تخريج حديث: متن الحاشية نفسه إحالتها بقالب «أخرجه فلان، حديث رقم
   // (N)، (ج-ص)» فلا يُلحق بها شاهد كتاب آخر ولا قوس كتب عارٍ في ذيلها
   if (/أخرجه|أخرجها|رواه/.test(out)) {
@@ -3789,7 +3793,7 @@ function msFnPrint(t) {
     /﴿/.test(bodyNoAnchor) || /نصًّا|بنصّه|بنصه|حرفيًا|حرفيا|بلفظه/.test(bodyNoAnchor)
     || /(?:قال|يقول|قاله|أورد|روى|نقل|ذكر|جاء في|نصّ على)\b[^«]{0,50}«[^»]{12,}»/.test(bodyNoAnchor)
     || /:\s*«[^»]{25,}»/.test(bodyNoAnchor)));
-  const std = msStandardCite(citeStr, literal);
+  const std = msStandardCite(citeStr, literal, judged === 'literal');
   return std ? (base + ' ' + std).replace(/\s+/g, ' ').trim() : base;
 }
 
