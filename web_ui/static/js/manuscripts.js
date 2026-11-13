@@ -2847,6 +2847,7 @@ async function msAutoRun(p) {
     ].filter(Boolean).join('\n');
     const data = await msAutoFetch('/api/manuscripts/intro', {
       title: p.title, author: msAuthorName(p), api_key: msApiKey(),
+      attribution: (p.author_profile && p.author_profile.attribution) || undefined,
       model: msGroupModel('bio', LEADER),
       bio_books: msGroupBookTitles('bio').length ? msGroupBookTitles('bio') : undefined,
       copies: (p.copies || []).map(c => ({ siglum: c.siglum, library: c.library, shelfmark: c.shelfmark,
@@ -3456,7 +3457,12 @@ function msEdNotePrint(text) {
     out = out.replace(/\(ثقة\s*[^)]*\)/g, '');
     out = out.replace(/\s*وفحص الشواهد بعينه/g, '');
     out = out.replace(/،?\s*مقابل صفر[^،؛.]*/g, '');
-    out = out.replace(/\s*\[(توثيق|تنبيه|مصدر|مراجعة)[^\]]*\]/g, '');
+    // التوثيق البرمجي يتحول في المنشور إلى مرجع دقيق: (شاهد: الكتاب، ج، ص)
+    out = out.replace(/\s*\[توثيق:([^\]]*)\]/g, (m, inner) => {
+      const loc = inner.match(/«([^»]+)»\s*\(ج\s*([^،)]*?)[،\s]*ص\s*([^)]+)\)/);
+      return loc ? ` (شاهد: ${loc[1].trim()}، ج${loc[2].trim()} ص${loc[3].trim()})` : '';
+    });
+    out = out.replace(/\s*\[(تنبيه|مصدر|مراجعة)[^\]]*\]/g, '');
     out = out.replace(/\s*\(ملاحظة محقق\)/g, '');
     return out.replace(/\s+/g, ' ').trim();
   }).filter(Boolean).join('\n');
@@ -3614,6 +3620,35 @@ function msArabicDigits(n) {
   return String(n).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
 }
 
+// صياغة مرجع الحاشية للمنشور بمنهج المحققين: (الكتاب، مادة/رقم، ج، ص)
+// فيُدمج شاهد التوثيق الدقيق في مرجع المصدر نفسه ولا يتكرر اسم الكتاب
+function msFnPrint(t) {
+  let out = String(t || '').trim();
+  let cite = null;
+  out = out.replace(/\s*\(شاهد:\s*([^()]+?،\s*ج\s*[^()]+)\)\s*$/, (m, c) => { cite = c.trim(); return ''; });
+  const dictRe = /لسان العرب|القاموس المحيط|تاج العروس|النهاية في غريب|المصباح المنير|مختار الصحاح|المعجم الوسيط/;
+  const tail = out.match(/\(([^()]+?)(?:\s*\(([^()]+)\))?\)\s*$/);
+  if (tail) {
+    const book = tail[1].trim(), sub = (tail[2] || '').trim();
+    const base = out.slice(0, tail.index).trimEnd();
+    if (cite) {
+      const cm = cite.match(/^(.+?)،\s*ج\s*(.+?)\s+ص\s*(.+)$/);
+      const sameBook = cm && (cm[1].includes(book) || book.includes(cm[1].split(' - ')[0].trim()));
+      if (sameBook) {
+        const mid = sub ? (dictRe.test(book) || dictRe.test(cm[1]) ? `، مادة (${sub})` : `، رقم (${sub})`) : '';
+        out = `${base} (${cm[1]}${mid}، ج${cm[2]} ص${cm[3]})`;
+      } else {
+        out = `${out} (${cite})`;
+      }
+    } else if (sub) {
+      out = `${base} (${book}، ${dictRe.test(book) ? `مادة (${sub})` : `رقم (${sub})`})`;
+    }
+  } else if (cite) {
+    out = `${out} (${cite})`;
+  }
+  return out.replace(/\s+/g, ' ').trim();
+}
+
 function msPaperRunData(p) {
   const { folios, groups } = msFinalParts(p);
   const escMd = s => String(s || '').replace(/([*_`])/g, '\\$1');
@@ -3622,24 +3657,52 @@ function msPaperRunData(p) {
     footnoteTexts.push(t);
     return `(${msArabicDigits(footnoteTexts.length)})`;
   };
+  // مراجع المقدمة المكتوبة بصيغة (الكتاب، ج، ص) تصير حواشيَ مرقمة
+  // كحواشي المتن تمامًا، وترقيمها يسبق ترقيم حواشي المتن لترتيب الورقة
+  let introMd = (p.intro || '').trim();
+  if (introMd) {
+    introMd = introMd.replace(/\(([^()]{3,140}?،\s*ج\s*[^()]+?ص\s*[٠-٩0-9]+[^()]*)\)/g,
+      (m, cite) => refFor(cite.trim()));
+  }
   const bodyParas = [];
   folios.forEach(f => {
     const entries = f.entries.map(e => ({ ...e, base: e.base || (e.type === 'زيادة' ? e.other : '') }));
-    const edItems = f.edLines.map(l => ({ base: msEdAnchorPhrase(l), _ed: true, _text: l }));
+    const edRaw = f.edLines.map(l => ({ base: msEdAnchorPhrase(l), _ed: true, _text: l }));
+    // موضع واحد في المتن = حاشية واحدة: تُدمج تعليقات الوكلاء المتعددة
+    // على العبارة نفسها في حاشية محقق واحدة فلا تتكدس العلامات على كلمة
+    const stripLead = s => s.replace(/^«[^»]+»\s*[—–-]?\s*/, '');
+    const edGrouped = []; const byKey = new Map();
+    edRaw.forEach(e => {
+      const key = msNormAnchor(e.base || '').norm;
+      if (key && byKey.has(key)) { byKey.get(key)._parts.push(e._text); return; }
+      const g = { base: e.base, _ed: true, _parts: [e._text] };
+      if (key) byKey.set(key, g);
+      edGrouped.push(g);
+    });
+    edGrouped.forEach(g => {
+      g._text = g._parts.length === 1 ? g._parts[0]
+        : g._parts[0] + ' ' + g._parts.slice(1).map(stripLead).join(' ');
+      delete g._parts;
+    });
+    const fnTextOf = e => e._ed ? msFnPrint(e._text) : msApparatusPrint(e);
     // لا حاشيتين متماثلتين في لوحة واحدة (فروق مكررة من جولات مقابلة)
     const seenFn = new Set();
-    const all = entries.concat(edItems).filter(e => {
-      const t = e._ed ? e._text : msApparatusPrint(e);
+    const all = entries.concat(edGrouped).filter(e => {
+      const t = fnTextOf(e);
       if (seenFn.has(t)) return false;
       seenFn.add(t);
       return true;
     });
     const paras = msFlowParagraphs(f.text);
     paras.forEach((para, pi) => {
-      const segs = msAnchorSegments(para, all, e => e._ed ? e._text : msApparatusPrint(e));
+      const segs = msAnchorSegments(para, all, fnTextOf);
       let md = segs.map(seg => seg.fn !== undefined ? escMd(seg.text) + refFor(seg.fn) : escMd(seg.text)).join('');
       if (pi === paras.length - 1) {
-        all.filter(e => !e._anchored).forEach(e => { md += refFor(e._ed ? e._text : msApparatusPrint(e)); });
+        // ما لم يجد مرساة في المتن يُجمع في حاشية واحدة بذيل اللوحة
+        // فلا تتكدس علامات متتابعة في آخر السطر
+        const un = all.filter(e => !e._anchored);
+        if (un.length === 1) md += refFor(fnTextOf(un[0]));
+        else if (un.length > 1) md += refFor(un.map(fnTextOf).join(' '));
       }
       if (pi === 0) md = `[${f.label}] ` + md;
       bodyParas.push(md);
@@ -3653,8 +3716,8 @@ function msPaperRunData(p) {
   }
   const rounds = [];
   if (p.author) rounds.push({ name: '', output: `تأليف: ${p.author} — تحقيق ودراسة` });
-  if ((p.intro || '').trim()) {
-    rounds.push({ name: 'مقدمة المحقق', output: p.intro.split('\n').filter(l => l.trim()).join('\n\n') });
+  if (introMd) {
+    rounds.push({ name: 'مقدمة المحقق', output: introMd.split('\n').filter(l => l.trim()).join('\n\n') });
   }
   rounds.push({ name: '', output: body });
   if (groups) {
