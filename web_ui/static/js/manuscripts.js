@@ -3729,7 +3729,7 @@ function msFnPrint(t) {
     const author = meta && meta.author ? meta.author : '';
     const dispTitle = title.replace(/\s*[-–]\s*(ت|ط)\s.*$/, '').trim();
     // لا يتكرر اسم المؤلف إن كان في العنوان نفسه («شرح السنة للبغوي»)
-    const authorDup = author && dispTitle.includes(author.split(/[،\s]/)[0]);
+    const authorDup = author && dispTitle.includes(author.split(/[،\s]/)[0].replace(/^ال/, ''));
     const head = (author && !authorDup)
       ? `${dispTitle} ${author.startsWith('ال') ? 'ل' + author.slice(1) : 'لـ' + author}` : dispTitle;
     if (jm) {
