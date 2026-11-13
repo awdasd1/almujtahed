@@ -3731,7 +3731,7 @@ function msFnPrint(t) {
     // لا يتكرر اسم المؤلف إن كان في العنوان نفسه («شرح السنة للبغوي»)
     const authorDup = author && dispTitle.includes(author.split(/[،\s]/)[0]);
     const head = (author && !authorDup)
-      ? `${dispTitle} ${author.startsWith('ال') ? 'ل' + author : 'لـ' + author}` : dispTitle;
+      ? `${dispTitle} ${author.startsWith('ال') ? 'ل' + author.slice(1) : 'لـ' + author}` : dispTitle;
     if (jm) {
       parts.push({ txt: `${head} (${toLatin(jm[1])}-${toLatin(jm[2])})${madda ? `، مادة (${madda})` : ''}`, ok: true });
     } else if (madda) {
@@ -3848,9 +3848,9 @@ function msBuildPrintHtml(p, options) {
   if (typeof buildAcademicPaperHtml !== 'function') return '';
   let html = buildAcademicPaperHtml(msPaperRunData(p), options || {});
   // لا نجوم متسربة من صياغة النماذج في المنشور، وفاصل ختام المقدمة وحده نجوم وسطى
+  html = html.replace(/\*\*/g, '');
   html = html.replace(/<hr[^>]*>/g, '<p style="text-align:center;text-indent:0">***</p>');
   html = html.replace(/<p[^>]*>\*\*\*<\/p>/g, '<p style="text-align:center;text-indent:0">***</p>');
-  html = html.replace(/\*\*/g, '');
   // «النص المحقق» عنوان وسطي في مطلع صفحة جديدة بعد مقدمة التحقيق
   html = html.replace('<h2 class="academic-round-title">النص المحقق</h2>',
     '<h2 class="academic-round-title ms-matn-start">النص المحقق</h2>');
