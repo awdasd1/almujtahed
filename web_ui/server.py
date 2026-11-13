@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.511"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.512"},
         },
     })
     if opened.get("error"):
@@ -15395,7 +15395,8 @@ def _ms_bio_extra_evidence(names, titles=None) -> Dict[str, Any]:
     except Exception:
         return out
     stu_keys = ["تلاميذ", "أخذ عنه", "أخذوا عنه", "تفقه به", "تفقه عليه", "تتلمذ", "قرأ عليه", "من أصحابه"]
-    praise_keys = ["قال الذهبي", "قال ابن كثير", "قال السبكي", "قال ابن حجر", "أثنى", "ثناء", "قال عنه", "قال فيه", "وصفه بـ"]
+    praise_keys = ["قال الذهبي", "وقال الذهبي", "قال ابن كثير", "قال السبكي", "قال ابن حجر",
+                   "شيخ الإسلام", "الإمام الحافظ", "أثنى عليه", "ثناء", "قال عنه", "قال فيه"]
     for bid in ids[:7]:
         hit = None
         for v in variants:
@@ -15419,9 +15420,14 @@ def _ms_bio_extra_evidence(names, titles=None) -> Dict[str, Any]:
                 for kw in keys:
                     i = text.find(kw)
                     if i >= 0:
+                        window = text[max(0, i - 160): i + 640]
+                        # الثناء لا يُقبل إلا مقترنًا بنسبة المؤلف في نافذته
+                        # فلا تتسرب تراجم الجيران في صفحات الكتاب
+                        if kind == "praise" and "نووي" not in window and "النواوي" not in window:
+                            continue
                         out[kind].append({"book": hit.get("title") or "", "part": hit.get("part"),
                                           "page": int(hit.get("page") or 0) + off,
-                                          "text": text[max(0, i - 160): i + 640]})
+                                          "text": window})
                         break
         if len(out["students"]) >= 4 and len(out["praise"]) >= 4:
             break
