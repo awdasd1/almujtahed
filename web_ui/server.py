@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.504"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.505"},
         },
     })
     if opened.get("error"):
@@ -13881,14 +13881,25 @@ def _ms_transcribe_one(model: str, b64_url: str, key: str) -> Dict[str, Any]:
         # تحرق سقف الإخراج في reasoning خفي وترجع محتوى فارغًا بنجاح ظاهري
         "reasoning": {"enabled": False},
     }
-    http_req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Manuscripts"},
-        data=json.dumps(payload).encode("utf-8"))
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+               "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Manuscripts"}
     started = time.time()
-    with urllib.request.urlopen(http_req, timeout=420) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    try:
+        http_req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers, data=json.dumps(payload).encode("utf-8"))
+        with urllib.request.urlopen(http_req, timeout=420) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        # نماذج (Gemini Carbon) ترفض معامل reasoning بـ400: أعد بدونه مرة
+        if getattr(exc, "code", None) != 400:
+            raise
+        payload.pop("reasoning", None)
+        http_req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers, data=json.dumps(payload).encode("utf-8"))
+        with urllib.request.urlopen(http_req, timeout=420) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
     if isinstance(data, dict) and data.get("error"):
         raise RuntimeError(str(data.get("error"))[:240])
     msg = ((data.get("choices") or [{}])[0].get("message") or {})
@@ -14131,25 +14142,27 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
             except Exception as exc:
                 results[slot] = {"model": primary_model if slot == "primary" else checker_model,
                                  "text": "", "error": str(exc)[:240]}
-    # إسناد احتياطي: قارئ سقط (خطأ أو رد فارغ) يُعاد بنموذج الاحتياط المعتمد
-    # مرة واحدة، ويُوثَّق السقوط والاحتياط في النتيجة نفسها لا يُخفى
-    MS_READER_FALLBACK = "google/gemini-4-carbon"
+    # إسناد احتياطي متسلسل: قارئ سقط (خطأ أو رد فارغ) يُعاد بغيره من المعتمدين
+    # (Carbon ثم Pro) مرة واحدة لكل بديل، ويُوثَّق السقوط والاحتياط لا يُخفى
+    MS_READER_FALLBACKS = ["google/gemini-4-carbon", "~google/gemini-pro-latest"]
     for slot in ("primary", "checker"):
         r = results.get(slot) or {}
         if (r.get("text") or "").strip():
             continue
         want = primary_model if slot == "primary" else checker_model
-        if want == MS_READER_FALLBACK:
-            continue
-        try:
-            fb = _ms_transcribe_one(MS_READER_FALLBACK, b64_url, key)
-            fb["requested_model"] = want
-            fb["fallback"] = True
-            fb["first_error"] = str(r.get("error") or "رد فارغ")[:200]
-            results[slot] = fb
-        except Exception as exc:
-            r["fallback_error"] = str(exc)[:200]
-            results[slot] = r
+        for fb_model in MS_READER_FALLBACKS:
+            if fb_model == want:
+                continue
+            try:
+                fb = _ms_transcribe_one(fb_model, b64_url, key)
+                fb["requested_model"] = want
+                fb["fallback"] = True
+                fb["first_error"] = str(r.get("error") or "رد فارغ")[:200]
+                results[slot] = fb
+                break
+            except Exception as exc:
+                r["fallback_error"] = str(exc)[:200]
+                results[slot] = r
     primary = results.get("primary") or {}
     checker = results.get("checker") or {}
     disputes, agreement = ([], 0.0)
