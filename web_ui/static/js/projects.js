@@ -6795,7 +6795,8 @@ function paperPrintCss() {
     .academic-text-content p, .academic-paragraph { font-family: ${stack(s.printBodyFont)}; font-size: ${bodySize}pt; font-weight: ${bodyW};${col(s.printBodyColor)} }
     [data-footnote-marker] { font-family: ${stack(s.printFnFont)}; font-size: ${fnSize}pt; font-weight: ${fnW};${col(s.printFnColor)} }
     .footnote-list .footnote-item, .footnote-item, p.footnote-line, .footnote-line { font-family: ${stack(s.printFnFont)}; font-size: ${fnSize}pt; font-weight: ${fnW};${col(s.printFnColor)} line-height: 1.8; }
-    .footnote-item .quran-verse, .footnote-item .hadith-text, .footnote-item .quoted-text, .footnote-line .quran-verse, .footnote-line .hadith-text, .footnote-line .quoted-text { font-size: 1em !important; font-weight: inherit !important; }
+    .footnote-item .quran-verse, .footnote-item .hadith-text, .footnote-item .quoted-text, .footnote-line .quran-verse, .footnote-line .hadith-text, .footnote-line .quoted-text, .pg-fn .quran-verse, .pg-fn .hadith-text, .pg-fn .quoted-text { font-size: 1em !important; font-weight: inherit !important; }
+    .pg-fn { font-family: ${stack(s.printFnFont)}; font-size: ${fnSize}pt; font-weight: ${fnW};${col(s.printFnColor)} }
     .quran-verse { font-family: ${stack(s.printQuranFont)}; font-size: ${quranSize}pt; font-weight: ${quranW};${col(s.printQuranColor)} }
     .hadith-text { font-family: ${stack(s.printHadithFont)}; font-size: ${hadithSize}pt; font-weight: ${hadithW};${col(s.printHadithColor)} }
     .quoted-text { font-family: ${stack(s.printQuoteFont)}; font-size: ${quoteSize}pt; font-weight: ${quoteW};${col(s.printQuoteColor)} }
