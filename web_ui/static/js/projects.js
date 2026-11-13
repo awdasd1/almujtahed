@@ -7295,6 +7295,8 @@ function buildAcademicPaperHtml(runData, options) {
           wordRunsFromNode(el, ctx, runs);
           var cleaned = wordCleanRuns(runs);
           if (!cleaned.length) return;
+          // «النص المحقق» في المخطوطات يبدأ صفحة جديدة في وورد أيضًا
+          if (el.classList.contains('ms-matn-start')) payload.blocks.push({ kind: 'pageBreak', runs: [] });
           payload.blocks.push({ kind: kind, runs: cleaned });
         });
       });

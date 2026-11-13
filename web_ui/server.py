@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.515"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.516"},
         },
     })
     if opened.get("error"):
@@ -14248,6 +14248,9 @@ MS_AGENTS_PROMPT = (
     "واكتب source بصيغة المحققين: اسم الكتاب ثم موضعه بين قوسين كـ(صحيح مسلم (2699)) أو "
     "(لسان العرب، مادة (غني)، ج1 ص91) أو (تفسير الطبري، ج10 ص93)؛ وكل كتاب تذكره في body أو source "
     "أتبعه موضعه (جزؤه وصفحته أو مادته) مباشرة، ولا تجمع كتابين فأكثر في مرجع واحد بموضع واحد أو بلا مواضع. "
+    "وتخريج الأحاديث بقالب التطبيق الصارم: في الصحاح والسنن والمصنفات المبوبة: «أخرجه البخاري، كتاب كذا، باب كذا، حديث رقم (N)، (ج-ص)»، "
+    "وفي المسانيد: «أخرجه أحمد في المسند حديث رقم (N)، (ج-ص)»، وبعدهما درجة الحديث إن كان في غير الصحيحين؛ "
+    "وما لم يظهر لك رقمه أو كتابه وبابه فاحذفه ولا تخترعه، والموضع (ج-ص) لا يسقط بحال. "
     "وإن نقلت في body نصًّا حرفيًا من مصدر "
     "فاجعله بين قوسي تنصيص ﴿ ﴾ واختم جملته بلفظ (نصًّا)، وإن كان شرحًا أو تلخيصًا بمعناك فابدأ "
     "body بلفظ «أي:» ليُعلم أنه بالمعنى لا بالنص.\n\nنص اللوحة:\n{text}"
@@ -15595,6 +15598,58 @@ async def manuscript_discuss(request: Request, payload: Any = Body(...)):
         return await asyncio.to_thread(_ms_discuss_sync, payload or {}, key)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذر النقاش: {str(exc)[:200]}")
+
+
+@app.post("/api/manuscripts/bibliography")
+async def manuscript_bibliography(payload: Any = Body(...)):
+    """بيانات المصادر والمراجع الكاملة من قاعدة الكتب (كما في بحوث
+    التطبيق): العنوان والمؤلف ووفاته والمحقق والطبعة والناشر ومدينته
+    وسنة الطبع وعدد الأجزاء — لبناء قائمة المراجع ومواضع الإحالات."""
+    p = payload or {}
+    ids = [int(x) for x in (p.get("book_ids") or []) if str(x).strip().lstrip("-").isdigit()][:80]
+    titles = [str(x).strip() for x in (p.get("titles") or []) if str(x).strip()][:80]
+    rows_out = []
+    seen = set()
+    try:
+        conn = shamela_local_mcp._books_conn()
+        if conn is None:
+            return {"rows": []}
+        wanted = list(ids)
+        for t in titles:
+            rows = conn.execute(
+                "SELECT book_id, title_ar FROM books WHERE title_ar LIKE ? LIMIT 10",
+                (f"%{t}%",)).fetchall()
+            rows = sorted(rows, key=lambda r: (0 if (r[1] or "").strip() == t else 1, len(r[1] or "")))
+            if rows and rows[0][0] not in wanted:
+                wanted.append(rows[0][0])
+        for bid in wanted[:80]:
+            if bid in seen:
+                continue
+            seen.add(bid)
+            r = conn.execute(
+                "SELECT title_ar, main_author_name_ar, main_author_death_hijri, betaka_text, volume_count_observed "
+                "FROM books WHERE book_id=?", (bid,)).fetchone()
+            if not r:
+                continue
+            bk = r[3] or ""
+            def _f(label):
+                mm = re.search(label + r":\s*([^\r\n]+)", bk)
+                return mm.group(1).strip() if mm else ""
+            pub_raw = _f("الناشر")
+            pub, city = (pub_raw.rsplit(" - ", 1) + [""])[:2] if " - " in pub_raw else (pub_raw, "")
+            ed_raw = _f("الطبعة")
+            ym = re.search(r"(1[0-9]{3}|[0-9]{4})\s*هـ", ed_raw)
+            rows_out.append({
+                "book_id": bid, "title": r[0] or "", "author": r[1] or "",
+                "death_year": r[2] or "", "editor": _f("تحقيق"),
+                "edition": ed_raw, "publisher": pub.strip(), "city": city.strip(),
+                "print_year": ym.group(1) if ym else "",
+                "volumes": r[4] or "",
+            })
+        conn.close()
+    except Exception:
+        return {"rows": []}
+    return {"rows": rows_out}
 
 
 @app.post("/api/manuscripts/intro")

@@ -3599,6 +3599,7 @@ async function msExportDocx() {
   const p = msCurrentProject();
   if (!p) return;
   const info = document.getElementById('msExportInfo');
+  await msPrefetchBiblio(p);
   // مسار وورد الأبحاث نفسه: من ورقة الطباعة المقسمة في إطار القراءة
   // (exportWordFromDoc) فتتطابق الحواشي والترقيم والضبط مع المعاينة
   msPreviewPrint();
@@ -3624,6 +3625,7 @@ async function msExportDocx() {
 async function msExportPdf() {
   const p = msCurrentProject();
   if (!p) return;
+  await msPrefetchBiblio(p);
   // ضبط الأبحاث الشرعية نفسه حرفيًا: forPdf بهوامش Paged الصفرية، وخطوط
   // وألوان ومقاسات وفواصل وخلفية من إعدادات طباعة المنظومة عبر paperPrintCss
   const html = msBuildPrintHtml(p, { toolbar: false, forPdf: true });
@@ -3648,48 +3650,100 @@ function msArabicDigits(n) {
   return String(n).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
 }
 
-// صياغة مرجع الحاشية للمنشور بمنهج المحققين: (الكتاب، مادة/رقم، ج، ص)
-// فيُدمج شاهد التوثيق الدقيق في مرجع المصدر نفسه ولا يتكرر اسم الكتاب
+// بيانات كتب الإحالات (مؤلف/أجزاء) تُجلب من قاعدة الكتب قبل الإخراج
+let MS_BOOK_META = {};
+function msBookKey(t) {
+  return String(t || '').replace(/[ً-ٰٟ]/g, '')
+    .replace(/\s*[-–]\s*(ت|ط)\s.*$/, '').replace(/\s+/g, ' ').trim();
+}
+async function msPrefetchBiblio(p) {
+  const ids = new Set(), titles = new Set();
+  (p.agent_suggestions || []).forEach(s => {
+    if (s.verify && s.verify.locus && s.verify.locus.book_id) ids.add(s.verify.locus.book_id);
+    const b = (String(s.source || '').match(/^([^()،]{3,60})/) || [])[1];
+    if (b) titles.add(b.trim());
+  });
+  if (!ids.size && !titles.size) return;
+  try {
+    const res = await fetch('/api/manuscripts/bibliography', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ book_ids: [...ids].slice(0, 60), titles: [...titles].slice(0, 60) }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    MS_BOOK_META = {};
+    (data.rows || []).forEach(r => { MS_BOOK_META[msBookKey(r.title)] = r; });
+    p._biblioRows = data.rows || [];
+  } catch (e) {}
+}
+
+// صياغة إحالة الحاشية بالمعيار القياسي للتطبيق نفسه (كما في البحوث
+// الشرعية المطبوعة): «انظر:» للنقل الحرفي و«ينظر:» للمعنوي أو متعدد
+// المصادر، ثم اسم الكتاب للمؤلف (جزء-صفحة) بأرقام لاتينية، وما لا
+// موضع موثّقًا له يُحذف فلا إحالة بلا شاهد
 function msFnPrint(t) {
   let out = String(t || '').trim();
-  let cite = null;
-  out = out.replace(/\s*\(شاهد:\s*([^()]+?،\s*ج\s*[^()]+)\)\s*$/, (m, c) => { cite = c.trim(); return ''; });
-  const dictRe = /لسان العرب|القاموس المحيط|تاج العروس|النهاية في غريب|المصباح المنير|مختار الصحاح|المعجم الوسيط/;
-  const tail = out.match(/\(([^()]+?)(?:\s*\(([^()]+)\))?\)\s*$/);
-  if (tail) {
-    const book = tail[1].trim(), sub = (tail[2] || '').trim();
-    const base = out.slice(0, tail.index).trimEnd();
+  const toLatin = s => String(s || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+  // تخريج حديث بقالب «أخرجه...»: متن الحاشية نفسه إحالتها، فلا يُلحق
+  // بها شاهد كتاب آخر ولا مرجع مصدر مكرر في ذيلها
+  if (/أخرجه|أخرجها|رواه/.test(out)) {
+    out = out.replace(/\s*\(شاهد:[^()]*\)\s*$/, '');
+    out = out.replace(/\s*\((?:صحيح|سنن|مسند|جامع)\s+([^()]{2,40}?)\s*\(([^()]{1,12})\)\)\s*$/, ' ($1، حديث رقم ($2))');
+    return out.replace(/\s+/g, ' ').trim();
+  }
+  let citeStr = null, base = out;
+  const anz = out.match(/\s+انظر:\s*([\s\S]+)$/);
+  if (anz) {
+    citeStr = anz[1].trim(); base = out.slice(0, anz.index).trimEnd();
+    // أقواس مصادر مداخلة بلا أجزاء ولا صفحات تُحذف متى قام مقامها الموضع الموثّق
+    if (/ج\s*[0-9٠-٩]/.test(citeStr)) {
+      base = base.replace(/\s*\([^()]*(?:\([^()]*\))[^()]*\)\s*$/, '');
+      base = base.replace(/\s*\((?![^()]*(?:،\s*ج|سورة|آية))[^()]*(?:تفسير|شرح|صحيح|كتاب|لسان|قاموس|تاج)[^()]*\)\s*$/, '');
+    }
+  } else {
+    let cite = null;
+    base = out.replace(/\s*\(شاهد:\s*([^()]+?،\s*ج\s*[^()]+)\)\s*$/, (m, c) => { cite = c.trim(); return ''; });
+    // مرجع مصدر بلا موضع موثق يُحذف متى وُجد شاهد موثّق يقوم مقامه
     if (cite) {
-      const cm = cite.match(/^(.+?)،\s*ج\s*(.+?)\s+ص\s*(.+)$/);
-      const sameBook = cm && (cm[1].includes(book) || book.includes(cm[1].split(' - ')[0].trim()));
-      if (sameBook) {
-        const mid = sub ? (dictRe.test(book) || dictRe.test(cm[1]) ? `، مادة (${sub})` : `، رقم (${sub})`) : '';
-        out = `${base} (${cm[1]}${mid}، ج${cm[2]} ص${cm[3]})`;
-      } else {
-        out = `${out} (${cite})`;
-      }
-    } else if (sub) {
-      out = `${base} (${book}، ${dictRe.test(book) ? `مادة (${sub})` : `رقم (${sub})`})`;
+      base = base.replace(/\s*\([^()]*(?:\([^()]*\))[^()]*\)\s*$/, ''); // قوس متداخل الأقواس
+      base = base.replace(/\s*\((?![^()]*(?:،\s*ج|سورة|آية))[^()]*(?:تفسير|شرح|صحيح|كتاب|لسان|قاموس|تاج)[^()]*\)\s*$/, '');
     }
-  } else if (cite) {
-    out = `${out} (${cite})`;
-  }
-  out = out.replace(/\s+/g, ' ').trim();
-  // مرجع الحاشية الختامي يُقدَّم بلفظ المحققين «انظر:» دون قوسين حوله
-  if (out.endsWith(')')) {
-    let depth = 0, open = -1;
-    for (let i = out.length - 1; i >= 0; i--) {
-      if (out[i] === ')') depth++;
-      else if (out[i] === '(') { depth--; if (!depth) { open = i; break; } }
-    }
-    if (open > 0) {
-      const inner = out.slice(open + 1, -1);
-      if (/،\s*(ج|مادة|رقم)/.test(inner) && inner.length <= 170) {
-        out = out.slice(0, open).trimEnd() + ' انظر: ' + inner;
-      }
+    const tailM = base.match(/\(([^()]*(?:،\s*ج|مادة|رقم)[^()]*)\)\s*$/);
+    if (tailM) {
+      const inner = tailM[1].trim();
+      base = base.slice(0, tailM.index).trimEnd();
+      citeStr = cite ? (inner + '؛ ' + cite) : inner;
+    } else if (cite) {
+      citeStr = cite;
     }
   }
-  return out;
+  if (!citeStr) return out.replace(/\s+/g, ' ').trim();
+  const parts = [];
+  citeStr.split('؛').forEach(rawPart => {
+    let part = rawPart.trim().replace(/\((?![^)]*(?:ج\s|ص\s|مادة|رقم))[^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+    if (!part) return;
+    const title = (part.split('،')[0] || '').trim();
+    const madda = (part.match(/مادة \(([^)]+)\)/) || [])[1] || '';
+    const jm = part.match(/ج\s*([0-9٠-٩]+)\s*ص\s*([0-9٠-٩]+)/);
+    const meta = MS_BOOK_META[msBookKey(title)] || null;
+    const author = meta && meta.author ? meta.author : '';
+    const dispTitle = title.replace(/\s*[-–]\s*(ت|ط)\s.*$/, '').trim();
+    const head = author ? `${dispTitle} ل${author}` : dispTitle;
+    if (jm) {
+      parts.push({ txt: `${head} (${toLatin(jm[1])}-${toLatin(jm[2])})${madda ? `، مادة (${madda})` : ''}`, ok: true });
+    } else if (madda) {
+      parts.push({ txt: `${head}، مادة (${madda})`, ok: false });
+    } else {
+      parts.push({ txt: head, ok: false });
+    }
+  });
+  const verified = parts.filter(x => x.ok);
+  const use = verified.length ? verified : parts;
+  if (!use.length) return base.replace(/\s+/g, ' ').trim();
+  const literal = /﴿/.test(out) || /نصًّا/.test(out);
+  const prefix = (use.length > 1 || !literal) ? 'ينظر: ' : 'انظر: ';
+  const joined = use.map((x, i) => (i === 0 ? x.txt : 'و' + x.txt)).join('؛ ');
+  return (base + ' ' + prefix + joined).replace(/\s+/g, ' ').trim();
 }
 
 function msPaperRunData(p) {
@@ -3704,8 +3758,17 @@ function msPaperRunData(p) {
   // كحواشي المتن تمامًا، وترقيمها يسبق ترقيم حواشي المتن لترتيب الورقة
   let introMd = (p.intro || '').trim();
   if (introMd) {
+    // عناوين الأقسام عناوين معرّضة دائمًا بنمط واحد (خط العناوين
+    // المضبوط في قسم الطباعة) فلا تخرج مرة ثخينة ومرة رقيقة
+    introMd = introMd.split('\n').map(l => {
+      const tx = l.trim();
+      if (/^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا|سادسًا|سابعًا|ثامنًا)[:：]/.test(tx) && !tx.startsWith('**')) return `**${tx}**`;
+      return l;
+    }).join('\n');
     introMd = introMd.replace(/\(([^()]{3,140}?،\s*ج\s*[^()]+?ص\s*[٠-٩0-9]+[^()]*)\)/g,
       (m, cite) => refFor(cite.trim()));
+    // فاصل ختام المقدمة: ثلاث نجوم وسط الصفحة، ولا نجوم في غير موضعها
+    introMd += '\n\n***';
   }
   const bodyParas = [];
   folios.forEach(f => {
@@ -3767,17 +3830,23 @@ function msPaperRunData(p) {
     const idxParts = [];
     Object.keys(groups).forEach(name => {
       if (!(groups[name] || []).length) return;
+      // المصادر والمراجع تخرج بآلية البحوث (صفحة مستقلة ببيانات
+      // كاملة مرتبة) متى جُلبت بياناتها، فلا تتكرر مجموعة فهارس
+      if (name === 'مصادر ومراجع التحقيق' && (p._biblioRows || []).length) return;
       idxParts.push(name === 'مصادر ومراجع التحقيق' ? '**المصادر والمراجع**' : `**فهرس ${name}**`);
       (groups[name] || []).forEach(i => idxParts.push(escMd(i)));
     });
     if (idxParts.length) rounds.push({ name: 'الفهارس', output: idxParts.join('\n\n') });
   }
-  return { projectTitle: p.title, rounds, bibliography: [] };
+  return { projectTitle: p.title, rounds, bibliography: p._biblioRows || [] };
 }
 
 function msBuildPrintHtml(p, options) {
   if (typeof buildAcademicPaperHtml !== 'function') return '';
   let html = buildAcademicPaperHtml(msPaperRunData(p), options || {});
+  // لا نجوم متسربة من صياغة النماذج في المنشور، وفاصل ختام المقدمة وحده نجوم وسطى
+  html = html.replace(/<p[^>]*>\*\*\*<\/p>/g, '<p style="text-align:center;text-indent:0">***</p>');
+  html = html.replace(/\*\*/g, '');
   // «النص المحقق» عنوان وسطي في مطلع صفحة جديدة بعد مقدمة التحقيق
   html = html.replace('<h2 class="academic-round-title">النص المحقق</h2>',
     '<h2 class="academic-round-title ms-matn-start">النص المحقق</h2>');
