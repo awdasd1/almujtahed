@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.512"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.515"},
         },
     })
     if opened.get("error"):
@@ -26526,8 +26526,13 @@ def build_docx_bytes(payload: dict) -> bytes:
 
     fn_paras = []
     fn_mark_rpr = _docx_rpr(fn_style)
+    # داخل الحاشية تتوحد كل المقاطع (قرآن/حديث/اقتباس) بخط الحاشية
+    # وحجمها ووزنها، فلا تتسرب إليها مقاسات المتن المضخمة
+    fn_run_styles = dict(styles or {})
+    for _k in ("quran", "hadith", "quote"):
+        fn_run_styles[_k] = fn_style
     for i, fnote in enumerate(footnotes):
-        runs = _docx_runs((fnote or {}).get("runs"), fn_style, styles, 0) if isinstance(fnote, dict) else ""
+        runs = _docx_runs((fnote or {}).get("runs"), fn_style, fn_run_styles, 0) if isinstance(fnote, dict) else ""
         if not runs:
             runs = "<w:r><w:t> </w:t></w:r>"
         # ترقيم الحاشية ديناميكي بالكامل: عنصر footnoteRef يجعل وورد
