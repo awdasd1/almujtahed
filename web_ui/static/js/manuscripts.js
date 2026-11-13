@@ -3733,6 +3733,11 @@ function msStandardCite(citeStr, literal) {
 }
 function msFnPrint(t) {
   let out = String(t || '').trim();
+  // حكم وكيل الطباعة الأكاديمي نفسه (بتوجيه بحوث التطبيق): ⟦ن⟧ نقل
+  // حرفي و⟦م⟧ نقل بالمعنى — يُحترم كما هو ولا تخمّن القاعدة الآلية فوقه
+  let judged = null;
+  const jm0 = out.match(/^⟦([نم])⟧\s*/);
+  if (jm0) { judged = jm0[1] === 'ن' ? 'literal' : 'meaning'; out = out.slice(jm0[0].length); }
   // تخريج حديث: متن الحاشية نفسه إحالتها بقالب «أخرجه فلان، حديث رقم
   // (N)، (ج-ص)» فلا يُلحق بها شاهد كتاب آخر ولا قوس كتب عارٍ في ذيلها
   if (/أخرجه|أخرجها|رواه/.test(out)) {
@@ -3780,10 +3785,10 @@ function msFnPrint(t) {
   // منسوب بقائل/أورد/نقل أو تصريح بالنص والحرفية. فأما كلمة المتن
   // المشروحة بين تنصيص فليست نقلًا من المصدر فتبقى «ينظر»
   const bodyNoAnchor = out.replace(/^«[^»]+»\s*[—–-]?\s*/, '');
-  const literal = !/^أي:/.test(bodyNoAnchor.trim()) && (
+  const literal = judged ? judged === 'literal' : (!/^أي:/.test(bodyNoAnchor.trim()) && (
     /﴿/.test(bodyNoAnchor) || /نصًّا|بنصّه|بنصه|حرفيًا|حرفيا|بلفظه/.test(bodyNoAnchor)
     || /(?:قال|يقول|قاله|أورد|روى|نقل|ذكر|جاء في|نصّ على)\b[^«]{0,50}«[^»]{12,}»/.test(bodyNoAnchor)
-    || /:\s*«[^»]{25,}»/.test(bodyNoAnchor));
+    || /:\s*«[^»]{25,}»/.test(bodyNoAnchor)));
   const std = msStandardCite(citeStr, literal);
   return std ? (base + ' ' + std).replace(/\s+/g, ' ').trim() : base;
 }
