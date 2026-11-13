@@ -11313,8 +11313,35 @@ body::-webkit-scrollbar,
   content: "";
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--bg-main, #f6f1e6) 62%, transparent);
+  background: color-mix(in srgb, var(--bg-main, #f6f1e6) 38%, transparent);
   pointer-events: none;
   z-index: 0;
 }
 #paneManuscripts > * { position: relative; z-index: 1; }
+/* حاويات التبويب شفافة لتظهر لوحة الخلفية من خلالها */
+#paneManuscripts .ms-create-card,
+#paneManuscripts .ms-project-card,
+#paneManuscripts .ms-copy-card,
+#paneManuscripts .ms-group-agent,
+#paneManuscripts .ms-stage-node,
+#paneManuscripts .ms-auto-step,
+#paneManuscripts .ms-auto-log,
+#paneManuscripts .ms-mode-btn,
+#paneManuscripts .ms-discuss-ai,
+#paneManuscripts .ms-legacy-path,
+#paneManuscripts .ms-empty,
+#paneManuscripts .ms-folio,
+#paneManuscripts .ms-form-row input,
+#paneManuscripts .ms-wb-text textarea,
+#paneManuscripts .ms-model-label select,
+#paneManuscripts .ms-group-model,
+#paneManuscripts .ms-book-chip {
+  background: color-mix(in srgb, var(--bg-surface, #fdfaf4) 12%, transparent);
+}
+#paneManuscripts .ms-mode-btn.active { background: rgba(180, 85, 45, .16); }
+#paneManuscripts .ms-stage-node.is-done { background: rgba(46, 125, 91, .14); }
+#paneManuscripts .ms-btn:not(.ms-btn-primary):not(.ms-view-active) {
+  background: color-mix(in srgb, var(--bg-surface, #fdfaf4) 18%, transparent);
+}
+#paneManuscripts .ms-btn-primary,
+#paneManuscripts .ms-view-active { background: var(--accent-clay, #b4552d); }
