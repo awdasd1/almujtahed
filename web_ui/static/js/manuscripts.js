@@ -2848,6 +2848,7 @@ async function msAutoRun(p) {
     const data = await msAutoFetch('/api/manuscripts/intro', {
       title: p.title, author: msAuthorName(p), api_key: msApiKey(),
       attribution: (p.author_profile && p.author_profile.attribution) || undefined,
+      bio_names: p.author_profile ? [p.author_profile.correct_name, p.author_profile.famous_name, p.author].filter(Boolean) : undefined,
       model: msGroupModel('bio', LEADER),
       bio_books: msGroupBookTitles('bio').length ? msGroupBookTitles('bio') : undefined,
       copies: (p.copies || []).map(c => ({ siglum: c.siglum, library: c.library, shelfmark: c.shelfmark,

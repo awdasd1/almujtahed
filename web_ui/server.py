@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.506"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.507"},
         },
     })
     if opened.get("error"):
@@ -14693,7 +14693,7 @@ _MS_BIBLIO_TITLES = [
 
 def _ms_author_profile_sync(payload: dict, key: str) -> Dict[str, Any]:
     written = str((payload or {}).get("author") or "").strip()
-    title = str((payload or {}).get("title") or "")
+    title = re.sub(r"^مشروع\s+", "", str((payload or {}).get("title") or "")).strip()
     if not written:
         raise ValueError("اسم المؤلف كما كُتب مفقود — اكتبه في بيانات المشروع أولًا")
     model = str((payload or {}).get("model") or "meta/muse-wonder")
@@ -15335,7 +15335,17 @@ def _ms_intro_sync(payload: dict, key: str) -> Dict[str, Any]:
     p = payload or {}
     title = str(p.get("title") or "")[:160]
     author = str(p.get("author") or "")[:160]
-    bio = _ms_bio_evidence(author, (p.get("bio_books") or None))
+    # شواهد الترجمة تُجمع بأغنى صيغ الاسم (الاسم الكامل من البطاقة أولًا)
+    # فالاسم المشهور وحده لا يلتقط أبواب الترجمة كلها
+    bio_names = [str(x).strip() for x in (p.get("bio_names") or []) if str(x).strip()]
+    candidates = bio_names + ([author] if author and author not in bio_names else [])
+    bio = {"snippets": [], "books": []}
+    for cand in candidates[:4]:
+        got = _ms_bio_evidence(cand, (p.get("bio_books") or None))
+        if len(got.get("snippets") or []) > len(bio.get("snippets") or []):
+            bio = got
+        if len(bio.get("snippets") or []) >= 6:
+            break
     ev_lines = []
     for s in bio["snippets"]:
         ev_lines.append(f"[{s['book']} ج{s.get('part') or '—'} ص{s.get('page') or '—'}] {s['text']}")
