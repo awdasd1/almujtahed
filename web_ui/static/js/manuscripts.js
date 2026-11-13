@@ -75,7 +75,7 @@ function msCopy(project, copyId) { return project ? (project.copies || []).find(
 function msFolio(copy, folioId) { return copy ? (copy.folios || []).find(f => f.id === folioId) || null : null; }
 
 async function initManuscriptsTab() {
-  if (msLoaded) { renderMsProjects(); return; }
+  if (msLoaded) { renderMsProjects(); renderMsGroup(); return; }
   try {
     const res = await fetch('/api/manuscripts');
     const data = await res.json();
@@ -85,6 +85,7 @@ async function initManuscriptsTab() {
   msLoaded = true;
   msFillModelSelects();
   renderMsProjects();
+  msLoadGroup();
 }
 
 function msSave() {
@@ -190,6 +191,8 @@ function msOpenProject(id) {
     ${p.desc ? `<p class="ms-proj-desc">${msEsc(p.desc)}</p>` : ''}`;
   renderMsCopies();
   renderMsAuto();
+  renderMsCompareChips();
+  renderMsDiscussion();
   renderMsCollation();
   renderMsAgents();
   renderMsAuthor();
@@ -1313,7 +1316,7 @@ async function msRunAgents() {
       btn.textContent = `⏳ الوكلاء على لوحة (${f.label})...`;
       const res = await fetch('/api/manuscripts/agents', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: apiKey, extra_books: MS_AGENT_BOOK_TITLES.length ? MS_AGENT_BOOK_TITLES : undefined }),
+        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: apiKey, extra_books: msManualExtraBooks(['ayat', 'hadith', 'tarajim', 'lugha']) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'تعذر تشغيل الوكلاء');
@@ -1420,7 +1423,7 @@ async function msRunAuthor() {
       btn.textContent = `⏳ وكيل المؤلف على لوحة (${f.label})...`;
       const res = await fetch('/api/manuscripts/author-agent', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: msApiKey(), extra_books: MS_AGENT_BOOK_TITLES.length ? MS_AGENT_BOOK_TITLES : undefined }),
+        body: JSON.stringify({ text: f.text, title: p.title, author: p.author, model, api_key: msApiKey(), extra_books: msManualExtraBooks(['authorworks']) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'تعذر وكيل المؤلف');
@@ -1797,6 +1800,172 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('resize', msSyncOverlay);
 });
 
+// ---------- مجموعة تحقيق المخطوطات المعتمدة ----------
+// مرجع واحد مضبوط للتحقيق الآلي والبشري: نماذج وكتب كل وكيل محفوظة في
+// نظام مجموعات الوكلاء نفسه، وتقرؤها خطوات التحقيق عند كل تشغيل.
+const MS_GROUP_ID = 'ms_tahqeeq_group_v1';
+const MS_GROUP_MODELS = [
+  ['meta/muse-wonder', 'Muse Wonder — قائد ومدقق'],
+  ['~openai/gpt-luna-latest', 'GPT Luna — مساعد تنفيذي'],
+  ['google/gemini-4-argon', 'Google Argon — معتمِد الصور والجودة'],
+  ['~google/gemini-pro-latest', 'Gemini Pro Latest'],
+  ['google/gemini-3.1-pro-preview', 'Gemini 3.1 Pro'],
+  ['~anthropic/claude-sonnet-latest', 'Claude Sonnet Latest'],
+  ['google/gemini-2.5-flash', 'Gemini 2.5 Flash'],
+];
+const MS_GROUP_DEFAULT_AGENTS = [
+  { key: 'leader', name: 'المحقق القائد والمدقق', desc: 'يحسم مواضع الخلاف، ويقود النقاش والتصحيحات مع الباحث', model: 'meta/muse-wonder', books: [] },
+  { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ، يحسم من الصورة، ويعتمد النسخة نهائيًا قبل الإصدار', model: 'google/gemini-4-argon', books: [] },
+  { key: 'bio', name: 'وكيل ترجمة المؤلف', desc: 'يبني ترجمة المؤلف بين المختصرة والمتوسطة من كتب التراجم المعتمدة: مولد ووفاة ومواقف وشيوخ وتلاميذ', model: 'meta/muse-wonder',
+    books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'شذرات الذهب', 'البداية والنهاية', 'طبقات الشافعية الكبرى', 'الأعلام', 'معجم المؤلفين', 'الدرر الكامنة', 'بغية الوعاة', 'حسن المحاضرة'] },
+  { key: 'ayat', name: 'وكيل تخريج الآيات', desc: 'يعزو الآيات إلى سورها وأرقامها ويضبط لفظها على المصحف، ويستعين بكتب التفسير والإعراب', model: '~openai/gpt-luna-latest',
+    books: ['تفسير الطبري', 'تفسير ابن كثير', 'الدر المنثور', 'فتح القدير للشوكاني', 'إعراب القرآن', 'معاني القرآن'] },
+  { key: 'hadith', name: 'وكيل تخريج الأحاديث', desc: 'يخرّج الأحاديث والآثار من الأصول وشروحها وكتب التخريج مع حكم مختصر', model: '~openai/gpt-luna-latest',
+    books: ['صحيح البخاري', 'صحيح مسلم', 'سنن أبي داود', 'سنن الترمذي', 'سنن النسائي', 'سنن ابن ماجه', 'موطأ مالك', 'مسند الإمام أحمد', 'فتح الباري', 'شرح النووي على صحيح مسلم', 'عون المعبود', 'تحفة الأحوذي', 'إرواء الغليل'] },
+  { key: 'tarajim', name: 'وكيل التراجم والأعلام', desc: 'يترجم الأعلام الواردين في المتن من كتب الرجال والتراجم المعتمدة', model: '~openai/gpt-luna-latest',
+    books: ['سير أعلام النبلاء', 'تهذيب الكمال', 'تهذيب التهذيب', 'تقريب التهذيب', 'الإصابة في تمييز الصحابة', 'أسد الغابة', 'ميزان الاعتدال', 'لسان الميزان', 'الوافي بالوفيات', 'الأعلام'] },
+  { key: 'lugha', name: 'وكيل اللغة والضبط', desc: 'يشرح الغريب ويضبط المشكل ويكشف التصحيف من معاجم اللغة وغريب الحديث', model: '~openai/gpt-luna-latest',
+    books: ['لسان العرب', 'تاج العروس', 'الصحاح', 'القاموس المحيط', 'النهاية في غريب الحديث', 'المصباح المنير', 'مختار الصحاح', 'المعجم الوسيط'] },
+  { key: 'authorworks', name: 'وكيل مقارنة أقوال المؤلف بكتبه', desc: 'متغير بحسب صاحب كل مخطوط: تُحلّ كتب المؤلف نفسه آليًا من المكتبة عند كل مشروع، وما تضيفه هنا مظان إضافية ثابتة', model: '~openai/gpt-luna-latest', books: [] },
+];
+let MS_GROUP = null;
+let MS_GROUP_PICK_KEY = null;
+
+async function msLoadGroup() {
+  try {
+    const res = await fetch('/api/agent-groups');
+    const gs = await res.json().catch(() => []);
+    MS_GROUP = (Array.isArray(gs) ? gs : []).find(g => g.id === MS_GROUP_ID) || null;
+  } catch (e) { MS_GROUP = null; }
+  renderMsGroup();
+  msApplyGroupModelDefaults();
+  return MS_GROUP;
+}
+
+// نماذج التشغيل البشري الافتراضية تُضبط من المجموعة المعتمدة (والمحقق يبدلها بيده إن شاء)
+function msApplyGroupModelDefaults() {
+  if (!MS_GROUP) return;
+  const set = (id, key) => {
+    const el = document.getElementById(id);
+    const model = msGroupModel(key, '');
+    if (el && model && [...el.options].some(o => o.value === model)) el.value = model;
+  };
+  set('msAgentModel', 'hadith');
+  set('msAuthorModel', 'authorworks');
+  set('msMonitorModel', 'leader');
+}
+
+function msGroupAgent(key) { return MS_GROUP ? (MS_GROUP.agents || []).find(a => a.ms_key === key) || null : null; }
+function msGroupModel(key, fallback) { const a = msGroupAgent(key); return (a && a.model) || fallback; }
+function msBookTitleOf(s) { return String(s || '').replace(/^#\d+\s*/, '').trim(); }
+function msGroupBookTitles(key) {
+  const a = msGroupAgent(key);
+  return a ? (a.books || []).map(msBookTitleOf).filter(Boolean) : [];
+}
+
+function msBuildGroup() {
+  return {
+    id: MS_GROUP_ID, name: 'مجموعة تحقيق المخطوطات',
+    desc: 'المرجع المعتمد لتحقيق المخطوطات آليًا وبشريًا: قائد ومدقق ومعتمِد صور وجودة وستة وكلاء متخصصين بنماذج وكتب مضبوطة.',
+    ms_kind: 'manuscripts',
+    agents: MS_GROUP_DEFAULT_AGENTS.map(d => ({
+      id: 'msag_' + d.key, ms_key: d.key, name: d.name, desc: d.desc, model: d.model,
+      enabled: true, active: true, role: d.key === 'leader' ? 'director' : 'agent',
+      is_director: d.key === 'leader', books: [...d.books], booksScope: [...d.books],
+      scope_summary: d.desc, system_prompt: d.desc,
+    })),
+  };
+}
+
+async function msSeedGroup(force) {
+  if (MS_GROUP && !force) { renderMsGroup(); return; }
+  if (force && !confirm('إعادة ضبط مجموعة تحقيق المخطوطات إلى ضبط المصنع؟ ستفقد تعديلات النماذج والكتب التي ضبطتها.')) return;
+  const g = msBuildGroup();
+  try {
+    const res = await fetch('/api/agent-groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(g) });
+    if (!res.ok) throw new Error('حفظ');
+    MS_GROUP = g; renderMsGroup();
+    msToast('اعتمدت «مجموعة تحقيق المخطوطات» مرجعًا للتحقيق الآلي والبشري بنماذجها وكتبها');
+  } catch (e) { msToast('تعذر حفظ المجموعة المعتمدة'); }
+}
+
+async function msSaveGroup() {
+  if (!MS_GROUP) return;
+  try {
+    await fetch('/api/agent-groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(MS_GROUP) });
+  } catch (e) { /* يعاد الحفظ عند أي تعديل لاحق */ }
+}
+
+function msGroupSetModel(key, model) {
+  const a = msGroupAgent(key);
+  if (!a || !model) return;
+  a.model = model;
+  msSaveGroup();
+  msToast(`حُفظ نموذج «${a.name}»: ${model} — يسري على التشغيلات القادمة آليًا وبشريًا`);
+}
+
+function msGroupRemoveBook(key, idx) {
+  const a = msGroupAgent(key);
+  if (!a) return;
+  a.books.splice(idx, 1);
+  a.booksScope = [...a.books];
+  msSaveGroup(); renderMsGroup();
+}
+
+// كتب المظان للتشغيل البشري: كتب وكلاء المجموعة المعتمدة + ما أضافه المحقق بيده
+function msManualExtraBooks(keys) {
+  const all = [];
+  (keys || []).forEach(k => msGroupBookTitles(k).forEach(t => { if (!all.includes(t)) all.push(t); }));
+  (MS_AGENT_BOOK_TITLES || []).forEach(t => { const x = msBookTitleOf(t); if (x && !all.includes(x)) all.push(x); });
+  return all.length ? all : undefined;
+}
+
+function msGroupPickBooks(key) {
+  const a = msGroupAgent(key);
+  if (!a) return;
+  MS_GROUP_PICK_KEY = key;
+  window._msGroupCurrentBooks = [...(a.books || [])];
+  if (typeof openSearchScopeModal === 'function') openSearchScopeModal('ms_group');
+  else msToast('نافذة انتقاء الكتب غير متاحة في هذه الصفحة');
+}
+
+window.onMsGroupBooks = function (titles) {
+  const a = msGroupAgent(MS_GROUP_PICK_KEY);
+  if (!a) return;
+  (titles || []).forEach(t => { if (t && !a.books.includes(t)) a.books.push(t); });
+  a.booksScope = [...a.books];
+  msSaveGroup(); renderMsGroup();
+  msToast(`كتب «${a.name}» المعتمدة الآن: ${a.books.length} كتابًا`);
+};
+
+function renderMsGroup() {
+  const box = document.getElementById('msGroupBody');
+  if (!box) return;
+  if (!MS_GROUP) {
+    box.innerHTML = `<div class="ms-hint">لم تُنشأ المجموعة المعتمدة بعد. أنشئها لتكون مرجع التحقيق آليًا وبشريًا: ستة وكلاء متخصصين (ترجمة مؤلف، آيات، أحاديث، تراجم، لغة وضبط، مقارنة بمؤلفات المؤلف) مع قائد ومعتمِد، لكلٍّ نموذجه وكتبه المعتمدة من الشاملة.</div>
+      <div class="ms-form-row"><button type="button" class="ms-btn ms-btn-primary" onclick="msSeedGroup(false)">⭐ إنشاء واعتماد مجموعة تحقيق المخطوطات</button></div>`;
+    return;
+  }
+  box.innerHTML = `
+    <div class="ms-hint" style="margin-bottom:8px">هذه المجموعة هي <strong>المرجع المعتمد</strong>: التحقيق الآلي يشغّل وكلاءها بنماذجهم وكتبهم، والتحقيق البشري يستعين بنفس الكتب والنماذج افتراضيًا. وكيل مقارنة المؤلف متغير: تُحلّ كتب صاحب كل مخطوط آليًا عند تشغيله. يمكنك إضافة كتب لأي وكيل في أي وقت فتسري على القادم.</div>
+    ${MS_GROUP.agents.map(a => `
+      <div class="ms-group-agent">
+        <div class="ms-group-agent-head">
+          <strong>${msEsc(a.name)}</strong>
+          <select class="ms-group-model" onchange="msGroupSetModel('${msEsc(a.ms_key)}', this.value)">
+            ${MS_GROUP_MODELS.map(([v, l]) => `<option value="${v}"${v === a.model ? ' selected' : ''}>${l}</option>`).join('')}
+            ${MS_GROUP_MODELS.some(([v]) => v === a.model) ? '' : `<option value="${msEsc(a.model)}" selected>${msEsc(a.model)}</option>`}
+          </select>
+        </div>
+        <div class="ms-hint">${msEsc(a.desc || '')}</div>
+        <div class="ms-group-books">
+          ${(a.books || []).map((b, i) => `<span class="ms-book-chip">${msEsc(b)} <button type="button" class="ms-chip-x" title="إزالة" onclick="msGroupRemoveBook('${msEsc(a.ms_key)}', ${i})">✕</button></span>`).join('') || '<span class="ms-hint">لا كتب مثبتة — يعمل بنطاقه الافتراضي</span>'}
+          <button type="button" class="ms-btn" onclick="msGroupPickBooks('${msEsc(a.ms_key)}')">📚 إضافة كتب من الشاملة</button>
+        </div>
+      </div>`).join('')}
+    <div class="ms-form-row"><button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة ضبط المصنع للمجموعة</button></div>`;
+}
+
 // ---------- التحقيق الآلي الكامل بقيادة المدقق الذكي ----------
 // المدقق Muse Wonder يقود، وGoogle Argon يقرأ الصور ويدقق النسخ،
 // ووكلاء التحقيق يعملون تحت قراره: نسخ واعتماد، مقابلة، حسم، تخريج،
@@ -1871,7 +2040,7 @@ function renderMsAuto() {
       <div>لوحات منسوخة ومعتمدة من أرغون: ${r.foliosTranscribed ?? 0} · مواضع خلاف حُسمت: ${r.decided ?? 0} (منها ${r.decidedAdopted ?? 0} اعتُمدت فيها قراءة النسخ الأخرى، و${r.imageDecided ?? 0} حسمها أرغون من الصورة) · بقيت بلا حسم: ${r.held ?? 0}</div>
       <div>اقتراحات وكلاء أُثبتت في الهامش: ${r.agentsAccepted ?? 0} · موازيات مؤلف أُثبتت: ${r.authorAccepted ?? 0} · رُدت لعدم ثبوت توثيقها: ${r.autoDismissed ?? 0}</div>
       ${r.approval ? `<div>اعتماد أرغون النهائي: ${msEsc(String(r.approval).slice(0, 220))}…</div>` : ''}
-      <div>${r.compare ? `المقارنة المرجعية: تطابق ${r.compare.similarity}٪ مع «${msEsc(r.compare.book || '')}» و${r.compare.rows} فرقًا` : 'المقارنة المرجعية: لم يُحدد كتابها في بطاقة المقارنة'} · الفهارس: ${r.indexEntries ?? 0} مدخلًا</div>
+      <div>${(r.compare && r.compare.length) ? `المقارنات المرجعية: ${r.compare.map(c => `«${msEsc(c.book || '')}» تطابق ${c.similarity}٪ و${c.rows} فرقًا`).join('؛ ')}` : 'المقارنة المرجعية: لم يُحدد كتابها في بطاقة المقارنة'} · الفهارس: ${r.indexEntries ?? 0} مدخلًا</div>
       <div>${(r.bioSources || []).length ? `مصادر ترجمة المؤلف: ${r.bioSources.map(msEsc).join('، ')}` : 'ترجمة المؤلف: لم تُعثر شواهد كافية في كتب التراجم'}</div>
       <div class="ms-hint">كل قرارات المدقق موثقة في مواضعها وقابلة لمراجعتك وتعديلك في أي وقت من بطاقات المشروع اليدوية بالأسفل.</div>
     </div>` : '';
@@ -1951,8 +2120,11 @@ async function msAutoRun(p) {
     }
     a.checkpoint = { step: key, item: '', at: new Date().toISOString() };
     msAutoStep(p, key, 'run'); await msSaveNow(); renderMsAuto();
+    const cost0 = Number(a.cost) || 0;
     try {
       await fn();
+      if (!R.costs) R.costs = {};
+      R.costs[key] = +(((Number(a.cost) || 0) - cost0).toFixed(4));
       const prev = a.steps[key] || {};
       msAutoStep(p, key, prev.heldInfo ? 'held' : 'done', prev.heldInfo || '');
       a.checkpoint = { step: key, item: 'اكتملت', at: new Date().toISOString() };
@@ -1965,10 +2137,17 @@ async function msAutoRun(p) {
     await msSaveNow(); renderMsAuto();
   };
   const base = msBaseCopy(p);
+  // المرجع المعتمد: مجموعة تحقيق المخطوطات بنماذج وكلائها وكتبهم
+  await msLoadGroup();
+  const LEADER = msGroupModel('leader', MS_WONDER_MODEL);
+  const APPROVER = msGroupModel('approver', MS_ARGON_MODEL);
+  R.group = MS_GROUP ? MS_GROUP.name : 'غير معتمدة — افتراضي خطة الجودة';
+  msAutoLog(p, `المرجع المعتمد لهذا التشغيل: ${R.group} (القائد ${LEADER}، المعتمِد ${APPROVER}).`);
 
-  // ١) النسخ والاعتماد بثلاثة النماذج (Argon مدققًا على الصورة)
+  // ١) النسخ والاعتماد بثلاثة النماذج (المعتمِد مدققًا على الصورة)
   await step('transcribe', true, async () => {
     const choice = msModelChoice();
+    choice.auditor = APPROVER;
     let done = 0;
     for (const c of p.copies || []) {
       for (const f of c.folios || []) {
@@ -2051,7 +2230,8 @@ async function msAutoRun(p) {
       try {
         const data = await msAutoFetch('/api/manuscripts/recommend', {
           title: p.title, author: p.author, folio: e.folio, type: e.type,
-          base: e.base, other: e.other, siglum: e.siglum, context: e.context, excerpt, api_key: msApiKey() });
+          base: e.base, other: e.other, siglum: e.siglum, context: e.context, excerpt, api_key: msApiKey(),
+          model: LEADER });
         addCost(data.cost);
         const [opt] = MS_REC_ACTIONS[data.action] || MS_REC_ACTIONS.needs_image;
         if (data.action === 'needs_image' || opt === 'comment_only') {
@@ -2060,7 +2240,7 @@ async function msAutoRun(p) {
           if (!imgPath) throw new Error('لا صورة للوحة الأم لهذا الموضع');
           const verdict = await msAutoFetch('/api/manuscripts/image-decide', {
             file_path: imgPath, title: p.title, author: p.author, folio: e.folio, type: e.type,
-            base: e.base, other: e.other, siglum: e.siglum, excerpt, api_key: msApiKey(), model: MS_ARGON_MODEL });
+            base: e.base, other: e.other, siglum: e.siglum, excerpt, api_key: msApiKey(), model: APPROVER });
           addCost(verdict.cost);
           const opt2 = verdict.reading === 'other' ? 'adopt_other' : 'keep_note';
           const corrected = msApplyRecommendation(p, e,
@@ -2110,17 +2290,34 @@ async function msAutoRun(p) {
   };
   await step('agents', false, async () => {
     p.agent_suggestions = p.agent_suggestions || [];
+    a.agentDone = a.agentDone || {};
+    // وكلاء المجموعة المعتمدة المتخصصون: لكلٍّ نموذجه وكتبه وتركيزه
+    const JOBS = [
+      ['ayat', 'وكيل تخريج الآيات', s => s.kind === 'takhrij' && !!s.surah, 'الآيات القرآنية وحدها: عزو كل آية إلى سورتها ورقمها وضبط لفظها على المصحف'],
+      ['hadith', 'وكيل تخريج الأحاديث', s => s.kind === 'takhrij' && !s.surah, 'الأحاديث والآثار وحدها: التخريج من كتب الأصول وشروحها مع حكم مختصر على السند'],
+      ['tarajim', 'وكيل التراجم والأعلام', s => s.kind === 'tarjama', 'الأعلام الواردون في المتن وحدها: ترجمة موجزة موثقة من كتب الرجال'],
+      ['lugha', 'وكيل اللغة والضبط', s => s.kind === 'lugha' || s.kind === 'dabt', 'غريب الألفاظ وضبط المشكل وكشف التصحيف وحدها من معاجم اللغة'],
+    ];
     for (const f of (base.folios || []).filter(x => (x.text || '').trim())) {
-      msAutoCheck(p);
-      if ((p.agent_suggestions || []).some(s => s.folio === f.label && s.kind !== 'author')) continue;
-      msAutoLog(p, `وكلاء التحقيق على لوحة (${f.label}): تخريج ولغة وتراجم وضبط...`);
-      const data = await msAutoFetch('/api/manuscripts/agents', {
-        text: f.text, title: p.title, author: p.author, model: MS_LUNA_MODEL, api_key: msApiKey() });
-      addCost(data.cost);
-      (data.suggestions || []).forEach(s => p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending' }));
-      msSave(); renderMsAuto();
+      for (const [key, label, pred, focus] of JOBS) {
+        msAutoCheck(p);
+        const doneKey = f.label + ':' + key;
+        if (a.agentDone[doneKey]) continue;
+        a.checkpoint = { step: 'agents', item: `${label} — لوحة (${f.label})`, at: new Date().toISOString() };
+        msAutoLog(p, `${label} (نموذج ${msGroupModel(key, MS_LUNA_MODEL)}) على لوحة (${f.label})...`);
+        const data = await msAutoFetch('/api/manuscripts/agents', {
+          text: f.text, title: p.title, author: p.author,
+          model: msGroupModel(key, MS_LUNA_MODEL), api_key: msApiKey(),
+          extra_books: msGroupBookTitles(key).length ? msGroupBookTitles(key) : undefined,
+          agent_focus: focus });
+        addCost(data.cost);
+        (data.suggestions || []).filter(pred).forEach(s =>
+          p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending', agent: key }));
+        a.agentDone[doneKey] = true;
+        await msSaveNow(); renderMsAuto();
+      }
     }
-    R.agentsAccepted = decideSuggestions(['takhrij', 'tarjama', 'lugha', 'dabt'], 'وكلاء التحقيق');
+    R.agentsAccepted = decideSuggestions(['takhrij', 'tarjama', 'lugha', 'dabt'], 'وكلاء المجموعة المعتمدة');
     renderMsAgents();
   });
 
@@ -2131,8 +2328,11 @@ async function msAutoRun(p) {
     for (const f of (base.folios || []).filter(x => (x.text || '').trim())) {
       msAutoCheck(p);
       if ((p.agent_suggestions || []).some(s => s.folio === f.label && s.kind === 'author')) continue;
+      msAutoLog(p, `وكيل مقارنة أقوال المؤلف بكتبه (متغير بحسب «${p.author}») على لوحة (${f.label})...`);
       const data = await msAutoFetch('/api/manuscripts/author-agent', {
-        text: f.text, title: p.title, author: p.author, model: MS_LUNA_MODEL, api_key: msApiKey() });
+        text: f.text, title: p.title, author: p.author,
+        model: msGroupModel('authorworks', MS_LUNA_MODEL), api_key: msApiKey(),
+        extra_books: msGroupBookTitles('authorworks').length ? msGroupBookTitles('authorworks') : undefined });
       addCost(data.cost);
       (data.suggestions || []).forEach(s => p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending' }));
       msSave(); renderMsAuto();
@@ -2166,7 +2366,7 @@ async function msAutoRun(p) {
     msAutoCheck(p);
     const data = await msAutoFetch('/api/manuscripts/monitor', {
       project_title: p.title, author: p.author, phase: 'شاملة',
-      context: msMonitorContext(p, 'شاملة'), model: MS_LUNA_MODEL, api_key: msApiKey() });
+      context: msMonitorContext(p, 'شاملة'), model: LEADER, api_key: msApiKey() });
     addCost(data.cost);
     (p.monitor_log = p.monitor_log || []).push({ id: msUid(), phase: 'شاملة', at: new Date().toISOString(),
       model: data.model || MS_WONDER_MODEL, findings: data.findings || '', status: 'open',
@@ -2178,27 +2378,36 @@ async function msAutoRun(p) {
 
   // ٧) المقارنة المرجعية بتحقيق منشور (إن حُدّد كتابه)
   await step('compare', false, async () => {
-    const bookEl = document.getElementById('msCompareBook');
-    // مساعدة ذاتية: الكتاب المحدد، فإن لم يكن فعنوان الكتاب نفسه تحقيقًا منشورًا في الشاملة
-    const candidates = [String(p.compareBook || '').trim(), String((bookEl && bookEl.value) || '').trim(), String(p.title || '').trim()]
-      .filter((v, i, arr) => v && arr.indexOf(v) === i);
-    if (!candidates.length) { msAutoLog(p, 'لا مرشح للمقارنة المرجعية — تُتخطى.'); return; }
+    // حتى ثلاثة تحقيقات مرجعية مضبوطة في المشروع؛ فإن لم تُضبط جرّب عنوان الكتاب نفسه
+    let books = msCompareBooks(p).slice(0, 3);
+    if (!books.length) {
+      const bookEl = document.getElementById('msCompareBook');
+      const cand = String((bookEl && bookEl.value) || p.title || '').trim();
+      if (cand) books = [cand];
+    }
+    if (!books.length) { msAutoLog(p, 'لا مرشح للمقارنة المرجعية — تُتخطى.'); return; }
     const ourText = (base.folios || []).map(f => f.text || '').join('\n');
-    for (const book of candidates) {
+    const datas = [], results = [];
+    for (const book of books) {
       msAutoCheck(p);
       try {
         const data = await msAutoFetch('/api/manuscripts/compare-edition', { text: ourText, book });
-        if (!data.found) { msAutoLog(p, `المقارنة بـ «${book}»: لا محاذاة — يُجرَّب مرشح آخر.`); continue; }
-        MS_COMPARE = data; p.compareBook = book;
-        R.compare = { book: (data.book || {}).title || book, similarity: data.similarity, rows: (data.rows || []).length };
-        msAutoLog(p, `المقارنة المرجعية بـ «${R.compare.book}»: تطابق ${data.similarity}٪ و${R.compare.rows} فرقًا (التفاصيل في بطاقة المقارنة).`);
-        return;
+        if (!data.found) { msAutoLog(p, `المقارنة بـ «${book}»: لا محاذاة — يُنتقل لغيره.`); continue; }
+        datas.push(data);
+        results.push({ book: (data.book || {}).title || book, similarity: data.similarity, rows: (data.rows || []).length });
+        msAutoLog(p, `المقارنة المرجعية بـ «${results[results.length - 1].book}»: تطابق ${data.similarity}٪ و${results[results.length - 1].rows} فرقًا.`);
       } catch (err) {
         if (err.network || MS_AUTO_STOP) throw err;
         msAutoLog(p, `المقارنة بـ «${book}» تعثرت: ${err.message}`);
       }
     }
-    msAutoLog(p, 'تعذرت المقارنة المرجعية بكل المرشحين — تُتخطى ولا توقف التحقيق.');
+    if (datas.length) {
+      MS_COMPARE = { ...datas[0], list: datas };
+      p.compareSummary = results;
+      R.compare = results;
+    } else {
+      msAutoLog(p, 'تعذرت المقارنة المرجعية بكل المرشحين — تُتخطى ولا توقف التحقيق.');
+    }
   });
 
   // ٨) مقدمة التحقيق وترجمة المؤلف من كتب التراجم
@@ -2208,10 +2417,12 @@ async function msAutoRun(p) {
       `نُسخت لوحات ${(p.copies || []).length} نسخة بقارئين ومدقق على الصورة واعتُمدت.`,
       R.collationEntries != null ? `قوبلت النسخ على الأم؛ حُسم ${R.decided || 0} موضع خلاف بقرار المدقق، واعتُمدت قراءة النسخ في المتن ${R.decidedAdopted || 0} مرة، وعُلّق ${R.held || 0} موضعًا لعين المحقق.` : '',
       `أُثبت في الهامش ${R.agentsAccepted || 0} تخريجًا وتعليقًا من وكلاء التحقيق، و${R.authorAccepted || 0} موازاة من مؤلفات المؤلف.`,
-      R.compare ? `قورن النص بتحقيق «${R.compare.book}» فبلغ التطابق ${R.compare.similarity}٪.` : '',
+      (R.compare && R.compare.length) ? `قورن النص بتحقيقات مرجعية: ${R.compare.map(c => `«${c.book}» (تطابق ${c.similarity}٪)`).join('، ')}.` : '',
     ].filter(Boolean).join('\n');
     const data = await msAutoFetch('/api/manuscripts/intro', {
-      title: p.title, author: p.author, api_key: msApiKey(), model: MS_WONDER_MODEL,
+      title: p.title, author: p.author, api_key: msApiKey(),
+      model: msGroupModel('bio', LEADER),
+      bio_books: msGroupBookTitles('bio').length ? msGroupBookTitles('bio') : undefined,
       copies: (p.copies || []).map(c => ({ siglum: c.siglum, library: c.library, shelfmark: c.shelfmark,
         date: c.date, script: c.script, notes: c.notes })),
       sigla: (p.copies || []).map(c => `(${c.siglum}) = ${c.library || ''} ${c.shelfmark || ''}`).join('؛ '),
@@ -2243,7 +2454,7 @@ async function msAutoRun(p) {
       + '\n\n== ملخص قرارات التحقيق الآلي ==\n' + JSON.stringify(R || {}).slice(0, 1600);
     const data = await msAutoFetch('/api/manuscripts/monitor', {
       project_title: p.title, author: p.author, phase: 'اعتماد أرغون النهائي',
-      context: ctx, model: MS_ARGON_MODEL, api_key: msApiKey() });
+      context: ctx, model: APPROVER, api_key: msApiKey() });
     addCost(data.cost);
     (p.monitor_log = p.monitor_log || []).push({ id: msUid(), phase: 'اعتماد أرغون', at: new Date().toISOString(),
       model: data.model || MS_ARGON_MODEL, findings: data.findings || '', status: 'open',
@@ -2349,6 +2560,190 @@ async function msAutoStart() {
   if (a.status === 'interrupted' || a.status === 'paused_network') {
     setTimeout(() => msAutoMaybeResume('محاولة لاحقة'), 20000);
   }
+}
+
+// ---------- وثيقة خطة التحقيق والنقاش مع المحقق الآلي ----------
+function msReportSections(p) {
+  const a = p.auto || {};
+  const R = a.report || {};
+  const base = msBaseCopy(p);
+  const entries = ((p.collation || {}).entries || []);
+  const sugs = p.agent_suggestions || [];
+  const accSugs = sugs.filter(s => s.status === 'accepted');
+  const verifiedAcc = accSugs.filter(s => ['verified', 'found'].includes((s.verify || {}).status) || s.kind === 'lugha' || s.kind === 'dabt');
+  const stepName = Object.fromEntries(MS_AUTO_STEPS);
+  const stTxt = { done: 'منجزة ✔', held: 'منجزة بملاحظات ⏸', err: 'تعثرت ✖', run: 'كانت جارية', todo: 'لم تُشغَّل' };
+  const lines = [];
+  const S = [];
+  S.push({ name: 'بيانات المشروع والنسخ المعتمدة', body: [
+    `الكتاب: ${p.title}`,
+    `المؤلف: ${p.author || '—'}`,
+    p.desc ? `الوصف: ${p.desc}` : '',
+    `نوع التحقيق: ${p.mode === 'auto' ? 'آلي كامل ذاتي' : 'بخطوات مراجعة بشرية'}`,
+    `المرجع المعتمد: ${(MS_GROUP && MS_GROUP.name) || R.group || 'مجموعة تحقيق المخطوطات'}`,
+    `النسخة الأم: (${(base || {}).siglum || '—'})`,
+    ...(p.copies || []).map(c => {
+      const pr = msFolioProgress(c);
+      return `نسخة (${c.siglum}) — ${c.library || ''} ${c.shelfmark ? 'رقم ' + c.shelfmark : ''} ${c.date || ''} ${c.script || ''} — ${pr.total} لوحة، معتمدة ${pr.approved}${c.notes ? ' — ' + c.notes : ''}`;
+    }),
+  ].filter(Boolean).join('\n') });
+  S.push({ name: 'خطة التحقيق وخطواتها من البداية إلى النهاية', body: [
+    `بدأ: ${a.startedAt ? new Date(a.startedAt).toLocaleString('ar-EG') : '—'} · انتهى: ${a.finishedAt ? new Date(a.finishedAt).toLocaleString('ar-EG') : '—'} · الحالة: ${a.status || '—'} · استئنافات ذاتية: ${a.resumes || 0}`,
+    ...MS_AUTO_STEPS.map(([k, label]) => {
+      const st = (a.steps || {})[k];
+      const cost = R.costs && R.costs[k] != null ? ` — كلفتها $${Number(R.costs[k]).toFixed(4)}` : '';
+      return `${label}: ${st ? (stTxt[st.status] || st.status) : 'لم تُشغَّل'}${st && st.info ? ' (' + st.info + ')' : ''}${cost}`;
+    }),
+    `نقطة الحفظ الأخيرة: ${a.checkpoint ? a.checkpoint.step + ' — ' + (a.checkpoint.item || '') : '—'}`,
+  ].join('\n') });
+  const byStatus = st => entries.filter(e => e.status === st);
+  S.push({ name: 'قرارات المقابلة بين النسخ', body: [
+    `إجمالي الفروق: ${entries.length} — مقبولة في الهامش: ${byStatus('accepted').length}، مردودة: ${byStatus('dismissed').length}، بلا حسم: ${byStatus('pending').length}`,
+    ...entries.slice(0, 220).map(e => `لوحة (${e.folio}) ${e.type} مع (${e.siglum}): الأم «${(e.base || '—').slice(0, 90)}» / الأخرى «${(e.other || '—').slice(0, 90)}» — ${e.status}${e.rec && e.rec.decision ? ' — ' + e.rec.decision : ''}${e.rec && e.rec.approver ? ' [اعتماد المعتمِد من الصورة]' : ''}`),
+  ].join('\n') });
+  const imgDec = entries.filter(e => e.rec && e.rec.image_decided);
+  S.push({ name: 'اعتماد المعتمِد (أرغون) من صور اللوحات', body: [
+    `مواضع حسمها المعتمِد بفحص صورة اللوحة: ${imgDec.length}`,
+    ...imgDec.slice(0, 80).map(e => `لوحة (${e.folio}) ${e.type} مع (${e.siglum}): ${e.rec.decision || ''}`),
+    `لوحات اعتمد نسخَها المعتمِد على الصورة: ${(p.copies || []).reduce((n, c) => n + (c.folios || []).filter(f => f.status === 'approved').length, 0)}`,
+  ].join('\n') });
+  S.push({ name: 'التخريج والتوثيق وموازيات المؤلف', body: [
+    `اقتراحات الوكلاء: ${sugs.length} — أُثبت في الهامش: ${accSugs.length} (موثقة أو لغوية/ضبطية: ${verifiedAcc.length})، رُدت: ${sugs.filter(s => s.status === 'dismissed').length}، معلقة: ${sugs.filter(s => s.status === 'pending').length}`,
+    ...accSugs.slice(0, 160).map(s => `[${MS_AGENT_KINDS[s.kind] || s.kind}] لوحة (${s.folio}) «${(s.anchor || '').slice(0, 80)}» — ${(s.body || '').slice(0, 160)}${s.source ? ' (' + s.source + ')' : ''}${s.verify && s.verify.detail ? ' — توثيق: ' + s.verify.detail : ''}`),
+    ...entries.filter(e => e.rec && e.rec.style).slice(0, 40).map(e => `مسح أسلوب المؤلف — لوحة (${e.folio}): الصيغة الغالبة في كتبه «${e.rec.style.dominant}»`),
+  ].join('\n') });
+  const cmps = (p.compareSummary && p.compareSummary.length) ? p.compareSummary : (R.compare || []);
+  S.push({ name: 'المقارنات المرجعية بالتحقيقات المنشورة', body: cmps.length
+    ? cmps.map(c => `«${c.book}»: نسبة التطابق ${c.similarity}٪ وعدد الفروق ${c.rows} (جداولها التفصيلية في بطاقة المقارنة)`).join('\n')
+    : 'لم تُجرَ مقارنة مرجعية بعد.' });
+  S.push({ name: 'رقابة الجودة واعتماد المعتمِد النهائي', body: (p.monitor_log || []).length
+    ? (p.monitor_log || []).slice(-5).map(m => `[${m.phase}] بنموذج ${m.model || '—'}:\n${String(m.findings || '').slice(0, 1400)}`).join('\n\n')
+    : 'لا ملاحظات رقابة مسجلة بعد.' });
+  S.push({ name: 'المقدمة وترجمة المؤلف', body: [
+    `مصادر الترجمة من كتب التراجم: ${(R.bioSources || []).join('، ') || '—'}`,
+    p.intro ? String(p.intro).slice(0, 2600) + '\n…(النص الكامل في بطاقة المقدمة ويتصدر النسخة النهائية)' : 'لم تُكتب المقدمة بعد.',
+  ].join('\n') });
+  const groups = (p.indexes || {}).groups || {};
+  S.push({ name: 'الفهارس', body: Object.keys(groups).length
+    ? Object.entries(groups).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.length : 0} مدخلًا`).join('\n')
+    : 'لم تُبنَ الفهارس بعد.' });
+  const totalFolios = (base && base.folios || []).length;
+  const approvedFolios = (base && base.folios || []).filter(f => f.status === 'approved').length;
+  const gates = [
+    [`كل لوحات الأم منسوخة ومعتمدة من المعتمِد (${approvedFolios}/${totalFolios})`, totalFolios > 0 && approvedFolios === totalFolios],
+    [`لا مواضع خلاف معلقة بلا حسم (${byStatus('pending').length})`, byStatus('pending').length === 0],
+    [`كل المُثبت في الهامش موثق بشاهد أو لغوي/ضبطي (${verifiedAcc.length}/${accSugs.length})`, verifiedAcc.length === accSugs.length],
+    ['اعتماد المعتمِد النهائي للجودة مسجل', (p.monitor_log || []).some(m => m.approver)],
+    ['مقدمة التحقيق وترجمة المؤلف مكتوبتان', !!(p.intro || '').trim()],
+    ['الفهارس مبنية', Object.keys(groups).length > 0],
+    ['النسخة النهائية صدرت', !!((a.steps || {}).output && a.steps.output.status === 'done') || p.mode !== 'auto'],
+  ];
+  S.push({ name: 'بوابات الجودة', body: gates.map(([t, ok]) => `${ok ? '✔' : '✖'} ${t}`).join('\n') });
+  S.push({ name: 'التصحيحات المتفق عليها مع الباحث في النقاش', body: (p.corrections && p.corrections.length)
+    ? p.corrections.map(c => `${new Date(c.at).toLocaleString('ar-EG')} — لوحة (${c.folio}) ${c.type}: ${c.option}${c.reason ? ' — ' + c.reason : ''}`).join('\n')
+    : 'لا تصحيحات نقاشية بعد — افتح النقاش مع المحقق الآلي أسفل هذه البطاقة لتصحيح أي نقطة.' });
+  S.push({ name: 'الكلفة والسجل', body: [
+    `الكلفة الإجمالية للجولات الآلية: $${Number(a.cost || 0).toFixed(4)}`,
+    ...MS_AUTO_STEPS.filter(([k]) => R.costs && R.costs[k] != null).map(([k, label]) => `${label}: $${Number(R.costs[k]).toFixed(4)}`),
+    `آخر تحديث للوثيقة: ${new Date().toLocaleString('ar-EG')}`,
+  ].join('\n') });
+  return S;
+}
+
+function msReportText(p) {
+  return msReportSections(p).map(s => s.name + '\n' + s.body).join('\n\n');
+}
+
+function msShowReport() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const sections = msReportSections(p);
+  p.final_report = { at: new Date().toISOString(), text: sections.map(s => s.name + '\n' + s.body).join('\n\n') };
+  msSave();
+  if (typeof buildAcademicPaperHtml !== 'function' || typeof openChatReadingOverlay !== 'function') {
+    msToast('تعذر فتح الوثيقة في هذه الصفحة');
+    return;
+  }
+  const runData = { projectTitle: 'وثيقة خطة التحقيق — ' + p.title,
+    rounds: sections.map((s, i) => ({ round: i + 1, name: s.name, output: s.body })) };
+  openChatReadingOverlay(buildAcademicPaperHtml(runData, {}), true);
+  msToast('فُتحت وثيقة خطة التحقيق — قابلة للطباعة وتصدير Word من شريطها');
+}
+
+function msDiscussContext(p) {
+  const entries = ((p.collation || {}).entries || []).slice(0, 140).map(e =>
+    `${e.id} | لوحة (${e.folio}) ${e.type} مع (${e.siglum}) | الأم:«${(e.base || '').slice(0, 70)}» الأخرى:«${(e.other || '').slice(0, 70)}» | الحالة:${e.status} | القرار:${(e.rec && e.rec.decision) || '—'}`).join('\n');
+  return (msReportText(p).slice(0, 23000) + '\n\nفهرس مواضع الخلاف (استخدم id عند اقتراح تصحيح):\n' + entries).slice(0, 34000);
+}
+
+function renderMsDiscussion() {
+  const box = document.getElementById('msDiscussLog');
+  if (!box) return;
+  const p = msCurrentProject();
+  if (!p) { box.innerHTML = ''; return; }
+  const msgs = p.discussion || [];
+  box.innerHTML = msgs.length ? msgs.map((m, i) => m.role === 'user'
+    ? `<div class="ms-discuss-user"><strong>الباحث:</strong> ${msEsc(m.content)}</div>`
+    : `<div class="ms-discuss-ai"><strong>المحقق الآلي:</strong><br>${msEsc(m.content).replace(/\n/g, '<br>')}
+       ${m.apply && !m.applied ? `<div class="ms-form-row" style="margin-top:6px"><button type="button" class="ms-btn ms-btn-primary" onclick="msDiscussApply(${i})">✔ تطبيق التصحيح المتفق عليه (لوحة ${msEsc(((((p.collation || {}).entries || []).find(e => e.id === m.apply.entry_id) || {}).folio) || '')})</button></div>` : ''}
+       ${m.applied ? '<div class="ms-hint" style="color:#2e7d5b;font-weight:700">✔ طُبق هذا التصحيح في المشروع</div>' : ''}</div>`
+  ).join('') : '<div class="ms-hint">لا نقاش بعد. اسأل المحقق الآلي عن أي قرار في الوثيقة، أو اطلب تصحيح نقطة بعينها — فإذا اتفقتما ظهر زر تطبيق التصحيح تحت رده.</div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+async function msDiscussSend() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const ta = document.getElementById('msDiscussInput');
+  const text = (ta.value || '').trim();
+  if (!text) return;
+  p.discussion = p.discussion || [];
+  const history = p.discussion.slice(-10).map(m => ({ role: m.role, content: m.content }));
+  p.discussion.push({ role: 'user', content: text, at: new Date().toISOString() });
+  ta.value = '';
+  msSave(); renderMsDiscussion();
+  const btn = document.getElementById('msDiscussSendBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const data = await msAutoFetch('/api/manuscripts/discuss', {
+      context: msDiscussContext(p), history, message: text,
+      api_key: msApiKey(), model: msGroupModel('leader', MS_WONDER_MODEL) });
+    let reply = data.reply || '';
+    let apply = null;
+    const start = reply.lastIndexOf('{"apply"');
+    if (start >= 0) {
+      const jsonText = reply.slice(start).replace(/```/g, '').trim();
+      try { apply = (JSON.parse(jsonText) || {}).apply || null; } catch (e) { apply = null; }
+      if (apply) reply = reply.slice(0, start).replace(/```json\s*$/g, '').trim();
+    }
+    p.discussion.push({ role: 'assistant', content: reply, at: new Date().toISOString(), apply, model: data.model });
+  } catch (e) {
+    p.discussion.push({ role: 'assistant', content: 'تعذر الرد الآن: ' + e.message, at: new Date().toISOString() });
+  }
+  if (btn) btn.disabled = false;
+  msSave(); renderMsDiscussion();
+}
+
+function msDiscussApply(i) {
+  const p = msCurrentProject();
+  if (!p) return;
+  const msg = (p.discussion || [])[i];
+  if (!msg || !msg.apply || msg.applied) return;
+  const prop = msg.apply;
+  const e = ((p.collation || {}).entries || []).find(x => x.id === prop.entry_id);
+  if (!e) { msToast('لم يُعثر على الموضع المقصود في المقابلة الحالية'); return; }
+  const option = ['adopt_other', 'keep_note', 'keep_drop'].includes(prop.option) ? prop.option : 'keep_note';
+  msApplyRecommendation(p, e,
+    { action: option === 'adopt_other' ? 'adopt_other' : (option === 'keep_drop' ? 'keep_base_drop' : 'keep_base_note'),
+      margin_note: prop.apparatus || '', model: msGroupModel('leader', MS_WONDER_MODEL) },
+    option, { useNote: !!prop.apparatus,
+      decisionLabel: 'تصحيح باتفاق النقاش مع المحقق الآلي' + (prop.reason ? ': ' + prop.reason : '') });
+  e.rec.discussion = true;
+  (p.corrections = p.corrections || []).push({ at: new Date().toISOString(), entry_id: e.id,
+    folio: e.folio, type: e.type, option, reason: prop.reason || '' });
+  msg.applied = true;
+  msSave(); renderMsDiscussion(); renderMsCollation();
+  msToast('✔ طُبق التصحيح المتفق عليه وسُجل في الوثيقة — أعد إصدار النسخة النهائية ليظهر فيها');
 }
 
 // ---------- المرحلة ٤: الفهارس والمقدمة والإخراج ----------
@@ -2490,8 +2885,10 @@ function msOpenCompareBook() {
 
 function msExportCompareTable() {
   if (!MS_COMPARE) { msToast('شغّل المقارنة أولًا'); return; }
-  const rows = [['#', 'النوع', 'تحقيقنا', 'التحقيق المقارن', 'السياق']].concat(
-    (MS_COMPARE.rows || []).map((r, i) => [i + 1, r.type, r.ours || '', r.theirs || '', r.context || '']));
+  const list = MS_COMPARE.list && MS_COMPARE.list.length ? MS_COMPARE.list : [MS_COMPARE];
+  const rows = [['التحقيق المرجعي', '#', 'النوع', 'تحقيقنا', 'التحقيق المقارن', 'السياق']];
+  list.forEach(d => (d.rows || []).forEach((r, i) =>
+    rows.push([(d.book || {}).title || '', i + 1, r.type, r.ours || '', r.theirs || '', r.context || ''])));
   const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
   const name = (MS_COMPARE.book && MS_COMPARE.book.title) ? `فروق — ${MS_COMPARE.book.title}.csv` : 'فروق التحقيق.csv';
@@ -2503,17 +2900,68 @@ function msOpenCompareBookPicker() {
   else msToast('نافذة انتقاء الكتب غير متاحة في هذه الصفحة');
 }
 
-window.onMsCompareBook = function (title, count) {
+// التحقيقات المرجعية للمقارنة: حتى ثلاثة، تُدار قائمتها في المشروع
+function msCompareBooks(p) {
+  if (!p) return [];
+  if (!Array.isArray(p.compareBooks)) p.compareBooks = p.compareBook ? [p.compareBook] : [];
+  return p.compareBooks;
+}
+
+function renderMsCompareChips() {
+  const box = document.getElementById('msCompareChips');
+  if (!box) return;
+  const p = msCurrentProject();
+  const books = p ? msCompareBooks(p) : [];
+  box.innerHTML = books.map((b, i) =>
+    `<span class="ms-book-chip">${msEsc(b)} <button type="button" class="ms-chip-x" title="إزالة" onclick="msRemoveCompareBook(${i})">✕</button></span>`).join('')
+    + (books.length ? `<span class="ms-hint">${books.length} من ٣ تحقيقات مرجعية كحد أقصى</span>` : '<span class="ms-hint">أضف حتى ٣ تحقيقات منشورة للمقارنة المرجعية (اكتب الاسم وأضفه، أو تصفح الكتب)</span>');
+}
+
+function msRemoveCompareBook(i) {
+  const p = msCurrentProject();
+  if (!p) return;
+  msCompareBooks(p).splice(i, 1);
+  p.compareBook = msCompareBooks(p)[0] || '';
+  msSave(); renderMsCompareChips();
+}
+
+function msAddCompareBook(title) {
+  const p = msCurrentProject();
+  if (!p) return false;
+  const t = String(title || '').trim();
+  if (!t) return false;
+  const books = msCompareBooks(p);
+  if (books.includes(t)) { msToast('هذا التحقيق المرجعي مضاف من قبل'); return false; }
+  if (books.length >= 3) { msToast('بلغت الحد الأقصى: ثلاثة تحقيقات مرجعية'); return false; }
+  books.push(t);
+  p.compareBook = books[0];
+  msSave(); renderMsCompareChips();
+  return true;
+}
+
+function msAddCompareFromInput() {
   const input = document.getElementById('msCompareBook');
-  if (!input) return;
-  if (title) {
-    input.value = title;
-    msToast(count > 1 ? `اخترت أكثر من كتاب: اعتمدنا الأول «${title}» للمقارنة` : `الكتاب المقارن: «${title}»`);
-  } else {
-    input.value = '';
-    msToast('أُلغي تحديد الكتاب المقارن — اكتب اسمه أو تصفح الكتب');
-  }
+  if (input && msAddCompareBook(input.value)) input.value = '';
+}
+
+window.onMsCompareBook = function (title) {
+  if (title && msAddCompareBook(title)) msToast(`أضيف التحقيق المرجعي: «${title}»`);
 };
+
+function msCompareSectionHtml(ourText, data, idx) {
+  const rows = data.rows.map((r, i) => `<tr><td>${i + 1}</td><td>${msEsc(r.type)}</td><td>${msEsc(r.ours || '—')}</td><td>${msEsc(r.theirs || '—')}</td><td>${msEsc(r.context || '')}</td></tr>`).join('');
+  return `
+    <div class="ms-disputes-title" style="margin-top:16px">التحقيق المرجعي ${idx + 1}: «${msEsc(data.book.title)}» (ج ${msEsc(data.book.from.part || '—')} ص ${msEsc(data.book.from.page || '—')} – ص ${msEsc(data.book.to.page || '—')}) — تطابق ${data.similarity}٪ و${data.rows.length} فرقًا</div>
+    <div class="ms-compare-grid">
+      <div class="ms-compare-col"><div class="ms-collate-folio-title">تحقيقنا (متن الأم كما اعتمدناه)</div><div class="ms-compare-text">${msHighlightCompare(ourText, data.rows, 'ours')}</div></div>
+      <div class="ms-compare-col"><div class="ms-collate-folio-title">التحقيق المقارن — ${msEsc(data.book.title)}</div><div class="ms-compare-text">${msHighlightCompare(data.their_text || '', data.rows, 'theirs')}</div></div>
+    </div>
+    <div class="ms-disputes-title">جدول الفروقات الآلي (${data.rows.length}) — ${Object.entries(data.counts || {}).map(([k, v]) => `${msEsc(k)}: ${v}`).join(' · ')} — المظلَّل في النصين هو موضع الفرق</div>
+    <div class="ms-compare-tablewrap"><table class="ms-compare-table">
+      <thead><tr><th>#</th><th>النوع</th><th>تحقيقنا</th><th>التحقيق المقارن</th><th>السياق قبل الفرق</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5">لا فروق جوهرية — تطابق تام في المواضع المحاذاة</td></tr>'}</tbody>
+    </table></div>`;
+}
 
 async function msCompareEdition() {
   const p = msCurrentProject();
@@ -2523,38 +2971,39 @@ async function msCompareEdition() {
   const ourText = (base.folios || []).filter(f => (f.text || '').trim())
     .map(f => f.text).join('\n');
   if (!ourText.trim()) { msToast('لا متن محققًا في لوحات الأم بعد'); return; }
-  const book = document.getElementById('msCompareBook').value.trim();
-  if (!book) { msToast('اكتب اسم الكتاب المحقَّق المقارن في الشاملة'); return; }
+  const typed = document.getElementById('msCompareBook').value.trim();
+  if (!msCompareBooks(p).length && typed) msAddCompareBook(typed);
+  const books = msCompareBooks(p).slice(0, 3);
+  if (!books.length) { msToast('أضف تحقيقًا منشورًا واحدًا على الأقل للمقارنة'); return; }
   const btn = document.getElementById('msCompareBtn');
   const info = document.getElementById('msCompareInfo');
-  btn.disabled = true; info.textContent = '⏳ جارٍ محاذاة تحقيقنا على التحقيق المنشور واستخراج الفروق...';
-  try {
-    const res = await fetch('/api/manuscripts/compare-edition', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: ourText, book }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || 'تعذرت المقارنة');
-    if (!data.found) throw new Error(data.detail || 'تعذرت المحاذاة');
-    MS_COMPARE = data;
-    const proj = msCurrentProject();
-    if (proj) { proj.compareBook = book; msSave(); }
-    info.textContent = `قورن بـ «${data.book.title}» (ج ${data.book.from.part || '—'} ص ${data.book.from.page || '—'} – ص ${data.book.to.page || '—'}) — نسبة التطابق ${data.similarity}٪ و${data.rows.length} فرقًا`;
-    const rows = data.rows.map((r, i) => `<tr><td>${i + 1}</td><td>${msEsc(r.type)}</td><td>${msEsc(r.ours || '—')}</td><td>${msEsc(r.theirs || '—')}</td><td>${msEsc(r.context || '')}</td></tr>`).join('');
-    document.getElementById('msCompareResult').innerHTML = `
-      <div class="ms-compare-grid">
-        <div class="ms-compare-col"><div class="ms-collate-folio-title">تحقيقنا (متن الأم كما اعتمدناه)</div><div class="ms-compare-text">${msHighlightCompare(ourText, data.rows, 'ours')}</div></div>
-        <div class="ms-compare-col"><div class="ms-collate-folio-title">التحقيق المقارن — ${msEsc(data.book.title)} (ص ${msEsc((data.book.from && data.book.from.page) || '—')}–${msEsc((data.book.to && data.book.to.page) || '—')})</div><div class="ms-compare-text">${msHighlightCompare(data.their_text || '', data.rows, 'theirs')}</div></div>
-      </div>
-      <div class="ms-disputes-title">جدول الفروقات الآلي (${data.rows.length}) — ${Object.entries(data.counts || {}).map(([k, v]) => `${msEsc(k)}: ${v}`).join(' · ')} — المظلَّل في النصين هو موضع الفرق</div>
-      <div class="ms-compare-tablewrap"><table class="ms-compare-table">
-        <thead><tr><th>#</th><th>النوع</th><th>تحقيقنا</th><th>التحقيق المقارن</th><th>السياق قبل الفرق</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5">لا فروق جوهرية — تطابق تام في المواضع المحاذاة</td></tr>'}</tbody>
-      </table></div>`;
-  } catch (e) {
-    info.textContent = '';
-    document.getElementById('msCompareResult').innerHTML = `<div class="ms-rec-loading">❌ ${msEsc(e.message)}</div>`;
+  btn.disabled = true; info.textContent = `⏳ جارٍ محاذاة تحقيقنا على ${books.length} تحقيقًا منشورًا واستخراج الفروق...`;
+  const list = [];
+  let html = '';
+  for (const book of books) {
+    try {
+      const res = await fetch('/api/manuscripts/compare-edition', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: ourText, book }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'تعذرت المقارنة');
+      if (!data.found) throw new Error(data.detail || 'تعذرت المحاذاة');
+      list.push(data);
+      html += msCompareSectionHtml(ourText, data, list.length - 1);
+    } catch (e) {
+      html += `<div class="ms-rec-loading">❌ «${msEsc(book)}»: ${msEsc(e.message)}</div>`;
+    }
   }
+  if (list.length) {
+    MS_COMPARE = { ...list[0], list };
+    p.compareSummary = list.map(d => ({ book: d.book.title, similarity: d.similarity, rows: d.rows.length }));
+    msSave();
+    info.textContent = 'قورن تحقيقنا بـ: ' + p.compareSummary.map(s => `«${s.book}» تطابق ${s.similarity}٪ و${s.rows} فرقًا`).join('؛ ');
+  } else {
+    info.textContent = '';
+  }
+  document.getElementById('msCompareResult').innerHTML = html;
   btn.disabled = false;
 }
 

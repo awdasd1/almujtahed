@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.495"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.496"},
         },
     })
     if opened.get("error"):
@@ -14218,9 +14218,11 @@ def _ms_parse_json(text: str):
     except Exception:
         return None
 
-def _ms_agents_one(model: str, text: str, title: str, author: str, key: str) -> Dict[str, Any]:
+def _ms_agents_one(model: str, text: str, title: str, author: str, key: str, focus: str = "") -> Dict[str, Any]:
     prompt = MS_AGENTS_PROMPT.format(title=title or "مخطوط", author=author or "غير معروف",
                                      text=(text or "")[:14000])
+    if focus:
+        prompt += f"\n\nتركيز هذه الجولة (وكيل متخصص من مجموعة تحقيق المخطوطات المعتمدة): {focus}، ولا تخرج عن هذا التركيز إلا نادرًا."
     payload = {"model": model,
                "messages": [{"role": "user", "content": prompt}],
                "temperature": 0.2, "max_tokens": 8192}
@@ -14428,7 +14430,8 @@ def _ms_agents_sync(payload: dict, key: str) -> Dict[str, Any]:
         raise ValueError("نص اللوحة قصير جدًا للتحليل")
     model = str((payload or {}).get("model") or "google/gemini-3.1-pro-preview")
     out = _ms_agents_one(model, text, str((payload or {}).get("title") or ""),
-                         str((payload or {}).get("author") or ""), key)
+                         str((payload or {}).get("author") or ""), key,
+                         focus=str((payload or {}).get("agent_focus") or ""))
     extra = _ms_resolve_extra_books((payload or {}).get("extra_books"))
     for s in out["suggestions"]:
         s["model"] = model
@@ -14844,9 +14847,10 @@ _MS_TARAJIM_TITLES = [
     "معجم الأدباء", "حسن المحاضرة",
 ]
 
-def _ms_bio_evidence(author: str) -> Dict[str, Any]:
+def _ms_bio_evidence(author: str, titles=None) -> Dict[str, Any]:
     """شواهد ترجمة المؤلف: مسح عبارة اسمه متصلة في كتب تراجم معتمدة،
-    ثم نافذة من صفحة مدخله (وصفحتها التالية) حول موضع الاسم."""
+    ثم نافذة من صفحة مدخله (وصفحتها التالية) حول موضع الاسم.
+    titles: كتب وكيل ترجمة المؤلف في المجموعة المعتمدة إن ضُبطت."""
     raw = re.sub(r"\(.*?\)", "", str(author or "")).strip()
     raw = re.sub(r"\s+", " ", raw).strip(" ،")
     if not raw:
@@ -14865,7 +14869,8 @@ def _ms_bio_evidence(author: str) -> Dict[str, Any]:
         if conn is None:
             return {"snippets": [], "books": []}
         ids = []
-        for t in _MS_TARAJIM_TITLES:
+        tarajim_titles = [str(x).strip() for x in (titles or []) if str(x).strip()] or _MS_TARAJIM_TITLES
+        for t in tarajim_titles:
             rows = conn.execute(
                 "SELECT book_id, title_ar FROM books WHERE title_ar LIKE ? LIMIT 14",
                 (f"%{t}%",)).fetchall()
@@ -14944,7 +14949,7 @@ def _ms_intro_sync(payload: dict, key: str) -> Dict[str, Any]:
     p = payload or {}
     title = str(p.get("title") or "")[:160]
     author = str(p.get("author") or "")[:160]
-    bio = _ms_bio_evidence(author)
+    bio = _ms_bio_evidence(author, (p.get("bio_books") or None))
     ev_lines = []
     for s in bio["snippets"]:
         ev_lines.append(f"[{s['book']} ج{s.get('part') or '—'} ص{s.get('page') or '—'}] {s['text']}")
@@ -14983,6 +14988,61 @@ def _ms_intro_sync(payload: dict, key: str) -> Dict[str, Any]:
     return {"intro": intro[:30000], "model": model,
             "bio_sources": bio["books"], "bio_snippets": len(bio["snippets"]),
             "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
+
+MS_DISCUSS_SYSTEM = (
+    "أنت «المحقق الآلي» قائد تحقيق هذا المخطوط (Muse Wonder)، تناقش الباحث في وثيقة خطة التحقيق وقراراته. "
+    "معك في السياق: وثيقة التحقيق كاملة وفهرس مواضع الخلاف بأرقامها (id) وقراراتها. "
+    "اشرح القرارات بأدلتها، واعترف بالخطأ إن بان، ولا تدافع عن قرار لا دليل له. "
+    "إذا اتفقت مع الباحث على تصحيح محدد لموضع خلاف بعينه، اختم ردك بسطر JSON وحده بهذه الصيغة حرفيًا: "
+    "{\"apply\": {\"entry_id\": \"رقم الموضع من الفهرس\", \"option\": \"adopt_other أو keep_note أو keep_drop\", "
+    "\"apparatus\": \"نص حاشية بديل إن لزم وإلا فراغ\", \"reason\": \"سبب التصحيح\"}} "
+    "ولا تصدر هذا السطر إلا لتصحيح واحد محدد متفق عليه، ولا تدّع أنك طبقت شيئًا بنفسك؛ التطبيق يتم بزر الباحث."
+)
+
+def _ms_discuss_sync(payload: dict, key: str) -> Dict[str, Any]:
+    p = payload or {}
+    messages = [{"role": "system", "content": MS_DISCUSS_SYSTEM},
+                {"role": "user", "content": "سياق التحقيق ووثيقته وفهرس مواضعه:\n" + str(p.get("context") or "")[:36000]}]
+    for h in (p.get("history") or [])[-10:]:
+        role = "assistant" if h.get("role") == "assistant" else "user"
+        content = str(h.get("content") or "")[:4000]
+        if content:
+            messages.append({"role": role, "content": content})
+    msg_text = str(p.get("message") or "")[:4000]
+    if not msg_text:
+        raise ValueError("رسالة النقاش فارغة")
+    messages.append({"role": "user", "content": msg_text})
+    model = str(p.get("model") or "meta/muse-wonder")
+    body = {"model": model, "messages": messages, "temperature": 0.3, "max_tokens": 3500}
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed MS Discussion"},
+        data=json.dumps(body).encode("utf-8"))
+    started = time.time()
+    with urllib.request.urlopen(http_req, timeout=600) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(str(data.get("error"))[:240])
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    reply = str(msg.get("content") or "").strip()
+    if not reply:
+        raise RuntimeError("لم يرجع المحقق الآلي ردًا")
+    usage = data.get("usage") or {}
+    return {"reply": reply[:20000], "model": model,
+            "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
+
+@app.post("/api/manuscripts/discuss")
+async def manuscript_discuss(request: Request, payload: Any = Body(...)):
+    """نقاش الباحث مع المحقق الآلي في وثيقة التحقيق وقراراته، مع مقترحات تصحيح قابلة للتطبيق."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_discuss_sync, payload or {}, key)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر النقاش: {str(exc)[:200]}")
+
 
 @app.post("/api/manuscripts/intro")
 async def manuscript_intro(request: Request, payload: Any = Body(...)):

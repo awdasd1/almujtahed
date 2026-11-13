@@ -8,8 +8,8 @@
     <AssemblyName>AlMujtahedSetup</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <RootNamespace>AlMujtahed.Setup</RootNamespace>
-    <Version>1.10.495</Version>
-    <InformationalVersion>1.10.495</InformationalVersion>
+    <Version>1.10.496</Version>
+    <InformationalVersion>1.10.496</InformationalVersion>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>

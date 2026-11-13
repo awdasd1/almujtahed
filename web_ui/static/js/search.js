@@ -591,6 +591,9 @@ async function openSearchScopeModal(target = 'search') {
   } else if (target === 'ms_compare') {
     selectedBooksScope = window._msCompareBookTitle ? [window._msCompareBookTitle] : [];
     modal.style.setProperty('z-index', '200000', 'important');
+  } else if (target === 'ms_group') {
+    selectedBooksScope = [...(window._msGroupCurrentBooks || [])];
+    modal.style.setProperty('z-index', '200000', 'important');
   } else {
     selectedBooksScope = [...(window._searchTabBooks || selectedBooksScope || [])];
     modal.style.zIndex = '250';
@@ -865,6 +868,14 @@ function applySearchScopeSelection() {
     window._msCompareBookTitle = selectedBooksScope[0] || '';
     if (typeof window.onMsCompareBook === 'function') {
       window.onMsCompareBook(selectedBooksScope[0] || '', selectedBooksScope.length);
+    }
+    closeSearchScopeModal();
+    return;
+  }
+
+  if (scopeModalTarget === 'ms_group') {
+    if (typeof window.onMsGroupBooks === 'function') {
+      window.onMsGroupBooks([...selectedBooksScope]);
     }
     closeSearchScopeModal();
     return;
