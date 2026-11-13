@@ -2849,6 +2849,11 @@ async function msAutoRun(p) {
       title: p.title, author: msAuthorName(p), api_key: msApiKey(),
       attribution: (p.author_profile && p.author_profile.attribution) || undefined,
       bio_names: p.author_profile ? [p.author_profile.correct_name, p.author_profile.famous_name, p.author].filter(Boolean) : undefined,
+      classification: p.author_profile ? [
+        p.author_profile.madhhab ? `المذهب الفقهي: ${p.author_profile.madhhab}` : '',
+        p.author_profile.aqeedah ? `العقيدة: ${p.author_profile.aqeedah}` : '',
+        p.author_profile.classification_basis ? `قرينة التصنيف: ${p.author_profile.classification_basis}` : '',
+      ].filter(Boolean).join('\n') || undefined : undefined,
       model: msGroupModel('bio', LEADER),
       bio_books: msGroupBookTitles('bio').length ? msGroupBookTitles('bio') : undefined,
       copies: (p.copies || []).map(c => ({ siglum: c.siglum, library: c.library, shelfmark: c.shelfmark,
@@ -3647,7 +3652,22 @@ function msFnPrint(t) {
   } else if (cite) {
     out = `${out} (${cite})`;
   }
-  return out.replace(/\s+/g, ' ').trim();
+  out = out.replace(/\s+/g, ' ').trim();
+  // مرجع الحاشية الختامي يُقدَّم بلفظ المحققين «انظر:» دون قوسين حوله
+  if (out.endsWith(')')) {
+    let depth = 0, open = -1;
+    for (let i = out.length - 1; i >= 0; i--) {
+      if (out[i] === ')') depth++;
+      else if (out[i] === '(') { depth--; if (!depth) { open = i; break; } }
+    }
+    if (open > 0) {
+      const inner = out.slice(open + 1, -1);
+      if (/،\s*(ج|مادة|رقم)/.test(inner) && inner.length <= 170) {
+        out = out.slice(0, open).trimEnd() + ' انظر: ' + inner;
+      }
+    }
+  }
+  return out;
 }
 
 function msPaperRunData(p) {
@@ -3720,7 +3740,7 @@ function msPaperRunData(p) {
   if (introMd) {
     rounds.push({ name: 'مقدمة المحقق', output: introMd.split('\n').filter(l => l.trim()).join('\n\n') });
   }
-  rounds.push({ name: '', output: body });
+  rounds.push({ name: 'النص المحقق', output: body });
   if (groups) {
     const idxParts = [];
     Object.keys(groups).forEach(name => {
@@ -3735,8 +3755,11 @@ function msPaperRunData(p) {
 function msBuildPrintHtml(p, options) {
   if (typeof buildAcademicPaperHtml !== 'function') return '';
   let html = buildAcademicPaperHtml(msPaperRunData(p), options || {});
+  // «النص المحقق» عنوان وسطي في مطلع صفحة جديدة بعد مقدمة التحقيق
+  html = html.replace('<h2 class="academic-round-title">النص المحقق</h2>',
+    '<h2 class="academic-round-title ms-matn-start">النص المحقق</h2>');
   // أرقام الحواشي العربية داخل روابطها باتجاه معزول فلا تنعكس (١٠ لا تظهر ٠١)
-  html = html.replace('</head>', '<style>.pg-fn-call,.pg-fn-marker{direction:ltr;unicode-bidi:isolate}</style></head>');
+  html = html.replace('</head>', '<style>.pg-fn-call,.pg-fn-marker{direction:ltr;unicode-bidi:isolate}.ms-matn-start{text-align:center !important;break-before:page;page-break-before:always}</style></head>');
   return html;
 }
 

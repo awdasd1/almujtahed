@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.508"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.510"},
         },
     })
     if opened.get("error"):
@@ -14246,7 +14246,9 @@ MS_AGENTS_PROMPT = (
     "ضوابط المنهج: anchor عبارة قصيرة مميزة (كلمتان إلى ست كلمات) لا آية كاملة ولا سطرًا طويلًا؛ "
     "ولكل موضع من النص اقتراح واحد فقط بأولى الأنواع به، فلا يجتمع على العبارة الواحدة تخريج وشرح وتفسير. "
     "واكتب source بصيغة المحققين: اسم الكتاب ثم موضعه بين قوسين كـ(صحيح مسلم (2699)) أو "
-    "(لسان العرب، مادة (غني)) أو (تفسير الطبري، ج10 ص93). وإن نقلت في body نصًّا حرفيًا من مصدر "
+    "(لسان العرب، مادة (غني)، ج1 ص91) أو (تفسير الطبري، ج10 ص93)؛ وكل كتاب تذكره في body أو source "
+    "أتبعه موضعه (جزؤه وصفحته أو مادته) مباشرة، ولا تجمع كتابين فأكثر في مرجع واحد بموضع واحد أو بلا مواضع. "
+    "وإن نقلت في body نصًّا حرفيًا من مصدر "
     "فاجعله بين قوسي تنصيص ﴿ ﴾ واختم جملته بلفظ (نصًّا)، وإن كان شرحًا أو تلخيصًا بمعناك فابدأ "
     "body بلفظ «أي:» ليُعلم أنه بالمعنى لا بالنص.\n\nنص اللوحة:\n{text}"
 )
@@ -14402,6 +14404,28 @@ def _ms_verify_suggestion(s: Dict[str, Any], extra_books=None) -> Dict[str, Any]
                             "detail": f"لم توجد العبارة متصلة في المظان، لكن وُجد لفظها المميز «{distinctive}» في «{hit['title']}» (ج {hit.get('part') or '—'} ص {hit.get('page') or '—'}) — شاهد لفظي يُراجع بعين المحقق",
                             "locus": hit}
     if s.get("kind") != "takhrij":
+        # اقتراح لغوي/ضبطي مصدره معجم: يُوثَّق بموضع المادة في المعجم نفسه
+        if s.get("kind") in ("lugha", "dabt"):
+            src = str(s.get("source") or "")
+            dm = re.search(r"(لسان العرب|القاموس المحيط|تاج العروس|النهاية في غريب الحديث|المصباح المنير|مختار الصحاح)[^()]*\(([^()]{2,24})\)", src)
+            if dm:
+                book_name, madda = dm.group(1), dm.group(2).strip()
+                try:
+                    conn = shamela_local_mcp._books_conn()
+                    rows = conn.execute(
+                        "SELECT book_id, title_ar FROM books WHERE title_ar LIKE ? LIMIT 10",
+                        (f"%{book_name}%",)).fetchall() if conn else []
+                    if conn:
+                        conn.close()
+                    rows = sorted(rows, key=lambda r: (0 if (r[1] or "").strip() == book_name else 1, len(r[1] or "")))
+                    if rows:
+                        hit = _ms_scan_book_phrase(rows[0][0], madda)
+                        if hit:
+                            return {"status": "found",
+                                    "detail": f"وُجدت المادة في «{hit['title']}» (ج {hit.get('part') or '—'} ص {hit.get('page') or '—'})",
+                                    "locus": hit}
+                except Exception:
+                    pass
         return {"status": "unchecked", "detail": "يحتاج توثيقًا من كتب التراجم/اللغة"}
     anchor = (s.get("anchor") or "").strip()
     try:
@@ -15303,18 +15327,91 @@ def _ms_bio_evidence(author: str, titles=None) -> Dict[str, Any]:
             break
     return {"snippets": snippets, "books": books}
 
+def _ms_bio_extra_evidence(names, titles=None) -> Dict[str, Any]:
+    """شواهد مستقلة لبابي التلاميذ وكلام أهل العلم: نوافذ حول ألفاظهما
+    في صفحات مدخل المؤلف بكتب التراجم (المدخل وسبع صفحات بعده)."""
+    out = {"students": [], "praise": []}
+    raw = ""
+    for n in (names or []):
+        cand = re.sub(r"\(.*?\)", "", str(n or "")).strip()
+        if cand:
+            raw = cand
+            break
+    if not raw:
+        return out
+    tokens = [t for t in raw.split() if len(t) > 1]
+    variants = [raw]
+    t = list(tokens)
+    while len(t) > 2:
+        t = t[:-1]
+        variants.append(" ".join(t))
+    try:
+        conn = shamela_local_mcp._books_conn()
+        if conn is None:
+            return out
+        ids = []
+        tarajim_titles = [str(x).strip() for x in (titles or []) if str(x).strip()] or _MS_TARAJIM_TITLES
+        for tt in tarajim_titles:
+            rows = conn.execute(
+                "SELECT book_id, title_ar FROM books WHERE title_ar LIKE ? LIMIT 14",
+                (f"%{tt}%",)).fetchall()
+            rows = sorted(rows, key=lambda r: (0 if (r[1] or "").strip() == tt else (1 if (r[1] or "").startswith(tt) else 2), len(r[1] or "")))
+            if rows and rows[0][0] not in ids:
+                ids.append(rows[0][0])
+        conn.close()
+    except Exception:
+        return out
+    stu_keys = ["تلاميذ", "أخذ عنه", "أخذوا عنه", "تفقه به", "تفقه عليه", "تتلمذ", "قرأ عليه", "من أصحابه"]
+    praise_keys = ["قال الذهبي", "قال ابن كثير", "قال السبكي", "قال ابن حجر", "أثنى", "ثناء", "قال عنه", "قال فيه", "وصفه بـ"]
+    for bid in ids[:7]:
+        hit = None
+        for v in variants:
+            hit = _ms_scan_book_phrase(bid, v)
+            if hit:
+                break
+        if not hit:
+            continue
+        for off in range(0, 8):
+            try:
+                pg = shamela_local_mcp.get_page(bid, int(hit.get("page") or 0) + off, hit.get("part"))
+                node = pg.get("page") if isinstance(pg.get("page"), dict) else pg
+                text = re.sub(r"\s+", " ", str((node or {}).get("body") or (node or {}).get("text") or pg.get("text") or "")).strip()
+            except Exception:
+                text = ""
+            if len(text) < 80:
+                continue
+            for kind, keys in (("students", stu_keys), ("praise", praise_keys)):
+                if len(out[kind]) >= 4:
+                    continue
+                for kw in keys:
+                    i = text.find(kw)
+                    if i >= 0:
+                        out[kind].append({"book": hit.get("title") or "", "part": hit.get("part"),
+                                          "page": int(hit.get("page") or 0) + off,
+                                          "text": text[max(0, i - 160): i + 640]})
+                        break
+        if len(out["students"]) >= 4 and len(out["praise"]) >= 4:
+            break
+    return out
+
 MS_INTRO_PROMPT = (
     "أنت محقق مخطوطات محترف (بقدرات Muse Wonder) تكتب مقدمة تحقيق كتاب «{title}» لمؤلفه {author} "
     "للطبعة المحققة الآلية في هذا المشروع. اكتب مقدمة أكاديمية رصينة على منهج المحققين، من الأقسام الآتية، "
-    "كل قسم يبدأ بسطر عنوانه وحده، وبين كل فقرة وأخرى سطر فارغ، بلا أي إشارة إلى ذكاء اصطناعي أو نماذج أو وكلاء:\n"
+    "كل عنوان قسم على سطر مستقل بين نجمتين مزدوجتين بهذه الصيغة: **أولًا: ترجمة المؤلف**، "
+    "وبين كل فقرة وأخرى سطر فارغ، بلا أي إشارة إلى ذكاء اصطناعي أو نماذج أو وكلاء:\n"
     "أولًا: ترجمة المؤلف — ترجمة وافية مهيكلة بالعناوين الفرعية الآتية، كل عنوان على سطر مستقل بين نجمتين "
     "مزدوجتين بهذه الصيغة: **اسمه ونسبته:** ثم فقرته في الأسطر التالية. والعناوين: اسمه ونسبته وكنيته ولقبه؛ "
-    "مولده وبلده ونشأته؛ شيوخه؛ تلاميذه؛ عقيدته ومذهبه؛ كتبه ومؤلفاته (من قائمة مؤلفاته المرفقة، رتّبها واذكر "
-    "أشهرها وما شهدت له الشواهد)؛ منزلته وكلام أهل العلم فيه؛ وفاته (المكان والسنة). "
-    "اكتب بصيغة الجزم والتقرير فيما شهدت له الشواهد المرفقة، ويُمنع منعًا باتًا حشو الترجمة بصيغ التمريض "
-    "(يُذكر/يُقال/قيل)؛ لا ترد هذه الصيغ إلا عند تعارض حقيقي بين الشواهد فتذكر الخلاف وقائله ومصدره. "
+    "مولده وبلده ونشأته؛ شيوخه؛ تلاميذه (من شواهد التلاميذ المرفقة خاصة)؛ مذهبه الفقهي؛ عقيدته (باب مستقل "
+    "عن المذهب من كتلة التصنيف المرفقة وشواهدها، ولا تخلط بين البابين ولا تكرر أحدهما في الآخر)؛ "
+    "كتبه ومؤلفاته (من قائمة مؤلفاته المرفقة، رتّبها واذكر أشهرها وما شهدت له الشواهد)؛ "
+    "منزلته وكلام أهل العلم فيه (انقل أقوال أهل العلم فيه بألفاظهم بين قوسي تنصيص من شواهد الثناء المرفقة، "
+    "منسوبة إلى قائليها، ولا تكتفِ بإعادة أوصاف سبقت في الأبواب المتقدمة)؛ وفاته (المكان والسنة). "
+    "ويُمنع منعًا باتًا تكرار أي معلومة في بابين، وحشو الترجمة بصيغ التمريض (يُذكر/يُقال/قيل)؛ "
+    "اكتب بصيغة الجزم والتقرير فيما شهدت له الشواهد المرفقة، ولا ترد صيغ التمريض إلا عند تعارض حقيقي "
+    "بين الشواهد فتذكر الخلاف وقائله ومصدره. "
     "واختم كل فقرة بمرجعها بين قوسين بهذه الصيغة حرفيًا: (اسم الكتاب، جX، صY) مأخوذًا من ترويسة الشاهد "
-    "المرفقة [الكتاب ج.. ص..]، وإن تعددت المراجع لفقرة فاجمعها في قوس واحد يفصل بينها (؛). "
+    "المرفقة [الكتاب ج.. ص..]، وإن تعددت المراجع لفقرة فاجمعها في قوس واحد يفصل بينها (؛)، "
+    "بشرط أن يكون لكل كتاب فيها جزؤه وصفحته. "
     "وإن لم تشهد الشواهد لباب من هذه الأبواب فاحذف عنوانه ولا تذكره، ولا تخترع سنة ولا مكانًا ولا اسمًا.\n"
     "ثانيًا: عنوان الكتاب ونسبته إلى مؤلفه — من كتلة تحقيق النسبة المرفقة: اعرض حكم النسبة وأدلتها "
     "(ذكر المؤلف كتابَه في مصنفاته، ووروده في كتب الببليوغرافيا والتراجم مقترنًا باسمه) واختم كل دليل "
@@ -15326,7 +15423,7 @@ MS_INTRO_PROMPT = (
     "خامسًا: منهج التحقيق — الخطوات المنجزة فعلًا كما في الملخص المرفق بلغة المحققين (إثبات قراءة الأم، إثبات الفروق المهمة "
     "في هامش المقابلة، رد فروق الضبط والرسم المحضة، التخريج والتوثيق، الموازاة بمؤلفات المؤلف، والمقارنة المرجعية إن وُجدت نتيجتها).\n"
     "سادسًا: الرموز والاصطلاحات — من الرموز المرفقة.\n\n"
-    "شواهد التراجم:\n{evidence}\n\nكتلة تحقيق نسبة الكتاب:\n{attribution}\n\nبيانات النسخ:\n{copies}\n\nملخص خطوات التحقيق المنجزة:\n{steps}\n\n"
+    "شواهد التراجم:\n{evidence}\n\nشواهد التلاميذ:\n{students}\n\nشواهد كلام أهل العلم فيه:\n{praise}\n\nكتلة التصنيف المذهبي والعقدي:\n{classification}\n\nكتلة تحقيق نسبة الكتاب:\n{attribution}\n\nبيانات النسخ:\n{copies}\n\nملخص خطوات التحقيق المنجزة:\n{steps}\n\n"
     "رموز النسخ: {sigla}\nمؤلفات المؤلف في المكتبة: {works}\n\n"
     "أخرج نص المقدمة فقط بلا JSON وبلا تعليق خارجها."
 )
@@ -15369,10 +15466,16 @@ def _ms_intro_sync(payload: dict, key: str) -> Dict[str, Any]:
                 att_lines.append(f"في الببليوغرافيا والتراجم: «{b.get('book')}» ج{b.get('part') or '—'} ص{b.get('page') or '—'}")
         if att.get("claim"): att_lines.append(f"قول أهل التراجم: {att.get('claim')}")
         if att.get("claim_basis"): att_lines.append(str(att.get("claim_basis")))
+    extra = _ms_bio_extra_evidence(candidates, (p.get("bio_books") or None))
+    stu_lines = [f"[{s['book']} ج{s.get('part') or '—'} ص{s.get('page') or '—'}] {s['text']}" for s in extra["students"]]
+    praise_lines = [f"[{s['book']} ج{s.get('part') or '—'} ص{s.get('page') or '—'}] {s['text']}" for s in extra["praise"]]
     title_clean = re.sub(r"^مشروع\s+", "", title).strip() or title
     prompt = MS_INTRO_PROMPT.format(
         title=title_clean, author=author,
         evidence="\n".join(ev_lines)[:12500] or "لا شواهد متاحة — اكتب الترجمة مما هو مشهور ثابت من ترجمته بصيغة الجزم، وتجنب ادعاء سنوات أو أماكن لا تثق بها.",
+        students="\n".join(stu_lines)[:4500] or "—",
+        praise="\n".join(praise_lines)[:4500] or "—",
+        classification=str(p.get("classification") or "")[:1800] or "—",
         attribution="\n".join(att_lines)[:2500] or "—",
         copies="\n".join(copies_lines)[:2500] or "—",
         steps=str(p.get("steps") or "")[:2500] or "—",
