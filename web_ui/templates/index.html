@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.498 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.499 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1451,7 +1451,7 @@
                 </div>
                 <div id="msProjectsView">
                     <div class="ms-create-card" id="msGroupCard">
-                        <div class="ms-create-title">⭐ مجموعة تحقيق المخطوطات المعتمدة — مرجع التحقيق آليًا وبشريًا</div>
+                        <div class="ms-create-title">⭐ «تحقيق المخطوطات» — مجموعة الوكلاء المعتمدة لمرحلتي التحقيق (في قسم الوكلاء أيضًا)</div>
                         <div id="msGroupBody"></div>
                     </div>
                     <div class="ms-create-card">
@@ -1497,7 +1497,7 @@
                         <div id="msAutoBody"></div>
                     </div>
                     <div class="ms-create-card" id="msCollateCard">
-                        <div class="ms-create-title">⚖️ المقابلة بين النسخ (المرحلة ٢)</div>
+                        <div class="ms-create-title">⚖️ المقابلة بين النسخ (المرحلة الأولى: قراءة النص ومقابلة النسخ وتدقيقها)</div>
                         <div class="ms-form-row">
                             <label class="ms-model-label">النسخة الأم
                                 <select id="msBaseCopy" onchange="msSetBaseCopy(this.value)"></select>
@@ -1524,8 +1524,13 @@
                         </div>
                         <div id="msCollatedText" hidden></div>
                     </div>
+                    <div class="ms-create-card" id="msStage2Card">
+                        <div class="ms-create-title">🏛️ المرحلة الثانية: تحقيق النص — مدير التحقيق ومجلس المستشارين والوكيل الذهبي والمتخصصون</div>
+                        <p class="ms-models-note">تنتهي المرحلة الأولى (قراءة النص ومقابلة النسخ وتدقيقها) بتسليم مديرها النسخة الجاهزة — النص مع جميع هوامشه — إلى <strong>مدير التحقيق</strong>؛ فيستشير مجلس المستشارين (تصل كلَّ واحد منهم نسخة كاملة استقلالًا) ليحللوا النص وينشئوا مراسي التحقيق ويقترحوا أمهات الكتب، فتُطابَق كتبهم في الشاملة، ثم ينشئ المدير <strong>الوكيل الذهبي</strong> المؤقت لهذا المخطوط بعينه باحثًا في كتب المجلس حصرًا، ويشغّل المتخصصين المختصرين: التخريج بدرجته من كتب التخريج المعتمدة، واللغة والغريب والأشعار وقائليها، والسير بتراجم لا تتجاوز ٤-٥ أسطر، والتفسير، والعقيدة ببيان مذهب أهل السنة — حتى يخرج النص محققًا بصورة علمية أكاديمية محكمة. المرجع الضابط: مجموعة «تحقيق المخطوطات» في قسم الوكلاء.</p>
+                        <div id="msStage2Body"></div>
+                    </div>
                     <div class="ms-create-card" id="msAgentsCard">
-                        <div class="ms-create-title">🔍 فريق وكلاء التحقيق (المرحلة ٣)</div>
+                        <div class="ms-create-title">🔍 فريق وكلاء التحقيق — أدوات يدوية واعتماد الاقتراحات (المرحلة الثانية)</div>
                         <div class="ms-form-row">
                             <label class="ms-model-label">نموذج الوكلاء
                                 <select id="msAgentModel">
@@ -1623,7 +1628,7 @@
                         <div id="msCompareResult"></div>
                     </div>
                     <div class="ms-create-card" id="msExportCard">
-                        <div class="ms-create-title">📚 الفهارس ومقدمة المحقق والإخراج (المرحلة ٤) — الإخراج النهائي للقارئ</div>
+                        <div class="ms-create-title">📚 الفهارس ومقدمة المحقق والإخراج — الإخراج النهائي للقارئ</div>
                         <div class="ms-form-row">
                             <button type="button" class="ms-btn" onclick="msBuildIndexes()">توليد الفهارس</button>
                             <button type="button" class="ms-btn" onclick="msGenIntro()">مسودة مقدمة المحقق</button>

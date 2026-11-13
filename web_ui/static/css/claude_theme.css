@@ -11137,6 +11137,10 @@ body::-webkit-scrollbar,
 .ms-discuss-user { align-self: flex-start; background: rgba(180, 85, 45, .10); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 8px 11px; font-size: 13px; line-height: 1.8; max-width: 92%; }
 .ms-discuss-ai { align-self: stretch; background: var(--bg-main, transparent); border: 1px solid #2e7d5b; border-radius: 10px; padding: 8px 11px; font-size: 13px; line-height: 1.8; }
 .ms-auto-log-at { opacity: .55; font-size: 11px; }
+.ms-stage-track { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; margin-bottom: 10px; }
+.ms-stage-node { flex: 1 1 260px; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; background: var(--bg-main, transparent); display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.8; }
+.ms-stage-node.is-done { border-color: #2e7d5b; background: rgba(46, 125, 91, .06); }
+.ms-stage-arrow { align-self: center; font-weight: 800; color: var(--accent-clay, #b4552d); font-size: 13px; }
 .ms-create-title { font-weight: 800; margin-bottom: 10px; }
 .ms-form-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .ms-form-row input { flex: 1 1 170px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-main, transparent); color: inherit; font-family: inherit; }

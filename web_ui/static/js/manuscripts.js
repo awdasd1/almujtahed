@@ -191,6 +191,7 @@ function msOpenProject(id) {
     ${p.desc ? `<p class="ms-proj-desc">${msEsc(p.desc)}</p>` : ''}`;
   renderMsCopies();
   renderMsAuto();
+  renderMsStage2();
   renderMsCompareChips();
   renderMsDiscussion();
   renderMsCollation();
@@ -255,6 +256,7 @@ function renderMsCopies() {
   }).join('');
   // أي تغير في النسخ/اللوحات يعيد حساب إتاحة زر التحقيق الآلي فورًا
   renderMsAuto();
+  renderMsStage2();
 }
 
 function msAddCopy() {
@@ -1174,7 +1176,7 @@ function msCloseWorkbench() {
 }
 
 // ---------- المرحلة ٣: فريق وكلاء التحقيق ----------
-const MS_AGENT_KINDS = { takhrij: 'تخريج', tarjama: 'ترجمة علم', lugha: 'لغة', dabt: 'ضبط/تصحيف', author: 'وكيل المؤلف' };
+const MS_AGENT_KINDS = { takhrij: 'تخريج', tarjama: 'ترجمة علم', lugha: 'لغة', dabt: 'ضبط/تصحيف', author: 'وكيل المؤلف', tafsir: 'تفسير', aqeedah: 'عقيدة', golden: 'الوكيل الذهبي' };
 
 function msVerifyBadge(v) {
   if (!v) return '';
@@ -1816,20 +1818,32 @@ const MS_GROUP_MODELS = [
   ['google/gemini-2.5-flash', 'Gemini 2.5 Flash'],
 ];
 const MS_GROUP_DEFAULT_AGENTS = [
-  { key: 'leader', name: 'المحقق القائد والمدقق', desc: 'يحسم مواضع الخلاف، ويقود النقاش والتصحيحات مع الباحث', model: 'meta/muse-wonder', books: [] },
-  { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ، يحسم من الصورة، ويعتمد النسخة نهائيًا قبل الإصدار', model: 'google/gemini-4-argon', books: [] },
-  { key: 'bio', name: 'وكيل ترجمة المؤلف', desc: 'يبني ترجمة المؤلف بين المختصرة والمتوسطة من كتب التراجم المعتمدة: مولد ووفاة ومواقف وشيوخ وتلاميذ', model: 'meta/muse-wonder',
+  { key: 'leader', name: 'مدير التحقيق — المحقق القائد والمدقق', desc: 'مدير المرحلة الثانية: يستلم النسخة الجاهزة من مدير المرحلة الأولى، يستشير مجلس المستشارين، ينشئ الوكيل الذهبي، يشغّل المتخصصين، ويعتمد النص المحقق نهائيًا. ويحسم مواضع خلاف المرحلة الأولى ويقود النقاش والتصحيحات', model: 'meta/muse-wonder', books: [], stage: 2 },
+  { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ، يحسم من الصورة، ويعتمد النسخة نهائيًا قبل الإصدار', model: 'google/gemini-4-argon', books: [], stage: 1 },
+  { key: 'advisor_sonnet', name: 'عضو مجلس المستشارين — Sonnet', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: '~anthropic/claude-sonnet-latest', books: [], stage: 2, advisor: true },
+  { key: 'advisor_astra', name: 'عضو مجلس المستشارين — Astra Pro', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'openai/gpt-6-astra-pro', books: [], stage: 2, advisor: true },
+  { key: 'advisor_wonder', name: 'عضو مجلس المستشارين — Muse Wonder', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'meta/muse-wonder', books: [], stage: 2, advisor: true },
+  { key: 'bio', name: 'وكيل ترجمة المؤلف', desc: 'يبني ترجمة المؤلف بين المختصرة والمتوسطة من كتب التراجم المعتمدة: مولد ووفاة ومواقف وشيوخ وتلاميذ', model: 'meta/muse-wonder', stage: 2,
     books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'شذرات الذهب', 'البداية والنهاية', 'طبقات الشافعية الكبرى', 'الأعلام', 'معجم المؤلفين', 'الدرر الكامنة', 'بغية الوعاة', 'حسن المحاضرة'] },
-  { key: 'ayat', name: 'وكيل تخريج الآيات', desc: 'يعزو الآيات إلى سورها وأرقامها ويضبط لفظها على المصحف، ويستعين بكتب التفسير والإعراب', model: '~openai/gpt-luna-latest',
+  { key: 'ayat', name: 'وكيل تخريج الآيات', desc: 'يعزو الآيات إلى سورها وأرقامها ويضبط لفظها على المصحف، ويستعين بكتب التفسير والإعراب', model: '~openai/gpt-luna-latest', stage: 2,
     books: ['تفسير الطبري', 'تفسير ابن كثير', 'الدر المنثور', 'فتح القدير للشوكاني', 'إعراب القرآن', 'معاني القرآن'] },
-  { key: 'hadith', name: 'وكيل تخريج الأحاديث', desc: 'يخرّج الأحاديث والآثار من الأصول وشروحها وكتب التخريج مع حكم مختصر', model: '~openai/gpt-luna-latest',
-    books: ['صحيح البخاري', 'صحيح مسلم', 'سنن أبي داود', 'سنن الترمذي', 'سنن النسائي', 'سنن ابن ماجه', 'موطأ مالك', 'مسند الإمام أحمد', 'فتح الباري', 'شرح النووي على صحيح مسلم', 'عون المعبود', 'تحفة الأحوذي', 'إرواء الغليل'] },
-  { key: 'tarajim', name: 'وكيل التراجم والأعلام', desc: 'يترجم الأعلام الواردين في المتن من كتب الرجال والتراجم المعتمدة', model: '~openai/gpt-luna-latest',
+  { key: 'hadith', name: 'وكيل التخريج', desc: 'يخرّج الأحاديث والآثار باختصار المحققين: عزو للمصدر والرقم ودرجة مختصرة من كتب التخريج المعتمدة (التلخيص الحبير، نصب الراية، إرواء الغليل، سلسلتا الألباني) — لا سرد أسانيد، والصحيحان يُكتفى بعزوهما', model: '~openai/gpt-luna-latest', stage: 2,
+    books: ['صحيح البخاري', 'صحيح مسلم', 'سنن أبي داود', 'سنن الترمذي', 'سنن النسائي', 'سنن ابن ماجه', 'موطأ مالك', 'مسند الإمام أحمد', 'التلخيص الحبير', 'نصب الراية', 'إرواء الغليل', 'سلسلة الأحاديث الصحيحة', 'سلسلة الأحاديث الضعيفة', 'فتح الباري', 'شرح النووي على صحيح مسلم'] },
+  { key: 'tarajim', name: 'وكيل السير والتراجم', desc: 'يعرّف بأعلام المتن باختصار شديد لا يتجاوز ٤-٥ أسطر: تعريف بالمترجم له ومذهبه وعقيدته وأهم شيوخه وتلاميذه ومؤلفاته وسنة وفاته — من كتب التراجم والطبقات، وما لم يثبت لا يُذكر أو يُنسب بقيل', model: '~openai/gpt-luna-latest', stage: 2,
     books: ['سير أعلام النبلاء', 'تهذيب الكمال', 'تهذيب التهذيب', 'تقريب التهذيب', 'الإصابة في تمييز الصحابة', 'أسد الغابة', 'ميزان الاعتدال', 'لسان الميزان', 'الوافي بالوفيات', 'الأعلام'] },
-  { key: 'lugha', name: 'وكيل اللغة والضبط', desc: 'يشرح الغريب ويضبط المشكل ويكشف التصحيف من معاجم اللغة وغريب الحديث', model: '~openai/gpt-luna-latest',
-    books: ['لسان العرب', 'تاج العروس', 'الصحاح', 'القاموس المحيط', 'النهاية في غريب الحديث', 'المصباح المنير', 'مختار الصحاح', 'المعجم الوسيط'] },
-  { key: 'authorworks', name: 'وكيل مقارنة أقوال المؤلف بكتبه', desc: 'متغير بحسب صاحب كل مخطوط: تُحلّ كتب المؤلف نفسه آليًا من المكتبة عند كل مشروع، وما تضيفه هنا مظان إضافية ثابتة', model: '~openai/gpt-luna-latest', books: [] },
+  { key: 'lugha', name: 'وكيل اللغة والأشعار', desc: 'يستخرج غريب الألفاظ من لسان العرب والقاموس المحيط وتاج العروس، ويضبط المشكل ويكشف التصحيف، ويعزو الأبيات الشعرية الواردة في المتن إلى قائليها من كتب الأدب والدواوين', model: '~openai/gpt-luna-latest', stage: 2,
+    books: ['لسان العرب', 'القاموس المحيط', 'تاج العروس', 'الصحاح', 'النهاية في غريب الحديث', 'المصباح المنير', 'مختار الصحاح', 'الأغاني', 'خزانة الأدب', 'المفضليات'] },
+  { key: 'tafsir', name: 'وكيل التفسير', desc: 'حين يكون المخطوط في التفسير أو يذكر المؤلف آية فيفسرها أو يستدل بها: يبين معناها ووجه الاستدلال باختصار من أمهات كتب التفسير المعتمدة', model: '~openai/gpt-luna-latest', stage: 2,
+    books: ['تفسير الطبري', 'تفسير ابن كثير', 'الجامع لأحكام القرآن للقرطبي', 'الدر المنثور', 'فتح القدير للشوكاني', 'روح المعاني', 'التحرير والتنوير'] },
+  { key: 'aqeedah', name: 'وكيل العقيدة', desc: 'حيث يذكر المؤلف في ثنايا بحثه موضوعًا أو كلامًا في الاعتقاد: يبين باختصار موثّق هل هو مذهب أهل السنة والجماعة أو خلافه، من كتب الاعتقاد المعتمدة — بلا توسع ولا تكفير ولا تبديع لأعيان', model: '~openai/gpt-luna-latest', stage: 2,
+    books: ['شرح العقيدة الطحاوية لابن أبي العز', 'شرح السنة للبغوي', 'الشريعة للآجري', 'الإبانة لابن بطة', 'شرح أصول اعتقاد أهل السنة والجماعة للالكائي', 'درء تعارض العقل والنقل', 'منهاج السنة النبوية'] },
+  { key: 'authorworks', name: 'وكيل مقارنة أقوال المؤلف بكتبه', desc: 'متغير بحسب صاحب كل مخطوط: تُحلّ كتب المؤلف نفسه آليًا من المكتبة عند كل مشروع، وما تضيفه هنا مظان إضافية ثابتة', model: '~openai/gpt-luna-latest', books: [], stage: 2 },
 ];
+// كتب تُستكمل في المجموعة الحية القائمة بلا مساس بضبط المحقق القائم
+const MS_GROUP_BOOK_UPGRADES = {
+  hadith: ['التلخيص الحبير', 'نصب الراية', 'سلسلة الأحاديث الصحيحة', 'سلسلة الأحاديث الضعيفة'],
+  lugha: ['الأغاني', 'خزانة الأدب', 'المفضليات'],
+};
 let MS_GROUP = null;
 let MS_GROUP_PICK_KEY = null;
 
@@ -1839,6 +1853,32 @@ async function msLoadGroup() {
     const gs = await res.json().catch(() => []);
     MS_GROUP = (Array.isArray(gs) ? gs : []).find(g => g.id === MS_GROUP_ID) || null;
   } catch (e) { MS_GROUP = null; }
+  if (MS_GROUP) {
+    // هجرة غير مدمّرة: استكمال وكلاء المرحلة الثانية الجدد وكتب التخريج المختصر
+    // في المجموعة القائمة، بلا مساس بنماذج المحقق وكتبه المضبوطة بيده
+    let changed = false;
+    if (MS_GROUP.name === 'مجموعة تحقيق المخطوطات') { MS_GROUP.name = 'تحقيق المخطوطات'; changed = true; }
+    MS_GROUP.agents = MS_GROUP.agents || [];
+    MS_GROUP_DEFAULT_AGENTS.forEach(d => {
+      if (!MS_GROUP.agents.some(a => a.ms_key === d.key)) {
+        MS_GROUP.agents.push({
+          id: 'msag_' + d.key, ms_key: d.key, name: d.name, desc: d.desc, model: d.model,
+          enabled: true, active: true, role: d.key === 'leader' ? 'director' : 'agent',
+          is_director: d.key === 'leader', books: [...d.books], booksScope: [...d.books],
+          scope_summary: d.desc, system_prompt: d.desc, stage: d.stage || 2, advisor: !!d.advisor,
+        });
+        changed = true;
+      }
+    });
+    Object.entries(MS_GROUP_BOOK_UPGRADES).forEach(([key, titles]) => {
+      const a = msGroupAgent(key);
+      if (!a) return;
+      a.books = a.books || [];
+      titles.forEach(t => { if (!a.books.includes(t)) { a.books.push(t); changed = true; } });
+      a.booksScope = [...a.books];
+    });
+    if (changed) { msSaveGroup(); msToast('حُدّثت «مجموعة تحقيق المخطوطات» ببنية المرحلتين: مجلس مستشارين ووكيلا تفسير وعقيدة وكتب التخريج المختصر — ضبطك القائم محفوظ'); }
+  }
   renderMsGroup();
   msApplyGroupModelDefaults();
   return MS_GROUP;
@@ -1867,14 +1907,14 @@ function msGroupBookTitles(key) {
 
 function msBuildGroup() {
   return {
-    id: MS_GROUP_ID, name: 'مجموعة تحقيق المخطوطات',
-    desc: 'المرجع المعتمد لتحقيق المخطوطات آليًا وبشريًا: قائد ومدقق ومعتمِد صور وجودة وستة وكلاء متخصصين بنماذج وكتب مضبوطة.',
+    id: MS_GROUP_ID, name: 'تحقيق المخطوطات',
+    desc: 'فريق تحقيق المخطوطات على مرحلتين: المرحلة الأولى قراءة النص ومقابلة النسخ وتدقيقها، والمرحلة الثانية تحقيق النص بمدير تحقيق ومجلس مستشارين ووكيل ذهبي مؤقت لكل مخطوط ومتخصصين مختصرين (تخريج، لغة وأشعار، سير وتراجم، تفسير، عقيدة) بنماذج وكتب مضبوطة من الشاملة.',
     ms_kind: 'manuscripts',
     agents: MS_GROUP_DEFAULT_AGENTS.map(d => ({
       id: 'msag_' + d.key, ms_key: d.key, name: d.name, desc: d.desc, model: d.model,
       enabled: true, active: true, role: d.key === 'leader' ? 'director' : 'agent',
       is_director: d.key === 'leader', books: [...d.books], booksScope: [...d.books],
-      scope_summary: d.desc, system_prompt: d.desc,
+      scope_summary: d.desc, system_prompt: d.desc, stage: d.stage || 2, advisor: !!d.advisor,
     })),
   };
 }
@@ -1944,12 +1984,12 @@ function renderMsGroup() {
   const box = document.getElementById('msGroupBody');
   if (!box) return;
   if (!MS_GROUP) {
-    box.innerHTML = `<div class="ms-hint">لم تُنشأ المجموعة المعتمدة بعد. أنشئها لتكون مرجع التحقيق آليًا وبشريًا: ستة وكلاء متخصصين (ترجمة مؤلف، آيات، أحاديث، تراجم، لغة وضبط، مقارنة بمؤلفات المؤلف) مع قائد ومعتمِد، لكلٍّ نموذجه وكتبه المعتمدة من الشاملة.</div>
+    box.innerHTML = `<div class="ms-hint">لم تُنشأ المجموعة المعتمدة بعد. أنشئها لتكون مرجع التحقيق بمرحلتيه: مدير تحقيق ومجلس مستشارين (٣) ومعتمِد صور وجودة ومتخصصون مختصرون (آيات، تخريج، سير وتراجم، لغة وأشعار، تفسير، عقيدة، ترجمة مؤلف، مقارنة بمؤلفات المؤلف)، لكلٍّ نموذجه وكتبه المعتمدة من الشاملة.</div>
       <div class="ms-form-row"><button type="button" class="ms-btn ms-btn-primary" onclick="msSeedGroup(false)">⭐ إنشاء واعتماد مجموعة تحقيق المخطوطات</button></div>`;
     return;
   }
   box.innerHTML = `
-    <div class="ms-hint" style="margin-bottom:8px">هذه المجموعة هي <strong>المرجع المعتمد</strong>: التحقيق الآلي يشغّل وكلاءها بنماذجهم وكتبهم، والتحقيق البشري يستعين بنفس الكتب والنماذج افتراضيًا. وكيل مقارنة المؤلف متغير: تُحلّ كتب صاحب كل مخطوط آليًا عند تشغيله. يمكنك إضافة كتب لأي وكيل في أي وقت فتسري على القادم.</div>
+    <div class="ms-hint" style="margin-bottom:8px">هذه المجموعة — <strong>«تحقيق المخطوطات»</strong> في قسم الوكلاء — هي <strong>المرجع المعتمد لمرحلتي التحقيق</strong>: مدير التحقيق ومجلس مستشارينه ومتخصصوه المختصرون بنماذجهم وكتبهم، يسري ضبطها على المرحلة الثانية آليًا وبشريًا. وكيل مقارنة المؤلف متغير: تُحلّ كتب صاحب كل مخطوط آليًا عند تشغيله. يمكنك إضافة كتب لأي وكيل في أي وقت فتسري على القادم.</div>
     ${MS_GROUP.agents.map(a => `
       <div class="ms-group-agent">
         <div class="ms-group-agent-head">
@@ -1966,6 +2006,290 @@ function renderMsGroup() {
         </div>
       </div>`).join('')}
     <div class="ms-form-row"><button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة ضبط المصنع للمجموعة</button></div>`;
+}
+
+// ---------- المرحلة الثانية: تحقيق النص (مدير تحقيق + مجلس + ذهبي + متخصصون) ----------
+// المرحلة الأولى (قراءة النص ومقابلة النسخ وتدقيقها) تنتهي بتسليم مديرها النسخة
+// الجاهزة بهوامشها إلى مدير التحقيق؛ فيستشير المجلس، وينشئ الوكيل الذهبي،
+// ويشغّل المتخصصين المختصرين، ثم يعتمد النص المحقق.
+function msInitStage2(p) {
+  if (!p.stage2) p.stage2 = { status: 'idle', handed_at: '', advisors: [], anchors: [], books: [], missing: [],
+    golden: null, log: [], cost: 0, done: {}, accepted: 0, dismissed: 0, manager_note: '' };
+  if (!p.stage2.done) p.stage2.done = {};
+  if (!p.stage2.log) p.stage2.log = [];
+  return p.stage2;
+}
+
+function msStage2Log(p, msg) {
+  const s2 = msInitStage2(p);
+  s2.log.push({ at: new Date().toLocaleTimeString('ar-EG'), msg });
+  if (s2.log.length > 160) s2.log = s2.log.slice(-160);
+}
+
+function msStage1Status(p) {
+  const base = msBaseCopy(p);
+  const folios = base ? (base.folios || []) : [];
+  const withText = folios.filter(f => (f.text || '').trim()).length;
+  const approved = folios.filter(f => f.status === 'approved').length;
+  const entries = ((p.collation || {}).entries || []);
+  const pending = entries.filter(e => e.status === 'pending').length;
+  return { base, total: folios.length, withText, approved, entries: entries.length, pending,
+           ready: !!base && folios.length > 0 && withText === folios.length && pending === 0 };
+}
+
+function msStageText(p) {
+  const base = msBaseCopy(p);
+  if (!base) return '';
+  return (base.folios || []).filter(f => (f.text || '').trim()).map(f => f.text.trim()).join('\n');
+}
+
+function msStageApparatus(p) {
+  const lines = [];
+  ((p.collation || {}).entries || []).filter(e => e.status === 'accepted').forEach(e => {
+    lines.push(`[مقابلة لوحة ${e.folio} مع (${e.siglum})] ${msApparatusPrint(e)}`);
+  });
+  const base = msBaseCopy(p);
+  if (base) (base.folios || []).forEach(f => {
+    if ((f.ed_note || '').trim()) lines.push(`[تحقيق لوحة ${f.label}] ${msEdNotePrint(f.ed_note)}`);
+  });
+  return lines.join('\n');
+}
+
+function renderMsStage2() {
+  const box = document.getElementById('msStage2Body');
+  const p = msCurrentProject();
+  if (!box || !p) return;
+  const s1 = msStage1Status(p);
+  const s2 = msInitStage2(p);
+  const handed = !!s2.handed_at;
+  const adv = s2.advisors || [];
+  box.innerHTML = `
+    <div class="ms-stage-track">
+      <div class="ms-stage-node ${s1.ready ? 'is-done' : ''}">
+        <strong>المرحلة الأولى: قراءة النص ومقابلة النسخ</strong>
+        <span>${s1.total ? `${s1.withText}/${s1.total} لوحة منسوخة في الأم (${s1.approved} معتمدة)` : 'لا لوحات بعد'}${s1.entries ? ` · مقابلة: ${s1.entries} فرقًا، ${s1.pending} معلّق` : ''} — ${s1.ready ? '✔ جاهزة للتسليم' : 'لم تكتمل بعد'}</span>
+      </div>
+      <div class="ms-stage-arrow">⟵ تسليم</div>
+      <div class="ms-stage-node ${handed ? 'is-done' : ''}">
+        <strong>المرحلة الثانية: تحقيق النص</strong>
+        <span>${handed ? `سُلّمت النسخة الجاهزة إلى مدير التحقيق (${msEsc(s2.handed_at)})` : 'بانتظار تسليم المرحلة الأولى'} · الحالة: ${msEsc({ idle: 'لم تبدأ', consulted: 'استُشير المجلس', golden: 'الذهبي أنجز', running: 'المتخصصون يعملون', done: 'معتمدة من مدير التحقيق', handed: 'مستلمة' }[s2.status] || s2.status)}${s2.cost ? ` · كلفة المرحلة: $${Number(s2.cost).toFixed(4)}` : ''}</span>
+      </div>
+    </div>
+    <div class="ms-form-row">
+      <button type="button" class="ms-btn ms-btn-primary" id="msStage2HandoverBtn" onclick="msStage2Handover()" ${handed || !s1.withText ? 'disabled' : ''}>📤 تسليم النسخة الجاهزة إلى مدير التحقيق (مع النص وكل هوامشه)</button>
+      ${handed ? `<button type="button" class="ms-btn" onclick="if(confirm('إعادة التسليم تلغي حالة المرحلة الثانية الحالية وتسجيلاتها؟')){const p=msCurrentProject(); p.stage2=null; msSave(); renderMsStage2();}">↺ إعادة تهيئة المرحلة الثانية</button>` : ''}
+    </div>
+    ${handed ? `
+    <div class="ms-form-row">
+      <button type="button" class="ms-btn ms-btn-primary" id="msStage2ConsultBtn" onclick="msStage2Consult()">🧭 ١) استشارة مجلس المستشارين (كلٌّ تصله النسخة كاملة)</button>
+      <button type="button" class="ms-btn ms-btn-primary" id="msStage2GoldenBtn" onclick="msStage2Golden()" ${adv.length ? '' : 'disabled'}>🥇 ٢) إنشاء الوكيل الذهبي وتشغيله في كتب المجلس</button>
+      <button type="button" class="ms-btn ms-btn-primary" id="msStage2RunBtn" onclick="msStage2Specialists()" ${adv.length ? '' : 'disabled'}>🔍 ٣) تشغيل المتخصصين المختصرين (تخريج/لغة وأشعار/سير/تفسير/عقيدة)</button>
+      <button type="button" class="ms-btn" id="msStage2ApproveBtn" onclick="msStage2Approve()">✔ ٤) اعتماد مدير التحقيق وبناء الفهارس</button>
+    </div>
+    ${adv.length ? `<div class="ms-margin-title">مجلس المستشارين — تحليلاتهم ومراسي التحقيق وكتبهم المطابَقة في الشاملة</div>
+      ${adv.map(a => `<div class="ms-group-agent"><div class="ms-group-agent-head"><strong>${msEsc(a.name)}</strong><span class="ms-wb-meta">${msEsc(a.model || '')}</span></div>
+        ${a.error ? `<div class="ms-hint">تعذر: ${msEsc(a.error)}</div>` : `<div class="ms-group-books" style="white-space:pre-wrap">${msEsc(a.analysis || '')}</div>
+        <div class="ms-group-books">${(a.books || []).map(b => `<span class="ms-book-chip">${msEsc(b.title)}${b.assign_to ? ` ← ${msEsc(b.assign_to)}` : ''}</span>`).join('')}</div>`}
+      </div>`).join('')}
+      <div class="ms-group-books"><strong>كتب المجلس بعد المطابقة في الشاملة:</strong> ${(s2.books || []).map(b => `<span class="ms-book-chip">${msEsc(b.resolved_title || b.title)}${b.resolved ? ' ✔ مطابق' : ' ✘ لم يوجد بمؤلفه'} (${b.votes || 1} صوت)</span>`).join('') || '—'}</div>
+      <div class="ms-group-books"><strong>مراسي التحقيق الموحدة:</strong> ${(s2.anchors || []).map(a => `<span class="ms-book-chip">${msEsc(a)}</span>`).join('') || '—'}
+      ${(s2.missing || []).length ? `<br><span class="ms-hint">كتب رشّحها المجلس ولم توجد في الشاملة بمؤلفيها فلم تُعتمد: ${s2.missing.map(msEsc).join('، ')}</span>` : ''}</div>`
+    : '<div class="ms-hint">استشر المجلس أولًا: كل مستشار تصله النسخة الجاهزة كاملة استقلالًا، فيحلل النص وينشئ مراسي التحقيق ويقترح أمهات الكتب، وتُطابَق كتبهم في الشاملة بمؤلفيها قبل أن يعمل بها أحد.</div>'}
+    ${s2.golden ? `<div class="ms-margin-title">🥇 الوكيل الذهبي المؤقت — أنشأه مدير التحقيق لهذا المخطوط بعينه</div>
+      <div class="ms-group-books" style="white-space:pre-wrap">${msEsc(s2.golden.prompt || '')}</div>
+      <div class="ms-hint">نطاقه الوحيد كتب المجلس المطابقة: ${(s2.golden.scope_books || []).map(msEsc).join('، ') || '—'} · اقتراحاته في بطاقة الوكلاء بالأسفل موسومة «الذهبي».</div>` : ''}
+    ${s2.manager_note ? `<div class="ms-margin-title">اعتماد مدير التحقيق</div><div class="ms-group-books" style="white-space:pre-wrap">${msEsc(s2.manager_note)}</div>` : ''}
+    ` : '<div class="ms-hint">حين تكتمل المرحلة الأولى (نص الأم كاملًا بلا فروق معلقة) سلّم النسخة الجاهزة؛ فيتولى مدير التحقيق تحقيق النص تحقيقًا مختصرًا محكمًا بفريقه.</div>'}
+    ${(s2.log || []).length ? `<div class="ms-auto-log">${s2.log.map(l => `<div><span class="ms-auto-log-at">${msEsc(l.at)}</span> ${msEsc(l.msg)}</div>`).join('')}</div>` : ''}`;
+}
+
+function msStage2Handover() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const s1 = msStage1Status(p);
+  if (!s1.withText) { msToast('لا نص جاهزًا بعد — أكمل نسخ لوحات الأم في المرحلة الأولى'); return; }
+  if (s1.pending) { msToast(`تنبيه: بقي ${s1.pending} فرق مقابلة معلّقًا — سيُسلَّم النص بهوامشه القائمة، ويمكن حسم المعلّق لاحقًا من بطاقة المقابلة`, 6000); }
+  const s2 = msInitStage2(p);
+  s2.handed_at = new Date().toLocaleString('ar-EG');
+  s2.status = 'handed';
+  s2.text_snapshot = msStageText(p).slice(0, 60000);
+  s2.apparatus_snapshot = msStageApparatus(p).slice(0, 12000);
+  msStage2Log(p, `سلّم مدير المرحلة الأولى النسخة الجاهزة إلى مدير التحقيق: نص الأم كاملًا (${s1.withText} لوحة) مع هوامش المقابلة والتحقيق القائمة.`);
+  msSave(); renderMsStage2();
+  msToast('✔ سُلّمت النسخة الجاهزة إلى مدير التحقيق — تبدأ المرحلة الثانية باستشارة المجلس');
+}
+
+async function msStage2Consult() {
+  const p = msCurrentProject();
+  if (!p) return;
+  await msLoadGroup();
+  const advisors = (MS_GROUP ? MS_GROUP.agents : []).filter(a => a.advisor || String(a.ms_key || '').startsWith('advisor'))
+    .map(a => ({ name: a.name, model: a.model }));
+  const specialists = (MS_GROUP ? MS_GROUP.agents : []).filter(a => ['hadith', 'lugha', 'tarajim', 'tafsir', 'aqeedah', 'ayat'].includes(a.ms_key)).map(a => a.name);
+  const btn = document.getElementById('msStage2ConsultBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ المجلس يدرس النسخة...'; }
+  const s2 = msInitStage2(p);
+  try {
+    const res = await fetch('/api/manuscripts/stage2-consult', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: p.title, author: p.author, desc: p.desc || '',
+        sigla: (p.copies || []).map(c => `(${c.siglum}) = ${c.library || ''} ${c.shelfmark || ''}`).join('؛ '),
+        text: s2.text_snapshot || msStageText(p), apparatus: s2.apparatus_snapshot || msStageApparatus(p),
+        advisors, specialists, director_model: msGroupModel('leader', MS_WONDER_MODEL), api_key: msApiKey(),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذرت الاستشارة');
+    s2.advisors = data.advisors || [];
+    s2.anchors = data.anchors || [];
+    s2.books = data.books || [];
+    s2.missing = data.missing || [];
+    s2.status = 'consulted';
+    const okBooks = s2.books.filter(b => b.resolved).length;
+    msStage2Log(p, `استُشير المجلس (${s2.advisors.length} عضوًا بمن فيهم مدير التحقيق مشاركًا في الترشيح): ${okBooks} كتابًا طُوبق في الشاملة من ${s2.books.length} مرشحًا، و${s2.anchors.length} مرساة تحقيق.`);
+    msSave(); renderMsStage2();
+    msToast(`✔ أنهى المجلس: ${okBooks} كتابًا مطابقًا و${s2.anchors.length} مرساة — راجع تحليلاتهم ثم أنشئ الوكيل الذهبي`, 7000);
+  } catch (e) { msToast('❌ ' + e.message, 7000); }
+  if (btn) { btn.disabled = false; btn.textContent = '🧭 ١) استشارة مجلس المستشارين (كلٌّ تصله النسخة كاملة)'; }
+}
+
+async function msStage2Golden() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const s2 = msInitStage2(p);
+  const books = (s2.books || []).filter(b => b.resolved).map(b => b.resolved_title || b.title);
+  if (!books.length) { msToast('لا كتب مطابقة من المجلس بعد — استشر المجلس أولًا'); return; }
+  const btn = document.getElementById('msStage2GoldenBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ الوكيل الذهبي يبحث في كتب المجلس...'; }
+  try {
+    const res = await fetch('/api/manuscripts/stage2-golden', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: p.title, author: p.author, text: s2.text_snapshot || msStageText(p),
+        books, anchors: s2.anchors || [], model: msGroupModel('leader', MS_WONDER_MODEL), api_key: msApiKey(),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر الوكيل الذهبي');
+    s2.golden = { prompt: data.golden_prompt || '', scope_books: data.scope_books || [], at: new Date().toISOString() };
+    s2.cost = (Number(s2.cost) || 0) + (Number(data.cost) || 0);
+    s2.status = 'golden';
+    p.agent_suggestions = p.agent_suggestions || [];
+    (data.suggestions || []).forEach(s => p.agent_suggestions.push({ ...s, id: msUid(), folio: (msBaseCopy(p).folios || []).find(f => (f.text || '').includes((s.anchor || '').slice(0, 24)))?.label || '', status: 'pending', agent: 'golden', stage2: true }));
+    msStage2Log(p, `أُنشئ الوكيل الذهبي المؤقت وشُغّل في ${books.length} كتابًا من كتب المجلس: ${(data.suggestions || []).length} اقتراحًا صلبًا بانتظار بوابة التوثيق.`);
+    msSave(); renderMsStage2(); renderMsAgents();
+    msToast('✔ أنهى الوكيل الذهبي — اقتراحاته في بطاقة الوكلاء، والموثّق منها سيُثبت عند تشغيل المتخصصين واعتماد المدير', 7000);
+  } catch (e) { msToast('❌ ' + e.message, 7000); }
+  if (btn) { btn.disabled = false; btn.textContent = '🥇 ٢) إنشاء الوكيل الذهبي وتشغيله في كتب المجلس'; }
+}
+
+// متخصصو المرحلة الثانية المختصرون: لكل فن تركيزه وكتبه وانضباط اختصاره
+const MS_STAGE2_JOBS = [
+  ['ayat', 'وكيل تخريج الآيات', s => s.kind === 'takhrij' && !!s.surah, 'الآيات القرآنية وحدها: عزو كل آية إلى سورتها ورقمها وضبط لفظها على المصحف، باختصار'],
+  ['hadith', 'وكيل التخريج', s => s.kind === 'takhrij' && !s.surah, 'الأحاديث والآثار وحدها باختصار المحققين: عزو الحديث إلى مصدره ورقمه، ودرجته مختصرة من كتب التخريج المعتمدة (التلخيص الحبير، نصب الراية، إرواء الغليل، سلسلة الأحاديث الصحيحة، سلسلة الأحاديث الضعيفة)؛ لا سرد للأسانيد ولا استطراد، وما كان في الصحيحين اكتفِ بعزوه إليهما'],
+  ['tarajim', 'وكيل السير والتراجم', s => s.kind === 'tarjama', 'الأعلام الواردون في المتن وحدهم، بترجمة مختصرة جدًا لا تتجاوز ٤-٥ أسطر: تعريف بالمترجم له ومذهبه وعقيدته وأهم شيوخه وتلاميذه ومؤلفاته وسنة وفاته؛ وما لم يثبت من كتب التراجم والطبقات لا يُذكر أو يُنسب بقيل'],
+  ['lugha', 'وكيل اللغة والأشعار', s => s.kind === 'lugha' || s.kind === 'dabt', 'غريب الألفاظ وضبط المشكل وكشف التصحيف من لسان العرب والقاموس المحيط وتاج العروس، والأبيات الشعرية الواردة وقائليها من كتب الأدب والدواوين — باختصار، لفظًا لفظًا'],
+  ['tafsir', 'وكيل التفسير', s => s.kind === 'tafsir', 'الآيات التي يفسرها المؤلف أو يستدل بها وحده: بيان معناها ووجه الاستدلال باختصار من أمهات كتب التفسير — ونوع كل اقتراحاتك في هذه الجولة tafsir حصرًا'],
+  ['aqeedah', 'وكيل العقيدة', s => s.kind === 'aqeedah', 'مواضع الاعتقاد التي يذكرها المؤلف في ثنايا بحثه وحدها: بيّن باختصار موثّق هل هذا مذهب أهل السنة والجماعة أو خلافه، من كتب الاعتقاد المعتمدة، بلا توسع ولا تكفير ولا تبديع لأعيان — ونوع كل اقتراحاتك في هذه الجولة aqeedah حصرًا'],
+];
+
+async function msStage2Specialists() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const base = msBaseCopy(p);
+  const s2 = msInitStage2(p);
+  const folios = base ? (base.folios || []).filter(f => (f.text || '').trim()) : [];
+  if (!folios.length) { msToast('لا نص في لوحات الأم'); return; }
+  const btn = document.getElementById('msStage2RunBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ المتخصصون يعملون...'; }
+  s2.status = 'running';
+  p.agent_suggestions = p.agent_suggestions || [];
+  // كتب المجلس المطابقة تُطعَّم في مظان كل متخصص بحسب إسناد المستشارين
+  const councilBooks = (s2.books || []).filter(b => b.resolved).map(b => b.resolved_title || b.title);
+  try {
+    for (const f of folios) {
+      for (const [key, label, pred, focus] of MS_STAGE2_JOBS) {
+        const doneKey = f.label + ':' + key;
+        if (s2.done[doneKey]) continue;
+        const extra = [...new Set([...msGroupBookTitles(key), ...councilBooks])];
+        msStage2Log(p, `${label} على لوحة (${f.label}) بنموذج ${msGroupModel(key, MS_LUNA_MODEL)}...`);
+        renderMsStage2();
+        const res = await fetch('/api/manuscripts/agents', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: f.text, title: p.title, author: p.author,
+            model: msGroupModel(key, MS_LUNA_MODEL), api_key: msApiKey(),
+            extra_books: extra.length ? extra : undefined, agent_focus: focus }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `تعذر ${label}`);
+        s2.cost = (Number(s2.cost) || 0) + (Number(data.cost) || 0);
+        (data.suggestions || []).filter(pred).forEach(s =>
+          p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending', agent: key, stage2: true }));
+        s2.done[doneKey] = true;
+        msSave(); renderMsAgents();
+      }
+    }
+    const gate = msStage2Gate(p);
+    msStage2Log(p, `بوابة التوثيق: أُثبت ${gate.acc} اقتراحًا موثقًا/لغويًا في هامش التحقيق، وبقي ${gate.left} بانتظار اعتماد المحقق في بطاقة الوكلاء، ورُد ${gate.dis} لعدم ثبوته.`);
+    msSave(); renderMsStage2(); renderMsAgents();
+    msToast(`✔ أنهى متخصصو المرحلة الثانية: أُثبت ${gate.acc} تعليقًا موثقًا، وبانتظار اعتمادك ${gate.left}`, 7000);
+  } catch (e) { msToast('❌ ' + e.message, 7000); }
+  if (btn) { btn.disabled = false; btn.textContent = '🔍 ٣) تشغيل المتخصصين المختصرين (تخريج/لغة وأشعار/سير/تفسير/عقيدة)'; }
+}
+
+// بوابة توثيق المرحلة الثانية: لا يدخل الهامش إلا موثّق بشاهد أو لغوي/ضبطي؛
+// التفسير والعقيدة والتراجم غير الموثقة تبقى للمحقق لا تُرد ولا تُثبت خلسة
+function msStage2Gate(p) {
+  const s2 = msInitStage2(p);
+  let acc = 0, dis = 0;
+  (p.agent_suggestions || []).filter(s => s.status === 'pending' && s.stage2).forEach(s => {
+    const v = (s.verify || {}).status || '';
+    if (v === 'verified' || v === 'found' || s.kind === 'lugha' || s.kind === 'dabt') {
+      msAcceptSuggestion(p, s); acc++;
+    } else if (v === 'not_found' && s.kind === 'takhrij') {
+      s.status = 'dismissed';
+      s.auto_reason = 'رُد في بوابة المرحلة الثانية: لم يثبت في المظان فلا يُثبت في هامش التحقيق';
+      dis++;
+    }
+  });
+  const left = (p.agent_suggestions || []).filter(s => s.status === 'pending' && s.stage2).length;
+  s2.accepted = (s2.accepted || 0) + acc;
+  s2.dismissed = (s2.dismissed || 0) + dis;
+  return { acc, dis, left };
+}
+
+async function msStage2Approve() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const s2 = msInitStage2(p);
+  const gate = msStage2Gate(p);
+  const btn = document.getElementById('msStage2ApproveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ مدير التحقيق يراجع ويعتمد...'; }
+  try {
+    const res = await fetch('/api/manuscripts/monitor', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_title: p.title, author: p.author, phase: 'اعتماد مدير التحقيق (المرحلة الثانية)',
+        context: msMonitorContext(p, 'شاملة')
+          + `\n\n== المرحلة الثانية ==\nاستُشير المجلس: ${(s2.advisors || []).length} عضوًا، كتب مطابقة: ${(s2.books || []).filter(b => b.resolved).length}، مراسٍ: ${(s2.anchors || []).length}. أُثبت في الهامش ${s2.accepted || 0} تعليقًا موثقًا ورُد ${s2.dismissed || 0}. المطلوب: اعتمادك مديرًا للتحقيق — هل النص المحقق بصورته الحالية صالح للإصدار الأكاديمي؟ وما أهم ما يجب تنبيه المحقق إليه باختصار؟`,
+        model: msGroupModel('leader', MS_WONDER_MODEL), api_key: msApiKey(),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر اعتماد المدير');
+    s2.cost = (Number(s2.cost) || 0) + (Number(data.cost) || 0);
+    s2.manager_note = String(data.findings || '').slice(0, 3000);
+    s2.status = 'done';
+    s2.approved_at = new Date().toISOString();
+    (p.monitor_log = p.monitor_log || []).push({ id: msUid(), phase: 'اعتماد مدير التحقيق', at: new Date().toISOString(),
+      model: data.model || MS_WONDER_MODEL, findings: data.findings || '', status: 'open', cost: data.cost, stage2: true });
+    msStage2Log(p, `اعتمد مدير التحقيق النص المحقق (أُثبت في هذه الجولة ${gate.acc} تعليقًا إضافيًا) — ملاحظاته في بطاقة المراقبة، والنص جاهز لبناء الفهارس والإصدار من بطاقة المرحلة الأخيرة.`);
+    msBuildIndexes();
+    msSave(); renderMsStage2(); renderMsMonitor();
+    msToast('✔ اعتمد مدير التحقيق النص — راجع اعتمادَه ثم عاين الطباعة النهائية من بطاقة الفهارس والإخراج', 7000);
+  } catch (e) { msToast('❌ ' + e.message, 7000); }
+  if (btn) { btn.disabled = false; btn.textContent = '✔ ٤) اعتماد مدير التحقيق وبناء الفهارس'; }
 }
 
 // ---------- التحقيق الآلي الكامل بقيادة المدقق الذكي ----------
@@ -2296,12 +2620,8 @@ async function msAutoRun(p) {
     p.agent_suggestions = p.agent_suggestions || [];
     a.agentDone = a.agentDone || {};
     // وكلاء المجموعة المعتمدة المتخصصون: لكلٍّ نموذجه وكتبه وتركيزه
-    const JOBS = [
-      ['ayat', 'وكيل تخريج الآيات', s => s.kind === 'takhrij' && !!s.surah, 'الآيات القرآنية وحدها: عزو كل آية إلى سورتها ورقمها وضبط لفظها على المصحف'],
-      ['hadith', 'وكيل تخريج الأحاديث', s => s.kind === 'takhrij' && !s.surah, 'الأحاديث والآثار وحدها: التخريج من كتب الأصول وشروحها مع حكم مختصر على السند'],
-      ['tarajim', 'وكيل التراجم والأعلام', s => s.kind === 'tarjama', 'الأعلام الواردون في المتن وحدها: ترجمة موجزة موثقة من كتب الرجال'],
-      ['lugha', 'وكيل اللغة والضبط', s => s.kind === 'lugha' || s.kind === 'dabt', 'غريب الألفاظ وضبط المشكل وكشف التصحيف وحدها من معاجم اللغة'],
-    ];
+    // متخصصو المرحلة الثانية الستة المختصرون (التعريف الموحد في MS_STAGE2_JOBS)
+    const JOBS = MS_STAGE2_JOBS;
     for (const f of (base.folios || []).filter(x => (x.text || '').trim())) {
       for (const [key, label, pred, focus] of JOBS) {
         msAutoCheck(p);
@@ -2321,7 +2641,7 @@ async function msAutoRun(p) {
         await msSaveNow(); renderMsAuto();
       }
     }
-    R.agentsAccepted = decideSuggestions(['takhrij', 'tarjama', 'lugha', 'dabt'], 'وكلاء المجموعة المعتمدة');
+    R.agentsAccepted = decideSuggestions(['takhrij', 'tarjama', 'lugha', 'dabt', 'tafsir', 'aqeedah'], 'متخصصو المرحلة الثانية');
     renderMsAgents();
   });
 
@@ -2627,6 +2947,15 @@ function msReportSections(p) {
     `مصادر الترجمة من كتب التراجم: ${(R.bioSources || []).join('، ') || '—'}`,
     p.intro ? String(p.intro).slice(0, 2600) + '\n…(النص الكامل في بطاقة المقدمة ويتصدر النسخة النهائية)' : 'لم تُكتب المقدمة بعد.',
   ].join('\n') });
+  const s2r = p.stage2 || {};
+  S.push({ name: 'المرحلة الثانية: تحقيق النص (مدير التحقيق والمجلس والذهبي والمتخصصون)', body: s2r.handed_at ? [
+    `التسليم من مدير المرحلة الأولى: ${s2r.handed_at} — نص الأم مع هوامش مقابلته وتحققيقه القائمة.`,
+    `مجلس المستشارين: ${(s2r.advisors || []).length} عضوًا درس كلٌّ منهم النسخة كاملة استقلالًا؛ كتب مطابقة في الشاملة: ${(s2r.books || []).filter(b => b.resolved).length} من ${(s2r.books || []).length} مرشحًا${(s2r.missing || []).length ? ' — لم يوجد بمؤلفيها: ' + s2r.missing.join('، ') : ''}.`,
+    `مراسي التحقيق الموحدة: ${(s2r.anchors || []).join('، ') || '—'}`,
+    s2r.golden ? `الوكيل الذهبي المؤقت: بُحث في كتب المجلس حصرًا (${(s2r.golden.scope_books || []).join('، ')}) بتوجيه مدير التحقيق الموثق في بطاقة المرحلة الثانية.` : 'الوكيل الذهبي: لم يُنشأ بعد.',
+    `بوابة التوثيق: أُثبت ${s2r.accepted || 0} تعليقًا موثقًا في هامش التحقيق، ورُد ${s2r.dismissed || 0} لعدم ثبوته، وكلفة المرحلة $${Number(s2r.cost || 0).toFixed(4)}.`,
+    s2r.manager_note ? `اعتماد مدير التحقيق:\n${String(s2r.manager_note).slice(0, 1800)}` : 'اعتماد مدير التحقيق: لم يُسجل بعد.',
+  ].join('\n') : 'لم تُسلَّم النسخة الجاهزة إلى مدير التحقيق بعد — المرحلة الثانية تبدأ بالتسليم من بطاقتها.' });
   const groups = (p.indexes || {}).groups || {};
   S.push({ name: 'الفهارس', body: Object.keys(groups).length
     ? Object.entries(groups).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.length : 0} مدخلًا`).join('\n')
@@ -2638,6 +2967,7 @@ function msReportSections(p) {
     [`لا مواضع خلاف معلقة بلا حسم (${byStatus('pending').length})`, byStatus('pending').length === 0],
     [`كل المُثبت في الهامش موثق بشاهد أو لغوي/ضبطي (${verifiedAcc.length}/${accSugs.length})`, verifiedAcc.length === accSugs.length],
     ['اعتماد المعتمِد النهائي للجودة مسجل', (p.monitor_log || []).some(m => m.approver)],
+    ['المرحلة الثانية (تحقيق النص) معتمدة من مدير التحقيق', (p.stage2 || {}).status === 'done'],
     ['مقدمة التحقيق وترجمة المؤلف مكتوبتان', !!(p.intro || '').trim()],
     ['الفهارس مبنية', Object.keys(groups).length > 0],
     ['النسخة النهائية صدرت', !!((a.steps || {}).output && a.steps.output.status === 'done') || p.mode !== 'auto'],

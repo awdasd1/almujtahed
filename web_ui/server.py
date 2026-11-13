@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.498"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.499"},
         },
     })
     if opened.get("error"):
@@ -14468,6 +14468,153 @@ async def manuscript_agents(request: Request, payload: Any = Body(...)):
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"تعذر تشغيل الوكلاء: {str(exc)[:200]}")
+
+
+# ---------- المرحلة الثانية: تحقيق النص (مدير تحقيق + مجلس مستشارين + وكيل ذهبي) ----------
+# المرحلة الأولى (قراءة النص ومقابلة النسخ وتدقيقها) تُسلّم نسخة جاهزة بهوامش
+# مقابلتها إلى مدير التحقيق؛ فيستشير مجلس المستشارين (كلٌّ تصله النسخة كاملة
+# استقلالًا) فينشئون مراسي التحقيق ويقترحون أمهات الكتب، تُطابَق في الشاملة،
+# ثم ينشئ المدير وكيلًا ذهبيًا مؤقتًا لهذا المخطوط بعينه يبحث في كتب المجلس
+# حصرًا، ويشغّل المتخصصين المختصرين (تخريج/لغة وأشعار/سير/تفسير/عقيدة).
+MS_STAGE2_ADVISOR_SYSTEM = (
+    "أنت عضو في مجلس مستشارين متفرغ لمدير تحقيق مخطوطات: تحليل ومراسٍ ومظانّ فقط، لا تحقيق ولا استخراج نصوص ولا أحكام.\n"
+    "سُلّمت إليك نسخة مخطوط جاهزة بعد قراءتها ومقابلة نسخها وتدقيقها، لدراستها استقلالًا عن زملائك كما تصلهم هم أيضًا كاملة.\n"
+    "المطلوب JSON حصرًا بلا أي نص خارجه:\n"
+    '{"analysis":"تحليل موجز: فن الكتاب وموضوعه وأبرز ما في هذا النص مما يحتاج تحقيقًا (أحاديث، أعلام، غريب، آيات، مسائل اعتقاد، أشعار...)",'
+    '"books":[{"title":"العنوان المشهور","author":"المؤلف","why":"لم هو مظنة هذا النص","assign_to":"اسم الوكيل المختص"}],'
+    '"anchors":["عبارة أو مصطلح أو علم بارز في النص 2-6 كلمات"]}\n'
+    "الكتب: أمهات مظانّ تحقيق هذا النص بعينه التي إن غابت ضاع أصل التحقيق (لا شروح نازلة تغني عنها الأصول)، 5 إلى 9 كتب.\n"
+    "المراسي: أعلام ومصطلحات وعبارات مفتاحية من متن النص نفسه لا صياغة معاصرة، 6 إلى 12 مرساة.\n"
+    "لا تختلق رقم كتاب ولا موضعًا؛ ترشيحك يُطابَق آليًا في قاعدة الشاملة ويُرفض ما لم يوجد بمؤلفه."
+)
+
+def _ms_stage2_consult_sync(payload: dict, key: str) -> Dict[str, Any]:
+    import concurrent.futures as _cf
+    title = str((payload or {}).get("title") or "مخطوط")
+    author = str((payload or {}).get("author") or "")
+    text = str((payload or {}).get("text") or "")
+    if len(text.strip()) < 80:
+        raise ValueError("النص الجاهز قصير جدًا لاستشارة المجلس — أكمل المرحلة الأولى أولًا")
+    specialists = [str(x).strip() for x in ((payload or {}).get("specialists") or []) if str(x).strip()]
+    advisors = [a for a in ((payload or {}).get("advisors") or []) if isinstance(a, dict) and a.get("model")][:4]
+    if not advisors:
+        advisors = [{"name": "عضو مجلس المستشارين", "model": "meta/muse-wonder"}]
+    director_model = str((payload or {}).get("director_model") or "")
+    user_blob = (
+        f"المخطوط: «{title}» للمؤلف {author or 'غير معروف'}"
+        + (f"\nفن الكتاب ووصفه: {str((payload or {}).get('desc') or '')[:300]}" if (payload or {}).get("desc") else "")
+        + (f"\nالنسخ ورموزها: {str((payload or {}).get('sigla') or '')[:400]}" if (payload or {}).get("sigla") else "")
+        + f"\n\n== نص النسخة الجاهزة (من المرحلة الأولى) ==\n{text[:10000]}"
+        + (f"\n\n== هوامش المقابلة والتحقيق القائمة ==\n{str((payload or {}).get('apparatus') or '')[:2400]}" if (payload or {}).get("apparatus") else "")
+        + (f"\n\nالوكلاء المختصون الذين تُسند إليهم الكتب: {'، '.join(specialists)}" if specialists else "")
+    )
+
+    def _one(ag):
+        try:
+            raw = call_openrouter_raw(
+                model_id=normalize_model_id(ag.get("model") or "meta/muse-wonder"),
+                messages=[{"role": "system", "content": MS_STAGE2_ADVISOR_SYSTEM},
+                          {"role": "user", "content": user_blob}],
+                api_key=key, temperature=0.2, max_tokens=12000, timeout=300,
+                thinking_level="high") or ""
+            parsed = _ms_parse_json(raw) or {}
+            return {"name": str(ag.get("name") or "مستشار"), "model": str(ag.get("model") or ""),
+                    "analysis": str(parsed.get("analysis") or "")[:1500],
+                    "anchors": [str(x).strip() for x in (parsed.get("anchors") or []) if str(x).strip()][:14],
+                    "books": [{"title": str(b.get("title") or "").strip(), "author": str(b.get("author") or "").strip(),
+                               "why": str(b.get("why") or "").strip()[:220], "assign_to": str(b.get("assign_to") or "").strip()[:80]}
+                              for b in (parsed.get("books") or []) if isinstance(b, dict) and str(b.get("title") or "").strip()][:10]}
+        except Exception as exc:
+            return {"name": str(ag.get("name") or "مستشار"), "model": str(ag.get("model") or ""),
+                    "analysis": "", "anchors": [], "books": [], "error": str(exc)[:160]}
+
+    roster = list(advisors)
+    if director_model:
+        roster.append({"name": "مدير التحقيق (مشارك في الترشيح)", "model": director_model})
+    with _cf.ThreadPoolExecutor(max_workers=min(5, len(roster))) as ex:
+        results = list(ex.map(_one, roster))
+    # توحيد الكتب والمراسي ومطابقة الكتب في الشاملة بمؤلفيها
+    book_votes: Dict[str, Dict[str, Any]] = {}
+    anchor_votes: Dict[str, int] = {}
+    for r in results:
+        for a in r.get("anchors") or []:
+            anchor_votes[a] = anchor_votes.get(a, 0) + 1
+        for b in r.get("books") or []:
+            k = b["title"]
+            cur = book_votes.setdefault(k, {**b, "votes": 0, "advisors": []})
+            cur["votes"] += 1
+            if r["name"] not in cur["advisors"]:
+                cur["advisors"].append(r["name"])
+            if not cur.get("assign_to") and b.get("assign_to"):
+                cur["assign_to"] = b["assign_to"]
+    books_out, missing = [], []
+    for title_b, b in sorted(book_votes.items(), key=lambda kv: -kv[1]["votes"]):
+        hit = _resolve_advisor_book(b["title"], b.get("author") or "")
+        row = {**b, "resolved": bool(hit), "book_id": (hit or {}).get("book_id"),
+               "resolved_title": (hit or {}).get("title") or ""}
+        books_out.append(row)
+        if not hit:
+            missing.append(b["title"])
+        if len(books_out) >= 14:
+            break
+    anchors_out = [a for a, _ in sorted(anchor_votes.items(), key=lambda kv: -kv[1])][:16]
+    return {"advisors": results, "books": books_out, "anchors": anchors_out, "missing": missing}
+
+
+@app.post("/api/manuscripts/stage2-consult")
+async def manuscript_stage2_consult(request: Request, payload: Any = Body(...)):
+    """مجلس مستشاري المرحلة الثانية: كل مستشار تصله النسخة الجاهزة كاملة،
+    فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — وتُطابَق في الشاملة."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_stage2_consult_sync, payload or {}, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذرت استشارة المجلس: {str(exc)[:200]}")
+
+
+def _ms_stage2_golden_sync(payload: dict, key: str) -> Dict[str, Any]:
+    title = str((payload or {}).get("title") or "مخطوط")
+    author = str((payload or {}).get("author") or "")
+    text = str((payload or {}).get("text") or "")
+    if len(text.strip()) < 80:
+        raise ValueError("النص الجاهز قصير جدًا للوكيل الذهبي")
+    model = str((payload or {}).get("model") or "meta/muse-wonder")
+    books = [str(x).strip() for x in ((payload or {}).get("books") or []) if str(x).strip()][:14]
+    anchors = [str(x).strip() for x in ((payload or {}).get("anchors") or []) if str(x).strip()][:16]
+    golden_prompt = (
+        f"أنت الوكيل الذهبي — صلب تحقيق مخطوط «{title}»" + (f" للمؤلف {author}" if author else "") + " لهذه النسخة بعينها.\n"
+        + (f"نطاقك الوحيد الكتب التي حدّدها مجلس المستشارين وطابقها مدير التحقيق من الشاملة: {'؛ '.join(books)}.\n" if books else "")
+        + (f"مراسي مجلس المستشارين: {'؛ '.join(anchors)}.\n" if anchors else "")
+        + "مهمتك بحث نوعي معمّق لا جمع واسع: أهم مواضع النص التي يتوقف عليها فهمه وتحقيقه — حديث محوري يحتاج تخريجًا ودرجة، "
+          "علم مفتاح، لفظ غريب يقلب المعنى، آية مستدل بها، مسألة اعتقاد، بيت شعر — بتعليق مختصر موثّق بمصدره من كتب نطاقك، "
+          "وما لم يثبت لك من كتب نطاقك لا تذكره. الاختصار المحكم شرط: تعليق المحقق لا مقالة."
+    )
+    out = _ms_agents_one(model, text, title, author, key, focus=golden_prompt)
+    extra = _ms_resolve_extra_books(books)
+    for s in out["suggestions"]:
+        s["model"] = model
+        s["verify"] = _ms_verify_suggestion(s, extra)
+    return {"golden_prompt": golden_prompt, "suggestions": out["suggestions"],
+            "model": model, "scope_books": [b["title"] for b in extra], "cost": out.get("cost")}
+
+
+@app.post("/api/manuscripts/stage2-golden")
+async def manuscript_stage2_golden(request: Request, payload: Any = Body(...)):
+    """الوكيل الذهبي المؤقت: ينشئه مدير التحقيق لهذا المخطوط بعينه بتوجيه نوعي،
+    ويبحث في كتب مجلس المستشارين المطابقة حصرًا، ونتيجته صلب التحقيق."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_stage2_golden_sync, payload or {}, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر تشغيل الوكيل الذهبي: {str(exc)[:200]}")
 
 
 # ---------- وكيل المؤلف المتخصص ----------
