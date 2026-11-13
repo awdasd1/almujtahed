@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.528"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.529"},
         },
     })
     if opened.get("error"):
@@ -14606,6 +14606,258 @@ async def verify_manuscript_suggestions(request: Request, payload: Any = Body(..
     results = await asyncio.to_thread(run)
     return {"results": results,
             "searched_books": [b["title"] for b in extra]}
+
+# ---------- مسار التحقيق الموجَّه: مخطِّط عبقري، مدير يعتمد، باحثون سريعون ----------
+# بدل تشغيل متخصصين يمسحون كل لوحة فيقترحون حشوًا: نموذج عبقري واحد
+# (Sonnet) يقرأ النص المُخرَج كاملًا ويقرر ما الذي يبحثه المحققون عادة
+# ويعلّقون عليه فقط، فيعرض خطته على مدير التحقيق (Argon) فيعتمد المهم
+# ويحذف الحشو ويوجّه، ثم ينفّذ باحثون سريعون (Gemini Flash) البحث
+# والاستخراج حرفيًا من الشاملة — السرعة للمسح، والذكاء للتخطيط والحسم.
+MS_PLANNER_MODEL = "anthropic/claude-sonnet-5.5"
+MS_SEARCHER_MODEL = "google/gemini-3.8-flash"
+MS_PLAN_TYPES = {"aqeedah", "lugha", "hadith", "ayat", "shir", "tarjama", "qawl", "tafsir"}
+
+MS_PLANNER_PROMPT = (
+    "أنت محقق مخطوطات عبقري خبير بمنهج التحقيق العلمي عند المتقدمين والمعاصرين. "
+    "النص التالي نصُّ مخطوطٍ بعد إخراجه وقراءته ومقابلة نسخه، من كتاب «{title}» للمؤلف {author}، "
+    "ونريد تحقيقه تحقيقًا علميًا رصينًا لا حشو فيه.\n"
+    "امسح النص كله مسح المحقق: عقديًا (مواضع الاعتقاد التي تحتاج بيان مذهب أهل السنة والجماعة)، "
+    "ولغويًا (اللفظ الغريب حقًا والمشكل والتصحيف المحتمل فقط)، وتخريجًا (الأحاديث والآثار)، "
+    "وآياتٍ (عزوها لسورة ورقم فقط، ولا تفسير إلا ما فسّره المؤلف على خلاف المعهود فيُنبَّه عليه)، "
+    "وأشعارًا (نسبتها وقائلها ومصدرها)، وأعلامًا (من يحتاج ترجمة فعلًا لخفائه أو محوريته)، "
+    "وأقوال علماء منقولة (يُتحقق: هل قالها في كتابه وبأي لفظ وموضع).\n"
+    "حدّد فقط ما يجب أن يُبحث ويُخرَّج مما يعلّق عليه المحققون عادة، واترك ما عداه ولو حسُن: "
+    "لا شرح مألوف، لا تفسير آيات لم يفسّرها المؤلف، لا ترجمة مشاهير يعرفهم كل طالب علم إلا لمحورية خاصة، "
+    "لا تعليق على كل لفظ. الجودة بالانتقاء لا بالكثرة: من ٥ إلى ٣٠ موضعًا بحسب حجم النص وغناه.\n"
+    "أخرج JSON صالحًا فقط بهذا الشكل دون أي نص خارجه:\n"
+    '{{"overview":"نظرة المحقق في النص: فنه وأبرز ما يحتاج تحقيقًا في سطرين",'
+    '"items":[{{"type":"aqeedah|lugha|hadith|ayat|shir|tarjama|qawl|tafsir",'
+    '"anchor":"عبارة حرفية قصيرة مميزة من النص (٢-٨ كلمات) تصلح مرساة للتعليق",'
+    '"need":"ما الذي يجب بحثه في هذا الموضع بالضبط بجملة واحدة",'
+    '"query":"عبارة البحث الحرفية المقترحة في المكتبة الشاملة (من النص أو من المصدر المتوقع)",'
+    '"book_hint":"الكتاب المظنة الأشهر لهذا البحث أو سلسلة فارغة",'
+    '"surah":null,"ayah":null,"priority":"عالية|متوسطة","why":"لماذا يستحق هذا الموضع تعليق المحقق"}}]}}\n'
+    "للآيات املأ surah وayah رقميين. ولكل موضع بحثٌ واحد بأولى أنواعه. JSON فقط.\n\n"
+    "بطاقة المؤلف والسياق: {card}\n\nنص المخطوط:\n{text}"
+)
+
+MS_MANAGER_PLAN_PROMPT = (
+    "أنت مدير تحقيق مخطوطات. عرض عليك المخطِّط العبقري خطة بحث لتحقيق كتاب «{title}» للمؤلف {author}. "
+    "مهمتك: اعتماد ما يجب بحثه فعلًا مما يعلّق عليه المحققون، وحذف الحشو والمكرر والهامشي بلا رحمة، "
+    "وتدقيق عبارة البحث والكتاب المظنة لكل بند، وترتيب الأولويات. "
+    "النص فيه {n_chars} حرفًا، فلا تعتمد أكثر من {cap} بندًا.\n"
+    "أخرج JSON صالحًا فقط دون أي نص خارجه:\n"
+    '{{"items":[نفس بنود الخطة المعتمدة بعد تنقيحك بنفس حقولها],'
+    '"dropped":["سبب حذف كل بند أسقطته باختصار"],'
+    '"note":"توجيهك العام للباحثين المنفذين في هذا الكتاب (سطر أو سطران)"}}\n\n'
+    "خطة المخطِّط:\n{plan}"
+)
+
+MS_SEARCHER_PROMPT = (
+    "أنت باحث سريع في تحقيق مخطوطات. نُفّذ بحث في المكتبة الشاملة عن موضع من كتاب «{title}» للمؤلف {author}.\n"
+    "نوع الموضع: {type} — المطلوب بحثه: {need}\nعبارة البحث: «{query}»\n"
+    "نتائج البحث (كتاب/جزء/صفحة/مقتطف):\n{hits}\n"
+    "صِغ تعليق تحقيق موجزًا (جملة أو جملتان) مما ثبت في النتائج فقط، بصيغة المحققين المختصرة، "
+    "واختر أفضل موضع واحد. ولا تخترع موضعًا ولا رقم حديث ولا درجة لا تراها في النتائج. "
+    "إن كان المنقول حرفيًا من المصدر فاجعله بين ﴿ ﴾ واختم بـ(نصًّا)، وإن كان بالمعنى فابدأ بـ«أي:». "
+    "أخرج JSON فقط: {{\"found\":true/false,\"body\":\"نص التعليق\",\"source\":\"اسم الكتاب (ج ص)\"}}"
+)
+
+
+def _ms_plan_sync(payload: dict, key: str) -> Dict[str, Any]:
+    title = str((payload or {}).get("title") or "مخطوط")
+    author = str((payload or {}).get("author") or "")
+    card = str((payload or {}).get("author_card") or "")[:2500]
+    text = str((payload or {}).get("text") or "")
+    if len(text.strip()) < 120:
+        raise ValueError("النص المُسلَّم قصير جدًا للتخطيط")
+    planner_model = str((payload or {}).get("planner_model") or MS_PLANNER_MODEL)
+    manager_model = str((payload or {}).get("manager_model") or "google/gemini-4-argon")
+    raw = call_openrouter_raw(planner_model, [{"role": "user", "content": MS_PLANNER_PROMPT.format(
+        title=title, author=author or "غير معروف", card=card or "—", text=text[:70000])}],
+        key, temperature=0.2, max_tokens=8000, timeout=420)
+    if not raw.strip():
+        raw = call_openrouter_raw(planner_model, [{"role": "user", "content": MS_PLANNER_PROMPT.format(
+            title=title, author=author or "غير معروف", card=card or "—", text=text[:70000])}],
+            key, temperature=0.2, max_tokens=8000, timeout=420)
+    plan = _ms_parse_json(raw) or {}
+    items = []
+    for it in (plan.get("items") or [])[:40]:
+        if not isinstance(it, dict) or not str(it.get("anchor") or "").strip():
+            continue
+        t = str(it.get("type") or "qawl")
+        items.append({
+            "type": t if t in MS_PLAN_TYPES else "qawl",
+            "anchor": str(it.get("anchor"))[:160],
+            "need": str(it.get("need") or "")[:300],
+            "query": str(it.get("query") or it.get("anchor"))[:160],
+            "book_hint": str(it.get("book_hint") or "")[:120],
+            "surah": it.get("surah") if isinstance(it.get("surah"), int) else None,
+            "ayah": it.get("ayah") if isinstance(it.get("ayah"), int) else None,
+            "priority": str(it.get("priority") or "متوسطة")[:20],
+            "why": str(it.get("why") or "")[:300],
+        })
+    if not items:
+        raise ValueError("لم يُنتج المخطِّط بنودًا صالحة — أعد المحاولة")
+    cap = 30 if len(text) > 20000 else 20
+    dropped, manager_note = [], ""
+    try:
+        mraw = call_openrouter_raw(manager_model, [{"role": "user", "content": MS_MANAGER_PLAN_PROMPT.format(
+            title=title, author=author or "غير معروف", n_chars=len(text), cap=cap,
+            plan=json.dumps({"overview": plan.get("overview") or "", "items": items}, ensure_ascii=False))}],
+            key, temperature=0.1, max_tokens=8000, timeout=420)
+        mp = _ms_parse_json(mraw) or {}
+        approved = []
+        for it in (mp.get("items") or [])[:cap]:
+            if isinstance(it, dict) and str(it.get("anchor") or "").strip():
+                t = str(it.get("type") or "qawl")
+                approved.append({
+                    "type": t if t in MS_PLAN_TYPES else "qawl",
+                    "anchor": str(it.get("anchor"))[:160],
+                    "need": str(it.get("need") or "")[:300],
+                    "query": str(it.get("query") or it.get("anchor"))[:160],
+                    "book_hint": str(it.get("book_hint") or "")[:120],
+                    "surah": it.get("surah") if isinstance(it.get("surah"), int) else None,
+                    "ayah": it.get("ayah") if isinstance(it.get("ayah"), int) else None,
+                    "priority": str(it.get("priority") or "متوسطة")[:20],
+                    "why": str(it.get("why") or "")[:300],
+                })
+        if approved:
+            dropped = [str(x)[:160] for x in (mp.get("dropped") or [])[:20]]
+            manager_note = str(mp.get("note") or "")[:800]
+            items = approved
+    except Exception:
+        manager_note = "تعذّرت مراجعة المدير آليًا فاعتُمدت خطة المخطِّط كما هي — راجعها بنفسك قبل التنفيذ."
+    return {"overview": str(plan.get("overview") or "")[:1200], "items": items,
+            "dropped": dropped, "manager_note": manager_note,
+            "planner_model": planner_model, "manager_model": manager_model}
+
+
+@app.post("/api/manuscripts/research-plan")
+async def manuscript_research_plan(request: Request, payload: Any = Body(...)):
+    """المخطِّط العبقري (Sonnet) يمسح النص ويحدد ما يجب بحثه، ومدير التحقيق يعتمد ويحذف الحشو."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_plan_sync, payload or {}, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر بناء خطة البحث: {str(exc)[:200]}")
+
+
+_MS_PLAN_KIND = {"ayat": "takhrij", "hadith": "takhrij", "shir": "takhrij",
+                 "tarjama": "tarjama", "lugha": "lugha", "aqeedah": "aqeedah",
+                 "tafsir": "tafsir", "qawl": "takhrij"}
+
+
+def _ms_execute_item(item: dict, title: str, author: str, key: str, extra_books: list) -> Dict[str, Any]:
+    typ = item.get("type") or "qawl"
+    query = str(item.get("query") or item.get("anchor") or "")[:160]
+    hits: list = []
+    hit_book = None
+    hint = str(item.get("book_hint") or "").strip()
+    if hint:
+        hit_book = _resolve_advisor_book(hint, "") or None
+        if not hit_book:
+            try:
+                row = shamela_local_mcp.resolve_book(hint)
+                if row and row.get("book_id"):
+                    hit_book = {"book_id": int(row["book_id"]), "title": row.get("title") or hint}
+            except Exception:
+                hit_book = None
+    if hit_book:
+        hit = _ms_scan_book_phrase(hit_book["book_id"], query, fuzzy=True)
+        if hit:
+            hits.append(hit)
+    if not hits:
+        try:
+            import library_search
+            idx = library_search.get_index()
+            res = idx.search(query, mode="phrase", limit=5) or {}
+            for r in (res.get("results") or [])[:4]:
+                meta = idx.meta.get(r.get("book_id"), {}) if hasattr(idx, "meta") else {}
+                hits.append({"book_id": r.get("book_id"),
+                             "title": r.get("title") or meta.get("title") or "كتاب",
+                             "part": r.get("part"), "page": r.get("page_num") or r.get("page"),
+                             "snippet": str(r.get("snippet") or r.get("text") or "")[:260]})
+        except Exception:
+            hits = []
+    if not hits and hit_book:
+        try:
+            r = shamela_local_mcp.search_in_book(hit_book["book_id"], query, limit=3) or {}
+            for x in (r.get("results") or [])[:3]:
+                hits.append({"book_id": hit_book["book_id"], "title": hit_book["title"],
+                             "part": x.get("part"), "page": x.get("page_num"),
+                             "snippet": str(x.get("snippet") or "")[:260]})
+        except Exception:
+            pass
+    kind = _MS_PLAN_KIND.get(typ, "takhrij")
+    sug = {"kind": kind, "anchor": str(item.get("anchor") or "")[:160],
+           "title": str(item.get("need") or "")[:140], "body": "", "source": "",
+           "surah": item.get("surah"), "ayah": item.get("ayah"),
+           "plan_type": typ, "model": MS_SEARCHER_MODEL}
+    if hits:
+        hits_txt = "\n".join(
+            f"- «{h.get('title')}» (ج {h.get('part') or '—'} ص {h.get('page') or '—'}): {str(h.get('snippet') or '')[:240]}"
+            for h in hits[:4])
+        try:
+            raw = call_openrouter_raw(MS_SEARCHER_MODEL, [{"role": "user", "content": MS_SEARCHER_PROMPT.format(
+                title=title, author=author or "غير معروف", type=typ,
+                need=str(item.get("need") or ""), query=query, hits=hits_txt)}],
+                key, temperature=0.1, max_tokens=1200, timeout=120)
+            out = _ms_parse_json(raw) or {}
+        except Exception:
+            out = {}
+        if out.get("found") and str(out.get("body") or "").strip():
+            sug["body"] = str(out.get("body"))[:900]
+            sug["source"] = str(out.get("source") or "")[:220]
+            h0 = hits[0]
+            sug["verify"] = {"status": "verified",
+                             "detail": f"نفّذه باحث سريع ({MS_SEARCHER_MODEL}) من نتيجة بحث موثقة في «{h0.get('title')}»",
+                             "locus": {"book_id": h0.get("book_id"), "title": h0.get("title"),
+                                       "part": h0.get("part"), "page": h0.get("page"),
+                                       "snippet": str(h0.get("snippet") or "")[:220]}}
+            return sug
+    sug["verify"] = _ms_verify_suggestion(sug, extra_books)
+    return sug
+
+
+def _ms_execute_plan_sync(payload: dict, key: str) -> Dict[str, Any]:
+    import concurrent.futures as _cf
+    title = str((payload or {}).get("title") or "مخطوط")
+    author = str((payload or {}).get("author") or "")
+    items = [it for it in ((payload or {}).get("items") or []) if isinstance(it, dict)][:40]
+    if not items:
+        raise ValueError("لا بنود في الخطة لتنفيذها")
+    extra = _ms_resolve_extra_books((payload or {}).get("extra_books"))
+    suggestions: list = []
+    with _cf.ThreadPoolExecutor(max_workers=6) as ex:
+        futs = [ex.submit(_ms_execute_item, it, title, author, key, extra) for it in items]
+        for f in futs:
+            try:
+                suggestions.append(f.result())
+            except Exception as exc:
+                suggestions.append({"kind": "takhrij", "anchor": "", "title": "",
+                                    "body": "", "source": "", "error": str(exc)[:120]})
+    return {"suggestions": [s for s in suggestions if s.get("anchor")],
+            "searcher_model": MS_SEARCHER_MODEL, "count": len(suggestions)}
+
+
+@app.post("/api/manuscripts/execute-plan")
+async def manuscript_execute_plan(request: Request, payload: Any = Body(...)):
+    """باحثون سريعون (Gemini Flash) ينفّذون بنود الخطة المعتمدة: بحث واستخراج موثّق من الشاملة."""
+    key = owner_openrouter_key(request, (payload or {}).get("api_key"))
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    try:
+        return await asyncio.to_thread(_ms_execute_plan_sync, payload or {}, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر تنفيذ خطة البحث: {str(exc)[:200]}")
+
 
 @app.post("/api/manuscripts/agents")
 async def manuscript_agents(request: Request, payload: Any = Body(...)):

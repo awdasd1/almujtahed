@@ -2114,11 +2114,27 @@ function renderMsStage2() {
       ${s2.author_verdict && s2.author_verdict.famous ? `<div class="ms-hint">حكم مجلس المستشارين على الاسم والتصنيف: الصحيح «${msEsc(s2.author_verdict.correct || '—')}» · المشهور «${msEsc(s2.author_verdict.famous)}» · ${msEsc(s2.author_verdict.madhhab || '')} · ${msEsc(s2.author_verdict.aqeedah || '')}</div>` : ''}`
     : '<div class="ms-hint">ابدأ ببطاقة المؤلف قبل المجلس: فتصنيفه مذهبيًا وعقديًا يوجّه اختيار كتب الطبقات والتراجم، واسمه المشهور يفتح كتبه للموازاة الدقيقة.</div>'}
     <div class="ms-form-row">
-      <button type="button" class="ms-btn ms-btn-primary" id="msStage2ConsultBtn" onclick="msStage2Consult()">🧭 ١) استشارة مجلس المستشارين (كلٌّ تصله النسخة كاملة)</button>
-      <button type="button" class="ms-btn ms-btn-primary" id="msStage2GoldenBtn" onclick="msStage2Golden()" ${adv.length ? '' : 'disabled'}>🥇 ٢) إنشاء الوكيل الذهبي وتشغيله في كتب المجلس</button>
-      <button type="button" class="ms-btn ms-btn-primary" id="msStage2RunBtn" onclick="msStage2Specialists()" ${adv.length ? '' : 'disabled'}>🔍 ٣) تشغيل المتخصصين المختصرين (تخريج/لغة وأشعار/سير/تفسير/عقيدة)</button>
-      <button type="button" class="ms-btn" id="msStage2ApproveBtn" onclick="msStage2Approve()">✔ ٤) اعتماد مدير التحقيق وبناء الفهارس</button>
+      <button type="button" class="ms-btn ms-btn-primary" id="msStage2PlanBtn" onclick="msStage2Plan()">🧠 ١) المخطِّط العبقري (Sonnet): مسح النص وتحديد ما يجب بحثه واعتماد مدير التحقيق</button>
+      <span class="ms-wb-meta">يقرأ النص المُخرَج كاملًا فيحدد المهم فقط مما يعلّق عليه المحققون (عقيدة/لغة غريبة/تخريج/آيات/أشعار/أعلام/أقوال)، ويعتمد مدير التحقيق الخطة ويحذف حشوها</span>
     </div>
+    ${s2.plan ? `<div class="ms-margin-title">🧠 خطة البحث المعتمدة من مدير التحقيق — ${(s2.plan.items || []).length} موضعًا فقط</div>
+      ${s2.plan.overview ? `<div class="ms-group-books">نظرة المخطِّط: ${msEsc(s2.plan.overview)}</div>` : ''}
+      ${s2.plan.manager_note ? `<div class="ms-group-books">توجيه المدير للباحثين: ${msEsc(s2.plan.manager_note)}</div>` : ''}
+      ${(s2.plan.dropped || []).length ? `<div class="ms-hint">حذف المدير من حشو الخطة: ${s2.plan.dropped.map(msEsc).join('؛ ')}</div>` : ''}
+      <div class="ms-group-books">${(s2.plan.items || []).map((it, i) => `<div class="ms-plan-item"><span class="ms-book-chip">${msEsc({ aqeedah: 'عقيدة', lugha: 'لغة غريبة', hadith: 'حديث', ayat: 'آية', shir: 'شعر', tarjama: 'علم', qawl: 'قول عالم', tafsir: 'تفسير' }[it.type] || it.type)} · ${msEsc(it.priority || '')}</span> <strong>«${msEsc(it.anchor)}»</strong> — ${msEsc(it.need)}${it.book_hint ? ` <span class="ms-wb-meta">(المظنة: ${msEsc(it.book_hint)})</span>` : ''} <button type="button" class="ms-btn ms-btn-mini" title="حذف هذا الموضع من الخطة" onclick="msPlanDrop(${i})">✕</button></div>`).join('')}</div>
+      <div class="ms-form-row">
+        <button type="button" class="ms-btn ms-btn-primary" id="msStage2ExecBtn" onclick="msStage2ExecutePlan()" ${s2.plan_executed ? 'disabled' : ''}>⚡ ٢) تنفيذ الباحثين السريعين (Gemini 3.8 Flash) على الخطة المعتمدة</button>
+        <button type="button" class="ms-btn" id="msStage2ApproveBtn" onclick="msStage2Approve()">✔ ٣) اعتماد مدير التحقيق وبناء الفهارس</button>
+      </div>`
+    : '<div class="ms-hint">المسار الموجَّه: لا متخصصون يمسحون كل لوحة فيقترحون حشوًا؛ مخطِّط عبقري واحد يختار المهم، ومدير يعتمد، وباحثون سريعون ينفّذون البحث والاستخراج من الشاملة.</div>'}
+    <details class="ms-legacy-path"><summary>المسار القديم الموسّع (مجلس مستشارين ووكيل ذهبي ومتخصصون لكل لوحة) — اختياري</summary>
+    <div class="ms-form-row">
+      <button type="button" class="ms-btn" id="msStage2ConsultBtn" onclick="msStage2Consult()">🧭 استشارة مجلس المستشارين (كلٌّ تصله النسخة كاملة)</button>
+      <button type="button" class="ms-btn" id="msStage2GoldenBtn" onclick="msStage2Golden()" ${adv.length ? '' : 'disabled'}>🥇 إنشاء الوكيل الذهبي وتشغيله في كتب المجلس</button>
+      <button type="button" class="ms-btn" id="msStage2RunBtn" onclick="msStage2Specialists()" ${adv.length ? '' : 'disabled'}>🔍 تشغيل المتخصصين المختصرين (تخريج/لغة وأشعار/سير/تفسير/عقيدة)</button>
+      <button type="button" class="ms-btn" id="msStage2ApproveBtn2" onclick="msStage2Approve()">✔ اعتماد مدير التحقيق وبناء الفهارس</button>
+    </div>
+    </details>
     ${adv.length ? `<div class="ms-margin-title">مجلس المستشارين — تحليلاتهم ومراسي التحقيق وكتبهم المطابَقة في الشاملة</div>
       ${adv.map(a => `<div class="ms-group-agent"><div class="ms-group-agent-head"><strong>${msEsc(a.name)}</strong><span class="ms-wb-meta">${msEsc(a.model || '')}</span></div>
         ${a.error ? `<div class="ms-hint">تعذر: ${msEsc(a.error)}</div>` : `<div class="ms-group-books" style="white-space:pre-wrap">${msEsc(a.analysis || '')}</div>
@@ -2463,6 +2479,78 @@ async function msStage2Approve() {
     msToast('✔ اعتمد مدير التحقيق النص — راجع اعتمادَه ثم عاين الطباعة النهائية من بطاقة الفهارس والإخراج', 7000);
   } catch (e) { msToast('❌ ' + e.message, 7000); }
   if (btn) { btn.disabled = false; btn.textContent = '✔ ٤) اعتماد مدير التحقيق وبناء الفهارس'; }
+}
+
+// المسار الموجَّه: مخطِّط عبقري يختار المهم، مدير يعتمد، باحثون سريعون ينفّذون
+function msPlanDrop(i) {
+  const p = msCurrentProject(); if (!p) return;
+  const s2 = msInitStage2(p);
+  if (!s2.plan || !s2.plan.items) return;
+  const gone = s2.plan.items.splice(i, 1)[0];
+  if (gone) msStage2Log(p, `حذف المحقق من الخطة: «${gone.anchor}» (${gone.need || ''}).`);
+  msSave(); renderMsStage2();
+}
+
+async function msStage2Plan() {
+  const p = msCurrentProject(); if (!p) return;
+  const s2 = msInitStage2(p);
+  const btn = document.getElementById('msStage2PlanBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ المخطِّط العبقري يمسح النص ومدير التحقيق يعتمد الخطة...'; }
+  try {
+    const res = await fetch('/api/manuscripts/research-plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: p.title, author: p.author,
+        author_card: msAuthorCardText(p),
+        text: s2.text_snapshot || msStageText(p),
+        api_key: msApiKey(),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذرت خطة البحث');
+    s2.plan = { overview: data.overview || '', items: data.items || [], dropped: data.dropped || [],
+      manager_note: data.manager_note || '', planner_model: data.planner_model, manager_model: data.manager_model,
+      at: new Date().toISOString() };
+    s2.plan_executed = false;
+    msStage2Log(p, `خطة البحث المعتمدة: ${s2.plan.items.length} موضعًا فقط اختارها المخطِّط (${data.planner_model}) واعتمدها المدير (${data.manager_model})، وحُذف ${s2.plan.dropped.length} من الحشو.`);
+    msSave(); renderMsStage2();
+    msToast(`✔ خطة مركّزة: ${s2.plan.items.length} موضعًا يستحق البحث — راجعها واحذف ما لا تريده ثم نفّذ الباحثين السريعين`, 8000);
+  } catch (e) { msToast('❌ ' + e.message, 8000); }
+  if (btn) { btn.disabled = false; btn.textContent = '🧠 ١) المخطِّط العبقري (Sonnet): مسح النص وتحديد ما يجب بحثه واعتماد مدير التحقيق'; }
+}
+
+async function msStage2ExecutePlan() {
+  const p = msCurrentProject(); if (!p) return;
+  const s2 = msInitStage2(p);
+  if (!s2.plan || !(s2.plan.items || []).length) { msToast('لا خطة معتمدة بعد'); return; }
+  const btn = document.getElementById('msStage2ExecBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ الباحثون السريعون يبحثون ويستخرجون من الشاملة...'; }
+  try {
+    const councilBooks = (s2.books || []).filter(b => b.resolved).map(b => b.resolved_title || b.title);
+    const res = await fetch('/api/manuscripts/execute-plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: p.title, author: p.author, items: s2.plan.items,
+        extra_books: councilBooks.length ? councilBooks : undefined,
+        api_key: msApiKey(),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر تنفيذ الخطة');
+    p.agent_suggestions = p.agent_suggestions || [];
+    const base = msBaseCopy(p);
+    (data.suggestions || []).filter(s => String(s.body || '').trim() || (s.verify || {}).locus).forEach(s => p.agent_suggestions.push({
+      ...s, id: msUid(),
+      folio: (base.folios || []).find(f => (f.audited_text || f.text || '').includes((s.anchor || '').slice(0, 24)))?.label
+        || (base.folios || []).find(f => (f.text || '').includes((s.anchor || '').slice(0, 24)))?.label || '',
+      status: 'pending', agent: 'flash', stage2: true }));
+    s2.plan_executed = true;
+    const gate = msStage2Gate(p);
+    msStage2Log(p, `نفّذ الباحثون السريعون (${data.searcher_model}) خطة البحث: ${data.count} موضعًا، أُثبت منها ${gate.acc} موثقًا في الهامش، وبقي ${gate.left} لاعتمادك في بطاقة الوكلاء، ورُد ${gate.dis}.`);
+    msSave(); renderMsStage2(); renderMsAgents();
+    msToast(`✔ أنهى الباحثون السريعون: أُثبت ${gate.acc} تعليقًا موثقًا وبانتظار اعتمادك ${gate.left}`, 8000);
+  } catch (e) { msToast('❌ ' + e.message, 8000); }
+  if (btn) { btn.disabled = false; btn.textContent = '⚡ ٢) تنفيذ الباحثين السريعين (Gemini 3.8 Flash) على الخطة المعتمدة'; }
 }
 
 // ---------- التحقيق الآلي الكامل بقيادة المدقق الذكي ----------
