@@ -7760,7 +7760,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.503"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.504"},
         },
     })
     if opened.get("error"):
@@ -14658,10 +14658,19 @@ MS_AUTHOR_PROFILE_SYSTEM = (
     '"era":"عصره وقرنه","birth":"مولده إن ثبت","death":"وفاته إن ثبتت",'
     '"classification_basis":"بم صنّفته مذهبيًا وعقديًا: كتبه وطبقته وشيوخه",'
     '"works":[{"title":"من مؤلفاته مرتبة كما يغلب تسلسلها","note":"أهميته في فنّه"}],'
-    '"tarajim_candidates":[{"title":"كتاب تراجم/طبقات هو مظنة ترجمته بحسب مذهبه وعصره","author":"مؤلفه","why":"لم هو مظنته"}]}\n'
+    '"tarajim_candidates":[{"title":"كتاب تراجم/طبقات هو مظنة ترجمته بحسب مذهبه وعصره","author":"مؤلفه","why":"لم هو مظنته"}],'
+    '"attribution":{"verdict":"ثابتة|مشهورة لم يتكلم فيها|مشكوكة|منحولة موضوعة","basis":"من نسب هذا الكتاب بعينه إليه من العلماء وأهل الببليوغرافيا والطبقات، وهل ذكره المؤلف نفسه في كتبه، وهل تكلم أحد في صحة النسبة أو شكك فيها"}}\n'
     "دقّق التصنيف: فبه تُختار كتب الطبقات في المذاهب وكتب العقائد والسير للبحث في ترجمته، وتُبنى الموازاة بكتبه. "
+    "وفي نسبة الكتاب المخطوط إليه كن على منهج أهل الببليوغرافيا (حاجي خليفة في كشف الظنون، والبغدادي في إيضاح المكنون وهدية العارفين، وابن النديم في الفهرست، وطاشكبري زاده في مفتاح السعادة، والقنوجي في أبجد العلوم، والزركلي في الأعلام، وكحالة في معجم المؤلفين، وبروكلمان وسزكين): من نسبه منهم ومن ذكره المؤلف في كتبه؟ "
     "ما لم يثبت عندك فصرّح بعدم ثبوته في حقله ولا تخترع سنة ولا كتابًا."
 )
+
+# كتب الببليوغرافيا والفهارس التي تُحتكم إليها نسبة الكتب إلى مؤلفيها
+_MS_BIBLIO_TITLES = [
+    "كشف الظنون عن أسامي الكتب والفنون", "إيضاح المكنون", "هدية العارفين",
+    "الفهرست لابن النديم", "فهرست ابن النديم", "مفتاح السعادة ومصباح السيادة",
+    "أبجد العلوم", "معجم المؤلفين", "الأعلام للزركلي", "معجم المطبوعات العربية",
+]
 
 def _ms_author_profile_sync(payload: dict, key: str) -> Dict[str, Any]:
     written = str((payload or {}).get("author") or "").strip()
@@ -14718,6 +14727,55 @@ def _ms_author_profile_sync(payload: dict, key: str) -> Dict[str, Any]:
         cands.append({"title": str(b["title"]), "author": str(b.get("author") or ""),
                       "why": str(b.get("why") or "")[:200], "resolved": bool(hit),
                       "resolved_title": (hit or {}).get("title") or "", "book_id": (hit or {}).get("book_id")})
+    # تحقيق نسبة المخطوط إلى المؤلف: أذكرها هو في كتبه؟ أثبتها العلماء؟
+    # أنسبها أهل الببليوغرافيا والطبقات؟ — بمسح فعلي لا بادعاء النموذج وحده
+    attribution = {"verdict": "", "summary": "", "self_mention": None, "biblio": [],
+                   "claim": str((prof.get("attribution") or {}).get("verdict") or "") if isinstance(prof.get("attribution"), dict) else "",
+                   "claim_basis": str((prof.get("attribution") or {}).get("basis") or "")[:700] if isinstance(prof.get("attribution"), dict) else ""}
+    work_phrase = re.split(r"\s+[-–—]\s+", str(title or ""))[0].strip()
+    work_phrase = re.sub(r"^(كتاب|رسالة)\s+", "", work_phrase).strip()
+    if len(work_phrase) >= 5:
+        for b in works_found[:6]:
+            if work_phrase and work_phrase in str(b.get("title") or ""):
+                continue  # الكتاب نفسه لا «يذكر نفسه» شاهدًا
+            hit = _ms_scan_book_phrase(b.get("book_id"), work_phrase)
+            if hit:
+                attribution["self_mention"] = {"book": hit.get("title") or b.get("title"),
+                                               "part": hit.get("part"), "page": hit.get("page")}
+                break
+        for b in _ms_resolve_extra_books(_MS_BIBLIO_TITLES):
+            hit = _ms_scan_book_phrase(b.get("book_id"), work_phrase)
+            if not hit:
+                continue
+            near_author = False
+            try:
+                pg = shamela_local_mcp.get_page(b["book_id"], int(hit.get("page") or 0), hit.get("part"))
+                node = pg.get("page") if isinstance(pg.get("page"), dict) else pg
+                ptxt = str((node or {}).get("body") or (node or {}).get("text") or pg.get("text") or "")
+                near_author = bool(nisba and nisba in ptxt) or bool(prof.get("famous_name") and str(prof.get("famous_name")) in ptxt)
+            except Exception:
+                near_author = False
+            attribution["biblio"].append({"book": hit.get("title") or b.get("title"),
+                                          "part": hit.get("part"), "page": hit.get("page"),
+                                          "near_author": near_author})
+            if len(attribution["biblio"]) >= 5:
+                break
+    biblio_strong = [x for x in attribution["biblio"] if x.get("near_author")]
+    if attribution["self_mention"]:
+        attribution["verdict"] = "ثابتة — ذكرها المؤلف نفسه في كتبه"
+        attribution["summary"] = f"وجدنا اسم الكتاب في «{attribution['self_mention']['book']}» (ج {attribution['self_mention'].get('part') or '—'} ص {attribution['self_mention'].get('page') or '—'}) من كتب المؤلف نفسه"
+    elif len(biblio_strong) >= 2:
+        attribution["verdict"] = "ثابتة — أثبتها أهل الببليوغرافيا والتراجم"
+        attribution["summary"] = "؛ ".join(f"«{x['book']}» (ج {x.get('part') or '—'} ص {x.get('page') or '—'})" for x in biblio_strong)
+    elif biblio_strong or attribution["biblio"]:
+        attribution["verdict"] = "منسوبة في مصادر ببليوغرافية — تحتاج تدعيمًا"
+        attribution["summary"] = "؛ ".join(f"«{x['book']}» (ج {x.get('part') or '—'} ص {x.get('page') or '—'}){' مع اسم المؤلف في الصفحة' if x.get('near_author') else ''}" for x in attribution["biblio"])
+    elif attribution["claim"]:
+        attribution["verdict"] = f"بقول أهل التراجم: {attribution['claim']} — لم يثبت عندنا في النطاق الممسوح بعد"
+        attribution["summary"] = attribution["claim_basis"]
+    else:
+        attribution["verdict"] = "لم تثبت عندنا بعد — تُراجع في كشف الظنون وذيوله وكتب الطبقات"
+        attribution["summary"] = ""
     found_titles = [w.get("title") or "" for w in works_found]
     works = []
     for w in (prof.get("works") or [])[:14]:
@@ -14735,6 +14793,7 @@ def _ms_author_profile_sync(payload: dict, key: str) -> Dict[str, Any]:
         "works": works, "works_in_shamela": found_titles[:14], "works_form": works_form,
         "tarajim_candidates": cands, "bio_snippets": len(bio.get("snippets") or []),
         "bio_books": bio.get("books") or [], "bio_form": bio_form, "model": model,
+        "attribution": attribution,
     }
 
 

@@ -1827,7 +1827,7 @@ const MS_GROUP_DEFAULT_AGENTS = [
   { key: 'advisor_argon', name: 'عضو مجلس المستشارين — Gemini Argon', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'google/gemini-4-argon', books: [], stage: 2, advisor: true },
   { key: 'advisor_wonder', name: 'عضو مجلس المستشارين — Muse Wonder', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'meta/muse-wonder', books: [], stage: 2, advisor: true },
   { key: 'authorid', name: 'وكيل بطاقة المؤلف وتصنيفه المذهبي والعقدي', desc: 'يبني بطاقة المؤلف عصبَ المرحلة الثانية: اسمه الصحيح والمشهور وصيغ النساخ (كاملًا ومختصرًا وبشهرته)، ومذهبه الفقهي وعقيدته بدقة، وكتبه وتسلسلها، وكتب طبقات مذهبه وتراجمه المرشحة — فعليها تُبنى الترجمة واختيار المظان والموازاة بكتبه بدقة', model: 'meta/muse-wonder', stage: 2,
-    books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'الأعلام', 'معجم المؤلفين', 'طبقات الشافعية الكبرى', 'طبقات الحنابلة', 'الديباج المذهب', 'الجواهر المضية في طبقات الحنفية', 'حسن المحاضرة', 'الدرر الكامنة'] },
+    books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'الأعلام', 'معجم المؤلفين', 'طبقات الشافعية الكبرى', 'طبقات الحنابلة', 'الديباج المذهب', 'الجواهر المضية في طبقات الحنفية', 'حسن المحاضرة', 'الدرر الكامنة', 'كشف الظنون عن أسامي الكتب والفنون', 'إيضاح المكنون', 'هدية العارفين', 'الفهرست لابن النديم', 'مفتاح السعادة ومصباح السيادة', 'أبجد العلوم'] },
   { key: 'bio', name: 'وكيل ترجمة المؤلف', desc: 'يبني ترجمة المؤلف بين المختصرة والمتوسطة من كتب التراجم المعتمدة: مولد ووفاة ومواقف وشيوخ وتلاميذ', model: 'meta/muse-wonder', stage: 2,
     books: ['سير أعلام النبلاء', 'وفيات الأعيان', 'الوافي بالوفيات', 'تاريخ الإسلام', 'شذرات الذهب', 'البداية والنهاية', 'طبقات الشافعية الكبرى', 'الأعلام', 'معجم المؤلفين', 'الدرر الكامنة', 'بغية الوعاة', 'حسن المحاضرة'] },
   { key: 'ayat', name: 'وكيل تخريج الآيات', desc: 'يعزو الآيات إلى سورها وأرقامها ويضبط لفظها على المصحف، ويستعين بكتب التفسير والإعراب', model: 'google/gemini-4-carbon', stage: 2,
@@ -1848,6 +1848,7 @@ const MS_GROUP_DEFAULT_AGENTS = [
 const MS_GROUP_BOOK_UPGRADES = {
   hadith: ['التلخيص الحبير', 'نصب الراية', 'سلسلة الأحاديث الصحيحة', 'سلسلة الأحاديث الضعيفة'],
   lugha: ['الأغاني', 'خزانة الأدب', 'المفضليات'],
+  authorid: ['كشف الظنون عن أسامي الكتب والفنون', 'إيضاح المكنون', 'هدية العارفين', 'الفهرست لابن النديم', 'مفتاح السعادة ومصباح السيادة', 'أبجد العلوم', 'معجم المؤلفين'],
 };
 let MS_GROUP = null;
 let MS_GROUP_PICK_KEY = null;
@@ -2143,6 +2144,8 @@ function msAuthorCardText(p) {
     `المذهب الفقهي: ${pr.madhhab || '—'} · العقيدة: ${pr.aqeedah || '—'} · العصر: ${pr.era || '—'} · الوفاة: ${pr.death || '—'}`,
     pr.classification_basis ? `قرينة التصنيف: ${pr.classification_basis}` : '',
     (pr.works_in_shamela || []).length ? `كتبه الموجودة في الشاملة (للموازاة بدقة): ${pr.works_in_shamela.join('، ')}` : '',
+    pr.attribution ? `نسبة هذا المخطوط إليه: ${pr.attribution.verdict || '—'}${pr.attribution.summary ? ' — ' + pr.attribution.summary : ''}` : '',
+    pr.attribution && pr.attribution.claim_basis ? `قول أهل التراجم والببليوغرافيا في النسبة: ${pr.attribution.claim_basis}` : '',
     (pr.tarajim_candidates || []).filter(c => c.resolved).length ? `كتب طبقات مذهبه وتراجمه المرشحة المطابقة: ${pr.tarajim_candidates.filter(c => c.resolved).map(c => c.resolved_title || c.title).join('، ')}` : '',
   ].filter(Boolean).join('\n');
 }
@@ -2170,6 +2173,7 @@ async function msStage2AuthorProfile() {
     if (!res.ok) throw new Error(data.detail || 'تعذرت بطاقة المؤلف');
     p.author_profile = data;
     msStage2Log(p, `بُنيت بطاقة المؤلف: الصحيح «${data.correct_name || '—'}» والمشهور «${data.famous_name || '—'}» — المذهب: ${data.madhhab || '—'}، العقيدة: ${data.aqeedah || '—'}؛ كتبه في الشاملة ${(data.works_in_shamela || []).length} بصيغة «${data.works_form || '—'}»، وشواهد ترجمته ${data.bio_snippets || 0} في ${(data.bio_books || []).join('، ') || '—'}.`);
+    if (data.attribution) msStage2Log(p, `نسبة «${p.title}» إليه: ${data.attribution.verdict || '—'}${data.attribution.summary ? ' — ' + data.attribution.summary : ''}`);
     msSave(); renderMsStage2();
     msToast('✔ بُنيت بطاقة المؤلف وتصنيفه — ستغذي المجلس والمتخصصين والمقدمة والموازاة', 7000);
   } catch (e) { msToast('❌ ' + e.message, 7000); }
