@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.548">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.549">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.548 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.549 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1738,6 +1738,20 @@
                     <button type="button" class="ms-btn" onclick="msAgentBooksPick()">📚 إضافة كتب من الشاملة</button>
                     <button type="button" class="ms-btn ms-btn-danger" onclick="msAgentBooksClear()">🗑 حذف الكل</button>
                     <button type="button" class="ms-btn ms-btn-primary" onclick="msAgentBooksClose()">إغلاق</button>
+                </div>
+            </div>
+        </div>
+        <div class="ms-modal-overlay" id="msAutoRestartModal" hidden>
+            <div class="ms-modal">
+                <div class="ms-modal-head">
+                    <strong>↻ إعادة تشغيل التحقيق الآلي</strong>
+                    <button type="button" class="ms-btn" onclick="msAutoRestartChoice('cancel')">✕</button>
+                </div>
+                <div class="ms-hint">لهذا المشروع تحقيق آلي سابق مكتمل: نصوص منسوخة وهوامش واقتراحات ومقدمة وفهارس واعتمادات. إعادة التشغيل تبدأ من الصفر على اللوحات المرفوعة وحدها، فماذا تريد بالتحقيق السابق قبل أن يُمسح؟</div>
+                <div class="ms-form-row" style="margin-top:12px">
+                    <button type="button" class="ms-btn ms-btn-danger" onclick="msAutoRestartChoice('delete')">🗑 حذف التحقيق السابق</button>
+                    <button type="button" class="ms-btn" onclick="msAutoRestartChoice('archive')">🗄 أرشفة التحقيق السابق</button>
+                    <button type="button" class="ms-btn ms-btn-primary" onclick="msAutoRestartChoice('cancel')">إلغاء</button>
                 </div>
             </div>
         </div>
@@ -6111,7 +6125,7 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.548"></script>
+    <script src="/static/js/app.js?v=1.10.549"></script>
     <script src="/static/js/search.js?v=1.10.493"></script>
     <script src="/static/js/reader.js?v=1.10.493"></script>
     <script src="/static/js/force3d.js?v=1.10.493"></script>
@@ -6119,12 +6133,12 @@
     <script src="/static/js/chat.js?v=1.10.493"></script>
     <script src="/static/js/designs.js?v=1.10.493"></script>
     <script src="/static/js/texts.js?v=1.10.493"></script>
-    <script src="/static/js/agents.js?v=1.10.548"></script>
+    <script src="/static/js/agents.js?v=1.10.549"></script>
     <script src="/static/js/providers.js?v=1.10.493"></script>
     <script src="/static/js/tools.js?v=1.10.493"></script>
     <script src="/static/js/shamela_link.js?v=1.10.493"></script>
     <script src="/static/js/projects.js?v=1.10.493"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.548"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.549"></script>
     <script src="/static/js/archive.js?v=1.10.493"></script>
     <script src="/static/js/compare.js?v=1.10.493"></script>
     <script src="/static/js/local_models.js?v=1.10.493"></script>

@@ -2887,11 +2887,20 @@ function renderMsAuto() {
       <div>${(r.bioSources || []).length ? `مصادر ترجمة المؤلف: ${r.bioSources.map(msEsc).join('، ')}` : 'ترجمة المؤلف: لم تُعثر شواهد كافية في كتب التراجم'}</div>
       <div class="ms-hint">كل قرارات المدقق موثقة في مواضعها وقابلة لمراجعتك وتعديلك في أي وقت من بطاقات المشروع اليدوية بالأسفل.</div>
     </div>` : '';
+  const archivesHtml = (p.archives || []).length ? `
+    <div class="ms-auto-report">
+      <div class="ms-disputes-title">🗄 تحقيقات مؤرشفة سابقة (${(p.archives || []).length})</div>
+      ${(p.archives || []).map(ar => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:4px 0">
+        <span>أرشيف ${msEsc(new Date(ar.at).toLocaleString('ar-EG'))} — ${(ar.snapshot?.agent_suggestions || []).length} اقتراحًا، كلفته $${Number(ar.snapshot?.auto?.cost || 0).toFixed(4)}</span>
+        <span><button type="button" class="ms-btn" onclick="msAutoArchiveRestore('${msEsc(ar.id)}')">استعادة</button>
+        <button type="button" class="ms-btn ms-btn-danger" onclick="msAutoArchiveDelete('${msEsc(ar.id)}')">حذف</button></span>
+      </div>`).join('')}
+    </div>` : '';
   document.getElementById('msAutoBody').innerHTML = `
     <div class="ms-auto-status">${msEsc(statusText)}${a.cost ? ` · كلفة الجولات: $${Number(a.cost).toFixed(4)}` : ''}</div>
     ${rolesLine}${ckpt}
     <div class="ms-auto-steps">${stepsHtml}</div>
-    ${reportHtml}
+    ${reportHtml}${archivesHtml}
     <div class="ms-auto-log">${(a.log || []).slice(-60).map(l => `<div><span class="ms-auto-log-at">${msEsc(l.at)}</span> ${msEsc(l.msg)}</div>`).join('')}</div>`;
   const startBtn = document.getElementById('msAutoStartBtn');
   const stopBtn = document.getElementById('msAutoStopBtn');
@@ -3475,11 +3484,97 @@ function msAutoMaybeResume(src) {
 
 // تشغيل/استئناف التحقيق الآلي: من البداية إلى الإخراج بلا أي تدخل بشري.
 // كل خطوة وبند محفوظ فور إنجازه، فالانقطاع أو إعادة التشغيل تعود لنقطة الحفظ.
+// مسح التحقيق السابق كله مع الإبقاء على صور اللوحات المرفوعة وحدها
+function msWipeInvestigation(p) {
+  (p.copies || []).forEach(c => (c.folios || []).forEach(f => {
+    ['text', 'primary_text', 'checker_text', 'audited_text', 'ed_note'].forEach(k => { f[k] = ''; });
+    f.disputes = []; f.agreement = null; f.status = 'pending'; f.reader_notes = [];
+  }));
+  p.agent_suggestions = [];
+  p.collation = { entries: [] };
+  delete p.stage2;
+  p.intro = '';
+  delete p.author_profile;
+  delete p.identification;
+  delete p.indexes;
+  p.monitor_log = [];
+  delete p._biblioRows;
+  p.auto = { status: 'idle', steps: {}, log: [], report: null, cost: 0 };
+}
+
+// أرشفة التحقيق السابق لقطة كاملة قابلة للاستعادة قبل مسحه
+function msArchiveInvestigation(p) {
+  const snap = JSON.parse(JSON.stringify({
+    auto: p.auto || null, copies: p.copies || [], agent_suggestions: p.agent_suggestions || [],
+    collation: p.collation || null, stage2: p.stage2 || null, intro: p.intro || '',
+    author_profile: p.author_profile || null, identification: p.identification || null,
+    indexes: p.indexes || null, monitor_log: p.monitor_log || [],
+  }));
+  p.archives = p.archives || [];
+  p.archives.unshift({ id: msUid(), at: new Date().toISOString(), snapshot: snap });
+  if (p.archives.length > 5) p.archives = p.archives.slice(0, 5);
+}
+
+async function msAutoArchiveRestore(archiveId) {
+  const p = msCurrentProject();
+  if (!p) return;
+  const ar = (p.archives || []).find(x => x.id === archiveId);
+  if (!ar) return;
+  if (!confirm('استعادة هذا التحقيق المؤرشف؟ سيحل محل حالة المشروع الحالية كلها (نصوص اللوحات وهوامشها واقتراحاتها ومقدمتها).')) return;
+  const s = JSON.parse(JSON.stringify(ar.snapshot || {}));
+  p.copies = s.copies || p.copies;
+  p.agent_suggestions = s.agent_suggestions || [];
+  p.collation = s.collation || { entries: [] };
+  if (s.stage2) p.stage2 = s.stage2; else delete p.stage2;
+  p.intro = s.intro || '';
+  if (s.author_profile) p.author_profile = s.author_profile; else delete p.author_profile;
+  if (s.identification) p.identification = s.identification; else delete p.identification;
+  if (s.indexes) p.indexes = s.indexes; else delete p.indexes;
+  p.monitor_log = s.monitor_log || [];
+  p.auto = s.auto || { status: 'idle', steps: {}, log: [], report: null, cost: 0 };
+  await msSaveNow();
+  renderMsProjects(); renderMsAuto();
+  if (typeof renderMsFolios === 'function') renderMsFolios();
+  msToast('✔ استُعيد التحقيق المؤرشف');
+}
+
+async function msAutoArchiveDelete(archiveId) {
+  const p = msCurrentProject();
+  if (!p) return;
+  if (!confirm('حذف هذا الأرشيف نهائيًا؟')) return;
+  p.archives = (p.archives || []).filter(x => x.id !== archiveId);
+  await msSaveNow(); renderMsAuto();
+}
+
+// اختيار المحقق في نافذة تنبيه إعادة التشغيل: حذف أو أرشفة أو إلغاء
+async function msAutoRestartChoice(choice) {
+  const modal = document.getElementById('msAutoRestartModal');
+  if (modal) modal.hidden = true;
+  const p = msCurrentProject();
+  if (!p || choice === 'cancel') return;
+  if (choice === 'archive') {
+    msArchiveInvestigation(p);
+    msToast('🗄 أُرشف التحقيق السابق — يبدأ التحقيق الجديد من اللوحات وحدها');
+  } else {
+    msToast('🗑 حُذف التحقيق السابق — يبدأ التحقيق الجديد من اللوحات وحدها');
+  }
+  msWipeInvestigation(p);
+  await msSaveNow();
+  renderMsProjects(); renderMsAuto();
+  if (typeof renderMsFolios === 'function') renderMsFolios();
+  msAutoStart();
+}
+
 async function msAutoStart() {
   const p = msCurrentProject();
   if (!p || MS_AUTO_RUNNING) return;
   const base = msBaseCopy(p);
   if (!base || !(base.folios || []).length) { msToast('ارفع لوحات النسخة الأم أولًا واوصف بقية النسخ ولوحاتها، ثم اضغط «اعتمد التحقيق الآلي»'); return; }
+  // تحقيق سابق مكتمل: لا إعادة تشغيل فوقه قبل قرار المحقق بحذفه أو أرشفته
+  if (msAutoInit(p).status === 'done') {
+    const modal = document.getElementById('msAutoRestartModal');
+    if (modal) { modal.hidden = false; return; }
+  }
   msAutoArmWatchdog();
   MS_AUTO_RUNNING = true; MS_AUTO_STOP = false;
   const a = msAutoInit(p);
