@@ -3223,17 +3223,21 @@ async function msAutoRun(p) {
       }
     }
     }
-    // سجل تنفيذ الخطة: كل بند معتمد بنتيجته، فلا يختفي بند بلا شاهد بصمت
-    if (directedDone && s2.plan && (s2.plan.items || []).length) {
-      R.planLedger = s2.plan.items.map(it => {
-        const hit = (p.agent_suggestions || []).some(s => s.agent === 'flash'
-          && ((s.anchor || '').includes(String(it.anchor || '').slice(0, 18)) || String(it.anchor || '').includes(String(s.anchor || '').slice(0, 18))));
-        return { type: it.type, anchor: it.anchor, outcome: hit ? 'نُفّذ وأثمر شاهدًا موثقًا' : 'لم يثمر شاهدًا مسجلًا في هذه الجولة' };
-      });
-      R.planLedger.filter(l => l.outcome.startsWith('لم')).forEach(l =>
-        msAutoLog(p, `بند خطة بلا ثمرة مسجلة (${l.type}): «${String(l.anchor || '').slice(0, 50)}» — يُراجع سببه (لا شاهد في المظان أو تعذّر وصول الباحث).`));
-    }
     R.agentsAccepted = decideSuggestions(['takhrij', 'tarjama', 'lugha', 'dabt', 'tafsir', 'aqeedah'], directedDone ? 'المسار الموجَّه (خطة معتمدة + باحثون سريعون)' : 'متخصصو المرحلة الثانية');
+    // سجل تنفيذ الخطة: كل بند معتمد بنتيجته، فلا يختفي بند بلا شاهد بصمت.
+    // يأتي بعد القبول حتمًا وملفوفًا بحارس: فعطل السجل لا يعطّل القبول أبدًا
+    try {
+      const planItems = ((p.stage2 || {}).plan || {}).items || [];
+      if (directedDone && planItems.length) {
+        R.planLedger = planItems.map(it => {
+          const hit = (p.agent_suggestions || []).some(s => s.agent === 'flash'
+            && ((s.anchor || '').includes(String(it.anchor || '').slice(0, 18)) || String(it.anchor || '').includes(String(s.anchor || '').slice(0, 18))));
+          return { type: it.type, anchor: it.anchor, outcome: hit ? 'نُفّذ وأثمر شاهدًا موثقًا' : 'لم يثمر شاهدًا مسجلًا في هذه الجولة' };
+        });
+        R.planLedger.filter(l => l.outcome.startsWith('لم')).forEach(l =>
+          msAutoLog(p, `بند خطة بلا ثمرة مسجلة (${l.type}): «${String(l.anchor || '').slice(0, 50)}» — يُراجع سببه (لا شاهد في المظان أو تعذّر وصول الباحث).`));
+      }
+    } catch (e) { /* سجل الخطة توثيق إضافي لا يعطّل قبول الاقتراحات */ }
     renderMsAgents();
   });
 
@@ -3298,8 +3302,13 @@ async function msAutoRun(p) {
     let books = msCompareBooks(p).slice(0, 3);
     if (!books.length) {
       const bookEl = document.getElementById('msCompareBook');
-      const cand = String((bookEl && bookEl.value) || p.title || '').trim();
-      if (cand) books = [cand];
+      // مرشح المقارنة عنوان الكتاب نظيفًا من لواحق التسمية في المشروع
+      // («رياض الصالحين (تحقيق مجود)» لا تُحلّ في الشاملة)، ثم كتاب
+      // التعرّف على اللوحة ولو بقي ترجيحًا بلا تأكيد
+      const clean = s => String(s || '').replace(/\(.*?\)/g, '').replace(/^مشروع\s+/, '').trim();
+      const cand = clean((bookEl && bookEl.value) || p.title || '');
+      const identBook = clean(((p.identification || {}).consensus || {}).book || '');
+      books = [...new Set([cand, identBook].filter(b => b.length >= 3))];
     }
     if (!books.length) { msAutoLog(p, 'لا مرشح للمقارنة المرجعية — تُتخطى.'); return; }
     const ourText = (base.folios || []).map(f => f.text || '').join('\n');

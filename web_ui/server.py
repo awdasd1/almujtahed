@@ -7810,7 +7810,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.549"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.550"},
         },
     })
     if opened.get("error"):
@@ -16009,23 +16009,36 @@ def _ms_intro_sync(payload: dict, key: str) -> Dict[str, Any]:
         sigla=str(p.get("sigla") or "")[:300] or "—",
         works="، ".join(w for w in works if w)[:600] or "—")
     model = str(p.get("model") or "meta/muse-wonder")
-    body = {"model": model, "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3, "max_tokens": 7500}
-    http_req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Auto Intro"},
-        data=json.dumps(body).encode("utf-8"))
+
+    def _intro_call(mdl):
+        body = {"model": mdl, "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.3, "max_tokens": 9000}
+        http_req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Auto Intro"},
+            data=json.dumps(body).encode("utf-8"))
+        with urllib.request.urlopen(http_req, timeout=900) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        if isinstance(data, dict) and data.get("error"):
+            raise RuntimeError(str(data.get("error"))[:240])
+        msg = ((data.get("choices") or [{}])[0].get("message") or {})
+        return str(msg.get("content") or "").strip(), (data.get("usage") or {})
+
+    # نماذج التفكير قد تعيد نصًا فارغًا أو مقتضبًا؛ صمتُها ليس نهاية
+    # المقدمة: إعادة بالنموذج نفسه ثم إسناد احتياطي لنموذج الكتابة
     started = time.time()
-    with urllib.request.urlopen(http_req, timeout=900) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    if isinstance(data, dict) and data.get("error"):
-        raise RuntimeError(str(data.get("error"))[:240])
-    msg = ((data.get("choices") or [{}])[0].get("message") or {})
-    intro = str(msg.get("content") or "").strip()
+    intro, usage = _intro_call(model)
+    if len(intro) < 200:
+        intro2, usage2 = _intro_call(model)
+        if len(intro2) > len(intro):
+            intro, usage = intro2, usage2
+    if len(intro) < 200 and model != "meta/muse-wonder":
+        intro3, usage3 = _intro_call("meta/muse-wonder")
+        if len(intro3) > len(intro):
+            intro, usage, model = intro3, usage3, "meta/muse-wonder (احتياطي)"
     if len(intro) < 200:
         raise RuntimeError("جاءت المقدمة أقصر من المأمول")
-    usage = data.get("usage") or {}
     return {"intro": intro[:30000], "model": model,
             "bio_sources": bio["books"], "bio_snippets": len(bio["snippets"]),
             "seconds": round(time.time() - started, 1), "cost": usage.get("cost")}
