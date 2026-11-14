@@ -7810,7 +7810,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.551"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.552"},
         },
     })
     if opened.get("error"):
@@ -21122,6 +21122,17 @@ async def reject_share_invite(invite_id: str, request: Request):
     )
     return {"status": "ok"}
 
+def _standard_chats():
+    """المحادثات المشحونة مع التطبيق توزيعًا: تُزرع مرة واحدة لمن لا سجل له."""
+    seed_file = os.path.join(os.path.dirname(__file__), "default_chats.json")
+    try:
+        with open(seed_file, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, list) and data else []
+    except Exception:
+        return []
+
+
 @app.get("/api/chats")
 async def get_chats(request: Request):
     """سجل محادثات العضو الحالي فقط"""
@@ -21138,6 +21149,18 @@ async def get_chats(request: Request):
             sessions.append(json.loads(row["payload"]))
         except Exception:
             continue
+    # تثبيت جديد لا سجل له: تُزرع المحادثات المشحونة مرة واحدة بعلامة،
+    # فمن حذف محادثاته بيده لا تُبعث له من جديد
+    if not sessions and _load_owned_list(owner_id, "chats_seeded") is None:
+        seeds = _standard_chats()
+        if seeds:
+            seeded = json.loads(json.dumps(seeds, ensure_ascii=False))
+            try:
+                _replace_chat_sessions(seeded, owner_id)
+                _save_owned_list(owner_id, "chats_seeded", [1])
+                sessions = seeded
+            except Exception:
+                pass
     return {"sessions": sessions}
 
 @app.put("/api/chats")
@@ -21148,6 +21171,10 @@ async def put_chats(payload: dict, request: Request):
     if not isinstance(sessions, list):
         raise HTTPException(status_code=400, detail="قائمة المحادثات غير صالحة")
     kept = _replace_chat_sessions(sessions, owner_id)
+    try:
+        _save_owned_list(owner_id, "chats_seeded", [1])
+    except Exception:
+        pass
     return {"status": "ok", "count": kept}
 
 @app.get("/api/projects")

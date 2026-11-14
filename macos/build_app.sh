@@ -24,6 +24,7 @@ cp -p "$ROOT/web_ui/shamela_local_mcp.py" "$ROOT/web_ui/almujtahed_mcp_server.py
   "$STAGE/source/web_ui/"
 cp -p "$ROOT/web_ui/default_agent_groups.json" "$STAGE/source/web_ui/default_agent_groups.json"
 cp -p "$ROOT/web_ui/default_projects.json" "$STAGE/source/web_ui/default_projects.json"
+cp -p "$ROOT/web_ui/default_chats.json" "$STAGE/source/web_ui/default_chats.json"
 cp -p "$ROOT/web_ui/anchor_table.json" "$STAGE/source/web_ui/anchor_table.json"
 cp -p "$ROOT/web_ui/madhhab_authority.json" "$STAGE/source/web_ui/madhhab_authority.json"
 cp -p "$ROOT/web_ui/discipline_books.json" "$STAGE/source/web_ui/discipline_books.json"
