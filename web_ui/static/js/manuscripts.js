@@ -2026,6 +2026,16 @@ window.onMsGroupBooks = function (titles) {
   msToast(`كتب «${a.name}» المعتمدة الآن: ${a.books.length} كتابًا`);
 };
 
+// فتح بطاقة الوكيل كاملة في تبويب الوكلاء: موضع التحكم الوحيد
+async function msOpenAgentCard(agentId) {
+  switchMainTab('agents');
+  try {
+    if (typeof loadAgentGroups === 'function') await loadAgentGroups();
+    if (typeof openGroupAgents === 'function') openGroupAgents(MS_GROUP_ID);
+    if (typeof editAgent === 'function') editAgent(agentId);
+  } catch (e) { msToast('تعذر فتح بطاقة الوكيل — افتح تبويب الوكلاء يدويًا'); }
+}
+
 function renderMsGroup() {
   const box = document.getElementById('msGroupBody');
   if (!box) return;
@@ -2035,20 +2045,12 @@ function renderMsGroup() {
     return;
   }
   box.innerHTML = `
-    <div class="ms-hint" style="margin-bottom:8px">هذه المجموعة — <strong>«تحقيق المخطوطات»</strong> في قسم الوكلاء — هي <strong>المرجع المعتمد لمرحلتي التحقيق</strong>: مدير التحقيق ومجلس مستشارينه ومتخصصوه المختصرون بنماذجهم وكتبهم، يسري ضبطها على المرحلة الثانية آليًا وبشريًا. وكيل مقارنة المؤلف متغير: تُحلّ كتب صاحب كل مخطوط آليًا عند تشغيله. يمكنك إضافة كتب لأي وكيل في أي وقت فتسري على القادم.</div>
+    <div class="ms-hint" style="margin-bottom:8px">هذه المجموعة — <strong>«تحقيق المخطوطات»</strong> في قسم الوكلاء — هي <strong>المرجع المعتمد لمرحلتي التحقيق</strong>، وهي نفسها في الموضعين. هنا الاسم وزر البطاقة فقط؛ والتحكم الكامل بكل وكيل (نموذجه وكتبه ونتائجه وضبطه) من <strong>بطاقة الوكيل</strong> في تبويب الوكلاء حتى لا يتكرر الضبط في موضعين.</div>
     ${MS_GROUP.agents.map(a => `
       <div class="ms-group-agent">
         <div class="ms-group-agent-head">
           <strong>${msEsc(a.name)}</strong>
-          <select class="ms-group-model" onchange="msGroupSetModel('${msEsc(a.ms_key)}', this.value)">
-            ${MS_GROUP_MODELS.map(([v, l]) => `<option value="${v}"${v === a.model ? ' selected' : ''}>${l}</option>`).join('')}
-            ${MS_GROUP_MODELS.some(([v]) => v === a.model) ? '' : `<option value="${msEsc(a.model)}" selected>${msEsc(a.model)}</option>`}
-          </select>
-        </div>
-        <div class="ms-hint">${msEsc(a.desc || '')}</div>
-        <div class="ms-group-books">
-          ${(a.books || []).map((b, i) => `<span class="ms-book-chip">${msEsc(b)} <button type="button" class="ms-chip-x" title="إزالة" onclick="msGroupRemoveBook('${msEsc(a.ms_key)}', ${i})">✕</button></span>`).join('') || '<span class="ms-hint">لا كتب مثبتة — يعمل بنطاقه الافتراضي</span>'}
-          <button type="button" class="ms-btn" onclick="msGroupPickBooks('${msEsc(a.ms_key)}')">📚 إضافة كتب من الشاملة</button>
+          <button type="button" class="ms-btn ms-btn-primary" onclick="msOpenAgentCard('${msEsc(a.id || ('msag_' + a.ms_key))}')">📇 فتح بطاقة الوكيل</button>
         </div>
       </div>`).join('')}
     <div class="ms-form-row"><button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة ضبط المصنع للمجموعة</button></div>`;
