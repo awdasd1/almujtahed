@@ -345,10 +345,7 @@ sealed class InstallerForm : Form
             boardBox.Bounds = ClientRectangle;
             return;
         }
-        var dpi = DeviceDpi <= 0 ? 96 : DeviceDpi;
-        ClientSize = new Size(
-            Math.Max(1, (int)Math.Round(image.Width * 96.0 / dpi)),
-            Math.Max(1, (int)Math.Round(image.Height * 96.0 / dpi)));
+        ClientSize = new Size(Math.Max(1, image.Width), Math.Max(1, image.Height));
         boardBox.Bounds = ClientRectangle;
     }
 
@@ -711,7 +708,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.566");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.567");
         tray.Visible = false;
     }
 
