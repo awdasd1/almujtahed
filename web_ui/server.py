@@ -7810,7 +7810,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.550"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.551"},
         },
     })
     if opened.get("error"):
@@ -20627,10 +20627,29 @@ def _write_projects_snapshot(projects: list) -> None:
     with open(PROJECTS_FILE, "w", encoding="utf-8") as f:
         json.dump(projects, f, ensure_ascii=False, indent=2)
 
+def _standard_projects():
+    """المشاريع البحثية المشحونة مع التطبيق توزيعًا: تُزرع لمن لا مخزون له."""
+    seed_file = os.path.join(os.path.dirname(__file__), "default_projects.json")
+    try:
+        with open(seed_file, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, list) and data else []
+    except Exception:
+        return []
+
+
 def load_stored_projects(owner_id: str):
     data = _load_owned_list(owner_id, "projects")
     if isinstance(data, list):
         return data
+    seeds = _standard_projects()
+    if seeds:
+        seeded = json.loads(json.dumps(seeds, ensure_ascii=False))
+        try:
+            _save_owned_list(owner_id, "projects", seeded)
+        except Exception:
+            pass
+        return seeded
     if owner_id == ADMIN_OWNER_ID and os.path.exists(PROJECTS_FILE):
         try:
             with open(PROJECTS_FILE, "r", encoding="utf-8") as handle:
