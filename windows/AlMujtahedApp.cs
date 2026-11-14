@@ -269,21 +269,15 @@ sealed class InstallerForm : Form
         foreach (Control control in Controls)
             control.Visible = false;
         Controls.Add(boardBox);
-        var boardDelete = new Button
+        boardBox.MouseMove += (_, e) =>
         {
-            Text = "حذف التطبيق",
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(98, 59, 25),
-            ForeColor = Color.FromArgb(241, 230, 210),
-            Font = AppFonts.Make(16, true),
-            Cursor = Cursors.Hand,
-            Bounds = new Rectangle(634, 477, 218, 48),
-            RightToLeft = RightToLeft.Yes
+            boardBox.Cursor = DeleteHit(e.Location) ? Cursors.Hand : Cursors.Default;
         };
-        boardDelete.FlatAppearance.BorderSize = 0;
-        boardDelete.Click += (_, _) => DeleteApplication();
-        Controls.Add(boardDelete);
-        boardDelete.BringToFront();
+        boardBox.MouseClick += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left && DeleteHit(e.Location))
+                DeleteApplication();
+        };
         FormBorderStyle = FormBorderStyle.None;
         AllowTransparency = true;
         TransparencyKey = boardKey;
@@ -351,18 +345,23 @@ sealed class InstallerForm : Form
         return plus > 0 ? version[..plus] : version;
     }
 
-    float BoardScale()
-    {
-        var dpi = DeviceDpi <= 0 ? 96 : DeviceDpi;
-        return Math.Max(1f, dpi / 96f);
-    }
-
     void FitBoardSharp()
     {
-        var width = boardBase?.Width ?? boardBox.Image?.Width ?? 1024;
-        var height = boardBase?.Height ?? boardBox.Image?.Height ?? 602;
-        ClientSize = new Size(Math.Max(1, width), Math.Max(1, height));
+        var width = boardBase?.Width ?? 1024;
+        var height = boardBase?.Height ?? 602;
+        var dpi = DeviceDpi <= 0 ? 96 : DeviceDpi;
+        ClientSize = new Size(
+            Math.Max(1, (int)Math.Round(width * 96.0 / dpi)),
+            Math.Max(1, (int)Math.Round(height * 96.0 / dpi)));
         boardBox.Bounds = ClientRectangle;
+    }
+
+    bool DeleteHit(Point point)
+    {
+        if (boardBase == null || boardBox.Width < 2 || boardBox.Height < 2) return false;
+        var x = point.X * boardBase.Width / (double)boardBox.Width;
+        var y = point.Y * boardBase.Height / (double)boardBox.Height;
+        return x >= 634 && x <= 852 && y >= 477 && y <= 525;
     }
 
     void PaintBoard(double percent)
@@ -371,24 +370,18 @@ sealed class InstallerForm : Form
         var shown = (int)Math.Round(percent);
         if (shown == boardShown) return;
         boardShown = shown;
-        var scale = BoardScale();
-        var width = Math.Max(1, (int)Math.Round(boardBase.Width * scale));
-        var height = Math.Max(1, (int)Math.Round(boardBase.Height * scale));
-        var copy = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-        copy.SetResolution(DeviceDpi <= 0 ? 96 : DeviceDpi, DeviceDpi <= 0 ? 96 : DeviceDpi);
+        var copy = new Bitmap(boardBase.Width, boardBase.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        var dpi = DeviceDpi <= 0 ? 96 : DeviceDpi;
+        copy.SetResolution(dpi, dpi);
         using (var g = Graphics.FromImage(copy))
         {
-            g.SmoothingMode = SmoothingMode.HighQuality;
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-            g.DrawImage(boardBase, new Rectangle(0, 0, width, height));
-            var track = new Rectangle(
-                (int)Math.Round(104 * scale),
-                (int)Math.Round(376 * scale),
-                (int)Math.Round(775 * scale),
-                (int)Math.Round(23 * scale));
-            using (var path = BoardPill(track, Math.Max(1, (int)Math.Round(11 * scale))))
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.DrawImage(boardBase, 0, 0, boardBase.Width, boardBase.Height);
+            var track = new Rectangle(104, 376, 775, 23);
+            using (var path = BoardPill(track, 11))
             {
                 g.SetClip(path);
                 var fraction = Math.Max(0, Math.Min(1, percent / 100));
@@ -404,13 +397,20 @@ sealed class InstallerForm : Form
             using var textBrush = new SolidBrush(onFill
                 ? Color.FromArgb(255, 241, 230, 210)
                 : Color.FromArgb(255, 98, 59, 25));
-            using var font = new Font("Tahoma", 13 * scale, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var font = new Font("Tahoma", 13, FontStyle.Bold, GraphicsUnit.Pixel);
             using var format = new StringFormat
             {
                 Alignment = StringAlignment.Center,
                 LineAlignment = StringAlignment.Center
             };
             g.DrawString($"{shown}٪", font, textBrush, track, format);
+            var button = new Rectangle(634, 477, 218, 48);
+            using (var path = BoardPill(button, 16))
+            using (var brush = new SolidBrush(Color.FromArgb(255, 98, 59, 25)))
+                g.FillPath(brush, path);
+            using var label = new Font("Tahoma", 20, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var cream = new SolidBrush(Color.FromArgb(255, 241, 230, 210));
+            g.DrawString("حذف التطبيق", label, cream, button, format);
         }
         var previous = boardBox.Image;
         boardBox.Image = copy;
@@ -732,7 +732,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.569");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.570");
         tray.Visible = false;
     }
 

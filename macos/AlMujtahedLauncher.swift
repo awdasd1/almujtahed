@@ -555,7 +555,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.569")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.570")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -686,7 +686,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.569"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.570"
     }
 
     private func buildWindow() {
@@ -820,7 +820,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 height: CGFloat(rep?.pixelsHigh ?? 602)
             )
             let scale = max(NSScreen.main?.backingScaleFactor ?? 2, 1)
-            let point = pixels
+            let point = NSSize(width: pixels.width / scale, height: pixels.height / scale)
             image.size = point
             window.setContentSize(point)
             content.frame = NSRect(origin: .zero, size: point)
@@ -835,25 +835,22 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
                let source = CGImageSourceCreateWithData(data as CFData, nil) {
                 boardBase = CGImageSourceCreateImageAtIndex(source, 0, nil)
             }
+            let hit = NSButton(frame: NSRect(
+                x: 634 / scale,
+                y: (pixels.height - 525) / scale,
+                width: 218 / scale,
+                height: 48 / scale
+            ))
+            hit.title = ""
+            hit.isBordered = false
+            hit.isTransparent = true
+            hit.target = self
+            hit.action = #selector(deleteApplication)
+            content.addSubview(hit)
+            paintBoard(percent: 0)
         } else {
             content.addSubview(board)
         }
-        let deleteOnBoard = NSButton(title: "حذف التطبيق", target: self, action: #selector(deleteApplication))
-        deleteOnBoard.isBordered = false
-        deleteOnBoard.wantsLayer = true
-        deleteOnBoard.layer?.backgroundColor = NSColor(srgbRed: 98 / 255, green: 59 / 255, blue: 25 / 255, alpha: 1).cgColor
-        deleteOnBoard.layer?.cornerRadius = 16
-        deleteOnBoard.layer?.masksToBounds = true
-        let boardHeight = content.bounds.height
-        deleteOnBoard.frame = NSRect(x: 634, y: boardHeight - 525, width: 218, height: 48)
-        deleteOnBoard.attributedTitle = NSAttributedString(
-            string: "حذف التطبيق",
-            attributes: [
-                .font: almarai(18, bold: true),
-                .foregroundColor: NSColor(srgbRed: 241 / 255, green: 230 / 255, blue: 210 / 255, alpha: 1)
-            ]
-        )
-        content.addSubview(deleteOnBoard)
 
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -1123,16 +1120,14 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         stopListener(port: 8085, marker: "server.py")
     }
 
-    /// الشريط داخل اللوحة: من اليمين، على بكسلات الصورة (104,376) بعرض 775 وارتفاع 23.
-    /// تُرسم اللوحة على دقة الشاشة ثم تُعرض بحجم الصورة بالنقاط، فيقابل كل بكسل جهاز بكسل رسم.
+    /// الشريط وزر الحذف يُرسمان على بكسلات الصورة كما هي، والنافذة بنصفها على شاشة ريتينا حتى لا تُكبَّر فتبهت.
     private func paintBoard(percent: Double) {
         guard let base = boardBase, let boardView else { return }
         let shown = Int(percent.rounded())
         if shown == boardShown { return }
         boardShown = shown
-        let scale = max(boardBacking, 1)
-        let width = Int((CGFloat(base.width) * scale).rounded())
-        let height = Int((CGFloat(base.height) * scale).rounded())
+        let width = base.width
+        let height = base.height
         guard let ctx = CGContext(
             data: nil,
             width: width,
@@ -1142,12 +1137,12 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             space: base.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
         ) else { return }
-        ctx.interpolationQuality = .high
+        ctx.interpolationQuality = .none
         ctx.draw(base, in: CGRect(x: 0, y: 0, width: width, height: height))
-        let track = CGRect(x: 104 * scale, y: CGFloat(height) - 399 * scale, width: 775 * scale, height: 23 * scale)
+        let track = CGRect(x: 104, y: CGFloat(height) - 399, width: 775, height: 23)
         let fraction = max(0, min(1, percent / 100))
         ctx.saveGState()
-        ctx.addPath(CGPath(roundedRect: track, cornerWidth: 11 * scale, cornerHeight: 11 * scale, transform: nil))
+        ctx.addPath(CGPath(roundedRect: track, cornerWidth: 11, cornerHeight: 11, transform: nil))
         ctx.clip()
         let fillWidth = track.width * CGFloat(fraction)
         if fillWidth > 0 {
@@ -1159,20 +1154,35 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let ink = onFill
             ? NSColor(srgbRed: 241 / 255, green: 230 / 255, blue: 210 / 255, alpha: 1)
             : NSColor(srgbRed: 98 / 255, green: 59 / 255, blue: 25 / 255, alpha: 1)
-        let font = CTFontCreateWithName(NSFont.systemFont(ofSize: 13 * scale, weight: .semibold).fontName as CFString, 13 * scale, nil)
-        let line = CTLineCreateWithAttributedString(NSAttributedString(string: "\(shown)٪", attributes: [
+        drawCentered("\(shown)٪", in: track, context: ctx, color: ink, size: 13)
+        let button = CGRect(x: 634, y: CGFloat(height) - 525, width: 218, height: 48)
+        ctx.setFillColor(CGColor(srgbRed: 98 / 255, green: 59 / 255, blue: 25 / 255, alpha: 1))
+        ctx.addPath(CGPath(roundedRect: button, cornerWidth: 16, cornerHeight: 16, transform: nil))
+        ctx.fillPath()
+        drawCentered(
+            "حذف التطبيق",
+            in: button,
+            context: ctx,
+            color: NSColor(srgbRed: 241 / 255, green: 230 / 255, blue: 210 / 255, alpha: 1),
+            size: 20
+        )
+        guard let painted = ctx.makeImage() else { return }
+        boardView.image = NSImage(cgImage: painted, size: boardPoint)
+        boardView.layer?.contentsScale = boardBacking
+    }
+
+    private func drawCentered(_ text: String, in rect: CGRect, context ctx: CGContext, color: NSColor, size: CGFloat) {
+        let font = CTFontCreateWithName(almarai(size, bold: true).fontName as CFString, size, nil)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
             .font: font,
-            .foregroundColor: ink
+            .foregroundColor: color
         ]))
         var ascent: CGFloat = 0
         var descent: CGFloat = 0
         let textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
         ctx.textMatrix = .identity
-        ctx.textPosition = CGPoint(x: track.midX - textWidth / 2, y: track.midY - (ascent - descent) / 2)
+        ctx.textPosition = CGPoint(x: rect.midX - textWidth / 2, y: rect.midY - (ascent - descent) / 2)
         CTLineDraw(line, ctx)
-        guard let painted = ctx.makeImage() else { return }
-        boardView.image = NSImage(cgImage: painted, size: boardPoint)
-        boardView.layer?.contentsScale = scale
     }
 
     private func refreshProgress(resetSpeed: Bool) {
