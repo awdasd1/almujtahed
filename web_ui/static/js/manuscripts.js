@@ -27,10 +27,16 @@ const MS_MODEL_PRESETS = {
   hard: { primary: 'google/gemini-3.1-pro-preview', checker: 'anthropic/claude-sonnet-5.5', auditor: 'google/gemini-3.1-pro-preview' },
 };
 
-// نماذج القراءة موحّدة بقرار المحقق (لا اختيار في الواجهة)، فلا يسري اختيار قديم محفوظ في المتصفح
+// نماذج القراءة من بطاقات القارئ الأول والثاني والمعتمِد في مجموعة
+// «تحقيق المخطوطات» نفسها؛ والاحتياط عند غياب المجموعة هو الضبط المعتمد
 function msModelChoice() {
   try { localStorage.removeItem('almujtahed_ms_models_v2'); } catch (e) { /* لا شيء */ }
-  return { ...MS_MODEL_PRESETS.standard };
+  const std = MS_MODEL_PRESETS.standard;
+  return {
+    primary: msGroupModel('reader1', std.primary),
+    checker: msGroupModel('reader2', std.checker),
+    auditor: msGroupModel('approver', std.auditor),
+  };
 }
 
 function msFillModelSelects() {
@@ -38,7 +44,9 @@ function msFillModelSelects() {
   [['msPrimaryModel', choice.primary], ['msCheckerModel', choice.checker], ['msAuditorModel', choice.auditor]].forEach(([id, val]) => {
     const sel = document.getElementById(id);
     if (!sel) return;
-    sel.innerHTML = MS_MODEL_CHOICES.map(([v, label]) =>
+    const choices = MS_MODEL_CHOICES.some(([v]) => v === val)
+      ? MS_MODEL_CHOICES : [...MS_MODEL_CHOICES, [val, String(val).split('/').pop()]];
+    sel.innerHTML = choices.map(([v, label]) =>
       `<option value="${v}"${v === val ? ' selected' : ''}>${label}</option>`).join('');
   });
 }
@@ -47,10 +55,14 @@ function msSaveModelChoice() {
   const primary = document.getElementById('msPrimaryModel')?.value;
   const checker = document.getElementById('msCheckerModel')?.value;
   const auditor = document.getElementById('msAuditorModel')?.value;
-  if (primary && checker && auditor) {
-    localStorage.setItem('almujtahed_ms_models_v2', JSON.stringify({ primary, checker, auditor }));
-    msToast('حُفظ اختيار نماذج النسخ والتدقيق');
-  }
+  if (!(primary && checker && auditor)) return;
+  if (!MS_GROUP) { msToast('مجموعة تحقيق المخطوطات غير محمّلة بعد — أعد فتح التبويب'); return; }
+  [['reader1', primary], ['reader2', checker], ['approver', auditor]].forEach(([key, model]) => {
+    const a = msGroupAgent(key);
+    if (a) a.model = model;
+  });
+  msSaveGroup();
+  msToast('حُفظ اختيار نماذج النسخ والتدقيق في بطاقات القارئ الأول والثاني والمعتمِد بالمجموعة');
 }
 
 function msPresetModels(name) {
@@ -457,7 +469,7 @@ async function msTrialReadEnhanced() {
   try {
     const res = await fetch('/api/manuscripts/transcribe-one', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file_path: ctx.folio.enhanced_file_path, model: '~google/gemini-pro-latest', api_key: msApiKey() }),
+      body: JSON.stringify({ file_path: ctx.folio.enhanced_file_path, model: msGroupModel('reader1', '~google/gemini-pro-latest'), api_key: msApiKey() }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذرت تجربة القراءة');
@@ -1841,6 +1853,8 @@ const MS_GROUP_DEFAULT_AGENTS = [
   { key: 'leader', name: 'مدير التحقيق — المحقق القائد والمدقق', desc: 'مدير التحقيق (Gemini Hydrogen): يستلم النسخة الجاهزة، يستشير مجلس المستشارين، يعتمد خطة البحث ويحذف حشوها، يشغّل الباحثين، ويعتمد النص المحقق نهائيًا. ويحسم مواضع خلاف المرحلة الأولى ويقود النقاش والتصحيحات', model: 'google/gemini-4-hydrogen', books: [], stage: 2 },
   { key: 'assistant', name: 'مساعد مدير التحقيق', desc: 'المساعد التنفيذي لمدير التحقيق (Gemini Carbon): يشغّل جولات الباحثين والمسح والموازاة والرقابة المساعدة بأمر المدير وتحت مراجعته واعتماده', model: 'google/gemini-4-carbon', books: [], stage: 2 },
   { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ ويحسم من الصورة بنموذج المدير (Gemini Hydrogen)', model: 'google/gemini-4-hydrogen', books: [], stage: 1 },
+  { key: 'reader1', name: 'القارئ الأول — ناسخ اللوحات الأول', desc: 'يقرأ صور لوحات المخطوط قراءة أولى كاملة مستقلة: ينقل المتن كما هو بلا تصحيح ولا إكمال من عنده، وينبّه على مواضع الشك والسقط والإلحاق. نموذجه هنا هو المعتمد لقراءة اللوحات الأولى في المرحلة الأولى آليًا وبشريًا، فبدّله إن أردت قارئًا أقوى', model: '~google/gemini-pro-latest', books: [], stage: 1 },
+  { key: 'reader2', name: 'القارئ الثاني — ناسخ اللوحات المقابِل', desc: 'يقرأ صور لوحات المخطوط قراءة ثانية مستقلة تمامًا عن الأولى لتُقابَل القراءتان ويظهر اختلافهما موضعًا موضعًا فيحسمه المدقق والمحقق. نموذجه هنا هو المعتمد للقراءة الثانية في المرحلة الأولى آليًا وبشريًا', model: 'google/gemini-4-carbon', books: [], stage: 1 },
   { key: 'monitor', name: 'المراقب — مدقق الجودة الشامل', desc: 'المراقب (Muse Wonder): رقابة الجودة الشاملة على النص المحقق وهوامشه وملاحظات الاعتماد، يدوّن ملاحظاته ولا يحسم ولا يعدّل بنفسه', model: 'meta/muse-wonder', books: [], stage: 2 },
   { key: 'advisor_sonnet', name: 'عضو مجلس المستشارين — Sonnet', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: '~anthropic/claude-sonnet-latest', books: [], stage: 2, advisor: true },
   { key: 'advisor_argon', name: 'عضو مجلس المستشارين — Gemini Argon', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'google/gemini-4-argon', books: [], stage: 2, advisor: true },
@@ -1940,6 +1954,9 @@ function msApplyGroupModelDefaults() {
   set('msAgentModel', 'hadith');
   set('msAuthorModel', 'authorworks');
   set('msMonitorModel', 'monitor');
+  set('msPrimaryModel', 'reader1');
+  set('msCheckerModel', 'reader2');
+  set('msAuditorModel', 'approver');
 }
 
 function msGroupAgent(key) { return MS_GROUP ? (MS_GROUP.agents || []).find(a => a.ms_key === key) || null : null; }
