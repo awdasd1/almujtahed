@@ -1893,10 +1893,17 @@ async function msLoadGroup() {
       }
       if (['ayat', 'hadith', 'tarajim', 'lugha', 'tafsir', 'aqeedah', 'authorworks'].includes(a.ms_key)
           && a.model === '~openai/gpt-luna-latest') { a.model = 'google/gemini-4-carbon'; changed = true; }
-      // توزيع النماذج المعتمد بأمر المحقق يُفرض على المجموعة الحية
-      const rosterModel = MS_ROSTER[a.ms_key];
-      if (rosterModel && a.model !== rosterModel) { a.model = rosterModel; changed = true; }
     });
+    // توزيع النماذج المعتمد يُبذر مرة واحدة فقط (roster_v1)؛ بعدها ضبط
+    // المحقق بيده — من تبويب الوكلاء أو من هنا — هو المعتمد ولا يُمسّ
+    if (!MS_GROUP.roster_v1) {
+      (MS_GROUP.agents || []).forEach(a => {
+        const rosterModel = MS_ROSTER[a.ms_key];
+        if (rosterModel) a.model = rosterModel;
+      });
+      MS_GROUP.roster_v1 = true;
+      changed = true;
+    }
     MS_GROUP.agents = MS_GROUP.agents || [];
     MS_GROUP_DEFAULT_AGENTS.forEach(d => {
       if (!MS_GROUP.agents.some(a => a.ms_key === d.key)) {
