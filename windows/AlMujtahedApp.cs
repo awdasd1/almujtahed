@@ -336,16 +336,17 @@ sealed class InstallerForm : Form
         return plus > 0 ? version[..plus] : version;
     }
 
+    float BoardScale()
+    {
+        var dpi = DeviceDpi <= 0 ? 96 : DeviceDpi;
+        return Math.Max(1f, dpi / 96f);
+    }
+
     void FitBoardSharp()
     {
-        var image = boardBox.Image;
-        if (image == null)
-        {
-            ClientSize = new Size(1024, 602);
-            boardBox.Bounds = ClientRectangle;
-            return;
-        }
-        ClientSize = new Size(Math.Max(1, image.Width), Math.Max(1, image.Height));
+        var width = boardBase?.Width ?? boardBox.Image?.Width ?? 1024;
+        var height = boardBase?.Height ?? boardBox.Image?.Height ?? 602;
+        ClientSize = new Size(Math.Max(1, width), Math.Max(1, height));
         boardBox.Bounds = ClientRectangle;
     }
 
@@ -355,16 +356,24 @@ sealed class InstallerForm : Form
         var shown = (int)Math.Round(percent);
         if (shown == boardShown) return;
         boardShown = shown;
-        var copy = new Bitmap(boardBase.Width, boardBase.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        var scale = BoardScale();
+        var width = Math.Max(1, (int)Math.Round(boardBase.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(boardBase.Height * scale));
+        var copy = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        copy.SetResolution(DeviceDpi <= 0 ? 96 : DeviceDpi, DeviceDpi <= 0 ? 96 : DeviceDpi);
         using (var g = Graphics.FromImage(copy))
         {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.InterpolationMode = InterpolationMode.NearestNeighbor;
-            g.PixelOffsetMode = PixelOffsetMode.Half;
-            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            g.DrawImage(boardBase, 0, 0, boardBase.Width, boardBase.Height);
-            var track = new Rectangle(104, 376, 775, 23);
-            using (var path = BoardPill(track, 11))
+            g.SmoothingMode = SmoothingMode.HighQuality;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            g.DrawImage(boardBase, new Rectangle(0, 0, width, height));
+            var track = new Rectangle(
+                (int)Math.Round(104 * scale),
+                (int)Math.Round(376 * scale),
+                (int)Math.Round(775 * scale),
+                (int)Math.Round(23 * scale));
+            using (var path = BoardPill(track, Math.Max(1, (int)Math.Round(11 * scale))))
             {
                 g.SetClip(path);
                 var fraction = Math.Max(0, Math.Min(1, percent / 100));
@@ -380,7 +389,7 @@ sealed class InstallerForm : Form
             using var textBrush = new SolidBrush(onFill
                 ? Color.FromArgb(255, 241, 230, 210)
                 : Color.FromArgb(255, 98, 59, 25));
-            using var font = new Font("Tahoma", 13, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var font = new Font("Tahoma", 13 * scale, FontStyle.Bold, GraphicsUnit.Pixel);
             using var format = new StringFormat
             {
                 Alignment = StringAlignment.Center,
@@ -708,7 +717,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.567");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.568");
         tray.Visible = false;
     }
 

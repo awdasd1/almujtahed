@@ -555,7 +555,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.567")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.568")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -686,7 +686,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.567"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.568"
     }
 
     private func buildWindow() {
@@ -1108,28 +1108,30 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// الشريط داخل اللوحة: من اليمين، على بكسلات الصورة (104,376) بعرض 775 وارتفاع 23.
+    /// تُرسم اللوحة على دقة الشاشة ثم تُعرض بحجم الصورة بالنقاط، فيقابل كل بكسل جهاز بكسل رسم.
     private func paintBoard(percent: Double) {
         guard let base = boardBase, let boardView else { return }
         let shown = Int(percent.rounded())
         if shown == boardShown { return }
         boardShown = shown
-        let width = base.width
-        let height = base.height
+        let scale = max(boardBacking, 1)
+        let width = Int((CGFloat(base.width) * scale).rounded())
+        let height = Int((CGFloat(base.height) * scale).rounded())
         guard let ctx = CGContext(
             data: nil,
             width: width,
             height: height,
             bitsPerComponent: 8,
             bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            space: base.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
         ) else { return }
-        ctx.interpolationQuality = .none
+        ctx.interpolationQuality = .high
         ctx.draw(base, in: CGRect(x: 0, y: 0, width: width, height: height))
-        let track = CGRect(x: 104, y: CGFloat(height) - 399, width: 775, height: 23)
+        let track = CGRect(x: 104 * scale, y: CGFloat(height) - 399 * scale, width: 775 * scale, height: 23 * scale)
         let fraction = max(0, min(1, percent / 100))
         ctx.saveGState()
-        ctx.addPath(CGPath(roundedRect: track, cornerWidth: 11, cornerHeight: 11, transform: nil))
+        ctx.addPath(CGPath(roundedRect: track, cornerWidth: 11 * scale, cornerHeight: 11 * scale, transform: nil))
         ctx.clip()
         let fillWidth = track.width * CGFloat(fraction)
         if fillWidth > 0 {
@@ -1141,7 +1143,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let ink = onFill
             ? NSColor(srgbRed: 241 / 255, green: 230 / 255, blue: 210 / 255, alpha: 1)
             : NSColor(srgbRed: 98 / 255, green: 59 / 255, blue: 25 / 255, alpha: 1)
-        let font = CTFontCreateWithName(NSFont.systemFont(ofSize: 13, weight: .semibold).fontName as CFString, 13, nil)
+        let font = CTFontCreateWithName(NSFont.systemFont(ofSize: 13 * scale, weight: .semibold).fontName as CFString, 13 * scale, nil)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: "\(shown)٪", attributes: [
             .font: font,
             .foregroundColor: ink
@@ -1154,7 +1156,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         CTLineDraw(line, ctx)
         guard let painted = ctx.makeImage() else { return }
         boardView.image = NSImage(cgImage: painted, size: boardPoint)
-        boardView.layer?.contentsScale = boardBacking
+        boardView.layer?.contentsScale = scale
     }
 
     private func refreshProgress(resetSpeed: Bool) {
