@@ -555,7 +555,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.568")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.569")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -686,7 +686,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.568"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.569"
     }
 
     private func buildWindow() {
@@ -838,6 +838,22 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             content.addSubview(board)
         }
+        let deleteOnBoard = NSButton(title: "حذف التطبيق", target: self, action: #selector(deleteApplication))
+        deleteOnBoard.isBordered = false
+        deleteOnBoard.wantsLayer = true
+        deleteOnBoard.layer?.backgroundColor = NSColor(srgbRed: 98 / 255, green: 59 / 255, blue: 25 / 255, alpha: 1).cgColor
+        deleteOnBoard.layer?.cornerRadius = 16
+        deleteOnBoard.layer?.masksToBounds = true
+        let boardHeight = content.bounds.height
+        deleteOnBoard.frame = NSRect(x: 634, y: boardHeight - 525, width: 218, height: 48)
+        deleteOnBoard.attributedTitle = NSAttributedString(
+            string: "حذف التطبيق",
+            attributes: [
+                .font: almarai(18, bold: true),
+                .foregroundColor: NSColor(srgbRed: 241 / 255, green: 230 / 255, blue: 210 / 255, alpha: 1)
+            ]
+        )
+        content.addSubview(deleteOnBoard)
 
         window.center()
         window.makeKeyAndOrderFront(nil)

@@ -269,6 +269,21 @@ sealed class InstallerForm : Form
         foreach (Control control in Controls)
             control.Visible = false;
         Controls.Add(boardBox);
+        var boardDelete = new Button
+        {
+            Text = "حذف التطبيق",
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(98, 59, 25),
+            ForeColor = Color.FromArgb(241, 230, 210),
+            Font = AppFonts.Make(16, true),
+            Cursor = Cursors.Hand,
+            Bounds = new Rectangle(634, 477, 218, 48),
+            RightToLeft = RightToLeft.Yes
+        };
+        boardDelete.FlatAppearance.BorderSize = 0;
+        boardDelete.Click += (_, _) => DeleteApplication();
+        Controls.Add(boardDelete);
+        boardDelete.BringToFront();
         FormBorderStyle = FormBorderStyle.None;
         AllowTransparency = true;
         TransparencyKey = boardKey;
@@ -717,7 +732,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.568");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.569");
         tray.Visible = false;
     }
 
