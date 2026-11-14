@@ -254,11 +254,21 @@ sealed class InstallerForm : Form
         {
             Dock = DockStyle.Fill,
             SizeMode = PictureBoxSizeMode.Zoom,
+            Cursor = Cursors.Default,
             BackColor = boardKey
         };
         var boardPath = Path.Combine(AppContext.BaseDirectory, "open-board.png");
         if (File.Exists(boardPath))
             boardBox.Image = Image.FromFile(boardPath);
+        boardBox.MouseMove += (_, e) =>
+        {
+            boardBox.Cursor = DeleteHit(e.Location) ? Cursors.Hand : Cursors.Default;
+        };
+        boardBox.MouseClick += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left && DeleteHit(e.Location))
+                DeleteApplication();
+        };
         foreach (Control control in Controls)
             control.Visible = false;
         Controls.Add(boardBox);
@@ -329,11 +339,35 @@ sealed class InstallerForm : Form
         return plus > 0 ? version[..plus] : version;
     }
 
+    void FitBoardSharp()
+    {
+        var image = boardBox.Image;
+        if (image == null)
+        {
+            ClientSize = new Size(1024, 602);
+            boardBox.Bounds = ClientRectangle;
+            return;
+        }
+        var dpi = DeviceDpi <= 0 ? 96 : DeviceDpi;
+        ClientSize = new Size(
+            Math.Max(1, (int)Math.Round(image.Width * 96.0 / dpi)),
+            Math.Max(1, (int)Math.Round(image.Height * 96.0 / dpi)));
+        boardBox.Bounds = ClientRectangle;
+    }
+
+    bool DeleteHit(Point point)
+    {
+        var image = boardBox.Image;
+        if (image == null || boardBox.Width < 2 || boardBox.Height < 2) return false;
+        var x = point.X * image.Width / (double)boardBox.Width;
+        var y = point.Y * image.Height / (double)boardBox.Height;
+        return x >= 634 && x <= 852 && y >= 477 && y <= 525;
+    }
+
     void LayoutHeader()
     {
         if (!arranged) return;
-        ClientSize = new Size(1024, 602);
-        boardBox.Bounds = ClientRectangle;
+        FitBoardSharp();
     }
 
     void PlaceStat(int index, int x, int width)
@@ -632,7 +666,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.563");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.564");
         tray.Visible = false;
     }
 

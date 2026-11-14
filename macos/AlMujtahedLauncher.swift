@@ -550,7 +550,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.563")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.564")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -681,7 +681,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.563"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.564"
     }
 
     private func buildWindow() {
@@ -799,20 +799,47 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // اللوحة وحدها: بلا أزرار ولا نصوص. التنصيب يمضي خلفها حتى تفتح النافذة.
         for view in content.subviews { view.isHidden = true }
-        window.setContentSize(NSSize(width: 1024, height: 602))
         window.backgroundColor = .clear
-        content.frame = NSRect(x: 0, y: 0, width: 1024, height: 602)
         content.layer?.backgroundColor = NSColor.clear.cgColor
-        let board = NSImageView(frame: content.bounds)
-        board.imageScaling = .scaleProportionallyUpOrDown
+        let board = NSImageView()
+        board.imageScaling = .scaleProportionallyDown
         board.imageAlignment = .alignCenter
-        board.autoresizingMask = [.width, .height]
+        board.imageInterpolation = .none
         board.wantsLayer = true
         board.layer?.backgroundColor = NSColor.clear.cgColor
-        if let url = Bundle.main.url(forResource: "open-board", withExtension: "png") {
-            board.image = NSImage(contentsOf: url)
+        board.layer?.contentsGravity = .resize
+        if let url = Bundle.main.url(forResource: "open-board", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            let rep = image.representations.first
+            let pixels = NSSize(
+                width: CGFloat(rep?.pixelsWide ?? 1024),
+                height: CGFloat(rep?.pixelsHigh ?? 602)
+            )
+            let scale = max(NSScreen.main?.backingScaleFactor ?? 2, 1)
+            let point = NSSize(width: pixels.width / scale, height: pixels.height / scale)
+            image.size = point
+            window.setContentSize(point)
+            content.frame = NSRect(origin: .zero, size: point)
+            board.frame = content.bounds
+            board.image = image
+            board.layer?.contentsScale = scale
+            content.addSubview(board)
+            // زر «حذف التطبيق» مرسوم في اللوحة: (634,477)–(852,525) من أعلى اليسار بالبكسل.
+            let hit = NSButton(frame: NSRect(
+                x: 634 / scale,
+                y: (pixels.height - 525) / scale,
+                width: (852 - 634) / scale,
+                height: (525 - 477) / scale
+            ))
+            hit.title = ""
+            hit.isBordered = false
+            hit.isTransparent = true
+            hit.target = self
+            hit.action = #selector(deleteApplication)
+            content.addSubview(hit)
+        } else {
+            content.addSubview(board)
         }
-        content.addSubview(board)
 
         window.center()
         window.makeKeyAndOrderFront(nil)
