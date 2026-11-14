@@ -71,7 +71,7 @@ xattr -cr "$DEST" || true
 SIGN_ID="${ALMUJTAHED_SIGN_ID:-}"
 if [ -z "$SIGN_ID" ]; then
   SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
-    | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)".*/\1/')"
+    | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)".*/\1/' || true)"
 fi
 if [ -n "$SIGN_ID" ]; then
   echo "🔏 التوقيع بهوية: $SIGN_ID"
