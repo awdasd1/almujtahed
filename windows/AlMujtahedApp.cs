@@ -666,7 +666,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.564");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.565");
         tray.Visible = false;
     }
 
@@ -1518,10 +1518,17 @@ static class BrandIcon
 {
     public static Icon Create()
     {
+        try
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "app.ico");
+            if (File.Exists(path))
+                return new Icon(path, 64, 64);
+        }
+        catch { }
         using var bitmap = new Bitmap(32, 32);
         using (var g = Graphics.FromImage(bitmap))
         {
-            g.Clear(Palette.Bright);
+            g.Clear(Color.Transparent);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             using var pen = new Pen(Color.White, 2);
             g.DrawRectangle(pen, 7, 6, 18, 20);

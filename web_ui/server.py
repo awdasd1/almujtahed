@@ -935,7 +935,7 @@ async def import_print_template(file: UploadFile = File(...)):
     }
 
 # الحالة العامة للنظام والنموذج
-# أُزيل مخزن Qdrant ونموذج التضمين نهائيًا من التطبيق (1.10.564):
+# أُزيل مخزن Qdrant ونموذج التضمين نهائيًا من التطبيق (1.10.565):
 # البحث اللفظي المضبوط (Lucene FTS) هو المحرك الوحيد، ولا قناة دلالية ولا متجهات.
 
 app_state = {
@@ -7631,7 +7631,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.564"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.565"},
         },
     })
     if opened.get("error"):
@@ -8394,7 +8394,7 @@ async def get_system_status():
         except Exception as e:
             q_connected = False
 
-    embedder_type = "none"  # لا نموذج تضمين في التطبيق (1.10.564)
+    embedder_type = "none"  # لا نموذج تضمين في التطبيق (1.10.565)
 
     free_gb = 0.0
     try:
@@ -9836,7 +9836,7 @@ def _hybrid_sparse_vector(text: str):
     """نفس متجه BM25 المتناثر المستخدم زمن بناء المخزن (تطبيع + crc32 + ‏1+log(tf) + دمج الاصطدامات)."""
     import math
     import zlib
-    from types import SimpleNamespace as SparseVector  # أُزيل Qdrant (1.10.564)؛ المسار الدلالي ميت
+    from types import SimpleNamespace as SparseVector  # أُزيل Qdrant (1.10.565)؛ المسار الدلالي ميت
     tf: Dict[str, float] = {}
     for tok in _HYBRID_WORD_RE.findall(_hybrid_norm(text)):
         if len(tok) < 2:
@@ -16946,7 +16946,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     _sem_label = {"active": "مفعّلة وباحثة في مخزن المتجهات", "unavailable": "مفعّلة بقرار الباحث لكن مخزن المتجهات أو نموذج التضمين غير متوفر — جرى البحث لفظيًا", "disabled": "معطّلة بقرار الباحث — بحث لفظي فقط"}[_sem_state]
     _sem_state = "off"
     _sem_label = "بحث لفظي فقط — لا قناة دلالية في التطبيق"
-    _sem_pass = False  # لا قناة دلالية في التطبيق (أُزيل Qdrant والتضمين في 1.10.564)
+    _sem_pass = False  # لا قناة دلالية في التطبيق (أُزيل Qdrant والتضمين في 1.10.565)
     print(f"🧠 [Semantic Channel] {_sem_state} ({_sem_label})", flush=True)
     if (
         search_query
