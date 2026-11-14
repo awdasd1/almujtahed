@@ -249,11 +249,12 @@ sealed class InstallerForm : Form
         Controls.Add(quitButton);
         Controls.Add(deleteButton);
         Controls.Add(reinstallButton);
+        var boardKey = Color.FromArgb(255, 1, 0, 1);
         boardBox = new PictureBox
         {
             Dock = DockStyle.Fill,
             SizeMode = PictureBoxSizeMode.Zoom,
-            BackColor = Color.Black
+            BackColor = boardKey
         };
         var boardPath = Path.Combine(AppContext.BaseDirectory, "open-board.png");
         if (File.Exists(boardPath))
@@ -261,7 +262,10 @@ sealed class InstallerForm : Form
         foreach (Control control in Controls)
             control.Visible = false;
         Controls.Add(boardBox);
-        BackColor = Color.Black;
+        FormBorderStyle = FormBorderStyle.None;
+        AllowTransparency = true;
+        TransparencyKey = boardKey;
+        BackColor = boardKey;
         ClientSize = new Size(1024, 602);
         arranged = true;
         LayoutHeader();
@@ -628,7 +632,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.562");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.563");
         tray.Visible = false;
     }
 
