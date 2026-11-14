@@ -545,12 +545,17 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var lastSampleAt = Date()
     private var lastSampleBytes: Int64 = 0
     private var speedBps: Double = 0
+    private var boardView: NSImageView?
+    private var boardBase: CGImage?
+    private var boardPoint = NSSize.zero
+    private var boardBacking: CGFloat = 2
+    private var boardShown = -1
     private var etaSeconds: TimeInterval = -1
     private var etaMarkedAt = Date()
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.571")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.572")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -681,7 +686,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.571"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.572"
     }
 
     private func buildWindow() {
@@ -823,6 +828,14 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             board.image = image
             board.layer?.contentsScale = scale
             content.addSubview(board)
+            boardView = board
+            boardPoint = point
+            boardBacking = scale
+            if let data = try? Data(contentsOf: url),
+               let source = CGImageSourceCreateWithData(data as CFData, nil) {
+                boardBase = CGImageSourceCreateImageAtIndex(source, 0, nil)
+            }
+            paintBoard(percent: 0)
         } else {
             content.addSubview(board)
         }
@@ -1095,6 +1108,61 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         stopListener(port: 8085, marker: "server.py")
     }
 
+    /// شريط بني تحت العبارة، على بكسلات الصورة (120,380) بعرض 784 وارتفاع 22، ويمتلئ من اليمين.
+    private func paintBoard(percent: Double) {
+        guard let base = boardBase, let boardView else { return }
+        let shown = Int(percent.rounded())
+        if shown == boardShown { return }
+        boardShown = shown
+        let width = base.width
+        let height = base.height
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: base.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else { return }
+        ctx.interpolationQuality = .none
+        ctx.draw(base, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let brown = CGColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
+        let track = CGRect(x: 120, y: CGFloat(height) - 402, width: 784, height: 22)
+        ctx.setStrokeColor(brown)
+        ctx.setLineWidth(2)
+        ctx.addPath(CGPath(roundedRect: track, cornerWidth: 11, cornerHeight: 11, transform: nil))
+        ctx.strokePath()
+        let fraction = max(0, min(1, percent / 100))
+        let inner = track.insetBy(dx: 3, dy: 3)
+        ctx.saveGState()
+        ctx.addPath(CGPath(roundedRect: inner, cornerWidth: 8, cornerHeight: 8, transform: nil))
+        ctx.clip()
+        let fillWidth = inner.width * CGFloat(fraction)
+        if fillWidth > 0 {
+            ctx.setFillColor(brown)
+            ctx.fill(CGRect(x: inner.maxX - fillWidth, y: inner.minY, width: fillWidth, height: inner.height))
+        }
+        ctx.restoreGState()
+        let ink = fraction >= 0.5
+            ? NSColor(srgbRed: 241 / 255, green: 230 / 255, blue: 210 / 255, alpha: 1)
+            : NSColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
+        let font = CTFontCreateWithName(almarai(13, bold: true).fontName as CFString, 13, nil)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: "\(shown)٪", attributes: [
+            .font: font,
+            .foregroundColor: ink
+        ]))
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        let textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+        ctx.textMatrix = .identity
+        ctx.textPosition = CGPoint(x: track.midX - textWidth / 2, y: track.midY - (ascent - descent) / 2)
+        CTLineDraw(line, ctx)
+        guard let painted = ctx.makeImage() else { return }
+        boardView.image = NSImage(cgImage: painted, size: boardPoint)
+        boardView.layer?.contentsScale = boardBacking
+    }
+
     private func refreshProgress(resetSpeed: Bool) {
         if ready { return }
         var message = currentStatus()
@@ -1124,6 +1192,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             : percent
         progressBar.fraction = CGFloat(shown / 100)
         percentValue.stringValue = "\(Int(shown.rounded()))%"
+        paintBoard(percent: shown)
         if installing {
             speedCaption?.stringValue = "نسبة التركيب"
             loadedCaption?.stringValue = ""
@@ -1203,6 +1272,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         readyAt = Date()
         progressBar.fraction = 1
         percentValue.stringValue = "100%"
+        paintBoard(percent: 100)
         speedValue.stringValue = speedText()
         let transfer = transferState()
         if transfer.received > 0 {

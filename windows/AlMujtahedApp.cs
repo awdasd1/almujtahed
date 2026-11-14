@@ -169,6 +169,7 @@ sealed class InstallerForm : Form
     readonly SoftButton reinstallButton;
     readonly PictureBox boardBox;
     Bitmap? boardBase;
+    int boardShown = -1;
     readonly Panel card;
     readonly BookIcon book;
     readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(2) };
@@ -344,6 +345,67 @@ sealed class InstallerForm : Form
             Math.Max(1, (int)Math.Round(width * 96.0 / dpi)),
             Math.Max(1, (int)Math.Round(height * 96.0 / dpi)));
         boardBox.Bounds = ClientRectangle;
+    }
+
+    void PaintBoard(double percent)
+    {
+        if (boardBase == null) return;
+        var shown = (int)Math.Round(percent);
+        if (shown == boardShown) return;
+        boardShown = shown;
+        var copy = new Bitmap(boardBase.Width, boardBase.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        var dpi = DeviceDpi <= 0 ? 96 : DeviceDpi;
+        copy.SetResolution(dpi, dpi);
+        using (var g = Graphics.FromImage(copy))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.DrawImage(boardBase, 0, 0, boardBase.Width, boardBase.Height);
+            var track = new Rectangle(120, 380, 784, 22);
+            using var brown = new Pen(Color.FromArgb(255, 91, 51, 16), 2);
+            using (var outline = BoardPill(track, 11))
+                g.DrawPath(brown, outline);
+            var fraction = Math.Max(0, Math.Min(1, percent / 100));
+            var inner = new Rectangle(track.X + 3, track.Y + 3, track.Width - 6, track.Height - 6);
+            using (var clip = BoardPill(inner, 8))
+                g.SetClip(clip);
+            var fillWidth = (float)(inner.Width * fraction);
+            if (fillWidth > 0)
+            {
+                using var brush = new SolidBrush(Color.FromArgb(255, 91, 51, 16));
+                g.FillRectangle(brush, inner.Right - fillWidth, inner.Y, fillWidth, inner.Height);
+            }
+            g.ResetClip();
+            var onFill = fraction >= 0.5;
+            using var textBrush = new SolidBrush(onFill
+                ? Color.FromArgb(255, 241, 230, 210)
+                : Color.FromArgb(255, 91, 51, 16));
+            using var font = new Font("Tahoma", 13, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var format = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            };
+            g.DrawString($"{shown}٪", font, textBrush, track, format);
+        }
+        var previous = boardBox.Image;
+        boardBox.Image = copy;
+        if (previous != null && !ReferenceEquals(previous, boardBase))
+            previous.Dispose();
+    }
+
+    static GraphicsPath BoardPill(Rectangle track, int radius)
+    {
+        var path = new GraphicsPath();
+        var diameter = Math.Max(2, radius * 2);
+        path.AddArc(track.X, track.Y, diameter, diameter, 180, 90);
+        path.AddArc(track.Right - diameter, track.Y, diameter, diameter, 270, 90);
+        path.AddArc(track.Right - diameter, track.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(track.X, track.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
     }
 
     void LayoutHeader()
@@ -648,7 +710,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.571");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.572");
         tray.Visible = false;
     }
 
@@ -789,6 +851,7 @@ sealed class InstallerForm : Form
             percent = Math.Min(100, Math.Max(transfer.Received, 0) * 100.0 / transfer.Expected);
         progressBar.Fraction = (float)(percent / 100);
         percentValue.Text = $"{(int)Math.Round(percent)}%";
+        PaintBoard(percent);
         var captions = card.Controls.OfType<Label>().Where(label => label.Tag as string == "caption").ToArray();
         if (installing)
         {
@@ -870,6 +933,7 @@ sealed class InstallerForm : Form
         ready = true;
         progressBar.Fraction = 1;
         percentValue.Text = "100%";
+        PaintBoard(100);
         speedValue.Text = SpeedText();
         var transfer = TransferState();
         if (transfer.Received > 0) loadedValue.Text = BytesText(transfer.Received);
