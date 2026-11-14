@@ -7810,7 +7810,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.547"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.548"},
         },
     })
     if opened.get("error"):
@@ -15878,7 +15878,9 @@ def _ms_book_importance_evidence(title: str, author: str):
     for bid, bt in kz:
         try:
             hit = _ms_scan_book_phrase(bid, clean)
-            if hit:
+            # المطابقة الضبابية قد تلتقط «الرياض الأنيقة» ونحوها؛ لا شاهد
+            # كشفٍ إلا وعنوان الكتاب بعينه في نافذته حرفيًا بعد التطبيع
+            if hit and _ms_norm_simple(clean) in _ms_norm_simple(str(hit.get("snippet") or "")):
                 lines.append(f"[{bt} ج{hit.get('part') or '—'} ص{hit.get('page') or '—'}] {str(hit.get('snippet') or '')[:700]}")
         except Exception:
             pass
