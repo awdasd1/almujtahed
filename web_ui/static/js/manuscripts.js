@@ -1852,9 +1852,9 @@ const MS_ROSTER = {
 const MS_GROUP_DEFAULT_AGENTS = [
   { key: 'leader', name: 'مدير التحقيق — المحقق القائد والمدقق', desc: 'مدير التحقيق (Gemini Hydrogen): يستلم النسخة الجاهزة، يستشير مجلس المستشارين، يعتمد خطة البحث ويحذف حشوها، يشغّل الباحثين، ويعتمد النص المحقق نهائيًا. ويحسم مواضع خلاف المرحلة الأولى ويقود النقاش والتصحيحات', model: 'google/gemini-4-hydrogen', books: [], stage: 2 },
   { key: 'assistant', name: 'مساعد مدير التحقيق', desc: 'المساعد التنفيذي لمدير التحقيق (Gemini Carbon): يشغّل جولات الباحثين والمسح والموازاة والرقابة المساعدة بأمر المدير وتحت مراجعته واعتماده', model: 'google/gemini-4-carbon', books: [], stage: 2 },
-  { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ ويحسم من الصورة بنموذج المدير (Gemini Hydrogen)', model: 'google/gemini-4-hydrogen', books: [], stage: 1 },
   { key: 'reader1', name: 'القارئ الأول — ناسخ اللوحات الأول', desc: 'يقرأ صور لوحات المخطوط قراءة أولى كاملة مستقلة: ينقل المتن كما هو بلا تصحيح ولا إكمال من عنده، وينبّه على مواضع الشك والسقط والإلحاق. نموذجه هنا هو المعتمد لقراءة اللوحات الأولى في المرحلة الأولى آليًا وبشريًا، فبدّله إن أردت قارئًا أقوى', model: '~google/gemini-pro-latest', books: [], stage: 1 },
   { key: 'reader2', name: 'القارئ الثاني — ناسخ اللوحات المقابِل', desc: 'يقرأ صور لوحات المخطوط قراءة ثانية مستقلة تمامًا عن الأولى لتُقابَل القراءتان ويظهر اختلافهما موضعًا موضعًا فيحسمه المدقق والمحقق. نموذجه هنا هو المعتمد للقراءة الثانية في المرحلة الأولى آليًا وبشريًا', model: 'google/gemini-4-carbon', books: [], stage: 1 },
+  { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ ويحسم من الصورة بنموذج المدير (Gemini Hydrogen)', model: 'google/gemini-4-hydrogen', books: [], stage: 1 },
   { key: 'monitor', name: 'المراقب — مدقق الجودة الشامل', desc: 'المراقب (Muse Wonder): رقابة الجودة الشاملة على النص المحقق وهوامشه وملاحظات الاعتماد، يدوّن ملاحظاته ولا يحسم ولا يعدّل بنفسه', model: 'meta/muse-wonder', books: [], stage: 2 },
   { key: 'advisor_sonnet', name: 'عضو مجلس المستشارين — Sonnet', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: '~anthropic/claude-sonnet-latest', books: [], stage: 2, advisor: true },
   { key: 'advisor_argon', name: 'عضو مجلس المستشارين — Gemini Argon', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: 'google/gemini-4-argon', books: [], stage: 2, advisor: true },
@@ -1936,6 +1936,10 @@ async function msLoadGroup() {
       titles.forEach(t => { if (!a.books.includes(t)) { a.books.push(t); changed = true; } });
       a.booksScope = [...a.books];
     });
+    // ترتيب العرض المعتمد: القارئ الأول والثاني قبل المعتمِد، وسائر الوكلاء بترتيب تعريفهم
+    const orderOf = k => { const i = MS_GROUP_DEFAULT_AGENTS.findIndex(d => d.key === k); return i < 0 ? 999 : i; };
+    const sortedAgents = [...MS_GROUP.agents].sort((x, y) => orderOf(x.ms_key) - orderOf(y.ms_key));
+    if (sortedAgents.some((a, i) => a !== MS_GROUP.agents[i])) { MS_GROUP.agents = sortedAgents; changed = true; }
     if (changed) { msSaveGroup(); msToast('حُدّثت «مجموعة تحقيق المخطوطات» ببنية المرحلتين: مجلس مستشارين ووكيلا تفسير وعقيدة وكتب التخريج المختصر — ضبطك القائم محفوظ'); }
   }
   renderMsGroup();
@@ -1983,7 +1987,7 @@ function msBuildGroup() {
 
 async function msSeedGroup(force) {
   if (MS_GROUP && !force) { renderMsGroup(); return; }
-  if (force && !confirm('إعادة ضبط مجموعة تحقيق المخطوطات إلى ضبط المصنع؟ ستفقد تعديلات النماذج والكتب التي ضبطتها.')) return;
+  if (force && !confirm('إعادة ضبط مجموعة تحقيق المخطوطات إلى الضبط الافتراضي؟ ستفقد تعديلات النماذج والكتب التي ضبطتها.')) return;
   const g = msBuildGroup();
   try {
     const res = await fetch('/api/agent-groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(g) });
@@ -2128,7 +2132,7 @@ function renderMsGroup() {
           </span>
         </div>
       </div>`).join('')}
-    <div class="ms-form-row"><button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة ضبط المصنع للمجموعة</button></div>`;
+    <div class="ms-form-row"><button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة الضبط الافتراضي للمجموعة</button></div>`;
 }
 
 // ---------- المرحلة الثانية: تحقيق النص (مدير تحقيق + مجلس + ذهبي + متخصصون) ----------
