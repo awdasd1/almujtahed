@@ -168,6 +168,8 @@ sealed class InstallerForm : Form
     readonly SoftButton openButton;
     readonly SoftButton reinstallButton;
     readonly PictureBox boardBox;
+    Bitmap? boardBase;
+    int boardShown = -1;
     readonly Panel card;
     readonly BookIcon book;
     readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(2) };
@@ -259,16 +261,11 @@ sealed class InstallerForm : Form
         };
         var boardPath = Path.Combine(AppContext.BaseDirectory, "open-board.png");
         if (File.Exists(boardPath))
-            boardBox.Image = Image.FromFile(boardPath);
-        boardBox.MouseMove += (_, e) =>
         {
-            boardBox.Cursor = DeleteHit(e.Location) ? Cursors.Hand : Cursors.Default;
-        };
-        boardBox.MouseClick += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Left && DeleteHit(e.Location))
-                DeleteApplication();
-        };
+            using var file = Image.FromFile(boardPath);
+            boardBase = new Bitmap(file);
+            boardBox.Image = new Bitmap(boardBase);
+        }
         foreach (Control control in Controls)
             control.Visible = false;
         Controls.Add(boardBox);
@@ -301,7 +298,7 @@ sealed class InstallerForm : Form
             LayoutHeader();
             BeginSetup();
             RefreshProgress(true);
-            displayTimer = new System.Windows.Forms.Timer { Interval = 10000 };
+            displayTimer = new System.Windows.Forms.Timer { Interval = 400 };
             displayTimer.Tick += (_, _) => RefreshProgress(false);
             displayTimer.Start();
             probeTimer = new System.Windows.Forms.Timer { Interval = 2000 };
@@ -355,13 +352,61 @@ sealed class InstallerForm : Form
         boardBox.Bounds = ClientRectangle;
     }
 
-    bool DeleteHit(Point point)
+    void PaintBoard(double percent)
     {
-        var image = boardBox.Image;
-        if (image == null || boardBox.Width < 2 || boardBox.Height < 2) return false;
-        var x = point.X * image.Width / (double)boardBox.Width;
-        var y = point.Y * image.Height / (double)boardBox.Height;
-        return x >= 634 && x <= 852 && y >= 477 && y <= 525;
+        if (boardBase == null) return;
+        var shown = (int)Math.Round(percent);
+        if (shown == boardShown) return;
+        boardShown = shown;
+        var copy = new Bitmap(boardBase.Width, boardBase.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(copy))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.DrawImage(boardBase, 0, 0, boardBase.Width, boardBase.Height);
+            var track = new Rectangle(104, 376, 775, 23);
+            using (var path = BoardPill(track, 11))
+            {
+                g.SetClip(path);
+                var fraction = Math.Max(0, Math.Min(1, percent / 100));
+                var fillWidth = (float)(track.Width * fraction);
+                if (fillWidth > 0)
+                {
+                    using var brush = new SolidBrush(Color.FromArgb(255, 98, 59, 25));
+                    g.FillRectangle(brush, track.Right - fillWidth, track.Y, fillWidth, track.Height);
+                }
+            }
+            g.ResetClip();
+            var onFill = percent >= 50;
+            using var textBrush = new SolidBrush(onFill
+                ? Color.FromArgb(255, 241, 230, 210)
+                : Color.FromArgb(255, 98, 59, 25));
+            using var font = new Font("Tahoma", 13, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var format = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            };
+            g.DrawString($"{shown}٪", font, textBrush, track, format);
+        }
+        var previous = boardBox.Image;
+        boardBox.Image = copy;
+        if (previous != null && !ReferenceEquals(previous, boardBase))
+            previous.Dispose();
+    }
+
+    static GraphicsPath BoardPill(Rectangle track, int radius)
+    {
+        var path = new GraphicsPath();
+        var diameter = radius * 2;
+        path.AddArc(track.X, track.Y, diameter, diameter, 180, 90);
+        path.AddArc(track.Right - diameter, track.Y, diameter, diameter, 270, 90);
+        path.AddArc(track.Right - diameter, track.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(track.X, track.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
     }
 
     void LayoutHeader()
@@ -666,7 +711,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.565");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.566");
         tray.Visible = false;
     }
 
@@ -807,6 +852,7 @@ sealed class InstallerForm : Form
             percent = Math.Min(100, Math.Max(transfer.Received, 0) * 100.0 / transfer.Expected);
         progressBar.Fraction = (float)(percent / 100);
         percentValue.Text = $"{(int)Math.Round(percent)}%";
+        PaintBoard(percent);
         var captions = card.Controls.OfType<Label>().Where(label => label.Tag as string == "caption").ToArray();
         if (installing)
         {
@@ -888,6 +934,7 @@ sealed class InstallerForm : Form
         ready = true;
         progressBar.Fraction = 1;
         percentValue.Text = "100%";
+        PaintBoard(100);
         speedValue.Text = SpeedText();
         var transfer = TransferState();
         if (transfer.Received > 0) loadedValue.Text = BytesText(transfer.Received);
