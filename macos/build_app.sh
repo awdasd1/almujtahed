@@ -61,6 +61,7 @@ cp "$ROOT/macos/mcp_daemon/com.almujtahed.mcp.plist.template" "$ROOT/macos/mcp_d
 chmod +x "$DEST/Contents/Resources/mcp_daemon/install_mcp_daemon.sh" "$DEST/Contents/Resources/mcp_daemon/uninstall_mcp_daemon.sh"
 cp "$ROOT/macos/Info.plist" "$DEST/Contents/Info.plist"
 cp "$ROOT/macos/AppIcon.icns" "$DEST/Contents/Resources/AppIcon.icns"
+cp "$ROOT/macos/open-board.png" "$DEST/Contents/Resources/open-board.png"
 cp "$ROOT/web_ui/static/fonts/Almarai-Regular.ttf" "$ROOT/web_ui/static/fonts/Almarai-Bold.ttf" "$DEST/Contents/Resources/fonts/"
 chmod +x "$DEST/Contents/MacOS/AlMujtahed" "$DEST/Contents/Resources/launch.sh"
 rsync -a "$STAGE/source/" "$DEST/Contents/Resources/source/"

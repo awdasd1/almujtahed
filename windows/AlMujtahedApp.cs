@@ -167,6 +167,7 @@ sealed class InstallerForm : Form
     readonly WarmBar progressBar;
     readonly SoftButton openButton;
     readonly SoftButton reinstallButton;
+    readonly PictureBox boardBox;
     readonly Panel card;
     readonly BookIcon book;
     readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(2) };
@@ -248,6 +249,20 @@ sealed class InstallerForm : Form
         Controls.Add(quitButton);
         Controls.Add(deleteButton);
         Controls.Add(reinstallButton);
+        boardBox = new PictureBox
+        {
+            Dock = DockStyle.Fill,
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Black
+        };
+        var boardPath = Path.Combine(AppContext.BaseDirectory, "open-board.png");
+        if (File.Exists(boardPath))
+            boardBox.Image = Image.FromFile(boardPath);
+        foreach (Control control in Controls)
+            control.Visible = false;
+        Controls.Add(boardBox);
+        BackColor = Color.Black;
+        ClientSize = new Size(1024, 602);
         arranged = true;
         LayoutHeader();
 
@@ -312,44 +327,9 @@ sealed class InstallerForm : Form
 
     void LayoutHeader()
     {
-        if (!arranged || Controls.OfType<SoftButton>().Count() < 4) return;
-        var raw = DeviceDpi / 96f;
-        uiScale = raw < 1f ? 1f : raw > 1.15f ? 1.15f : raw;
-        ApplyType();
-        int S(int value) => (int)Math.Round(value * uiScale);
-        if (ClientSize.Width != S(760))
-            ClientSize = new Size(S(760), S(508));
-        Place(versionLabel, 32, 30, 88, 24);
-        Place(editionLabel, 32, 52, 120, 18);
-        Place(book, 760 - 32 - 34, 30, 34, 34);
-        var titleSize = TextRenderer.MeasureText(titleLabel.Text, titleLabel.Font);
-        var titleWidth = titleSize.Width + S(4);
-        Place(titleLabel, 760 - 32 - 34 - 8 - (int)(titleWidth / uiScale), 30, (int)(titleWidth / uiScale), 40);
-        Place(statusLabel, 32, 94, 760 - 64, 24);
-        Place(card, 28, 138, 760 - 56, 252);
-        var inner = card.ClientSize;
-        if (inner.Width < 100) return;
-        if (card.Controls.OfType<DownloadIcon>().FirstOrDefault() is Control icon)
-            icon.Bounds = new Rectangle(inner.Width - S(24) - S(36), S(24), S(36), S(36));
-        if (card.Controls.OfType<Label>().FirstOrDefault(label => label.Text == "تشغيل المجتهد") is Control cardTitle)
-            cardTitle.Bounds = new Rectangle(S(110), S(24), inner.Width - S(110) - S(72), S(32));
-        percentValue.Bounds = new Rectangle(S(24), S(22), S(72), S(30));
-        using (var path = RoundRect(new Rectangle(0, 0, percentValue.Width, percentValue.Height), S(8)))
-            percentValue.Region = new Region(path);
-        phaseLabel.Bounds = new Rectangle(S(24), S(72), inner.Width - S(48), S(56));
-        progressBar.Bounds = new Rectangle(S(24), S(136), inner.Width - S(48), S(8));
-        var column = (inner.Width - S(48) - S(36)) / 4f;
-        var gap = S(12);
-        PlaceStat(0, S(24) + (int)((column + gap) * 3), (int)column);
-        PlaceStat(1, S(24) + (int)((column + gap) * 2), (int)column);
-        PlaceStat(2, S(24) + (int)(column + gap), (int)column);
-        PlaceStat(3, S(24), (int)column);
-        var buttonWidth = (ClientSize.Width - S(56) - gap * 3) / 4;
-        var buttonY = ClientSize.Height - S(36) - S(40);
-        openButton.Bounds = new Rectangle(ClientSize.Width - S(28) - buttonWidth, buttonY, buttonWidth, S(40));
-        Controls.OfType<SoftButton>().ElementAt(1).Bounds = new Rectangle(ClientSize.Width - S(28) - buttonWidth * 2 - gap, buttonY, buttonWidth, S(40));
-        Controls.OfType<SoftButton>().ElementAt(2).Bounds = new Rectangle(ClientSize.Width - S(28) - buttonWidth * 3 - gap * 2, buttonY, buttonWidth, S(40));
-        reinstallButton.Bounds = new Rectangle(S(28), buttonY, buttonWidth, S(40));
+        if (!arranged) return;
+        ClientSize = new Size(1024, 602);
+        boardBox.Bounds = ClientRectangle;
     }
 
     void PlaceStat(int index, int x, int width)
@@ -648,7 +628,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.561");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.562");
         tray.Visible = false;
     }
 

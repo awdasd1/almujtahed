@@ -68,6 +68,7 @@ chmod +x "$STAGE/source/start_local.sh" "$STAGE/source/start_local.py"
 
 mkdir -p "$BUNDLE/fonts" "$BUNDLE/source"
 cp "$ROOT/windows/app.ico" "$BUNDLE/app.ico"
+cp "$ROOT/macos/open-board.png" "$BUNDLE/open-board.png"
 cp "$ROOT/windows/launch.ps1" "$BUNDLE/launch.ps1"
 cp "$ROOT/windows/python_setup.ps1" "$BUNDLE/python_setup.ps1"
 cp "$ROOT/web_ui/static/fonts/Almarai-Regular.ttf" "$ROOT/web_ui/static/fonts/Almarai-Bold.ttf" "$BUNDLE/fonts/"
