@@ -2102,14 +2102,30 @@ function msCleanAgentName(name) {
   return n || String(name || '');
 }
 
-// فتح بطاقة الوكيل كاملة في تبويب الوكلاء: موضع التحكم الوحيد
+// فتح بطاقة الوكيل فوق تبويب المخطوطات دون مغادرته؛ الإغلاق يعيد الموضع نفسه
 async function msOpenAgentCard(agentId) {
-  switchMainTab('agents');
+  if (typeof markAgentCardReturn === 'function') markAgentCardReturn('manuscripts');
   try {
     if (typeof loadAgentGroups === 'function') await loadAgentGroups();
     if (typeof openGroupAgents === 'function') openGroupAgents(MS_GROUP_ID);
     if (typeof editAgent === 'function') editAgent(agentId);
-  } catch (e) { msToast('تعذر فتح بطاقة الوكيل — افتح تبويب الوكلاء يدويًا'); }
+    const opened = document.getElementById('agentModalOverlay')?.classList.contains('open');
+    if (!opened && typeof clearAgentCardReturn === 'function') clearAgentCardReturn();
+  } catch (e) {
+    if (typeof clearAgentCardReturn === 'function') clearAgentCardReturn();
+    msToast('تعذر فتح بطاقة الوكيل — افتح تبويب الوكلاء يدويًا');
+  }
+}
+
+// بعد حفظ البطاقة أو إغلاقها: المجموعة في التبويب تعكس التعديل والتمرير يبقى مكانه
+function msSyncGroupFromEditor(scrollY) {
+  const live = (window.agentGroups || []).find(g => g.id === MS_GROUP_ID);
+  if (live) {
+    MS_GROUP = live;
+    renderMsGroup();
+    msApplyGroupModelDefaults();
+  }
+  requestAnimationFrame(() => window.scrollTo(0, scrollY || 0));
 }
 
 function renderMsGroup() {

@@ -73,6 +73,21 @@ try {
 
 let currentActiveGroupId = null;
 
+// إن فُتحت البطاقة من تبويب آخر (تحقيق المخطوطات) نُعيد ذلك التبويب وموضع التمرير عند الإغلاق
+let agentCardReturn = null;
+function markAgentCardReturn(tab) {
+  const groupsEl = document.getElementById('agentGroupsSection');
+  const detailEl = document.getElementById('groupAgentsDetailSection');
+  agentCardReturn = {
+    tab: tab || '',
+    y: window.scrollY,
+    groupId: currentActiveGroupId,
+    groupsDisplay: groupsEl ? groupsEl.style.display : '',
+    detailDisplay: detailEl ? detailEl.style.display : '',
+  };
+}
+function clearAgentCardReturn() { agentCardReturn = null; }
+
 // التوافقية العكسية للقوائم العامة
 let subAgentsList = [];
 
@@ -1111,6 +1126,16 @@ function editAgent(id) {
 
 function closeAgentModal() {
   document.getElementById('agentModalOverlay').classList.remove('open');
+  if (!agentCardReturn) return;
+  const ret = agentCardReturn;
+  agentCardReturn = null;
+  currentActiveGroupId = ret.groupId;
+  const groupsEl = document.getElementById('agentGroupsSection');
+  const detailEl = document.getElementById('groupAgentsDetailSection');
+  if (groupsEl) groupsEl.style.display = ret.groupsDisplay;
+  if (detailEl) detailEl.style.display = ret.detailDisplay;
+  syncSubAgentsList();
+  if (ret.tab === 'manuscripts' && typeof msSyncGroupFromEditor === 'function') msSyncGroupFromEditor(ret.y);
 }
 
 function handleAgentModalOverlayClick(e) {
@@ -1357,6 +1382,8 @@ window.closeMcpModal = closeMcpModal;
 window.verifyMcpUrl = verifyMcpUrl;
 window.adoptMcpBranches = adoptMcpBranches;
 window.editAgent = editAgent;
+window.markAgentCardReturn = markAgentCardReturn;
+window.clearAgentCardReturn = clearAgentCardReturn;
 window.closeAgentModal = closeAgentModal;
 window.handleAgentModalOverlayClick = handleAgentModalOverlayClick;
 window.handleAgentRerankCheckChange = handleAgentRerankCheckChange;
