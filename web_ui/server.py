@@ -7810,7 +7810,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.545"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.546"},
         },
     })
     if opened.get("error"):
@@ -14652,6 +14652,9 @@ def _ms_verify_suggestion(s: Dict[str, Any], extra_books=None) -> Dict[str, Any]
             except Exception:
                 pass
             return {"status": "found", "detail": detail}
+        # التخريج المعتمد يجمع مواضع الحديث في كتب الأصول كلها لا أول
+        # مصادفة، لتصدر الحاشية بعزوه إلى مخرِّجيه جميعًا بمواضعهم
+        loci_all = []
         for book_name in ("صحيح مسلم", "صحيح البخاري", "سنن أبي داود", "جامع الترمذي",
                           "سنن النسائي", "سنن ابن ماجه", "موطأ مالك", "مسند أحمد"):
             try:
@@ -14662,15 +14665,18 @@ def _ms_verify_suggestion(s: Dict[str, Any], extra_books=None) -> Dict[str, Any]
                                                        quote_text=anchor[:160])
                 status = (check or {}).get("match_status") or ""
                 if status.startswith("MATCH"):
-                    cit = (check or {}).get("citation") or {}
                     m0 = ((check or {}).get("matches") or [{}])[0]
-                    return {"status": "verified",
-                            "detail": f"موثّق: طابق ({status}) في «{book_name}»" + (f" — {cit}"[:120] if cit else ""),
-                            "locus": {"book_id": row.get("book_id"), "title": (check or {}).get("book_title") or book_name,
-                                      "part": m0.get("part"), "page": m0.get("page_num"),
-                                      "snippet": m0.get("snippet") or ""}}
+                    loci_all.append({"book_id": row.get("book_id"),
+                                     "title": (check or {}).get("book_title") or book_name,
+                                     "part": m0.get("part"), "page": m0.get("page_num"),
+                                     "snippet": m0.get("snippet") or ""})
             except Exception:
                 continue
+        if loci_all:
+            detail = "موثّق في " + "، و".join(
+                f"«{l['title']}» (ج {l.get('part') or '—'} ص {l.get('page') or '—'})" for l in loci_all[:4])
+            return {"status": "verified", "detail": detail,
+                    "locus": loci_all[0], "loci": loci_all[:6]}
         return {"status": "not_found", "detail": "لم يُعثر على العبارة في كتب الأصول عندنا — لا يُعتمد حتى يثبت"}
     except Exception as exc:
         return {"status": "unchecked", "detail": f"تعذر التوثيق الآلي: {str(exc)[:100]}"}
@@ -15762,6 +15768,10 @@ def _ms_bio_evidence(author: str, titles=None) -> Dict[str, Any]:
         window = text[max(0, i - 120): i + 780]
         if len(window) < 60:
             continue
+        # اسم أُحادي (نسبة وحدها كـ«النووي») يلتقط وُرودًا عابرة في أجزاء
+        # لا مدخل له فيها؛ لا شاهد إلا بنافذة ذات سمة ترجمية ظاهرة
+        if len(tokens) < 2 and not any(m in window for m in ("توفي", "مولد", "وُلد", "سنة", "الإمام", "الحافظ", "رحمه الله")):
+            continue
         snippets.append({"book": hit.get("title") or "", "part": hit.get("part"),
                          "page": hit.get("page"), "text": window})
         if hit.get("title") and hit["title"] not in books:
@@ -15773,7 +15783,7 @@ def _ms_bio_evidence(author: str, titles=None) -> Dict[str, Any]:
 def _ms_bio_extra_evidence(names, titles=None) -> Dict[str, Any]:
     """شواهد مستقلة لبابي التلاميذ وكلام أهل العلم: نوافذ حول ألفاظهما
     في صفحات مدخل المؤلف بكتب التراجم (المدخل وسبع صفحات بعده)."""
-    out = {"students": [], "praise": []}
+    out = {"students": [], "praise": [], "life": []}
     raw = ""
     for n in (names or []):
         cand = re.sub(r"\(.*?\)", "", str(n or "")).strip()
@@ -15804,9 +15814,10 @@ def _ms_bio_extra_evidence(names, titles=None) -> Dict[str, Any]:
         conn.close()
     except Exception:
         return out
-    stu_keys = ["تلاميذ", "أخذ عنه", "أخذوا عنه", "تفقه به", "تفقه عليه", "تتلمذ", "قرأ عليه", "من أصحابه"]
+    stu_keys = ["شيوخه", "سمع من", "أخذ عن", "تلاميذ", "أخذ عنه", "أخذوا عنه", "تفقه به", "تفقه عليه", "تتلمذ", "قرأ عليه", "من أصحابه"]
     praise_keys = ["قال الذهبي", "وقال الذهبي", "قال ابن كثير", "قال السبكي", "قال ابن حجر",
                    "شيخ الإسلام", "الإمام الحافظ", "أثنى عليه", "ثناء", "قال عنه", "قال فيه"]
+    life_keys = ["ولد سنة", "وُلد سنة", "مولده", "ولد في", "توفي سنة", "توفي في", "وفاته", "ودُفن", "دُفن بـ"]
     for bid in ids[:7]:
         hit = None
         for v in variants:
@@ -15824,8 +15835,8 @@ def _ms_bio_extra_evidence(names, titles=None) -> Dict[str, Any]:
                 text = ""
             if len(text) < 80:
                 continue
-            for kind, keys in (("students", stu_keys), ("praise", praise_keys)):
-                if len(out[kind]) >= 4:
+            for kind, keys in (("students", stu_keys), ("praise", praise_keys), ("life", life_keys)):
+                if len(out[kind]) >= (3 if kind == "life" else 4):
                     continue
                 for kw in keys:
                     i = text.find(kw)
@@ -15833,15 +15844,59 @@ def _ms_bio_extra_evidence(names, titles=None) -> Dict[str, Any]:
                         window = text[max(0, i - 160): i + 640]
                         # الثناء لا يُقبل إلا مقترنًا بنسبة المؤلف في نافذته
                         # فلا تتسرب تراجم الجيران في صفحات الكتاب
-                        if kind == "praise" and "نووي" not in window and "النواوي" not in window:
+                        distinctive = tokens[-1] if tokens else ""
+                        if kind == "praise" and distinctive and distinctive not in window:
                             continue
                         out[kind].append({"book": hit.get("title") or "", "part": hit.get("part"),
                                           "page": int(hit.get("page") or 0) + off,
                                           "text": window})
                         break
-        if len(out["students"]) >= 4 and len(out["praise"]) >= 4:
+        if len(out["students"]) >= 4 and len(out["praise"]) >= 4 and len(out["life"]) >= 2:
             break
     return out
+
+def _ms_book_importance_evidence(title: str, author: str):
+    """شواهد موثقة لأهمية الكتاب المحقَّق: مدخله في كشف الظنون، ومقدمات
+    شروحه في المكتبة — نقلًا حرفيًا بموضعه، لا كلامًا إنشائيًا."""
+    clean = re.sub(r"\(.*?\)", "", str(title or "")).strip()
+    clean = re.sub(r"^مشروع\s+", "", clean).strip()
+    if len(clean) < 4:
+        return []
+    lines = []
+    try:
+        conn = shamela_local_mcp._books_conn()
+        if conn is None:
+            return []
+        kz = conn.execute("SELECT book_id, title_ar FROM books WHERE title_ar LIKE '%كشف الظنون%' LIMIT 3").fetchall()
+        sharh = conn.execute(
+            "SELECT book_id, title_ar FROM books WHERE title_ar LIKE ? AND (title_ar LIKE 'شرح%' OR title_ar LIKE 'دليل%' OR title_ar LIKE '%شرح%رياض%' OR title_ar LIKE '%الفالحين%') LIMIT 4",
+            (f"%{clean[:18]}%",)).fetchall()
+        conn.close()
+    except Exception:
+        return []
+    for bid, bt in kz:
+        try:
+            hit = _ms_scan_book_phrase(bid, clean)
+            if hit:
+                lines.append(f"[{bt} ج{hit.get('part') or '—'} ص{hit.get('page') or '—'}] {str(hit.get('snippet') or '')[:700]}")
+        except Exception:
+            pass
+    for bid, bt in sharh[:2]:
+        try:
+            text = ""
+            for pgno in (1, 2, 3):
+                pg = shamela_local_mcp.get_page(bid, pgno)
+                node = pg.get("page") if isinstance(pg.get("page"), dict) else pg
+                text += " " + str((node or {}).get("body") or (node or {}).get("text") or pg.get("text") or "")
+            text = re.sub(r"\s+", " ", text).strip()
+            i = text.find(clean[:14])
+            window = text[max(0, i - 100): i + 700] if i >= 0 else text[:700]
+            if len(window) >= 120:
+                lines.append(f"[{bt} — من مقدمته] {window}")
+        except Exception:
+            pass
+    return lines[:3]
+
 
 MS_INTRO_PROMPT = (
     "أنت محقق مخطوطات محترف (بقدرات Muse Wonder) تكتب مقدمة تحقيق كتاب «{title}» لمؤلفه {author} "
@@ -15855,6 +15910,8 @@ MS_INTRO_PROMPT = (
     "كتبه ومؤلفاته (من قائمة مؤلفاته المرفقة، رتّبها واذكر أشهرها وما شهدت له الشواهد)؛ "
     "منزلته وكلام أهل العلم فيه (انقل أقوال أهل العلم فيه بألفاظهم بين قوسي تنصيص من شواهد الثناء المرفقة، "
     "منسوبة إلى قائليها، ولا تكتفِ بإعادة أوصاف سبقت في الأبواب المتقدمة)؛ وفاته (المكان والسنة). "
+    "واستقِ بابي المولد والوفاة من شواهد المولد والوفاة المرفقة خاصة، وبابي الشيوخ والتلاميذ من شواهد التلاميذ المرفقة، "
+    "فباب شهدت له الشواهد المخصصة لا يُحذف ولا يُختصر إلى سطر؛ والاختصار المخلّ بعنصر شهد له شاهد مرفق مخالفة لهذا التوجيه. "
     "ويُمنع منعًا باتًا تكرار أي معلومة في بابين، وحشو الترجمة بصيغ التمريض (يُذكر/يُقال/قيل)؛ "
     "اكتب بصيغة الجزم والتقرير فيما شهدت له الشواهد المرفقة، ولا ترد صيغ التمريض إلا عند تعارض حقيقي "
     "بين الشواهد فتذكر الخلاف وقائله ومصدره. "
@@ -15866,13 +15923,17 @@ MS_INTRO_PROMPT = (
     "(ذكر المؤلف كتابَه في مصنفاته، ووروده في كتب الببليوغرافيا والتراجم مقترنًا باسمه) واختم كل دليل "
     "بمرجعه بصيغة (اسم الكتاب، جX، صY). فإن خلت الكتلة فاكتب فقرة قصيرة جازمة بما يثبت من عنوان "
     "المخطوط ونسخه دون ادعاء أدلة غير موجودة.\n"
-    "ثالثًا: الكتاب وأهميته — موضوعه ومنزلته بين كتب فنه وسبب شهرته وانتشاره باختصار.\n"
-    "رابعًا: النسخ المعتمدة — من بيانات النسخ المرفقة: الرمز والخزانة ورقم الحفظ والتاريخ والخط وما لُوحظ عليها، "
-    "وبيان النسخة الأم وسبب اعتمادها أصلًا.\n"
+    "ثالثًا: الكتاب وأهميته — موضوعه ومنزلته بين كتب فنّه، ولا يُكتب هذا القسم إنشاءً من عندك: انقل نقلًا أو نقلين "
+    "حرفيين من شواهد الأهمية المرفقة (كشف الظنون ومقدمات الشروح) بين قوسي تنصيص، منسوبين إلى كتابيهما بصيغة "
+    "(اسم الكتاب، جX، صY)، ثم جملة تقريرية واحدة منك تربط النقلين بمنزلة الكتاب. فإن خلت الشواهد المرفقة "
+    "فصرّح في القسم نفسه: «لم نقف في الشواهد المتاحة على نص موثق في منزلة هذا الكتاب» واكتف بوصف موضوعه وأبوابه.\n"
+    "رابعًا: النسخ المعتمدة — من بيانات النسخ المرفقة حصرًا: الرمز وما ورد فيها من خزانة ورقم حفظ وتاريخ وخط وملحوظات، "
+    "وبيان النسخة الأم وسبب اعتمادها أصلًا. ويُمنع منعًا باتًا اختراع خزانة أو رقم حفظ أو تاريخ أو وصف تمامٍ لم يرد "
+    "في البيانات؛ وما لم يرد فيها فاكتب: «لم تُوثَّق بيانات حفظها في بيانات المشروع» وصف حالتها من ملخص الخطوات المنجزة.\n"
     "خامسًا: منهج التحقيق — الخطوات المنجزة فعلًا كما في الملخص المرفق بلغة المحققين (إثبات قراءة الأم، إثبات الفروق المهمة "
     "في هامش المقابلة، رد فروق الضبط والرسم المحضة، التخريج والتوثيق، الموازاة بمؤلفات المؤلف، والمقارنة المرجعية إن وُجدت نتيجتها).\n"
     "سادسًا: الرموز والاصطلاحات — من الرموز المرفقة.\n\n"
-    "شواهد التراجم:\n{evidence}\n\nشواهد التلاميذ:\n{students}\n\nشواهد كلام أهل العلم فيه:\n{praise}\n\nكتلة التصنيف المذهبي والعقدي:\n{classification}\n\nكتلة تحقيق نسبة الكتاب:\n{attribution}\n\nبيانات النسخ:\n{copies}\n\nملخص خطوات التحقيق المنجزة:\n{steps}\n\n"
+    "شواهد التراجم:\n{evidence}\n\nشواهد المولد والوفاة:\n{life}\n\nشواهد التلاميذ:\n{students}\n\nشواهد كلام أهل العلم فيه:\n{praise}\n\nكتلة التصنيف المذهبي والعقدي:\n{classification}\n\nكتلة تحقيق نسبة الكتاب:\n{attribution}\n\nشواهد أهمية الكتاب:\n{importance}\n\nبيانات النسخ:\n{copies}\n\nملخص خطوات التحقيق المنجزة:\n{steps}\n\n"
     "رموز النسخ: {sigla}\nمؤلفات المؤلف في المكتبة: {works}\n\n"
     "أخرج نص المقدمة فقط بلا JSON وبلا تعليق خارجها."
 )
@@ -15918,12 +15979,16 @@ def _ms_intro_sync(payload: dict, key: str) -> Dict[str, Any]:
     extra = _ms_bio_extra_evidence(candidates, (p.get("bio_books") or None))
     stu_lines = [f"[{s['book']} ج{s.get('part') or '—'} ص{s.get('page') or '—'}] {s['text']}" for s in extra["students"]]
     praise_lines = [f"[{s['book']} ج{s.get('part') or '—'} ص{s.get('page') or '—'}] {s['text']}" for s in extra["praise"]]
+    life_lines = [f"[{s['book']} ج{s.get('part') or '—'} ص{s.get('page') or '—'}] {s['text']}" for s in extra.get("life") or []]
+    importance_lines = _ms_book_importance_evidence(title_clean if 'title_clean' in dir() else title, author)
     title_clean = re.sub(r"^مشروع\s+", "", title).strip() or title
     prompt = MS_INTRO_PROMPT.format(
         title=title_clean, author=author,
         evidence="\n".join(ev_lines)[:12500] or "لا شواهد متاحة — اكتب الترجمة مما هو مشهور ثابت من ترجمته بصيغة الجزم، وتجنب ادعاء سنوات أو أماكن لا تثق بها.",
         students="\n".join(stu_lines)[:4500] or "—",
         praise="\n".join(praise_lines)[:4500] or "—",
+        life="\n".join(life_lines)[:3500] or "—",
+        importance="\n".join(importance_lines)[:3500] or "—",
         classification=str(p.get("classification") or "")[:1800] or "—",
         attribution="\n".join(att_lines)[:2500] or "—",
         copies="\n".join(copies_lines)[:2500] or "—",

@@ -1353,10 +1353,56 @@ async function msRunAgents() {
   }
 }
 
+// متن تخريج مركّب من مواضع التوثيق نفسها بقالب المحققين حين يكون متن
+// الاقتراح عبارة توثيق آلية لا صياغة تخريج: «أخرجه مسلم، حديث رقم
+// (N)، (جزء-صفحة)» والأول متصدّر والباقي معطوف بالواو بمواضعه
+function msComposeTakhrijBody(s) {
+  const loci = (s.verify && (s.verify.loci || (s.verify.locus ? [s.verify.locus] : []))) || [];
+  if (!loci.length) return '';
+  const imam = t => {
+    t = String(t || '');
+    if (/مسلم/.test(t)) return 'مسلم';
+    if (/البخاري/.test(t)) return 'البخاري';
+    if (/أبي داود|ابو داود/.test(t)) return 'أبو داود';
+    if (/الترمذي/.test(t)) return 'الترمذي';
+    if (/النسائي/.test(t)) return 'النسائي';
+    if (/ابن ماجه/.test(t)) return 'ابن ماجه';
+    if (/موطأ/.test(t)) return 'مالك في الموطأ';
+    if (/مسند/.test(t)) return 'أحمد في المسند';
+    return t.replace(/\s*[-–]\s*(ت|ط)\s.*$/, '').trim();
+  };
+  const numOf = l => {
+    const m = String(l.snippet || '').match(/\(\s*([0-9٠-٩]{2,6})\s*\)/);
+    return m ? m[1] : '';
+  };
+  const first = loci[0];
+  let out = `أخرجه ${imam(first.title)}`;
+  const n0 = numOf(first);
+  if (n0) out += `، حديث رقم (${n0})`;
+  if (first.part || first.page) out += `، (${first.part || '—'}-${first.page || '—'})`;
+  loci.slice(1, 4).forEach(l => {
+    out += `، و${imam(l.title)}`;
+    const n = numOf(l);
+    if (n) out += ` (${n})`;
+    if (l.part || l.page) out += ` (${l.part || '—'}-${l.page || '—'})`;
+  });
+  return out;
+}
+
 // إثبات اقتراح وكيل في هامش تحقيق لوحته (يدوي أو آلي)
 function msAcceptSuggestion(p, s) {
   s.status = 'accepted';
   const base = msBaseCopy(p);
+  // اقتراح بلا لوحة تُسند لوحته بمطابقة مرساته في نصوص الأم فلا يضيع عند الطباعة
+  if (!s.folio && base) {
+    const f2 = (base.folios || []).find(x => (x.text || '').includes(String(s.anchor || '').slice(0, 24)));
+    if (f2) s.folio = f2.label;
+  }
+  // متن التخريج يُركّب من مواضع توثيقه بقالب المحققين إن كان عبارة آلية
+  if (s.kind === 'takhrij' && !s.surah && /موثّق|طابق|وُجد|لم يُعثر/.test(String(s.body || ''))) {
+    const composed = msComposeTakhrijBody(s);
+    if (composed) s.body = composed;
+  }
   const f = base ? (base.folios || []).find(x => x.label === s.folio) : null;
   if (f) {
     const line = `[وكيل ${MS_AGENT_KINDS[s.kind] || s.kind}] «${s.anchor}» — ${s.body}${s.source ? ` (${s.source})` : ''}${s.verify && s.verify.detail ? ` [توثيق: ${s.verify.detail}]` : ''}`;
@@ -3168,6 +3214,16 @@ async function msAutoRun(p) {
       }
     }
     }
+    // سجل تنفيذ الخطة: كل بند معتمد بنتيجته، فلا يختفي بند بلا شاهد بصمت
+    if (directedDone && s2.plan && (s2.plan.items || []).length) {
+      R.planLedger = s2.plan.items.map(it => {
+        const hit = (p.agent_suggestions || []).some(s => s.agent === 'flash'
+          && ((s.anchor || '').includes(String(it.anchor || '').slice(0, 18)) || String(it.anchor || '').includes(String(s.anchor || '').slice(0, 18))));
+        return { type: it.type, anchor: it.anchor, outcome: hit ? 'نُفّذ وأثمر شاهدًا موثقًا' : 'لم يثمر شاهدًا مسجلًا في هذه الجولة' };
+      });
+      R.planLedger.filter(l => l.outcome.startsWith('لم')).forEach(l =>
+        msAutoLog(p, `بند خطة بلا ثمرة مسجلة (${l.type}): «${String(l.anchor || '').slice(0, 50)}» — يُراجع سببه (لا شاهد في المظان أو تعذّر وصول الباحث).`));
+    }
     R.agentsAccepted = decideSuggestions(['takhrij', 'tarjama', 'lugha', 'dabt', 'tafsir', 'aqeedah'], directedDone ? 'المسار الموجَّه (خطة معتمدة + باحثون سريعون)' : 'متخصصو المرحلة الثانية');
     renderMsAgents();
   });
@@ -3264,11 +3320,40 @@ async function msAutoRun(p) {
   // ٨) مقدمة التحقيق وترجمة المؤلف من كتب التراجم
   await step('intro', false, async () => {
     if (p.intro && a.introDone) { msAutoLog(p, 'المقدمة وترجمة المؤلف محفوظتان من جولة سابقة.'); return; }
+    // بطاقة المؤلف تُجهَّز أولًا إن غابت: فهي مصدر الاسم الكامل والتصنيف
+    // المذهبي والعقدي وحكم النسبة التي تُبنى عليها الترجمة والمقدمة
+    if (!p.author_profile && String(p.author || '').trim()) {
+      try {
+        msAutoLog(p, 'وكيل بطاقة المؤلف يجهّز بطاقته (الاسم الصحيح والتصنيف وحكم النسبة) قبل كتابة الترجمة...');
+        const prof = await msAutoFetch('/api/manuscripts/author-profile', {
+          author: p.author, title: p.title, desc: p.desc || '',
+          text: msStageText(p).slice(0, 3500),
+          model: msGroupModel('authorid', MS_FLASH_MODEL),
+          tarajim_books: [...new Set([...msGroupBookTitles('authorid'), ...msGroupBookTitles('bio')])],
+          api_key: msApiKey() });
+        if (prof && (prof.correct_name || prof.famous_name)) {
+          p.author_profile = prof; addCost(prof.cost);
+          msAutoLog(p, `بُنيت بطاقة المؤلف: «${prof.correct_name || prof.famous_name}» — ${prof.madhhab || ''}، ${prof.aqeedah || ''}.`);
+          await msSaveNow();
+        }
+      } catch (e) { msAutoLog(p, `تعذّرت بطاقة المؤلف (${String(e.message || '').slice(0, 90)}) — تُكتب الترجمة من صيغ اسم المشروع المتاحة.`); }
+    }
+    // منهج التحقيق يُروى من وقائع الجولة نفسها لا بصيغ عامة: اتفاق
+    // القارئين ومواضع الاختلاف، وصعوبات اللوحات كما رصدها المراقب،
+    // وكيف عولجت بقرارات المعتمِد والمدير، وحصاد الخطة بندًا بندًا
+    const folioLines = (p.copies || []).map(c => (c.folios || []).map(f =>
+      `(${c.siglum}) ${f.label}: اتفاق القارئين ${f.agreement != null ? f.agreement + '٪' : '—'}، مواضع اختلاف محفوظة ${(f.disputes || []).length}`).join('؛ ')).filter(Boolean);
+    const monitorNotes = (p.monitor_log || []).flatMap(m => (Array.isArray(m.findings) ? m.findings : [])
+      .filter(fd => fd && (fd.severity === 'high' || fd.severity === 'med'))
+      .map(fd => `[${fd.severity}] ${fd.area}: ${fd.note}`));
+    const ledgerLines = (R.planLedger || []).map(l => `بند ${l.type} «${String(l.anchor || '').slice(0, 40)}»: ${l.outcome}`);
     const stepsSummary = [
-      `نُسخت لوحات ${(p.copies || []).length} نسخة بقارئين ومدقق على الصورة واعتُمدت.`,
+      `نُسخت لوحات ${(p.copies || []).length} نسخة بقارئين مستقلين ومدقق على الصورة واعتُمدت. نسب الاتفاق ومواضع الاختلاف: ${folioLines.join(' | ') || '—'}.`,
       R.collationEntries != null ? `قوبلت النسخ على الأم؛ حُسم ${R.decided || 0} موضع خلاف بقرار المدقق، واعتُمدت قراءة النسخ في المتن ${R.decidedAdopted || 0} مرة، وعُلّق ${R.held || 0} موضعًا لعين المحقق.` : '',
+      monitorNotes.length ? `صعوبات واجهت التحقيق كما رصدها المراقب وكيف عولجت بالحسم من الصورة أو التعليق للمحقق:\n${monitorNotes.slice(0, 8).join('\n')}` : '',
       `أُثبت في الهامش ${R.agentsAccepted || 0} تخريجًا وتعليقًا من وكلاء التحقيق، و${R.authorAccepted || 0} موازاة من مؤلفات المؤلف.`,
-      (R.compare && R.compare.length) ? `قورن النص بتحقيقات مرجعية: ${R.compare.map(c => `«${c.book}» (تطابق ${c.similarity}٪)`).join('، ')}.` : '',
+      ledgerLines.length ? `حصاد خطة البحث المعتمدة بندًا بندًا:\n${ledgerLines.join('\n')}` : '',
+      (R.compare && R.compare.length) ? `قورن النص بتحقيقات مرجعية: ${R.compare.map(c => `«${c.book}» (تطابق ${c.similarity}٪)`).join('، ')}.` : 'تعذّرت المقارنة المرجعية في هذه الجولة فلم تُبنَ عليها قراءة.',
     ].filter(Boolean).join('\n');
     const data = await msAutoFetch('/api/manuscripts/intro', {
       title: p.title, author: msAuthorName(p), api_key: msApiKey(),
@@ -3279,7 +3364,7 @@ async function msAutoRun(p) {
         p.author_profile.aqeedah ? `العقيدة: ${p.author_profile.aqeedah}` : '',
         p.author_profile.classification_basis ? `قرينة التصنيف: ${p.author_profile.classification_basis}` : '',
       ].filter(Boolean).join('\n') || undefined : undefined,
-      model: msGroupModel('bio', MS_FLASH_MODEL),
+      model: msGroupModel('leader', 'meta/muse-wonder'),
       bio_books: msGroupBookTitles('bio').length ? msGroupBookTitles('bio') : undefined,
       copies: (p.copies || []).map(c => ({ siglum: c.siglum, library: c.library, shelfmark: c.shelfmark,
         date: c.date, script: c.script, notes: c.notes })),
@@ -3314,7 +3399,8 @@ async function msAutoRun(p) {
     msAutoCheck(p);
     const ctx = msMonitorContext(p, 'شاملة')
       + '\n\n== مقدمة التحقيق وترجمة المؤلف ==\n' + String(p.intro || '').slice(0, 4000)
-      + '\n\n== ملخص قرارات التحقيق الآلي ==\n' + JSON.stringify(R || {}).slice(0, 1600);
+      + '\n\n== ملخص قرارات التحقيق الآلي ==\n' + JSON.stringify(R || {}).slice(0, 1600)
+      + '\n\n== واجب الاعتماد والمحاسبة ==\nأنت مدير التحقيق المعتمِد لا موقّع صامت: راجع ملاحظات المراقب واحدة واحدة، وردّ على كل ملاحظة عالية الخطورة في حكمك بقبولها ومعالجتها أو ردّها بتعليل موثق، واذكر ما يبقى مشروطًا به اعتمادك. الاعتماد الذي يتجاوز ملاحظات عالية بلا ردّ عليها اعتمادٌ غير مسؤول ويُسجَّل عليك.';
     const data = await msAutoFetch('/api/manuscripts/monitor', {
       project_title: p.title, author: p.author, phase: 'اعتماد المدير النهائي',
       context: ctx, model: APPROVER, api_key: msApiKey() });
@@ -3323,8 +3409,20 @@ async function msAutoRun(p) {
       model: data.model || MS_DIRECTOR_MODEL, findings: data.findings || '', status: 'open',
       cost: data.cost, seconds: data.seconds, auto: true, approver: true });
     a.approveDone = true;
-    R.approval = String(data.findings || '').slice(0, 400);
-    msAutoLog(p, '✔ فحص المدير النسخة كاملة واعتمدها اعتمادًا نهائيًا للجودة (ملاحظاته في بطاقة المراقبة).');
+    R.approval = (Array.isArray(data.findings)
+      ? data.findings.map(fd => typeof fd === 'string' ? fd : `[${fd.severity || ''}] ${fd.area || ''}: ${fd.note || ''}`).join('\n')
+      : String(data.findings || '')).slice(0, 900);
+    // محاسبة المدير للمراقب: ملاحظات عالية قائمة تجعل الاعتماد مشروطًا
+    // بها ومسجلًا في التقرير، لا اعتمادًا صامتًا فوقها
+    const highs = (p.monitor_log || []).flatMap(m => Array.isArray(m.findings) ? m.findings : [])
+      .filter(fd => fd && fd.severity === 'high');
+    R.monitorHigh = highs.length;
+    if (highs.length) {
+      R.approvalConditional = true;
+      msAutoLog(p, `⚠️ اعتماد المدير مشروط: توجد ${highs.length} ملاحظة مراقبة عالية الخطورة قائمة (${highs.slice(0, 3).map(h => h.area).join('؛ ')}) — راجعها في بطاقة المراقبة قبل اعتماد النسخة نهائيًا بيدك.`);
+    } else {
+      msAutoLog(p, '✔ فحص المدير النسخة كاملة واعتمدها اعتمادًا نهائيًا للجودة (ملاحظاته في بطاقة المراقبة).');
+    }
     renderMsMonitor();
   });
 
@@ -3908,6 +4006,10 @@ function msEdNotePrint(text) {
     out = out.replace(/\s*[—-]?\s*قرار المحقق بعد توصية[^.؛]*/g, '');
     out = out.replace(/بعد توصية (Muse Wonder|المدقق الذكي)[^.؛]*/g, '');
     out = out.replace(/\(ثقة\s*[^)]*\)/g, '');
+    // لا رموز تقنية إنجليزية ولا نسب تطابق آلية في المنشور أبدًا
+    out = out.replace(/\s*\(MATCH_[A-Z_]+\)/g, '');
+    out = out.replace(/موثّق:\s*طابق\s*في/g, 'موثّق في');
+    out = out.replace(/،?\s*تطابق\s*[0-9٠-٩]+\s*[٪%]/g, '');
     out = out.replace(/\s*وفحص الشواهد بعينه/g, '');
     out = out.replace(/،?\s*مقابل صفر[^،؛.]*/g, '');
     // التوثيق البرمجي يتحول في المنشور إلى مرجع دقيق: (شاهد: الكتاب، ج، ص)
@@ -4169,6 +4271,8 @@ function msCiteParts(citeStr) {
     let part = String(rawPart || '').trim()
       .replace(/^شاهد:\s*/, '').replace(/^و(?=[^\s،])/, '')
       .replace(/\((?![^)]*(?:ج\s|ص\s|مادة|رقم|[0-9٠-٩]\s*-\s*[0-9٠-٩]))[^)]*\)/g, '')
+      // «ج — ص N» جزءٌ مجهول: تُقرأ صفحةً وحدها فلا يخرج «ج —» في المنشور
+      .replace(/ج\s*—\s*(?=ص)/, '')
       .replace(/\s+/g, ' ').trim();
     if (!part) return;
     const title = (part.split('،')[0] || '').trim()
@@ -4212,7 +4316,7 @@ function msStandardCite(citeStr, literal, judgedLiteral) {
   return prefix + parts.map((x, i) => (i === 0 ? x.txt : 'و' + x.txt)).join('؛ ');
 }
 function msFnPrint(t) {
-  let out = String(t || '').trim();
+  let out = String(t || '').trim().replace(/\s*\(MATCH_[A-Z_]+\)/g, '');
   // حكم وكيل الطباعة الأكاديمي نفسه (بتوجيه بحوث التطبيق): ⟦ن⟧ نقل
   // حرفي و⟦م⟧ نقل بالمعنى — يُحترم كما هو ولو تعددت مواضع الإحالة،
   // ولا تخمّن القاعدة الآلية فوقه، وتُحذف علامته من المطبوع
@@ -4260,6 +4364,12 @@ function msFnPrint(t) {
     }
   }
   const citeStr = cites.filter(Boolean).join('؛ ');
+  // الإحالة المضمّنة في متن الحاشية نفسه بصيغة «الكتاب» ج/ص تُحذف من
+  // المتن ما دامت ستخرج معيارية في الذيل، فلا يتكرر الجزء والصفحة مرتين
+  if (citeStr) {
+    base = base.replace(/«[^»]{2,70}»\s*ج\s*[0-9٠-٩—-]*\s*[,،]?\s*ص\s*[0-9٠-٩]+\s*[؛؛]?/g, '');
+    base = base.replace(/\s*\(ج\s*[0-9٠-٩—-]+\s*[,،]?\s*ص\s*[0-9٠-٩]+\)/g, '');
+  }
   base = base.replace(/\(\s*\)/g, '').replace(/\s*(?:انظر|ينظر):\s*$/, '')
     .replace(/[؛,،]\s*$/, '').replace(/\s+/g, ' ').trim();
   if (!citeStr) return base;
