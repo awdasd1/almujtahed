@@ -7810,7 +7810,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.546"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.547"},
         },
     })
     if opened.get("error"):
@@ -15867,7 +15867,8 @@ def _ms_book_importance_evidence(title: str, author: str):
         conn = shamela_local_mcp._books_conn()
         if conn is None:
             return []
-        kz = conn.execute("SELECT book_id, title_ar FROM books WHERE title_ar LIKE '%كشف الظنون%' LIMIT 3").fetchall()
+        kz = conn.execute("SELECT book_id, title_ar FROM books WHERE title_ar LIKE '%كشف الظنون%' "
+                          "ORDER BY (title_ar LIKE 'كشف الظنون عن%') DESC, LENGTH(title_ar) LIMIT 3").fetchall()
         sharh = conn.execute(
             "SELECT book_id, title_ar FROM books WHERE title_ar LIKE ? AND (title_ar LIKE 'شرح%' OR title_ar LIKE 'دليل%' OR title_ar LIKE '%شرح%رياض%' OR title_ar LIKE '%الفالحين%') LIMIT 4",
             (f"%{clean[:18]}%",)).fetchall()
@@ -15883,16 +15884,26 @@ def _ms_book_importance_evidence(title: str, author: str):
             pass
     for bid, bt in sharh[:2]:
         try:
-            text = ""
-            for pgno in (1, 2, 3):
+            # نافذة مدح صريحة من مقدمة الشرح: اسم الكتاب مقترنًا بلفظ منزلة،
+            # لا فهرس موضوعات ولا أول ما اتفق من الصفحات
+            best = ""
+            for pgno in range(1, 9):
                 pg = shamela_local_mcp.get_page(bid, pgno)
                 node = pg.get("page") if isinstance(pg.get("page"), dict) else pg
-                text += " " + str((node or {}).get("body") or (node or {}).get("text") or pg.get("text") or "")
-            text = re.sub(r"\s+", " ", text).strip()
-            i = text.find(clean[:14])
-            window = text[max(0, i - 100): i + 700] if i >= 0 else text[:700]
-            if len(window) >= 120:
-                lines.append(f"[{bt} — من مقدمته] {window}")
+                text = re.sub(r"\s+", " ", str((node or {}).get("body") or (node or {}).get("text") or pg.get("text") or "")).strip()
+                if len(text) < 120:
+                    continue
+                for m in re.finditer(re.escape(clean[:14]), text):
+                    w = text[max(0, m.start() - 120): m.start() + 680]
+                    if any(k in w for k in ("أنفع", "أجمع", "انتشر", "أقبل", "عظيم", "منزلة", "حفظه", "نفع")):
+                        best = w
+                        break
+                    if not best:
+                        best = w
+                if best and any(k in best for k in ("أنفع", "أجمع", "انتشر", "أقبل", "عظيم", "منزلة", "حفظه", "نفع")):
+                    break
+            if len(best) >= 120:
+                lines.append(f"[{bt} — من مقدمته] {best}")
         except Exception:
             pass
     return lines[:3]
