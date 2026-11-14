@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.541">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.542">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.541 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.542 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
@@ -1726,6 +1726,21 @@
             </div>
         </section>
 
+        <div class="ms-modal-overlay" id="msAgentBooksModal" hidden>
+            <div class="ms-modal">
+                <div class="ms-modal-head">
+                    <strong id="msAgentBooksTitle">📚 الكتب الافتراضية</strong>
+                    <button type="button" class="ms-btn" onclick="msAgentBooksClose()">✕</button>
+                </div>
+                <div class="ms-hint">كتب هذا الوكيل المعتمدة في الشاملة: الافتراضية منها كما ضبطتها المجموعة، والمضافة بيدك — احذف منها ما شئت.</div>
+                <div id="msAgentBooksList"></div>
+                <div class="ms-form-row" style="margin-top:12px">
+                    <button type="button" class="ms-btn" onclick="msAgentBooksPick()">📚 إضافة كتب من الشاملة</button>
+                    <button type="button" class="ms-btn ms-btn-danger" onclick="msAgentBooksClear()">🗑 حذف الكل</button>
+                    <button type="button" class="ms-btn ms-btn-primary" onclick="msAgentBooksClose()">إغلاق</button>
+                </div>
+            </div>
+        </div>
         <div class="ms-modal-overlay" id="msRecModal" hidden>
             <div class="ms-modal">
                 <div class="ms-modal-head">
@@ -6096,7 +6111,7 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.541"></script>
+    <script src="/static/js/app.js?v=1.10.542"></script>
     <script src="/static/js/search.js?v=1.10.493"></script>
     <script src="/static/js/reader.js?v=1.10.493"></script>
     <script src="/static/js/force3d.js?v=1.10.493"></script>

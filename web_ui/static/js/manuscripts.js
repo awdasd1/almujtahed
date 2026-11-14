@@ -2016,6 +2016,51 @@ function msGroupRemoveBook(key, idx) {
   msSaveGroup(); renderMsGroup();
 }
 
+// نافذة كتب الوكيل: الافتراضية والمضافة، حذف فردي أو كلّي
+let MS_BOOKS_KEY = null;
+function msAgentBooksOpen(key) {
+  MS_BOOKS_KEY = key;
+  msAgentBooksRender();
+  const modal = document.getElementById('msAgentBooksModal');
+  if (modal) modal.hidden = false;
+}
+function msAgentBooksClose() {
+  const modal = document.getElementById('msAgentBooksModal');
+  if (modal) modal.hidden = true;
+  MS_BOOKS_KEY = null;
+}
+function msAgentBooksRender() {
+  const list = document.getElementById('msAgentBooksList');
+  const title = document.getElementById('msAgentBooksTitle');
+  const a = msGroupAgent(MS_BOOKS_KEY);
+  if (!list || !a) return;
+  if (title) title.textContent = `📚 كتب «${msCleanAgentName(a.name)}» المعتمدة`;
+  const defaults = (MS_GROUP_DEFAULT_AGENTS.find(d => d.key === MS_BOOKS_KEY) || {}).books || [];
+  const books = a.books || [];
+  list.innerHTML = books.length
+    ? `<div class="ms-group-books">${books.map((b, i) => `<span class="ms-book-chip">${msEsc(b)} <span class="ms-wb-meta">${defaults.includes(b) ? '(افتراضي)' : '(مضاف)'}</span> <button type="button" class="ms-chip-x" title="حذف هذا الكتاب" onclick="msAgentBooksRemove(${i})">✕</button></span>`).join('')}</div>`
+    : '<div class="ms-hint">لا كتب معتمدة لهذا الوكيل — يعمل بنطاقه العام.</div>';
+}
+function msAgentBooksRemove(idx) {
+  const a = msGroupAgent(MS_BOOKS_KEY);
+  if (!a) return;
+  a.books.splice(idx, 1);
+  a.booksScope = [...a.books];
+  msSaveGroup(); renderMsGroup(); msAgentBooksRender();
+}
+function msAgentBooksClear() {
+  const a = msGroupAgent(MS_BOOKS_KEY);
+  if (!a || !(a.books || []).length) return;
+  if (!confirm(`حذف كل كتب «${msCleanAgentName(a.name)}» المعتمدة (${a.books.length} كتابًا)؟`)) return;
+  a.books = [];
+  a.booksScope = [];
+  msSaveGroup(); renderMsGroup(); msAgentBooksRender();
+  msToast('حُذفت كل كتب الوكيل المعتمدة');
+}
+function msAgentBooksPick() {
+  if (MS_BOOKS_KEY) msGroupPickBooks(MS_BOOKS_KEY);
+}
+
 // كتب المظان للتشغيل البشري: كتب وكلاء المجموعة المعتمدة + ما أضافه المحقق بيده
 function msManualExtraBooks(keys) {
   const all = [];
@@ -2039,6 +2084,7 @@ window.onMsGroupBooks = function (titles) {
   (titles || []).forEach(t => { if (t && !a.books.includes(t)) a.books.push(t); });
   a.booksScope = [...a.books];
   msSaveGroup(); renderMsGroup();
+  if (MS_BOOKS_KEY === MS_GROUP_PICK_KEY) msAgentBooksRender();
   msToast(`كتب «${a.name}» المعتمدة الآن: ${a.books.length} كتابًا`);
 };
 
@@ -2076,7 +2122,10 @@ function renderMsGroup() {
       <div class="ms-group-agent">
         <div class="ms-group-agent-head">
           <strong>${msEsc(msCleanAgentName(a.name))}</strong>
-          <button type="button" class="ms-btn ms-btn-primary" onclick="msOpenAgentCard('${msEsc(a.id || ('msag_' + a.ms_key))}')">📇 فتح بطاقة الوكيل</button>
+          <span>
+            <button type="button" class="ms-btn" onclick="msAgentBooksOpen('${msEsc(a.ms_key)}')">📚 الكتب الافتراضية</button>
+            <button type="button" class="ms-btn ms-btn-primary" onclick="msOpenAgentCard('${msEsc(a.id || ('msag_' + a.ms_key))}')">📇 فتح بطاقة الوكيل</button>
+          </span>
         </div>
       </div>`).join('')}
     <div class="ms-form-row"><button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة ضبط المصنع للمجموعة</button></div>`;
