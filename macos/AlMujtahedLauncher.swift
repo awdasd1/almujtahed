@@ -804,7 +804,6 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let board = NSImageView()
         board.imageScaling = .scaleProportionallyDown
         board.imageAlignment = .alignCenter
-        board.imageInterpolation = .none
         board.wantsLayer = true
         board.layer?.backgroundColor = NSColor.clear.cgColor
         board.layer?.contentsGravity = .resize
