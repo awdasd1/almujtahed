@@ -470,12 +470,20 @@ body[data-theme="dark"] {
   gap: 8px 10px;
 }
 
-.brand-title .brand-icon {
-  width: 10px;
-  height: 10px;
-  background: linear-gradient(135deg, var(--accent-clay), var(--accent-emerald));
-  border-radius: 50%;
-  display: inline-block;
+.brand-mark {
+  height: 76px;
+  width: auto;
+  max-width: min(280px, 46vw);
+  display: block;
+  object-fit: contain;
+  object-position: right center;
+}
+
+[data-theme="dark"] .brand-mark,
+[data-theme="charcoal"] .brand-mark {
+  background: #fbf7f0;
+  border-radius: 8px;
+  padding: 2px 6px;
 }
 
 .brand-subtitle-1 {
