@@ -21,8 +21,9 @@ dotnet publish "$ROOT/windows/AlMujtahed.csproj" -c Release -r win-x64 --self-co
 
 mkdir -p "$STAGE/source"
 git -C "$ROOT" archive --format=tar HEAD | tar -xf - -C "$STAGE/source"
+rm -rf "$STAGE/source/qdrant_service" "$STAGE/source/init_coolify_data.py"
 cp -p "$ROOT/.gitignore" "$ROOT/README.md" "$ROOT/changes.md" "$ROOT/dev.md" \
-  "$ROOT/init_coolify_data.py" "$ROOT/start_local.py" "$ROOT/start_local.sh" "$ROOT/start_local.bat" \
+  "$ROOT/start_local.py" "$ROOT/start_local.sh" "$ROOT/start_local.bat" \
   "$ROOT/local_bundle.py" \
   "$ROOT/requirements-desktop.txt" \
   "$STAGE/source/"

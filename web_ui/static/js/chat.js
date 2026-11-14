@@ -661,20 +661,10 @@ let isSemanticEnhancedEnabled = false;
 // في تقرير كل بحث (مفعّلة وباحثة / معطّلة بقراره / مفعّلة وغير متوفرة)
 // =============================================================================
 function initSemanticEnhancedState() {
-  const saved = localStorage.getItem('almojtahed_semantic_enhanced_v2');
-  if (saved !== null) isSemanticEnhancedEnabled = saved === 'true';
+  // لا قناة دلالية في التطبيق (أُزيل مخزن المتجهات ونموذج التضمين في 1.10.553):
+  // البحث لفظي دائمًا، وأي تفعيل محفوظ قديمًا يُلغى.
+  isSemanticEnhancedEnabled = false;
   updateSemanticEnhancedUI();
-  // مؤشر التوفر الحي: مخزن متصل ونموذج تضمين محمّل؟
-  fetch('/api/system/resources').then(r => r.ok ? r.json() : null).then(d => {
-    if (!d) return;
-    const avail = !!(d.qdrant && d.qdrant.connected && d.model && d.model.loaded);
-    const btn = document.getElementById('btnToggleSemanticEnhanced');
-    if (btn) btn.title = avail
-      ? `الخيار المعزّز متاح الآن: مخزن «${(d.qdrant && d.qdrant.collection_name) || ''}» متصل ونموذج التضمين محمّل. سياسة معتمدة: يُفعَّل للمسائل النحيلة لفظيًا التي تعجز عنها المراسي، ويُترك مغلقًا في المسائل غنية اللفظ. انقر للتبديل.`
-      : 'تنبيه: مخزن المتجهات أو نموذج التضمين غير متوفر حاليًا على هذا الجهاز؛ تفعيل الخيار لن يضيف قناة دلالية وسيُعلن ذلك في تقرير البحث. انقر للتبديل.';
-    const lbl = document.getElementById('labelSemanticEnhanced');
-    if (lbl && isSemanticEnhancedEnabled) lbl.textContent = avail ? '🧠 دلالي معزّز' : '🧠 دلالي (غير متوفر)';
-  }).catch(() => {});
 }
 
 function toggleSemanticEnhanced() {
@@ -682,9 +672,7 @@ function toggleSemanticEnhanced() {
   localStorage.setItem('almojtahed_semantic_enhanced_v2', isSemanticEnhancedEnabled);
   updateSemanticEnhancedUI();
   if (typeof showToast === 'function') {
-    showToast(isSemanticEnhancedEnabled
-      ? 'تم تفعيل الخيار المعزّز: قناة البحث الدلالي في مخزن المتجهات (إن توفرت) 🧠'
-      : 'تم تعطيل القناة الدلالية بقرارك: بحث لفظي فقط في فهرس المكتبة');
+    showToast('البحث لفظي فقط في فهرس المكتبة — لا قناة دلالية في التطبيق');
   }
 }
 

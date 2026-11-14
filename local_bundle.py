@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""نسخ نموذج التضمين والمكتبة الشاملة وقاعدة البيانات من مجلد محلي وإليه."""
+"""نسخ المكتبة الشاملة من مجلد محلي وإليه (لا نموذج تضمين ولا مخزن متجهات في التطبيق)."""
 
 import json
 import os
@@ -10,9 +10,6 @@ import threading
 import time
 from pathlib import Path
 
-MODEL_NAME = "almojtahed-embedding-8b-Q4_K_M.gguf"
-COLLECTION_NAME = "shamela_almojtahed_8b_dense"
-SNAPSHOT_NAME = "shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot"
 BUNDLE_NAME = "المجتهد-محلي"
 MIN_BYTES = 1024 ** 3
 SKIP_DIRS = {".git", "_git_tmp", ".cache", "__pycache__", "tmp", "node_modules"}
@@ -96,35 +93,12 @@ def locate(folder: Path, minimum: int | None = None) -> dict | None:
 def _describe(root: Path, minimum: int) -> dict | None:
     if not root.is_dir():
         return None
-    model = _first_file([
-        root / "model" / MODEL_NAME,
-        root / "models" / "gguf" / MODEL_NAME,
-    ], minimum)
     shamela = _first_dir([root / "shamela", root / "shamela4_data"])
-    snapshot = _first_file([
-        root / "database" / "snapshot" / SNAPSHOT_NAME,
-        root / "qdrant_service" / "snapshots" / SNAPSHOT_NAME,
-        root / "snapshot" / SNAPSHOT_NAME,
-    ], minimum)
-    storage = _first_dir([
-        root / "database" / "storage" / "collections" / COLLECTION_NAME,
-        root / "qdrant_service" / "storage" / "collections" / COLLECTION_NAME,
-    ])
-    if not any((model, shamela, snapshot, storage)):
-        return None
-    missing = []
-    if not model:
-        missing.append("نموذج التضمين")
     if not shamela:
-        missing.append("المكتبة الشاملة")
-    if not snapshot and not storage:
-        missing.append("قاعدة البيانات")
+        return None
     return {
-        "model": model,
         "shamela": shamela,
-        "snapshot": snapshot,
-        "storage": storage,
-        "missing": missing,
+        "missing": [],
     }
 
 
@@ -143,11 +117,7 @@ def _first_dir(paths):
 
 
 def runtime_ready(root: Path) -> bool:
-    model = root / "models" / "gguf" / MODEL_NAME
-    shamela = root / "shamela4_data"
-    storage = root / "qdrant_service" / "storage" / "collections" / COLLECTION_NAME
-    snapshot = root / "qdrant_service" / "snapshots" / SNAPSHOT_NAME
-    return _file_ok(model) and _dir_ok(shamela) and (_dir_ok(storage) or _file_ok(snapshot))
+    return _dir_ok(root / "shamela4_data")
 
 
 def _iter_files(folder: Path):
@@ -236,41 +206,24 @@ def _copy_tree(src: Path, dest: Path, progress: _Progress):
 def import_bundle(folder: Path, root: Path):
     found = locate(folder)
     if not found:
-        raise RuntimeError("المجلد لا يحتوي على نموذج التضمين والمكتبة الشاملة وقاعدة البيانات")
-    expected = _measure([found["model"], found["shamela"], found["snapshot"] or found["storage"]])
+        raise RuntimeError("المجلد لا يحتوي على المكتبة الشاملة")
+    expected = _measure([found["shamela"]])
     message = "جاري استيراد النسخة المحلية"
     progress = _Progress(root, expected, message)
     write_job(root, state="copying", message=message, received=0, expected=expected, error="", path=str(found["root"]))
-    _copy_file(found["model"], root / "models" / "gguf" / MODEL_NAME, progress)
     _copy_tree(found["shamela"], root / "shamela4_data", progress)
-    if found["storage"]:
-        storage_root = found["storage"].parents[1]
-        _copy_tree(storage_root, root / "qdrant_service" / "storage", progress)
-    elif found["snapshot"]:
-        _copy_file(found["snapshot"], root / "qdrant_service" / "snapshots" / SNAPSHOT_NAME, progress)
-    write_job(root, state="done", message="اكتمل الاستيراد. أعد فتح التطبيق ليكتمل تشغيل قاعدة البيانات.", received=expected, expected=expected, error="")
+    write_job(root, state="done", message="اكتمل الاستيراد. أعد فتح التطبيق.", received=expected, expected=expected, error="")
     _write_bootstrap(root, "ready", "اكتمل النسخ من المجلد المحلي", expected, expected)
 
 
 def _export_sources(root: Path) -> dict:
-    model = root / "models" / "gguf" / MODEL_NAME
     shamela = root / "shamela4_data"
-    snapshot = root / "qdrant_service" / "snapshots" / SNAPSHOT_NAME
-    storage = root / "qdrant_service" / "storage"
-    collection = storage / "collections" / COLLECTION_NAME
     found = {
-        "model": model if _file_ok(model) else None,
         "shamela": shamela if _dir_ok(shamela) else None,
-        "snapshot": snapshot if _file_ok(snapshot) else None,
-        "storage": storage if _dir_ok(collection) else None,
     }
     missing = []
-    if not found["model"]:
-        missing.append("نموذج التضمين")
     if not found["shamela"]:
         missing.append("المكتبة الشاملة")
-    if not found["snapshot"] and not found["storage"]:
-        missing.append("قاعدة البيانات")
     found["missing"] = missing
     return found
 
@@ -284,27 +237,18 @@ def export_bundle(destination: Path, root: Path):
     if bundle.exists():
         shutil.rmtree(bundle, ignore_errors=True)
     bundle.mkdir(parents=True, exist_ok=True)
-    database = found["snapshot"] or found["storage"]
-    expected = _measure([found["model"], found["shamela"], database])
+    expected = _measure([found["shamela"]])
     free = shutil.disk_usage(destination).free
     if free < expected + 1024 ** 3:
         raise RuntimeError("المساحة في مجلد الحفظ لا تكفي لهذه النسخة")
     message = "جاري تصدير النسخة المحلية"
     progress = _Progress(root, expected, message)
     write_job(root, state="copying", message=message, received=0, expected=expected, error="", path=str(bundle))
-    _copy_file(found["model"], bundle / "model" / MODEL_NAME, progress)
     _copy_tree(found["shamela"], bundle / "shamela", progress)
-    if found["snapshot"]:
-        _copy_file(found["snapshot"], bundle / "database" / "snapshot" / SNAPSHOT_NAME, progress)
-        kind = "snapshot"
-    else:
-        _copy_tree(found["storage"], bundle / "database" / "storage", progress)
-        kind = "storage"
     manifest = {
         "kind": "almujtahed-local",
-        "version": 1,
-        "database": kind,
-        "parts": ["model", "shamela", "database"],
+        "version": 2,
+        "parts": ["shamela"],
     }
     (bundle / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     write_job(root, state="done", message="تم حفظ النسخة المحلية", received=expected, expected=expected, error="", path=str(bundle))
@@ -374,7 +318,7 @@ def start_import(root: Path, folder: str | None = None) -> dict:
         write_job(root, state="cancelled", message="أُلغي اختيار المجلد", error="")
         return job_snapshot()
     if locate(Path(folder)) is None:
-        write_job(root, state="error", message="المجلد غير مكتمل", error="يلزم أن يحتوي المجلد على نموذج التضمين والمكتبة الشاملة وقاعدة البيانات")
+        write_job(root, state="error", message="المجلد غير مكتمل", error="يلزم أن يحتوي المجلد على المكتبة الشاملة")
         return job_snapshot()
 
     def run():

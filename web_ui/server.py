@@ -40,8 +40,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny, Range
 import astronomy_engine
 import shamela_local_mcp
 try:
@@ -937,11 +935,8 @@ async def import_print_template(file: UploadFile = File(...)):
     }
 
 # الحالة العامة للنظام والنموذج
-# قرار المنتج (1.10.267): Qdrant موقوف كليًا من التطبيق — لا حاجة لقناة
-# الدلالة، والبحث اللفظي المضبوط هو الأساس. لا يُشغَّل المحرك ولا يُحمَّل
-# نموذج التضمين ولا يُنتظر أيٌّ منهما عند الإقلاع. إعادة التفعيل عند
-# الحاجة بمتغير بيئة ALMUJTAHED_QDRANT=on دون تغيير كود.
-QDRANT_DISABLED = os.getenv("ALMUJTAHED_QDRANT", "off").strip().lower() not in ("on", "1", "enabled", "yes")
+# أُزيل مخزن Qdrant ونموذج التضمين نهائيًا من التطبيق (1.10.553):
+# البحث اللفظي المضبوط (Lucene FTS) هو المحرك الوحيد، ولا قناة دلالية ولا متجهات.
 
 app_state = {
     "qdrant": None,
@@ -1223,7 +1218,7 @@ def _gpu_status():
         hint = "لم يُرصد كرت شاشة. على أوبونتو يُفحص تعريف NVIDIA، وداخل الحاوية يلزم تمرير الكرت إلى الخدمة."
     elif app_active:
         label = "يعمل مع التطبيق"
-        hint = "نموذج التضمين يعمل على الكرت لزيادة سرعة البحث."
+        hint = "الكرت يعمل مع التطبيق لتسريع النماذج المحلية."
     elif not driver_ready:
         label = "غير مفعّل"
         if hardware["ubuntu"] or hardware["vendor"] == "NVIDIA":
@@ -1232,10 +1227,10 @@ def _gpu_status():
             hint = "الكرت ظاهر في النظام لكن تعريفه غير جاهز للاستخدام."
     elif engine_ready:
         label = "جاهز للتشغيل"
-        hint = "الكرت جاهز ويمكن نقل نموذج التضمين إليه."
+        hint = "الكرت جاهز ويمكن للنماذج المحلية استخدامه."
     else:
         label = "لا يستخدمه التطبيق"
-        hint = "الكرت مفعّل في النظام، لكن محرك التضمين الحالي مبني للمعالج فقط."
+        hint = "الكرت مفعّل في النظام، لكن محرك النماذج المحلية الحالي مبني للمعالج فقط."
     memory_total = hardware.get("memory_total_gb")
     memory_used = hardware.get("memory_used_gb")
     memory_percent = None
@@ -1264,45 +1259,6 @@ def _gpu_status():
     }
 
 
-def _enable_app_gpu():
-    if not _GPU_ENABLE_LOCK.acquire(blocking=False):
-        return False, "جارٍ نقل النموذج إلى الكرت"
-    try:
-        status = _gpu_status()
-        if not status["present"]:
-            return False, status["hint"]
-        if not status["driver_ready"]:
-            return False, status["hint"]
-        if status["app_active"] and _gpu_mode() != "cpu":
-            return True, "الكرت يعمل مع التطبيق مسبقاً"
-        if not status["engine_ready"]:
-            return False, status["hint"]
-        _set_gpu_mode("gpu")
-        with _GPU_PROBE_LOCK:
-            _GPU_PROBE_CACHE["at"] = 0.0
-        path = _embedding_gguf_path()
-        if path.is_file() and path.stat().st_size > 1024 ** 3 and _llama_supports_gpu():
-            _activate_gguf_embedder(path)
-            if app_state.get("embed_on_gpu"):
-                return True, "تم تشغيل الكرت مع نموذج التضمين"
-            return False, app_state.get("embed_gpu_error") or "أُعيد تحميل النموذج وبقي على المعالج"
-        device = _pick_torch_device()
-        embedder = app_state.get("st_embedder")
-        if embedder is not None and device in ("cuda", "mps"):
-            try:
-                app_state["st_embedder"] = embedder.to(device)
-                app_state["embed_backend"] = "sentence_transformers"
-                app_state["embed_on_gpu"] = True
-                app_state["embed_device"] = device
-                app_state["embed_gpu_error"] = ""
-                return True, "تم نقل نموذج التضمين إلى الكرت"
-            except Exception:
-                app_state["embed_gpu_error"] = "تعذر نقل النموذج إلى الكرت، وبقي على المعالج"
-                return False, app_state["embed_gpu_error"]
-        return False, "الكرت جاهز، لكن نموذج التضمين غير محمّل لنقله إليه"
-    finally:
-        _GPU_ENABLE_LOCK.release()
-
 def get_db():
     if not hasattr(_db_local, "conn") or _db_local.conn is None:
         if DB_INDEX_PATH.exists():
@@ -1311,146 +1267,13 @@ def get_db():
             _db_local.conn = conn
     return getattr(_db_local, "conn", None)
 
-def _load_local_gguf_later(path: Path):
-    try:
-        _activate_gguf_embedder(path)
-        app_state["is_ready"] = True
-    except Exception as ex:
-        print(f"⚠️ تعذر تحميل نموذج التضمين في الخلفية: {ex}")
-
-
 def load_models_and_db():
-    """تهيئة نموذج التضمين، قاعدة البيانات، والاتصال بـ Qdrant"""
-    if QDRANT_DISABLED:
-        app_state["qdrant"] = None
-        app_state["semantic_disabled"] = True
-        print("🚫 [المجتهد] Qdrant موقوف بقرار المنتج — القناة الدلالية معطلة والبحث اللفظي هو الأساس.", flush=True)
-        return
-    print("⏳ [المجتهد] جاري الاتصال بمخزن المتجهات Qdrant...")
-    try:
-        qdrant = None
-        q_candidates = [
-            "127.0.0.1",
-            "localhost",
-            os.getenv("QDRANT_HOST", "").strip(),
-            "qdrant",
-            "host.docker.internal"
-        ]
-        q_port = int(os.getenv("QDRANT_PORT", "6333"))
-        for h in q_candidates:
-            if not h:
-                continue
-            try:
-                temp_client = QdrantClient(host=h, port=q_port, timeout=5.0)
-                temp_client.get_collections()
-                qdrant = temp_client
-                print(f"✅ تم الاتصال بمخزن Qdrant على المضيف: {h}:{q_port}")
-                break
-            except Exception:
-                continue
+    """إقلاع خفيف: البحث اللفظي (Lucene FTS) هو محرك التطبيق الوحيد."""
+    app_state["qdrant"] = None
+    app_state["semantic_disabled"] = True
+    app_state["is_ready"] = True
+    print("📚 [المجتهد] البحث اللفظي هو أساس التطبيق — لا مخزن متجهات ولا نموذج تضمين.", flush=True)
 
-        if not qdrant:
-            raise ConnectionError(f"تعذر الاتصال بـ Qdrant على أي من المضيفين: {q_candidates}")
-
-        colls = [c.name for c in qdrant.get_collections().collections]
-        print(f"✅ المجموعات المتوفرة في Qdrant: {colls}")
-        
-        if "shamela_almojtahed_8b_dense" in colls:
-            app_state["qdrant"] = qdrant
-            app_state["collection_name"] = "shamela_almojtahed_8b_dense"
-            app_state["is_8b"] = True
-            app_state["is_hybrid_col"] = False
-            print("🚀 [المجتهد] تم ربط المجموعة الكبرى shamela_almojtahed_8b_dense (8.15 مليون مقطع بدقة 8B) بنجاح!")
-        elif "shamela_06b_hybrid" in colls:
-            app_state["qdrant"] = qdrant
-            app_state["collection_name"] = "shamela_06b_hybrid"
-            app_state["is_8b"] = False
-            app_state["is_hybrid_col"] = True
-            print("🚀 [المجتهد] تم ربط المجموعة الهجينة shamela_06b_hybrid (7.55 مليون صفحة: دلالي 0.6B + لفظي BM25) بنجاح!")
-        elif "shamela_corpus" in colls:
-            app_state["qdrant"] = qdrant
-            app_state["collection_name"] = "shamela_corpus"
-            app_state["is_8b"] = False
-            print("✅ تم ربط كولكشن shamela_corpus (5.14 مليون مقطع) بنجاح!")
-    except Exception as e:
-        print(f"⚠️ تعذر الاتصال بـ Qdrant: {e}")
-
-    # تطبيق سطح المكتب يفتح النافذة فوراً. تحميل النموذج يتم في الخلفية
-    # حتى لا يوقف فتح التطبيق جلب قاعدة البيانات.
-    if os.getenv("ALMUJTAHED_LOCAL", "").strip() == "1":
-        gguf_name = "almojtahed-embed-06b-Q8_0.gguf" if app_state.get("is_hybrid_col") else "almojtahed-embedding-8b-Q4_K_M.gguf"
-        gguf_path = PACKAGE_ROOT / "models" / "gguf" / gguf_name
-        if not gguf_path.is_file():
-            gguf_path = SYSTEM_ROOT / "models" / "gguf" / gguf_name
-        min_gguf_size = 100 * 1024 ** 2 if app_state.get("is_hybrid_col") else 1024 ** 3
-        if gguf_path.is_file() and gguf_path.stat().st_size > min_gguf_size:
-            threading.Thread(target=_load_local_gguf_later, args=(gguf_path,), name="local-embed", daemon=True).start()
-        return
-
-    # تحميل نموذج التضمين 0.6B إذا كانت المجموعة الهجينة هي المرتبطة
-    GGUF_06B_PATH = PACKAGE_ROOT / "models" / "gguf" / "almojtahed-embed-06b-Q8_0.gguf"
-    if not GGUF_06B_PATH.exists():
-        GGUF_06B_PATH = SYSTEM_ROOT / "models" / "gguf" / "almojtahed-embed-06b-Q8_0.gguf"
-    if app_state.get("is_hybrid_col") and GGUF_06B_PATH.exists():
-        print(f"⏳ [المجتهد] تحميل نموذج التضمين 0.6B ({GGUF_06B_PATH.name})...")
-        try:
-            _activate_gguf_embedder(GGUF_06B_PATH)
-            where = "الكرت" if app_state.get("embed_on_gpu") else "المعالج"
-            print(f"✅ تم تحميل نموذج التضمين 0.6B على {where}!")
-            app_state["is_ready"] = True
-        except Exception as e:
-            print(f"⚠️ تعذر تحميل نموذج التضمين 0.6B: {e}")
-
-    # تحميل نموذج التضمين المكمم 8B إذا كانت المجموعة 8B
-    GGUF_8B_PATH = PACKAGE_ROOT / "models" / "gguf" / "almojtahed-embedding-8b-Q4_K_M.gguf"
-    if not GGUF_8B_PATH.exists():
-        GGUF_8B_PATH = SYSTEM_ROOT / "models" / "gguf" / "almojtahed-embedding-8b-Q4_K_M.gguf"
-    if app_state.get("is_8b") and GGUF_8B_PATH.exists():
-        print(f"⏳ [المجتهد] تحميل نموذج التضمين المكمم Al-Mojtahed 8B ({GGUF_8B_PATH.name})...")
-        try:
-            _activate_gguf_embedder(GGUF_8B_PATH)
-            where = "الكرت" if app_state.get("embed_on_gpu") else "المعالج"
-            print(f"✅ تم تحميل نموذج التضمين المكمم Al-Mojtahed 8B على {where}!")
-            app_state["is_ready"] = True
-        except Exception as e:
-            print(f"⚠️ تعذر تحميل Llama 8B embedder: {e}")
-
-    # فحص وتحميل نموذج التضمين الشرعي cs95/almojtahed-qwen3-8b عبر SentenceTransformers
-    emb_hf_dir = PACKAGE_ROOT / "models" / "embedding"
-    if not emb_hf_dir.exists():
-        emb_hf_dir = SYSTEM_ROOT / "models" / "embedding"
-    if not app_state.get("llama_embedder"):
-        try:
-            device = _pick_torch_device()
-            from sentence_transformers import SentenceTransformer
-            if emb_hf_dir.exists() and ((emb_hf_dir / "config.json").exists() or (emb_hf_dir / "config_sentence_transformers.json").exists()):
-                print(f"⏳ [المجتهد] تحميل نموذج التضمين الشرعي Al-Mojtahed 8B من المسار المحلي ({emb_hf_dir}) على [{device}]...")
-                app_state["st_embedder"] = SentenceTransformer(str(emb_hf_dir), device=device)
-            else:
-                print(f"⏳ [المجتهد] تحميل نموذج التضمين الشرعي Al-Mojtahed 8B من Hugging Face على [{device}]...")
-                app_state["st_embedder"] = SentenceTransformer("cs95/almojtahed-qwen3-8b", device=device)
-            print(f"✅ تم تحميل نموذج التضمين الشرعي Al-Mojtahed 8B عبر SentenceTransformer ({device}) بنجاح!")
-            app_state["embed_backend"] = "sentence_transformers"
-            app_state["embed_on_gpu"] = device in ("cuda", "mps")
-            app_state["embed_device"] = device
-            app_state["embed_gpu_error"] = ""
-            app_state["is_ready"] = True
-        except Exception as e:
-            print(f"⚠️ تعذر تحميل نموذج التضمين الشرعي: {e}")
-
-    # تحميل BGE-M3 كاحتياطي أخير
-    if not app_state.get("is_ready"):
-        print("⏳ [المجتهد] محاولة تحميل نموذج التضمين BGE-M3 كاحتياطي...")
-        try:
-            from FlagEmbedding import BGEM3FlagModel
-            app_state["embed_model"] = BGEM3FlagModel('BAAI/bge-m3', use_fp16=False, device='cpu')
-            app_state["embed_backend"] = "bge"
-            app_state["embed_on_gpu"] = False
-            app_state["embed_device"] = "cpu"
-            print("✅ تم تحميل نموذج التضمين BGE-M3 بنجاح!")
-            app_state["is_ready"] = True
-        except Exception as e:
-            print(f"⚠️ تعذر تحميل BGE-M3 محلياً: {e}")
 
 @app.on_event("startup")
 def on_startup():
@@ -1467,8 +1290,6 @@ def on_startup():
         threading.Thread(target=_ss_warm.warm, daemon=True, name="shamela-bridge-warm").start()
     except Exception:
         pass
-    if _bundled_qdrant_path() and not QDRANT_DISABLED:
-        threading.Thread(target=_qdrant_watchdog, name="qdrant-watchdog", daemon=True).start()
 
 # نماذج البيانات
 class SearchRequest(BaseModel):
@@ -7810,7 +7631,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.552"},
+            "clientInfo": {"name": "almujtahed", "version": "1.10.553"},
         },
     })
     if opened.get("error"):
@@ -8573,13 +8394,7 @@ async def get_system_status():
         except Exception as e:
             q_connected = False
 
-    embedder_type = "none"
-    if app_state.get("llama_embedder"):
-        embedder_type = "llama_8b_gguf"
-    elif app_state.get("st_embedder"):
-        embedder_type = "sentence_transformers_8b"
-    elif app_state.get("embed_model"):
-        embedder_type = "bge_m3"
+    embedder_type = "none"  # لا نموذج تضمين في التطبيق (1.10.553)
 
     free_gb = 0.0
     try:
@@ -8589,7 +8404,7 @@ async def get_system_status():
         pass
 
     return {
-        "status": "ok" if (q_connected and points_count > 0 and embedder_type != "none") else "warning",
+        "status": "ok",
         "qdrant_connected": q_connected,
         "collection_name": app_state.get("collection_name"),
         "points_count": points_count,
@@ -8764,665 +8579,26 @@ def _data_disk_is_persistent():
     except OSError:
         return None
 
-def _ensure_qdrant_client():
-    """إعادة الربط إذا اكتمل السنابشوت بعد إقلاع الواجهة."""
-    if QDRANT_DISABLED:
-        return
-    if app_state.get("qdrant"):
-        return
-    if not _QDRANT_ATTACH_LOCK.acquire(blocking=False):
-        return
-    try:
-        if app_state.get("qdrant"):
-            return
-        hosts = []
-        for host in ("127.0.0.1", "localhost", os.getenv("QDRANT_HOST", "").strip()):
-            if host and host not in hosts:
-                hosts.append(host)
-        port = int(os.getenv("QDRANT_PORT", "6333"))
-        for host in hosts:
-            try:
-                client = QdrantClient(host=host, port=port, timeout=3)
-                names = [item.name for item in client.get_collections().collections]
-                if "shamela_almojtahed_8b_dense" in names:
-                    app_state["qdrant"] = client
-                    app_state["collection_name"] = "shamela_almojtahed_8b_dense"
-                    app_state["is_8b"] = True
-                    app_state["is_hybrid_col"] = False
-                    return
-                if "shamela_06b_hybrid" in names:
-                    app_state["qdrant"] = client
-                    app_state["collection_name"] = "shamela_06b_hybrid"
-                    app_state["is_8b"] = False
-                    app_state["is_hybrid_col"] = True
-                    return
-                if "shamela_corpus" in names:
-                    app_state["qdrant"] = client
-                    app_state["collection_name"] = "shamela_corpus"
-                    app_state["is_8b"] = False
-                    return
-            except Exception:
-                continue
-    finally:
-        _QDRANT_ATTACH_LOCK.release()
-
-_QDRANT_SIZE_SAMPLE = {"at": 0.0, "bytes": 0, "busy": False, "speed_bps": None}
-
-def _qdrant_dir_bytes():
-    """قياس مخزن المتجهات كل 20 ثانية. الواجهة تعمل أثناء السحب وQdrant يكمل التنزيل وحده."""
-    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
-    if data_dir:
-        target = Path(data_dir) / "qdrant"
-    else:
-        status = _read_bootstrap_status() or {}
-        if status.get("phase") != "snapshot":
-            return 0
-        target = PACKAGE_ROOT / "qdrant_service" / "storage"
-    if not target.exists():
-        return 0
-    now = time.time()
-    with _QDRANT_ATTACH_LOCK:
-        if _QDRANT_SIZE_SAMPLE["busy"]:
-            return int(_QDRANT_SIZE_SAMPLE["bytes"])
-        if _QDRANT_SIZE_SAMPLE["at"] and now - _QDRANT_SIZE_SAMPLE["at"] < 20:
-            return int(_QDRANT_SIZE_SAMPLE["bytes"])
-        _QDRANT_SIZE_SAMPLE["busy"] = True
-    received = int(_QDRANT_SIZE_SAMPLE["bytes"])
-    try:
-        if sys.platform == "darwin":
-            output = subprocess.check_output(["du", "-sk", str(target)], text=True, timeout=60)
-            received = int(output.split()[0]) * 1024
-        else:
-            output = subprocess.check_output(["du", "-sb", str(target)], text=True, timeout=25)
-            received = int(output.split()[0])
-    except Exception:
-        pass
-    now = time.time()
-    with _QDRANT_ATTACH_LOCK:
-        prev_at = float(_QDRANT_SIZE_SAMPLE["at"] or 0)
-        prev_bytes = int(_QDRANT_SIZE_SAMPLE["bytes"] or 0)
-        if prev_at and now > prev_at and received >= prev_bytes:
-            _QDRANT_SIZE_SAMPLE["speed_bps"] = (received - prev_bytes) / (now - prev_at)
-        _QDRANT_SIZE_SAMPLE["at"] = now
-        _QDRANT_SIZE_SAMPLE["bytes"] = received
-        _QDRANT_SIZE_SAMPLE["busy"] = False
-    return received
-
-def _format_transfer_speed(bps):
-    if not bps or bps < 1:
-        return "جاري قياس السرعة"
-    if bps >= 1024 ** 2:
-        return f"{bps / (1024 ** 2):.1f} ميغابايت/ث"
-    return f"{max(1, round(bps / 1024))} كيلوبايت/ث"
-
-_QDRANT_ENGINE = {"starting": False, "last_message": ""}
-_QDRANT_START_LOCK = threading.Lock()
-
-def _bundled_qdrant_path():
-    names = ("qdrant.exe", "qdrant") if os.name == "nt" else ("qdrant", "qdrant.exe")
-    for root in (PACKAGE_ROOT, Path("/app"), SYSTEM_ROOT):
-        directory = root / "qdrant_service"
-        for name in names:
-            binary = directory / name
-            try:
-                if binary.is_file() and binary.stat().st_size > 1_000_000:
-                    return binary
-            except OSError:
-                continue
-    return None
-
-def _qdrant_port_open(port=6333):
-    import socket
-    sock = socket.socket()
-    sock.settimeout(1.0)
-    try:
-        sock.connect(("127.0.0.1", port))
-        return True
-    except OSError:
-        return False
-    finally:
-        sock.close()
-
-def _qdrant_pid_file():
-    raw = os.getenv("ALMUJTAHED_QDRANT_PID_FILE", "").strip()
-    return Path(raw) if raw else None
-
-def _listener_pids(port=6333):
-    pids = []
-    if sys.platform == "win32":
-        try:
-            output = subprocess.check_output(["netstat", "-ano", "-p", "tcp"], text=True, timeout=5, errors="replace")
-        except Exception:
-            return []
-        token = f":{port}"
-        for line in output.splitlines():
-            if token not in line or "LISTENING" not in line.upper():
-                continue
-            parts = line.split()
-            if parts and parts[-1].isdigit():
-                pids.append(int(parts[-1]))
-        return pids
-    try:
-        output = subprocess.check_output(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"], text=True, timeout=5)
-    except Exception:
-        return []
-    for raw in output.split():
-        if raw.isdigit():
-            pids.append(int(raw))
-    return pids
-
-def _process_command(pid):
-    try:
-        if sys.platform == "win32":
-            output = subprocess.check_output(
-                ["powershell", "-NoProfile", "-Command", f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
-                text=True,
-                timeout=8,
-                errors="replace",
-            )
-            return output.strip()
-        if sys.platform == "darwin":
-            output = subprocess.check_output(["ps", "-p", str(int(pid)), "-o", "command="], text=True, timeout=5)
-            return output.strip()
-        raw = Path(f"/proc/{int(pid)}/cmdline").read_bytes().replace(b"\x00", b" ")
-        return raw.decode("utf-8", "replace").strip()
-    except Exception:
-        return ""
-
-def _command_is_our_qdrant(command, binary):
-    if not command:
-        return False
-    folded = command.replace("\\", "/").lower()
-    target = str(binary).replace("\\", "/").lower()
-    return target in folded
-
-def _our_qdrant_pids():
-    binary = _bundled_qdrant_path()
-    if binary is None:
-        return []
-    candidates = set(_listener_pids())
-    pid_file = _qdrant_pid_file()
-    if pid_file and pid_file.is_file():
-        try:
-            candidates.add(int(pid_file.read_text(encoding="utf-8").strip()))
-        except (OSError, ValueError):
-            pass
-    found = []
-    for pid in candidates:
-        if pid > 0 and _command_is_our_qdrant(_process_command(pid), binary):
-            found.append(pid)
-    return found
-
-def _clear_qdrant_pid_file():
-    pid_file = _qdrant_pid_file()
-    if pid_file and pid_file.is_file():
-        try:
-            pid_file.unlink()
-        except OSError:
-            pass
-
-def _write_qdrant_pid(pid):
-    pid_file = _qdrant_pid_file()
-    if not pid_file:
-        return
-    try:
-        pid_file.parent.mkdir(parents=True, exist_ok=True)
-        pid_file.write_text(str(int(pid)), encoding="utf-8")
-    except OSError:
-        pass
-
-def _signal_pid(pid, force=False):
-    if sys.platform == "win32":
-        command = ["taskkill", "/PID", str(int(pid)), "/T"]
-        if force:
-            command.append("/F")
-        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
-        return
-    os.kill(int(pid), 9 if force else 15)
-
-def _start_bundled_qdrant():
-    """يشغّل محرك هذه النسخة إذا كان المنفذ فارغاً. لا يمس مخزناً آخر على المنفذ نفسه."""
-    if QDRANT_DISABLED:
-        return False
-    binary = _bundled_qdrant_path()
-    if binary is None:
-        _QDRANT_ENGINE["last_message"] = "تعذر العثور على محرك المخزن داخل التطبيق"
-        return False, _QDRANT_ENGINE["last_message"]
-    if _qdrant_port_open():
-        if _our_qdrant_pids():
-            _ensure_qdrant_client()
-            _QDRANT_ENGINE["last_message"] = "المخزن يعمل"
-            return True, "المخزن يعمل"
-        _QDRANT_ENGINE["last_message"] = "المنفذ 6333 مشغول بمخزن آخر، تعذر تشغيل مخزن هذه النسخة"
-        return False, _QDRANT_ENGINE["last_message"]
-    if not _QDRANT_START_LOCK.acquire(blocking=False):
-        return True, "جارٍ تشغيل المخزن"
-    try:
-        if _qdrant_port_open():
-            message = "المخزن يعمل" if _our_qdrant_pids() else "المنفذ 6333 مشغول بمخزن آخر، تعذر تشغيل مخزن هذه النسخة"
-        else:
-            _QDRANT_ENGINE["starting"] = True
-            service_dir = binary.parent
-            config_path = service_dir / "config" / "config.yaml"
-            if not config_path.is_file():
-                message = "ملف إعداد المخزن غير موجود"
-            else:
-                (service_dir / "storage").mkdir(parents=True, exist_ok=True)
-                (service_dir / "snapshots").mkdir(parents=True, exist_ok=True)
-                log_handle = open(service_dir / "qdrant.log", "ab", buffering=0)
-                kwargs = {
-                    "cwd": str(service_dir),
-                    "stdout": log_handle,
-                    "stderr": log_handle,
-                    "stdin": subprocess.DEVNULL,
-                }
-                if os.name == "nt":
-                    kwargs["creationflags"] = 0x08000000 | 0x00000200 | 0x01000000
-                else:
-                    kwargs["start_new_session"] = True
-                process = subprocess.Popen([str(binary), "--config-path", str(config_path)], **kwargs)
-                _write_qdrant_pid(process.pid)
-                message = "المحرك لم يرد بعد التشغيل"
-                for _ in range(30):
-                    if _qdrant_port_open():
-                        message = "تم تشغيل المخزن"
-                        break
-                    if process.poll() is not None:
-                        message = "توقف محرك المخزن قبل أن يرد"
-                        break
-                    time.sleep(1)
-        _QDRANT_ENGINE["last_message"] = message
-    except Exception as ex:
-        message = "تعذر تشغيل المخزن"
-        _QDRANT_ENGINE["last_message"] = message
-        print(f"⚠️ تعذر تشغيل Qdrant: {type(ex).__name__}")
-    finally:
-        _QDRANT_ENGINE["starting"] = False
-        _QDRANT_START_LOCK.release()
-    if _qdrant_port_open() and _our_qdrant_pids():
-        _ensure_qdrant_client()
-        return True, _QDRANT_ENGINE["last_message"]
-    if _qdrant_port_open():
-        return False, _QDRANT_ENGINE["last_message"] or "المنفذ 6333 مشغول بمخزن آخر"
-    return False, _QDRANT_ENGINE["last_message"]
-
-def _stop_bundled_qdrant():
-    """يوقف محرك هذه النسخة فقط، ويترك أي مخزن آخر على المنفذ كما هو."""
-    binary = _bundled_qdrant_path()
-    if binary is None:
-        return False, "تعذر العثور على محرك المخزن داخل التطبيق"
-    pids = _our_qdrant_pids()
-    if not pids:
-        if _qdrant_port_open():
-            return False, "المنفذ 6333 مشغول بمخزن آخر، ولم يُوقف مخزن هذه النسخة"
-        _clear_qdrant_pid_file()
-        return True, "المخزن متوقف"
-    for pid in pids:
-        try:
-            _signal_pid(pid, force=False)
-        except Exception:
-            continue
-    for _ in range(10):
-        if not _our_qdrant_pids():
-            break
-        time.sleep(0.4)
-    for pid in _our_qdrant_pids():
-        try:
-            _signal_pid(pid, force=True)
-        except Exception:
-            continue
-    time.sleep(0.3)
-    if _our_qdrant_pids():
-        return False, "تعذر إيقاف المخزن"
-    _clear_qdrant_pid_file()
-    app_state["qdrant"] = None
-    return True, "تم إيقاف المخزن"
-
-def _qdrant_watchdog():
-    while True:
-        time.sleep(20)
-        try:
-            if _QDRANT_ENGINE.get("closed"):
-                continue
-            if not _qdrant_port_open():
-                _start_bundled_qdrant()
-            elif not app_state.get("qdrant"):
-                _ensure_qdrant_client()
-        except Exception:
-            pass
-
-def _collection_installed():
-    collection = PACKAGE_ROOT / "qdrant_service" / "storage" / "collections" / "shamela_almojtahed_8b_dense"
-    try:
-        return collection.is_dir() and any(collection.iterdir())
-    except OSError:
-        return False
-
-def _snapshot_restore_view(connected, points_count):
-    status = _read_bootstrap_status() or {}
-    phase = status.get("phase") or ""
-    expected = int(status.get("expected_bytes") or _SNAPSHOT_EXPECTED_BYTES) or _SNAPSHOT_EXPECTED_BYTES
-    ready = bool(_collection_installed() or (connected and points_count > 1000))
-    active_phase = phase in ("download", "snapshot", "install", "local")
-    received = 0 if ready or not active_phase else max(int(status.get("received_bytes") or 0), _qdrant_dir_bytes())
-    downloading = active_phase and (not ready) and received >= (1024 ** 3)
-    percent = 100 if ready else min(99, int(received * 100 / expected)) if expected else 0
-    received_gb = round(received / (1024 ** 3), 1)
-    expected_gb = round(expected / (1024 ** 3), 1)
-    if ready or not active_phase:
-        label = "مخزن البيانات جاهز" if ready else ""
-        active = False
-    elif phase == "install":
-        label = "جاري تركيب قاعدة البيانات ... فضلا انتظر حتى تكتمل ويتوقف العداد"
-        active = True
-    elif downloading or phase in ("download", "snapshot"):
-        label = "جاري سحب قاعدة البيانات"
-        active = True
-    elif phase == "error":
-        label = status.get("message") or "توقفت استعادة مخزن البيانات"
-        active = True
-    else:
-        label = ""
-        active = False
-    return {
-        "active": active,
-        "phase": "ready" if ready else (phase or "idle"),
-        "percent": percent,
-        "label": label,
-        "received_gb": received_gb,
-        "expected_gb": expected_gb,
-        "persistent": _data_disk_is_persistent(),
-    }
-
 @app.get("/api/system/resources")
 async def get_system_resources_endpoint():
-    """مؤشر موارد الخادم الحي: الرام، القرص، حالة Qdrant، ونموذج التضمين"""
+    """مؤشر موارد الخادم الحي: الرام والقرص فقط — لا مخزن متجهات ولا نموذج تضمين"""
     mem = _get_live_memory_usage()
     disk = _get_live_disk_usage()
-
-    if not app_state.get("qdrant"):
-        _ensure_qdrant_client()
-
-    q_connected = False
-    points_count = 0
-    collection_name = app_state.get("collection_name", "shamela_almojtahed_8b_dense")
-    if app_state.get("qdrant"):
-        try:
-            q_connected = True
-            info = app_state["qdrant"].get_collection(collection_name)
-            points_count = info.points_count or 0
-        except Exception:
-            q_connected = False
-            app_state["qdrant"] = None
-
-    restore = _snapshot_restore_view(q_connected, points_count)
-    model_loaded = bool(app_state.get("llama_embedder") or app_state.get("st_embedder") or app_state.get("embed_model"))
-    model_name = "almojtahed-embedding-8b-Q4_K_M.gguf" if app_state.get("is_8b") else "Al-Mojtahed Model"
-
-    # حساب الحالة العامة ولون المؤشر
-    if restore.get("active"):
-        health_color = "yellow"
-        health_label = restore.get("label") or "جاري سحب قاعدة البيانات"
-    elif not q_connected or not model_loaded:
-        health_color = "red"
-        health_label = "حرج - توقف إحدى الخدمات الأساسية"
-    elif mem["percent"] > 90 or disk["percent"] > 92:
-        health_color = "red"
-        health_label = "حرج - ضغط شديد على الموارد"
+    if mem["percent"] > 90 or disk["percent"] > 92:
+        health_color, health_label = "red", "حرج - ضغط شديد على الموارد"
     elif mem["percent"] > 80 or disk["percent"] > 85:
-        health_color = "yellow"
-        health_label = "تنبيه - استهلاك مرتفع للموارد"
+        health_color, health_label = "yellow", "تنبيه - استهلاك مرتفع للموارد"
     else:
-        health_color = "green"
-        health_label = "ممتاز - السيرفر يعمل بكفاءة واستقرار تام"
-
+        health_color, health_label = "green", "ممتاز - السيرفر يعمل بكفاءة واستقرار تام"
     return {
         "status": "ok",
         "health_color": health_color,
         "health_label": health_label,
         "memory": mem,
         "disk": disk,
-        "qdrant": {
-            "connected": q_connected,
-            "collection_name": collection_name,
-            "points_count": points_count,
-            "engine_up": _qdrant_port_open(),
-            "can_restart": _bundled_qdrant_path() is not None,
-            "engine_message": _QDRANT_ENGINE.get("last_message") or "",
-            "restore": restore
-        },
-        "model": {
-            "loaded": model_loaded,
-            "name": model_name,
-            "type": "8B GGUF (4096D)" if app_state.get("is_8b") else "Standard",
-            "on_gpu": bool(app_state.get("embed_on_gpu")),
-            "download": _embedding_download_view(),
-        },
         "gpu": _gpu_status(),
     }
 
-
-@app.post("/api/system/gpu/enable")
-async def enable_gpu_endpoint(request: Request):
-    """ينقل نموذج التضمين إلى كرت ظاهر ومعرّفه جاهز. لا يثبّت تعريفات النظام."""
-    require_admin(request)
-    ok, message = await asyncio.to_thread(_enable_app_gpu)
-    return {"status": "ok" if ok else "error", "message": message, "gpu": _gpu_status()}
-
-
-@app.post("/api/system/qdrant/restart")
-async def restart_qdrant_endpoint(request: Request):
-    """يعيد تشغيل محرك هذه النسخة حتى لو كان متوقفاً، من غير مسح البيانات."""
-    require_admin(request)
-    if _bundled_qdrant_path() is None:
-        return {"status": "unavailable", "message": "تعذر العثور على محرك المخزن داخل التطبيق"}
-
-    def _restart():
-        _QDRANT_ENGINE["closed"] = True
-        _stop_bundled_qdrant()
-        app_state["qdrant"] = None
-        for _ in range(20):
-            if not _qdrant_port_open():
-                break
-            time.sleep(0.25)
-        _QDRANT_ENGINE["closed"] = False
-        return _start_bundled_qdrant()
-
-    ok, message = await asyncio.to_thread(_restart)
-    return {"status": "ok" if ok else "error", "message": message}
-
-
-@app.post("/api/system/qdrant/stop")
-async def stop_qdrant_endpoint(request: Request):
-    """يوقف محرك هذه النسخة ويبقيه متوقفاً حتى يطلب المستخدم تشغيله."""
-    require_admin(request)
-    if _bundled_qdrant_path() is None:
-        return {"status": "unavailable", "message": "تعذر العثور على محرك المخزن داخل التطبيق"}
-
-    def _stop():
-        _QDRANT_ENGINE["closed"] = True
-        return _stop_bundled_qdrant()
-
-    ok, message = await asyncio.to_thread(_stop)
-    return {"status": "ok" if ok else "error", "message": message}
-
-EMBED_GGUF_NAME = "almojtahed-embedding-8b-Q4_K_M.gguf"
-EMBED_GGUF_REPO = "cs95/almojtahed-qwen3-8b"
-_EMBED_FETCH = {"running": False, "message": "", "attempt": 0, "received": 0, "expected": 0, "speed_bps": None}
-_EMBED_FETCH_LOCK = threading.Lock()
-
-def _embedding_download_view():
-    received = int(_EMBED_FETCH.get("received") or 0)
-    expected = int(_EMBED_FETCH.get("expected") or 0)
-    running = bool(_EMBED_FETCH["running"])
-    percent = min(99, int(received * 100 / expected)) if running and expected else 0
-    speed = _format_transfer_speed(_EMBED_FETCH.get("speed_bps")) if running else ""
-    received_gb = round(received / (1024 ** 3), 2)
-    expected_gb = round(expected / (1024 ** 3), 2) if expected else 0
-    message = _EMBED_FETCH.get("message") or ""
-    if running and expected:
-        message = f"جاري سحب نموذج التضمين: {received_gb} من {expected_gb} غيغابايت · {speed}"
-    return {
-        "running": running,
-        "message": message,
-        "attempt": int(_EMBED_FETCH.get("attempt") or 0),
-        "received_gb": received_gb,
-        "expected_gb": expected_gb,
-        "percent": percent,
-        "speed": speed,
-    }
-
-def _embedding_gguf_path():
-    name = EMBED_GGUF_NAME
-    for root in (PACKAGE_ROOT, SYSTEM_ROOT):
-        path = root / "models" / "gguf" / name
-        if path.is_file() and path.stat().st_size > 1024 ** 3:
-            return path
-    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
-    if data_dir:
-        return Path(data_dir) / "models" / "gguf" / name
-    return PACKAGE_ROOT / "models" / "gguf" / name
-
-def _activate_gguf_embedder(path: Path):
-    import gc
-    from llama_cpp import Llama
-    layers = _desired_gpu_layers()
-    with EMBEDDING_LOCK:
-        old = app_state.get("llama_embedder")
-        app_state["llama_embedder"] = None
-        if old is not None:
-            del old
-            gc.collect()
-        try:
-            model = Llama(
-                model_path=str(path),
-                embedding=True,
-                n_gpu_layers=layers,
-                n_threads=min(8, os.cpu_count() or 4),
-                verbose=False,
-            )
-            used_layers = layers
-            app_state["embed_gpu_error"] = ""
-        except Exception:
-            if layers == 0:
-                raise
-            model = Llama(
-                model_path=str(path),
-                embedding=True,
-                n_gpu_layers=0,
-                n_threads=min(8, os.cpu_count() or 4),
-                verbose=False,
-            )
-            used_layers = 0
-            app_state["embed_gpu_error"] = "تعذر نقل النموذج إلى الكرت، وبقي على المعالج"
-        app_state["llama_embedder"] = model
-        _mark_llama_runtime(model, used_layers)
-        app_state["embedder_kind"] = "gguf06b" if "06b" in path.name.lower() else "gguf8b"
-        app_state["is_8b"] = app_state["embedder_kind"] != "gguf06b"
-        app_state["is_ready"] = True
-
-def _embedding_received_bytes(directory: Path, final: Path) -> int:
-    best = final.stat().st_size if final.is_file() else 0
-    if not directory.is_dir():
-        return best
-    for path in directory.rglob("*"):
-        if not path.is_file():
-            continue
-        if EMBED_GGUF_NAME not in path.name and not path.name.endswith(".incomplete"):
-            continue
-        try:
-            best = max(best, path.stat().st_size)
-        except OSError:
-            continue
-    return best
-
-def _embedding_remote_size(token):
-    try:
-        from huggingface_hub import get_hf_file_metadata, hf_hub_url
-        url = hf_hub_url(EMBED_GGUF_REPO, EMBED_GGUF_NAME)
-        meta = get_hf_file_metadata(url, token=token)
-        return int(meta.size or 0)
-    except Exception:
-        return 0
-
-def _watch_embedding_bytes(directory: Path, final: Path, stop: threading.Event):
-    previous_bytes = 0
-    previous_at = time.time()
-    while not stop.wait(2):
-        received = _embedding_received_bytes(directory, final)
-        now = time.time()
-        if received >= previous_bytes and now > previous_at:
-            _EMBED_FETCH["speed_bps"] = (received - previous_bytes) / (now - previous_at)
-        previous_bytes = received
-        previous_at = now
-        _EMBED_FETCH["received"] = received
-
-def _download_embedding_worker():
-    path = _embedding_gguf_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.is_file() and path.stat().st_size > 1024 ** 3:
-            _activate_gguf_embedder(path)
-            _EMBED_FETCH["message"] = "النموذج موجود وتم تحميله في الذاكرة"
-            return
-        token = os.getenv("HF_TOKEN") or None
-        _EMBED_FETCH["expected"] = _embedding_remote_size(token)
-        _EMBED_FETCH["received"] = _embedding_received_bytes(path.parent, path)
-        stop_watch = threading.Event()
-        watcher = threading.Thread(
-            target=_watch_embedding_bytes,
-            args=(path.parent, path, stop_watch),
-            daemon=True,
-        )
-        watcher.start()
-        try:
-            from huggingface_hub import hf_hub_download
-            for attempt in range(1, 5):
-                _EMBED_FETCH["attempt"] = attempt
-                _EMBED_FETCH["message"] = f"محاولة سحب نموذج التضمين {attempt} من 4"
-                try:
-                    hf_hub_download(
-                        repo_id=EMBED_GGUF_REPO,
-                        filename=EMBED_GGUF_NAME,
-                        local_dir=str(path.parent),
-                        token=token,
-                    )
-                    if path.is_file() and path.stat().st_size > 1024 ** 3:
-                        _activate_gguf_embedder(path)
-                        _EMBED_FETCH["received"] = path.stat().st_size
-                        _EMBED_FETCH["message"] = "اكتمل سحب نموذج التضمين وتحميله في الذاكرة"
-                        return
-                    _EMBED_FETCH["message"] = "وصل ملف أصغر من النموذج المتوقع"
-                except Exception as ex:
-                    _EMBED_FETCH["message"] = f"فشلت المحاولة {attempt} من 4"
-                    print(f"⚠️ سحب نموذج التضمين، المحاولة {attempt}: {type(ex).__name__}")
-                    time.sleep(min(60, 8 * attempt))
-        finally:
-            stop_watch.set()
-    except Exception as ex:
-        _EMBED_FETCH["message"] = "تعذر تحميل نموذج التضمين في الذاكرة"
-        print(f"⚠️ تحميل نموذج التضمين: {type(ex).__name__}")
-    finally:
-        _EMBED_FETCH["running"] = False
-
-def _start_embedding_download():
-    with _EMBED_FETCH_LOCK:
-        if _EMBED_FETCH["running"]:
-            return False, "سحب نموذج التضمين يعمل الآن"
-        _EMBED_FETCH["running"] = True
-        _EMBED_FETCH["attempt"] = 0
-        _EMBED_FETCH["received"] = 0
-        _EMBED_FETCH["speed_bps"] = None
-        _EMBED_FETCH["message"] = "بدأ سحب نموذج التضمين"
-    threading.Thread(target=_download_embedding_worker, name="embed-download", daemon=True).start()
-    return True, "بدأ سحب نموذج التضمين. الشريط يبيّن التقدم، فلا تكرر الضغط."
-
-@app.post("/api/system/embedding/download")
-async def download_embedding_endpoint(request: Request):
-    """إعادة سحب نموذج التضمين فقط، من غير مسح مخزن المتجهات."""
-    require_admin(request)
-    ok, message = _start_embedding_download()
-    return {"status": "ok" if ok else "busy", "message": message}
 
 @app.post("/api/system/optimize")
 async def optimize_system_resources_endpoint():
@@ -9445,41 +8621,10 @@ async def optimize_system_resources_endpoint():
 
     return {
         "status": "ok",
-        "message": f"تم تنظيف الكاش بنجاح وتحرير كائنات الذاكرة ({collected} كائن) وتنشيط نموذج التضمين!",
+        "message": f"تم تنظيف الكاش بنجاح وتحرير كائنات الذاكرة ({collected} كائن) !",
         "memory": _get_live_memory_usage(),
         "disk": _get_live_disk_usage()
     }
-
-
-@app.post("/api/system/reload_model")
-async def reload_system_model_endpoint():
-    """إعادة تفريغ وتحميل نموذج التضمين الشرعي 8B في الرام لإنعاشه بالكامل"""
-    import gc
-    try:
-        with EMBEDDING_LOCK:
-            if app_state.get("llama_embedder"):
-                del app_state["llama_embedder"]
-                app_state["llama_embedder"] = None
-            gc.collect()
-
-            GGUF_8B_PATH = PACKAGE_ROOT / "models" / "gguf" / "almojtahed-embedding-8b-Q4_K_M.gguf"
-            if not GGUF_8B_PATH.exists():
-                GGUF_8B_PATH = SYSTEM_ROOT / "models" / "gguf" / "almojtahed-embedding-8b-Q4_K_M.gguf"
-
-            if GGUF_8B_PATH.exists():
-                _activate_gguf_embedder(GGUF_8B_PATH)
-                where = "على كرت الشاشة" if app_state.get("embed_on_gpu") else "على المعالج"
-                return {
-                    "status": "ok",
-                    "message": f"تمت إعادة تحميل نموذج التضمين الشرعي 8B {where}.",
-                    "memory": _get_live_memory_usage(),
-                    "disk": _get_live_disk_usage()
-                }
-            else:
-                return {"status": "error", "message": "ملف النموذج غير موجود على القرص."}
-    except Exception as e:
-        return {"status": "error", "message": f"حدث خطأ أثناء إعادة تحميل النموذج: {e}"}
-
 
 
 def _qdrant_alive() -> bool:
@@ -10691,7 +9836,7 @@ def _hybrid_sparse_vector(text: str):
     """نفس متجه BM25 المتناثر المستخدم زمن بناء المخزن (تطبيع + crc32 + ‏1+log(tf) + دمج الاصطدامات)."""
     import math
     import zlib
-    from qdrant_client.models import SparseVector
+    from types import SimpleNamespace as SparseVector  # أُزيل Qdrant (1.10.553)؛ المسار الدلالي ميت
     tf: Dict[str, float] = {}
     for tok in _HYBRID_WORD_RE.findall(_hybrid_norm(text)):
         if len(tok) < 2:
@@ -17799,11 +16944,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             _sem_available = False
     _sem_state = "disabled" if not _sem_enabled else ("active" if _sem_available else "unavailable")
     _sem_label = {"active": "مفعّلة وباحثة في مخزن المتجهات", "unavailable": "مفعّلة بقرار الباحث لكن مخزن المتجهات أو نموذج التضمين غير متوفر — جرى البحث لفظيًا", "disabled": "معطّلة بقرار الباحث — بحث لفظي فقط"}[_sem_state]
-    if QDRANT_DISABLED:
-        _sem_state = "off"
-        _sem_label = "موقوفة من التطبيق (Qdrant معطّل بقرار المنتج) — بحث لفظي فقط"
-        _sem_pass = False
-    _sem_pass = _sem_enabled and _sem_available
+    _sem_state = "off"
+    _sem_label = "بحث لفظي فقط — لا قناة دلالية في التطبيق"
+    _sem_pass = False  # لا قناة دلالية في التطبيق (أُزيل Qdrant والتضمين في 1.10.553)
     print(f"🧠 [Semantic Channel] {_sem_state} ({_sem_label})", flush=True)
     if (
         search_query

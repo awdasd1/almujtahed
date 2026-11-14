@@ -107,11 +107,6 @@ static class Paths
     public static string Runtime => Path.Combine(Support, "runtime");
     public static string StatusFile => Path.Combine(Support, "status.txt");
     public static string BootstrapFile => Path.Combine(Runtime, "web_ui", "bootstrap_status.json");
-    public static string ModelFile => Path.Combine(Runtime, "models", "gguf", "almojtahed-embedding-8b-Q4_K_M.gguf");
-    public static string Snapshots => Path.Combine(Runtime, "qdrant_service", "snapshots");
-    public const string SnapshotName = "shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot";
-    public const long SnapshotExpected = 184_683_593_728L;
-    public const long ModelExpected = 4_724_464_026L;
 }
 
 static class AppFonts
@@ -454,28 +449,14 @@ sealed class InstallerForm : Form
             StartEngine();
             return;
         }
-        if (CloudAlreadyStarted())
-        {
-            WriteSource("cloud", null);
-            StartEngine();
-            return;
-        }
         AskSource();
     }
 
     bool DataAlreadyInstalled()
     {
-        if (ByteCount(Paths.ModelFile) <= 1_000_000_000) return false;
+        // البيانات الوحيدة: المكتبة الشاملة (من مجلد محلي أو من تطبيق الشاملة).
         var shamela = Path.Combine(Paths.Runtime, "shamela4_data");
-        if (!Directory.Exists(shamela)) return false;
-        var collection = Path.Combine(Paths.Runtime, "qdrant_service", "storage", "collections", "shamela_almojtahed_8b_dense");
-        if (Directory.Exists(collection)) return true;
-        return ByteCount(Path.Combine(Paths.Snapshots, Paths.SnapshotName)) > 1_000_000_000;
-    }
-
-    bool CloudAlreadyStarted()
-    {
-        return IncompleteModelExists() || SnapshotDownloadBytes() != null;
+        return Directory.Exists(shamela) && Directory.EnumerateFileSystemEntries(shamela).Any();
     }
 
     void WriteSource(string mode, string? path)
@@ -505,7 +486,7 @@ sealed class InstallerForm : Form
         };
         var text = new Label
         {
-            Text = "نموذج التضمين، والمكتبة الشاملة، وقاعدة البيانات (السنابشوت). السحابة تكمل التنصيب بالتنزيل الحالي، والمحلية تنسخها من مجلد على القرص.",
+            Text = "المكتبة الشاملة: إما من تطبيق «المكتبة الشاملة» على هذا الجهاز مباشرة، أو نسخها من مجلد محلي على القرص.",
             AutoSize = false,
             TextAlign = ContentAlignment.MiddleRight,
             Bounds = new Rectangle(24, 24, 512, 110),
@@ -536,7 +517,7 @@ sealed class InstallerForm : Form
     {
         using var dialog = new FolderBrowserDialog
         {
-            Description = "اختر المجلد الذي يحتوي على نموذج التضمين والمكتبة الشاملة وقاعدة البيانات",
+            Description = "اختر المجلد الذي يحتوي على المكتبة الشاملة",
             UseDescriptionForTitle = true
         };
         if (dialog.ShowDialog(this) != DialogResult.OK)
@@ -547,7 +528,7 @@ sealed class InstallerForm : Form
         if (LocalFolderIsValid(dialog.SelectedPath)) return dialog.SelectedPath;
         var again = MessageBox.Show(
             this,
-            "يلزم أن يحتوي المجلد على نموذج التضمين والمكتبة الشاملة وقاعدة البيانات. نعم لاختيار مجلد آخر، ولا للسحابة.",
+            "يلزم أن يحتوي المجلد على المكتبة الشاملة. نعم لاختيار مجلد آخر، ولا للسحابة.",
             "المجلد غير مكتمل",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning,
@@ -566,16 +547,7 @@ sealed class InstallerForm : Form
     {
         foreach (var root in new[] { folder, Path.Combine(folder, "المجتهد-محلي") })
         {
-            if (ModelInFolder(root) && ShamelaInFolder(root) && DatabaseInFolder(root)) return true;
-        }
-        return false;
-    }
-
-    static bool ModelInFolder(string root)
-    {
-        foreach (var relative in new[] { "model/almojtahed-embedding-8b-Q4_K_M.gguf", "models/gguf/almojtahed-embedding-8b-Q4_K_M.gguf" })
-        {
-            if (ByteCount(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar))) > 1_000_000_000) return true;
+            if (ShamelaInFolder(root)) return true;
         }
         return false;
     }
@@ -585,25 +557,6 @@ sealed class InstallerForm : Form
         foreach (var name in new[] { "shamela", "shamela4_data" })
         {
             var path = Path.Combine(root, name);
-            if (Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any()) return true;
-        }
-        return false;
-    }
-
-    static bool DatabaseInFolder(string root)
-    {
-        var snapshot = "shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot";
-        foreach (var relative in new[] { "database/snapshot/" + snapshot, "qdrant_service/snapshots/" + snapshot })
-        {
-            if (ByteCount(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar))) > 1_000_000_000) return true;
-        }
-        foreach (var relative in new[]
-        {
-            "database/storage/collections/shamela_almojtahed_8b_dense",
-            "qdrant_service/storage/collections/shamela_almojtahed_8b_dense"
-        })
-        {
-            var path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
             if (Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any()) return true;
         }
         return false;
@@ -695,7 +648,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.552");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.553");
         tray.Visible = false;
     }
 
@@ -757,10 +710,6 @@ sealed class InstallerForm : Form
         ShutdownServices();
         foreach (var relative in new[]
         {
-            "models/gguf",
-            "qdrant_service/snapshots",
-            "qdrant_service/storage/tmp",
-            "qdrant_service/storage/collections",
             "shamela4_data/_git_tmp",
             "web_ui/bootstrap_status.json",
             "web_ui/local_source.json"
@@ -781,9 +730,8 @@ sealed class InstallerForm : Form
     {
         engineGeneration++;
         try { if (engine is { HasExited: false }) engine.Kill(entireProcessTree: true); } catch { }
-        StopOwned(Path.Combine(Paths.Support, "qdrant.pid"));
         StopOwned(Path.Combine(Paths.Support, "init.pid"));
-        foreach (var port in new[] { 6333, 8085 })
+        foreach (var port in new[] { 8085 })
         {
             foreach (var pid in Native.ListeningPids(port))
                 StopPid(pid);
@@ -816,7 +764,7 @@ sealed class InstallerForm : Form
         if (ready) return;
         var message = CurrentStatus();
         var boot = ReadBootstrap();
-        if (boot?.Phase == "snapshot" && !string.IsNullOrWhiteSpace(boot.Message))
+        if (!string.IsNullOrWhiteSpace(boot?.Message))
             message = boot.Message;
         if (!string.IsNullOrWhiteSpace(message))
         {
@@ -874,7 +822,6 @@ sealed class InstallerForm : Form
         {
             case "download":
             case "install":
-            case "snapshot":
             case "local":
                 return "جاري تثبيت الملفات";
         }
@@ -886,10 +833,7 @@ sealed class InstallerForm : Form
         var installing = message.Contains("بايثون", StringComparison.Ordinal) || message.Contains("Python", StringComparison.Ordinal)
             || message.Contains("مكتبات", StringComparison.Ordinal) || message.Contains("بيئة", StringComparison.Ordinal)
             || message.Contains("تثبيت", StringComparison.Ordinal) || message.Contains("تنزيل", StringComparison.Ordinal)
-            || message.Contains("سحب", StringComparison.Ordinal) || message.Contains("نموذج", StringComparison.Ordinal)
-            || message.Contains("تضمين", StringComparison.Ordinal) || message.Contains("محرك", StringComparison.Ordinal)
-            || message.Contains("سنابشوت", StringComparison.Ordinal) || message.Contains("قاعدة", StringComparison.Ordinal)
-            || message.Contains("Qdrant", StringComparison.Ordinal) || IncompleteModelExists();
+            || message.Contains("سحب", StringComparison.Ordinal);
         if (installing)
         {
             var stillWorking = message.Contains("جاري", StringComparison.Ordinal) || message.Contains("سحب", StringComparison.Ordinal)
@@ -903,12 +847,6 @@ sealed class InstallerForm : Form
         return "جاري فتح التطبيق";
     }
 
-    static bool IncompleteModelExists()
-    {
-        var cache = Path.Combine(Paths.Runtime, "models", "gguf", ".cache", "huggingface", "download");
-        return Directory.Exists(cache) && Directory.EnumerateFiles(cache, "*.incomplete").Any();
-    }
-
     double DisplayedPercent(string message, Transfer transfer)
     {
         var phase = ReadBootstrap()?.Phase;
@@ -918,9 +856,7 @@ sealed class InstallerForm : Form
             return Math.Min(90, transfer.Received / (double)transfer.Expected * 90);
         if (message.Contains("بيئة بايثون", StringComparison.Ordinal)) return 8;
         if (message.Contains("مكتبات", StringComparison.Ordinal)) return 20;
-        if (message.Contains("تنزيل محرك", StringComparison.Ordinal)) return 34;
-        if (message.Contains("تم تشغيل Qdrant", StringComparison.Ordinal) || message.Contains("Qdrant يعمل", StringComparison.Ordinal)) return 42;
-        if (message.Contains("موجود", StringComparison.Ordinal) || message.Contains("سنابشوت", StringComparison.Ordinal) || message.Contains("الشاملة", StringComparison.Ordinal)) return 88;
+        if (message.Contains("موجود", StringComparison.Ordinal) || message.Contains("الشاملة", StringComparison.Ordinal)) return 88;
         if (message.Contains("الواجهة", StringComparison.Ordinal) || message.Contains("فتح التطبيق", StringComparison.Ordinal)) return 94;
         if (message.Contains("تثبيت الملفات", StringComparison.Ordinal) || message.Contains("تثبيت", StringComparison.Ordinal)) return 22;
         if (message.Contains("تهيئة", StringComparison.Ordinal) || message.Contains("تجهيز", StringComparison.Ordinal)) return 8;
@@ -977,13 +913,13 @@ sealed class InstallerForm : Form
             }
             openButton.Active = true;
             engineRestarts = 0;
-            if (DatabaseAlreadyPresent())
+            if (DataAlreadyInstalled())
             {
                 MarkReady();
                 return;
             }
             var phase = ReadBootstrap()?.Phase;
-            if (phase is "download" or "install" or "snapshot" or "local" or "error" || FilesLookDamaged()) return;
+            if (phase is "download" or "install" or "local" or "error" || FilesLookDamaged()) return;
             MarkReady();
         }
         catch { }
@@ -997,59 +933,7 @@ sealed class InstallerForm : Form
         var boot = ReadBootstrap();
         if (boot?.Phase == "local" && boot.Expected > 0)
             return new Transfer(Math.Min(Math.Max(boot.Received, 0), boot.Expected), boot.Expected);
-        var modelSize = ByteCount(Paths.ModelFile);
-        if (modelSize > 1_000_000_000)
-        {
-            var expected = ReadBootstrap()?.Expected ?? Paths.SnapshotExpected;
-            if (expected <= 0) expected = Paths.SnapshotExpected;
-            var phase = ReadBootstrap()?.Phase;
-            if (phase == "download")
-            {
-                var partial = SnapshotDownloadBytes() ?? ReadBootstrap()?.Received ?? 0;
-                return new Transfer(Math.Min(partial, expected), expected);
-            }
-            if (phase == "install")
-            {
-                var installed = ReadBootstrap()?.Received ?? 0;
-                return new Transfer(Math.Min(Math.Max(installed, 0), expected), expected);
-            }
-            return new Transfer(modelSize, modelSize);
-        }
-        long received = ByteCount(Paths.ModelFile);
-        var root = Path.Combine(Paths.Runtime, "models", "gguf");
-        if (Directory.Exists(root))
-        {
-            foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
-            {
-                var name = Path.GetFileName(file);
-                if (name.EndsWith(".lock", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".metadata", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var inCache = file.Contains($"{Path.DirectorySeparatorChar}.cache{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
-                var partial = name.EndsWith(".incomplete", StringComparison.OrdinalIgnoreCase)
-                    || name.EndsWith(".partial", StringComparison.OrdinalIgnoreCase)
-                    || name.Contains(".part", StringComparison.OrdinalIgnoreCase);
-                if (!inCache && !partial && !name.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                received = Math.Max(received, new FileInfo(file).Length);
-            }
-        }
-        return new Transfer(received, Math.Max(Paths.ModelExpected, received));
-    }
-
-    static long? SnapshotDownloadBytes()
-    {
-        var partial = Path.Combine(Paths.Snapshots, Paths.SnapshotName + ".partial");
-        var finalFile = Path.Combine(Paths.Snapshots, Paths.SnapshotName);
-        var partialSize = ByteCount(partial);
-        if (partialSize > 0) return partialSize;
-        var finalSize = ByteCount(finalFile);
-        if (finalSize > 0) return finalSize;
-        var cache = Path.Combine(Paths.Snapshots, ".cache", "huggingface", "download");
-        if (!Directory.Exists(cache)) return null;
-        long received = 0;
-        foreach (var file in Directory.EnumerateFiles(cache, "*.incomplete"))
-            received = Math.Max(received, new FileInfo(file).Length);
-        return received > 0 ? received : null;
+        return new Transfer(0, 0);
     }
 
     sealed class Bootstrap
@@ -1083,22 +967,13 @@ sealed class InstallerForm : Form
     bool DownloadStillRunning()
     {
         var boot = ReadBootstrap();
-        return boot != null && !boot.NeedsReinstall && boot.Phase is "download" or "install" or "snapshot";
-    }
-
-    static bool DatabaseAlreadyPresent()
-    {
-        var collection = Path.Combine(Paths.Runtime, "qdrant_service", "storage", "collections", "shamela_almojtahed_8b_dense");
-        if (Directory.Exists(collection) && Directory.EnumerateFileSystemEntries(collection).Any()) return true;
-        return ByteCount(Path.Combine(Paths.Snapshots, Paths.SnapshotName)) > 1_000_000_000;
+        return boot != null && !boot.NeedsReinstall && boot.Phase is "download" or "install";
     }
 
     bool FilesLookDamaged()
     {
         var boot = ReadBootstrap();
-        if (boot?.NeedsReinstall == true || boot?.Phase == "error") return true;
-        var size = ByteCount(Paths.ModelFile);
-        return size > 0 && size < 1_000_000_000 && !IncompleteModelExists();
+        return boot?.NeedsReinstall == true || boot?.Phase == "error";
     }
 
     static long ByteCount(string path) => File.Exists(path) ? new FileInfo(path).Length : 0;

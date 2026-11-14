@@ -15,7 +15,6 @@ function Set-Status([string]$Message) {
 
 Set-Status 'جاري تهيئة التطبيق'
 $env:ALMUJTAHED_STATUS_FILE = $Status
-$env:ALMUJTAHED_QDRANT_PID_FILE = Join-Path $Support 'qdrant.pid'
 $env:ALMUJTAHED_INIT_PID_FILE = Join-Path $Support 'init.pid'
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
@@ -29,16 +28,11 @@ $skipPrefix = @(
     '.venv\',
     'models\',
     'shamela4_data\',
-    'qdrant_service\storage\',
-    'qdrant_service\snapshots\',
     'web_ui\uploads\',
     '__pycache__\'
 )
 $skipFile = @(
     '.env',
-    'qdrant_service\qdrant.exe',
-    'qdrant_service\qdrant',
-    'qdrant_service\qdrant.log',
     'web_ui\app_memory.db',
     'web_ui\bootstrap_status.json',
     'web_ui\init.log'
@@ -88,7 +82,7 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
 Set-Location -LiteralPath $Runtime
 $previous = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-& $venvPython -c "import fastapi, uvicorn, qdrant_client, huggingface_hub, dotenv, llama_cpp" | Out-Null
+& $venvPython -c "import fastapi, uvicorn, huggingface_hub, dotenv, llama_cpp" | Out-Null
 $importExit = $LASTEXITCODE
 $ErrorActionPreference = $previous
 if ($importExit -ne 0) {

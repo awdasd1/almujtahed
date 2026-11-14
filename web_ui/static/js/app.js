@@ -1415,7 +1415,7 @@ function paintLocalExport(data) {
 async function exportLocalBundle() {
   const accepted = await showConfirmDialog({
     title: 'تأكيد التصدير',
-    message: 'سيُصدَّر نموذج التضمين والمكتبة الشاملة وقاعدة البيانات إلى مجلد. قد يستغرق ذلك عدة دقائق حسب سرعة القرص.',
+    message: 'ستُصدَّر المكتبة الشاملة إلى مجلد. قد يستغرق ذلك عدة دقائق حسب سرعة القرص.',
     confirmText: 'تصدير',
     cancelText: 'إلغاء',
     danger: false,
@@ -2407,108 +2407,6 @@ async function fetchServerHealth(showToast = false) {
       if (statDiskFree) statDiskFree.textContent = `شاغر: ${data.disk.free_gb} GB`;
     }
 
-    // 4. تحديث حالة Qdrant
-    if (data.qdrant) {
-      const statQdrantPoints = document.getElementById('statQdrantPoints');
-      const statQdrantCollection = document.getElementById('statQdrantCollection');
-      const badgeQdrantStatus = document.getElementById('badgeQdrantStatus');
-
-      const restore = data.qdrant.restore || null;
-      const restoreWrap = document.getElementById('qdrantRestoreWrap');
-      const restoreBar = document.getElementById('barQdrantRestore');
-      const restoreLabel = document.getElementById('statQdrantRestore');
-      const persistWarn = document.getElementById('qdrantPersistWarn');
-      const restoring = !!(restore && restore.active);
-
-      if (statQdrantPoints) {
-        if (restoring && restore.phase === 'install') {
-          statQdrantPoints.textContent = `${Math.round(restore.percent || 0)}%`;
-        } else if (restoring) {
-          statQdrantPoints.textContent = `${restore.received_gb} / ${restore.expected_gb} GB`;
-        } else if (data.qdrant.points_count) {
-          statQdrantPoints.textContent = Number(data.qdrant.points_count).toLocaleString('en-US');
-        } else {
-          statQdrantPoints.textContent = '—';
-        }
-      }
-      if (statQdrantCollection) statQdrantCollection.textContent = data.qdrant.collection_name || 'shamela_almojtahed_8b_dense';
-      if (badgeQdrantStatus) {
-        if (restoring && restore.phase === 'error') {
-          badgeQdrantStatus.textContent = 'تعثّر السحب';
-          badgeQdrantStatus.style.color = '#ef4444';
-        } else if (restoring && restore.phase === 'install') {
-          badgeQdrantStatus.textContent = 'جاري التركيب';
-          badgeQdrantStatus.style.color = '#f59e0b';
-        } else if (restoring) {
-          badgeQdrantStatus.textContent = 'جاري السحب';
-          badgeQdrantStatus.style.color = '#f59e0b';
-        } else {
-          badgeQdrantStatus.textContent = data.qdrant.connected ? 'متصل ومفهرس' : 'غير متصل';
-          badgeQdrantStatus.style.color = data.qdrant.connected ? '#10b981' : '#ef4444';
-        }
-      }
-      if (restoreWrap) restoreWrap.style.display = restoring ? 'block' : 'none';
-      if (restoring && restoreBar) restoreBar.style.width = `${Math.max(2, restore.percent || 0)}%`;
-      if (restoring && restoreLabel) restoreLabel.textContent = restore.label || (restore.phase === 'install'
-        ? 'جاري تركيب قاعدة البيانات ... فضلا انتظر حتى تكتمل ويتوقف العداد'
-        : 'جاري سحب قاعدة البيانات');
-      if (persistWarn) {
-        if (restore && restore.persistent === false) {
-          persistWarn.style.display = 'block';
-          persistWarn.textContent = 'القرص الحالي مؤقت. من Coolify أضف Persistent Storage ووجهته /data وإلا يُمسح السحب عند إعادة النشر.';
-        } else {
-          persistWarn.style.display = 'none';
-          persistWarn.textContent = '';
-        }
-      }
-      if (!window._qdrantActionBusy) setQdrantActionButtons(false);
-    }
-
-    // 5. تحديث حالة النموذج
-    if (data.model) {
-      const statModelName = document.getElementById('statModelName');
-      const statModelEngine = document.getElementById('statModelEngine');
-      const badgeModelStatus = document.getElementById('badgeModelStatus');
-
-      if (statModelName) statModelName.textContent = data.model.name || 'Al-Mojtahed 8B GGUF';
-      if (statModelEngine) {
-        const place = data.model.on_gpu ? 'على كرت الشاشة' : 'على المعالج';
-        statModelEngine.textContent = data.model.loaded ? `محمل في الذاكرة · ${place}` : 'غير محمل';
-      }
-      const download = data.model.download || {};
-      const modelWrap = document.getElementById('modelDownloadWrap');
-      const modelBar = document.getElementById('barModelDownload');
-      const modelDownload = document.getElementById('statModelDownload');
-      const downloadBtn = document.getElementById('btnDownloadEmbedding');
-      if (badgeModelStatus) {
-        if (download.running) {
-          badgeModelStatus.textContent = 'جاري السحب';
-          badgeModelStatus.style.color = '#f59e0b';
-        } else {
-          badgeModelStatus.textContent = data.model.loaded ? 'جاهز' : 'متوقف';
-          badgeModelStatus.style.color = data.model.loaded ? '#10b981' : '#ef4444';
-        }
-      }
-      if (modelWrap) modelWrap.style.display = download.running ? 'block' : 'none';
-      if (download.running && modelBar) modelBar.style.width = `${Math.max(2, download.percent || 0)}%`;
-      if (modelDownload) {
-        modelDownload.style.display = download.message ? 'block' : 'none';
-        modelDownload.textContent = download.message || '';
-      }
-      if (downloadBtn) {
-        downloadBtn.disabled = !!download.running;
-        downloadBtn.textContent = download.running ? 'جاري سحب النموذج...' : 'إعادة سحب نموذج التضمين';
-      }
-      if (download.running) {
-        if (!window._embedDownloadPoller) {
-          window._embedDownloadPoller = setInterval(() => fetchServerHealth(false), 3000);
-        }
-      } else if (window._embedDownloadPoller) {
-        clearInterval(window._embedDownloadPoller);
-        window._embedDownloadPoller = null;
-      }
-    }
-
     renderGpuCard(data.gpu || {});
 
     if (showToast && typeof showAlertDialog === 'function') {
@@ -2552,7 +2450,7 @@ function renderGpuCard(gpu) {
     else driver.textContent = gpu.driver_ready ? 'مفعّل' : 'غير مفعّل';
   }
   if (appLink) {
-    appLink.textContent = active ? 'يعمل مع نموذج التضمين' : (present ? 'لا يعمل مع التطبيق' : '—');
+    appLink.textContent = active ? 'يعمل مع التطبيق' : (present ? 'لا يعمل مع التطبيق' : '—');
     appLink.style.color = active ? '#10b981' : 'inherit';
     appLink.style.fontWeight = active ? '700' : '400';
   }
@@ -2572,36 +2470,7 @@ function renderGpuCard(gpu) {
     hint.style.display = gpu.hint ? 'block' : 'none';
     hint.textContent = gpu.hint || '';
   }
-  if (enableWrap) {
-    const isAdmin = document.body.classList.contains('is-admin');
-    enableWrap.hidden = !(isAdmin && gpu.can_enable);
-  }
-}
-
-async function enableServerGpu() {
-  const btn = document.getElementById('btnEnableGpu');
-  const feedback = document.getElementById('telemetryFeedbackMsg');
-  if (btn) btn.disabled = true;
-  try {
-    const res = await fetch('/api/system/gpu/enable', { method: 'POST' });
-    const data = await res.json();
-    const ok = res.ok && data.status === 'ok';
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.background = ok ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)';
-      feedback.style.color = ok ? '#10b981' : '#b45309';
-      feedback.textContent = data.message || (ok ? 'تم تشغيل الكرت' : 'تعذر تشغيل الكرت');
-    }
-    await fetchServerHealth(false);
-  } catch (err) {
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.color = '#ef4444';
-      feedback.textContent = 'تعذر تشغيل الكرت مع التطبيق';
-    }
-  } finally {
-    if (btn) btn.disabled = false;
-  }
+  if (enableWrap) enableWrap.hidden = true;
 }
 
 async function optimizeServerMemory() {
@@ -2645,136 +2514,6 @@ async function optimizeServerMemory() {
   }
 }
 
-async function downloadEmbeddingModel() {
-  const btn = document.getElementById('btnDownloadEmbedding');
-  const feedback = document.getElementById('telemetryFeedbackMsg');
-  if (btn) btn.disabled = true;
-  try {
-    const res = await fetch('/api/system/embedding/download', { method: 'POST' });
-    const data = await res.json();
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.background = 'rgba(245, 158, 11, 0.12)';
-      feedback.style.color = '#b45309';
-      feedback.textContent = data.message || 'بدأ سحب نموذج التضمين';
-    }
-    await fetchServerHealth(false);
-  } catch (err) {
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.color = '#ef4444';
-      feedback.textContent = 'تعذر بدء سحب نموذج التضمين';
-    }
-    if (btn) btn.disabled = false;
-  }
-}
-
-function setQdrantActionButtons(disabled) {
-  window._qdrantActionBusy = !!disabled;
-  const restartBtn = document.getElementById('btnRestartQdrant');
-  const stopBtn = document.getElementById('btnStopQdrant');
-  if (restartBtn) restartBtn.disabled = !!disabled;
-  if (stopBtn) stopBtn.disabled = !!disabled;
-}
-
-function showQdrantFeedback(data, fallback) {
-  const feedback = document.getElementById('telemetryFeedbackMsg');
-  if (!feedback) return;
-  const ok = data && data.status === 'ok';
-  feedback.style.display = 'block';
-  feedback.style.background = ok ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)';
-  feedback.style.color = ok ? '#10b981' : '#b45309';
-  feedback.textContent = (data && data.message) || fallback;
-}
-
-async function restartQdrantStore() {
-  const feedback = document.getElementById('telemetryFeedbackMsg');
-  setQdrantActionButtons(true);
-  try {
-    const res = await fetch('/api/system/qdrant/restart', { method: 'POST' });
-    const data = await res.json();
-    showQdrantFeedback(data, 'تمت إعادة تشغيل المخزن');
-    await fetchServerHealth(false);
-  } catch (err) {
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.color = '#ef4444';
-      feedback.textContent = 'تعذر إعادة تشغيل المخزن';
-    }
-  } finally {
-    setQdrantActionButtons(false);
-  }
-}
-
-async function stopQdrantStore() {
-  const feedback = document.getElementById('telemetryFeedbackMsg');
-  setQdrantActionButtons(true);
-  try {
-    const res = await fetch('/api/system/qdrant/stop', { method: 'POST' });
-    const data = await res.json();
-    showQdrantFeedback(data, 'تم إيقاف المخزن');
-    await fetchServerHealth(false);
-  } catch (err) {
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.color = '#ef4444';
-      feedback.textContent = 'تعذر إيقاف المخزن';
-    }
-  } finally {
-    setQdrantActionButtons(false);
-  }
-}
-
-async function reloadServerModel() {
-  if (!confirm('هل ترغب بإعادة تفريغ وتحميل نموذج التضمين الشرعي 8B في الرام؟ يستغرق ذلك بضع ثوانٍ.')) {
-    return;
-  }
-
-  const btn = document.getElementById('btnReloadModel');
-  const feedback = document.getElementById('telemetryFeedbackMsg');
-  const originalText = btn ? btn.innerHTML : '';
-
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<span>جاري إعادة التحميل... ⏳</span>';
-  }
-
-  try {
-    const res = await fetch('/api/system/reload_model', { method: 'POST' });
-    const data = await res.json();
-
-    if (feedback) {
-      feedback.style.display = 'block';
-      if (data.status === 'ok') {
-        feedback.style.background = 'rgba(16, 185, 129, 0.12)';
-        feedback.style.color = '#10b981';
-        feedback.textContent = data.message || 'تمت إعادة تحميل النموذج بنجاح!';
-      } else {
-        feedback.style.background = 'rgba(239, 68, 68, 0.12)';
-        feedback.style.color = '#ef4444';
-        feedback.textContent = data.message || 'تعذر إعادة تحميل النموذج.';
-      }
-      setTimeout(() => { feedback.style.display = 'none'; }, 6000);
-    }
-
-    await fetchServerHealth(false);
-  } catch (err) {
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.background = 'rgba(239, 68, 68, 0.12)';
-      feedback.style.color = '#ef4444';
-      feedback.textContent = 'خطأ في الاتصال: ' + err.message;
-    }
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = originalText;
-      if (window.lucide && typeof lucide.createIcons === 'function') {
-        lucide.createIcons();
-      }
-    }
-  }
-}
 
 // بدء الفحص الدوري لموارد السيرفر كل 30 ثانية
 if (typeof window !== 'undefined') {
@@ -3385,7 +3124,6 @@ window.closeLibraryStatsModal = closeLibraryStatsModal;
 window.loadLibraryStats = loadLibraryStats;
 window.fetchServerHealth = fetchServerHealth;
 window.optimizeServerMemory = optimizeServerMemory;
-window.reloadServerModel = reloadServerModel;
 window.quickSaveCurrentWorkspace = quickSaveCurrentWorkspace;
 window.runSystemDiagnose = runSystemDiagnose;
 window.runSystemRepair = runSystemRepair;

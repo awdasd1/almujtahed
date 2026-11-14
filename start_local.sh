@@ -39,7 +39,7 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
-python -c "import fastapi, uvicorn, qdrant_client, huggingface_hub, dotenv, llama_cpp" >/dev/null 2>&1 || {
+python -c "import fastapi, uvicorn, huggingface_hub, dotenv, llama_cpp" >/dev/null 2>&1 || {
   status "جاري تثبيت الملفات"
   python -m pip install --upgrade pip
   python -m pip install -r requirements.txt

@@ -7,7 +7,7 @@
     <title>المجتهد | المكتبة الشاملة المضمنة والمكممة</title>
     <meta name="description"
         content="منظومة المجتهد - بحث دلالي عميق في المكتبة الشاملة المضمنة والمكممة مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.552">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.553">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,13 +27,13 @@
                 <div class="brand-title">
                     <span class="brand-icon" aria-hidden="true"></span>
                     <span>المجتهد</span>
-                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.552 (نسخة تجريبية)</span>
+                    <span class="brand-version" id="appVersionLabel">إصدار رقم 1.10.553 (نسخة تجريبية)</span>
                 </div>
                 <span class="brand-subtitle-1">المكتبة الشاملة المضمنة والمكممة</span>
             </div>
 
             <div class="header-actions">
-                <button class="btn-icon" id="localBundleBtn" type="button" onclick="exportLocalBundle()" title="تصدير نموذج التضمين والمكتبة الشاملة وقاعدة البيانات إلى مجلد" aria-label="تصدير محلي">
+                <button class="btn-icon" id="localBundleBtn" type="button" onclick="exportLocalBundle()" title="تصدير المكتبة الشاملة إلى مجلد" aria-label="تصدير محلي">
                     <i data-lucide="hard-drive" class="icon" aria-hidden="true"></i>
                 </button>
                 <button class="btn-icon" id="changelogBtn" type="button" onclick="openChangelogModal()" title="سجل التحديثات" aria-label="سجل التحديثات">
@@ -5563,78 +5563,6 @@
                         </div>
                     </div>
 
-                    <!-- 3. بطاقة قاعدة بيانات المتجهات Qdrant -->
-                    <div class="telemetry-card" id="cardQdrant">
-                        <div class="telemetry-card-header">
-                            <div class="telemetry-icon-box" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">
-                                <i data-lucide="database" class="icon"></i>
-                            </div>
-                            <span class="telemetry-title">مخزن البيانات</span>
-                            <span class="telemetry-badge" id="badgeQdrantStatus" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">متصل</span>
-                        </div>
-                        <div class="telemetry-big-stat" id="statQdrantPoints">8,148,092</div>
-                        <div id="qdrantRestoreWrap" style="display:none;">
-                            <div class="telemetry-progress-container">
-                                <div class="telemetry-progress-bar" id="barQdrantRestore" style="width: 0%; background: linear-gradient(90deg, #f59e0b, #10b981);"></div>
-                            </div>
-                            <div class="telemetry-card-footer">
-                                <span id="statQdrantRestore">جاري قياس السحب...</span>
-                            </div>
-                        </div>
-                        <div id="qdrantPersistWarn" style="display:none; margin-top: 8px; color: #b45309; font-size: 0.82rem;"></div>
-                        <div class="telemetry-store-actions">
-                            <button type="button" id="btnRestartQdrant" class="btn-secondary-action admin-only-tab" onclick="restartQdrantStore()">
-                                إعادة تشغيل المخزن
-                            </button>
-                            <button type="button" id="btnStopQdrant" class="btn-secondary-action admin-only-tab" onclick="stopQdrantStore()">
-                                إيقاف المخزن
-                            </button>
-                        </div>
-                        <div class="telemetry-subinfo">
-                            <div class="info-row">
-                                <span class="label">المجموعة:</span>
-                                <span class="val font-mono" id="statQdrantCollection">shamela_almojtahed_8b_dense</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="label">المطابقة والتكميم:</span>
-                                <span class="val" style="color: #10b981; font-weight: 600;">int8 On-Disk (نشط)</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 4. بطاقة نموذج التضمين الشرعي 8B -->
-                    <div class="telemetry-card" id="cardModel">
-                        <div class="telemetry-card-header">
-                            <div class="telemetry-icon-box" style="background: rgba(168, 85, 247, 0.12); color: #a855f7;">
-                                <i data-lucide="sparkles" class="icon"></i>
-                            </div>
-                            <span class="telemetry-title">نموذج التضمين (Embedding)</span>
-                            <span class="telemetry-badge" id="badgeModelStatus" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">محمل</span>
-                        </div>
-                        <div class="telemetry-big-stat" style="font-size: 16.5px;" id="statModelName">Al-Mojtahed 8B GGUF</div>
-                        <div class="telemetry-subinfo">
-                            <div class="info-row">
-                                <span class="label">الأبعاد الدلالية:</span>
-                                <span class="val font-mono">4096 بُعد شرعي</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="label">حالة المحرك:</span>
-                                <span class="val" style="color: #10b981; font-weight: 600;" id="statModelEngine">محمل في الذاكرة (سريع)</span>
-                            </div>
-                        </div>
-                        <div id="modelDownloadWrap" style="display:none;">
-                            <div class="telemetry-progress-container">
-                                <div class="telemetry-progress-bar" id="barModelDownload" style="width: 0%; background: linear-gradient(90deg, #f59e0b, #a855f7);"></div>
-                            </div>
-                        </div>
-                        <div id="statModelDownload" style="display:none; margin-top: 8px; color: #b45309; font-size: 0.82rem;"></div>
-                        <div class="telemetry-store-actions">
-                            <button type="button" id="btnDownloadEmbedding" class="btn-secondary-action admin-only-tab" onclick="downloadEmbeddingModel()">
-                                إعادة سحب نموذج التضمين
-                            </button>
-                        </div>
-                    </div>
-
                     <div class="telemetry-card telemetry-card-wide" id="cardGpu">
                         <div class="telemetry-card-header">
                             <div class="telemetry-icon-box" style="background: rgba(14, 165, 233, 0.12); color: #0ea5e9;">
@@ -5668,11 +5596,7 @@
                             </div>
                         </div>
                         <div id="statGpuHint" style="display:none; margin-top: 8px; color: var(--text-muted); font-size: 0.82rem;"></div>
-                        <div id="gpuEnableWrap" hidden style="margin-top: 10px;">
-                            <button type="button" id="btnEnableGpu" class="btn-secondary-action" onclick="enableServerGpu()" style="align-items: center; gap: 6px; padding: 7px 12px; font-size: 12.5px;">
-                                تشغيل الكرت مع التطبيق
-                            </button>
-                        </div>
+
                     </div>
                 </div>
 
@@ -5685,7 +5609,7 @@
                             <div>
                                 <div class="telemetry-actions-title">تحسين وتنظيف كاش الذاكرة</div>
                                 <div class="telemetry-actions-desc">
-                                    ينظف كاش بايثون ومخلفات الاستعلامات المتراكمة، كما يمكنك إعادة إنعاش وتحميل النموذج من جديد في الرام بعد ساعات العمل الكثيفة.
+                                    ينظف كاش بايثون ومخلفات الاستعلامات المتراكمة بعد ساعات العمل الكثيفة.
                                 </div>
                             </div>
                         </div>
@@ -5694,10 +5618,7 @@
                                 <i data-lucide="sparkles" class="icon"></i>
                                 <span>تنظيف الكاش وتحسين الذاكرة</span>
                             </button>
-                            <button type="button" class="btn-secondary-action" id="btnReloadModel" onclick="reloadServerModel()">
-                                <i data-lucide="rotate-ccw" class="icon"></i>
-                                <span>إعادة تحميل النموذج</span>
-                            </button>
+
                         </div>
                     </div>
                 </section>
@@ -6125,7 +6046,7 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.552"></script>
+    <script src="/static/js/app.js?v=1.10.553"></script>
     <script src="/static/js/search.js?v=1.10.493"></script>
     <script src="/static/js/reader.js?v=1.10.493"></script>
     <script src="/static/js/force3d.js?v=1.10.493"></script>
@@ -6133,12 +6054,12 @@
     <script src="/static/js/chat.js?v=1.10.493"></script>
     <script src="/static/js/designs.js?v=1.10.493"></script>
     <script src="/static/js/texts.js?v=1.10.493"></script>
-    <script src="/static/js/agents.js?v=1.10.552"></script>
+    <script src="/static/js/agents.js?v=1.10.553"></script>
     <script src="/static/js/providers.js?v=1.10.493"></script>
     <script src="/static/js/tools.js?v=1.10.493"></script>
     <script src="/static/js/shamela_link.js?v=1.10.493"></script>
     <script src="/static/js/projects.js?v=1.10.493"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.552"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.553"></script>
     <script src="/static/js/archive.js?v=1.10.493"></script>
     <script src="/static/js/compare.js?v=1.10.493"></script>
     <script src="/static/js/local_models.js?v=1.10.493"></script>

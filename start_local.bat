@@ -16,7 +16,7 @@ if not exist .venv (
 )
 
 call .venv\Scripts\activate.bat
-python -c "import fastapi, uvicorn, qdrant_client, huggingface_hub, dotenv, llama_cpp" >nul 2>&1
+python -c "import fastapi, uvicorn, huggingface_hub, dotenv, llama_cpp" >nul 2>&1
 if errorlevel 1 (
   echo تثبيت مكتبات التشغيل لأول مرة. قد يأخذ هذا عدة دقائق...
   python -m pip install --upgrade pip

@@ -550,7 +550,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.552")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.553")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -681,7 +681,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.552"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.553"
     }
 
     private func buildWindow() {
@@ -888,10 +888,6 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let runtime = support.appendingPathComponent("runtime")
         let fm = FileManager.default
         for relative in [
-            "models/gguf",
-            "qdrant_service/snapshots",
-            "qdrant_service/storage/tmp",
-            "qdrant_service/storage/collections",
             "shamela4_data/_git_tmp",
             "web_ui/bootstrap_status.json",
             "web_ui/local_source.json"
@@ -905,10 +901,6 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if readBootstrap()?.needsReinstall == true || readBootstrap()?.phase == "error" {
             return true
         }
-        let model = support.appendingPathComponent("runtime/models/gguf/almojtahed-embedding-8b-Q4_K_M.gguf")
-        if let size = byteCount(model), size > 0, size < 1_000_000_000, !incompleteModelExists() {
-            return true
-        }
         return false
     }
 
@@ -918,35 +910,13 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             startEngine()
             return
         }
-        if cloudAlreadyStarted() {
-            writeSource(mode: "cloud", path: nil)
-            startEngine()
-            return
-        }
         askSource()
     }
 
-    private func databaseAlreadyPresent() -> Bool {
-        let collection = support.appendingPathComponent("runtime/qdrant_service/storage/collections/shamela_almojtahed_8b_dense")
-        if folderHasChild(collection) { return true }
-        let snapshot = support.appendingPathComponent("runtime/qdrant_service/snapshots/shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot")
-        return (byteCount(snapshot) ?? 0) > 1_000_000_000
-    }
-
     private func dataAlreadyInstalled() -> Bool {
-        let model = support.appendingPathComponent("runtime/models/gguf/almojtahed-embedding-8b-Q4_K_M.gguf")
-        guard let size = byteCount(model), size > 1_000_000_000 else { return false }
+        // البيانات الوحيدة: المكتبة الشاملة (من مجلد محلي أو من تطبيق الشاملة).
         let shamela = support.appendingPathComponent("runtime/shamela4_data")
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: shamela.path, isDirectory: &isDir), isDir.boolValue else { return false }
-        let collection = support.appendingPathComponent("runtime/qdrant_service/storage/collections/shamela_almojtahed_8b_dense")
-        if FileManager.default.fileExists(atPath: collection.path) { return true }
-        let snapshot = support.appendingPathComponent("runtime/qdrant_service/snapshots/shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot")
-        return (byteCount(snapshot) ?? 0) > 1_000_000_000
-    }
-
-    private func cloudAlreadyStarted() -> Bool {
-        incompleteModelExists() || snapshotDownloadBytes() != nil
+        return folderHasChild(shamela)
     }
 
     private func writeSource(mode: String, path: String?) {
@@ -962,7 +932,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "مصدر البيانات"
-        alert.informativeText = "نموذج التضمين، والمكتبة الشاملة، وقاعدة البيانات (السنابشوت). السحابة تكمل التنصيب بالتنزيل الحالي، والمحلية تنسخها من مجلد على القرص."
+        alert.informativeText = "المكتبة الشاملة: إما من تطبيق «المكتبة الشاملة» على هذا الجهاز مباشرة، أو نسخها من مجلد محلي على القرص."
         alert.addButton(withTitle: "سحابة")
         alert.addButton(withTitle: "محلية")
         if alert.runModal() == .alertSecondButtonReturn {
@@ -981,7 +951,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.canCreateDirectories = false
         panel.allowsMultipleSelection = false
         panel.prompt = "اختيار"
-        panel.message = "اختر المجلد الذي يحتوي على نموذج التضمين والمكتبة الشاملة وقاعدة البيانات"
+        panel.message = "اختر المجلد الذي يحتوي على المكتبة الشاملة"
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else {
             askSource()
@@ -990,7 +960,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if localFolderIsValid(url) { return url.path }
         let warn = NSAlert()
         warn.messageText = "المجلد غير مكتمل"
-        warn.informativeText = "يلزم أن يحتوي المجلد على نموذج التضمين والمكتبة الشاملة وقاعدة البيانات."
+        warn.informativeText = "يلزم أن يحتوي المجلد على المكتبة الشاملة."
         warn.addButton(withTitle: "اختيار مجلد آخر")
         warn.addButton(withTitle: "سحابة")
         if warn.runModal() == .alertSecondButtonReturn {
@@ -1003,32 +973,12 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func localFolderIsValid(_ url: URL) -> Bool {
         let candidates = [url, url.appendingPathComponent("المجتهد-محلي")]
-        return candidates.contains { modelInFolder($0) && shamelaInFolder($0) && databaseInFolder($0) }
-    }
-
-    private func modelInFolder(_ root: URL) -> Bool {
-        let names = ["model/almojtahed-embedding-8b-Q4_K_M.gguf", "models/gguf/almojtahed-embedding-8b-Q4_K_M.gguf"]
-        return names.contains { (byteCount(root.appendingPathComponent($0)) ?? 0) > 1_000_000_000 }
+        return candidates.contains { shamelaInFolder($0) }
     }
 
     private func shamelaInFolder(_ root: URL) -> Bool {
         let names = ["shamela", "shamela4_data"]
         return names.contains { folderHasChild(root.appendingPathComponent($0)) }
-    }
-
-    private func databaseInFolder(_ root: URL) -> Bool {
-        let snapshotNames = [
-            "database/snapshot/shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot",
-            "qdrant_service/snapshots/shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot"
-        ]
-        if snapshotNames.contains(where: { (byteCount(root.appendingPathComponent($0)) ?? 0) > 1_000_000_000 }) {
-            return true
-        }
-        let storageNames = [
-            "database/storage/collections/shamela_almojtahed_8b_dense",
-            "qdrant_service/storage/collections/shamela_almojtahed_8b_dense"
-        ]
-        return storageNames.contains { folderHasChild(root.appendingPathComponent($0)) }
     }
 
     private func folderHasChild(_ url: URL) -> Bool {
@@ -1104,19 +1054,17 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func shutdownServices() {
-        stopOwnedProcess(named: "qdrant.pid", marker: "qdrant")
         stopOwnedProcess(named: "init.pid", marker: "init_coolify_data.py")
         if let task, task.isRunning {
             task.terminate()
         }
-        stopListener(port: 6333, marker: "Al-Mujtahed")
         stopListener(port: 8085, marker: "server.py")
     }
 
     private func refreshProgress(resetSpeed: Bool) {
         if ready { return }
         var message = currentStatus()
-        if let boot = readBootstrap(), boot.phase == "snapshot", !boot.message.isEmpty {
+        if let boot = readBootstrap(), !boot.message.isEmpty {
             message = boot.message
         }
         if !message.isEmpty {
@@ -1177,13 +1125,13 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return "جاري فتح التطبيق"
         }
         switch readBootstrap()?.phase {
-        case "download", "install", "snapshot", "local":
+        case "download", "install", "local":
             return "جاري تثبيت الملفات"
         default:
             break
         }
-        let installing = ["بايثون", "Python", "مكتبات", "بيئة", "تثبيت", "تنزيل", "سحب", "نموذج", "تضمين", "محرك", "سنابشوت", "قاعدة", "Qdrant"]
-        if installing.contains(where: { message.contains($0) }) || incompleteModelExists() {
+        let installing = ["بايثون", "Python", "مكتبات", "بيئة", "تثبيت", "تنزيل", "سحب"]
+        if installing.contains(where: { message.contains($0) }) {
             let stillWorking = message.contains("جاري") || message.contains("سحب") || message.contains("تنزيل") || message.contains("تثبيت")
             if !stillWorking && (message.contains("موجود") || message.contains("تم تشغيل") || message.contains("يعمل")) {
                 return "جاري فتح التطبيق"
@@ -1196,12 +1144,6 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return "جاري فتح التطبيق"
     }
 
-    private func incompleteModelExists() -> Bool {
-        let cache = support.appendingPathComponent("runtime/models/gguf/.cache/huggingface/download")
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: cache.path) else { return false }
-        return names.contains { $0.hasSuffix(".incomplete") }
-    }
-
     private func displayedPercent(message: String, transfer: (received: Int64, expected: Int64)) -> Double {
         if readBootstrap()?.phase == "local" { return transfer.expected > 0 ? min(90, Double(max(transfer.received, 0)) / Double(transfer.expected) * 90) : 8 }
         if readBootstrap()?.phase == "download" || readBootstrap()?.phase == "install", transfer.expected > 0 {
@@ -1212,9 +1154,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if message.contains("بيئة بايثون") { return 8 }
         if message.contains("مكتبات") { return 20 }
-        if message.contains("تنزيل محرك") { return 34 }
-        if message.contains("تم تشغيل Qdrant") || message.contains("Qdrant يعمل") { return 42 }
-        if message.contains("موجود") || message.contains("سنابشوت") || message.contains("الشاملة") { return 88 }
+        if message.contains("موجود") || message.contains("الشاملة") { return 88 }
         if message.contains("الواجهة") || message.contains("فتح التطبيق") { return 94 }
         if message.contains("تثبيت الملفات") || message.contains("تثبيت") { return 22 }
         if message.contains("تهيئة") || message.contains("تجهيز") { return 8 }
@@ -1261,11 +1201,11 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self.showAppWindow()
                 }
                 self.setOpenButtonEnabled(true)
-                if self.databaseAlreadyPresent() {
+                if self.dataAlreadyInstalled() {
                     self.markReady()
                     return
                 }
-                if let phase = self.readBootstrap()?.phase, phase == "download" || phase == "install" || phase == "snapshot" || phase == "local" || phase == "error" || self.filesLookDamaged() {
+                if let phase = self.readBootstrap()?.phase, phase == "download" || phase == "install" || phase == "local" || phase == "error" || self.filesLookDamaged() {
                     return
                 }
                 self.markReady()
@@ -1277,55 +1217,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if readBootstrap()?.phase == "local", let boot = readBootstrap(), boot.expected > 0 {
             return (min(max(boot.received, 0), boot.expected), boot.expected)
         }
-        let finalFile = support.appendingPathComponent("runtime/models/gguf/almojtahed-embedding-8b-Q4_K_M.gguf")
-        if let size = byteCount(finalFile), size > 1_000_000_000 {
-            let expectedSnapshot = readBootstrap()?.expected ?? 184_683_593_728
-            let phase = readBootstrap()?.phase
-            if phase == "download" {
-                let partial = snapshotDownloadBytes() ?? readBootstrap()?.received ?? 0
-                return (min(partial, expectedSnapshot), expectedSnapshot)
-            }
-            if phase == "install" {
-                let received = readBootstrap()?.received ?? 0
-                return (min(max(received, 0), expectedSnapshot), expectedSnapshot)
-            }
-            return (size, size)
-        }
-        var received: Int64 = 0
-        var newest = Date.distantPast
-        let cache = support.appendingPathComponent("runtime/models/gguf/.cache/huggingface/download")
-        if let names = try? FileManager.default.contentsOfDirectory(atPath: cache.path) {
-            for name in names where name.hasSuffix(".incomplete") {
-                let url = cache.appendingPathComponent(name)
-                var info = stat()
-                guard stat(url.path, &info) == 0 else { continue }
-                let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec))
-                if modified >= newest {
-                    newest = modified
-                    received = Int64(info.st_size)
-                }
-            }
-        }
-        let expected = max(Int64(4_724_464_026), received)
-        return (received, expected)
-    }
-
-    private func snapshotDownloadBytes() -> Int64? {
-        let root = support.appendingPathComponent("runtime/qdrant_service/snapshots")
-        let finalName = "shamela_almojtahed_8b_dense-2735741993374707-2026-10-15-02-17-32.snapshot"
-        if let size = byteCount(root.appendingPathComponent(finalName + ".partial")), size > 0 {
-            return size
-        }
-        if let size = byteCount(root.appendingPathComponent(finalName)), size > 0 {
-            return size
-        }
-        let cache = root.appendingPathComponent(".cache/huggingface/download")
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: cache.path) else { return nil }
-        var received: Int64 = 0
-        for name in names where name.hasSuffix(".incomplete") {
-            received = max(received, byteCount(cache.appendingPathComponent(name)) ?? 0)
-        }
-        return received > 0 ? received : nil
+        return (0, 0)
     }
 
     private struct Bootstrap {
