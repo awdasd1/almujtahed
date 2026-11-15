@@ -26,7 +26,7 @@ final class AppDownloads: NSObject, WKDownloadDelegate {
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
         var name = suggestedFilename.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty || name == "Unknown" || name == "unknown" {
-            name = "تصدير-المجتهد.txt"
+            name = "تصدير-المغني.txt"
         }
         let base = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
@@ -214,15 +214,15 @@ final class NativePrinter: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        NSLog("AlMujtahedPrint: navigation finished")
+        NSLog("AlmoghniPrint: navigation finished")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        NSLog("AlMujtahedPrint: navigation failed: %@", error.localizedDescription)
+        NSLog("AlmoghniPrint: navigation failed: %@", error.localizedDescription)
     }
 
     func enqueue(html: String, baseURL: URL, presentingWindow: NSWindow?) {
-        NSLog("AlMujtahedPrint: enqueue %d chars", html.count)
+        NSLog("AlmoghniPrint: enqueue %d chars", html.count)
         queue.append((html: html, baseURL: baseURL, presenting: presentingWindow))
         pump()
     }
@@ -246,7 +246,7 @@ final class NativePrinter: NSObject, WKNavigationDelegate {
     private func poll() {
         guard phase == .loading else { return }
         if Date().timeIntervalSince(startedAt) > 120 {
-            NSLog("AlMujtahedPrint: timeout — opening panel anyway")
+            NSLog("AlmoghniPrint: timeout — opening panel anyway")
             openPrintPanel()
             return
         }
@@ -266,7 +266,7 @@ final class NativePrinter: NSObject, WKNavigationDelegate {
 
     private func openPrintPanel() {
         guard phase == .loading else { return }
-        NSLog("AlMujtahedPrint: opening print panel")
+        NSLog("AlmoghniPrint: opening print panel")
         phase = .panel
         pollTimer?.invalidate()
         pollTimer = nil
@@ -299,7 +299,7 @@ final class NativePrinter: NSObject, WKNavigationDelegate {
     }
 
     @objc func printOperationDidRun(_ operation: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
-        NSLog("AlMujtahedPrint: panel closed success=%@", success ? "true" : "false")
+        NSLog("AlmoghniPrint: panel closed success=%@", success ? "true" : "false")
         finishJob()
     }
 
@@ -334,16 +334,16 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
             backing: .buffered,
             defer: false
         )
-        window.title = "المجتهد"
+        window.title = "المغني"
         window.minSize = NSSize(width: 900, height: 640)
         window.contentView = webView
-        window.setFrameAutosaveName("AlMujtahedApp")
-        if !window.setFrameUsingName("AlMujtahedApp") {
+        window.setFrameAutosaveName("AlmoghniApp")
+        if !window.setFrameUsingName("AlmoghniApp") {
             window.setFrame(NSScreen.main?.visibleFrame ?? window.frame, display: true)
         }
         window.isReleasedWhenClosed = false
         super.init()
-        contentController.add(self, name: "almujtahed")
+        contentController.add(self, name: "almoghni")
         window.delegate = self
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -422,7 +422,7 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let alert = NSAlert()
-        alert.messageText = "المجتهد"
+        alert.messageText = "المغني"
         alert.informativeText = message
         alert.addButton(withTitle: "موافق")
         alert.runModal()
@@ -431,7 +431,7 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
         let alert = NSAlert()
-        alert.messageText = "المجتهد"
+        alert.messageText = "المغني"
         alert.informativeText = message
         alert.alertStyle = .warning
         alert.addButton(withTitle: "موافق")
@@ -444,7 +444,7 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "almujtahed" else { return }
+        guard message.name == "almoghni" else { return }
         if let text = message.body as? String {
             guard text == "quit", !quitting else { return }
             quitting = true
@@ -472,7 +472,7 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
             let path = response == .OK ? (panel.url?.path ?? "") : ""
             let wrapped = (try? JSONSerialization.data(withJSONObject: [path])).flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
             let encoded = wrapped.dropFirst().dropLast()
-            self?.webView.evaluateJavaScript("window.__almujtahedPick && window.__almujtahedPick(\(encoded))")
+            self?.webView.evaluateJavaScript("window.__almoghniPick && window.__almoghniPick(\(encoded))")
         }
     }
 
@@ -556,7 +556,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.579")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.580")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -570,7 +570,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var relocating = false
 
     private func relocateToApplicationsIfNeeded() -> Bool {
-        if ProcessInfo.processInfo.environment["ALMUJTAHED_NO_RELOCATE"] == "1" { return false }
+        if ProcessInfo.processInfo.environment["ALMOGHNI_NO_RELOCATE"] == "1" { return false }
         let fm = FileManager.default
         let bundle = Bundle.main.bundleURL
         let homeApps = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path
@@ -589,7 +589,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return true
         }
         for appsDir in appsDirs {
-            let dest = URL(fileURLWithPath: appsDir).appendingPathComponent("المجتهد.app")
+            let dest = URL(fileURLWithPath: appsDir).appendingPathComponent("المغني.app")
             if let existing = Bundle(url: dest),
                let ev = existing.infoDictionary?["CFBundleShortVersionString"] as? String,
                ev.compare(myVersion, options: .numeric) != .orderedAscending {
@@ -611,7 +611,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if relocateToApplicationsIfNeeded() { return }
         if !acquireLock() {
-            let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.almujtahed.desktop")
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.almoghni.desktop")
             others.first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }?
                 .activate(options: [.activateAllWindows])
             NSApp.terminate(nil)
@@ -687,7 +687,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.579"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.580"
     }
 
     private func buildWindow() {
@@ -699,7 +699,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "المجتهد"
+        window.title = "المغني"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isOpaque = false
@@ -717,7 +717,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         headerIcon.frame = NSRect(x: width - 32 - 34, y: height - 30 - 34, width: 34, height: 34)
         content.addSubview(headerIcon)
 
-        let title = text("المجتهد", size: 28, weight: .bold, color: ink)
+        let title = text("المغني", size: 28, weight: .bold, color: ink)
         title.sizeToFit()
         let titleWidth = title.frame.width + 4
         title.frame = NSRect(x: headerIcon.frame.minX - 8 - titleWidth, y: headerIcon.frame.midY - 20, width: titleWidth, height: 40)
@@ -759,7 +759,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         cardIcon.frame = NSRect(x: card.bounds.width - 24 - 36, y: card.bounds.height - 24 - 36, width: 36, height: 36)
         card.addSubview(cardIcon)
 
-        let cardTitle = text("تشغيل المجتهد", size: 18, weight: .bold, color: ink)
+        let cardTitle = text("تشغيل المغني", size: 18, weight: .bold, color: ink)
         cardTitle.frame = NSRect(x: 110, y: card.bounds.height - 24 - 32, width: card.bounds.width - 110 - 72, height: 32)
         card.addSubview(cardTitle)
 
@@ -1015,7 +1015,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func localFolderIsValid(_ url: URL) -> Bool {
-        let candidates = [url, url.appendingPathComponent("المجتهد-محلي")]
+        let candidates = [url, url.appendingPathComponent("المغني-محلي"), url.appendingPathComponent("المجتهد-محلي")]
         return candidates.contains { shamelaInFolder($0) }
     }
 
@@ -1049,7 +1049,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             try task.run()
             self.task = task
         } catch {
-            phaseLabel.stringValue = "تعذر تشغيل المجتهد"
+            phaseLabel.stringValue = "تعذر تشغيل المغني"
         }
     }
 

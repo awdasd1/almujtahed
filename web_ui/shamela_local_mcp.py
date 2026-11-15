@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-shamela_local_mcp.py - خادم بروتوكول MCP الداخلي لمنظومة المجتهد
+shamela_local_mcp.py - خادم بروتوكول MCP الداخلي لمنظومة المغني
 =============================================================================
 الوظيفة: توفير أدوات التحقيق والمطالعة الموضعية لنصوص الشاملة التراثية الأصلية:
   1. get_page_range: تقليب وقراءة صفحات متسلسلة كاملة بنصها وهوامشها وتخريجها.
@@ -72,7 +72,7 @@ def _data_roots() -> List[Path]:
         if raw:
             roots.insert(0, Path(raw).expanduser())
     home = Path.home()
-    _imp = os.environ.get("ALMUJTAHED_SHAMELA_IMPORT_DIR", "")
+    _imp = os.environ.get("ALMOGHNI_SHAMELA_IMPORT_DIR", "")
     if _imp:
         _imp_path = Path(_imp).expanduser()
     else:
@@ -80,13 +80,13 @@ def _data_roots() -> List[Path]:
             import shamela_link as _SLL
             _imp_path = _SLL.import_dir()
         except Exception:
-            _imp_path = home / "Library" / "Application Support" / "Al-Mujtahed" / "runtime" / "shamela_imported"
+            _imp_path = home / "Library" / "Application Support" / "Almoghni" / "runtime" / "shamela_imported"
     if _library_source() == "shamela":
         roots.insert(0, _imp_path)
     else:
         roots.append(_imp_path)  # الجديد المستورد وحده هناك يُقرأ، والتوائم من المدمجة
     for candidate in (
-        home / "Library" / "Application Support" / "Al-Mujtahed" / "runtime" / "shamela4_data",
+        home / "Library" / "Application Support" / "Almoghni" / "runtime" / "shamela4_data",
         SYSTEM_ROOT / "shamela4_data",
     ):
         if candidate not in roots:

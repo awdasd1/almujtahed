@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""تشغيل المجتهد على ماك أو ويندوز أو لينكس.
+"""تشغيل المغني على ماك أو ويندوز أو لينكس.
 
 لا مخزن متجهات ولا نموذج تضمين في التطبيق (أُزيلا نهائيًا في 1.10.553):
 المكتبة هي تطبيق «المكتبة الشاملة» عند المستخدم — بحث لفظي في فهرسها
@@ -28,7 +28,7 @@ def public_status(message):
 
 def log(message):
     print(message, flush=True)
-    status_path = os.environ.get("ALMUJTAHED_STATUS_FILE", "").strip()
+    status_path = os.environ.get("ALMOGHNI_STATUS_FILE", "").strip()
     if not status_path:
         return
     try:
@@ -55,8 +55,8 @@ def prepare_env():
     if not env_path.exists() and example.exists():
         env_path.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
         log("تم إنشاء .env من المثال")
-    os.environ["ALMUJTAHED_LOCAL"] = "1"
-    os.environ.pop("ALMUJTAHED_DATA_DIR", None)
+    os.environ["ALMOGHNI_LOCAL"] = "1"
+    os.environ.pop("ALMOGHNI_DATA_DIR", None)
 
 
 def shamela_ready():
@@ -82,7 +82,7 @@ def _serve_web():
 
 def start_web():
     if port_open(8085):
-        log("واجهة المجتهد تعمل بالفعل على http://localhost:8085")
+        log("واجهة المغني تعمل بالفعل على http://localhost:8085")
         if os.name == "nt":
             while port_open(8085):
                 time.sleep(5)
@@ -105,7 +105,7 @@ def start_web():
             print(f"تعذر فتح الواجهة: {ex}", flush=True)
         log("جاري فتح التطبيق")
         time.sleep(2)
-    while pid_alive("ALMUJTAHED_INIT_PID_FILE"):
+    while pid_alive("ALMOGHNI_INIT_PID_FILE"):
         time.sleep(5)
         if port_open(8085):
             return
@@ -116,7 +116,7 @@ def start_web():
 
 
 def attach_log():
-    path = os.environ.get("ALMUJTAHED_LOG_FILE", "").strip()
+    path = os.environ.get("ALMOGHNI_LOG_FILE", "").strip()
     if not path:
         return
     try:
@@ -172,7 +172,7 @@ def main():
     if sys.version_info < (3, 10):
         raise SystemExit("يلزم بايثون 3.10 أو أحدث.")
     attach_log()
-    log("تشغيل المجتهد على الجهاز المحلي")
+    log("تشغيل المغني على الجهاز المحلي")
     prepare_env()
     try:
         apply_local_source()
@@ -202,7 +202,7 @@ def main():
             log(f"تعذر فحص الشاملة المحلية: {ex}")
         if not lazy:
             log("لا مكتبة شاملة منزّلة على هذا الجهاز — ثبّت تطبيق «المكتبة الشاملة» "
-                "ونزّل كتبك فيه، وسيقرأها المجتهد مباشرة. لن يُنزَّل شيء من الإنترنت.")
+                "ونزّل كتبك فيه، وسيقرأها المغني مباشرة. لن يُنزَّل شيء من الإنترنت.")
     log("الواجهة: http://localhost:8085")
     start_web()
 

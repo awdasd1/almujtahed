@@ -154,7 +154,7 @@ def _new_searcher(jpype, reader):
     في العملية الأم (احتياطي محلي) باحث عادي: المجمّع المشترك أغرق تحت
     تزامن بحوث كثيرة كما أظهر قياس الضغط."""
     IndexSearcher = jpype.JClass("org.apache.lucene.search.IndexSearcher")
-    if os.environ.get("ALMUJTAHED_BRIDGE_WORKER") == "1":
+    if os.environ.get("ALMOGHNI_BRIDGE_WORKER") == "1":
         if _STATE.get("executor") is None:
             try:
                 Executors = jpype.JClass("java.util.concurrent.Executors")
@@ -173,7 +173,7 @@ def warm():
     """تسخين الجسر عند إقلاع الخادم: تشغيل جسور العمال وتسخينها، حتى لا
     تدفع الجولة الأولى كلفة الإقلاع البارد متزامنة مع تزاحم الوكلاء.
     داخل عامل: تسخين محلي فقط."""
-    if os.environ.get("ALMUJTAHED_BRIDGE_WORKER") == "1":
+    if os.environ.get("ALMOGHNI_BRIDGE_WORKER") == "1":
         try:
             if _ensure_reader() is None:
                 return False
@@ -208,7 +208,7 @@ import tempfile as _tempfile
 
 _POOL = {"workers": [], "lock": threading.Lock(), "started": False}
 try:
-    _POOL_N = int(os.environ.get("ALMUJTAHED_BRIDGE_WORKERS", "3") or 3)
+    _POOL_N = int(os.environ.get("ALMOGHNI_BRIDGE_WORKERS", "3") or 3)
 except Exception:
     _POOL_N = 3
 
@@ -224,8 +224,8 @@ class _BridgeWorker:
 
     def _spawn(self):
         env = dict(os.environ)
-        env["ALMUJTAHED_BRIDGE_WORKER"] = "1"
-        log_path = Path(_tempfile.gettempdir()) / f"almujtahed-bridge-{self.idx}.log"
+        env["ALMOGHNI_BRIDGE_WORKER"] = "1"
+        log_path = Path(_tempfile.gettempdir()) / f"almoghni-bridge-{self.idx}.log"
         try:
             err = open(log_path, "ab")
         except Exception:
@@ -269,7 +269,7 @@ class _BridgeWorker:
 
 def _pool_start() -> bool:
     """تشغيل عمال الجسور مرة واحدة + نبض تسخين لكل عامل. False إن تعذّر."""
-    if _POOL_N <= 0 or os.environ.get("ALMUJTAHED_BRIDGE_WORKER") == "1":
+    if _POOL_N <= 0 or os.environ.get("ALMOGHNI_BRIDGE_WORKER") == "1":
         return False
     with _POOL["lock"]:
         if _POOL["started"]:
@@ -536,7 +536,7 @@ def search(query, mode="phrase", death_max=None, death_min=None, categories=None
             _RESULT_CACHE.move_to_end(_ckey)
             return {**_hit_cache, "results": [dict(r) for r in _hit_cache["results"]]}
     result = None
-    if os.environ.get("ALMUJTAHED_BRIDGE_WORKER") != "1" and _POOL_N > 0:
+    if os.environ.get("ALMOGHNI_BRIDGE_WORKER") != "1" and _POOL_N > 0:
         if not _POOL["started"]:
             _pool_start()
         if _POOL["workers"]:

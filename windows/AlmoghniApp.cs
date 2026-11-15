@@ -7,7 +7,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
-namespace AlMujtahed;
+namespace Almoghni;
 
 static class Program
 {
@@ -21,7 +21,7 @@ static class Program
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            using var mutex = new Mutex(true, @"Local\com.almujtahed.desktop", out var created);
+            using var mutex = new Mutex(true, @"Local\com.almoghni.desktop", out var created);
             if (!created)
             {
                 PostMessage((IntPtr)HWND_BROADCAST, Native.ActivateMessage, IntPtr.Zero, IntPtr.Zero);
@@ -38,7 +38,7 @@ static class Program
                 File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "startup-error.txt"), ex.ToString());
             }
             catch { }
-            MessageBox.Show(ex.Message, "المجتهد", MessageBoxButtons.OK, MessageBoxIcon.Error,
+            MessageBox.Show(ex.Message, "المغني", MessageBoxButtons.OK, MessageBoxIcon.Error,
                 MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
         }
     }
@@ -49,7 +49,7 @@ static class Program
 
 static class Native
 {
-    public static readonly int ActivateMessage = RegisterWindowMessage("ALMUJTAHED_OPEN");
+    public static readonly int ActivateMessage = RegisterWindowMessage("ALMOGHNI_OPEN");
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern int RegisterWindowMessage(string lpString);
@@ -197,7 +197,7 @@ sealed class InstallerForm : Form
 
     public InstallerForm()
     {
-        Text = "المجتهد";
+        Text = "المغني";
         RightToLeft = RightToLeft.Yes;
         RightToLeftLayout = false;
         AutoScaleMode = AutoScaleMode.None;
@@ -210,7 +210,7 @@ sealed class InstallerForm : Form
         ClientSize = new Size(760, 508);
 
         book = new BookIcon();
-        titleLabel = MakeLabel("المجتهد", 28, true, Palette.Ink, ContentAlignment.MiddleLeft);
+        titleLabel = MakeLabel("المغني", 28, true, Palette.Ink, ContentAlignment.MiddleLeft);
         versionLabel = MakeLabel(AppVersion(), 16, true, Palette.Bright, ContentAlignment.MiddleLeft);
         versionLabel.RightToLeft = RightToLeft.No;
         editionLabel = MakeLabel("نسخة تجريبية", 12, false, Palette.Muted, ContentAlignment.MiddleLeft);
@@ -218,7 +218,7 @@ sealed class InstallerForm : Form
         statusLabel = MakeLabel("جاري تهيئة التطبيق", 14, false, Palette.Muted, ContentAlignment.MiddleLeft);
         card = new CardPanel();
         var cardIcon = new DownloadIcon();
-        var cardTitle = MakeLabel("تشغيل المجتهد", 18, true, Palette.Ink, ContentAlignment.MiddleLeft);
+        var cardTitle = MakeLabel("تشغيل المغني", 18, true, Palette.Ink, ContentAlignment.MiddleLeft);
         percentValue = MakeLabel("0%", 13, true, Palette.Muted, ContentAlignment.MiddleCenter);
         percentValue.BackColor = Color.FromArgb(237, 228, 214);
         phaseLabel = MakeLabel("جاري تهيئة التطبيق", 20, true, Palette.Ink, ContentAlignment.MiddleLeft);
@@ -281,7 +281,7 @@ sealed class InstallerForm : Form
         tray = new NotifyIcon
         {
             Icon = Icon,
-            Text = "المجتهد",
+            Text = "المغني",
             Visible = false
         };
         var menu = new ContextMenuStrip { RightToLeft = RightToLeft.Yes };
@@ -321,7 +321,7 @@ sealed class InstallerForm : Form
             if (label == percentValue || label == phaseLabel) continue;
             label.Font = label.Tag as string == "caption"
                 ? AppFonts.Make(11, false, uiScale)
-                : label.Text == "تشغيل المجتهد"
+                : label.Text == "تشغيل المغني"
                     ? AppFonts.Make(15, true, uiScale)
                     : AppFonts.Make(14, true, uiScale);
         }
@@ -617,7 +617,7 @@ sealed class InstallerForm : Form
 
     static bool LocalFolderIsValid(string folder)
     {
-        foreach (var root in new[] { folder, Path.Combine(folder, "المجتهد-محلي") })
+        foreach (var root in new[] { folder, Path.Combine(folder, "المغني-محلي"), Path.Combine(folder, "المجتهد-محلي") })
         {
             if (ShamelaInFolder(root)) return true;
         }
@@ -639,7 +639,7 @@ sealed class InstallerForm : Form
         var script = Path.Combine(AppContext.BaseDirectory, "launch.ps1");
         if (!File.Exists(script))
         {
-            phaseLabel.Text = "تعذر تشغيل المجتهد";
+            phaseLabel.Text = "تعذر تشغيل المغني";
             return;
         }
         var generation = ++engineGeneration;
@@ -698,7 +698,7 @@ sealed class InstallerForm : Form
         }
         catch
         {
-            phaseLabel.Text = "تعذر تشغيل المجتهد";
+            phaseLabel.Text = "تعذر تشغيل المغني";
         }
     }
 
@@ -720,7 +720,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.579");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.580");
         tray.Visible = false;
     }
 
@@ -1125,7 +1125,7 @@ sealed class AppForm : Form
 
     public AppForm()
     {
-        Text = "المجتهد";
+        Text = "المغني";
         Icon = BrandIcon.Create();
         StartPosition = FormStartPosition.Manual;
         WindowState = FormWindowState.Normal;
@@ -1198,7 +1198,7 @@ sealed class AppForm : Form
                             try
                             {
                                 web.CoreWebView2?.PostWebMessageAsJson(
-                                    "{\"almujtahedFolder\":" + JsonSerializer.Serialize(picked) + "}");
+                                    "{\"almoghniFolder\":" + JsonSerializer.Serialize(picked) + "}");
                             }
                             catch { }
                         }));
@@ -1251,7 +1251,7 @@ sealed class AppForm : Form
             MessageBox.Show(
                 this,
                 "يلزم مكوّن WebView2 من مايكروسوفت لفتح نافذة التطبيق. سيُفتح رابط تثبيته.",
-                "المجتهد",
+                "المغني",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information,
                 MessageBoxDefaultButton.Button1,

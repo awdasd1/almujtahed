@@ -1,5 +1,5 @@
 // =============================================================================
-// منظومة المجتهد - واجهة الشات الذكي (chat.js)
+// منظومة المغني - واجهة الشات الذكي (chat.js)
 // إدارة المحادثات، عمق التفكير، رفع المرفقات، والتواصل مع النماذج
 // =============================================================================
 
@@ -764,7 +764,7 @@ function normalizeChatSessions(list) {
 
 // تهيئة سجل المحادثات من قاعدة الخادم، مع نقل ما تبقى في المتصفح مرة واحدة
 async function initChatHistory() {
-  await (window.almujtahedIdentity || Promise.resolve());
+  await (window.almoghniIdentity || Promise.resolve());
   const chatStorageKey = ownerStorageKey(CHAT_STORAGE_KEY);
   let localSessions = [];
   try {
@@ -1253,7 +1253,7 @@ function chatMessagePaperTitle(msg, session) {
   const heading = String(msg && msg.content || '').match(/^#{1,3}\s+([^\n]+)/);
   const made = heading && heading[1].replace(/[*_`]/g, '').trim();
   if (msg && msg.selection_research) return made || 'تعليق وشرح مختصر';
-  return (session && session.title) || 'دراسة وتحقيق بحثي - منظومة المجتهد';
+  return (session && session.title) || 'دراسة وتحقيق بحثي - منظومة المغني';
 }
 
 function scrollChatMessageTop(idx) {
@@ -2249,7 +2249,7 @@ function renderSessionMessages(sessionId, options) {
         </div>
         <audio controls preload="metadata" src="${escapeHtml(msg.audio_summary.url)}"></audio>
         <div class="chat-audio-summary-actions">
-          <a class="btn-msg-export" href="${escapeHtml(msg.audio_summary.url)}" download="ملخص-صوتي-المجتهد.${escapeHtml(String(msg.audio_summary.url).split('.').pop() || 'wav')}" title="تنزيل الملف الصوتي">⬇️ تنزيل</a>
+          <a class="btn-msg-export" href="${escapeHtml(msg.audio_summary.url)}" download="ملخص-صوتي-المغني.${escapeHtml(String(msg.audio_summary.url).split('.').pop() || 'wav')}" title="تنزيل الملف الصوتي">⬇️ تنزيل</a>
           <button type="button" class="btn-msg-export" onclick="shareAudioSummary(${idx})" title="مشاركة الملف الصوتي">🔗 مشاركة</button>
           ${msg.audio_summary.text ? `<button type="button" class="btn-msg-export" onclick="copyAudioSummaryText(${idx})" title="نسخ نص الملخص الصوتي كاملًا">📋 نسخ النص</button>` : ''}
           ${msg.audio_summary.text ? `<button type="button" class="btn-msg-export" onclick="toggleAudioSummaryText(${idx}, this)" title="عرض نص الملخص الصوتي أو إخفاؤه">📝 نص الملخص</button>` : ''}
@@ -2267,7 +2267,7 @@ function renderSessionMessages(sessionId, options) {
         </div>
         <audio controls preload="metadata" src="${escapeHtml(msg.podcast.url)}"></audio>
         <div class="chat-audio-summary-actions">
-          <a class="btn-msg-export" href="${escapeHtml(msg.podcast.url)}" download="بودكاست-حواري-المجتهد.${escapeHtml(String(msg.podcast.url).split('.').pop() || 'mp3')}" title="تنزيل ملف البودكاست">⬇️ تنزيل</a>
+          <a class="btn-msg-export" href="${escapeHtml(msg.podcast.url)}" download="بودكاست-حواري-المغني.${escapeHtml(String(msg.podcast.url).split('.').pop() || 'mp3')}" title="تنزيل ملف البودكاست">⬇️ تنزيل</a>
           <button type="button" class="btn-msg-export" onclick="sharePodcast(${idx})" title="مشاركة ملف البودكاست">🔗 مشاركة</button>
           <button type="button" class="btn-msg-export" onclick="publishPodcast(${idx}, this)" title="نشر الحلقة: غلاف مولّد بعنوانها ونص منشور جاهز بمصادرها في نافذة النشر">📤 نشر</button>
           ${Array.isArray(msg.podcast.script) && msg.podcast.script.length ? `<button type="button" class="btn-msg-export" onclick="copyPodcastScript(${idx})" title="نسخ نص الحوار كاملًا بالأدوار">📋 نسخ الحوار</button>` : ''}
@@ -2285,7 +2285,7 @@ function renderSessionMessages(sessionId, options) {
           <span class="chat-audio-voice">${msg.presentation.slides ? `${msg.presentation.slides} شريحة${msg.presentation.voice ? ` بصوت ${escapeHtml(msg.presentation.voice)}` : ' — بلا شرح صوتي'}` : 'PowerPoint بصري صوتي'}</span>
         </div>
         <div class="chat-audio-summary-actions">
-          <a class="btn-msg-export" href="${escapeHtml(msg.presentation.url)}" download="عرض-تقديمي-المجتهد.pptx" title="تنزيل ملف العرض التقديمي">⬇️ تنزيل العرض</a>
+          <a class="btn-msg-export" href="${escapeHtml(msg.presentation.url)}" download="عرض-تقديمي-المغني.pptx" title="تنزيل ملف العرض التقديمي">⬇️ تنزيل العرض</a>
           <button type="button" class="btn-msg-export" onclick="sharePresentation(${idx})" title="مشاركة ملف العرض التقديمي">🔗 مشاركة</button>
           <button type="button" class="btn-msg-export" onclick="publishPresentationVideo(${idx}, this)" title="تحويل العرض إلى فيديو MP4 بشرائحه وأصواتها (٣٠ إطارًا/ثانية) ونشره في تيك توك وإكس وسائر المنصات">🎬 نشر كفيديو</button>
         </div>
@@ -2456,7 +2456,7 @@ function exportChatMessageHtml(idx) {
   const session = chatSessions.find(s => s.id === activeSessionId);
   if (!session || !session.messages[idx]) return;
   const msg = session.messages[idx];
-  const title = session.title || 'دراسة وتحقيق بحثي - منظومة المجتهد';
+  const title = session.title || 'دراسة وتحقيق بحثي - منظومة المغني';
   const runData = {
     projectTitle: title,
     executedAt: new Date().toLocaleString('ar-SA'),
@@ -2747,7 +2747,7 @@ async function exportWordFromDoc(doc) {
 function printChatReadingFrame(raw) {
   const frame = document.getElementById('chatReadingFrame');
   if (!frame || !frame.contentWindow) return;
-  const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+  const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almoghni;
   let out = '';
   try {
     out = '<!DOCTYPE html>\n' + frame.contentDocument.documentElement.outerHTML;
@@ -2928,15 +2928,15 @@ async function shareAudioSummary(idx) {
     if (resp.ok) {
       const blob = await resp.blob();
       const ext = (String(info.url).split('.').pop() || 'wav').toLowerCase();
-      const file = new File([blob], `ملخص-صوتي-المجتهد.${ext}`, { type: blob.type || (ext === 'mp3' ? 'audio/mpeg' : 'audio/wav') });
+      const file = new File([blob], `ملخص-صوتي-المغني.${ext}`, { type: blob.type || (ext === 'mp3' ? 'audio/mpeg' : 'audio/wav') });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'ملخص صوتي — المجتهد' });
+        await navigator.share({ files: [file], title: 'ملخص صوتي — المغني' });
         return;
       }
     }
   } catch (e) { /* تُجرَّب مشاركة الرابط بعدها */ }
   if (navigator.share) {
-    try { await navigator.share({ title: 'ملخص صوتي — المجتهد', url: absolute }); return; } catch (e) { /* تُنسخ بعدها */ }
+    try { await navigator.share({ title: 'ملخص صوتي — المغني', url: absolute }); return; } catch (e) { /* تُنسخ بعدها */ }
   }
   try {
     await navigator.clipboard.writeText(absolute);
@@ -3037,15 +3037,15 @@ async function sharePodcast(idx) {
     if (resp.ok) {
       const blob = await resp.blob();
       const ext = (String(info.url).split('.').pop() || 'mp3').toLowerCase();
-      const file = new File([blob], `بودكاست-حواري-المجتهد.${ext}`, { type: blob.type || (ext === 'mp3' ? 'audio/mpeg' : 'audio/wav') });
+      const file = new File([blob], `بودكاست-حواري-المغني.${ext}`, { type: blob.type || (ext === 'mp3' ? 'audio/mpeg' : 'audio/wav') });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'بودكاست حواري — المجتهد' });
+        await navigator.share({ files: [file], title: 'بودكاست حواري — المغني' });
         return;
       }
     }
   } catch (e) { /* تُجرَّب مشاركة الرابط بعدها */ }
   if (navigator.share) {
-    try { await navigator.share({ title: 'بودكاست حواري — المجتهد', url: absolute }); return; } catch (e) { /* تُنسخ بعدها */ }
+    try { await navigator.share({ title: 'بودكاست حواري — المغني', url: absolute }); return; } catch (e) { /* تُنسخ بعدها */ }
   }
   try {
     await navigator.clipboard.writeText(absolute);
@@ -3055,7 +3055,7 @@ async function sharePodcast(idx) {
   }
 }
 
-// غلاف حلقة مولّد محليًا (كانفس): تدرّج هادئ بهوية المجتهد وعنوان الحلقة — ليُنشر منشورًا مصوّرًا عن الحلقة
+// غلاف حلقة مولّد محليًا (كانفس): تدرّج هادئ بهوية المغني وعنوان الحلقة — ليُنشر منشورًا مصوّرًا عن الحلقة
 function makePodcastCoverBlob(title) {
   return new Promise((resolve, reject) => {
     try {
@@ -3093,7 +3093,7 @@ function makePodcastCoverBlob(title) {
       lines.slice(0, 3).forEach((l, i) => ctx.fillText(l, 600, 262 + i * 84));
       ctx.fillStyle = 'rgba(255,255,255,0.88)';
       ctx.font = '32px "Amiri", serif';
-      ctx.fillText('محمد يستضيف إبراهيم — من بحوث المجتهد الموثّقة', 600, 262 + Math.min(lines.length, 3) * 84 + 66);
+      ctx.fillText('محمد يستضيف إبراهيم — من بحوث المغني الموثّقة', 600, 262 + Math.min(lines.length, 3) * 84 + 66);
       canvas.toBlob(b => (b ? resolve(b) : reject(new Error('تعذر توليد الغلاف'))), 'image/png');
     } catch (e) { reject(e); }
   });
@@ -3130,7 +3130,7 @@ async function publishPodcast(idx, btn) {
     }
     const caption = [
       `🎙️ بودكاست حواري — ${info.title || 'حلقة علمية'}`,
-      'حلقة حوارية بين محمد المقدّم وإبراهيم الضيف، مولّدة من بحوث «المجتهد» الموثّقة بالمكتبة الشاملة.',
+      'حلقة حوارية بين محمد المقدّم وإبراهيم الضيف، مولّدة من بحوث «المغني» الموثّقة بالمكتبة الشاملة.',
       info.sources_text ? `\n📚 مصادر الحلقة:\n${String(info.sources_text).slice(0, 1100)}` : '',
     ].filter(Boolean).join('\n');
     if (typeof window.openDesignVideoPublish === 'function') window.openDesignVideoPublish(info.video_url, caption);
@@ -3255,7 +3255,7 @@ function openPresentationOptions(idx, btn, scanCtx) {
             <label class="pres-radio-card"><input type="radio" name="presExplainedStyle" value="icons"> <span><b>🔷 شرح مصور بأيقونات</b><small>أيقونات ورموز مسطحة بسيطة داخل العقد بدل الصور الفوتوغرافية — رسم أنظف وأخف</small></span></label>
           </div>
           <div class="pres-opt-label">ألوان الشريحة</div>
-          <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المجتهد الهادئة المعتمدة</small></span></label>
+          <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المغني الهادئة المعتمدة</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="presColorsMode" value="custom"> <span><b>ألوان مخصصة</b><small>ثلاثة ألوان لصورة الشريحة بنسب سيادة، وألوان خطوط النص القابل للتحرير</small></span></label>
           <div id="presCustomColors" class="pres-custom-colors" hidden>
             ${[0, 1, 2].map(i => `<div class="pres-color-row"><span class="pres-color-name">لون ${['رئيسي', 'ثانوي', 'لمسة'][i]}</span><input type="color" id="presImgColor${i}"><input type="number" id="presImgPct${i}" class="pres-pct" min="0" max="100" step="5"><span>٪</span></div>`).join('')}
@@ -3416,15 +3416,15 @@ async function sharePresentation(idx) {
     const resp = await fetch(info.url);
     if (resp.ok) {
       const blob = await resp.blob();
-      const file = new File([blob], 'عرض-تقديمي-المجتهد.pptx', { type: blob.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+      const file = new File([blob], 'عرض-تقديمي-المغني.pptx', { type: blob.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'عرض تقديمي — المجتهد' });
+        await navigator.share({ files: [file], title: 'عرض تقديمي — المغني' });
         return;
       }
     }
   } catch (e) { /* تُجرَّب مشاركة الرابط بعدها */ }
   if (navigator.share) {
-    try { await navigator.share({ title: 'عرض تقديمي — المجتهد', url: absolute }); return; } catch (e) { /* تُنسخ بعدها */ }
+    try { await navigator.share({ title: 'عرض تقديمي — المغني', url: absolute }); return; } catch (e) { /* تُنسخ بعدها */ }
   }
   try {
     await navigator.clipboard.writeText(absolute);
@@ -3457,7 +3457,7 @@ async function publishPresentationVideo(idx, btn) {
     }
     const caption = [
       `📊 ${info.title || 'عرض تقديمي'}`,
-      'عرض تقديمي بصري صوتي مولّد من بحوث «المجتهد» الموثّقة بالمكتبة الشاملة' + (info.slides ? ` — ${info.slides} شرائح` : '') + '.',
+      'عرض تقديمي بصري صوتي مولّد من بحوث «المغني» الموثّقة بالمكتبة الشاملة' + (info.slides ? ` — ${info.slides} شرائح` : '') + '.',
     ].join('\n');
     if (typeof window.openDesignVideoPublish === 'function') window.openDesignVideoPublish(info.video_url, caption);
     else if (typeof showToast === 'function') showToast('نافذة النشر غير جاهزة — حدّث الصفحة');
@@ -3469,8 +3469,8 @@ async function publishPresentationVideo(idx, btn) {
 }
 
 function cleanModelDisplayName(modelId) {
-  if (!modelId) return 'المجتهد الذكي';
-  if (modelId === 'local-almojtahed-8b') return 'المجتهد 8B (محلي)';
+  if (!modelId) return 'المغني الذكي';
+  if (modelId === 'local-almojtahed-8b') return 'المغني 8B (محلي)';
   const parts = modelId.split('/');
   return parts.length > 1 ? parts[1] : modelId;
 }
@@ -4237,7 +4237,7 @@ function closeDiscussion() {
   if (typeof activeSessionId === 'undefined' || !activeSessionId) return;
   setDiscussionState(activeSessionId, '');
   const input = document.getElementById('chatInputText');
-  if (input) input.placeholder = 'اسأل المجتهد في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
+  if (input) input.placeholder = 'اسأل المغني في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
   if (typeof showToast === 'function') showToast('أُنهيت المناقشة مؤقتًا؛ محادثتها محفوظة وتستطيع استئنافها بزر «المناقشة» متى شئت', 3000);
 }
 // 📋 زر الباحث المختصر: يجلب ثغرات تقرير البحث وفجواته من سجل القياس
@@ -4349,7 +4349,7 @@ async function finalizeDiscussion() {
   });
   setDiscussionState(activeSessionId, 'closed');
   const input = document.getElementById('chatInputText');
-  if (input) input.placeholder = 'اسأل المجتهد في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
+  if (input) input.placeholder = 'اسأل المغني في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
   renderSessionMessages(activeSessionId);
   if (typeof saveChatSessions === 'function') saveChatSessions();
   await triggerChatCompletion(session, [], { discussionMode: 'finalize' });
@@ -4563,7 +4563,7 @@ async function downloadChatResearchReport(idx) {
     }
   } catch (e) { }
   const L = [];
-  L.push('تقرير بحث — المجتهد');
+  L.push('تقرير بحث — المغني');
   L.push('====================');
   L.push('');
   if (entry) {
@@ -4582,7 +4582,7 @@ async function downloadChatResearchReport(idx) {
     L.push('');
     L.push('أولًا: اكتمال الفريق');
     L.push(`الوكلاء المرسلون: ${entry.agents_total ?? '—'} · الساقطون تقنيًا: ${failed.length}${failed.length ? ' (' + failed.join('، ') + ')' : ''} · المعطّلون بقرار المستخدم: ${disabled.length}${disabled.length ? ' (' + disabled.join('، ') + ')' : ''}`);
-    if (failed.length) L.push('الساقطون بُنيت أقسامهم على بطاقات شواهدهم وبطاقات الخلاف والمقارنة، والبديل العملي لكل منهم في تقرير هذا البحث من سجل القياس بإحصائيات المجتهد.');
+    if (failed.length) L.push('الساقطون بُنيت أقسامهم على بطاقات شواهدهم وبطاقات الخلاف والمقارنة، والبديل العملي لكل منهم في تقرير هذا البحث من سجل القياس بإحصائيات المغني.');
     if (disabled.length) L.push('المعطّلون قرارك أنت: لم يُطلب منهم شيء ولم يُعوّض دورهم، والبحث مبني على النطاق المقلّص بقرارك.');
     L.push('');
     L.push('ثانيًا: مؤشرات التدقيق التوثيقي');
@@ -5716,7 +5716,7 @@ function downloadTableAsCSV(btn) {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
-    link.download = `جدول_المجتهد_${dateStr}_${timeStr}.csv`;
+    link.download = `جدول_المغني_${dateStr}_${timeStr}.csv`;
 
     document.body.appendChild(link);
     link.click();
@@ -6810,12 +6810,12 @@ async function publishEchartImage(wrapper) {
     if (!blob) throw new Error('تعذر تجهيز صورة الرسم');
     const title = echartVisualTitle(wrapper, 'رسم بياني');
     const fd = new FormData();
-    fd.append('file', new File([blob], 'رسم-بياني-المجتهد.png', { type: 'image/png' }));
+    fd.append('file', new File([blob], 'رسم-بياني-المغني.png', { type: 'image/png' }));
     const upRes = await fetch('/api/chat/upload', { method: 'POST', body: fd });
     const up = await upRes.json().catch(() => ({}));
     if (!upRes.ok || !up.file_url) throw new Error(up.error || 'تعذر رفع صورة الرسم');
     const kind = (typeof ECHART_KIND_LABELS !== 'undefined' && ECHART_KIND_LABELS[wrapper._kind]) || '';
-    const caption = [`📊 ${title}`, kind ? `رسم ${kind} مولّد بمسح ذكي من بحوث «المجتهد» الموثّقة بالمكتبة الشاملة.` : 'رسم بياني مولّد من بحوث «المجتهد» الموثّقة بالمكتبة الشاملة.'].join('\n');
+    const caption = [`📊 ${title}`, kind ? `رسم ${kind} مولّد بمسح ذكي من بحوث «المغني» الموثّقة بالمكتبة الشاملة.` : 'رسم بياني مولّد من بحوث «المغني» الموثّقة بالمكتبة الشاملة.'].join('\n');
     window.openDesignImagePublish(up.file_url, caption);
   } catch (e) {
     if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر تجهيز نشر الرسم'), 7000);
@@ -7922,7 +7922,7 @@ function openTreeImageOptions(selected) {
             <option value="portrait">📱 طولي — للجوال ومنصات التواصل</option>
           </select>
           <div class="pres-opt-label">ألوان الرسم</div>
-          <label class="pres-radio-card"><input type="radio" name="treeImgColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المجتهد الهادئة المعتمدة</small></span></label>
+          <label class="pres-radio-card"><input type="radio" name="treeImgColorsMode" value="default"> <span><b>الألوان الافتراضية</b><small>هوية المغني الهادئة المعتمدة</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="treeImgColorsMode" value="custom"> <span><b>ألوان مخصصة</b><small>ثلاثة ألوان لصورة الشرح بنسب سيادة</small></span></label>
           <div id="treeImgCustomColors" class="pres-custom-colors" hidden>
             ${[0, 1, 2].map(i => `<div class="pres-color-row"><span class="pres-color-name">لون ${['رئيسي', 'ثانوي', 'لمسة'][i]}</span><input type="color" id="treeImgColor${i}"><input type="number" id="treeImgPct${i}" class="pres-pct" min="0" max="100" step="5"><span>٪</span></div>`).join('')}
@@ -10040,7 +10040,7 @@ window.toggleChatRawMcp = function() {
   updateChatRawMcpUI();
   if (typeof showToast === 'function') {
     showToast(window.chatRawMcp
-      ? '🔌 وضع MCP الخام مفعّل: النموذج يقود أدوات المجتهد مباشرة، بلا وكلاء، مع ضبط إحالات فقط'
+      ? '🔌 وضع MCP الخام مفعّل: النموذج يقود أدوات المغني مباشرة، بلا وكلاء، مع ضبط إحالات فقط'
       : '↩️ عودة إلى الوضع المعتاد (وكلاء وتوجيه واسترجاع)', 3000);
   }
 };
@@ -10050,8 +10050,8 @@ window.updateChatRawMcpUI = function() {
   if (!btn) return;
   btn.classList.toggle('mode-raw', !!window.chatRawMcp);
   btn.title = window.chatRawMcp
-    ? 'وضع MCP الخام مفعّل الآن: النموذج مع أدوات المجتهد فقط وقاعدة إحالة واحدة تضبط النقل والعزو، بلا وكلاء ولا استرجاع مسبق (انقر للإيقاف)'
-    : 'MCP خام مباشر: النموذج المختار يقود أدوات خادم المجتهد بنفسه كما يفعل أي عميل MCP خارجي — بلا وكلاء ولا خط استرجاع، مع قاعدة إحالة واحدة تضبط النقل والعزو فقط (انقر للتفعيل)';
+    ? 'وضع MCP الخام مفعّل الآن: النموذج مع أدوات المغني فقط وقاعدة إحالة واحدة تضبط النقل والعزو، بلا وكلاء ولا استرجاع مسبق (انقر للإيقاف)'
+    : 'MCP خام مباشر: النموذج المختار يقود أدوات خادم المغني بنفسه كما يفعل أي عميل MCP خارجي — بلا وكلاء ولا خط استرجاع، مع قاعدة إحالة واحدة تضبط النقل والعزو فقط (انقر للتفعيل)';
 };
 
 window.chatAgentDispatchMode = localStorage.getItem('almojtahed_chat_dispatch_mode') || 'parallel';

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# يجهّز نسخة سطح المكتب داخل مجلد بيانات المستخدم ثم يشغّل المجتهد.
+# يجهّز نسخة سطح المكتب داخل مجلد بيانات المستخدم ثم يشغّل المغني.
 set -euo pipefail
 
 APP_CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,8 +14,8 @@ mkdir -p "$SUPPORT" "$LOG_DIR" "$RUNTIME"
 printf '%s\n' "جاري تهيئة التطبيق" > "$STATUS"
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-export ALMUJTAHED_STATUS_FILE="$STATUS"
-export ALMUJTAHED_INIT_PID_FILE="$SUPPORT/init.pid"
+export ALMOGHNI_STATUS_FILE="$STATUS"
+export ALMOGHNI_INIT_PID_FILE="$SUPPORT/init.pid"
 
 if ! command -v rsync >/dev/null 2>&1; then
   printf '%s\n' "تعذر تشغيل التطبيق" > "$STATUS"

@@ -1,6 +1,6 @@
 # توقيع تطبيق الماك وتوثيقه (Developer ID + Notarization)
 
-قرار مؤجل التنفيذ بطلب صاحب المشروع (نُسجل هنا بتاريخ ١٤٤٨/… الموافق ٩ نوفمبر ٢٠٢٦م، ونعود إليه عند اكتمال التطبيق). الهدف: أن يفتح «المجتهد» عند كل منزّل بلا تحذير «مطوّر غير معروف» من Gatekeeper.
+قرار مؤجل التنفيذ بطلب صاحب المشروع (نُسجل هنا بتاريخ ١٤٤٨/… الموافق ٩ نوفمبر ٢٠٢٦م، ونعود إليه عند اكتمال التطبيق). الهدف: أن يفتح «المغني» عند كل منزّل بلا تحذير «مطوّر غير معروف» من Gatekeeper.
 
 ## الطريق المعتمد — ولماذا ليس متجر آبل
 
@@ -14,10 +14,10 @@
 ## ما جُهّز في الكود (تم، بانتظار الشهادة)
 
 - `macos/build_app.sh`: مرحلة توقيع وتوثيق آلية بعد البناء:
-  - تكتشف شهادة «Developer ID Application» في سلسلة المفاتيح (أو `ALMUJTAHED_SIGN_ID`).
+  - تكتشف شهادة «Developer ID Application» في سلسلة المفاتيح (أو `ALMOGHNI_SIGN_ID`).
   - توقّع المُشغّل ثم الحزمة بـ `--options runtime --timestamp` مع `macos/entitlements.plist`، وتتحقق بـ `codesign --verify --strict`.
-  - إن وُجد ملف اعتماد توثيق باسم `almujtahed-notary` (أو `ALMUJTAHED_NOTARY_PROFILE`): تضغط الحزمة بـ `ditto`، وترفعها بـ `notarytool submit --wait`، ثم `stapler staple` و`stapler validate` و`spctl --assess`.
-  - بلا شهادة: تُبنى النسخة غير موقعة كما كان سابقًا مع تنبيه مطبوع. وتعطيل التوثيق وحده: `ALMUJTAHED_NOTARIZE=off`.
+  - إن وُجد ملف اعتماد توثيق باسم `almoghni-notary` (أو `ALMOGHNI_NOTARY_PROFILE`): تضغط الحزمة بـ `ditto`، وترفعها بـ `notarytool submit --wait`، ثم `stapler staple` و`stapler validate` و`spctl --assess`.
+  - بلا شهادة: تُبنى النسخة غير موقعة كما كان سابقًا مع تنبيه مطبوع. وتعطيل التوثيق وحده: `ALMOGHNI_NOTARIZE=off`.
 - بنية الحزمة بسيطة ومؤاتية: ثنائي المُشغّل فقط (لا أطر خارجية داخلها)، والبقية نصوص وخطوط. حجمها ~٥٨MB فرفع التوثيق سريع.
 - ملحوظة مطمئنة: عمليات بايثون تُبنى بيئتها في مجلد تشغيل المستخدم خارج الحزمة، وتوقيع الحزمة لا يقيّدها؛ المُشغّل لا يربط إلا أطر نظام آبل فلا حاجة لتصاريح استثنائية.
 
@@ -32,11 +32,11 @@
 
 ### ٢) اعتماد التوثيق
 
-1. من appleid.apple.com ← Sign-In and Security ← App-Specific Passwords: إنشاء كلمة باسم `almujtahed-notary` (تظهر مرة واحدة).
+1. من appleid.apple.com ← Sign-In and Security ← App-Specific Passwords: إنشاء كلمة باسم `almoghni-notary` (تظهر مرة واحدة).
 2. في Terminal (الإدخال مخفي):
 
 ```bash
-xcrun notarytool store-credentials "almujtahed-notary" --apple-id "بريد الحساب" --team-id "TEAMID" --password "xxxx-xxxx-xxxx-xxxx"
+xcrun notarytool store-credentials "almoghni-notary" --apple-id "بريد الحساب" --team-id "TEAMID" --password "xxxx-xxxx-xxxx-xxxx"
 ```
 
 ## بعد إتمامهما (عمل الوكيل)

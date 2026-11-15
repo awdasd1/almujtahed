@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-BUNDLE_NAME = "المجتهد-محلي"
+BUNDLE_NAME = "المغني-محلي"
 MIN_BYTES = 1024 ** 3
 SKIP_DIRS = {".git", "_git_tmp", ".cache", "__pycache__", "tmp", "node_modules"}
 
@@ -81,7 +81,7 @@ def locate(folder: Path, minimum: int | None = None) -> dict | None:
     folder = Path(folder).expanduser()
     if not folder.is_dir():
         return None
-    candidates = [folder, folder / BUNDLE_NAME]
+    candidates = [folder, folder / BUNDLE_NAME, folder / "المجتهد-محلي"]
     for root in candidates:
         found = _describe(root, minimum)
         if found and not found["missing"]:
@@ -246,7 +246,7 @@ def export_bundle(destination: Path, root: Path):
     write_job(root, state="copying", message=message, received=0, expected=expected, error="", path=str(bundle))
     _copy_tree(found["shamela"], bundle / "shamela", progress)
     manifest = {
-        "kind": "almujtahed-local",
+        "kind": "almoghni-local",
         "version": 2,
         "parts": ["shamela"],
     }

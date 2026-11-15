@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Source = Join-Path $AppRoot 'source'
-$Support = Join-Path $env:LOCALAPPDATA 'Al-Mujtahed'
+$Support = Join-Path $env:LOCALAPPDATA 'Almoghni'
 $Runtime = Join-Path $Support 'runtime'
 $Status = Join-Path $Support 'status.txt'
 $LogDir = Join-Path $Support 'logs'
@@ -14,8 +14,8 @@ function Set-Status([string]$Message) {
 }
 
 Set-Status 'جاري تهيئة التطبيق'
-$env:ALMUJTAHED_STATUS_FILE = $Status
-$env:ALMUJTAHED_INIT_PID_FILE = Join-Path $Support 'init.pid'
+$env:ALMOGHNI_STATUS_FILE = $Status
+$env:ALMOGHNI_INIT_PID_FILE = Join-Path $Support 'init.pid'
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 
@@ -109,7 +109,7 @@ if ($importExit -ne 0) {
 $script = Join-Path $Runtime 'start_local.py'
 $runner = Join-Path $Runtime '.venv\Scripts\pythonw.exe'
 if (-not (Test-Path -LiteralPath $runner)) { $runner = $venvPython }
-$env:ALMUJTAHED_LOG_FILE = $LogFile
+$env:ALMOGHNI_LOG_FILE = $LogFile
 $ErrorActionPreference = 'Continue'
 $proc = New-Object System.Diagnostics.Process
 $proc.StartInfo.FileName = $runner

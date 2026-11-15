@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-منظومة المجتهد - خادم الويب والواجهة الخلفية (server.py)
+منظومة المغني - خادم الويب والواجهة الخلفية (server.py)
 الخطة الأولى: ربط البحث الدلالي الحي بمخزن Qdrant (shamela_corpus - 5.14M نص)
 مع استخراج النصوص الأصلية من صفحات الشاملة وتطبيق نموذج إعادة الترتيب
 """
@@ -48,7 +48,7 @@ except ImportError:
     rank_bm25 = None
 
 
-# المسارات الأساسية والذاتية لمنظومة المجتهد (Portable Self-Contained Paths)
+# المسارات الأساسية والذاتية لمنظومة المغني (Portable Self-Contained Paths)
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -228,7 +228,7 @@ def resolve_book_titles_for_search(raw_books: List[str], cursor=None) -> List[st
     return list(resolved)
 
 app = FastAPI(
-    title="منظومة المجتهد",
+    title="منظومة المغني",
     description="المكتبة الشاملة المضمنة والمكممة - بحث دلالي حي في 5.14 مليون مقطع",
     version="1.0.0"
 )
@@ -245,7 +245,7 @@ app.add_middleware(
 # دوال ونظام إدارة البيئة (.env) والمصادقة الأمنية (Authentication & Sessions)
 # =============================================================================
 
-SESSION_COOKIE_NAME = "almujtahed_session"
+SESSION_COOKIE_NAME = "almoghni_session"
 SESSION_DURATION_SECONDS = 3 * 24 * 3600  # 3 days = 259,200 seconds
 
 def update_env_file(updates: Dict[str, Any]):
@@ -843,7 +843,7 @@ MAX_TEMPLATE_BYTES = 80 * 1024 * 1024
 @app.post("/api/print/template/export")
 async def export_print_template(payload: dict = Body(...)):
     """تحزيم قالب طباعة كامل (إعدادات + خطوط مستخدمة + خلفية) في ZIP"""
-    name = str(payload.get("name") or "قالب طباعة المجتهد").strip()[:80] or "قالب طباعة المجتهد"
+    name = str(payload.get("name") or "قالب طباعة المغني").strip()[:80] or "قالب طباعة المغني"
     settings = payload.get("settings") if isinstance(payload.get("settings"), dict) else {}
     fonts_used = []
     wanted = set()
@@ -865,7 +865,7 @@ async def export_print_template(payload: dict = Body(...)):
             background_name = background.name
             bundle.write(background, f"background/{background.name}")
         manifest = {
-            "app": "almujtahed-print-template",
+            "app": "almoghni-print-template",
             "version": 1,
             "name": name,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
@@ -877,7 +877,7 @@ async def export_print_template(payload: dict = Body(...)):
     return Response(
         content=buffer.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=almujtahed-print-template.zip"},
+        headers={"Content-Disposition": "attachment; filename=almoghni-print-template.zip"},
     )
 
 @app.post("/api/print/template/import")
@@ -961,7 +961,7 @@ _GPU_PROBE_CACHE = {"at": 0.0, "data": None}
 
 
 def _gpu_mode_path() -> Path:
-    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    data_dir = os.getenv("ALMOGHNI_DATA_DIR", "").strip()
     if data_dir:
         return Path(data_dir) / "web" / "gpu_mode.json"
     return BASE_DIR / "gpu_mode.json"
@@ -1272,7 +1272,7 @@ def load_models_and_db():
     app_state["qdrant"] = None
     app_state["semantic_disabled"] = True
     app_state["is_ready"] = True
-    print("📚 [المجتهد] البحث اللفظي هو أساس التطبيق — لا مخزن متجهات ولا نموذج تضمين.", flush=True)
+    print("📚 [المغني] البحث اللفظي هو أساس التطبيق — لا مخزن متجهات ولا نموذج تضمين.", flush=True)
 
 
 @app.on_event("startup")
@@ -1440,7 +1440,7 @@ _LOCAL_FETCH = {
 
 
 def _local_chat_dir() -> Path:
-    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    data_dir = os.getenv("ALMOGHNI_DATA_DIR", "").strip()
     root = Path(data_dir) / "models" / LOCAL_CHAT_DIR_NAME if data_dir else PACKAGE_ROOT / "models" / LOCAL_CHAT_DIR_NAME
     root.mkdir(parents=True, exist_ok=True)
     return root
@@ -1593,7 +1593,7 @@ def _resolve_model_download(url: str):
         repo = f"{parts[0]}/{parts[1]}"
         request = urllib.request.Request(
             f"https://huggingface.co/api/models/{repo}",
-            headers={"User-Agent": "almujtahed-local-models"},
+            headers={"User-Agent": "almoghni-local-models"},
         )
         with urllib.request.urlopen(request, timeout=25) as response:
             info = json.loads(response.read().decode("utf-8"))
@@ -1630,7 +1630,7 @@ def _download_local_model_worker(url: str):
         partial = final_path.with_name(final_path.name + ".partial")
         _LOCAL_FETCH["filename"] = final_path.name
         _LOCAL_FETCH["message"] = f"جارٍ سحب {final_path.name}"
-        request = urllib.request.Request(file_url, headers={"User-Agent": "almujtahed-local-models"})
+        request = urllib.request.Request(file_url, headers={"User-Agent": "almoghni-local-models"})
         with urllib.request.urlopen(request, timeout=60) as response:
             expected = int(response.headers.get("Content-Length") or 0)
             _LOCAL_FETCH["expected"] = expected
@@ -1714,7 +1714,7 @@ def call_openrouter_raw(
                 "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "http://localhost:8085",
-                "X-Title": "Al-Mojtahed Multi-Agent Engine"
+                "X-Title": "Almoghni Multi-Agent Engine"
             },
             data=json.dumps(body_payload).encode("utf-8")
         )
@@ -1777,7 +1777,7 @@ class ChatRequest(BaseModel):
     library_only: Optional[bool] = False # بحث مباشر في الشاملة من نص محدد، بلا وكلاء
     free_mode: bool = False # سيناريو البحث الحر: دردشة عامة بلا كتب ولا استرجاع ولا أي توجيه خفي — النموذج يجيب من ذاكرته
     web_search: Optional[bool] = None # أداة بحث الويب (Tavily) بقرار الباحث في الحر والمخصص: مفعّلة يستدعيها النموذج عند عجز ذاكرته، معطّلة يعتذر ويطلب تفعيلها؛ None = لا شأن لها (الموسع عبر المشاريع)
-    raw_mcp: bool = False # MCP خام مباشر: النموذج يقود أدوات المجتهد بنفسه، بلا وكلاء ولا توجيه ولا خط استرجاع
+    raw_mcp: bool = False # MCP خام مباشر: النموذج يقود أدوات المغني بنفسه، بلا وكلاء ولا توجيه ولا خط استرجاع
     selected_books: Optional[List[str]] = None
     selected_categories: Optional[List[str]] = None  # تصنيفات الشاملة الأساسية المختارة في البحث المخصص — نطاق تصنيفي للبحث
     custom_focus_topics: Optional[str] = None  # موضوعات حرة من خيار «أخرى» في حدود البحث المخصص الموضوعية — تُركَّز في المراسي والتوجيه
@@ -4232,7 +4232,7 @@ def _shamela_roots() -> List[Path]:
     add(SHAMELA_DATA_PATH)
     add(os.getenv("SHAMELA4_DATA_DIR"))
     add(os.getenv("SHAMELA_DATA_DIR"))
-    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    data_dir = os.getenv("ALMOGHNI_DATA_DIR", "").strip()
     if data_dir:
         add(Path(data_dir) / "shamela4_data")
     add(PACKAGE_ROOT / "shamela4_data")
@@ -5029,7 +5029,7 @@ def _brand_design_image_png(raw: bytes, logo_bytes: bytes) -> bytes:
 
 
 def _brand_design_image(raw: bytes) -> tuple[bytes, bool]:
-    """ختم الصورة بشعار المجتهد في الركن الأسفل — طبع فعلي لا يعتمد على نموذج الصورة."""
+    """ختم الصورة بشعار المغني في الركن الأسفل — طبع فعلي لا يعتمد على نموذج الصورة."""
     logo_path = BASE_DIR / "design_logo.png"
     if not logo_path.exists():
         return raw, False
@@ -5056,7 +5056,7 @@ def _brand_design_image(raw: bytes) -> tuple[bytes, bool]:
 
 @app.post("/api/designs/image")
 async def design_image(req: DesignImageRequest, request: Request):
-    """توليد صورة التصميم عبر OpenRouter (نموذج صورة ثابت) وختمها بشعار المجتهد."""
+    """توليد صورة التصميم عبر OpenRouter (نموذج صورة ثابت) وختمها بشعار المغني."""
     prompt = (req.prompt or "").strip()
     if len(prompt) < 20:
         raise HTTPException(status_code=400, detail="توجيه الصورة قصير جدًا")
@@ -5080,7 +5080,7 @@ async def design_image(req: DesignImageRequest, request: Request):
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:8085",
-            "X-Title": "Al-Mujtahed Designs",
+            "X-Title": "Almoghni Designs",
         },
         data=json.dumps(payload).encode("utf-8"),
     )
@@ -5128,7 +5128,7 @@ async def design_image(req: DesignImageRequest, request: Request):
     designs_dir = UPLOADS_BUCKET_DIR / owner_id / "designs"
     designs_dir.mkdir(parents=True, exist_ok=True)
     safe_title = re.sub(r"[^\w؀-ۿ ]+", "", title, flags=re.UNICODE).strip()
-    safe_title = re.sub(r"\s+", "-", safe_title)[:60].strip("-") or "تصميم-المجتهد"
+    safe_title = re.sub(r"\s+", "-", safe_title)[:60].strip("-") or "تصميم-المغني"
     filename = f"{safe_title}-{int(time.time())}.png"
     (designs_dir / filename).write_bytes(branded)
     return {
@@ -5162,7 +5162,7 @@ def _design_title_from_prompt(prompt: str) -> str:
     match = re.search(r'["«]([؀-ۿ][^"»]{3,80})["»]', prompt or "")
     if match:
         return match.group(1).strip()
-    return "تصميم المجتهد"
+    return "تصميم المغني"
 
 
 class AudioSummaryRequest(BaseModel):
@@ -5193,7 +5193,7 @@ def _openrouter_chat_text(key: str, model: str, system: str, user: str, timeout:
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:8085",
-            "X-Title": "Al-Mujtahed Audio Summary",
+            "X-Title": "Almoghni Audio Summary",
         },
         data=json.dumps(payload).encode("utf-8"),
     )
@@ -5245,7 +5245,7 @@ def _openrouter_tts(key: str, text: str, with_instructions: bool, voice: Optiona
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:8085",
-            "X-Title": "Al-Mujtahed Audio Summary",
+            "X-Title": "Almoghni Audio Summary",
         },
         data=json.dumps(payload).encode("utf-8"),
     )
@@ -6207,7 +6207,7 @@ def _openrouter_image_bytes(key: str, prompt: str, model: str, size: str = "1536
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:8085",
-            "X-Title": "Al-Mujtahed Presentation",
+            "X-Title": "Almoghni Presentation",
         },
         data=json.dumps(payload).encode("utf-8"),
     )
@@ -7040,7 +7040,7 @@ def _publish_via_ayrshare(req: DesignPublishRequest, request: Request, target: P
         upload = _ayrshare_call("/media/upload", key, {
             "file": f"data:{mime};base64," + base64.b64encode(raw).decode("ascii"),
             "fileName": name,
-            "description": "تصميم المجتهد",
+            "description": "تصميم المغني",
         }, timeout=180)
         media_url = upload.get("url") if isinstance(upload, dict) else None
         if not media_url:
@@ -7547,9 +7547,9 @@ async def get_mcp_tools_catalog():
     """عرض قائمة أدوات التحقيق والمطالعة المتاحة للنماذج الذكية عبر بروتوكول MCP"""
     return {
         "status": "ok",
-        "server": "almujtahed_mcp",
-        "description": "خادم المجتهد MCP: بحث منغلق النطاق وقراءة صفحات ومطابقة اقتباس على الشاملة المحلية",
-        "tools": shamela_local_mcp.SHAMELA_MCP_TOOLS_SPEC + ALMUJTAHED_MCP_EXTRA_TOOLS
+        "server": "almoghni_mcp",
+        "description": "خادم المغني MCP: بحث منغلق النطاق وقراءة صفحات ومطابقة اقتباس على الشاملة المحلية",
+        "tools": shamela_local_mcp.SHAMELA_MCP_TOOLS_SPEC + ALMOGHNI_MCP_EXTRA_TOOLS
     }
 
 
@@ -7603,7 +7603,7 @@ def _mcp_post(url: str, payload: dict, session_id: Optional[str] = None, timeout
 
 
 def _is_internal_mcp_url(url: str) -> bool:
-    """رابط خادم المجتهد MCP الداخلي على هذا الجهاز وهذا المنفذ نفسه."""
+    """رابط خادم المغني MCP الداخلي على هذا الجهاز وهذا المنفذ نفسه."""
     try:
         parsed = urllib.parse.urlparse((url or "").strip())
     except Exception:
@@ -7631,7 +7631,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almujtahed", "version": "1.10.579"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.580"},
         },
     })
     if opened.get("error"):
@@ -7739,7 +7739,7 @@ class MCPExecuteRequest(BaseModel):
     name: str
     arguments: Dict[str, Any]
 
-ALMUJTAHED_MCP_GUIDE = (
+ALMOGHNI_MCP_GUIDE = (
     "ترتيب العمل: حلّ الكتاب برقمه، ثم بحث داخل نطاق مغلق، ثم قراءة الصفحة كاملة، "
     "ثم مطابقة قبل أي نقل. لا يوجد بحث مفتوح في المكتبة من هذه الأدوات، ولا يعتمد "
     "إلا شاهد حالته MATCH_EXACT أو MATCH_NORMALIZED. "
@@ -7761,12 +7761,12 @@ ALMUJTAHED_MCP_GUIDE = (
     "وtarikh_search للتاريخ، وlugha_search لمواد المعاجم وكتب الغريب، وverify_batch لمطابقة النقول دفعة قبل التسليم، وget_book_coverage لإثبات نطاق كتاب."
 )
 
-ALMUJTAHED_MCP_EXTRA_TOOLS = [
+ALMOGHNI_MCP_EXTRA_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "almujtahed_guide",
-            "description": "دليل ترتيب العمل في خادم المجتهد MCP: النطاق والقراءة والمطابقة والعزو.",
+            "name": "almoghni_guide",
+            "description": "دليل ترتيب العمل في خادم المغني MCP: النطاق والقراءة والمطابقة والعزو.",
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -7909,8 +7909,8 @@ def _mcp_research_evidence(args: Dict[str, Any], request: Request) -> Dict[str, 
 
 
 def _mcp_dispatch(name: str, args: Dict[str, Any], request: Request) -> Dict[str, Any]:
-    if name == "almujtahed_guide":
-        return {"status": "ok", "guide": ALMUJTAHED_MCP_GUIDE}
+    if name == "almoghni_guide":
+        return {"status": "ok", "guide": ALMOGHNI_MCP_GUIDE}
     if name == "anchor_lookup":
         return shamela_local_mcp.anchor_lookup((args or {}).get("query") or "")
     if name == "anchor_search":
@@ -7932,7 +7932,7 @@ async def execute_mcp_tool_route(req: MCPExecuteRequest, request: Request):
 
 def _mcp_protocol_tools() -> List[Dict[str, Any]]:
     tools = []
-    for spec in shamela_local_mcp.SHAMELA_MCP_TOOLS_SPEC + ALMUJTAHED_MCP_EXTRA_TOOLS:
+    for spec in shamela_local_mcp.SHAMELA_MCP_TOOLS_SPEC + ALMOGHNI_MCP_EXTRA_TOOLS:
         fn = spec.get("function") or {}
         tools.append({
             "name": fn.get("name"),
@@ -7943,7 +7943,7 @@ def _mcp_protocol_tools() -> List[Dict[str, Any]]:
 
 
 @app.post("/mcp")
-async def almujtahed_mcp_protocol(request: Request):
+async def almoghni_mcp_protocol(request: Request):
     """خادم MCP قياسي للمجتهد داخل التطبيق: initialize وtools/list وtools/call."""
     try:
         payload = await request.json()
@@ -7957,8 +7957,8 @@ async def almujtahed_mcp_protocol(request: Request):
         return {"jsonrpc": "2.0", "id": rid, "result": {
             "protocolVersion": "2025-03-26",
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "almujtahed", "version": "1.0.0"},
-            "instructions": ALMUJTAHED_MCP_GUIDE,
+            "serverInfo": {"name": "almoghni", "version": "1.0.0"},
+            "instructions": ALMOGHNI_MCP_GUIDE,
         }}
     if method.startswith("notifications/"):
         return JSONResponse(status_code=202, content={})
@@ -8270,7 +8270,7 @@ async def get_system_status():
             pass
     return {
         "status": "online",
-        "system_name": "المجتهد (Al-Mojtahed)",
+        "system_name": "المغني (Almoghni)",
         "active_plan": "الخطة الأولى: شاملا كوربس (shamela_corpus)",
         "indexed_points": count,
         "embedding_model": "BAAI/bge-m3 (Dense 1024D)",
@@ -8561,7 +8561,7 @@ _QDRANT_ATTACH_LOCK = threading.Lock()
 _SNAPSHOT_EXPECTED_BYTES = 172 * (1024 ** 3)
 
 def _read_bootstrap_status():
-    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    data_dir = os.getenv("ALMOGHNI_DATA_DIR", "").strip()
     path = Path(data_dir) / "web" / "bootstrap_status.json" if data_dir else BASE_DIR / "bootstrap_status.json"
     if not path.is_file():
         return None
@@ -8571,7 +8571,7 @@ def _read_bootstrap_status():
         return None
 
 def _data_disk_is_persistent():
-    data_dir = os.getenv("ALMUJTAHED_DATA_DIR", "").strip()
+    data_dir = os.getenv("ALMOGHNI_DATA_DIR", "").strip()
     if not data_dir or not os.path.isdir(data_dir):
         return None
     try:
@@ -9386,7 +9386,7 @@ def _run_shamela_import_job():
 
 @app.post("/api/shamela/import")
 async def shamela_import():
-    """استيراد كتب الشاملة المنزّلة إلى مكتبة المجتهد (عملية خلفية بتقدّم)."""
+    """استيراد كتب الشاملة المنزّلة إلى مكتبة المغني (عملية خلفية بتقدّم)."""
     if _shamela_job["running"]:
         return {"ok": False, "message": "الاستيراد جارٍ أصلًا — تابع تقدّمه من البطاقة."}
     threading.Thread(target=_run_shamela_import_job, daemon=True, name="shamela-import").start()
@@ -10887,7 +10887,7 @@ def plan_retrieval_round(question: str, api_key: str, model: str, prior_anchors:
 # =============================================================================
 _ANCHOR_PANEL_GENERATORS = [
     m.strip() for m in os.getenv(
-        "ALMUJTAHED_ANCHOR_PANEL",
+        "ALMOGHNI_ANCHOR_PANEL",
         "google/gemini-2.5-pro,anthropic/claude-sonnet-4.5,openai/gpt-5",
     ).split(",") if m.strip()
 ]
@@ -10961,7 +10961,7 @@ def _anchor_cluster_key(a: str) -> str:
     return re.sub(r"\s+", " ", a).strip()
 
 
-_ANCHOR_ARBITER_MODEL = os.getenv("ALMUJTAHED_ANCHOR_ARBITER", "anthropic/claude-sonnet-4.5")
+_ANCHOR_ARBITER_MODEL = os.getenv("ALMOGHNI_ANCHOR_ARBITER", "anthropic/claude-sonnet-4.5")
 
 
 def generate_anchor_panel(query: str, api_key: str, intent_genres: Optional[List[str]] = None, panel_hint: Optional[str] = None) -> Dict[str, Any]:
@@ -12180,7 +12180,7 @@ def _build_evidence_ledger(
 
 # ════════════════════════════════════════════════════════════════════
 # 🏛 إدارة المخاطر في حوكمة البحوث (المرحلة الأولى)
-# ميثاق: أنظمة المجتهد المكتوبة (قاعدة المكتبة، ربط النقول، صيغ الحواشي
+# ميثاق: أنظمة المغني المكتوبة (قاعدة المكتبة، ربط النقول، صيغ الحواشي
 # والتخريج، اكتمال الفريق، العتبات) يُراقَب الانحراف عنها عند كل بحث:
 # حصاد حتمي من طبقات القياس الثلاث (قياسات مدمجة، أحداث الجولة، تشريح
 # الجواب)، ثم مسؤول مخاطر مستقل — نموذج لا يكون مدير الجولة ولا منفّذ
@@ -12426,7 +12426,7 @@ def _risk_officer_memo(events, *, question, group, manager_model, ledger,
         + (ledger or "— لم يُبنَ سجل أدلة —")
     )[:60000]
     _sys = (
-        "أنت مسؤول إدارة المخاطر في حوكمة منظومة «المجتهد» البحثية، مستقل تمامًا عن مدير البحث وفريقه: لا تجامل ولا تهوّل. "
+        "أنت مسؤول إدارة المخاطر في حوكمة منظومة «المغني» البحثية، مستقل تمامًا عن مدير البحث وفريقه: لا تجامل ولا تهوّل. "
         "يصلك حصاد آلي من طبقات قياس المنظومة (أحداث مرشحة بأدلتها الرقمية، جدول الفريق، منبهات التوثيق، سجل الأدلة)، ومهمتك:\n"
         "١) أكّد كل حدث مرشح أو ارفضه إن كان دليله لا يقوم، ولك إعادة تصنيفه (عالية/متوسطة/منخفضة) مع تعليل من سطر.\n"
         "٢) أضف من سجل الأدلة مخاطر نوعية لا تلتقطها العدّادات إن وجدت: ترجيح بلا بطاقة، تغطية مذهبية ناقصة، تناقض بين وكيلين مرّ صامتًا، دعوى بلا سند — بحد أقصى أربع، وبتصنيفها ودليلها من السجل.\n"
@@ -13077,7 +13077,7 @@ def _ms_transcribe_one(model: str, b64_url: str, key: str) -> Dict[str, Any]:
         "reasoning": {"enabled": False},
     }
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-               "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Manuscripts"}
+               "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Manuscripts"}
     started = time.time()
     try:
         http_req = urllib.request.Request(
@@ -13140,7 +13140,7 @@ def _ms_audit_one(model: str, b64_url: str, text_a: str, text_b: str, key: str) 
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Manuscripts Audit"},
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Manuscripts Audit"},
         data=json.dumps(payload).encode("utf-8"))
     started = time.time()
     with urllib.request.urlopen(http_req, timeout=420) as resp:
@@ -13537,7 +13537,7 @@ def _ms_agents_one(model: str, text: str, title: str, author: str, key: str, foc
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed MS Agents"},
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni MS Agents"},
         data=json.dumps(payload).encode("utf-8"))
     started = time.time()
     with urllib.request.urlopen(http_req, timeout=420) as resp:
@@ -14519,7 +14519,7 @@ def _ms_author_compare(model: str, phrase: str, parallels: list, key: str) -> Di
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Author Agent"},
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Author Agent"},
         data=json.dumps(payload).encode("utf-8"))
     with urllib.request.urlopen(http_req, timeout=300) as resp:
         data = json.loads(resp.read().decode("utf-8"))
@@ -14661,7 +14661,7 @@ def _ms_monitor_sync(payload: dict, key: str) -> Dict[str, Any]:
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Monitor"},
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Monitor"},
         data=json.dumps(body).encode("utf-8"))
     started = time.time()
     with urllib.request.urlopen(http_req, timeout=600) as resp:
@@ -14726,7 +14726,7 @@ def _ms_recommend_sync(payload: dict, key: str) -> Dict[str, Any]:
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Recommend"},
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Recommend"},
         data=json.dumps(body).encode("utf-8"))
     started = time.time()
     with urllib.request.urlopen(http_req, timeout=600) as resp:
@@ -14771,7 +14771,7 @@ def _ms_image_decide_sync(payload: dict, key: str, b64_url: str) -> Dict[str, An
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Argon Approval"},
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Argon Approval"},
         data=json.dumps(body).encode("utf-8"))
     started = time.time()
     with urllib.request.urlopen(http_req, timeout=600) as resp:
@@ -15161,7 +15161,7 @@ def _ms_intro_sync(payload: dict, key: str) -> Dict[str, Any]:
         http_req = urllib.request.Request(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Auto Intro"},
+                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Auto Intro"},
             data=json.dumps(body).encode("utf-8"))
         with urllib.request.urlopen(http_req, timeout=900) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -15216,7 +15216,7 @@ def _ms_discuss_sync(payload: dict, key: str) -> Dict[str, Any]:
     http_req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed MS Discussion"},
+                 "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni MS Discussion"},
         data=json.dumps(body).encode("utf-8"))
     started = time.time()
     with urllib.request.urlopen(http_req, timeout=600) as resp:
@@ -15337,7 +15337,7 @@ def _ms_vision_text(model: str, b64_url: str, prompt: str, key: str, max_tokens:
         http_req = urllib.request.Request(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Identify"},
+                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Identify"},
             data=json.dumps(payload).encode("utf-8"))
         try:
             with urllib.request.urlopen(http_req, timeout=420) as resp:
@@ -15924,7 +15924,7 @@ async def compare_stream_endpoint(req: CompareStreamRequest, request: Request):
                         "Authorization": f"Bearer {key}",
                         "Content-Type": "application/json",
                         "HTTP-Referer": "http://localhost:8085",
-                        "X-Title": "Al-Mojtahed Compare"
+                        "X-Title": "Almoghni Compare"
                     },
                     data=json.dumps(body).encode("utf-8")
                 )
@@ -16283,7 +16283,7 @@ def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
         http_req = urllib.request.Request(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Free Chat"},
+                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Free Chat"},
             data=json.dumps(payload).encode("utf-8"))
         with urllib.request.urlopen(http_req, timeout=300) as resp:
             return json.loads(resp.read().decode("utf-8"))
@@ -16385,7 +16385,7 @@ def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
 
 
 def _raw_mcp_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
-    """وضع MCP الخام المباشر: النموذج المختار يقود أدوات خادم المجتهد بنفسه
+    """وضع MCP الخام المباشر: النموذج المختار يقود أدوات خادم المغني بنفسه
     كما يفعل أي عميل MCP خارجي — بلا وكلاء، وبلا خط استرجاع، وبلا قواعد
     بحث أو إخراج، عدا قاعدة إحالة واحدة قصيرة (RAW_MCP_CITATION_RULE)
     تضبط النقل والعزو فقط، وبوابة مطابقة لاحقة تتحقق منها آليًا."""
@@ -16397,7 +16397,7 @@ def _raw_mcp_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
         return {**base, "reply": "⚠️ وضع MCP الخام يحتاج مفتاح OpenRouter مضبوطًا في حسابك."}
     port = os.environ.get("PORT", "8085")
     try:
-        tools, mapping = mcp_openai_tools([{"url": f"http://127.0.0.1:{port}/mcp", "name": "المجتهد"}])
+        tools, mapping = mcp_openai_tools([{"url": f"http://127.0.0.1:{port}/mcp", "name": "المغني"}])
     except Exception as exc:
         return {**base, "reply": f"⚠️ تعذر تجهيز أدوات MCP: {exc}"}
     if not tools:
@@ -16418,7 +16418,7 @@ def _raw_mcp_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
         o_req = urllib.request.Request(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Al-Mojtahed Raw MCP"},
+                     "HTTP-Referer": "http://localhost:8085", "X-Title": "Almoghni Raw MCP"},
             data=json.dumps(payload).encode("utf-8"))
         with urllib.request.urlopen(o_req, timeout=240) as resp:
             return json.loads(resp.read().decode("utf-8"))
@@ -17231,7 +17231,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         "Authorization": f"Bearer {api_key_to_use}",
                         "Content-Type": "application/json",
                         "HTTP-Referer": "http://localhost:8085",
-                        "X-Title": "Al-Mojtahed Subagent",
+                        "X-Title": "Almoghni Subagent",
                     },
                     data=json.dumps(body).encode("utf-8"),
                 )
@@ -17914,7 +17914,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 system_instruction = req.system_prompt
             else:
                 system_instruction = (
-                    "أنت المجتهد، مساعد ذكي وباحث محقق متخصص في العلوم الإسلامية والفقهية واللغوية والتاريخية.\n"
+                    "أنت المغني، مساعد ذكي وباحث محقق متخصص في العلوم الإسلامية والفقهية واللغوية والتاريخية.\n"
                     "أجب مباشرة وبتوسع وتحرير علمي رصين عن استفسار وسؤال المستخدم باللغة العربية الفصحى.\n"
                     "حلل المسألة في فقرات محررة. لا تُنشئ جداول ماركداون ولا ثبت مصادر مجدولاً في هذه الإجابة.\n"
                     "الجواب البحثي يلتزم الإخراج القياسي العام للمسائل الشرعية واللغوية والتاريخية: هيكل البحث، ثم الحواشي المطابقة لأرقام المتن، وتتولى المنظومة إظهار قائمة المصادر والمراجع من قاعدة الكتب، بوسوم HTML.\n"
@@ -18223,7 +18223,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                             "Authorization": f"Bearer {key}",
                             "Content-Type": "application/json",
                             "HTTP-Referer": "http://localhost:8085",
-                            "X-Title": "Al-Mojtahed Sharia Engine"
+                            "X-Title": "Almoghni Sharia Engine"
                         },
                         data=json.dumps(body_payload).encode("utf-8")
                     )
@@ -18685,7 +18685,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 model_id=_officer,
                 messages=[
                     {"role": "system", "content": (
-                        "أنت مسؤول إدارة المخاطر المستقل في حوكمة منظومة المجتهد. أرسل صاحب البحث بنود مخاطر إلى مدير المشروع لمعالجتها، وهذا رد المدير وما نفّذه من طلبات وكلاء. "
+                        "أنت مسؤول إدارة المخاطر المستقل في حوكمة منظومة المغني. أرسل صاحب البحث بنود مخاطر إلى مدير المشروع لمعالجتها، وهذا رد المدير وما نفّذه من طلبات وكلاء. "
                         "احكم على كل بند: هل عولج فعلًا بما يزيل خطره أو يخفضه إلى مقبول، أم بقي مفتوحًا؟ لا يكفي وعد المدير ولا كلامه عن نفسه؛ العبرة بما في الرد والتقارير المنفذة من إصلاح أو سدّ موثق. "
                         "أخرج لكل بند سطرًا واحدًا حصرًا بصيغة: [رقم البند] مُغلق — تعليل بسطر | أو: [رقم البند] مفتوح — ما بقي ناقصًا بسطر.")},
                     {"role": "user", "content": (
@@ -19141,7 +19141,7 @@ async def get_openrouter_models(request: Request, api_key: Optional[str] = None)
             headers={
                 "Authorization": f"Bearer {key}",
                 "HTTP-Referer": "http://localhost:8085",
-                "X-Title": "Al-Mojtahed Sharia Engine"
+                "X-Title": "Almoghni Sharia Engine"
             }
         )
         with urllib.request.urlopen(req, timeout=12) as resp:
@@ -19202,7 +19202,7 @@ def _openrouter_get(url: str, key: str) -> dict:
         headers={
             "Authorization": f"Bearer {key}",
             "HTTP-Referer": "http://localhost:8085",
-            "X-Title": "Al-Mojtahed Sharia Engine",
+            "X-Title": "Almoghni Sharia Engine",
             "Accept": "application/json",
         },
     )
@@ -19387,7 +19387,7 @@ def _english_model_about(model_id: str) -> str:
     page_url = "https://openrouter.ai/" + urllib.parse.quote(model_id, safe="/")
     description = ""
     try:
-        req = urllib.request.Request(page_url, headers={"User-Agent": "Al-Mojtahed/1.0"})
+        req = urllib.request.Request(page_url, headers={"User-Agent": "Almoghni/1.0"})
         with urllib.request.urlopen(req, timeout=20) as resp:
             page = resp.read().decode("utf-8", "replace")
         description = _extract_openrouter_page_description(page)
@@ -19432,7 +19432,7 @@ def _translate_model_about_to_arabic(english: str, api_key: str) -> str:
                 "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "http://localhost:8085",
-                "X-Title": "Al-Mojtahed Sharia Engine"
+                "X-Title": "Almoghni Sharia Engine"
             },
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8")
         )
@@ -19487,7 +19487,7 @@ async def get_openrouter_credits(request: Request, api_key: Optional[str] = None
     headers = {
         "Authorization": f"Bearer {key}",
         "HTTP-Referer": "http://localhost:8085",
-        "X-Title": "Al-Mojtahed Sharia Engine"
+        "X-Title": "Almoghni Sharia Engine"
     }
 
     credits_data = {}
@@ -21222,7 +21222,7 @@ class ToolArchitectInstallRequest(BaseModel):
     urls: List[str] = []
 
 
-TOOL_ARCHITECT_SYSTEM = """أنت «مهندس الأدوات» في منظومة المجتهد للبحث الأكاديمي الشرعي.
+TOOL_ARCHITECT_SYSTEM = """أنت «مهندس الأدوات» في منظومة المغني للبحث الأكاديمي الشرعي.
 مهمتك الوحيدة: إنشاء أداة تُطبق على بحث جاهز أنتجه نموذج ذكاء اصطناعي مرتبط بمخزن الشاملة الذي يضم نحو ثمانية ملايين نص تراثي.
 
 السياق ثابت ولا تسأل عنه أبداً:
@@ -21266,7 +21266,7 @@ def _select_python_coding_model(key: str) -> Dict[str, Any]:
         headers={
             "Authorization": f"Bearer {key}",
             "HTTP-Referer": "http://localhost:8085",
-            "X-Title": "Al-Mojtahed Tool Architect",
+            "X-Title": "Almoghni Tool Architect",
         },
     )
     try:
@@ -21510,7 +21510,7 @@ async def tool_architect_study_endpoint(req: ToolArchitectStudyRequest, request:
     if not docs:
         raise HTTPException(status_code=502, detail="تعذر قراءة وثائق الأداة المختارة")
     prompt = (
-        "أنت وكيل البرمجة الفرعي. ادرس وثائق الأداة التالية وجهّزها للاستعمال داخل المجتهد على ناتج بحث جاهز.\n"
+        "أنت وكيل البرمجة الفرعي. ادرس وثائق الأداة التالية وجهّزها للاستعمال داخل المغني على ناتج بحث جاهز.\n"
         "أعد JSON فقط بالحقول: summary, kind, packages, cdn_urls, code, init_script, mock_data, notes.\n"
         "kind تكون python إذا كانت مكتبة بايثون، وweb إذا كانت مكتبة جافاسكربت تعرض الرسم في المتصفح.\n"
         "إذا كان الرابط من pypi.org أو github.com فاختر kind=python وحزمة PyPI حديثة تدعم Python 3.11 أو أحدث. إذا كان الرابط من npmjs.com فاختر kind=web وضع اسم الحزمة في cdn على صورة https://cdn.jsdelivr.net/npm/الاسم ولا تضع اسم حزمة npm داخل packages.\n"
@@ -21680,7 +21680,7 @@ def _select_map_model(key: str) -> List[str]:
         headers={
             "Authorization": f"Bearer {key}",
             "HTTP-Referer": "http://localhost:8085",
-            "X-Title": "Al-Mojtahed Map",
+            "X-Title": "Almoghni Map",
         },
     )
     try:
@@ -24295,7 +24295,7 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
         call_model = legacy_aliases[call_model]
 
     planner_system_prompt = (
-        "أنت «العقل المدبر والمخطط المنهجي للمشاريع البحثية التراثية» في منظومة المجتهد المتصلة بالمكتبة الشاملة (8.15 مليون نص تراثي).\n"
+        "أنت «العقل المدبر والمخطط المنهجي للمشاريع البحثية التراثية» في منظومة المغني المتصلة بالمكتبة الشاملة (8.15 مليون نص تراثي).\n"
         "مهمتك: صياغة «المخطط القياسي الكامل لتنفيذ المشروع (Standard Project Blueprint)» بدقة علمية وهندسة برمجية فائقة.\n"
         "في توجيه المدير وكل وكيل: الإحالة القياسية وحدها هي اسم الكتاب ثم (الجزء-الصفحة) بأرقام لاتينية، مثل مجموع الفتاوى (2-368). للكتاب ذي الجزء الواحد: زاد المستقنع ص(50). تُمنع الشرطة المائلة والأرقام العربية وعكس الترتيب ووضع اسم الكتاب داخل القوس.\n\n"
         "يجب أن يتضمن ردك أولاً بنية JSON صالحة للتنفيذ البرمجي ومحصورة بين علامات ```json و ``` تحتوي الحقول التالية تماماً:\n"
@@ -24395,7 +24395,7 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
                     "Authorization": f"Bearer {key}",
                     "Content-Type": "application/json",
                     "HTTP-Referer": "http://localhost:8085",
-                    "X-Title": "Al-Mojtahed Research Architect"
+                    "X-Title": "Almoghni Research Architect"
                 },
                 data=json.dumps(payload).encode("utf-8")
             )
@@ -25551,7 +25551,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "        توجيه النظام: مهندس تخطيط المشاريع البحثية التراثية\n"
         "══════════════════════════════════════════════════════════════\n\n"
         "【أولاً: الهوية والدور】\n"
-        "أنت «مهندس التخطيط المعماري»، العقل المدبر لمشاريع البحث التراثي الإسلامي الكبرى في الفقه وأصوله، والحديث وعلومه، والتفسير، والعقيدة، والتاريخ والسِّيَر، والتراجم والرجال، واللغة، والمخطوطات، في منظومة «المجتهد» المرتبطة بالمكتبة الشاملة ومستودع Qdrant (8.15M نص).\n"
+        "أنت «مهندس التخطيط المعماري»، العقل المدبر لمشاريع البحث التراثي الإسلامي الكبرى في الفقه وأصوله، والحديث وعلومه، والتفسير، والعقيدة، والتاريخ والسِّيَر، والتراجم والرجال، واللغة، والمخطوطات، في منظومة «المغني» المرتبطة بالمكتبة الشاملة ومستودع Qdrant (8.15M نص).\n"
         "أنت لا تكتب البحث بنفسك، بل وظيفتك:\n"
         "1. دراسة المشروع دراسة مستوفية ومحاورة الباحث بحفاوة وشغف وعمق علمي رصين يليق بالعلماء حتى تتضح كل جوانبه.\n"
         "2. استخلاص نتائج الدراسة في «ميثاق المشروع» و«المخطط المعماري التقني» واعتماده.\n"
@@ -25833,7 +25833,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
                         "Authorization": f"Bearer {key}",
                         "Content-Type": "application/json",
                         "HTTP-Referer": "http://localhost:8085",
-                        "X-Title": "Al-Mojtahed Architect"
+                        "X-Title": "Almoghni Architect"
                     },
                     data=json.dumps(body).encode("utf-8")
                 )
@@ -26610,6 +26610,6 @@ async def export_project_docx_endpoint(req: ExportDocxRequest):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8085))
-    print(f"🚀 تشغيل منظومة المجتهد الحية على المنفذ: http://localhost:{port}")
+    print(f"🚀 تشغيل منظومة المغني الحية على المنفذ: http://localhost:{port}")
     uvicorn.run(app, host="127.0.0.1", port=port)
 

@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
 
-namespace AlMujtahed.Setup;
+namespace Almoghni.Setup;
 
 static class Program
 {
@@ -54,11 +54,11 @@ static class Program
 
 static class Installer
 {
-    const string MarkerName = "almujtahed-setup-info.txt";
+    const string MarkerName = "almoghni-setup-info.txt";
 
     public static string DefaultFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Programs", "المجتهد");
+        "Programs", "المغني");
 
     public static string CurrentVersion =>
         Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "";
@@ -76,7 +76,7 @@ static class Installer
 
         foreach (var folder in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            if (!File.Exists(Path.Combine(folder, "AlMujtahed.exe"))) continue;
+            if (!File.Exists(Path.Combine(folder, "Almoghni.exe"))) continue;
             var marker = Path.Combine(folder, MarkerName);
             var version = "";
             try { version = File.Exists(marker) ? File.ReadAllText(marker).Trim() : ""; } catch { }
@@ -118,12 +118,12 @@ static class Installer
 
     public static void CreateShortcuts(string folder)
     {
-        var exe = Path.Combine(folder, "AlMujtahed.exe");
+        var exe = Path.Combine(folder, "Almoghni.exe");
         var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : exe;
         var links = new[]
         {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "المجتهد.lnk"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "المجتهد.lnk")
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "المغني.lnk"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "المغني.lnk")
         };
         foreach (var link in links)
         {
@@ -142,7 +142,7 @@ static class Installer
     static void CreateShellShortcut(string linkPath, string targetPath, string workingDirectory, string iconPath)
     {
         var link = (IShellLinkW)new ShellLink();
-        link.SetDescription("المجتهد — منظومة البحث التراثي");
+        link.SetDescription("المغني — منظومة البحث التراثي");
         link.SetPath(targetPath);
         link.SetWorkingDirectory(workingDirectory);
         link.SetIconLocation(iconPath, 0);
@@ -159,7 +159,7 @@ static class Installer
         shortcut.TargetPath = targetPath;
         shortcut.WorkingDirectory = workingDirectory;
         shortcut.IconLocation = iconPath + ",0";
-        shortcut.Description = "المجتهد — منظومة البحث التراثي";
+        shortcut.Description = "المغني — منظومة البحث التراثي";
         shortcut.Save();
     }
 
@@ -208,23 +208,23 @@ static class Installer
         void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string ppszFileName);
     }
 
-    const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\AlMujtahed";
+    const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Almoghni";
 
     public static void RegisterUninstallEntry(string folder)
     {
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey(UninstallKeyPath);
-            key.SetValue("DisplayName", "المجتهد");
+            key.SetValue("DisplayName", "المغني");
             key.SetValue("DisplayVersion", CurrentVersion);
-            key.SetValue("Publisher", "المجتهد");
+            key.SetValue("Publisher", "المغني");
             key.SetValue("InstallLocation", folder);
-            var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : Path.Combine(folder, "AlMujtahed.exe");
+            var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : Path.Combine(folder, "Almoghni.exe");
             key.SetValue("DisplayIcon", $"\"{iconPath}\",0");
             key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
             // ملف الإلغاء يعيش داخل مجلد التثبيت نفسه، لا عند ملف التنزيلات
             // الذي قد يحذفه المستخدم فينكسر إلغاء التثبيت من الإعدادات.
-            var uninstaller = Path.Combine(folder, "إلغاء تثبيت المجتهد.exe");
+            var uninstaller = Path.Combine(folder, "إلغاء تثبيت المغني.exe");
             var setupExe = Environment.ProcessPath ?? "";
             try
             {
@@ -252,8 +252,8 @@ static class Installer
         var links = new[]
         {
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                @"Microsoft\Windows\Start Menu\Programs", "المجتهد.lnk"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "المجتهد.lnk")
+                @"Microsoft\Windows\Start Menu\Programs", "المغني.lnk"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "المغني.lnk")
         };
         foreach (var link in links)
         {
@@ -294,7 +294,7 @@ static class Installer
 
     public static void Launch(string folder)
     {
-        var exe = Path.Combine(Path.GetFullPath(folder), "AlMujtahed.exe");
+        var exe = Path.Combine(Path.GetFullPath(folder), "Almoghni.exe");
         Process.Start(new ProcessStartInfo(exe)
         {
             WorkingDirectory = Path.GetDirectoryName(exe)!,
@@ -313,7 +313,7 @@ sealed class SetupForm : Form
 
     public SetupForm((string folder, string version)? existing = null)
     {
-        Text = "تثبيت المجتهد";
+        Text = "تثبيت المغني";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -326,7 +326,7 @@ sealed class SetupForm : Form
 
         var title = new Label
         {
-            Text = "المجتهد",
+            Text = "المغني",
             Font = new Font(Font, FontStyle.Bold),
             AutoSize = true,
             ForeColor = Color.FromArgb(42, 34, 26),
@@ -362,7 +362,7 @@ sealed class SetupForm : Form
     {
         using var dialog = new FolderBrowserDialog
         {
-            Description = "اختر مجلد تثبيت المجتهد",
+            Description = "اختر مجلد تثبيت المغني",
             UseDescriptionForTitle = true,
             SelectedPath = pathBox.Text
         };
@@ -389,7 +389,7 @@ sealed class SetupForm : Form
         catch (Exception ex)
         {
             status.Text = "تعذر فك الملفات";
-            MessageBox.Show(this, ex.Message, "تثبيت المجتهد", MessageBoxButtons.OK, MessageBoxIcon.Warning,
+            MessageBox.Show(this, ex.Message, "تثبيت المغني", MessageBoxButtons.OK, MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
             install.Enabled = true;
             browse.Enabled = true;
@@ -401,7 +401,7 @@ sealed class UninstallForm : Form
 {
     public UninstallForm()
     {
-        Text = "إلغاء تثبيت المجتهد";
+        Text = "إلغاء تثبيت المغني";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -413,7 +413,7 @@ sealed class UninstallForm : Form
         BackColor = Color.FromArgb(241, 233, 220);
         var label = new Label
         {
-            Text = "سيُحذف تطبيق المجتهد واختصاراته من هذا الجهاز. بيانات التطبيق في AppData تُحذف أيضًا من داخل التطبيق نفسه (زر حذف التطبيق) إن أردتها.",
+            Text = "سيُحذف تطبيق المغني واختصاراته من هذا الجهاز. بيانات التطبيق في AppData تُحذف أيضًا من داخل التطبيق نفسه (زر حذف التطبيق) إن أردتها.",
             AutoSize = false,
             Location = new Point(24, 20),
             Size = new Size(412, 56),
@@ -452,7 +452,7 @@ sealed class UninstallForm : Form
                 catch { }
             }
         }
-        MessageBox.Show(this, "تم إلغاء تثبيت المجتهد.", "المجتهد", MessageBoxButtons.OK, MessageBoxIcon.Information,
+        MessageBox.Show(this, "تم إلغاء تثبيت المغني.", "المغني", MessageBoxButtons.OK, MessageBoxIcon.Information,
             MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
         Close();
     }

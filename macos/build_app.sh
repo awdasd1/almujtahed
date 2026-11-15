@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# يبني تطبيق المجتهد لماك ويضعه في مجلد التنزيلات.
+# يبني تطبيق المغني لماك ويضعه في مجلد التنزيلات.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="${1:-$HOME/Downloads/المجتهد.app}"
+DEST="${1:-$HOME/Downloads/المغني.app}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 swiftc -O -target arm64-apple-macosx13.0 -framework Cocoa -framework WebKit \
-  -o "$STAGE/AlMujtahed" "$ROOT/macos/AlMujtahedLauncher.swift"
+  -o "$STAGE/Almoghni" "$ROOT/macos/AlmoghniLauncher.swift"
 
 mkdir -p "$STAGE/source"
 git -C "$ROOT" archive --format=tar HEAD | tar -xf - -C "$STAGE/source"
@@ -18,7 +18,7 @@ cp -p "$ROOT/.gitignore" "$ROOT/README.md" "$ROOT/changes.md" "$ROOT/dev.md" \
   "$ROOT/local_bundle.py" \
   "$STAGE/source/"
 cp -p "$ROOT/web_ui/server.py" "$STAGE/source/web_ui/server.py"
-cp -p "$ROOT/web_ui/shamela_local_mcp.py" "$ROOT/web_ui/almujtahed_mcp_server.py" \
+cp -p "$ROOT/web_ui/shamela_local_mcp.py" "$ROOT/web_ui/almoghni_mcp_server.py" \
   "$ROOT/web_ui/shamela_link.py" "$ROOT/web_ui/shamela_search.py" "$ROOT/web_ui/shamela_bridge_worker.py" \
   "$ROOT/web_ui/library_search.py" "$ROOT/web_ui/build_library_index.py" \
   "$ROOT/web_ui/build_ayah_index.py" "$ROOT/web_ui/build_hadith_gradings.py" "$ROOT/web_ui/quran_uthmani.json" \
@@ -54,25 +54,25 @@ chmod +x "$STAGE/source/start_local.sh" "$STAGE/source/start_local.py"
 
 rm -rf "$DEST"
 mkdir -p "$DEST/Contents/MacOS" "$DEST/Contents/Resources/fonts"
-cp "$STAGE/AlMujtahed" "$DEST/Contents/MacOS/AlMujtahed"
+cp "$STAGE/Almoghni" "$DEST/Contents/MacOS/Almoghni"
 cp "$ROOT/macos/launch.sh" "$DEST/Contents/Resources/launch.sh"
 mkdir -p "$DEST/Contents/Resources/mcp_daemon"
-cp "$ROOT/macos/mcp_daemon/com.almujtahed.mcp.plist.template" "$ROOT/macos/mcp_daemon/install_mcp_daemon.sh" "$ROOT/macos/mcp_daemon/uninstall_mcp_daemon.sh" "$DEST/Contents/Resources/mcp_daemon/"
+cp "$ROOT/macos/mcp_daemon/com.almoghni.mcp.plist.template" "$ROOT/macos/mcp_daemon/install_mcp_daemon.sh" "$ROOT/macos/mcp_daemon/uninstall_mcp_daemon.sh" "$DEST/Contents/Resources/mcp_daemon/"
 chmod +x "$DEST/Contents/Resources/mcp_daemon/install_mcp_daemon.sh" "$DEST/Contents/Resources/mcp_daemon/uninstall_mcp_daemon.sh"
 cp "$ROOT/macos/Info.plist" "$DEST/Contents/Info.plist"
 cp "$ROOT/macos/AppIcon.icns" "$DEST/Contents/Resources/AppIcon.icns"
 cp "$ROOT/macos/open-board.png" "$DEST/Contents/Resources/open-board.png"
 cp "$ROOT/web_ui/static/fonts/Almarai-Regular.ttf" "$ROOT/web_ui/static/fonts/Almarai-Bold.ttf" "$DEST/Contents/Resources/fonts/"
-chmod +x "$DEST/Contents/MacOS/AlMujtahed" "$DEST/Contents/Resources/launch.sh"
+chmod +x "$DEST/Contents/MacOS/Almoghni" "$DEST/Contents/Resources/launch.sh"
 rsync -a "$STAGE/source/" "$DEST/Contents/Resources/source/"
 xattr -cr "$DEST" || true
 
 # --- التوقيع والتوثيق (Developer ID + Notarization) -----------------------
 # إن وُجدت شهادة «Developer ID Application» في سلسلة المفاتيح وقّعنا
 # بالتصليب الأمني وختم زمني، ثم وثّقنا عند آبل إن توفر ملف اعتماد
-# التوثيق (almujtahed-notary). بغيابهما يُبنى التطبيق غير موقّع كما
-# كان، مع تنبيه. تعطيل التوثيق وحده: ALMUJTAHED_NOTARIZE=off
-SIGN_ID="${ALMUJTAHED_SIGN_ID:-}"
+# التوثيق (almoghni-notary). بغيابهما يُبنى التطبيق غير موقّع كما
+# كان، مع تنبيه. تعطيل التوثيق وحده: ALMOGHNI_NOTARIZE=off
+SIGN_ID="${ALMOGHNI_SIGN_ID:-}"
 if [ -z "$SIGN_ID" ]; then
   SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
     | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)".*/\1/' || true)"
@@ -81,16 +81,16 @@ if [ -n "$SIGN_ID" ]; then
   echo "🔏 التوقيع بهوية: $SIGN_ID"
   codesign --force --options runtime --timestamp \
     --entitlements "$ROOT/macos/entitlements.plist" \
-    --sign "$SIGN_ID" "$DEST/Contents/MacOS/AlMujtahed"
+    --sign "$SIGN_ID" "$DEST/Contents/MacOS/Almoghni"
   codesign --force --options runtime --timestamp \
     --entitlements "$ROOT/macos/entitlements.plist" \
     --sign "$SIGN_ID" "$DEST"
   codesign --verify --strict --verbose=2 "$DEST"
-  NOTARY_PROFILE="${ALMUJTAHED_NOTARY_PROFILE:-almujtahed-notary}"
-  if [ "${ALMUJTAHED_NOTARIZE:-on}" != "off" ] \
+  NOTARY_PROFILE="${ALMOGHNI_NOTARY_PROFILE:-almoghni-notary}"
+  if [ "${ALMOGHNI_NOTARIZE:-on}" != "off" ] \
      && xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
     echo "📨 التوثيق عند آبل (قد يستغرق دقائق)…"
-    ZIP_TMP="$(mktemp -d)/almujtahed-notarize.zip"
+    ZIP_TMP="$(mktemp -d)/almoghni-notarize.zip"
     ditto -c -k --keepParent "$DEST" "$ZIP_TMP"
     xcrun notarytool submit "$ZIP_TMP" --keychain-profile "$NOTARY_PROFILE" --wait
     xcrun stapler staple "$DEST"

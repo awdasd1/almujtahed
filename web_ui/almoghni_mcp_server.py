@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-خادم MCP الخاص بالمجتهد: بروتوكول MCP قياسي فوق مكتبة الشاملة المحلية.
+خادم MCP الخاص بالمغني: بروتوكول MCP قياسي فوق مكتبة الشاملة المحلية.
 
 المبدأ: الفهرس والبحث يرشّحان الصفحة، وملف الكتاب وحده مصدر النقل،
 ولا إحالة إلا بعد مطابقة. الخادم قراءة فقط، ولا أداة كتابة فيه.
 
 التشغيل:
-    python3 almujtahed_mcp_server.py            # HTTP على 127.0.0.1:8765/mcp
-    python3 almujtahed_mcp_server.py --stdio    # قناة stdio لعملاء MCP
-البيئة: SHAMELA4_DATA_DIR لمجلد الشاملة، وALMUJTAHED_MCP_PORT للمنفذ.
+    python3 almoghni_mcp_server.py            # HTTP على 127.0.0.1:8765/mcp
+    python3 almoghni_mcp_server.py --stdio    # قناة stdio لعملاء MCP
+البيئة: SHAMELA4_DATA_DIR لمجلد الشاملة، وALMOGHNI_MCP_PORT للمنفذ.
 """
 
 import json
@@ -22,14 +22,14 @@ from typing import Any, Dict, List
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import shamela_local_mcp as shamela
 
-SERVER_NAME = "almujtahed"
+SERVER_NAME = "almoghni"
 SERVER_VERSION = "1.0.0"
 PROTOCOL_VERSION = "2025-03-26"
 
-GUIDE = """ترتيب العمل في المجتهد (إلزامي):
+GUIDE = """ترتيب العمل في المغني (إلزامي):
 0. لمسألة فقهية مقارنة: ابدأ بـ fiqh_topic_locations إن كان موضوعها في شجرة الفقه (fiqh_topics لاكتشاف الموضوعات)، أو fiqh_dossier لملف بالنصوص، أو dossier_topic (طبقات زمنية × مذاهب أهل السنة، وخلايا صفرية موثقة)، ثم اقرأ خلاياه وطابق.
    آية: ayah_loci وملفها الطبقي ayah_dossier؛ من قال أولًا: attestations؛ حديث: hadith_loci وملفه hadith_dossier؛ قاعدة: qawaid_search؛ عقيدة: creed_search ومسألة مفهرسة creed_issue؛ تاريخ: tarikh_search؛ لغة: lugha_search؛ ضبط مذهب (المعتمد والمقرر والاصطلاح): madhhab_authorities؛ إجماع وأسباب خلاف وخلاف عال: authority_books بأقسامها ijma/asbab/khilaf؛ قبل التسليم: verify_batch؛ لإثبات غياب: get_book_coverage.
-1. ابدأ بـ almujtahed_guide مرة واحدة في الجلسة.
+1. ابدأ بـ almoghni_guide مرة واحدة في الجلسة.
 2. حلّ كل كتاب برقمه: resolve_book. الرقم هو المفتاح الوحيد، والعنوان للعرض.
 3. ابحث داخل النطاق المغلق فقط: search_passages أو search_books_scoped بقائمة أرقام كتب.
    إن مرّت قائمة كتب لم يخرج البحث عنها، ولا يوجد بحث مفتوح في المكتبة.
@@ -59,7 +59,7 @@ def _tool(name: str, description: str, properties: Dict[str, Any], required: Lis
 
 
 TOOLS = [
-    _tool("almujtahed_guide", "دليل ترتيب العمل في خادم المجتهد: النطاق، القراءة، المطابقة، والعزو. يُستدعى مرة واحدة أول الجلسة.", {}, []),
+    _tool("almoghni_guide", "دليل ترتيب العمل في خادم المغني: النطاق، القراءة، المطابقة، والعزو. يُستدعى مرة واحدة أول الجلسة.", {}, []),
     _tool("resolve_book", "حلّ كتاب إلى رقمه المعياري ومؤلفه وتصنيفه ومساره.", {"book": {"type": "string"}}, ["book"]),
     _tool("get_book_card", "بطاقة الكتاب: المحقق والطبعة والناشر ومدينة النشر وسنة الطبع.", {"book": {"type": "string"}}, ["book"]),
     _tool("get_book_toc", "فهرس أبواب الكتاب وعناوينه.", {"book": {"type": "string"}}, ["book"]),
@@ -158,7 +158,7 @@ def call_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     # الخادم المستقل للوكلاء الخارجيين: الملفات بحجمها النحيف افتراضيًا ما لم يُطلب الكامل صراحة
     if name in ("ayah_dossier", "hadith_dossier", "word_dossier", "fiqh_dossier") and "brief" not in args:
         args = {**args, "brief": True}
-    if name == "almujtahed_guide":
+    if name == "almoghni_guide":
         return {"status": "ok", "guide": GUIDE, "tools": TOOL_NAMES}
     if name == "search_passages":
         rounds = [args.get("query") or ""] + list(args.get("anchors") or [])
@@ -279,5 +279,5 @@ if __name__ == "__main__":
     if "--stdio" in sys.argv:
         _stdio()
     else:
-        port = int(os.getenv("ALMUJTAHED_MCP_PORT", "8765"))
+        port = int(os.getenv("ALMOGHNI_MCP_PORT", "8765"))
         ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

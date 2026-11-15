@@ -1,5 +1,5 @@
 // =============================================================================
-// منظومة المجتهد - إدارة مجموعات الوكلاء المساعدين (agents.js)
+// منظومة المغني - إدارة مجموعات الوكلاء المساعدين (agents.js)
 // تنظيم الوكلاء في مجموعات، إنشاء وتكرار وحذف المجموعات، وإدارة النماذج بداخلها
 // =============================================================================
 
@@ -13,7 +13,7 @@ const DEFAULT_AGENTS = [
     name: 'وكيل الفقه وأصوله',
     desc: 'متخصص في تحرير الفروع الفقهية على المذاهب الأربعة، وتخريج الفروع على الأصول، والقواعد والضوابط الفقهية.',
     enabled: true,
-    systemPrompt: 'أنت وكيل الفقه وأصوله في منظومة المجتهد. مهمتك استخراج المسائل الفقهية وتحرير المعتمد في المذاهب الأربعة مع عزو كل قول لكتابه وصفحته بدقة تامة.',
+    systemPrompt: 'أنت وكيل الفقه وأصوله في منظومة المغني. مهمتك استخراج المسائل الفقهية وتحرير المعتمد في المذاهب الأربعة مع عزو كل قول لكتابه وصفحته بدقة تامة.',
     temp: 0.15,
     topK: 40,
     repPenalty: 1.1,
@@ -25,7 +25,7 @@ const DEFAULT_AGENTS = [
     name: 'وكيل الحديث والرجال',
     desc: 'متخصص في تخريج الأحاديث، وتتبع الأسانيد، والحكم على الرواة من كتب الجرح والتعديل وكتب العلل.',
     enabled: true,
-    systemPrompt: 'أنت وكيل الحديث والرجال في منظومة المجتهد. مهمتك تخريج الأحاديث النبوية وبيان طرقها وأحكام أئمة الصنعة كالبخاري وأبي حاتم وابن حجر.',
+    systemPrompt: 'أنت وكيل الحديث والرجال في منظومة المغني. مهمتك تخريج الأحاديث النبوية وبيان طرقها وأحكام أئمة الصنعة كالبخاري وأبي حاتم وابن حجر.',
     temp: 0.1,
     topK: 30,
     repPenalty: 1.15,
@@ -37,7 +37,7 @@ const DEFAULT_AGENTS = [
     name: 'وكيل التفسير وعلوم القرآن',
     desc: 'متخصص في تحرير أقوال المفسرين بالمأثور وبالدراية، وأسباب النزول، وغريب القرآن والقراءات.',
     enabled: true,
-    systemPrompt: 'أنت وكيل التفسير وعلوم القرآن في منظومة المجتهد. مهمتك جمع تفاسير الآيات من الطبري والقرطبي وابن كثير وغيرهم مع بيان وجوه الإعراب والمعاني.',
+    systemPrompt: 'أنت وكيل التفسير وعلوم القرآن في منظومة المغني. مهمتك جمع تفاسير الآيات من الطبري والقرطبي وابن كثير وغيرهم مع بيان وجوه الإعراب والمعاني.',
     temp: 0.2,
     topK: 40,
     repPenalty: 1.1,
@@ -49,7 +49,7 @@ const DEFAULT_AGENTS = [
     name: 'وكيل التاريخ والتراجم',
     desc: 'متخصص في توثيق وفيات العلماء، وأخبار الأمصار، والأحداث التاريخية وسير الأعلام والملوك.',
     enabled: true,
-    systemPrompt: 'أنت وكيل التاريخ والتراجم في منظومة المجتهد. مهمتك استخراج تراجم الأعلام من تاريخ دمشق وسير أعلام النبلاء والبداية والنهاية.',
+    systemPrompt: 'أنت وكيل التاريخ والتراجم في منظومة المغني. مهمتك استخراج تراجم الأعلام من تاريخ دمشق وسير أعلام النبلاء والبداية والنهاية.',
     temp: 0.25,
     topK: 50,
     repPenalty: 1.05,
@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // تحميل المجموعات من التخزين المحلي وخادم المنظومة
 async function loadAgentGroups() {
-  await (window.almujtahedIdentity || Promise.resolve());
+  await (window.almoghniIdentity || Promise.resolve());
   try {
     const rawGroups = localStorage.getItem(ownerStorageKey(AGENT_GROUPS_STORAGE_KEY));
     if (rawGroups) {
@@ -873,7 +873,7 @@ function populateAgentModelDropdown(targetModelId = null) {
   groups.push({
     title: 'المحلي (Offline)',
     models: [
-      { id: 'local-almojtahed-8b', name: 'Al-Mojtahed 8B (المحلي المكمم - بدون إنترنت)' }
+      { id: 'local-almojtahed-8b', name: 'Almoghni 8B (المحلي المكمم - بدون إنترنت)' }
     ]
   });
 
@@ -1188,7 +1188,7 @@ function useInternalMcp() {
   const input = document.getElementById('mcpUrlInput');
   if (input) input.value = window.location.origin + '/mcp';
   const nameInput = document.getElementById('mcpNameInput');
-  if (nameInput && !nameInput.value.trim()) nameInput.value = 'المجتهد';
+  if (nameInput && !nameInput.value.trim()) nameInput.value = 'المغني';
   verifyMcpUrl();
 }
 

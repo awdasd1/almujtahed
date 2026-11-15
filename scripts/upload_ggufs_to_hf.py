@@ -7,7 +7,7 @@ def main():
     api = HfApi()
     print("👤 Authenticated as:", api.whoami()["name"])
 
-    base_dir = Path("/Users/maa/almujtahed/models/gguf")
+    base_dir = Path("/Users/maa/almoghni/models/gguf")
     emb_file = base_dir / "almojtahed-embedding-8b-Q4_K_M.gguf"
     rerank_file = base_dir / "almojtahed-reranker-8b-Q4_K_M.gguf"
 

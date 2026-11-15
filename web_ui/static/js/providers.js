@@ -1,5 +1,5 @@
 // =============================================================================
-// منظومة المجتهد - إدارة مزودي الخدمة ونماذج الذكاء الاصطناعي (providers.js)
+// منظومة المغني - إدارة مزودي الخدمة ونماذج الذكاء الاصطناعي (providers.js)
 // دعم: كلود، جوجل، أوبن إي آي، ديبسيك، وأوبن راوتر (جلب حي للتسعير والمقاييس)
 // =============================================================================
 
@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initProvidersTab() {
-  window.almujtahedIdentity?.then(async () => {
+  window.almoghniIdentity?.then(async () => {
     try {
       const res = await fetch('/api/config/providers');
       if (res.ok) {
@@ -882,7 +882,7 @@ function syncChatModelDropdown(provider = null, targetModelId = null) {
   groups.push({
     title: 'المحلي (Offline)',
     models: [
-      { id: 'local-almojtahed-8b', name: 'Al-Mojtahed 8B (المحلي المكمم - بدون إنترنت)' }
+      { id: 'local-almojtahed-8b', name: 'Almoghni 8B (المحلي المكمم - بدون إنترنت)' }
     ]
   });
 

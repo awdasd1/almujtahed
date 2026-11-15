@@ -1,4 +1,4 @@
-# 🌟 منظومة المجتهد الشاملة والمستقلة (Al-Mujtahed Standalone Platform)
+# 🌟 منظومة المغني الشاملة والمستقلة (Almoghni Standalone Platform)
 
 > **المكتبة الشاملة المضمنة والمكممة - بحث دلالي عميق، استوديو مشاريع، قارئ شاملة، ووكلاء مساعدون**  
 > نسخة محمولة ذاتياً (Self-Contained & Fully Portable) مهيأة للنقل والتشغيل على أي جهاز أو سيرفر جديد بنسبة **100% دون أي فقد في البيانات أو النماذج**.
@@ -33,7 +33,7 @@ start_local.bat
 ./macos/build_app.sh
 ```
 
-يُنشئ `~/Downloads/المجتهد.app`. أول فتح يعرض نافذة التجهيز، ويسحب النماذج والسنابشوت إلى `~/Library/Application Support/Al-Mujtahed`، ثم يفتح الواجهة في المتصفح. إغلاق النافذة يوقف التطبيق.
+يُنشئ `~/Downloads/المغني.app`. أول فتح يعرض نافذة التجهيز، ويسحب النماذج والسنابشوت إلى `~/Library/Application Support/Al-Mujtahed`، ثم يفتح الواجهة في المتصفح. إغلاق النافذة يوقف التطبيق.
 
 بعد الإقلاع:
 
@@ -48,13 +48,13 @@ start_local.bat
 
 ---
 
-## 📦 محتويات حزمة «المجتهد» المستقلة (`almujtahed/`)
+## 📦 محتويات حزمة «المغني» المستقلة (`almoghni/`)
 
 تحتوي هذه الحزمة على كافة الملفات التشغيلية والمخازن المتجهة والنماذج وقواعد البيانات في مكان واحد:
 
 ```
-almujtahed/
-├── 🚀 start_almujtahed.sh          # سكربت التشغيل الموحد بنقرة واحدة (Qdrant + FastAPI Web Server)
+almoghni/
+├── 🚀 start_almoghni.sh          # سكربت التشغيل الموحد بنقرة واحدة (Qdrant + FastAPI Web Server)
 ├── 📄 requirements.txt            # كافة اعتماديات ومكتبات بايثون المطلوبة
 ├── 📚 books.csv                   # الفهرس الببليوغرافي الشامل (8,589 كتاباً ومؤلفاً)
 ├── 🗄️ shamela_index.db            # قاعدة بيانات SQLite لفهارس الكتب والتصنيفات (8,589 كتاباً)
@@ -93,18 +93,18 @@ almujtahed/
 ## 🚚 طريقة نقل المنظومة إلى جهاز جديد بنسبة 100%
 
 ### الخطوة 1: نسخ المجلد إلى الجهاز الجديد
-قم بنسخ مجلد `almujtahed` بالكامل عبر قرص تخزين خارجي (External SSD) أو عبر الشبكة:
+قم بنسخ مجلد `almoghni` بالكامل عبر قرص تخزين خارجي (External SSD) أو عبر الشبكة:
 ```bash
 # على سبيل المثال، نسخ المجلد كاملاً إلى مسارك المفضل في الجهاز الجديد
-cp -R /path/to/almujtahed /home/username/almujtahed
+cp -R /path/to/almoghni /home/username/almoghni
 ```
 
 ---
 
 ### الخطوة 2: تثبيت بيئة بايثون والاعتماديات
-في الجهاز الجديد، افتح الطرفية (Terminal) داخل مجلد `almujtahed` وشغل:
+في الجهاز الجديد، افتح الطرفية (Terminal) داخل مجلد `almoghni` وشغل:
 ```bash
-cd almujtahed
+cd almoghni
 
 # يُفضل إنشاء بيئة وهمية معزولة
 python3 -m venv .venv
@@ -131,7 +131,7 @@ pip install -r requirements.txt
 إذا كانت النماذج والسنابشوت موجودة مع النسخة المنسوخة:
 
 ```bash
-./start_almujtahed.sh
+./start_almoghni.sh
 ```
 
 إذا كانت النسخة من المستودع بلا هذه الملفات، استخدم `./start_local.sh` أو `start_local.bat` كما في قسم التشغيل المحلي أعلاه.
@@ -149,7 +149,7 @@ pip install -r requirements.txt
 ## 🐳 خيار بديل: تشغيل Qdrant عبر دوكر (Docker)
 إذا كنت تنتقل إلى نظام تشغيل مختلف (مثل Ubuntu Linux) وترغب في تشغيل Qdrant عبر Docker مع استخدام نفس مجلد البيانات المنسوخ دون إعادة فهرسة:
 ```bash
-cd almujtahed/qdrant_service
+cd almoghni/qdrant_service
 docker run -d -p 6333:6333 -p 6334:6334 \
   -v "$(pwd)/storage:/qdrant/storage" \
   qdrant/qdrant

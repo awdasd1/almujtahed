@@ -42,7 +42,7 @@ function Install-UserPython([string]$LogFile) {
     $version = '3.12.10'
     $installer = Join-Path $env:TEMP "python-$version-amd64.exe"
     $url = "https://www.python.org/ftp/python/$version/python-$version-amd64.exe"
-    Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing -Headers @{ 'User-Agent' = 'almujtahed-local' }
+    Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing -Headers @{ 'User-Agent' = 'almoghni-local' }
     $target = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312'
     $arg = "/quiet InstallAllUsers=0 PrependPath=1 Include_test=0 Include_pip=1 Include_launcher=1 Shortcuts=0 TargetDir=`"$target`""
     $proc = Start-Process -FilePath $installer -ArgumentList $arg -Wait -PassThru

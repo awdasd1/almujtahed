@@ -1,5 +1,5 @@
 /* ==========================================================================
-   هوية المجتهد البصرية — Heritage Calm
+   هوية المغني البصرية — Heritage Calm
    - رملي هادئ + طيني دافئ + زمردي رصين
    - الخطوط: Amiri للعناوين + Noto Naskh للنصوص + Lotus Linotype كاحتياطي نظامي
    - أيقونات فلات (Lucide) بحجم موحّد وبدون تعبئة
@@ -10816,7 +10816,7 @@ body::-webkit-scrollbar,
 .fn-hover-open:hover { background: var(--accent-light, var(--accent-subtle)); }
 .fn-hover-warn { font-size: 12px; color: var(--mark-gold, var(--accent-clay)); font-family: var(--font-ui, 'Amiri', serif); margin-top: 4px; }
 
-/* تبويب «تصاميم»: شات مختصر من الفكرة إلى صورة مختومة بشعار المجتهد */
+/* تبويب «تصاميم»: شات مختصر من الفكرة إلى صورة مختومة بشعار المغني */
 /* خطوط التبويب: العناوين بالمراعي والنصوص بالأميري (من جوجل، مع نسخ محلية) */
 @font-face { font-family: 'Almarai'; src: url('/static/fonts/Almarai-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
 @font-face { font-family: 'Almarai'; src: url('/static/fonts/Almarai-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }

@@ -1,5 +1,5 @@
 // =============================================================================
-// منظومة المجتهد - الكود الأساسي (app.js)
+// منظومة المغني - الكود الأساسي (app.js)
 // إدارة التبويبات، الإعدادات، والسمات البصرية
 // =============================================================================
 
@@ -12,7 +12,7 @@ const STORAGE_KEYS = {
 };
 
 function ownerStorageKey(base) {
-  const owner = window._almujtahedOwner || 'pending';
+  const owner = window._almoghniOwner || 'pending';
   return `${base}::${owner}`;
 }
 
@@ -36,10 +36,10 @@ function writeTavilyKey(key) {
   localStorage.setItem(ownerStorageKey('almojtahed_tavily_key'), key || '');
 }
 
-window.almujtahedIdentity = fetch('/api/auth/status')
+window.almoghniIdentity = fetch('/api/auth/status')
   .then((res) => res.json())
   .then((data) => {
-    window._almujtahedOwner = data.owner_id || '';
+    window._almoghniOwner = data.owner_id || '';
     document.body.classList.toggle('is-admin', data.role === 'admin');
     return data;
   })
@@ -73,7 +73,7 @@ const DEFAULT_SETTINGS = {
     openrouter: ''
   },
   modelParams: {
-    systemPrompt: `أنت "المجتهد"، باحث تراثي وعالم فقهي رقمي دقيق متصل بالمكتبة الشاملة الكاملة. استند بدقة إلى النصوص الموثقة من كتب التراث، واذكر اسم الكتاب، والمؤلف، والجزء والصفحة بدقة مع الالتزام بالحياد العلمي والأمانة في النقل.`,
+    systemPrompt: `أنت "المغني"، باحث تراثي وعالم فقهي رقمي دقيق متصل بالمكتبة الشاملة الكاملة. استند بدقة إلى النصوص الموثقة من كتب التراث، واذكر اسم الكتاب، والمؤلف، والجزء والصفحة بدقة مع الالتزام بالحياد العلمي والأمانة في النقل.`,
     temperature: 0.2,
     topK: 40,
     repPenalty: 1.1,
@@ -594,23 +594,23 @@ function migrateFontSettings(settings) {
 }
 
 function ensureGoogleFontsStylesheet() {
-  if (document.getElementById('almujtahed-google-fonts')) return;
+  if (document.getElementById('almoghni-google-fonts')) return;
   const families = GOOGLE_FONT_CATALOG.map((font) => {
     const name = encodeURIComponent(font.family).replace(/%20/g, '+');
     return `family=${name}:wght@${font.weights}`;
   }).join('&');
   const link = document.createElement('link');
-  link.id = 'almujtahed-google-fonts';
+  link.id = 'almoghni-google-fonts';
   link.rel = 'stylesheet';
   link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
   document.head.appendChild(link);
 }
 
 function ensureCustomFontFaces() {
-  let style = document.getElementById('almujtahed-custom-fonts');
+  let style = document.getElementById('almoghni-custom-fonts');
   if (!style) {
     style = document.createElement('style');
-    style.id = 'almujtahed-custom-fonts';
+    style.id = 'almoghni-custom-fonts';
     document.head.appendChild(style);
   }
   style.textContent = customFonts.map((font) => {
@@ -1001,7 +1001,7 @@ function collectPrintTemplateSettings() {
 
 async function buildPrintTemplateFile() {
   const nameInput = document.getElementById('printTemplateName');
-  const name = (nameInput && nameInput.value.trim()) || 'قالب طباعة المجتهد';
+  const name = (nameInput && nameInput.value.trim()) || 'قالب طباعة المغني';
   const response = await fetch('/api/print/template/export', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1012,7 +1012,7 @@ async function buildPrintTemplateFile() {
     throw new Error(apiErrorDetail(data, 'تعذر تصدير القالب'));
   }
   const blob = await response.blob();
-  const safe = name.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || 'almujtahed-print-template';
+  const safe = name.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || 'almoghni-print-template';
   return new File([blob], `${safe}.zip`, { type: 'application/zip' });
 }
 
@@ -1355,11 +1355,11 @@ function localExportSize(bytes) {
 }
 
 function chooseNativeFolder(prompt) {
-  const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+  const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almoghni;
   if (!bridge) return Promise.resolve(null);
   return new Promise((resolve) => {
-    window.__almujtahedPick = (path) => {
-      window.__almujtahedPick = null;
+    window.__almoghniPick = (path) => {
+      window.__almoghniPick = null;
       resolve(typeof path === 'string' ? path : '');
     };
     bridge.postMessage({ action: 'chooseFolder', prompt: prompt || 'اختر المجلد' });
@@ -2077,7 +2077,7 @@ function downloadResearchReport(idx) {
   if (failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
   else if (failed.length === 2 || (ratio !== null && ratio < 65) || (a.ijma_unattributed || 0) > 0) verdict = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
   const L = [];
-  L.push('تقرير بحث خاص — سجل قياس البحوث في المجتهد');
+  L.push('تقرير بحث خاص — سجل قياس البحوث في المغني');
   L.push('==========================================');
   L.push('');
   L.push(`البحث: ${it.question || '—'}`);
@@ -2227,7 +2227,7 @@ function exportResearchMetrics() {
 }
 
 function downloadResearchMetricsGuide() {
-  const guide = `شرح قراءة «سجل قياس البحوث» في المجتهد
+  const guide = `شرح قراءة «سجل قياس البحوث» في المغني
 ====================================
 
 ما هذا السجل؟

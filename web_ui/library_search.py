@@ -17,11 +17,11 @@ import threading
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
-META_DB = os.environ.get("ALMUJTAHED_META_DB", os.path.join(_ROOT, "shamela_index.db"))
+META_DB = os.environ.get("ALMOGHNI_META_DB", os.path.join(_ROOT, "shamela_index.db"))
 
 
 def _default_fts_dir() -> str:
-    env = os.environ.get("ALMUJTAHED_FTS_DIR")
+    env = os.environ.get("ALMOGHNI_FTS_DIR")
     if env:
         return env
     # المصدر الحاكم (ملف library_source.txt): shamela → فهرس المستوردة إن وُجد

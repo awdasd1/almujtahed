@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""بناء فهرس مكتبة المجتهد (FTS5: نصوص + عناوين أبواب) — مرة واحدة عند أول تشغيل.
+"""بناء فهرس مكتبة المغني (FTS5: نصوص + عناوين أبواب) — مرة واحدة عند أول تشغيل.
 
 تقسيم الكتب على شظايا متوازية (عملية لكل نواة تقريبًا)، كل شظية قاعدة SQLite.
 الاستعمال اليدوي:  python3 build_library_index.py [--out DIR] [--workers N]
@@ -35,7 +35,7 @@ def _build_shard(args):
     con.execute("CREATE VIRTUAL TABLE pages_fts USING fts5(text, book_id UNINDEXED, page_id UNINDEXED, part UNINDEXED, page_num UNINDEXED, seq UNINDEXED, tokenize='unicode61')")
     con.execute("CREATE VIRTUAL TABLE headings_fts USING fts5(text, book_id UNINDEXED, page_id UNINDEXED, tokenize='unicode61')")
     npages = 0
-    _src_root = os.environ.get("ALMUJTAHED_FTS_SOURCE_ROOT", "")
+    _src_root = os.environ.get("ALMOGHNI_FTS_SOURCE_ROOT", "")
     for b in books:
         _clean = str(b["rel_path"]).replace("shamela4_data/", "").strip("/")
         _cands = []

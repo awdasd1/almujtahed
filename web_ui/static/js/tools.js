@@ -1350,7 +1350,7 @@ async function handleImportToolFile(event) {
       } else if (typeof parsed === 'object' && (parsed.name || parsed.python_code || parsed.id)) {
         toolsToImport = [parsed];
       } else {
-        throw new Error('ملف JSON لا يحتوي على بيانات أداة صالحة لمنظومة المجتهد');
+        throw new Error('ملف JSON لا يحتوي على بيانات أداة صالحة لمنظومة المغني');
       }
 
       if (toolsToImport.length === 0) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# تشغيل المجتهد محلياً بأمر واحد بعد سحب المستودع على ماك أو لينكس.
+# تشغيل المغني محلياً بأمر واحد بعد سحب المستودع على ماك أو لينكس.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,8 +7,8 @@ cd "$ROOT"
 
 status() {
   printf '%s\n' "$1"
-  if [ -n "${ALMUJTAHED_STATUS_FILE:-}" ]; then
-    printf '%s\n' "$1" > "$ALMUJTAHED_STATUS_FILE"
+  if [ -n "${ALMOGHNI_STATUS_FILE:-}" ]; then
+    printf '%s\n' "$1" > "$ALMOGHNI_STATUS_FILE"
   fi
 }
 

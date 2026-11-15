@@ -7,23 +7,23 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>ar</string>
 	<key>CFBundleDisplayName</key>
-	<string>المجتهد</string>
+	<string>المغني</string>
 	<key>CFBundleExecutable</key>
-	<string>AlMujtahed</string>
+	<string>Almoghni</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.almujtahed.desktop</string>
+	<string>com.almoghni.desktop</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>المجتهد</string>
+	<string>المغني</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.10.579</string>
+	<string>1.10.580</string>
 	<key>CFBundleVersion</key>
-	<string>1679</string>
+	<string>1680</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.education</string>
 	<key>LSMinimumSystemVersion</key>

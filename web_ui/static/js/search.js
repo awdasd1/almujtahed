@@ -1,5 +1,5 @@
 // =============================================================================
-// منظومة المجتهد - محرك البحث الدلالي (search.js)
+// منظومة المغني - محرك البحث الدلالي (search.js)
 // البحث الدلالي، الفلترة الفقهية، وإعادة الترتيب (Reranking)
 // =============================================================================
 
@@ -109,7 +109,7 @@ function updateHybridToggleUI() {
     btn.classList.remove('is-active');
     btn.classList.add('is-disabled');
     btn.setAttribute('aria-pressed', 'false');
-    btn.title = 'البحث الدلالي الصرف مفعّل: يعتمد كلياً على تضمين المتجهات Al-Mojtahed 8B. انقر لتفعيل الدمج الهجين.';
+    btn.title = 'البحث الدلالي الصرف مفعّل: يعتمد كلياً على تضمين المتجهات Almoghni 8B. انقر لتفعيل الدمج الهجين.';
     label.textContent = 'بحث دلالي صرف (Dense Only)';
     if (icon) icon.setAttribute('data-lucide', 'cpu');
   }

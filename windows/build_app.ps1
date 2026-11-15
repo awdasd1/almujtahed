@@ -1,12 +1,12 @@
-﻿# يبني ملف تثبيت المجتهد لويندوز ويضعه في مجلد التنزيلات.
+﻿# يبني ملف تثبيت المغني لويندوز ويضعه في مجلد التنزيلات.
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
-$Exe = if ($args.Count -gt 0) { $args[0] } else { Join-Path $env:USERPROFILE 'Downloads\المجتهد.exe' }
-$Stage = Join-Path ([System.IO.Path]::GetTempPath()) ("almujtahed-win-" + [guid]::NewGuid().ToString('N'))
+$Exe = if ($args.Count -gt 0) { $args[0] } else { Join-Path $env:USERPROFILE 'Downloads\المغني.exe' }
+$Stage = Join-Path ([System.IO.Path]::GetTempPath()) ("almoghni-win-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 try {
     $Bundle = Join-Path $Stage 'app'
-    dotnet publish (Join-Path $PSScriptRoot 'AlMujtahed.csproj') -c Release -r win-x64 --self-contained true -p:DebugType=None -o $Bundle
+    dotnet publish (Join-Path $PSScriptRoot 'Almoghni.csproj') -c Release -r win-x64 --self-contained true -p:DebugType=None -o $Bundle
     $Source = Join-Path $Stage 'source'
     New-Item -ItemType Directory -Force -Path $Source, (Join-Path $Bundle 'fonts'), (Join-Path $Bundle 'source') | Out-Null
     git -C $Root archive --format=tar -o (Join-Path $Stage 'source.tar') HEAD
@@ -26,8 +26,8 @@ try {
     Copy-Item -Path (Join-Path $Source '*') -Destination (Join-Path $Bundle 'source') -Recurse -Force
     $Zip = Join-Path $Stage 'payload.zip'
     Compress-Archive -Path (Join-Path $Bundle '*') -DestinationPath $Zip
-    dotnet publish (Join-Path $PSScriptRoot 'AlMujtahedSetup.csproj') -c Release -r win-x64 --self-contained true -p:DebugType=None "-p:PayloadZip=$Zip" -o (Join-Path $Stage 'setup')
-    Copy-Item -LiteralPath (Join-Path $Stage 'setup\AlMujtahedSetup.exe') -Destination $Exe -Force
+    dotnet publish (Join-Path $PSScriptRoot 'AlmoghniSetup.csproj') -c Release -r win-x64 --self-contained true -p:DebugType=None "-p:PayloadZip=$Zip" -o (Join-Path $Stage 'setup')
+    Copy-Item -LiteralPath (Join-Path $Stage 'setup\AlmoghniSetup.exe') -Destination $Exe -Force
     Write-Output $Exe
 }
 finally {

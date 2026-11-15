@@ -67,7 +67,7 @@ async function loadShamelaStatus() {
     _applyShamelaPathUi(st);
     if (!st.found) {
       badge.textContent = 'غير موجود';
-      text.textContent = st.message || 'لم يُعثر على تطبيق المكتبة الشاملة الجديد على هذا الجهاز. تبقى مكتبة المجتهد المدمجة هي المصدر.';
+      text.textContent = st.message || 'لم يُعثر على تطبيق المكتبة الشاملة الجديد على هذا الجهاز. تبقى مكتبة المغني المدمجة هي المصدر.';
       btn.style.display = 'none';
       return;
     }
@@ -78,10 +78,10 @@ async function loadShamelaStatus() {
         ? '📚 مصدر مكتبة البحث الحالي: <b>الشاملة المثبتة على جهازك</b> (النسخ المستوردة منها) — والنسخة المدمجة محفوظة احتياطًا للرجوع.'
         : '📚 مصدر مكتبة البحث الحالي: النسخة المدمجة في التطبيق.',
       `تطبيق الشاملة مثبّت: كتالوجه ${Number(st.catalog_total).toLocaleString('ar')} كتابًا، المنزّل منه فعليًا ${Number(st.downloaded).toLocaleString('ar')} كتابًا${st.downloaded < st.catalog_total ? ' (ينزّل الباقي عند الطلب)' : ''}.`,
-      `من المنزّل: ${Number(st.downloaded_in_our_library).toLocaleString('ar')} موجود أصلًا في مكتبة المجتهد، و${Number(st.importable_new).toLocaleString('ar')} جديد قابل للاستيراد، والمستورَد سابقًا ${Number(st.imported).toLocaleString('ar')}.`
+      `من المنزّل: ${Number(st.downloaded_in_our_library).toLocaleString('ar')} موجود أصلًا في مكتبة المغني، و${Number(st.importable_new).toLocaleString('ar')} جديد قابل للاستيراد، والمستورَد سابقًا ${Number(st.imported).toLocaleString('ar')}.`
     ];
     if (st.downloaded < st.catalog_total) {
-      lines.push(`المكتبة عندك في الشاملة ناقصة (${Number(st.missing_from_shamela_downloads).toLocaleString('ar')} كتاب غير منزّل): الأفضل إكمال تنزيل ما تحتاجه داخل تطبيق الشاملة ثم استيراده هنا، أو الاعتماد على مكتبة المجتهد المدمجة الكاملة.`);
+      lines.push(`المكتبة عندك في الشاملة ناقصة (${Number(st.missing_from_shamela_downloads).toLocaleString('ar')} كتاب غير منزّل): الأفضل إكمال تنزيل ما تحتاجه داخل تطبيق الشاملة ثم استيراده هنا، أو الاعتماد على مكتبة المغني المدمجة الكاملة.`);
     } else {
       lines.push('مكتبة الشاملة عندك مكتملة التنزيل — كل كتاب فيها متاح للاستيراد فورًا.');
     }
@@ -164,7 +164,7 @@ function _applyShamelaPathUi(st) {
 function _pickFolderNative(promptText) {
   /* منتقي مجلد أصلي: جسر الماك الجاهز، أو جسر ويندوز (WebView2)،
      وnull إن فتح المستخدم الواجهة من متصفح عادي بلا جسر. */
-  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almoghni
       && typeof chooseNativeFolder === 'function') {
     return chooseNativeFolder(promptText);
   }
@@ -173,9 +173,9 @@ function _pickFolderNative(promptText) {
       const handler = (e) => {
         try {
           const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-          if (d && 'almujtahedFolder' in d) {
+          if (d && 'almoghniFolder' in d) {
             window.chrome.webview.removeEventListener('message', handler);
-            resolve(d.almujtahedFolder || '');
+            resolve(d.almoghniFolder || '');
           }
         } catch (_) { /* رسائل أخرى */ }
       };

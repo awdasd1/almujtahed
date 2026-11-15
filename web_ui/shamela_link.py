@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""ربط مكتبة الشاملة المحلية (تطبيق الشاملة الجديد) بالمجتهد.
+"""ربط مكتبة الشاملة المحلية (تطبيق الشاملة الجديد) بالمغني.
 
 الفكرة: أغلب الباحثين لديهم تطبيق الشاملة أصلًا. بدل تنزيل المكتبة كاملة:
 1) كشف: نعثر على بيانات التطبيق ونقرأ كتالوجه `master.db` ونعدّ الكتب
    المنزّلة فعلًا (التطبيق ينزّل النصوص عند الطلب، فالكتالوج وحده لا يكفي).
 2) استيراد: نصوص الكتب المنزّلة محفوظة عندهم داخل فهرس Lucene؛ نقرؤه
    بأدواتهم المدمجة نفسها (JRE + حزم Lucene داخل التطبيق، عبر JPype)
-   ونحوّل كل كتاب مرة واحدة إلى صيغة المجتهد الداخلية (`pages.jsonl`
-   ورفيقاتها) تحت مجلد استيراد خاص. بعد التحويل لا يعتمد المجتهد على
+   ونحوّل كل كتاب مرة واحدة إلى صيغة المغني الداخلية (`pages.jsonl`
+   ورفيقاتها) تحت مجلد استيراد خاص. بعد التحويل لا يعتمد المغني على
    بنيتهم الداخلية في شيء: المستورَد كتاب أصلي عندنا يُفهرس ويُبحث
    ويُتحقق منه كسائر المكتبة.
 
@@ -140,29 +140,29 @@ def find_shamela_root():
 
 def import_dir() -> Path:
     """مجلد الكتب المستوردة من الشاملة (قابل للكتابة دائمًا، خارج الحزمة)."""
-    env = os.getenv("ALMUJTAHED_SHAMELA_IMPORT_DIR", "").strip()
+    env = os.getenv("ALMOGHNI_SHAMELA_IMPORT_DIR", "").strip()
     if env:
         return Path(env).expanduser()
     home = Path.home()
     if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "Al-Mujtahed" / "runtime" / "shamela_imported"
+        return home / "Library" / "Application Support" / "Almoghni" / "runtime" / "shamela_imported"
     if os.getenv("APPDATA"):
         return Path(os.getenv("APPDATA")) / "Al-Mujtahed" / "runtime" / "shamela_imported"
-    return home / ".almujtahed" / "shamela_imported"
+    return home / ".almoghni" / "shamela_imported"
 
 
 def mirror_dir() -> Path:
     """مرآة قاعدة الشاملة داخل تطبيقنا (الخطة الثانية، 1.10.270): نسخة من
     مجلد database وحده (الفهرس + قواعد الكتب) تُزامَن تفاضليًا، فيقرأ الجسر
     والاستخراج منها لا من تثبيت الشاملة — استقلال عن موضعه وتغيّراته."""
-    env = os.getenv("ALMUJTAHED_SHAMELA_MIRROR_DIR", "").strip()
+    env = os.getenv("ALMOGHNI_SHAMELA_MIRROR_DIR", "").strip()
     if env:
         return Path(env).expanduser()
     return import_dir().parent / "shamela_mirror"
 
 
 def mirror_ready() -> bool:
-    if os.getenv("ALMUJTAHED_MIRROR", "").strip().lower() == "off":
+    if os.getenv("ALMOGHNI_MIRROR", "").strip().lower() == "off":
         return False
     md = mirror_dir()
     return (md / ".mirror_ok").exists() and (md / "database" / "store" / "page").exists()
@@ -266,7 +266,7 @@ def _catalog_path() -> Path:
 
 
 def _our_catalog() -> dict:
-    """{book_id: {rel_path, title, author}} من كتالوج المجتهد."""
+    """{book_id: {rel_path, title, author}} من كتالوج المغني."""
     p = _catalog_path()
     out = {}
     if not p.exists():
@@ -496,12 +496,12 @@ def census() -> dict:
         "missing_from_shamela_downloads": max(0, len(theirs) - len(downloaded)),
     })
     if not downloaded:
-        st["advice"] = "تطبيق الشاملة مثبّت لكن لا كتب منزّلة فيه بعد؛ نزّل كتبك فيه ثم ارجع للاستيراد، أو اعتمد مكتبة المجتهد المدمجة."
+        st["advice"] = "تطبيق الشاملة مثبّت لكن لا كتب منزّلة فيه بعد؛ نزّل كتبك فيه ثم ارجع للاستيراد، أو اعتمد مكتبة المغني المدمجة."
     elif importable:
         st["advice"] = (f"عندك {len(importable)} كتابًا منزّلًا في الشاملة لا يطابق عنوانُه كتابًا عندنا — "
                         "استيراده يضيفه فورًا بلا تنزيل كامل.")
     else:
-        st["advice"] = "كل كتب الشاملة المنزّلة عندك موجودة أصلًا في مكتبة المجتهد أو مستوردة."
+        st["advice"] = "كل كتب الشاملة المنزّلة عندك موجودة أصلًا في مكتبة المغني أو مستوردة."
     return st
 
 
@@ -645,7 +645,7 @@ def register_new_books(progress=None) -> int:
 
 def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=print,
             as_primary: bool = False) -> dict:
-    """تحويل كتب الشاملة المنزّلة إلى صيغة المجتهد. يرجع تقريرًا.
+    """تحويل كتب الشاملة المنزّلة إلى صيغة المغني. يرجع تقريرًا.
     book_ids هنا أرقام الشاملة (نطاقهم)، لا أرقامنا.
     as_primary (وضع الهجرة): التوأم المطابق عنوانًا عندنا يُكتب برقمنا
     ومسارنا داخل مجلد الاستيراد، فتصير النسخة المستوردة هي نسخة الكتاب
@@ -893,7 +893,7 @@ def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=p
 
 
 def register_imported_catalog(out_dir: Path = None) -> int:
-    """إدخال الكتب المستوردة الجديدة في كتالوج المجتهد بأرقامها.
+    """إدخال الكتب المستوردة الجديدة في كتالوج المغني بأرقامها.
     كتاب عندنا ملفاته أصلًا لا يُسجَّل ثانية (لا مكررات بالعنوان)."""
     out_dir = Path(out_dir) if out_dir else import_dir()
     cat = _catalog_path()
@@ -932,11 +932,11 @@ def register_imported_catalog(out_dir: Path = None) -> int:
 
 
 def _fts_dir() -> Path:
-    env = os.getenv("ALMUJTAHED_FTS_DIR", "").strip()
+    env = os.getenv("ALMOGHNI_FTS_DIR", "").strip()
     if env:
         return Path(env)
     for cand in (_ROOT / "library_fts", _ROOT / "exp_fts" / "full",
-                 Path.home() / "Library" / "Application Support" / "Al-Mujtahed" / "runtime" / "library_fts"):
+                 Path.home() / "Library" / "Application Support" / "Almoghni" / "runtime" / "library_fts"):
         if glob.glob(str(cand / "shard*.db")):
             return cand
     return _ROOT / "library_fts"
@@ -1022,7 +1022,7 @@ def build_shamela_fts(out_dir: Path = None) -> dict:
     out = Path(out_dir) if out_dir else import_dir()
     fts_out = _ROOT / "library_fts_shamela"
     sys.path.insert(0, str(_HERE))
-    os.environ["ALMUJTAHED_FTS_SOURCE_ROOT"] = str(out)
+    os.environ["ALMOGHNI_FTS_SOURCE_ROOT"] = str(out)
     import build_library_index
     _ours = _our_catalog()
     _tidx = _our_title_index(_ours)

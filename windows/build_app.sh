@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# يبني نسخة المجتهد لويندوز ويضعها في مجلد التنزيلات.
+# يبني نسخة المغني لويندوز ويضعها في مجلد التنزيلات.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,7 +16,7 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 BUNDLE="$STAGE/app"
-dotnet publish "$ROOT/windows/AlMujtahed.csproj" -c Release -r win-x64 --self-contained true \
+dotnet publish "$ROOT/windows/Almoghni.csproj" -c Release -r win-x64 --self-contained true \
   -p:DebugType=None -o "$BUNDLE"
 
 mkdir -p "$STAGE/source"
@@ -29,7 +29,7 @@ cp -p "$ROOT/.gitignore" "$ROOT/README.md" "$ROOT/changes.md" "$ROOT/dev.md" \
   "$STAGE/source/"
 cp -p "$ROOT/web_ui/server.py" "$STAGE/source/web_ui/server.py"
 cp -p "$ROOT/web_ui/design_logo.png" "$STAGE/source/web_ui/design_logo.png"
-cp -p "$ROOT/web_ui/shamela_local_mcp.py" "$ROOT/web_ui/almujtahed_mcp_server.py" \
+cp -p "$ROOT/web_ui/shamela_local_mcp.py" "$ROOT/web_ui/almoghni_mcp_server.py" \
   "$ROOT/web_ui/shamela_link.py" "$ROOT/web_ui/shamela_search.py" "$ROOT/web_ui/shamela_bridge_worker.py" \
   "$ROOT/web_ui/library_search.py" "$ROOT/web_ui/build_library_index.py" \
   "$ROOT/web_ui/build_ayah_index.py" "$ROOT/web_ui/build_hadith_gradings.py" "$ROOT/web_ui/quran_uthmani.json" \
@@ -85,11 +85,11 @@ with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compressleve
             archive.write(path, path.relative_to(root).as_posix())
 PY
 
-dotnet publish "$ROOT/windows/AlMujtahedSetup.csproj" -c Release -r win-x64 --self-contained true \
+dotnet publish "$ROOT/windows/AlmoghniSetup.csproj" -c Release -r win-x64 --self-contained true \
   -p:DebugType=None -p:PayloadZip="$STAGE/payload.zip" -o "$STAGE/setup"
 
-EXE="${1:-$HOME/Downloads/المجتهد.exe}"
+EXE="${1:-$HOME/Downloads/المغني.exe}"
 rm -f "$EXE"
-cp "$STAGE/setup/AlMujtahedSetup.exe" "$EXE"
-rm -rf "$HOME/Downloads/المجتهد-ويندوز"
+cp "$STAGE/setup/AlmoghniSetup.exe" "$EXE"
+rm -rf "$HOME/Downloads/المغني-ويندوز"
 echo "$EXE"

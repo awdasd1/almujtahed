@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# منظومة المجتهد - سكربت بدء التشغيل والتهيئة السحابية للحاوية
+# منظومة المغني - سكربت بدء التشغيل والتهيئة السحابية للحاوية
 # ==============================================================================
 
 set -e
 
 echo "=========================================================="
-echo "🌟 بدء تشغيل منصة المجتهد على Coolify / Docker"
+echo "🌟 بدء تشغيل منصة المغني على Coolify / Docker"
 echo "=========================================================="
 
 # القرص الثابت يبقى بعد حذف الحاوية وإعادة بنائها.
 # في Coolify أضف Persistent Storage وجهته /data
-DATA_DIR="${ALMUJTAHED_DATA_DIR:-/data}"
-export ALMUJTAHED_DATA_DIR="$DATA_DIR"
+DATA_DIR="${ALMOGHNI_DATA_DIR:-/data}"
+export ALMOGHNI_DATA_DIR="$DATA_DIR"
 mkdir -p \
   "$DATA_DIR/qdrant/storage" \
   "$DATA_DIR/qdrant/snapshots" \
@@ -82,7 +82,7 @@ fi
 
 echo "💾 البيانات الثابتة على: $DATA_DIR"
 
-# 2. Qdrant عملية مستقلة. nohup يبقيها بعد انطلاق واجهة المجتهد.
+# 2. Qdrant عملية مستقلة. nohup يبقيها بعد انطلاق واجهة المغني.
 echo "📡 التحقق من جاهزية محرك Qdrant..."
 if ! curl -sf --max-time 2 http://127.0.0.1:6333/collections >/dev/null 2>&1; then
     if [ -f /app/qdrant_service/qdrant ]; then
@@ -113,6 +113,6 @@ nohup python3 /app/init_coolify_data.py >> "$DATA_DIR/web/init.log" 2>&1 &
 echo "📥 جلب البيانات يعمل في الخلفية. شريط التقدم يظهر في نافذة صحة الخادم."
 
 # 3. إطلاق خادم التطبيق
-echo "🚀 تشغيل خادم المجتهد (FastAPI)..."
+echo "🚀 تشغيل خادم المغني (FastAPI)..."
 cd /app/web_ui
 exec python3 server.py

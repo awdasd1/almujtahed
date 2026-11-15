@@ -218,7 +218,7 @@ def create_resilient_qdrant_client() -> QdrantClient:
             if clean and f"http://{clean}:6333" not in candidates:
                 candidates.append(f"http://{clean}:6333")
 
-    # إضافة آي بي خادم المجتهد الفعلي
+    # إضافة آي بي خادم المغني الفعلي
     if "http://5.75.141.129:6333" not in candidates:
         candidates.append("http://5.75.141.129:6333")
     if "http://mj.majalat.ai:6333" not in candidates:

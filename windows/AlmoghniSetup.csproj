@@ -5,11 +5,11 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>AlMujtahedSetup</AssemblyName>
+    <AssemblyName>AlmoghniSetup</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <RootNamespace>AlMujtahed.Setup</RootNamespace>
-    <Version>1.10.579</Version>
-    <InformationalVersion>1.10.579</InformationalVersion>
+    <RootNamespace>Almoghni.Setup</RootNamespace>
+    <Version>1.10.580</Version>
+    <InformationalVersion>1.10.580</InformationalVersion>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
@@ -21,7 +21,7 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="AlMujtahedApp.cs" />
+    <Compile Remove="AlmoghniApp.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="$(PayloadZip)" Condition="'$(PayloadZip)' != ''">

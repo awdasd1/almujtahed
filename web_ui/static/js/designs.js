@@ -1,6 +1,6 @@
 /* تبويب «تصاميم»: فكرة قصيرة → بحث في كتب «تعليق وشرح مختصر» المعتمدة
-   بنموذج ثابت (Gemini 3.8 Flash) يصوغ توجيه صورة بهوية المجتهد →
-   توليد الصورة بنموذج ثابت عبر OpenRouter وختمها بشعار المجتهد. */
+   بنموذج ثابت (Gemini 3.8 Flash) يصوغ توجيه صورة بهوية المغني →
+   توليد الصورة بنموذج ثابت عبر OpenRouter وختمها بشعار المغني. */
 const DESIGN_TEXT_MODEL = 'google/gemini-3.8-flash';
 const DESIGNS_STORE_KEY = 'almujtahed_designs_v1';
 let designMessages = [];
@@ -446,7 +446,7 @@ function saveDesignColors() {
   try { localStorage.setItem(DESIGN_COLORS_KEY, JSON.stringify(designColorsState)); } catch (e) {}
 }
 
-/* لوحة الألوان الإنجليزية الموجهة لصانع الصور: الافتراضية هي هوية المجتهد الثابتة */
+/* لوحة الألوان الإنجليزية الموجهة لصانع الصور: الافتراضية هي هوية المغني الثابتة */
 function designPaletteEn() {
   loadDesignColors();
   if (designColorsState.mode !== 'custom') {
@@ -614,7 +614,7 @@ function designSystemPrompt(imageMode, booksList) {
   const [pc1, pc2, pc3] = designColorsState.img;
   const bookNames = (Array.isArray(booksList) ? booksList : []).filter(Boolean);
   return [
-    'أنت مهندس توجيهات صور (Prompt Engineer) لتبويب «تصاميم» في تطبيق المجتهد للبحث التراثي.',
+    'أنت مهندس توجيهات صور (Prompt Engineer) لتبويب «تصاميم» في تطبيق المغني للبحث التراثي.',
     'مهمتك الوحيدة: تحويل فكرة المستخدم إلى توجيه توليد صورة واحد (Image Prompt) بالإنجليزية فقط، جاهز للإرسال مباشرة إلى نموذج توليد صور، مستندًا إلى الشواهد المرفقة من كتب التراث المعتمدة — لا تخترع وقائع أو أماكن أو تواريخ لا تدعمها الشواهد.',
     `قيد صارم لا يُتجاوز مطلقًا: لا تستعمل إلا الشواهد المرفقة المستخرجة من الكتب المحددة التالية حصرًا${bookNames.length ? ': ' + bookNames.join('؛ ') : ''}. ممنوع منعًا باتًا أي معلومة أو اسم علم أو مكان أو تاريخ من خارج هذه الشواهد أو من ذاكرتك ومعارفك العامة، وممنوع نسبة قول أو واقعة إلى كتاب غير وارد في هذه القائمة، فإن لم تسعفك الشواهد في تفصيل ما فاحذفه من التوجيه ولا تستكمله من عندك.`,
     'أخرج التوجيه وحده في فقرة واحدة متصلة، بلا مقدمة ولا شرح ولا عناوين ولا علامات تنقيط عربية، ثم فقرة المصادر كما في نهاية هذه التعليمات.',
@@ -625,7 +625,7 @@ function designSystemPrompt(imageMode, booksList) {
     `2) خطوط الصورة العربية: العنوان الرئيسي والعناوين الفرعية داخل الصورة بخط المراعي (Almarai — Google Fonts) بالوزن العريض، وبقية النصوص العربية (الشروح والتسميات والقوائم والتعليقات) بخط الأميري (Amiri — Google Fonts) الأنيق. اختر عنوانًا عربيًا دقيقًا للفكرة واكتبه في التوجيه بحروف عربية حرفيًا بين علامتي تنصيص، مثل: The main title reads clearly in Arabic: "رحلة الإمام البخاري لطلب الحديث", set in bold Almarai (Google Fonts) in the exact color ${fonts.title}; subheadings in bold Almarai in the exact color ${fonts.sub}; all other Arabic text, labels and captions in Amiri (Google Fonts) in the exact color ${fonts.body} — crisp, perfectly legible, with no distorted characters.`,
     customPalette
       ? `3) لوحة ألوان مخصصة فرضها المستخدم ويلزم الالتزام بها حرفيًا في التوجيه الإنجليزي برموزها ونسبها: اللون السائد ${pc1.hex} بنسبة ${pc1.pct}٪ تقريبًا من مساحة التصميم (خلفيات وأشكال وزخارف)، واللون الثاني ${pc2.hex} بنسبة ${pc2.pct}٪، ولون التمييز ${pc3.hex} بنسبة ${pc3.pct}٪ — مع تجنب الأسود والذهبي القياسي وسمات الفانتازيا الداكنة.`
-      : '3) هوية المجتهد البصرية الثابتة: Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use: deep ocean navy, muted teal, slate gray, ivory sand, and vibrant coral-orange accents. Absolutely avoid standard black-and-gold or dark vintage fantasy themes.',
+      : '3) هوية المغني البصرية الثابتة: Modern editorial cartography combined with Andalusian manuscript warmth. Strictly use: deep ocean navy, muted teal, slate gray, ivory sand, and vibrant coral-orange accents. Absolutely avoid standard black-and-gold or dark vintage fantasy themes.',
     textOnly
       ? '4) بلا صور مطلقًا: ممنوع أي عنصر تصويري مهما كان — لا رسوم ولا صور فوتوغرافية ولا أيقونات ولا مشاهد طبيعية ولا مبانٍ ولا خرائط مرسومة ولا أشخاص ولا حيوانات ولا أي كائنات أو أشياء مصوَّرة. التصميم نصي خالص: خط عربي وعناوين ونصوص موزعة ببراعة مع زخارف هندسية مسطحة وخلفية لونية، ويجب أن يتضمن التوجيه الإنجليزي حرفيًا عبارة بهذا المعنى: Text-only Arabic typographic poster — absolutely no images, no illustrations, no photographs, no drawings, no icons, no scenery, no buildings, no maps, no people, no animals, no pictorial elements of any kind; only elegant Arabic calligraphy and typography, flat geometric ornament and solid color backgrounds.'
       : noLiving
@@ -731,7 +731,7 @@ function renderDesignMessages() {
           <span class="design-chip">${msg.image_mode === 'none' ? '📝 بلا صور مطلقًا' : msg.image_mode === 'without' ? '🚫 بلا أي كائن حي' : '🖼️ بصور'}</span>
           ${modelChip}
           ${msg.discipline ? `<span class="design-chip">🔍 ${escapeHtml(msg.discipline)}</span>` : ''}
-          ${msg.branded ? '<span class="design-chip">🟢 مختوم بشعار المجتهد</span>' : '<span class="design-chip">الشعار غير مطبوع (راجع التثبيت)</span>'}
+          ${msg.branded ? '<span class="design-chip">🟢 مختوم بشعار المغني</span>' : '<span class="design-chip">الشعار غير مطبوع (راجع التثبيت)</span>'}
           ${costChip}${durChip}
           ${msg.file_name ? `<span class="design-chip">📄 ${escapeHtml(msg.file_name)}</span>` : ''}
           ${publishChip}
@@ -746,7 +746,7 @@ function renderDesignMessages() {
           ${msg.image_url ? `<button type="button" class="design-mini-btn design-danger" data-design-action="delete" data-idx="${idx}">🗑️ حذف نهائي</button>` : ''}
         </div>
       </div>
-      ${msg.image_url && !msg.collapsed ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المجتهد" loading="lazy" data-design-zoom="${idx}" title="انقر للتكبير">` : ''}
+      ${msg.image_url && !msg.collapsed ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المغني" loading="lazy" data-design-zoom="${idx}" title="انقر للتكبير">` : ''}
       ${books ? `<div class="design-books">📚 من كتب: ${books}</div>` : ''}
       ${msg.sources && msg.sources.length ? `<div class="design-sources"><div class="design-sources-title">📚 المصادر التي اعتمدها نموذج الصياغة:</div><ul>${msg.sources.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>` : ''}
       ${msg.prompt ? `<details class="design-prompt"><summary>توجيه الصورة الذي أُرسل للنموذج</summary><p dir="ltr">${escapeHtml(msg.prompt)}</p></details>` : ''}
@@ -912,9 +912,9 @@ async function shareDesignImage(msg) {
   try {
     const resp = await fetch(msg.image_url);
     const blob = await resp.blob();
-    const file = new File([blob], msg.file_name || 'تصميم-المجتهد.png', { type: blob.type || 'image/png' });
+    const file = new File([blob], msg.file_name || 'تصميم-المغني.png', { type: blob.type || 'image/png' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: msg.title || 'تصميم المجتهد' });
+      await navigator.share({ files: [file], title: msg.title || 'تصميم المغني' });
       return;
     }
     if (navigator.clipboard && window.ClipboardItem) {
@@ -953,14 +953,14 @@ function platformLabelAr(platform) {
 }
 
 function designCaptionDraft(msg) {
-  const tags = ['#المجتهد'];
+  const tags = ['#المغني'];
   const disc = String(msg.discipline || '').replace(/\(يدوي\)|مسترجعة من المجلد/g, '').trim();
   disc.split('+').forEach(part => {
     const word = part.replace(/[^\u0600-\u06FF ]/g, '').trim().replace(/\s+/g, '');
     if (word.length > 1) tags.push('#' + word);
   });
   tags.push('#تراث', '#تاريخ_إسلامي');
-  return `${msg.title || 'تصميم من المجتهد'}\n\n📚 تصميم موثّق من كتب التراث — عبر تطبيق «المجتهد»\n${[...new Set(tags)].join(' ')}`;
+  return `${msg.title || 'تصميم من المغني'}\n\n📚 تصميم موثّق من كتب التراث — عبر تطبيق «المغني»\n${[...new Set(tags)].join(' ')}`;
 }
 
 function designScheduleDateTime() {

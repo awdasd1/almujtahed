@@ -87,7 +87,7 @@ async function initProjectsTab() {
 
 // تحميل المشاريع من الخادم أو التخزين المحلي
 async function loadProjectsData() {
-  await (window.almujtahedIdentity || Promise.resolve());
+  await (window.almoghniIdentity || Promise.resolve());
   try {
     const res = await fetch('/api/projects');
     if (res.ok) {
@@ -1898,7 +1898,7 @@ async function openProjectPlanningModal(projectId = null) {
       statusBadge.className = 'p-status-pill';
     }
 
-    const welcomeText = `مرحباً بك أستاذنا الباحث الكريم في **استوديو تخطيط وهندسة المشاريع التراثية الكبرى** 🧭.\n\nأنا **كبير المهندسين المعماريين** لمنظومة «المجتهد»، ومهمتي أن أحاورك وأناقشك خطوة بخطوة في فكرة مسألتك أو مشروعك البحثي الجديد (المعرّف الفريد: \`${newUniqueId}\`).\n\nسنحدد سوياً:\n1. 📜 النطاق الزمني والمصادري الدقيق في الشاملة.\n2. 👥 تشكيل كروت الوكلاء المساعدين التخصصيين وتوجيهاتهم الخاصة.\n3. 📐 أداة التحقق والمقارنة الأكاديمية أو الحسابية المطلوبة.\n4. ⚖️ مصفوفة المقارنة المرجعية (Benchmark).\n\n**تفضل بطرح موضوعك أو مسألتك وما تصبو إلى تحقيقه لنبدأ نقاشنا فوراً!**`;
+    const welcomeText = `مرحباً بك أستاذنا الباحث الكريم في **استوديو تخطيط وهندسة المشاريع التراثية الكبرى** 🧭.\n\nأنا **كبير المهندسين المعماريين** لمنظومة «المغني»، ومهمتي أن أحاورك وأناقشك خطوة بخطوة في فكرة مسألتك أو مشروعك البحثي الجديد (المعرّف الفريد: \`${newUniqueId}\`).\n\nسنحدد سوياً:\n1. 📜 النطاق الزمني والمصادري الدقيق في الشاملة.\n2. 👥 تشكيل كروت الوكلاء المساعدين التخصصيين وتوجيهاتهم الخاصة.\n3. 📐 أداة التحقق والمقارنة الأكاديمية أو الحسابية المطلوبة.\n4. ⚖️ مصفوفة المقارنة المرجعية (Benchmark).\n\n**تفضل بطرح موضوعك أو مسألتك وما تصبو إلى تحقيقه لنبدأ نقاشنا فوراً!**`;
     architectHistory = [{ role: 'assistant', content: welcomeText }];
     renderArchitectChat();
   }
@@ -4774,7 +4774,7 @@ function downloadProjectResultsCsv(type = 'results') {
   if (!tables || tables.length === 0) {
     // في حال تعذر العثور على جدول ماركداون، تصدير نصوص الشواهد كـ CSV
     const csvContent = "\uFEFFالمسألة,التفاصيل,المصدر\n" +
-      `"${currentProjectRunData.projectTitle}","تقرير النتائج المستخرجة","المجتهد"`;
+      `"${currentProjectRunData.projectTitle}","تقرير النتائج المستخرجة","المغني"`;
     triggerCsvDownload(csvContent, `${type}_results.csv`);
     return;
   }
@@ -5381,7 +5381,7 @@ function populateP2CModelsDropdown(project) {
   }
 }
 
-// زر الحفظ: يحفظ جميع الإعدادات في إعدادات الشات بقسم إعدادات منظومة المجتهد ويطبقها فوراً
+// زر الحفظ: يحفظ جميع الإعدادات في إعدادات الشات بقسم إعدادات منظومة المغني ويطبقها فوراً
 function saveProjectToChatSettingsAndApply() {
   const systemPrompt = document.getElementById('p2cSystemPrompt')?.value.trim() || '';
   const additionalPrompt = document.getElementById('p2cAdditionalPrompt')?.value.trim() || '';
@@ -5533,7 +5533,7 @@ function downloadProjectRunReportTxt() {
   const content = `# تقرير تحقيق مشروع: ${title}
 تاريخ التنفيذ: ${currentProjectRunData.executedAt}
 نموذج القيادة والتحقيق: ${currentProjectRunData.directorModel}
-المنظومة: محرك المجتهد للشريعة والتراث الإسلامي
+المنظومة: محرك المغني للشريعة والتراث الإسلامي
 
 ---
 
@@ -5587,7 +5587,7 @@ function buildStandaloneProjectHtml(runData, options) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(title)} - منظومة المجتهد</title>
+  <title>${escapeHtml(title)} - منظومة المغني</title>
   
   <!-- خطوط عربية أكاديمية -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -6033,7 +6033,7 @@ function buildStandaloneProjectHtml(runData, options) {
   <header class="top-action-bar">
     <div class="bar-brand">
       <span>📖</span>
-      <span>منظومة المجتهد - تقرير استخراج وتحقيق أكاديمي</span>
+      <span>منظومة المغني - تقرير استخراج وتحقيق أكاديمي</span>
     </div>
     <div class="bar-actions">
       ${settings.printable === false ? '' : `<button class="btn-act btn-primary" onclick="window.print()">
@@ -6095,7 +6095,7 @@ function buildStandaloneProjectHtml(runData, options) {
     ${roundsHtml}
 
     <footer class="report-footer-seal">
-      تم تحرير وتدقيق هذا التقرير التراثي الأكاديمي آلياً بواسطة منظومة المجتهد المتصلة بالمكتبة الشاملة ووكلاء الذكاء الاصطناعي متعددي الأدوار.
+      تم تحرير وتدقيق هذا التقرير التراثي الأكاديمي آلياً بواسطة منظومة المغني المتصلة بالمكتبة الشاملة ووكلاء الذكاء الاصطناعي متعددي الأدوار.
     </footer>
 
   </main>
@@ -7126,7 +7126,7 @@ function buildAcademicPaperHtml(runData, options) {
       var out = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
       out = out.replace(/<script[^>]*paged\\.polyfill[^>]*><\\/script>/i, '');
       out = stripFootnoteLinks(out);
-      var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+      var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almoghni;
       if (bridge) {
         var base = 'http://127.0.0.1:8085/';
         try { if (window.location && window.location.origin && window.location.origin !== 'null') base = window.location.origin + '/'; } catch (e) {}
@@ -7342,7 +7342,7 @@ function buildAcademicPaperHtml(runData, options) {
        التطبيق الأصلي ليفتح لوحة طباعة النظام (WKWebView يتجاهل
        window.print)؛ في المتصفح والويندوز يبقى عمل الزر كما هو */
     (function () {
-      var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almujtahed;
+      var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almoghni;
       if (!bridge) return;
       var btn = document.querySelector('.top-action-bar .btn-primary');
       if (!btn) return;

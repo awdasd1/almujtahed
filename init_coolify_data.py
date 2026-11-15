@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-منظومة المجتهد - سكربت التهيئة والتنصيب الآلي على خوادم السحاب وCoolify
+منظومة المغني - سكربت التهيئة والتنصيب الآلي على خوادم السحاب وCoolify
 يقوم بجلب وتثبيت:
 1. سنابشوت متجهات الشاملة (172 GB) واستعادتها آلياً في Qdrant ثم تنظيف الملف المؤرشف لتوفير المساحة
 2. قاعدة بيانات نصوص الشاملة الكاملة (40 قسماً) من HuggingFace عبر git clone --depth 1 السريع جداً
@@ -28,11 +28,11 @@ load_dotenv(ROOT_DIR / ".env")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant").strip()
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 COLLECTION_NAME = "shamela_almojtahed_8b_dense"
-DATA_DIR = Path(os.getenv("ALMUJTAHED_DATA_DIR", "/data"))
+DATA_DIR = Path(os.getenv("ALMOGHNI_DATA_DIR", "/data"))
 SNAPSHOT_EXPECTED_BYTES = 172 * (1024 ** 3)
 
 def local_mode():
-    return os.getenv("ALMUJTAHED_LOCAL", "").strip() == "1"
+    return os.getenv("ALMOGHNI_LOCAL", "").strip() == "1"
 
 def qdrant_root():
     if local_mode():
@@ -236,7 +236,7 @@ def download_snapshot_resume(url, partial, token):
     current_url = url
     while True:
         start = partial.stat().st_size if partial.is_file() else 0
-        headers = {"User-Agent": "almujtahed-local"}
+        headers = {"User-Agent": "almoghni-local"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         if start:
@@ -564,7 +564,7 @@ def init_ai_models():
     # 1. نموذج التضمين الشرعي المكمم 8B GGUF
     emb_gguf_path = gguf_dir / "almojtahed-embedding-8b-Q4_K_M.gguf"
     if emb_gguf_path.exists() and emb_gguf_path.stat().st_size > 1024**3:
-        print(f"✅ نموذج التضمين المكمم Al-Mojtahed 8B موجود وجاهز ({emb_gguf_path.stat().st_size / (1024**3):.2f} GB).")
+        print(f"✅ نموذج التضمين المكمم Almoghni 8B موجود وجاهز ({emb_gguf_path.stat().st_size / (1024**3):.2f} GB).")
     else:
         print(f"📥 جاري سحب ملف التضمين المكمم {emb_gguf_path.name} من {EMBEDDING_MODEL_REPO}...")
         from huggingface_hub import hf_hub_download
@@ -579,7 +579,7 @@ def init_ai_models():
                     token=token
                 )
                 if emb_gguf_path.exists() and emb_gguf_path.stat().st_size > 1024**3:
-                    print("✅ تم تحميل نموذج التضمين المكمم Al-Mojtahed 8B GGUF بنجاح!")
+                    print("✅ تم تحميل نموذج التضمين المكمم Almoghni 8B GGUF بنجاح!")
                     last_error = None
                     break
                 last_error = "وصل ملف أصغر من النموذج المتوقع"
@@ -605,7 +605,7 @@ def main(skip_models=False, only_models=False, snapshot_only=False, texts_only=F
         QDRANT_HOST = "127.0.0.1"
     print("\n" + "=" * 75)
     title = "الجهاز المحلي" if local_mode() else "Coolify"
-    print(f"🌟 بدء فحص وتهيئة بيانات منصة المجتهد ({title})")
+    print(f"🌟 بدء فحص وتهيئة بيانات منصة المغني ({title})")
     print("=" * 75)
 
     if texts_only:
@@ -622,12 +622,12 @@ def main(skip_models=False, only_models=False, snapshot_only=False, texts_only=F
                 init_ai_models()
 
     print("\n" + "=" * 75)
-    print("🎉 اكتمل فحص البيانات بنجاح، جاري بدء تشغيل واجهة المجتهد...")
+    print("🎉 اكتمل فحص البيانات بنجاح، جاري بدء تشغيل واجهة المغني...")
     print("=" * 75 + "\n")
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="تهيئة بيانات المجتهد من Hugging Face")
+    parser = argparse.ArgumentParser(description="تهيئة بيانات المغني من Hugging Face")
     parser.add_argument("--local", action="store_true", help="ضع الملفات داخل مجلد المشروع على الجهاز")
     parser.add_argument("--skip-models", action="store_true", help="تخطَّ نموذج التضمين")
     parser.add_argument("--only-models", action="store_true", help="اسحب نموذج التضمين فقط")
@@ -635,6 +635,6 @@ if __name__ == "__main__":
     parser.add_argument("--texts-only", action="store_true", help="نصوص الشاملة فقط، بلا Qdrant ولا سنابشوت ولا نماذج")
     args = parser.parse_args()
     if args.local:
-        os.environ["ALMUJTAHED_LOCAL"] = "1"
+        os.environ["ALMOGHNI_LOCAL"] = "1"
         os.environ["QDRANT_HOST"] = "127.0.0.1"
     main(skip_models=args.skip_models, only_models=args.only_models, snapshot_only=args.snapshot_only, texts_only=args.texts_only)
