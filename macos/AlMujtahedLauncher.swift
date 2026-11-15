@@ -550,12 +550,13 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var boardPoint = NSSize.zero
     private var boardBacking: CGFloat = 2
     private var boardShown = -1
+    private var boardProgress: Double = 0
     private var etaSeconds: TimeInterval = -1
     private var etaMarkedAt = Date()
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.572")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.573")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -686,7 +687,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.572"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.573"
     }
 
     private func buildWindow() {
@@ -1128,7 +1129,21 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ctx.interpolationQuality = .none
         ctx.draw(base, in: CGRect(x: 0, y: 0, width: width, height: height))
         let brown = CGColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
+        let brownInk = NSColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
+        drawBoardText(appVersion, at: CGPoint(x: 48, y: CGFloat(height) - 162), context: ctx, color: brownInk, size: 16, bold: true)
         let track = CGRect(x: 120, y: CGFloat(height) - 402, width: 784, height: 22)
+        let caption = "جارٍ إعداد التطبيق فضلاً انتظر ..."
+        let captionFont = CTFontCreateWithName(almarai(16, bold: false).fontName as CFString, 16, nil)
+        let captionLine = CTLineCreateWithAttributedString(NSAttributedString(string: caption, attributes: [
+            .font: captionFont,
+            .foregroundColor: brownInk
+        ]))
+        var captionAscent: CGFloat = 0
+        var captionDescent: CGFloat = 0
+        let captionWidth = CGFloat(CTLineGetTypographicBounds(captionLine, &captionAscent, &captionDescent, nil))
+        ctx.textMatrix = .identity
+        ctx.textPosition = CGPoint(x: track.maxX - captionWidth, y: track.maxY + 16)
+        CTLineDraw(captionLine, ctx)
         ctx.setStrokeColor(brown)
         ctx.setLineWidth(2)
         ctx.addPath(CGPath(roundedRect: track, cornerWidth: 11, cornerHeight: 11, transform: nil))
@@ -1163,6 +1178,17 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         boardView.layer?.contentsScale = boardBacking
     }
 
+    private func drawBoardText(_ text: String, at point: CGPoint, context ctx: CGContext, color: NSColor, size: CGFloat, bold: Bool) {
+        let font = CTFontCreateWithName(almarai(size, bold: bold).fontName as CFString, size, nil)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+            .font: font,
+            .foregroundColor: color
+        ]))
+        ctx.textMatrix = .identity
+        ctx.textPosition = point
+        CTLineDraw(line, ctx)
+    }
+
     private func refreshProgress(resetSpeed: Bool) {
         if ready { return }
         var message = currentStatus()
@@ -1187,9 +1213,11 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let percent = ready ? 100.0 : displayedPercent(message: message, transfer: transfer)
         let installing = readBootstrap()?.phase == "install"
-        let shown = installing && transfer.expected > 0
-            ? min(100, Double(max(transfer.received, 0)) / Double(transfer.expected) * 100)
-            : percent
+        var shown = percent
+        if !ready {
+            shown = min(96, max(shown, boardProgress))
+            boardProgress = shown
+        }
         progressBar.fraction = CGFloat(shown / 100)
         percentValue.stringValue = "\(Int(shown.rounded()))%"
         paintBoard(percent: shown)
@@ -1300,10 +1328,6 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DispatchQueue.main.async {
                 self.checkingInterface = false
                 guard ok else { return }
-                if !self.openedBrowser {
-                    self.openedBrowser = true
-                    self.showAppWindow()
-                }
                 self.setOpenButtonEnabled(true)
                 if self.dataAlreadyInstalled() {
                     self.markReady()

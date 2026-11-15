@@ -170,6 +170,7 @@ sealed class InstallerForm : Form
     readonly PictureBox boardBox;
     Bitmap? boardBase;
     int boardShown = -1;
+    double boardProgress;
     readonly Panel card;
     readonly BookIcon book;
     readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(2) };
@@ -363,7 +364,22 @@ sealed class InstallerForm : Form
             g.PixelOffsetMode = PixelOffsetMode.Half;
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             g.DrawImage(boardBase, 0, 0, boardBase.Width, boardBase.Height);
+            using var brownInk = new SolidBrush(Color.FromArgb(255, 91, 51, 16));
+            using var versionFont = new Font("Tahoma", 16, FontStyle.Bold, GraphicsUnit.Pixel);
+            g.DrawString(AppVersion(), versionFont, brownInk, new PointF(48, 146));
             var track = new Rectangle(120, 380, 784, 22);
+            using var captionFont = new Font("Tahoma", 16, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var captionFormat = new StringFormat(StringFormatFlags.DirectionRightToLeft)
+            {
+                Alignment = StringAlignment.Near,
+                LineAlignment = StringAlignment.Far
+            };
+            g.DrawString(
+                "جارٍ إعداد التطبيق فضلاً انتظر ...",
+                captionFont,
+                brownInk,
+                new RectangleF(track.Left, track.Top - 40, track.Width, 36),
+                captionFormat);
             using var brown = new Pen(Color.FromArgb(255, 91, 51, 16), 2);
             using (var outline = BoardPill(track, 11))
                 g.DrawPath(brown, outline);
@@ -710,7 +726,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.572");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.573");
         tray.Visible = false;
     }
 
@@ -847,8 +863,11 @@ sealed class InstallerForm : Form
         lastSampleAt = now;
         var percent = DisplayedPercent(message, transfer);
         var installing = ReadBootstrap()?.Phase == "install";
-        if (installing && transfer.Expected > 0)
-            percent = Math.Min(100, Math.Max(transfer.Received, 0) * 100.0 / transfer.Expected);
+        if (!ready)
+        {
+            percent = Math.Min(96, Math.Max(percent, boardProgress));
+            boardProgress = percent;
+        }
         progressBar.Fraction = (float)(percent / 100);
         percentValue.Text = $"{(int)Math.Round(percent)}%";
         PaintBoard(percent);
@@ -970,11 +989,6 @@ sealed class InstallerForm : Form
         try
         {
             if (!await InterfaceIsUp()) return;
-            if (appWindow is not { PageReady: true })
-            {
-                openedApp = true;
-                ShowApp();
-            }
             openButton.Active = true;
             engineRestarts = 0;
             if (DataAlreadyInstalled())
