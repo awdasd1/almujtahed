@@ -11444,9 +11444,12 @@ html[data-visual-lab="on"] body::before {
   filter: blur(var(--lab-image-blur, 0px));
 }
 
-html[data-visual-lab="on"] .app-header,
 html[data-visual-lab="on"] .main-content {
   z-index: 1;
+}
+
+html[data-visual-lab="on"] .app-header {
+  z-index: 50;
 }
 
 html[data-visual-lab="on"] .btn-flat-primary,
