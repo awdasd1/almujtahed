@@ -90,6 +90,7 @@ foreach ($file in $files) {
         Set-SetupProgress (2 + [int](16.0 * $copied / $files.Count))
     }
 }
+Set-SetupProgress 18
 
 $venvPython = Join-Path $Runtime '.venv\Scripts\python.exe'
 . (Join-Path $AppRoot 'python_setup.ps1')

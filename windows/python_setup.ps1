@@ -1,43 +1,63 @@
-﻿function Start-QuietProcess([string]$File, [string[]]$ArgumentList, [string]$WorkingDirectory, [string]$StdOut, [string]$StdErr) {
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $File
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $false
-    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) { $psi.WorkingDirectory = $WorkingDirectory }
+﻿if (-not ('AlmoghniQuiet.Runner' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+namespace AlmoghniQuiet {
+    public static class Runner {
+        public static Process Start(string file, string args, string work, string stdout, string stderr) {
+            var psi = new ProcessStartInfo(file, args);
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = false;
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+            if (!string.IsNullOrEmpty(work)) psi.WorkingDirectory = work;
+            StreamWriter output = null;
+            StreamWriter error = null;
+            if (!string.IsNullOrEmpty(stdout)) {
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.StandardOutputEncoding = new UTF8Encoding(false);
+                psi.StandardErrorEncoding = new UTF8Encoding(false);
+                output = Writer(stdout);
+                error = Writer(string.IsNullOrEmpty(stderr) ? stdout : stderr);
+            }
+            var process = new Process();
+            process.StartInfo = psi;
+            process.EnableRaisingEvents = true;
+            if (output != null) {
+                process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs ev) {
+                    if (ev.Data != null) output.WriteLine(ev.Data);
+                };
+                process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs ev) {
+                    if (ev.Data != null) error.WriteLine(ev.Data);
+                };
+                process.Exited += delegate { try { output.Dispose(); error.Dispose(); } catch {} };
+            }
+            process.Start();
+            if (output != null) {
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+            }
+            return process;
+        }
+        static StreamWriter Writer(string path) {
+            var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            var writer = new StreamWriter(stream, new UTF8Encoding(false));
+            writer.AutoFlush = true;
+            return writer;
+        }
+    }
+}
+'@
+}
+
+function Start-QuietProcess([string]$File, [string[]]$ArgumentList, [string]$WorkingDirectory, [string]$StdOut, [string]$StdErr) {
     $parts = foreach ($arg in $ArgumentList) {
         if ($null -eq $arg) { continue }
         if ($arg -match '[\s"]') { '"' + ($arg -replace '"', '\"') + '"' } else { $arg }
     }
-    $psi.Arguments = ($parts -join ' ')
-    $capture = -not [string]::IsNullOrWhiteSpace($StdOut)
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo = $psi
-    if ($capture) {
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
-        $psi.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
-        $outWriter = [System.IO.StreamWriter]::new($StdOut, $true, [System.Text.UTF8Encoding]::new($false))
-        $errTarget = if ([string]::IsNullOrWhiteSpace($StdErr)) { $StdOut } else { $StdErr }
-        $errWriter = [System.IO.StreamWriter]::new($errTarget, $true, [System.Text.UTF8Encoding]::new($false))
-        $outWriter.AutoFlush = $true
-        $errWriter.AutoFlush = $true
-        $proc.add_OutputDataReceived({
-            param($sender, $event)
-            if ($null -ne $event.Data) { $outWriter.WriteLine($event.Data) }
-        }.GetNewClosure())
-        $proc.add_ErrorDataReceived({
-            param($sender, $event)
-            if ($null -ne $event.Data) { $errWriter.WriteLine($event.Data) }
-        }.GetNewClosure())
-    }
-    [void]$proc.Start()
-    if ($capture) {
-        $proc.BeginOutputReadLine()
-        $proc.BeginErrorReadLine()
-    }
-    return $proc
+    return [AlmoghniQuiet.Runner]::Start($File, ($parts -join ' '), $WorkingDirectory, $StdOut, $StdErr)
 }
 
 function Test-RealPython([string]$Path) {
