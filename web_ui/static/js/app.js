@@ -1644,6 +1644,7 @@ function loadSettings() {
       const parsed = JSON.parse(raw);
       delete parsed.providers;
       migrateFontSettings(parsed);
+      if (parsed.visualLab && parsed.visualLab.schema !== 2) delete parsed.visualLab;
       currentSettings = { ...DEFAULT_SETTINGS, ...parsed, providers: {} };
     }
   } catch (e) {
@@ -1763,7 +1764,7 @@ const LAB_VARS = [
   '--lab-mid-width', '--lab-mid-border', '--lab-dark-bg', '--lab-dark-width', '--lab-dark-border',
   '--lab-color-tabs', '--lab-color-heading', '--lab-color-sub', '--lab-color-reading',
   '--bg-canvas', '--bg-surface', '--bg-surface-hover', '--bg-muted', '--border-subtle', '--border-hover',
-  '--glass', '--btn-bg', '--btn-text',
+  '--btn-bg', '--btn-text',
   '--lab-page-image', '--lab-image-opacity', '--lab-image-size', '--lab-image-blur',
 ];
 
@@ -1819,6 +1820,7 @@ function readVisualLabForm() {
   const stops = [1, 2, 3, 4, 5].map((n) => labHex(`bgStop${n}`, '#F1E9DC'));
   const alphas = [1, 2, 3, 4, 5].map((n) => labNum(`bgStopA${n}`, 100));
   return {
+    schema: 2,
     buttons: {
       fill: labHex('btnFill', '#B56A4C'), fillAlpha: labNum('btnFillA', 100),
       text: labHex('btnText', '#FFFFFF'), textAlpha: labNum('btnTextA', 100),
@@ -1903,6 +1905,7 @@ function seedVisualLabForm() {
   const clay = pick('--accent-clay', '#B56A4C');
   const text = pick('--text-main', '#2A221A');
   const mutedText = pick('--text-muted', '#6A5C4D');
+  const glass = pick('--glass', '#FBF7F0');
   const ink = pick('--ink-deep', '#1C1611');
   writeVisualLabForm({
     buttons: {
@@ -1914,7 +1917,7 @@ function seedVisualLabForm() {
     containers: {
       light: { fill: surface.hex, fillAlpha: 100, border: border.hex, borderAlpha: 100, width: 1 },
       mid: { fill: muted.hex, fillAlpha: 100, border: borderHover.hex, borderAlpha: 100, width: 1 },
-      dark: { fill: ink.hex, fillAlpha: 92, border: ink.hex, borderAlpha: 100, width: 1 },
+      dark: { fill: glass.hex, fillAlpha: glass.alpha, border: border.hex, borderAlpha: 100, width: 1 },
     },
     fontColors: {
       tabs: mutedText, heading: ink, subheading: text, reading: text,
@@ -1986,7 +1989,6 @@ function applyVisualLab() {
   set('--lab-light-width', `${Number(light.width) || 0}px`);
   set('--lab-mid-border', labRgba(mid.border, mid.borderAlpha));
   set('--lab-mid-width', `${Number(mid.width) || 0}px`);
-  set('--glass', labRgba(dark.fill, dark.fillAlpha));
   set('--lab-dark-bg', labRgba(dark.fill, dark.fillAlpha));
   set('--lab-dark-border', labRgba(dark.border, dark.borderAlpha));
   set('--lab-dark-width', `${Number(dark.width) || 0}px`);
