@@ -9,13 +9,18 @@ namespace Almoghni.Setup;
 
 static class Program
 {
+    static bool IsUninstallArg(string arg) =>
+        arg.Equals("--uninstall", StringComparison.OrdinalIgnoreCase) ||
+        arg.Equals("-uninstall", StringComparison.OrdinalIgnoreCase) ||
+        arg.Equals("/uninstall", StringComparison.OrdinalIgnoreCase);
+
     [STAThread]
     static void Main(string[] args)
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        if (args.Any(arg => arg == "--uninstall"))
+        if (args.Any(IsUninstallArg))
         {
             Application.Run(new UninstallForm());
             return;
@@ -229,7 +234,8 @@ static class Installer
             key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
             // ملف الإلغاء يعيش داخل مجلد التثبيت نفسه، لا عند ملف التنزيلات
             // الذي قد يحذفه المستخدم فينكسر إلغاء التثبيت من الإعدادات.
-            var uninstaller = Path.Combine(folder, "إلغاء تثبيت المغني.exe");
+            var uninstaller = Path.Combine(folder, "Uninstall.exe");
+            var legacyUninstaller = Path.Combine(folder, "إلغاء تثبيت المغني.exe");
             var setupExe = Environment.ProcessPath ?? "";
             try
             {
@@ -238,9 +244,14 @@ static class Installer
                     (!File.Exists(uninstaller) ||
                      FileVersionInfo.GetVersionInfo(uninstaller).FileVersion != FileVersionInfo.GetVersionInfo(setupExe).FileVersion))
                     File.Copy(setupExe, uninstaller, true);
+                if (File.Exists(legacyUninstaller) &&
+                    !string.Equals(Path.GetFullPath(legacyUninstaller), Path.GetFullPath(setupExe), StringComparison.OrdinalIgnoreCase))
+                    File.Delete(legacyUninstaller);
             }
             catch { uninstaller = setupExe; }
-            key.SetValue("UninstallString", $"\"{uninstaller}\" --uninstall");
+            var command = $"\"{uninstaller}\" --uninstall";
+            key.SetValue("UninstallString", command);
+            key.SetValue("QuietUninstallString", command);
             key.SetValue("NoModify", 1, RegistryValueKind.DWord);
             key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
         }
@@ -252,31 +263,55 @@ static class Installer
         try { Registry.CurrentUser.DeleteSubKeyTree(UninstallKeyPath, false); } catch { }
     }
 
-    public static void RemoveShortcuts()
+    public static void RemoveShortcuts(IEnumerable<string>? installFolders = null)
     {
-        var dirs = new[]
+        var folders = (installFolders ?? Array.Empty<string>())
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
+            .ToList();
+        foreach (var link in ShortcutCandidates())
+        {
+            var name = Path.GetFileName(link);
+            if (name.Contains("(Mac)", StringComparison.OrdinalIgnoreCase)) continue;
+            var named = name.Equals("المغني.lnk", StringComparison.Ordinal)
+                || name.Equals("amoghni.lnk", StringComparison.OrdinalIgnoreCase);
+            var target = ShortcutTarget(link);
+            var aimed = folders.Any(folder => target.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+                || target.Contains(@"\Programs\amoghni\", StringComparison.OrdinalIgnoreCase)
+                || target.Contains(@"\Programs\المغني\", StringComparison.OrdinalIgnoreCase);
+            if (!named && !aimed) continue;
+            try { File.Delete(link); } catch { }
+        }
+    }
+
+    static IEnumerable<string> ShortcutCandidates()
+    {
+        var roots = new List<string>
         {
             Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
             Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
             Environment.GetFolderPath(Environment.SpecialFolder.Programs),
             Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
         };
-        foreach (var dir in dirs.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase))
+        try
         {
-            if (!Directory.Exists(dir)) continue;
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders");
+            if (key?.GetValue("Desktop") is string desktop && desktop.Length > 0)
+                roots.Add(Environment.ExpandEnvironmentVariables(desktop));
+        }
+        catch { }
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots)
+        {
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root)) continue;
+            var direct = Path.Combine(root, "المغني.lnk");
+            if (seen.Add(direct)) yield return direct;
             IEnumerable<string> links;
-            try { links = Directory.EnumerateFiles(dir, "*.lnk", SearchOption.AllDirectories); }
+            try { links = Directory.EnumerateFiles(root, "المغني.lnk", SearchOption.AllDirectories); }
             catch { continue; }
             foreach (var link in links)
-            {
-                var name = Path.GetFileName(link);
-                var named = name.Contains("المغني", StringComparison.Ordinal) || name.Contains("amoghni", StringComparison.OrdinalIgnoreCase);
-                var target = ShortcutTarget(link);
-                var aimed = target.Contains("amoghni.exe", StringComparison.OrdinalIgnoreCase)
-                    || target.Contains("Almoghni.exe", StringComparison.OrdinalIgnoreCase);
-                if (!named && !aimed) continue;
-                try { File.Delete(link); } catch { }
-            }
+                if (seen.Add(link)) yield return link;
         }
     }
 
@@ -291,34 +326,54 @@ static class Installer
         catch { return ""; }
     }
 
-    public static void ScheduleFolderDelete(string folder)
+    public static void ScheduleFolderDeletes(IEnumerable<string> folders)
     {
-        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) return;
-        foreach (var name in new[] { "amoghni", "Almoghni" })
+        var targets = folders
+            .Where(folder => !string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var folder in targets)
         {
-            foreach (var process in Process.GetProcessesByName(name))
+            foreach (var name in new[] { "amoghni", "Almoghni" })
             {
-                try
+                foreach (var process in Process.GetProcessesByName(name))
                 {
-                    var path = process.MainModule?.FileName ?? "";
-                    if (path.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
-                        process.Kill(entireProcessTree: true);
+                    try
+                    {
+                        var path = process.MainModule?.FileName ?? "";
+                        if (path.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+                            process.Kill(entireProcessTree: true);
+                    }
+                    catch { }
                 }
-                catch { }
             }
         }
-        try
+        if (targets.Count == 0) return;
+        var script = Path.Combine(Path.GetTempPath(), "almoghni-remove-" + Guid.NewGuid().ToString("N") + ".ps1");
+        var body = new StringBuilder();
+        body.AppendLine("$ErrorActionPreference = 'SilentlyContinue'");
+        body.AppendLine("Start-Sleep -Seconds 2");
+        body.AppendLine("Get-Process -Name amoghni,Almoghni | Stop-Process -Force");
+        foreach (var folder in targets)
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = "/c timeout /t 3 /nobreak >nul & rmdir /s /q \"" + folder + "\"",
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                WindowStyle = ProcessWindowStyle.Hidden
-            });
+            var literal = folder.Replace("'", "''");
+            body.AppendLine("for ($try = 0; $try -lt 12; $try++) {");
+            body.AppendLine($"  if (-not (Test-Path -LiteralPath '{literal}')) {{ break }}");
+            body.AppendLine($"  Remove-Item -LiteralPath '{literal}' -Recurse -Force -ErrorAction SilentlyContinue");
+            body.AppendLine("  Start-Sleep -Seconds 1");
+            body.AppendLine("}");
         }
-        catch { }
+        body.AppendLine("Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue");
+        File.WriteAllText(script, body.ToString(), new UTF8Encoding(true));
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = "/c start \"\" /min powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + script + "\"",
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            WindowStyle = ProcessWindowStyle.Hidden
+        });
     }
 
     public static void Extract(string folder, IProgress<int>? progress)
@@ -492,12 +547,11 @@ sealed class UninstallForm : Form
         if (Installer.FindExisting() is { } found) folders.Add(found.folder);
         folders.Add(Installer.DefaultFolder);
         folders.Add(Installer.LegacyFolder);
-        Installer.RemoveShortcuts();
+        Installer.RemoveShortcuts(folders);
         Installer.UnregisterUninstallEntry();
         MessageBox.Show(this, "تم إلغاء تثبيت المغني.", "المغني", MessageBoxButtons.OK, MessageBoxIcon.Information,
             MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
-        foreach (var folder in folders.Distinct(StringComparer.OrdinalIgnoreCase))
-            Installer.ScheduleFolderDelete(folder);
+        Installer.ScheduleFolderDeletes(folders);
         Close();
         Environment.Exit(0);
     }
