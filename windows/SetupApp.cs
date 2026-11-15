@@ -382,10 +382,9 @@ static class Installer
         var body = new StringBuilder();
         body.AppendLine("$ErrorActionPreference = 'SilentlyContinue'");
         body.AppendLine("Start-Sleep -Seconds 2");
-        body.AppendLine("$folders = @(");
+        body.AppendLine("$folders = @()");
         foreach (var folder in targets)
-            body.AppendLine($"  '{folder.Replace("'", "''")}',");
-        body.AppendLine(")");
+            body.AppendLine($"$folders += '{folder.Replace("'", "''")}'");
         body.AppendLine("function Test-Under([string]$path) {");
         body.AppendLine("  foreach ($folder in $folders) {");
         body.AppendLine("    if ($path.StartsWith($folder, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }");
