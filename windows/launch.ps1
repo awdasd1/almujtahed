@@ -93,6 +93,8 @@ foreach ($file in $files) {
 Set-SetupProgress 18
 
 $venvPython = Join-Path $Runtime '.venv\Scripts\python.exe'
+Set-Location -LiteralPath $Runtime
+try { [System.IO.Directory]::SetCurrentDirectory($Runtime) } catch { }
 . (Join-Path $AppRoot 'python_setup.ps1')
 $python = Find-RealPython
 if ($python) {

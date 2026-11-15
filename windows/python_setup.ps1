@@ -1,4 +1,8 @@
-﻿if (-not ('AlmoghniQuiet.Runner' -as [type])) {
+﻿# مجلد عمل العملية عند تشغيل التطبيق هو مجلد التثبيت، وهو مليء بملفات
+# System.*.dll الخاصة بـ.NET، فيلتقطها مترجم Add-Type بدل مكتبات النظام
+# ويفشل التجميع ويموت محرك التشغيل قبل تثبيت بايثون. النقل إلى TEMP يمنع ذلك.
+try { [System.IO.Directory]::SetCurrentDirectory([System.IO.Path]::GetTempPath()) } catch { }
+if (-not ('AlmoghniQuiet.Runner' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Diagnostics;
