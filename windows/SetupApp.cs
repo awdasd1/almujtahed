@@ -392,10 +392,23 @@ static class Installer
         body.AppendLine("  }");
         body.AppendLine("  return $false");
         body.AppendLine("}");
-        body.AppendLine("for ($try = 0; $try -lt 12; $try++) {");
+        // سكربت الحذف نفسه ابنٌ لبرنامج الإلغاء الساكن داخل المجلد، وقتل شجرة
+        // العمليات كان يقتله مع أبيه قبل حذف أي ملف. نستثني سلسلة الأجداد
+        // ونقتل كل عملية على حدة بلا /T، وننتظر خروج برنامج الإلغاء نفسه.
+        body.AppendLine("$exclude = @{}");
+        body.AppendLine("$cursor = $PID");
+        body.AppendLine("for ($i = 0; $i -lt 12; $i++) {");
+        body.AppendLine("  $exclude[[int]$cursor] = $true");
+        body.AppendLine("  $row = Get-CimInstance Win32_Process -Filter \"ProcessId = $cursor\" -ErrorAction SilentlyContinue");
+        body.AppendLine("  if (-not $row -or -not $row.ParentProcessId) { break }");
+        body.AppendLine("  $cursor = [int]$row.ParentProcessId");
+        body.AppendLine("  if ($cursor -le 0) { break }");
+        body.AppendLine("}");
+        body.AppendLine("for ($try = 0; $try -lt 20; $try++) {");
         body.AppendLine("  Get-CimInstance Win32_Process | ForEach-Object {");
+        body.AppendLine("    if ($exclude.ContainsKey([int]$_.ProcessId)) { return }");
         body.AppendLine("    $exe = [string]$_.ExecutablePath");
-        body.AppendLine("    if ($exe -and (Test-Under $exe)) { & taskkill.exe /T /F /PID $_.ProcessId | Out-Null }");
+        body.AppendLine("    if ($exe -and (Test-Under $exe)) { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }");
         body.AppendLine("  }");
         body.AppendLine("  $alive = $false");
         body.AppendLine("  foreach ($folder in $folders) {");
