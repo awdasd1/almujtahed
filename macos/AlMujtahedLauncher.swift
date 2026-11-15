@@ -556,7 +556,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.576")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.577")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -687,7 +687,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.576"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.577"
     }
 
     private func buildWindow() {
@@ -953,12 +953,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func beginSetup() {
-        let choice = support.appendingPathComponent("runtime/web_ui/local_source.json")
-        if FileManager.default.fileExists(atPath: choice.path) || dataAlreadyInstalled() {
-            startEngine()
-            return
-        }
-        askSource()
+        startEngine()
     }
 
     private func dataAlreadyInstalled() -> Bool {
@@ -1130,7 +1125,18 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ctx.draw(base, in: CGRect(x: 0, y: 0, width: width, height: height))
         let brown = CGColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
         let brownInk = NSColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
-        drawBoardText("النسخة: \(appVersion)", at: CGPoint(x: 48, y: CGFloat(height) - 168), context: ctx, color: brownInk, size: 22, bold: true)
+        let versionText = "النسخة: \(appVersion)"
+        let versionFont = CTFontCreateWithName(almarai(22, bold: true).fontName as CFString, 22, nil)
+        let versionLine = CTLineCreateWithAttributedString(NSAttributedString(string: versionText, attributes: [
+            .font: versionFont,
+            .foregroundColor: brownInk
+        ]))
+        var versionAscent: CGFloat = 0
+        var versionDescent: CGFloat = 0
+        let versionWidth = CGFloat(CTLineGetTypographicBounds(versionLine, &versionAscent, &versionDescent, nil))
+        ctx.textMatrix = .identity
+        ctx.textPosition = CGPoint(x: 672 - versionWidth, y: CGFloat(height) - 158)
+        CTLineDraw(versionLine, ctx)
         let track = CGRect(x: 120, y: CGFloat(height) - 420, width: 784, height: 40)
         let caption = "جارٍ إعداد التطبيق فضلاً انتظر ..."
         let captionFont = CTFontCreateWithName(almarai(24, bold: false).fontName as CFString, 24, nil)
@@ -1176,17 +1182,6 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let painted = ctx.makeImage() else { return }
         boardView.image = NSImage(cgImage: painted, size: boardPoint)
         boardView.layer?.contentsScale = boardBacking
-    }
-
-    private func drawBoardText(_ text: String, at point: CGPoint, context ctx: CGContext, color: NSColor, size: CGFloat, bold: Bool) {
-        let font = CTFontCreateWithName(almarai(size, bold: bold).fontName as CFString, size, nil)
-        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
-            .font: font,
-            .foregroundColor: color
-        ]))
-        ctx.textMatrix = .identity
-        ctx.textPosition = point
-        CTLineDraw(line, ctx)
     }
 
     private func refreshProgress(resetSpeed: Bool) {

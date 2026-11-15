@@ -366,7 +366,12 @@ sealed class InstallerForm : Form
             g.DrawImage(boardBase, 0, 0, boardBase.Width, boardBase.Height);
             using var brownInk = new SolidBrush(Color.FromArgb(255, 91, 51, 16));
             using var versionFont = new Font("Tahoma", 22, FontStyle.Bold, GraphicsUnit.Pixel);
-            g.DrawString("النسخة: " + AppVersion(), versionFont, brownInk, new PointF(48, 138));
+            using var versionFormat = new StringFormat(StringFormatFlags.DirectionRightToLeft)
+            {
+                Alignment = StringAlignment.Near,
+                LineAlignment = StringAlignment.Center
+            };
+            g.DrawString("النسخة: " + AppVersion(), versionFont, brownInk, new RectangleF(430, 136, 242, 32), versionFormat);
             var track = new Rectangle(120, 380, 784, 40);
             using var captionFont = new Font("Tahoma", 24, FontStyle.Regular, GraphicsUnit.Pixel);
             using var captionFormat = new StringFormat(StringFormatFlags.DirectionRightToLeft)
@@ -521,13 +526,7 @@ sealed class InstallerForm : Form
 
     void BeginSetup()
     {
-        var choice = Path.Combine(Paths.Runtime, "web_ui", "local_source.json");
-        if (File.Exists(choice) || DataAlreadyInstalled())
-        {
-            StartEngine();
-            return;
-        }
-        AskSource();
+        StartEngine();
     }
 
     bool DataAlreadyInstalled()
@@ -726,7 +725,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.576");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.577");
         tray.Visible = false;
     }
 
