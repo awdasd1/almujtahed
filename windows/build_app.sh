@@ -22,6 +22,7 @@ dotnet publish "$ROOT/windows/Almoghni.csproj" -c Release -r win-x64 --self-cont
 mkdir -p "$STAGE/source"
 git -C "$ROOT" archive --format=tar HEAD | tar -xf - -C "$STAGE/source"
 rm -rf "$STAGE/source/qdrant_service" "$STAGE/source/init_coolify_data.py"
+rm -f "$STAGE/source/.env" "$STAGE/source/web_ui/.env"
 cp -p "$ROOT/.gitignore" "$ROOT/README.md" "$ROOT/changes.md" "$ROOT/dev.md" \
   "$ROOT/start_local.py" "$ROOT/start_local.sh" "$ROOT/start_local.bat" \
   "$ROOT/local_bundle.py" \
@@ -35,6 +36,7 @@ cp -p "$ROOT/web_ui/shamela_local_mcp.py" "$ROOT/web_ui/almoghni_mcp_server.py" 
   "$ROOT/web_ui/build_ayah_index.py" "$ROOT/web_ui/build_hadith_gradings.py" "$ROOT/web_ui/quran_uthmani.json" \
   "$ROOT/web_ui/default_agent_groups.json" "$ROOT/web_ui/default_projects.json" "$ROOT/web_ui/default_chats.json" \
   "$STAGE/source/web_ui/"
+test -s "$STAGE/source/web_ui/default_chats.json"
 cp -p "$ROOT/web_ui/anchor_table.json" "$STAGE/source/web_ui/anchor_table.json"
 cp -p "$ROOT/web_ui/madhhab_authority.json" "$STAGE/source/web_ui/madhhab_authority.json"
 cp -p "$ROOT/web_ui/discipline_books.json" "$STAGE/source/web_ui/discipline_books.json"

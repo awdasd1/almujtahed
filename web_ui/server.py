@@ -7631,7 +7631,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.583"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.584"},
         },
     })
     if opened.get("error"):
@@ -20287,6 +20287,26 @@ def _standard_chats():
         return []
 
 
+def _ensure_shipped_chats(owner_id: str, sessions: list) -> list:
+    """المحادثات المشحونة تُضاف مرة واحدة على ماك وويندوز، حتى لو سبقتها جلسة فارغة."""
+    if _load_owned_list(owner_id, "chats_bundle_v1") is not None:
+        return sessions
+    seeds = _standard_chats()
+    if not seeds:
+        return sessions
+    known = {str(item.get("id")) for item in sessions if isinstance(item, dict)}
+    extra = [item for item in seeds if str(item.get("id")) not in known]
+    merged = extra + sessions if extra else sessions
+    try:
+        if extra:
+            _replace_chat_sessions(merged, owner_id)
+        _save_owned_list(owner_id, "chats_seeded", [1])
+        _save_owned_list(owner_id, "chats_bundle_v1", [1])
+    except Exception:
+        return sessions
+    return merged
+
+
 @app.get("/api/chats")
 async def get_chats(request: Request):
     """سجل محادثات العضو الحالي فقط"""
@@ -20303,19 +20323,7 @@ async def get_chats(request: Request):
             sessions.append(json.loads(row["payload"]))
         except Exception:
             continue
-    # تثبيت جديد لا سجل له: تُزرع المحادثات المشحونة مرة واحدة بعلامة،
-    # فمن حذف محادثاته بيده لا تُبعث له من جديد
-    if not sessions and _load_owned_list(owner_id, "chats_seeded") is None:
-        seeds = _standard_chats()
-        if seeds:
-            seeded = json.loads(json.dumps(seeds, ensure_ascii=False))
-            try:
-                _replace_chat_sessions(seeded, owner_id)
-                _save_owned_list(owner_id, "chats_seeded", [1])
-                sessions = seeded
-            except Exception:
-                pass
-    return {"sessions": sessions}
+    return {"sessions": _ensure_shipped_chats(owner_id, sessions)}
 
 @app.put("/api/chats")
 async def put_chats(payload: dict, request: Request):
