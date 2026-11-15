@@ -556,7 +556,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.575")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.576")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -687,7 +687,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.575"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.576"
     }
 
     private func buildWindow() {
@@ -1130,10 +1130,10 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ctx.draw(base, in: CGRect(x: 0, y: 0, width: width, height: height))
         let brown = CGColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
         let brownInk = NSColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
-        drawBoardText("النسخة: \(appVersion)", at: CGPoint(x: 48, y: CGFloat(height) - 172), context: ctx, color: brownInk, size: 28, bold: true)
+        drawBoardText("النسخة: \(appVersion)", at: CGPoint(x: 48, y: CGFloat(height) - 168), context: ctx, color: brownInk, size: 22, bold: true)
         let track = CGRect(x: 120, y: CGFloat(height) - 420, width: 784, height: 40)
         let caption = "جارٍ إعداد التطبيق فضلاً انتظر ..."
-        let captionFont = CTFontCreateWithName(almarai(30, bold: false).fontName as CFString, 30, nil)
+        let captionFont = CTFontCreateWithName(almarai(24, bold: false).fontName as CFString, 24, nil)
         let captionLine = CTLineCreateWithAttributedString(NSAttributedString(string: caption, attributes: [
             .font: captionFont,
             .foregroundColor: brownInk
@@ -1142,7 +1142,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         var captionDescent: CGFloat = 0
         let captionWidth = CGFloat(CTLineGetTypographicBounds(captionLine, &captionAscent, &captionDescent, nil))
         ctx.textMatrix = .identity
-        ctx.textPosition = CGPoint(x: track.maxX - captionWidth, y: track.maxY + 18)
+        ctx.textPosition = CGPoint(x: track.maxX - captionWidth, y: track.maxY + 36)
         CTLineDraw(captionLine, ctx)
         ctx.setStrokeColor(brown)
         ctx.setLineWidth(3)

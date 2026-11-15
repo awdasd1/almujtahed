@@ -365,10 +365,10 @@ sealed class InstallerForm : Form
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             g.DrawImage(boardBase, 0, 0, boardBase.Width, boardBase.Height);
             using var brownInk = new SolidBrush(Color.FromArgb(255, 91, 51, 16));
-            using var versionFont = new Font("Tahoma", 28, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var versionFont = new Font("Tahoma", 22, FontStyle.Bold, GraphicsUnit.Pixel);
             g.DrawString("النسخة: " + AppVersion(), versionFont, brownInk, new PointF(48, 138));
             var track = new Rectangle(120, 380, 784, 40);
-            using var captionFont = new Font("Tahoma", 30, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var captionFont = new Font("Tahoma", 24, FontStyle.Regular, GraphicsUnit.Pixel);
             using var captionFormat = new StringFormat(StringFormatFlags.DirectionRightToLeft)
             {
                 Alignment = StringAlignment.Near,
@@ -378,7 +378,7 @@ sealed class InstallerForm : Form
                 "جارٍ إعداد التطبيق فضلاً انتظر ...",
                 captionFont,
                 brownInk,
-                new RectangleF(track.Left, track.Top - 52, track.Width, 48),
+                new RectangleF(track.Left, track.Top - 78, track.Width, 42),
                 captionFormat);
             using var brown = new Pen(Color.FromArgb(255, 91, 51, 16), 3);
             using (var outline = BoardPill(track, 20))
@@ -726,7 +726,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.575");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.576");
         tray.Visible = false;
     }
 
