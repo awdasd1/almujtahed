@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.602">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.603">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.602" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.603" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.602</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.603</span>
             </div>
 
             <div class="header-actions">
@@ -3383,31 +3383,304 @@
                                 <option value="lilac">ليلك — رمادي بارد وبنفسجي</option>
                                 <option value="marshmallow">مارشملو — باستيل وردي وبنفسجي عميق</option>
                             </select>
-                            <span class="form-help">ثلاثة ثيمات مختلفة في اللون وشكل الزوايا، بلا ظلال.</span>
+                            <span class="form-help">الثيم نقطة بداية. ما تعدّله في المعمل أدناه يعلو عليه، ويُحفظ مع القالب عند التصدير.</span>
                         </div>
 
+                        <div class="settings-section-title" style="margin-top: 15px;">ألوان الأزرار</div>
+                        <div data-lab-field>
+                            <div class="form-group">
+                                <label for="fontAppSelect">خط الأزرار والحقول</label>
+                                <select id="fontAppSelect" class="form-select font-role-select"
+                                    onchange="handleFontRoleChange('app', this.value)"></select>
+                                <span class="font-role-preview" id="fontAppPreview">بحث · حفظ · إعدادات</span>
+                            </div>
+                            <div class="form-group">
+                                <label>الزر الأساسي — التعبئة</label>
+                                <div class="lab-row">
+                                    <input type="color" id="btnFill" value="#B56A4C">
+                                    <div class="slider-container">
+                                        <input type="range" id="btnFillA" min="0" max="100" value="100" data-out="btnFillAVal" data-unit="٪">
+                                        <span class="slider-value" id="btnFillAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>الزر الأساسي — لون النص</label>
+                                <div class="lab-row">
+                                    <input type="color" id="btnText" value="#FFFFFF">
+                                    <div class="slider-container">
+                                        <input type="range" id="btnTextA" min="0" max="100" value="100" data-out="btnTextAVal" data-unit="٪">
+                                        <span class="slider-value" id="btnTextAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>الزر الثانوي — التعبئة</label>
+                                <div class="lab-row">
+                                    <input type="color" id="btn2Fill" value="#FBF7F0">
+                                    <div class="slider-container">
+                                        <input type="range" id="btn2FillA" min="0" max="100" value="100" data-out="btn2FillAVal" data-unit="٪">
+                                        <span class="slider-value" id="btn2FillAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>الزر الثانوي — لون النص</label>
+                                <div class="lab-row">
+                                    <input type="color" id="btn2Text" value="#2A221A">
+                                    <div class="slider-container">
+                                        <input type="range" id="btn2TextA" min="0" max="100" value="100" data-out="btn2TextAVal" data-unit="٪">
+                                        <span class="slider-value" id="btn2TextAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>الزر الثانوي — لون الحد</label>
+                                <div class="lab-row">
+                                    <input type="color" id="btn2Border" value="#D6CBB8">
+                                    <div class="slider-container">
+                                        <input type="range" id="btn2BorderA" min="0" max="100" value="100" data-out="btn2BorderAVal" data-unit="٪">
+                                        <span class="slider-value" id="btn2BorderAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>سمك حد الزر الثانوي</label>
+                                <div class="slider-container">
+                                    <input type="range" id="btn2Width" min="0" max="8" value="1" data-out="btn2WidthVal" data-unit=" بكسل">
+                                    <span class="slider-value" id="btn2WidthVal">1 بكسل</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section-title" style="margin-top: 15px;">خلفية الصفحة</div>
+                        <div data-lab-field>
+                            <div class="form-group">
+                                <label for="bgMode">النوع</label>
+                                <select id="bgMode" class="form-select">
+                                    <option value="solid">لون سادة</option>
+                                    <option value="gradient">تدرّج</option>
+                                </select>
+                            </div>
+                            <div class="form-group" data-bg-solid>
+                                <label>لون الخلفية</label>
+                                <div class="lab-row">
+                                    <input type="color" id="bgColor" value="#F1E9DC">
+                                    <div class="slider-container">
+                                        <input type="range" id="bgAlpha" min="0" max="100" value="100" data-out="bgAlphaVal" data-unit="٪">
+                                        <span class="slider-value" id="bgAlphaVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group" data-bg-gradient hidden>
+                                <label for="bgStops">عدد ألوان التدرّج</label>
+                                <select id="bgStops" class="form-select">
+                                    <option value="2">لونان</option>
+                                    <option value="3" selected>ثلاثة ألوان</option>
+                                    <option value="4">أربعة ألوان</option>
+                                    <option value="5">خمسة ألوان</option>
+                                </select>
+                            </div>
+                            <div class="form-group" data-bg-gradient hidden>
+                                <label>زاوية التدرّج</label>
+                                <div class="slider-container">
+                                    <input type="range" id="bgAngle" min="0" max="360" value="180" data-out="bgAngleVal" data-unit="°">
+                                    <span class="slider-value" id="bgAngleVal">180°</span>
+                                </div>
+                            </div>
+                            <div class="form-group" data-bg-gradient data-stop="1" hidden>
+                                <label>لون التدرّج ١</label>
+                                <div class="lab-row">
+                                    <input type="color" id="bgStop1" value="#F1E9DC">
+                                    <div class="slider-container">
+                                        <input type="range" id="bgStopA1" min="0" max="100" value="100" data-out="bgStopA1Val" data-unit="٪">
+                                        <span class="slider-value" id="bgStopA1Val">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group" data-bg-gradient data-stop="2" hidden>
+                                <label>لون التدرّج ٢</label>
+                                <div class="lab-row">
+                                    <input type="color" id="bgStop2" value="#E7DCCB">
+                                    <div class="slider-container">
+                                        <input type="range" id="bgStopA2" min="0" max="100" value="100" data-out="bgStopA2Val" data-unit="٪">
+                                        <span class="slider-value" id="bgStopA2Val">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group" data-bg-gradient data-stop="3" hidden>
+                                <label>لون التدرّج ٣</label>
+                                <div class="lab-row">
+                                    <input type="color" id="bgStop3" value="#FBF7F0">
+                                    <div class="slider-container">
+                                        <input type="range" id="bgStopA3" min="0" max="100" value="100" data-out="bgStopA3Val" data-unit="٪">
+                                        <span class="slider-value" id="bgStopA3Val">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group" data-bg-gradient data-stop="4" hidden>
+                                <label>لون التدرّج ٤</label>
+                                <div class="lab-row">
+                                    <input type="color" id="bgStop4" value="#D6CBB8">
+                                    <div class="slider-container">
+                                        <input type="range" id="bgStopA4" min="0" max="100" value="100" data-out="bgStopA4Val" data-unit="٪">
+                                        <span class="slider-value" id="bgStopA4Val">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group" data-bg-gradient data-stop="5" hidden>
+                                <label>لون التدرّج ٥</label>
+                                <div class="lab-row">
+                                    <input type="color" id="bgStop5" value="#B56A4C">
+                                    <div class="slider-container">
+                                        <input type="range" id="bgStopA5" min="0" max="100" value="100" data-out="bgStopA5Val" data-unit="٪">
+                                        <span class="slider-value" id="bgStopA5Val">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section-title" style="margin-top: 15px;">الحاويات</div>
+                        <div data-lab-field>
+                            <div class="form-help" style="margin-bottom: 10px;">الفاتحة للبطاقات، والمتوسطة للقوائم والحقول، والغامقة لشريط الأعلى.</div>
+                            <div class="settings-section-title" style="font-size: 15px;">الحاوية الفاتحة</div>
+                            <div class="form-group">
+                                <label>التعبئة</label>
+                                <div class="lab-row">
+                                    <input type="color" id="boxLightFill" value="#FBF7F0">
+                                    <div class="slider-container">
+                                        <input type="range" id="boxLightFillA" min="0" max="100" value="100" data-out="boxLightFillAVal" data-unit="٪">
+                                        <span class="slider-value" id="boxLightFillAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>الحد</label>
+                                <div class="lab-row">
+                                    <input type="color" id="boxLightBorder" value="#D6CBB8">
+                                    <div class="slider-container">
+                                        <input type="range" id="boxLightBorderA" min="0" max="100" value="100" data-out="boxLightBorderAVal" data-unit="٪">
+                                        <span class="slider-value" id="boxLightBorderAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>سمك الحد</label>
+                                <div class="slider-container">
+                                    <input type="range" id="boxLightWidth" min="0" max="8" value="1" data-out="boxLightWidthVal" data-unit=" بكسل">
+                                    <span class="slider-value" id="boxLightWidthVal">1 بكسل</span>
+                                </div>
+                            </div>
+                            <div class="settings-section-title" style="font-size: 15px;">الحاوية المتوسطة</div>
+                            <div class="form-group">
+                                <label>التعبئة</label>
+                                <div class="lab-row">
+                                    <input type="color" id="boxMidFill" value="#E7DCCB">
+                                    <div class="slider-container">
+                                        <input type="range" id="boxMidFillA" min="0" max="100" value="100" data-out="boxMidFillAVal" data-unit="٪">
+                                        <span class="slider-value" id="boxMidFillAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>الحد</label>
+                                <div class="lab-row">
+                                    <input type="color" id="boxMidBorder" value="#BFAE96">
+                                    <div class="slider-container">
+                                        <input type="range" id="boxMidBorderA" min="0" max="100" value="100" data-out="boxMidBorderAVal" data-unit="٪">
+                                        <span class="slider-value" id="boxMidBorderAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>سمك الحد</label>
+                                <div class="slider-container">
+                                    <input type="range" id="boxMidWidth" min="0" max="8" value="1" data-out="boxMidWidthVal" data-unit=" بكسل">
+                                    <span class="slider-value" id="boxMidWidthVal">1 بكسل</span>
+                                </div>
+                            </div>
+                            <div class="settings-section-title" style="font-size: 15px;">الحاوية الغامقة</div>
+                            <div class="form-group">
+                                <label>التعبئة</label>
+                                <div class="lab-row">
+                                    <input type="color" id="boxDarkFill" value="#2A221A">
+                                    <div class="slider-container">
+                                        <input type="range" id="boxDarkFillA" min="0" max="100" value="92" data-out="boxDarkFillAVal" data-unit="٪">
+                                        <span class="slider-value" id="boxDarkFillAVal">92٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>الحد</label>
+                                <div class="lab-row">
+                                    <input type="color" id="boxDarkBorder" value="#1C1611">
+                                    <div class="slider-container">
+                                        <input type="range" id="boxDarkBorderA" min="0" max="100" value="100" data-out="boxDarkBorderAVal" data-unit="٪">
+                                        <span class="slider-value" id="boxDarkBorderAVal">100٪</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>سمك الحد</label>
+                                <div class="slider-container">
+                                    <input type="range" id="boxDarkWidth" min="0" max="8" value="1" data-out="boxDarkWidthVal" data-unit=" بكسل">
+                                    <span class="slider-value" id="boxDarkWidthVal">1 بكسل</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section-title" style="margin-top: 15px;">تقسيم الخطوط</div>
                         <div class="form-group">
-                            <label for="fontHeadingSelect">خط العناوين</label>
+                            <label for="fontTabsSelect">خط التبويبات</label>
+                            <select id="fontTabsSelect" class="form-select font-role-select"
+                                onchange="handleFontRoleChange('tabs', this.value)"></select>
+                            <span class="font-role-preview" id="fontTabsPreview">بحث · محادثات · وكلاء · مشاريع</span>
+                            <div class="lab-row" data-lab-field>
+                                <input type="color" id="fontTabsColor" value="#6A5C4D">
+                                <div class="slider-container">
+                                    <input type="range" id="fontTabsAlpha" min="0" max="100" value="100" data-out="fontTabsAlphaVal" data-unit="٪">
+                                    <span class="slider-value" id="fontTabsAlphaVal">100٪</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="fontHeadingSelect">خط العناوين الرئيسية</label>
                             <select id="fontHeadingSelect" class="form-select font-role-select"
                                 onchange="handleFontRoleChange('heading', this.value)"></select>
                             <span class="font-role-preview" id="fontHeadingPreview">المغني — البحث الدلالي التراثي</span>
-                            <span class="form-help">اسم المنظومة، وعناوين الصفحات والأقسام والبطاقات.</span>
+                            <div class="lab-row" data-lab-field>
+                                <input type="color" id="fontHeadingColor" value="#1C1611">
+                                <div class="slider-container">
+                                    <input type="range" id="fontHeadingAlpha" min="0" max="100" value="100" data-out="fontHeadingAlphaVal" data-unit="٪">
+                                    <span class="slider-value" id="fontHeadingAlphaVal">100٪</span>
+                                </div>
+                            </div>
                         </div>
-
                         <div class="form-group">
-                            <label for="fontAppSelect">خط التطبيق</label>
-                            <select id="fontAppSelect" class="form-select font-role-select"
-                                onchange="handleFontRoleChange('app', this.value)"></select>
-                            <span class="font-role-preview" id="fontAppPreview">بحث · محادثات · وكلاء · إعدادات</span>
-                            <span class="form-help">القوائم، الأزرار، الحقول، وبقية واجهة المنظومة.</span>
+                            <label for="fontSubheadingSelect">خط العناوين الفرعية</label>
+                            <select id="fontSubheadingSelect" class="form-select font-role-select"
+                                onchange="handleFontRoleChange('subheading', this.value)"></select>
+                            <span class="font-role-preview" id="fontSubheadingPreview">عنوان القسم والبطاقة</span>
+                            <div class="lab-row" data-lab-field>
+                                <input type="color" id="fontSubColor" value="#2A221A">
+                                <div class="slider-container">
+                                    <input type="range" id="fontSubAlpha" min="0" max="100" value="100" data-out="fontSubAlphaVal" data-unit="٪">
+                                    <span class="slider-value" id="fontSubAlphaVal">100٪</span>
+                                </div>
+                            </div>
                         </div>
-
                         <div class="form-group">
-                            <label for="fontReadingSelect">خط نتيجة البحث الدلالي والشات</label>
+                            <label for="fontReadingSelect">خط النصوص والشات</label>
                             <select id="fontReadingSelect" class="form-select font-role-select"
                                 onchange="handleFontRoleChange('reading', this.value)"></select>
                             <span class="font-role-preview" id="fontReadingPreview">قال الإمام: الاستدلال بالنص مقدم على القياس عند التعارض.</span>
-                            <span class="form-help">نص بطاقة نتيجة البحث، وفقّاعات المحادثة والمقارنة.</span>
+                            <div class="lab-row" data-lab-field>
+                                <input type="color" id="fontReadingColor" value="#2A221A">
+                                <div class="slider-container">
+                                    <input type="range" id="fontReadingAlpha" min="0" max="100" value="100" data-out="fontReadingAlphaVal" data-unit="٪">
+                                    <span class="slider-value" id="fontReadingAlphaVal">100٪</span>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="settings-section-title" style="margin-top: 15px;">خطوط خاصة</div>
@@ -3429,14 +3702,16 @@
                             </div>
                         </div>
 
-                        <div class="settings-section-title" style="margin-top: 15px;">رفع وتصدير التمبلت والقوالب</div>
+                        <div class="settings-section-title" style="margin-top: 15px;">رفع وتصدير القالب</div>
                         <div class="form-group">
-                            <label>رفع تمبلت جديد (JSON / CSS):</label>
+                            <label>استيراد قالب (JSON / CSS):</label>
                             <input type="file" id="templateFileInput" accept=".json,.css" class="form-input"
                                 onchange="handleTemplateUpload(event)">
-                            <button type="button" class="btn-flat-secondary" style="margin-top: 10px;"
-                                onclick="exportVisualTemplate()">تصدير التمبلت الحالي</button>
-                            <span class="form-help">التصدير يحفظ الألوان والخطوط وحجم النص في ملف JSON، والرفع يعيد تطبيقها.</span>
+                            <div class="lab-row" style="margin-top: 10px;">
+                                <button type="button" class="btn-flat-secondary" onclick="exportVisualTemplate()">تصدير القالب الحالي</button>
+                                <button type="button" class="btn-flat-secondary" onclick="resetVisualLab()">إعادة الألوان إلى الثيم</button>
+                            </div>
+                            <span class="form-help">التصدير يحفظ ألوان المعمل والخطوط وحجم النص. الاستيراد يعيد تطبيق القالب نفسه.</span>
                         </div>
                     </div>
 
@@ -6046,7 +6321,7 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.602"></script>
+    <script src="/static/js/app.js?v=1.10.603"></script>
     <script src="/static/js/search.js?v=1.10.493"></script>
     <script src="/static/js/reader.js?v=1.10.493"></script>
     <script src="/static/js/force3d.js?v=1.10.493"></script>
@@ -6054,16 +6329,16 @@
     <script src="/static/js/chat.js?v=1.10.493"></script>
     <script src="/static/js/designs.js?v=1.10.493"></script>
     <script src="/static/js/texts.js?v=1.10.493"></script>
-    <script src="/static/js/agents.js?v=1.10.602"></script>
+    <script src="/static/js/agents.js?v=1.10.603"></script>
     <script src="/static/js/providers.js?v=1.10.493"></script>
     <script src="/static/js/tools.js?v=1.10.493"></script>
     <script src="/static/js/shamela_link.js?v=1.10.493"></script>
     <script src="/static/js/projects.js?v=1.10.493"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.602"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.603"></script>
     <script src="/static/js/archive.js?v=1.10.493"></script>
     <script src="/static/js/compare.js?v=1.10.493"></script>
     <script src="/static/js/local_models.js?v=1.10.493"></script>
-    <script src="/static/js/changelog.js?v=1.10.602"></script>
+    <script src="/static/js/changelog.js?v=1.10.603"></script>
 
     <script>
         window.refreshLucideIcons = function () {

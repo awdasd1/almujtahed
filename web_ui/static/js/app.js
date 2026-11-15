@@ -50,6 +50,8 @@ const DEFAULT_SETTINGS = {
   themePreset: 'sand',
   fontFamily: "'Amiri', 'Noto Naskh Arabic', 'Lotus Linotype', serif",
   fontHeading: 'google:Amiri',
+  fontSubheading: 'google:Amiri',
+  fontTabs: 'google:Amiri',
   fontApp: 'google:Amiri',
   fontReading: 'google:Noto Naskh Arabic',
   printH1Font: 'google:Amiri', printH1Size: 25, printH1Weight: 700, printH1Color: '',
@@ -89,6 +91,7 @@ let currentSettings = { ...DEFAULT_SETTINGS };
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   initTheme();
+  applyVisualLab();
   initThemeSelects();
   setupEventListeners();
   initFontSystem();
@@ -267,6 +270,7 @@ function applyVisualThemePreset(preset, options = {}) {
   const select = document.getElementById('themePresetSelect');
   if (select && select.value !== theme) select.value = theme;
   updateThemeIcon(theme);
+  if (typeof applyVisualLab === 'function') applyVisualLab();
   if (!options.silent && typeof showToast === 'function') {
     showToast(`تم التبديل إلى ثيم ${THEME_META[theme].label}`);
   }
@@ -552,7 +556,9 @@ const GOOGLE_FONT_CATALOG = [
 ];
 
 const FONT_ROLE_FIELDS = {
+  tabs: { key: 'fontTabs', selectId: 'fontTabsSelect', previewId: 'fontTabsPreview' },
   heading: { key: 'fontHeading', selectId: 'fontHeadingSelect', previewId: 'fontHeadingPreview' },
+  subheading: { key: 'fontSubheading', selectId: 'fontSubheadingSelect', previewId: 'fontSubheadingPreview' },
   app: { key: 'fontApp', selectId: 'fontAppSelect', previewId: 'fontAppPreview' },
   reading: { key: 'fontReading', selectId: 'fontReadingSelect', previewId: 'fontReadingPreview' },
 };
@@ -584,6 +590,8 @@ function stackForFontChoice(choice) {
 
 function migrateFontSettings(settings) {
   if (!settings || typeof settings !== 'object') return;
+  if (!settings.fontTabs) settings.fontTabs = settings.fontApp || 'google:Amiri';
+  if (!settings.fontSubheading) settings.fontSubheading = settings.fontHeading || 'google:Amiri';
   const hasRoles = settings.fontHeading && settings.fontApp && settings.fontReading;
   if (hasRoles) return;
   const legacy = String(settings.fontFamily || '');
@@ -631,7 +639,9 @@ function applyFontFamily(font) {
 
 function applyFontRoles() {
   const root = document.documentElement;
+  root.style.setProperty('--font-tabs', stackForFontChoice(currentSettings.fontTabs || currentSettings.fontApp));
   root.style.setProperty('--font-heading', stackForFontChoice(currentSettings.fontHeading));
+  root.style.setProperty('--font-subheading', stackForFontChoice(currentSettings.fontSubheading || currentSettings.fontHeading));
   root.style.setProperty('--font-app', stackForFontChoice(currentSettings.fontApp));
   root.style.setProperty('--font-reading', stackForFontChoice(currentSettings.fontReading));
   updateFontPreviews();
@@ -1662,6 +1672,7 @@ function syncSettingsToUI() {
   if (typeof setContextTokens === 'function') setContextTokens(m.contextTokens || 1048576);
   if (typeof setWitnessCount === 'function') setWitnessCount(currentWitnessCount());
   applyCustomGenerationState();
+  if (typeof syncVisualLabForm === 'function') syncVisualLabForm();
 }
 
 function applyCustomGenerationState() {
@@ -1734,6 +1745,268 @@ function saveAllSettings() {
   showToast('تم حفظ كافة الإعدادات بنجاح');
 }
 
+const LAB_VARS = [
+  '--lab-page-bg', '--lab-btn-fill', '--lab-btn-text', '--lab-btn2-fill', '--lab-btn2-text',
+  '--lab-btn2-border', '--lab-btn2-width', '--lab-light-width', '--lab-light-border',
+  '--lab-mid-width', '--lab-mid-border', '--lab-dark-bg', '--lab-dark-width', '--lab-dark-border',
+  '--lab-color-tabs', '--lab-color-heading', '--lab-color-sub', '--lab-color-reading',
+  '--bg-canvas', '--bg-surface', '--bg-surface-hover', '--bg-muted', '--border-subtle', '--border-hover',
+  '--glass', '--btn-bg', '--btn-text',
+];
+
+let visualLabBinding = false;
+
+function labRgba(hex, alphaPercent) {
+  const raw = String(hex || '#000000').replace('#', '');
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw.padEnd(6, '0').slice(0, 6);
+  const r = parseInt(full.slice(0, 2), 16) || 0;
+  const g = parseInt(full.slice(2, 4), 16) || 0;
+  const b = parseInt(full.slice(4, 6), 16) || 0;
+  const alpha = Math.max(0, Math.min(100, Number(alphaPercent) || 0)) / 100;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function parseCssColor(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?/);
+  if (match) {
+    const hex = [match[1], match[2], match[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('');
+    const channel = match[4] == null ? 1 : parseFloat(match[4]);
+    const alpha = channel <= 1 ? Math.round(channel * 100) : Math.round(channel);
+    return { hex: `#${hex}`, alpha };
+  }
+  if (/^#[0-9a-f]{6}$/i.test(text)) return { hex: text, alpha: 100 };
+  return null;
+}
+
+function labNum(id, fallback) {
+  const el = document.getElementById(id);
+  if (!el) return fallback;
+  const value = Number(el.value);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function labHex(id, fallback) {
+  const el = document.getElementById(id);
+  return el && /^#[0-9a-f]{6}$/i.test(el.value) ? el.value : fallback;
+}
+
+function setLabField(id, value) {
+  const el = document.getElementById(id);
+  if (!el || value == null) return;
+  el.value = value;
+  const out = el.dataset && el.dataset.out;
+  if (out) {
+    const label = document.getElementById(out);
+    if (label) label.textContent = `${value}${el.dataset.unit || ''}`;
+  }
+}
+
+function readVisualLabForm() {
+  const stops = [1, 2, 3, 4, 5].map((n) => labHex(`bgStop${n}`, '#F1E9DC'));
+  const alphas = [1, 2, 3, 4, 5].map((n) => labNum(`bgStopA${n}`, 100));
+  return {
+    buttons: {
+      fill: labHex('btnFill', '#B56A4C'), fillAlpha: labNum('btnFillA', 100),
+      text: labHex('btnText', '#FFFFFF'), textAlpha: labNum('btnTextA', 100),
+      secondaryFill: labHex('btn2Fill', '#FBF7F0'), secondaryFillAlpha: labNum('btn2FillA', 100),
+      secondaryText: labHex('btn2Text', '#2A221A'), secondaryTextAlpha: labNum('btn2TextA', 100),
+      secondaryBorder: labHex('btn2Border', '#D6CBB8'), secondaryBorderAlpha: labNum('btn2BorderA', 100),
+      secondaryWidth: labNum('btn2Width', 1),
+    },
+    background: {
+      mode: document.getElementById('bgMode')?.value === 'gradient' ? 'gradient' : 'solid',
+      color: labHex('bgColor', '#F1E9DC'),
+      alpha: labNum('bgAlpha', 100),
+      angle: labNum('bgAngle', 180),
+      count: Math.max(2, Math.min(5, labNum('bgStops', 3))),
+      colors: stops,
+      alphas,
+    },
+    containers: {
+      light: { fill: labHex('boxLightFill', '#FBF7F0'), fillAlpha: labNum('boxLightFillA', 100), border: labHex('boxLightBorder', '#D6CBB8'), borderAlpha: labNum('boxLightBorderA', 100), width: labNum('boxLightWidth', 1) },
+      mid: { fill: labHex('boxMidFill', '#E7DCCB'), fillAlpha: labNum('boxMidFillA', 100), border: labHex('boxMidBorder', '#BFAE96'), borderAlpha: labNum('boxMidBorderA', 100), width: labNum('boxMidWidth', 1) },
+      dark: { fill: labHex('boxDarkFill', '#2A221A'), fillAlpha: labNum('boxDarkFillA', 92), border: labHex('boxDarkBorder', '#1C1611'), borderAlpha: labNum('boxDarkBorderA', 100), width: labNum('boxDarkWidth', 1) },
+    },
+    fontColors: {
+      tabs: { color: labHex('fontTabsColor', '#6A5C4D'), alpha: labNum('fontTabsAlpha', 100) },
+      heading: { color: labHex('fontHeadingColor', '#1C1611'), alpha: labNum('fontHeadingAlpha', 100) },
+      subheading: { color: labHex('fontSubColor', '#2A221A'), alpha: labNum('fontSubAlpha', 100) },
+      reading: { color: labHex('fontReadingColor', '#2A221A'), alpha: labNum('fontReadingAlpha', 100) },
+    },
+  };
+}
+
+function writeVisualLabForm(lab) {
+  if (!lab) return;
+  visualLabBinding = true;
+  const b = lab.buttons || {};
+  setLabField('btnFill', b.fill); setLabField('btnFillA', b.fillAlpha);
+  setLabField('btnText', b.text); setLabField('btnTextA', b.textAlpha);
+  setLabField('btn2Fill', b.secondaryFill); setLabField('btn2FillA', b.secondaryFillAlpha);
+  setLabField('btn2Text', b.secondaryText); setLabField('btn2TextA', b.secondaryTextAlpha);
+  setLabField('btn2Border', b.secondaryBorder); setLabField('btn2BorderA', b.secondaryBorderAlpha);
+  setLabField('btn2Width', b.secondaryWidth);
+  const bg = lab.background || {};
+  setLabField('bgMode', bg.mode || 'solid');
+  setLabField('bgColor', bg.color); setLabField('bgAlpha', bg.alpha);
+  setLabField('bgAngle', bg.angle); setLabField('bgStops', bg.count || 3);
+  (bg.colors || []).forEach((color, index) => setLabField(`bgStop${index + 1}`, color));
+  (bg.alphas || []).forEach((alpha, index) => setLabField(`bgStopA${index + 1}`, alpha));
+  const boxes = lab.containers || {};
+  [['light', 'boxLight'], ['mid', 'boxMid'], ['dark', 'boxDark']].forEach(([key, prefix]) => {
+    const box = boxes[key] || {};
+    setLabField(`${prefix}Fill`, box.fill); setLabField(`${prefix}FillA`, box.fillAlpha);
+    setLabField(`${prefix}Border`, box.border); setLabField(`${prefix}BorderA`, box.borderAlpha);
+    setLabField(`${prefix}Width`, box.width);
+  });
+  const fonts = lab.fontColors || {};
+  setLabField('fontTabsColor', fonts.tabs?.color); setLabField('fontTabsAlpha', fonts.tabs?.alpha);
+  setLabField('fontHeadingColor', fonts.heading?.color); setLabField('fontHeadingAlpha', fonts.heading?.alpha);
+  setLabField('fontSubColor', fonts.subheading?.color); setLabField('fontSubAlpha', fonts.subheading?.alpha);
+  setLabField('fontReadingColor', fonts.reading?.color); setLabField('fontReadingAlpha', fonts.reading?.alpha);
+  visualLabBinding = false;
+  refreshLabVisibility();
+}
+
+function seedVisualLabForm() {
+  const styles = getComputedStyle(document.documentElement);
+  const pick = (name, fallback) => parseCssColor(styles.getPropertyValue(name)) || parseCssColor(fallback) || { hex: fallback, alpha: 100 };
+  const canvas = pick('--bg-canvas', '#F1E9DC');
+  const surface = pick('--bg-surface', '#FBF7F0');
+  const muted = pick('--bg-muted', '#E7DCCB');
+  const border = pick('--border-subtle', '#D6CBB8');
+  const borderHover = pick('--border-hover', '#BFAE96');
+  const clay = pick('--accent-clay', '#B56A4C');
+  const text = pick('--text-main', '#2A221A');
+  const mutedText = pick('--text-muted', '#6A5C4D');
+  const ink = pick('--ink-deep', '#1C1611');
+  writeVisualLabForm({
+    buttons: {
+      fill: clay.hex, fillAlpha: 100, text: '#FFFFFF', textAlpha: 100,
+      secondaryFill: surface.hex, secondaryFillAlpha: 100, secondaryText: text.hex, secondaryTextAlpha: 100,
+      secondaryBorder: border.hex, secondaryBorderAlpha: 100, secondaryWidth: 1,
+    },
+    background: { mode: 'solid', color: canvas.hex, alpha: 100, angle: 180, count: 3, colors: [canvas.hex, muted.hex, surface.hex, border.hex, clay.hex], alphas: [100, 100, 100, 100, 100] },
+    containers: {
+      light: { fill: surface.hex, fillAlpha: 100, border: border.hex, borderAlpha: 100, width: 1 },
+      mid: { fill: muted.hex, fillAlpha: 100, border: borderHover.hex, borderAlpha: 100, width: 1 },
+      dark: { fill: ink.hex, fillAlpha: 92, border: ink.hex, borderAlpha: 100, width: 1 },
+    },
+    fontColors: {
+      tabs: mutedText, heading: ink, subheading: text, reading: text,
+    },
+  });
+}
+
+function refreshLabVisibility() {
+  const gradient = document.getElementById('bgMode')?.value === 'gradient';
+  const count = Math.max(2, Math.min(5, labNum('bgStops', 3)));
+  document.querySelectorAll('[data-bg-solid]').forEach((el) => { el.hidden = gradient; });
+  document.querySelectorAll('[data-bg-gradient]').forEach((el) => {
+    const stop = Number(el.dataset.stop || 0);
+    el.hidden = !gradient || (stop > 0 && stop > count);
+  });
+}
+
+function applyVisualLab() {
+  const root = document.documentElement;
+  const lab = currentSettings.visualLab;
+  if (!lab) {
+    root.removeAttribute('data-visual-lab');
+    LAB_VARS.forEach((name) => root.style.removeProperty(name));
+    return;
+  }
+  const buttons = lab.buttons || {};
+  const bg = lab.background || {};
+  const boxes = lab.containers || {};
+  const fonts = lab.fontColors || {};
+  const light = boxes.light || {};
+  const mid = boxes.mid || {};
+  const dark = boxes.dark || {};
+  const count = Math.max(2, Math.min(5, Number(bg.count) || 2));
+  const colors = Array.isArray(bg.colors) ? bg.colors : [];
+  const alphas = Array.isArray(bg.alphas) ? bg.alphas : [];
+  const stops = colors.slice(0, count).map((color, index) => {
+    const at = count === 1 ? 0 : Math.round((index * 100) / (count - 1));
+    return `${labRgba(color, alphas[index] ?? 100)} ${at}%`;
+  });
+  const page = bg.mode === 'gradient' && stops.length
+    ? `linear-gradient(${Number(bg.angle) || 0}deg, ${stops.join(', ')})`
+    : labRgba(bg.color, bg.alpha);
+  const set = (name, value) => root.style.setProperty(name, value);
+  set('--lab-page-bg', page);
+  if (bg.mode !== 'gradient') set('--bg-canvas', page);
+  else root.style.removeProperty('--bg-canvas');
+  set('--lab-btn-fill', labRgba(buttons.fill, buttons.fillAlpha));
+  set('--lab-btn-text', labRgba(buttons.text, buttons.textAlpha));
+  set('--btn-bg', labRgba(buttons.fill, buttons.fillAlpha));
+  set('--btn-text', labRgba(buttons.text, buttons.textAlpha));
+  set('--lab-btn2-fill', labRgba(buttons.secondaryFill, buttons.secondaryFillAlpha));
+  set('--lab-btn2-text', labRgba(buttons.secondaryText, buttons.secondaryTextAlpha));
+  set('--lab-btn2-border', labRgba(buttons.secondaryBorder, buttons.secondaryBorderAlpha));
+  set('--lab-btn2-width', `${Number(buttons.secondaryWidth) || 0}px`);
+  set('--bg-surface', labRgba(light.fill, light.fillAlpha));
+  set('--bg-surface-hover', labRgba(mid.fill, mid.fillAlpha));
+  set('--bg-muted', labRgba(mid.fill, mid.fillAlpha));
+  set('--border-subtle', labRgba(light.border, light.borderAlpha));
+  set('--border-hover', labRgba(mid.border, mid.borderAlpha));
+  set('--lab-light-border', labRgba(light.border, light.borderAlpha));
+  set('--lab-light-width', `${Number(light.width) || 0}px`);
+  set('--lab-mid-border', labRgba(mid.border, mid.borderAlpha));
+  set('--lab-mid-width', `${Number(mid.width) || 0}px`);
+  set('--glass', labRgba(dark.fill, dark.fillAlpha));
+  set('--lab-dark-bg', labRgba(dark.fill, dark.fillAlpha));
+  set('--lab-dark-border', labRgba(dark.border, dark.borderAlpha));
+  set('--lab-dark-width', `${Number(dark.width) || 0}px`);
+  set('--lab-color-tabs', labRgba(fonts.tabs?.color, fonts.tabs?.alpha));
+  set('--lab-color-heading', labRgba(fonts.heading?.color, fonts.heading?.alpha));
+  set('--lab-color-sub', labRgba(fonts.subheading?.color, fonts.subheading?.alpha));
+  set('--lab-color-reading', labRgba(fonts.reading?.color, fonts.reading?.alpha));
+  root.setAttribute('data-visual-lab', 'on');
+}
+
+function commitVisualLab() {
+  if (visualLabBinding) return;
+  currentSettings.visualLab = readVisualLabForm();
+  applyVisualLab();
+  persistFontSettings();
+}
+
+function syncVisualLabForm() {
+  bindVisualLab();
+  if (currentSettings.visualLab) writeVisualLabForm(currentSettings.visualLab);
+  else seedVisualLabForm();
+}
+
+function bindVisualLab() {
+  const pane = document.getElementById('setPaneVisual');
+  if (!pane || pane.dataset.labBound) return;
+  pane.dataset.labBound = '1';
+  const onEdit = (event) => {
+    if (visualLabBinding || !event.target.closest('[data-lab-field]')) return;
+    const output = event.target.dataset && event.target.dataset.out;
+    if (output) {
+      const label = document.getElementById(output);
+      if (label) label.textContent = `${event.target.value}${event.target.dataset.unit || ''}`;
+    }
+    refreshLabVisibility();
+    commitVisualLab();
+  };
+  pane.addEventListener('input', onEdit);
+  pane.addEventListener('change', onEdit);
+}
+
+function resetVisualLab() {
+  currentSettings.visualLab = null;
+  applyVisualLab();
+  seedVisualLabForm();
+  persistFontSettings();
+  showToast('عادت الألوان إلى الثيم الحالي');
+}
+window.resetVisualLab = resetVisualLab;
+window.applyVisualLab = applyVisualLab;
+
 // معالجة رفع التمبلت الجديد
 function handleTemplateUpload(e) {
   const file = e.target.files[0];
@@ -1754,14 +2027,21 @@ function handleTemplateUpload(e) {
         }
         if (custom.fonts && typeof custom.fonts === 'object') {
           if (custom.fonts.heading) currentSettings.fontHeading = custom.fonts.heading;
+          if (custom.fonts.subheading) currentSettings.fontSubheading = custom.fonts.subheading;
+          if (custom.fonts.tabs) currentSettings.fontTabs = custom.fonts.tabs;
           if (custom.fonts.app) currentSettings.fontApp = custom.fonts.app;
           if (custom.fonts.reading) currentSettings.fontReading = custom.fonts.reading;
           if (typeof populateFontSelects === 'function') populateFontSelects();
           applyFontRoles();
-          persistFontSettings();
         }
+        if (custom.visualLab && typeof custom.visualLab === 'object') {
+          currentSettings.visualLab = custom.visualLab;
+          applyVisualLab();
+          writeVisualLabForm(custom.visualLab);
+        }
+        persistFontSettings();
         if (custom.textSize) updateTextSize(custom.textSize);
-        showToast('تم تحميل وتطبيق التمبلت بنجاح');
+        showToast('تم تحميل وتطبيق القالب بنجاح');
       } else if (file.name.endsWith('.css')) {
         const style = document.createElement('style');
         style.textContent = evt.target.result;
@@ -1801,9 +2081,12 @@ function exportVisualTemplate() {
     textSize: parseInt(localStorage.getItem(STORAGE_KEYS.FONT_SIZE) || '19', 10),
     fonts: {
       heading: currentSettings.fontHeading || '',
+      subheading: currentSettings.fontSubheading || '',
+      tabs: currentSettings.fontTabs || '',
       app: currentSettings.fontApp || '',
       reading: currentSettings.fontReading || '',
     },
+    visualLab: currentSettings.visualLab || null,
     colors,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -1814,7 +2097,7 @@ function exportVisualTemplate() {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-  showToast('تم تصدير التمبلت');
+  showToast('تم تصدير القالب');
 }
 window.exportVisualTemplate = exportVisualTemplate;
 

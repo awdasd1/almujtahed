@@ -10600,9 +10600,17 @@ a.chat-fn-back:hover {
 .brand-title,
 .search-hero h2,
 .agents-header h2,
-.agent-name,
 .modal-title,
 .settings-section-title,
+.construction-title,
+.project-title-meta h2,
+.tools-header-info h2,
+.compare-toolbar h2,
+h1, h2 {
+  font-family: var(--font-heading) !important;
+}
+
+.agent-name,
 .book-title-tag,
 .result-chapter,
 .reader-book-title,
@@ -10610,20 +10618,16 @@ a.chat-fn-back:hover {
 .specs-panel-title,
 .ranking-item-title,
 .activity-section-title,
-.construction-title,
 .project-card-title,
-.project-title-meta h2,
 .project-title-meta h3,
 .studio-empty-blueprint h4,
 .modal-title-with-icon h3,
-.tools-header-info h2,
 .tool-card-title,
 .chart-render-title,
 .isnad-render-title,
 .app-dialog-title,
-.compare-toolbar h2,
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading) !important;
+h3, h4, h5, h6 {
+  font-family: var(--font-subheading, var(--font-heading)) !important;
 }
 
 body,
@@ -10631,11 +10635,9 @@ button:not(.theme-select-option),
 input,
 textarea,
 select,
-.nav-tab-btn,
 .btn-flat-primary,
 .btn-flat-secondary,
 .btn-new-chat,
-.settings-tab-btn,
 .search-input,
 .search-input::placeholder,
 .filter-select,
@@ -10659,6 +10661,11 @@ select,
 .compare-msg,
 .compare-msg *:not(pre):not(code) {
   font-family: var(--font-reading) !important;
+}
+
+.nav-tab-btn,
+.settings-tab-btn {
+  font-family: var(--font-tabs, var(--font-app)) !important;
 }
 
 .result-text pre,
@@ -11374,3 +11381,95 @@ body::-webkit-scrollbar,
 }
 #paneManuscripts .ms-btn-primary,
 #paneManuscripts .ms-view-active { background: var(--accent-clay, #b4552d); }
+
+.lab-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.lab-row input[type="color"] {
+  width: 54px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.lab-row .slider-container {
+  flex: 1;
+  min-width: 160px;
+}
+
+html[data-visual-lab="on"] body {
+  background: var(--lab-page-bg) !important;
+}
+
+html[data-visual-lab="on"] .btn-flat-primary,
+html[data-visual-lab="on"] .btn-new-chat {
+  background: var(--lab-btn-fill) !important;
+  color: var(--lab-btn-text) !important;
+}
+
+html[data-visual-lab="on"] .btn-flat-secondary {
+  background: var(--lab-btn2-fill) !important;
+  color: var(--lab-btn2-text) !important;
+  border: var(--lab-btn2-width) solid var(--lab-btn2-border) !important;
+}
+
+html[data-visual-lab="on"] .result-card,
+html[data-visual-lab="on"] .chat-sidebar,
+html[data-visual-lab="on"] .filters-bar,
+html[data-visual-lab="on"] .modal {
+  border-width: var(--lab-light-width);
+  border-style: solid;
+  border-color: var(--lab-light-border);
+}
+
+html[data-visual-lab="on"] .main-nav,
+html[data-visual-lab="on"] .form-input,
+html[data-visual-lab="on"] .form-select,
+html[data-visual-lab="on"] .form-textarea {
+  border-width: var(--lab-mid-width);
+  border-style: solid;
+  border-color: var(--lab-mid-border);
+}
+
+html[data-visual-lab="on"] .app-header {
+  background: var(--lab-dark-bg) !important;
+  border-bottom-width: var(--lab-dark-width);
+  border-bottom-style: solid;
+  border-bottom-color: var(--lab-dark-border);
+}
+
+html[data-visual-lab="on"] .nav-tab-btn,
+html[data-visual-lab="on"] .settings-tab-btn {
+  color: var(--lab-color-tabs);
+}
+
+html[data-visual-lab="on"] h1,
+html[data-visual-lab="on"] h2,
+html[data-visual-lab="on"] .settings-section-title,
+html[data-visual-lab="on"] .modal-title,
+html[data-visual-lab="on"] .search-hero h2 {
+  color: var(--lab-color-heading);
+}
+
+html[data-visual-lab="on"] h3,
+html[data-visual-lab="on"] h4,
+html[data-visual-lab="on"] h5,
+html[data-visual-lab="on"] h6,
+html[data-visual-lab="on"] .agent-name,
+html[data-visual-lab="on"] .result-chapter,
+html[data-visual-lab="on"] .tool-card-title {
+  color: var(--lab-color-sub);
+}
+
+html[data-visual-lab="on"] .result-text,
+html[data-visual-lab="on"] .message-content,
+html[data-visual-lab="on"] .compare-msg {
+  color: var(--lab-color-reading);
+}
