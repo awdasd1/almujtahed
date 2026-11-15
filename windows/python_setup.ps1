@@ -6,6 +6,17 @@
 }
 
 function Find-RealPython {
+    foreach ($ver in @('3.12', '3.13', '3.11', '3.10')) {
+        foreach ($root in @('HKCU:\Software\Python\PythonCore', 'HKLM:\Software\Python\PythonCore')) {
+            $key = Join-Path $root $ver
+            $install = Join-Path $key 'InstallPath'
+            $dir = $null
+            try { $dir = (Get-ItemProperty -LiteralPath $install -ErrorAction Stop).'(default)' } catch { }
+            if ([string]::IsNullOrWhiteSpace($dir)) { continue }
+            $exe = Join-Path $dir 'python.exe'
+            if (Test-RealPython $exe) { return $exe }
+        }
+    }
     $localRoot = Join-Path $env:LOCALAPPDATA 'Programs\Python'
     $fixed = @(
         (Join-Path $localRoot 'Python312\python.exe'),
@@ -20,9 +31,8 @@ function Find-RealPython {
     foreach ($exe in $fixed) {
         if (Test-RealPython $exe) { return $exe }
     }
-    foreach ($root in @($localRoot, 'C:\Program Files', 'C:\Program Files (x86)')) {
-        if (-not (Test-Path -LiteralPath $root)) { continue }
-        $found = Get-ChildItem -LiteralPath $root -Filter python.exe -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+    if (Test-Path -LiteralPath $localRoot) {
+        $found = Get-ChildItem -LiteralPath $localRoot -Filter python.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue |
             Where-Object { Test-RealPython $_.FullName } |
             Sort-Object FullName -Descending |
             Select-Object -First 1
@@ -36,23 +46,79 @@ function Find-RealPython {
     return $null
 }
 
-function Install-UserPython([string]$LogFile) {
+function Save-WithProgress([string]$Url, [string]$Dest, [int]$FromPercent, [int]$ToPercent) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $ProgressPreference = 'SilentlyContinue'
+    if (Test-Path -LiteralPath $Dest) {
+        $existing = (Get-Item -LiteralPath $Dest).Length
+        if ($existing -gt 8000000) { return }
+        Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
+    }
+    Add-Type -AssemblyName System.Net.Http
+    $client = [System.Net.Http.HttpClient]::new()
+    $client.Timeout = [TimeSpan]::FromMinutes(8)
+    $client.DefaultRequestHeaders.UserAgent.ParseAdd('almoghni-local')
+    $response = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+    $response.EnsureSuccessStatusCode() | Out-Null
+    $total = $response.Content.Headers.ContentLength
+    $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+    $file = [System.IO.File]::Create($Dest)
+    try {
+        $buffer = New-Object byte[] 65536
+        $got = 0L
+        while (($count = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $file.Write($buffer, 0, $count)
+            $got += $count
+            if ($total -gt 0 -and (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue)) {
+                $span = $ToPercent - $FromPercent
+                Set-SetupProgress ($FromPercent + [int]($span * $got / $total))
+            }
+        }
+    } finally {
+        $file.Close()
+        $stream.Close()
+        $client.Dispose()
+    }
+}
+
+function Install-UserPython([string]$LogFile) {
     $version = '3.12.10'
     $installer = Join-Path $env:TEMP "python-$version-amd64.exe"
     $url = "https://www.python.org/ftp/python/$version/python-$version-amd64.exe"
-    Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing -Headers @{ 'User-Agent' = 'almoghni-local' }
+    if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 20 }
+    Save-WithProgress $url $installer 20 26
     $target = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312'
-    $arg = "/quiet InstallAllUsers=0 PrependPath=1 Include_test=0 Include_pip=1 Include_launcher=1 Shortcuts=0 TargetDir=`"$target`""
-    $proc = Start-Process -FilePath $installer -ArgumentList $arg -Wait -PassThru
-    if ($LogFile) {
-        Add-Content -LiteralPath $LogFile -Value "python installer exit $($proc.ExitCode)" -Encoding UTF8
-    }
-    if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-        throw "python installer exit $($proc.ExitCode)"
-    }
     $python = Join-Path $target 'python.exe'
+    $installArgs = @(
+        '/quiet',
+        'InstallAllUsers=0',
+        'PrependPath=0',
+        'Include_test=0',
+        'Include_pip=1',
+        'Include_launcher=0',
+        'Shortcuts=0',
+        "TargetDir=$target"
+    )
+    if (-not (Test-RealPython $python)) {
+        if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 26 }
+        $repair = Start-Process -FilePath $installer -ArgumentList @('/repair', '/quiet') -Wait -PassThru
+        if ($LogFile) {
+            Add-Content -LiteralPath $LogFile -Value "python repair exit $($repair.ExitCode)" -Encoding UTF8
+        }
+    }
+    if (-not (Test-RealPython $python)) {
+        $remove = Start-Process -FilePath $installer -ArgumentList @('/uninstall', '/quiet') -Wait -PassThru
+        if ($LogFile) {
+            Add-Content -LiteralPath $LogFile -Value "python uninstall exit $($remove.ExitCode)" -Encoding UTF8
+        }
+        if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 27 }
+        $proc = Start-Process -FilePath $installer -ArgumentList $installArgs -Wait -PassThru
+        if ($LogFile) {
+            Add-Content -LiteralPath $LogFile -Value "python installer exit $($proc.ExitCode)" -Encoding UTF8
+        }
+        if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+            throw "python installer exit $($proc.ExitCode)"
+        }
+    }
     if (-not (Test-RealPython $python)) {
         throw 'python missing after install'
     }

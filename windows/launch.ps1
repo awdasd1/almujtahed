@@ -112,50 +112,73 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
 }
 
 Set-Location -LiteralPath $Runtime
-Set-SetupProgress 91
-Set-Status 'جاري تثبيت الملفات'
 $previous = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 & $venvPython -c "import fastapi, uvicorn, huggingface_hub, dotenv, llama_cpp" | Out-Null
 $importExit = $LASTEXITCODE
 $ErrorActionPreference = $previous
 if ($importExit -ne 0) {
-    Set-Status 'جاري تثبيت الملفات'
+    Set-Status 'جاري تثبيت المكتبات'
     Set-SetupProgress 32
     $req = Join-Path $Runtime 'requirements-desktop.txt'
     if (-not (Test-Path -LiteralPath $req)) { $req = Join-Path $Runtime 'requirements.txt' }
     $packageTotal = @(Get-Content -LiteralPath $req | Where-Object { $_ -match '^[A-Za-z0-9]' }).Count
     if ($packageTotal -lt 1) { $packageTotal = 1 }
-    $packagesSeen = 0
-    $previous = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    & $venvPython -m pip install --upgrade pip *>> $LogFile
-    if ($LASTEXITCODE -ne 0) {
-        $ErrorActionPreference = $previous
-        Set-Status 'تعذر تشغيل التطبيق'
-        exit $LASTEXITCODE
-    }
-    Set-SetupProgress 36
-    & $venvPython -m pip install --extra-index-url "https://abetlen.github.io/llama-cpp-python/whl/cpu" --only-binary=llama-cpp-python -r $req 2>&1 | ForEach-Object {
-        $line = "$_"
-        Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
-        if ($line -match '^Collecting ') {
-            $packagesSeen++
-            $span = [Math]::Min($packagesSeen, $packageTotal)
-            Set-SetupProgress (36 + [int](50.0 * $span / $packageTotal))
-        } elseif ($line -match 'Installing collected packages') {
-            Set-SetupProgress 88
+    $pipOut = Join-Path $LogDir 'pip.log'
+    $pipErr = Join-Path $LogDir 'pip-err.log'
+    Remove-Item -LiteralPath $pipOut, $pipErr -Force -ErrorAction SilentlyContinue
+    function Read-SharedText([string]$Path) {
+        if (-not (Test-Path -LiteralPath $Path)) { return '' }
+        $stream = [System.IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+        try {
+            $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8, $true)
+            return $reader.ReadToEnd()
+        } finally {
+            $stream.Close()
         }
     }
-    $pipExit = $LASTEXITCODE
-    $ErrorActionPreference = $previous
-    if ($pipExit -ne 0) {
-        Set-Status 'تعذر تشغيل التطبيق'
-        exit $pipExit
+    function Update-PipProgress {
+        $text = (Read-SharedText $pipOut) + (Read-SharedText $pipErr)
+        $seen = ([regex]::Matches($text, '(?m)^Collecting ')).Count
+        if ($seen -gt 0) {
+            $span = [Math]::Min($seen, $packageTotal)
+            Set-SetupProgress (36 + [int](48.0 * $span / $packageTotal))
+        }
+        if ($text -match 'Installing collected packages') { Set-SetupProgress 86 }
     }
+    $upgrade = Start-Process -FilePath $venvPython -ArgumentList @('-m', 'pip', 'install', '--disable-pip-version-check', '--progress-bar', 'off', '--upgrade', 'pip') -WorkingDirectory $Runtime -RedirectStandardOutput $pipOut -RedirectStandardError $pipErr -WindowStyle Hidden -PassThru
+    while (-not $upgrade.HasExited) {
+        Update-PipProgress
+        Start-Sleep -Milliseconds 600
+    }
+    $upgrade.WaitForExit()
+    if ($upgrade.ExitCode -ne 0) {
+        Set-Status 'تعذر تشغيل التطبيق'
+        exit $upgrade.ExitCode
+    }
+    Set-SetupProgress 36
+    Remove-Item -LiteralPath $pipOut, $pipErr -Force -ErrorAction SilentlyContinue
+    $install = Start-Process -FilePath $venvPython -ArgumentList @(
+        '-m', 'pip', 'install', '--disable-pip-version-check', '--progress-bar', 'off',
+        '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/cpu',
+        '--only-binary=llama-cpp-python', '-r', $req
+    ) -WorkingDirectory $Runtime -RedirectStandardOutput $pipOut -RedirectStandardError $pipErr -WindowStyle Hidden -PassThru
+    while (-not $install.HasExited) {
+        Update-PipProgress
+        Start-Sleep -Milliseconds 600
+    }
+    $install.WaitForExit()
+    if ($install.ExitCode -ne 0) {
+        Set-Status 'تعذر تشغيل التطبيق'
+        exit $install.ExitCode
+    }
+    Get-Content -LiteralPath $pipOut, $pipErr -ErrorAction SilentlyContinue | Add-Content -LiteralPath $LogFile -Encoding UTF8
+    Set-SetupProgress 90
+} else {
     Set-SetupProgress 90
 }
 
+Set-SetupProgress 91
 $script = Join-Path $Runtime 'start_local.py'
 $runner = Join-Path $Runtime '.venv\Scripts\pythonw.exe'
 if (-not (Test-Path -LiteralPath $runner)) { $runner = $venvPython }
