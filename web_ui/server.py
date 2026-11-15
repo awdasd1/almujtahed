@@ -7631,7 +7631,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.582"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.583"},
         },
     })
     if opened.get("error"):
@@ -19669,7 +19669,7 @@ def _migrate_owner_scope(conn: sqlite3.Connection) -> None:
         try:
             with open(PROJECTS_FILE, "r", encoding="utf-8") as handle:
                 existing = json.load(handle)
-            if isinstance(existing, list):
+            if isinstance(existing, list) and existing:
                 projects_payload = json.dumps(existing, ensure_ascii=False)
         except Exception as exc:
             print(f"Could not import projects into owner scope: {exc}")
@@ -19679,12 +19679,10 @@ def _migrate_owner_scope(conn: sqlite3.Connection) -> None:
         try:
             with open(AGENT_GROUPS_FILE, "r", encoding="utf-8") as handle:
                 groups = json.load(handle)
-            if isinstance(groups, list):
+            if isinstance(groups, list) and groups:
                 adopt("agents", json.dumps(groups, ensure_ascii=False))
         except Exception as exc:
             print(f"Could not import agent groups into owner scope: {exc}")
-    else:
-        adopt("agents", "[]")
 
     if os.path.exists(TOOLS_FILE):
         try:
@@ -19783,21 +19781,25 @@ def _standard_projects():
 
 def load_stored_projects(owner_id: str):
     data = _load_owned_list(owner_id, "projects")
+    seeded_marker = _load_owned_list(owner_id, "projects_seeded")
+    if data is None or (isinstance(data, list) and not data and seeded_marker is None):
+        seeds = _standard_projects()
+        if seeds:
+            seeded = json.loads(json.dumps(seeds, ensure_ascii=False))
+            try:
+                save_stored_projects(seeded, owner_id)
+            except Exception:
+                pass
+            return seeded
+        if isinstance(data, list):
+            return data
     if isinstance(data, list):
         return data
-    seeds = _standard_projects()
-    if seeds:
-        seeded = json.loads(json.dumps(seeds, ensure_ascii=False))
-        try:
-            _save_owned_list(owner_id, "projects", seeded)
-        except Exception:
-            pass
-        return seeded
     if owner_id == ADMIN_OWNER_ID and os.path.exists(PROJECTS_FILE):
         try:
             with open(PROJECTS_FILE, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
-            if isinstance(data, list):
+            if isinstance(data, list) and data:
                 return data
         except Exception as exc:
             print(f"Error loading projects: {exc}")
@@ -19805,6 +19807,10 @@ def load_stored_projects(owner_id: str):
 
 def save_stored_projects(projects, owner_id: str):
     _save_owned_list(owner_id, "projects", projects)
+    try:
+        _save_owned_list(owner_id, "projects_seeded", [1])
+    except Exception:
+        pass
     if owner_id == ADMIN_OWNER_ID:
         try:
             _write_projects_snapshot(projects)
@@ -19824,23 +19830,28 @@ def _standard_agent_groups():
 
 def load_stored_agent_groups(owner_id: str):
     """قراءة مجموعات وكلاء هذا العضو فقط. من لا مخزون له بعد (تثبيت أو حساب
-    جديد) تُزرع له المجموعات القياسية المشحونة؛ ومن حفظ قائمة فارغة بيده
-    (حذف الكل) يُحترم حذفه ولا تُبعث له من جديد."""
+    جديد، أو قائمة فارغة نُسخت مع الحزمة قبل الزراعة) تُزرع له المجموعات
+    القياسية المشحونة. ومن حفظ قائمة فارغة بيده بعد ذلك يُحترم حذفه."""
     data = _load_owned_list(owner_id, "agents")
-    if isinstance(data, list):
-        return data
-    seeds = _standard_agent_groups()
-    if seeds:
-        seeded = json.loads(json.dumps(seeds, ensure_ascii=False))
-        try:
-            _save_owned_list(owner_id, "agents", seeded)
-        except Exception:
-            pass
-        return seeded
-    return []
+    seeded_marker = _load_owned_list(owner_id, "agents_seeded")
+    if data is None or (isinstance(data, list) and not data and seeded_marker is None):
+        seeds = _standard_agent_groups()
+        if seeds:
+            seeded = json.loads(json.dumps(seeds, ensure_ascii=False))
+            try:
+                save_stored_agent_groups(seeded, owner_id)
+            except Exception:
+                pass
+            return seeded
+        return data if isinstance(data, list) else []
+    return data if isinstance(data, list) else []
 
 def save_stored_agent_groups(groups, owner_id: str):
     _save_owned_list(owner_id, "agents", groups)
+    try:
+        _save_owned_list(owner_id, "agents_seeded", [1])
+    except Exception:
+        pass
     if owner_id == ADMIN_OWNER_ID:
         try:
             with open(AGENT_GROUPS_FILE, "w", encoding="utf-8") as handle:
