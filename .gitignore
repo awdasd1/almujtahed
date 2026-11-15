@@ -61,6 +61,7 @@ web_ui/app_memory.db-wal
 web_ui/app_memory.db-shm
 web_ui/gpu_mode.json
 web_ui/almojtahed.db
+web_ui/visual_background/
 web_ui/uploads/*
 !web_ui/uploads/.gitkeep
 web_ui/fonts/*

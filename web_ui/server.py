@@ -847,6 +847,55 @@ async def delete_manuscript_background():
 
 app.mount("/ms-background", StaticFiles(directory=str(MS_BG_DIR)), name="ms-background")
 
+VISUAL_BG_DIR = BASE_DIR / "visual_background"
+VISUAL_BG_DIR.mkdir(parents=True, exist_ok=True)
+
+def _visual_bg_current():
+    for path in sorted(VISUAL_BG_DIR.glob("background.*")):
+        if path.is_file() and path.suffix.lower() in PRINT_BG_EXTENSIONS:
+            return path
+    return None
+
+def _visual_bg_payload():
+    path = _visual_bg_current()
+    if not path:
+        return {"url": None}
+    return {"url": f"/visual-background/{path.name}?v={int(path.stat().st_mtime)}"}
+
+@app.get("/api/visual/background")
+async def get_visual_background():
+    return _visual_bg_payload()
+
+@app.post("/api/visual/background")
+async def upload_visual_background(file: UploadFile = File(...)):
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in PRINT_BG_EXTENSIONS or ext == ".svg":
+        raise HTTPException(status_code=400, detail="صيغة الصورة غير مدعومة (PNG أو JPG أو WEBP أو GIF)")
+    contents = await file.read()
+    if len(contents) < 32:
+        raise HTTPException(status_code=400, detail="ملف الصورة فارغ أو تالف")
+    if len(contents) > MAX_PRINT_BG_BYTES:
+        raise HTTPException(status_code=413, detail="حجم الصورة أكبر من 12 ميغابايت")
+    for old in VISUAL_BG_DIR.glob("background.*"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    (VISUAL_BG_DIR / f"background{ext}").write_bytes(contents)
+    return {"success": True, **_visual_bg_payload()}
+
+@app.delete("/api/visual/background")
+async def delete_visual_background():
+    path = _visual_bg_current()
+    if path:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return {"success": True, "url": None}
+
+app.mount("/visual-background", StaticFiles(directory=str(VISUAL_BG_DIR)), name="visual-background")
+
 # قوالب الطباعة: حزمة ZIP واحدة فيها الإعدادات والخطوط الخاصة والخلفية،
 # للتصدير والمشاركة والتحميل ثم الاستيراد والتنصيب الكامل
 import io as _io
@@ -7645,7 +7694,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.603"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.604"},
         },
     })
     if opened.get("error"):

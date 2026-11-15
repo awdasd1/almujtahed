@@ -11404,8 +11404,46 @@ body::-webkit-scrollbar,
   min-width: 160px;
 }
 
+#settingsModalOverlay.is-preview-clear {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  justify-content: flex-start;
+  align-items: stretch;
+  pointer-events: none;
+}
+
+#settingsModalOverlay.is-preview-clear .modal-window {
+  pointer-events: auto;
+  width: min(520px, 46vw);
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0;
+  border-radius: 0;
+  animation: none;
+}
+
 html[data-visual-lab="on"] body {
   background: var(--lab-page-bg) !important;
+}
+
+html[data-visual-lab="on"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--lab-page-image, none);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: var(--lab-image-size, cover);
+  opacity: var(--lab-image-opacity, 0);
+  filter: blur(var(--lab-image-blur, 0px));
+}
+
+html[data-visual-lab="on"] body > * {
+  position: relative;
+  z-index: 1;
 }
 
 html[data-visual-lab="on"] .btn-flat-primary,

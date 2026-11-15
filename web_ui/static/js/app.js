@@ -1491,10 +1491,21 @@ function openSettingsModal() {
     updateAuxiliaryModelsList();
   }
   document.getElementById('settingsModalOverlay').classList.add('open');
+  syncSettingsPreview();
 }
 
 function closeSettingsModal() {
-  document.getElementById('settingsModalOverlay').classList.remove('open');
+  const overlay = document.getElementById('settingsModalOverlay');
+  overlay.classList.remove('open');
+  overlay.classList.remove('is-preview-clear');
+}
+
+function syncSettingsPreview() {
+  const overlay = document.getElementById('settingsModalOverlay');
+  const visual = document.getElementById('setPaneVisual');
+  if (!overlay || !visual) return;
+  const clear = overlay.classList.contains('open') && visual.style.display !== 'none';
+  overlay.classList.toggle('is-preview-clear', clear);
 }
 
 function handleModalOverlayClick(e) {
@@ -1525,6 +1536,7 @@ function switchSettingsTab(tabKey) {
     if (pane) pane.style.display = 'flex';
     if (btn) btn.classList.add('active');
   }
+  syncSettingsPreview();
 }
 
 // قراءة الإعدادات من التخزين وحقنها في الحقول
@@ -1752,6 +1764,7 @@ const LAB_VARS = [
   '--lab-color-tabs', '--lab-color-heading', '--lab-color-sub', '--lab-color-reading',
   '--bg-canvas', '--bg-surface', '--bg-surface-hover', '--bg-muted', '--border-subtle', '--border-hover',
   '--glass', '--btn-bg', '--btn-text',
+  '--lab-page-image', '--lab-image-opacity', '--lab-image-size', '--lab-image-blur',
 ];
 
 let visualLabBinding = false;
@@ -1822,6 +1835,11 @@ function readVisualLabForm() {
       count: Math.max(2, Math.min(5, labNum('bgStops', 3))),
       colors: stops,
       alphas,
+      imageUrl: currentSettings.visualLab?.background?.imageUrl || '',
+      imageOpacity: labNum('appBgOpacity', 100),
+      imageFit: document.getElementById('appBgFit')?.value || 'cover',
+      imageSize: labNum('appBgSize', 100),
+      imageBlur: labNum('appBgBlur', 0),
     },
     containers: {
       light: { fill: labHex('boxLightFill', '#FBF7F0'), fillAlpha: labNum('boxLightFillA', 100), border: labHex('boxLightBorder', '#D6CBB8'), borderAlpha: labNum('boxLightBorderA', 100), width: labNum('boxLightWidth', 1) },
@@ -1851,6 +1869,11 @@ function writeVisualLabForm(lab) {
   setLabField('bgMode', bg.mode || 'solid');
   setLabField('bgColor', bg.color); setLabField('bgAlpha', bg.alpha);
   setLabField('bgAngle', bg.angle); setLabField('bgStops', bg.count || 3);
+  setLabField('appBgOpacity', bg.imageOpacity ?? 100);
+  setLabField('appBgFit', bg.imageFit || 'cover');
+  setLabField('appBgSize', bg.imageSize ?? 100);
+  setLabField('appBgBlur', bg.imageBlur ?? 0);
+  paintAppBackgroundThumb(bg.imageUrl || '');
   (bg.colors || []).forEach((color, index) => setLabField(`bgStop${index + 1}`, color));
   (bg.alphas || []).forEach((alpha, index) => setLabField(`bgStopA${index + 1}`, alpha));
   const boxes = lab.containers || {};
@@ -1907,6 +1930,8 @@ function refreshLabVisibility() {
     const stop = Number(el.dataset.stop || 0);
     el.hidden = !gradient || (stop > 0 && stop > count);
   });
+  const sizeRow = document.getElementById('appBgSizeRow');
+  if (sizeRow) sizeRow.hidden = document.getElementById('appBgFit')?.value !== 'scale';
 }
 
 function applyVisualLab() {
@@ -1936,6 +1961,12 @@ function applyVisualLab() {
     : labRgba(bg.color, bg.alpha);
   const set = (name, value) => root.style.setProperty(name, value);
   set('--lab-page-bg', page);
+  const imageUrl = String(bg.imageUrl || '').replace(/["\\\n\r]/g, '');
+  const fit = bg.imageFit === 'contain' ? 'contain' : (bg.imageFit === 'scale' ? `${Math.max(20, Math.min(200, Number(bg.imageSize) || 100))}%` : 'cover');
+  set('--lab-page-image', imageUrl ? `url("${imageUrl}")` : 'none');
+  set('--lab-image-opacity', imageUrl ? String(Math.max(0, Math.min(100, Number(bg.imageOpacity) || 0)) / 100) : '0');
+  set('--lab-image-size', fit);
+  set('--lab-image-blur', `${Math.max(0, Math.min(24, Number(bg.imageBlur) || 0))}px`);
   if (bg.mode !== 'gradient') set('--bg-canvas', page);
   else root.style.removeProperty('--bg-canvas');
   set('--lab-btn-fill', labRgba(buttons.fill, buttons.fillAlpha));
@@ -2006,6 +2037,60 @@ function resetVisualLab() {
 }
 window.resetVisualLab = resetVisualLab;
 window.applyVisualLab = applyVisualLab;
+
+function paintAppBackgroundThumb(url) {
+  const thumb = document.getElementById('appBgThumb');
+  const remove = document.getElementById('appBgRemove');
+  if (thumb) {
+    if (url) {
+      thumb.hidden = false;
+      thumb.src = url;
+    } else {
+      thumb.hidden = true;
+      thumb.removeAttribute('src');
+    }
+  }
+  if (remove) remove.hidden = !url;
+}
+
+async function uploadAppBackground(event) {
+  const input = event.target;
+  const file = (input.files || [])[0];
+  input.value = '';
+  if (!file) return;
+  const body = new FormData();
+  body.append('file', file);
+  try {
+    const response = await fetch('/api/visual/background', { method: 'POST', body });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.url) {
+      showToast((data && data.detail) || 'تعذر رفع صورة الخلفية');
+      return;
+    }
+    if (!currentSettings.visualLab) commitVisualLab();
+    currentSettings.visualLab.background = currentSettings.visualLab.background || {};
+    currentSettings.visualLab.background.imageUrl = data.url;
+    applyVisualLab();
+    persistFontSettings();
+    paintAppBackgroundThumb(data.url);
+    showToast('تم تعيين صورة الخلفية');
+  } catch (error) {
+    showToast('تعذر رفع صورة الخلفية');
+  }
+}
+
+async function removeAppBackground() {
+  try { await fetch('/api/visual/background', { method: 'DELETE' }); } catch (error) {}
+  if (currentSettings.visualLab && currentSettings.visualLab.background) {
+    currentSettings.visualLab.background.imageUrl = '';
+    applyVisualLab();
+    persistFontSettings();
+  }
+  paintAppBackgroundThumb('');
+  showToast('أُزيلت صورة الخلفية');
+}
+window.uploadAppBackground = uploadAppBackground;
+window.removeAppBackground = removeAppBackground;
 
 // معالجة رفع التمبلت الجديد
 function handleTemplateUpload(e) {

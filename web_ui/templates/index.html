@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.603">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.604">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.603" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.604" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.603</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.604</span>
             </div>
 
             <div class="header-actions">
@@ -3538,6 +3538,45 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="form-group">
+                                <label for="appBgInput">صورة الخلفية</label>
+                                <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+                                    <label for="appBgInput" class="btn-flat-secondary" style="cursor:pointer;">رفع صورة</label>
+                                    <img id="appBgThumb" alt="معاينة صورة الخلفية" hidden style="width:92px;height:64px;object-fit:cover;border:1px solid var(--border-subtle);border-radius:6px;">
+                                    <button type="button" id="appBgRemove" class="btn-flat-secondary" hidden onclick="removeAppBackground()">حذف الصورة</button>
+                                </div>
+                                <input type="file" id="appBgInput" hidden accept="image/png,image/jpeg,image/webp,image/gif" onchange="uploadAppBackground(event)">
+                                <span class="form-help">PNG أو JPG أو WEBP أو GIF حتى 12 ميغابايت. تظهر فوق لون الخلفية أو تدرّجها.</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="appBgFit">طريقة العرض</label>
+                                <select id="appBgFit" class="form-select">
+                                    <option value="cover">تغطية الصفحة</option>
+                                    <option value="contain">إظهار الصورة كاملة</option>
+                                    <option value="scale">مقاس مخصص</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="appBgSizeRow" hidden>
+                                <label>المقاس</label>
+                                <div class="slider-container">
+                                    <input type="range" id="appBgSize" min="20" max="200" value="100" data-out="appBgSizeVal" data-unit="٪">
+                                    <span class="slider-value" id="appBgSizeVal">100٪</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>شفافية الصورة</label>
+                                <div class="slider-container">
+                                    <input type="range" id="appBgOpacity" min="0" max="100" value="100" data-out="appBgOpacityVal" data-unit="٪">
+                                    <span class="slider-value" id="appBgOpacityVal">100٪</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>ضبابية الصورة</label>
+                                <div class="slider-container">
+                                    <input type="range" id="appBgBlur" min="0" max="24" value="0" data-out="appBgBlurVal" data-unit=" بكسل">
+                                    <span class="slider-value" id="appBgBlurVal">0 بكسل</span>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="settings-section-title" style="margin-top: 15px;">الحاويات</div>
@@ -6321,7 +6360,7 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.603"></script>
+    <script src="/static/js/app.js?v=1.10.604"></script>
     <script src="/static/js/search.js?v=1.10.493"></script>
     <script src="/static/js/reader.js?v=1.10.493"></script>
     <script src="/static/js/force3d.js?v=1.10.493"></script>
@@ -6329,16 +6368,16 @@
     <script src="/static/js/chat.js?v=1.10.493"></script>
     <script src="/static/js/designs.js?v=1.10.493"></script>
     <script src="/static/js/texts.js?v=1.10.493"></script>
-    <script src="/static/js/agents.js?v=1.10.603"></script>
+    <script src="/static/js/agents.js?v=1.10.604"></script>
     <script src="/static/js/providers.js?v=1.10.493"></script>
     <script src="/static/js/tools.js?v=1.10.493"></script>
     <script src="/static/js/shamela_link.js?v=1.10.493"></script>
     <script src="/static/js/projects.js?v=1.10.493"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.603"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.604"></script>
     <script src="/static/js/archive.js?v=1.10.493"></script>
     <script src="/static/js/compare.js?v=1.10.493"></script>
     <script src="/static/js/local_models.js?v=1.10.493"></script>
-    <script src="/static/js/changelog.js?v=1.10.603"></script>
+    <script src="/static/js/changelog.js?v=1.10.604"></script>
 
     <script>
         window.refreshLucideIcons = function () {
