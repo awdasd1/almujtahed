@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.almujtahed.mcp</string>
+  <string>com.almoghni.mcp</string>
   <key>ProgramArguments</key>
   <array>
     <string>__PYTHON__</string>
@@ -13,7 +13,7 @@
   <string>__WEBUI__</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>ALMUJTAHED_MCP_PORT</key>
+    <key>ALMOGHNI_MCP_PORT</key>
     <string>8765</string>
   </dict>
   <key>RunAtLoad</key>

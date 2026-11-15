@@ -3,13 +3,13 @@
 # ليصل إليه وكلاء خارجيون (Cursor/Claude) حتى والتطبيق مغلق.
 set -euo pipefail
 
-RUNTIME="$HOME/Library/Application Support/Al-Mujtahed/runtime"
+RUNTIME="$HOME/Library/Application Support/Almoghni/runtime"
 PY="$RUNTIME/.venv/bin/python"
 SERVER="$RUNTIME/web_ui/almoghni_mcp_server.py"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TEMPLATE="$HERE/com.almoghni.mcp.plist.template"
 PLIST="$HOME/Library/LaunchAgents/com.almoghni.mcp.plist"
-LOG="$HOME/Library/Logs/Al-Mujtahed/mcp_daemon.log"
+LOG="$HOME/Library/Logs/Almoghni/mcp_daemon.log"
 
 if [ ! -x "$PY" ] || [ ! -f "$SERVER" ]; then
   echo "افتح تطبيق المغني مرة واحدة أولًا ليجهّز بيئته، ثم أعد تشغيل هذا المثبّت."

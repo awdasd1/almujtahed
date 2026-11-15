@@ -2,6 +2,21 @@
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Source = Join-Path $AppRoot 'source'
 $Support = Join-Path $env:LOCALAPPDATA 'Almoghni'
+$OldSupport = Join-Path $env:LOCALAPPDATA 'Al-Mujtahed'
+if (Test-Path -LiteralPath $OldSupport) {
+    if (-not (Test-Path -LiteralPath $Support)) {
+        Move-Item -LiteralPath $OldSupport -Destination $Support
+    } elseif (-not (Test-Path -LiteralPath (Join-Path $Support 'runtime\.venv'))) {
+        $imported = Join-Path $Support 'runtime\shamela_imported'
+        $oldImported = Join-Path $OldSupport 'runtime\shamela_imported'
+        if ((Test-Path -LiteralPath $imported) -and -not (Test-Path -LiteralPath $oldImported)) {
+            New-Item -ItemType Directory -Force -Path (Join-Path $OldSupport 'runtime') | Out-Null
+            Move-Item -LiteralPath $imported -Destination $oldImported
+        }
+        Remove-Item -LiteralPath $Support -Recurse -Force
+        Move-Item -LiteralPath $OldSupport -Destination $Support
+    }
+}
 $Runtime = Join-Path $Support 'runtime'
 $Status = Join-Path $Support 'status.txt'
 $LogDir = Join-Path $Support 'logs'

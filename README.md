@@ -33,7 +33,7 @@ start_local.bat
 ./macos/build_app.sh
 ```
 
-يُنشئ `~/Downloads/المغني.app`. أول فتح يعرض نافذة التجهيز، ويسحب النماذج والسنابشوت إلى `~/Library/Application Support/Al-Mujtahed`، ثم يفتح الواجهة في المتصفح. إغلاق النافذة يوقف التطبيق.
+يُنشئ `~/Downloads/المغني.app`. أول فتح يعرض نافذة التجهيز، ويسحب النماذج والسنابشوت إلى `~/Library/Application Support/Almoghni`، ثم يفتح الواجهة في المتصفح. إغلاق النافذة يوقف التطبيق.
 
 بعد الإقلاع:
 

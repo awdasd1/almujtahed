@@ -554,9 +554,9 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var etaSeconds: TimeInterval = -1
     private var etaMarkedAt = Date()
     private let support = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
+        .appendingPathComponent("Library/Application Support/Almoghni", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.580")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.581")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -609,6 +609,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        migrateLegacySupport()
         if relocateToApplicationsIfNeeded() { return }
         if !acquireLock() {
             let others = NSRunningApplication.runningApplications(withBundleIdentifier: "com.almoghni.desktop")
@@ -687,7 +688,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.580"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.581"
     }
 
     private func buildWindow() {
@@ -1086,7 +1087,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         shutdownServices()
         let fm = FileManager.default
         try? fm.removeItem(at: support)
-        let logs = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Al-Mujtahed")
+        let logs = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Almoghni")
         try? fm.removeItem(at: logs)
         let bundle = "'" + Bundle.main.bundlePath.replacingOccurrences(of: "'", with: "'\\''") + "'"
         let remove = Process()
@@ -1442,6 +1443,36 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         task.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// مجلد البيانات صار Almoghni. إن بقيت المكتبة في Al-Mujtahed تُنقل إليه.
+    private func migrateLegacySupport() {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        let oldSupport = home.appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
+        let newSupport = support
+        var isDir: ObjCBool = false
+        if fm.fileExists(atPath: oldSupport.path, isDirectory: &isDir), isDir.boolValue {
+            let newExists = fm.fileExists(atPath: newSupport.path)
+            let newReady = fm.fileExists(atPath: newSupport.appendingPathComponent("runtime/.venv").path)
+            if !newExists {
+                try? fm.moveItem(at: oldSupport, to: newSupport)
+            } else if !newReady {
+                let imported = newSupport.appendingPathComponent("runtime/shamela_imported")
+                let oldImported = oldSupport.appendingPathComponent("runtime/shamela_imported")
+                if fm.fileExists(atPath: imported.path), !fm.fileExists(atPath: oldImported.path) {
+                    try? fm.createDirectory(at: oldSupport.appendingPathComponent("runtime"), withIntermediateDirectories: true)
+                    try? fm.moveItem(at: imported, to: oldImported)
+                }
+                try? fm.removeItem(at: newSupport)
+                try? fm.moveItem(at: oldSupport, to: newSupport)
+            }
+        }
+        let oldLogs = home.appendingPathComponent("Library/Logs/Al-Mujtahed", isDirectory: true)
+        let newLogs = home.appendingPathComponent("Library/Logs/Almoghni", isDirectory: true)
+        if fm.fileExists(atPath: oldLogs.path), !fm.fileExists(atPath: newLogs.path) {
+            try? fm.moveItem(at: oldLogs, to: newLogs)
+        }
     }
 
     private func acquireLock() -> Bool {

@@ -27,6 +27,7 @@ static class Program
                 PostMessage((IntPtr)HWND_BROADCAST, Native.ActivateMessage, IntPtr.Zero, IntPtr.Zero);
                 return;
             }
+            Paths.MigrateLegacy();
             Directory.CreateDirectory(Paths.Support);
             Application.Run(new InstallerForm());
             GC.KeepAlive(mutex);
@@ -103,10 +104,37 @@ static class Native
 static class Paths
 {
     public static string Support => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Al-Mujtahed");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Almoghni");
     public static string Runtime => Path.Combine(Support, "runtime");
     public static string StatusFile => Path.Combine(Support, "status.txt");
     public static string BootstrapFile => Path.Combine(Runtime, "web_ui", "bootstrap_status.json");
+
+    public static void MigrateLegacy()
+    {
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var oldSupport = Path.Combine(root, "Al-Mujtahed");
+        var newSupport = Path.Combine(root, "Almoghni");
+        if (!Directory.Exists(oldSupport)) return;
+        if (!Directory.Exists(newSupport))
+        {
+            try { Directory.Move(oldSupport, newSupport); } catch { }
+            return;
+        }
+        if (Directory.Exists(Path.Combine(newSupport, "runtime", ".venv"))) return;
+        var imported = Path.Combine(newSupport, "runtime", "shamela_imported");
+        var oldImported = Path.Combine(oldSupport, "runtime", "shamela_imported");
+        if (Directory.Exists(imported) && !Directory.Exists(oldImported))
+        {
+            Directory.CreateDirectory(Path.Combine(oldSupport, "runtime"));
+            try { Directory.Move(imported, oldImported); } catch { }
+        }
+        try
+        {
+            Directory.Delete(newSupport, true);
+            Directory.Move(oldSupport, newSupport);
+        }
+        catch { }
+    }
 }
 
 static class AppFonts
@@ -720,7 +748,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.580");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.581");
         tray.Visible = false;
     }
 
@@ -824,7 +852,9 @@ sealed class InstallerForm : Form
         {
             using var process = Process.GetProcessById(pid);
             var path = process.MainModule?.FileName ?? "";
-            if (!path.Contains($"{Path.DirectorySeparatorChar}Al-Mujtahed{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            var inNew = path.Contains($"{Path.DirectorySeparatorChar}Almoghni{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+            var inOld = path.Contains($"{Path.DirectorySeparatorChar}Al-Mujtahed{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+            if (!inNew && !inOld)
                 return;
             process.Kill(entireProcessTree: true);
         }

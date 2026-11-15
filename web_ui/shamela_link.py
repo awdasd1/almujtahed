@@ -147,7 +147,7 @@ def import_dir() -> Path:
     if sys.platform == "darwin":
         return home / "Library" / "Application Support" / "Almoghni" / "runtime" / "shamela_imported"
     if os.getenv("APPDATA"):
-        return Path(os.getenv("APPDATA")) / "Al-Mujtahed" / "runtime" / "shamela_imported"
+        return Path(os.getenv("APPDATA")) / "Almoghni" / "runtime" / "shamela_imported"
     return home / ".almoghni" / "shamela_imported"
 
 

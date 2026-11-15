@@ -4,10 +4,27 @@ set -euo pipefail
 
 APP_CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$APP_CONTENTS/Resources/source"
-SUPPORT="$HOME/Library/Application Support/Al-Mujtahed"
+SUPPORT="$HOME/Library/Application Support/Almoghni"
 RUNTIME="$SUPPORT/runtime"
 STATUS="$SUPPORT/status.txt"
-LOG_DIR="$HOME/Library/Logs/Al-Mujtahed"
+LOG_DIR="$HOME/Library/Logs/Almoghni"
+# نقل بيانات النسخة السابقة إن كان مجلدها ما زال بالاسم القديم.
+OLD_SUPPORT="$HOME/Library/Application Support/Al-Mujtahed"
+if [ -d "$OLD_SUPPORT" ]; then
+  if [ ! -d "$SUPPORT" ]; then
+    mv "$OLD_SUPPORT" "$SUPPORT"
+  elif [ -d "$OLD_SUPPORT/runtime" ] && [ ! -e "$RUNTIME/.venv" ]; then
+    if [ -d "$RUNTIME/shamela_imported" ] && [ ! -e "$OLD_SUPPORT/runtime/shamela_imported" ]; then
+      mv "$RUNTIME/shamela_imported" "$OLD_SUPPORT/runtime/shamela_imported"
+    fi
+    rm -rf "$SUPPORT"
+    mv "$OLD_SUPPORT" "$SUPPORT"
+  fi
+fi
+OLD_LOG="$HOME/Library/Logs/Al-Mujtahed"
+if [ -d "$OLD_LOG" ] && [ ! -d "$LOG_DIR" ]; then
+  mv "$OLD_LOG" "$LOG_DIR"
+fi
 LOG_FILE="$LOG_DIR/launch.log"
 
 mkdir -p "$SUPPORT" "$LOG_DIR" "$RUNTIME"
