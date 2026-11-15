@@ -422,14 +422,30 @@ static class Installer
         body.AppendLine("}");
         body.AppendLine("Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue");
         File.WriteAllText(script, body.ToString(), new UTF8Encoding(true));
-        Process.Start(new ProcessStartInfo
+        // الانطلاق عبر cmd من تطبيق بلا طرفية كان يموت فوراً فلا يعمل السكربت
+        // أبداً ويبقى المجلد كاملاً. التشغيل بقشرة النظام ينفصل تماماً عن
+        // العملية الأب ويبقى حياً بعد خروجها.
+        try
         {
-            FileName = "cmd.exe",
-            Arguments = "/c start \"\" /min powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + script + "\"",
-            CreateNoWindow = true,
-            UseShellExecute = false,
-            WindowStyle = ProcessWindowStyle.Hidden
-        });
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + script + "\"",
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+        }
+        catch
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/c start \"\" /min powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + script + "\"",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+        }
     }
 
     public static void Extract(string folder, IProgress<int>? progress)
