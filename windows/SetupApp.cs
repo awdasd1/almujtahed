@@ -76,7 +76,8 @@ static class Installer
 
         foreach (var folder in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            if (!File.Exists(Path.Combine(folder, "Almoghni.exe"))) continue;
+            if (!File.Exists(Path.Combine(folder, "amoghni.exe")) &&
+                !File.Exists(Path.Combine(folder, "Almoghni.exe"))) continue;
             var marker = Path.Combine(folder, MarkerName);
             var version = "";
             try { version = File.Exists(marker) ? File.ReadAllText(marker).Trim() : ""; } catch { }
@@ -118,7 +119,7 @@ static class Installer
 
     public static void CreateShortcuts(string folder)
     {
-        var exe = Path.Combine(folder, "Almoghni.exe");
+        var exe = Path.Combine(folder, "amoghni.exe");
         var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : exe;
         var links = new[]
         {
@@ -219,7 +220,7 @@ static class Installer
             key.SetValue("DisplayVersion", CurrentVersion);
             key.SetValue("Publisher", "المغني");
             key.SetValue("InstallLocation", folder);
-            var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : Path.Combine(folder, "Almoghni.exe");
+            var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : Path.Combine(folder, "amoghni.exe");
             key.SetValue("DisplayIcon", $"\"{iconPath}\",0");
             key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
             // ملف الإلغاء يعيش داخل مجلد التثبيت نفسه، لا عند ملف التنزيلات
@@ -294,7 +295,7 @@ static class Installer
 
     public static void Launch(string folder)
     {
-        var exe = Path.Combine(Path.GetFullPath(folder), "Almoghni.exe");
+        var exe = Path.Combine(Path.GetFullPath(folder), "amoghni.exe");
         Process.Start(new ProcessStartInfo(exe)
         {
             WorkingDirectory = Path.GetDirectoryName(exe)!,

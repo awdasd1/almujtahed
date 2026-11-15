@@ -88,7 +88,7 @@ PY
 dotnet publish "$ROOT/windows/AlmoghniSetup.csproj" -c Release -r win-x64 --self-contained true \
   -p:DebugType=None -p:PayloadZip="$STAGE/payload.zip" -o "$STAGE/setup"
 
-EXE="${1:-$HOME/Downloads/المغني.exe}"
+EXE="${1:-$HOME/Downloads/amoghni.exe}"
 rm -f "$EXE"
 cp "$STAGE/setup/AlmoghniSetup.exe" "$EXE"
 rm -rf "$HOME/Downloads/المغني-ويندوز"

@@ -1,7 +1,7 @@
 ﻿# يبني ملف تثبيت المغني لويندوز ويضعه في مجلد التنزيلات.
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
-$Exe = if ($args.Count -gt 0) { $args[0] } else { Join-Path $env:USERPROFILE 'Downloads\المغني.exe' }
+$Exe = if ($args.Count -gt 0) { $args[0] } else { Join-Path $env:USERPROFILE 'Downloads\amoghni.exe' }
 $Stage = Join-Path ([System.IO.Path]::GetTempPath()) ("almoghni-win-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 try {

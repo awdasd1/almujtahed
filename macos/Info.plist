@@ -9,7 +9,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>المغني</string>
 	<key>CFBundleExecutable</key>
-	<string>Almoghni</string>
+	<string>amoghni</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
@@ -21,9 +21,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.10.581</string>
+	<string>1.10.582</string>
 	<key>CFBundleVersion</key>
-	<string>1681</string>
+	<string>1682</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.education</string>
 	<key>LSMinimumSystemVersion</key>
