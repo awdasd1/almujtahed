@@ -153,14 +153,21 @@ def ensure_index_async() -> None:
 try:
     from shamela_local_mcp import clean_arabic_text as _normalize
 except Exception:  # تشغيل مستقل
+    _FALLBACK_TABLE = {}
+    for _cp in range(0x064B, 0x0660):
+        _FALLBACK_TABLE[_cp] = None
+    _FALLBACK_TABLE[0x0670] = None
+    _FALLBACK_TABLE[0x0640] = None
+    for _ch in "إأآ":
+        _FALLBACK_TABLE[ord(_ch)] = "ا"
+    _FALLBACK_TABLE[ord("ى")] = "ي"
+    _FALLBACK_TABLE[ord("ة")] = "ه"
+
     def _normalize(text: str) -> str:
         if not text:
             return ""
         t = re.sub(r"<[^>]+>", " ", text)
-        t = re.sub(r"[ً-ٰٟـ]", "", t)
-        t = re.sub(r"[إأآا]", "ا", t)
-        t = re.sub(r"[ىي]", "ي", t)
-        t = t.replace("ة", "ه")
+        t = t.translate(_FALLBACK_TABLE)
         return " ".join(t.split())
 
 _GEO_CATS = {"البلدان والرحلات", "الأنساب"}
