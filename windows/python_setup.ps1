@@ -1,4 +1,46 @@
-﻿function Test-RealPython([string]$Path) {
+﻿function Start-QuietProcess([string]$File, [string[]]$ArgumentList, [string]$WorkingDirectory, [string]$StdOut, [string]$StdErr) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $File
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $false
+    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) { $psi.WorkingDirectory = $WorkingDirectory }
+    $parts = foreach ($arg in $ArgumentList) {
+        if ($null -eq $arg) { continue }
+        if ($arg -match '[\s"]') { '"' + ($arg -replace '"', '\"') + '"' } else { $arg }
+    }
+    $psi.Arguments = ($parts -join ' ')
+    $capture = -not [string]::IsNullOrWhiteSpace($StdOut)
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    if ($capture) {
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+        $psi.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
+        $outWriter = [System.IO.StreamWriter]::new($StdOut, $true, [System.Text.UTF8Encoding]::new($false))
+        $errTarget = if ([string]::IsNullOrWhiteSpace($StdErr)) { $StdOut } else { $StdErr }
+        $errWriter = [System.IO.StreamWriter]::new($errTarget, $true, [System.Text.UTF8Encoding]::new($false))
+        $outWriter.AutoFlush = $true
+        $errWriter.AutoFlush = $true
+        $proc.add_OutputDataReceived({
+            param($sender, $event)
+            if ($null -ne $event.Data) { $outWriter.WriteLine($event.Data) }
+        }.GetNewClosure())
+        $proc.add_ErrorDataReceived({
+            param($sender, $event)
+            if ($null -ne $event.Data) { $errWriter.WriteLine($event.Data) }
+        }.GetNewClosure())
+    }
+    [void]$proc.Start()
+    if ($capture) {
+        $proc.BeginOutputReadLine()
+        $proc.BeginErrorReadLine()
+    }
+    return $proc
+}
+
+function Test-RealPython([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
     if (-not (Test-Path -LiteralPath $Path)) { return $false }
     if ($Path -like '*\WindowsApps\*') { return $false }
@@ -40,7 +82,13 @@ function Find-RealPython {
     }
     $py = Get-Command py -ErrorAction SilentlyContinue
     if ($py -and $py.Source -notlike '*\WindowsApps\*') {
-        $exe = (& $py.Source -3 -c "import sys; print(sys.executable)" 2>$null | Out-String).Trim()
+        $pyOut = Join-Path $env:TEMP 'almoghni-py-which.txt'
+        $pyErr = Join-Path $env:TEMP 'almoghni-py-which.err'
+        Remove-Item -LiteralPath $pyOut, $pyErr -Force -ErrorAction SilentlyContinue
+        $which = Start-QuietProcess $py.Source @('-3', '-c', 'import sys; print(sys.executable)') '' $pyOut $pyErr
+        $which.WaitForExit()
+        $exe = ''
+        if (Test-Path -LiteralPath $pyOut) { $exe = (Get-Content -LiteralPath $pyOut -Raw -ErrorAction SilentlyContinue).Trim() }
         if (Test-RealPython $exe) { return $exe }
     }
     return $null
@@ -100,18 +148,21 @@ function Install-UserPython([string]$LogFile) {
     )
     if (-not (Test-RealPython $python)) {
         if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 26 }
-        $repair = Start-Process -FilePath $installer -ArgumentList @('/repair', '/quiet') -Wait -PassThru
+        $repair = Start-QuietProcess $installer @('/repair', '/quiet') '' '' ''
+        $repair.WaitForExit()
         if ($LogFile) {
             Add-Content -LiteralPath $LogFile -Value "python repair exit $($repair.ExitCode)" -Encoding UTF8
         }
     }
     if (-not (Test-RealPython $python)) {
-        $remove = Start-Process -FilePath $installer -ArgumentList @('/uninstall', '/quiet') -Wait -PassThru
+        $remove = Start-QuietProcess $installer @('/uninstall', '/quiet') '' '' ''
+        $remove.WaitForExit()
         if ($LogFile) {
             Add-Content -LiteralPath $LogFile -Value "python uninstall exit $($remove.ExitCode)" -Encoding UTF8
         }
         if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 27 }
-        $proc = Start-Process -FilePath $installer -ArgumentList $installArgs -Wait -PassThru
+        $proc = Start-QuietProcess $installer $installArgs '' '' ''
+        $proc.WaitForExit()
         if ($LogFile) {
             Add-Content -LiteralPath $LogFile -Value "python installer exit $($proc.ExitCode)" -Encoding UTF8
         }

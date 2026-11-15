@@ -685,10 +685,11 @@ sealed class InstallerForm : Form
             StartInfo = new ProcessStartInfo
             {
                 FileName = "powershell.exe",
-                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\"",
+                Arguments = $"-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"{script}\"",
                 WorkingDirectory = AppContext.BaseDirectory,
                 UseShellExecute = false,
-                CreateNoWindow = true
+                CreateNoWindow = false,
+                WindowStyle = ProcessWindowStyle.Hidden
             },
             EnableRaisingEvents = true
         };
@@ -757,7 +758,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.588");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.589");
         tray.Visible = false;
         ShowInTaskbar = false;
         Hide();

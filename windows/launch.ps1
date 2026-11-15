@@ -104,19 +104,21 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
     if (Test-Path -LiteralPath $venvDir) {
         Remove-Item -LiteralPath $venvDir -Recurse -Force -ErrorAction SilentlyContinue
     }
-    & $python -m venv $venvDir *>> $LogFile
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $venvPython)) {
+    $venvProc = Start-QuietProcess $python @('-m', 'venv', $venvDir) $Runtime $LogFile (Join-Path $LogDir 'venv-err.log')
+    $venvProc.WaitForExit()
+    if ($venvProc.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $venvPython)) {
         Set-Status 'تعذر تشغيل التطبيق'
         exit 1
     }
 }
 
 Set-Location -LiteralPath $Runtime
-$previous = $ErrorActionPreference
-$ErrorActionPreference = 'Continue'
-& $venvPython -c "import fastapi, uvicorn, huggingface_hub, dotenv, llama_cpp" | Out-Null
-$importExit = $LASTEXITCODE
-$ErrorActionPreference = $previous
+$importOut = Join-Path $LogDir 'import-check.log'
+$importErr = Join-Path $LogDir 'import-check.err'
+Remove-Item -LiteralPath $importOut, $importErr -Force -ErrorAction SilentlyContinue
+$importProc = Start-QuietProcess $venvPython @('-c', 'import fastapi, uvicorn, huggingface_hub, dotenv, llama_cpp') $Runtime $importOut $importErr
+$importProc.WaitForExit()
+$importExit = $importProc.ExitCode
 if ($importExit -ne 0) {
     Set-Status 'جاري تثبيت المكتبات'
     Set-SetupProgress 32
@@ -146,7 +148,7 @@ if ($importExit -ne 0) {
         }
         if ($text -match 'Installing collected packages') { Set-SetupProgress 86 }
     }
-    $upgrade = Start-Process -FilePath $venvPython -ArgumentList @('-m', 'pip', 'install', '--disable-pip-version-check', '--progress-bar', 'off', '--upgrade', 'pip') -WorkingDirectory $Runtime -RedirectStandardOutput $pipOut -RedirectStandardError $pipErr -WindowStyle Hidden -PassThru
+    $upgrade = Start-QuietProcess $venvPython @('-m', 'pip', 'install', '--disable-pip-version-check', '--progress-bar', 'off', '--upgrade', 'pip') $Runtime $pipOut $pipErr
     while (-not $upgrade.HasExited) {
         Update-PipProgress
         Start-Sleep -Milliseconds 600
@@ -158,11 +160,11 @@ if ($importExit -ne 0) {
     }
     Set-SetupProgress 36
     Remove-Item -LiteralPath $pipOut, $pipErr -Force -ErrorAction SilentlyContinue
-    $install = Start-Process -FilePath $venvPython -ArgumentList @(
+    $install = Start-QuietProcess $venvPython @(
         '-m', 'pip', 'install', '--disable-pip-version-check', '--progress-bar', 'off',
         '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/cpu',
         '--only-binary=llama-cpp-python', '-r', $req
-    ) -WorkingDirectory $Runtime -RedirectStandardOutput $pipOut -RedirectStandardError $pipErr -WindowStyle Hidden -PassThru
+    ) $Runtime $pipOut $pipErr
     while (-not $install.HasExited) {
         Update-PipProgress
         Start-Sleep -Milliseconds 600
