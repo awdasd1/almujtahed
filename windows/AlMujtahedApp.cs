@@ -366,12 +366,7 @@ sealed class InstallerForm : Form
             g.DrawImage(boardBase, 0, 0, boardBase.Width, boardBase.Height);
             using var brownInk = new SolidBrush(Color.FromArgb(255, 91, 51, 16));
             using var versionFont = new Font("Tahoma", 22, FontStyle.Bold, GraphicsUnit.Pixel);
-            using var versionFormat = new StringFormat(StringFormatFlags.DirectionRightToLeft)
-            {
-                Alignment = StringAlignment.Near,
-                LineAlignment = StringAlignment.Center
-            };
-            g.DrawString("النسخة: " + AppVersion(), versionFont, brownInk, new RectangleF(430, 136, 242, 32), versionFormat);
+            g.DrawString("النسخة: " + AppVersion(), versionFont, brownInk, new PointF(48, 142));
             var track = new Rectangle(120, 380, 784, 40);
             using var captionFont = new Font("Tahoma", 24, FontStyle.Regular, GraphicsUnit.Pixel);
             using var captionFormat = new StringFormat(StringFormatFlags.DirectionRightToLeft)
@@ -725,7 +720,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.577");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.578");
         tray.Visible = false;
     }
 

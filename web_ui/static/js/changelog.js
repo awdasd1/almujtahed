@@ -1,8 +1,7 @@
 function changelogVersionLabel(markdown) {
     const match = String(markdown || "").match(/^##\s+(\d+\.\d+(?:\.\d+)?)(?:\s*\(([^)]+)\))?/m);
     if (!match) return "";
-    const note = match[2] ? ` (${match[2].trim()})` : "";
-    return `إصدار رقم ${match[1]}${note}`;
+    return `النسخة: ${match[1]}`;
 }
 
 function paintAppVersion(markdown) {
