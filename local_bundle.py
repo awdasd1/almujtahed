@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """نسخ المكتبة الشاملة من مجلد محلي وإليه (لا نموذج تضمين ولا مخزن متجهات في التطبيق)."""
 
+import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -203,15 +205,69 @@ def _copy_tree(src: Path, dest: Path, progress: _Progress):
         _copy_file(item, target, progress)
 
 
+def catalog_fingerprint(root: Path) -> str | None:
+    """بصمة كتالوج الكتب: الفهرس الجاهز لا يصلح إلا لنسخة الكتالوج نفسها."""
+    db = root / "shamela_index.db"
+    if not db.is_file():
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        rows = con.execute("SELECT book_id, rel_path FROM books ORDER BY book_id").fetchall()
+        con.close()
+    except sqlite3.Error:
+        return None
+    digest = hashlib.sha256()
+    for book_id, rel_path in rows:
+        digest.update(f"{book_id}:{rel_path}\n".encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _fts_source(root: Path) -> Path | None:
+    for cand in (root / "library_fts", root / "library_fts_shamela"):
+        if cand.is_dir() and list(cand.glob("shard*.db")):
+            return cand
+    return None
+
+
+def _import_prebuilt_fts(found_root: Path, root: Path, progress: _Progress) -> bool:
+    """استيراد الفهرس الجاهز من الحزمة إن طابقت بصمته كتالوج هذا الجهاز."""
+    src = found_root / "library_fts"
+    if not src.is_dir() or not list(src.glob("shard*.db")):
+        return False
+    try:
+        manifest = json.loads((found_root / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    wanted = (manifest.get("fts") or {}).get("catalog_sha256")
+    if not wanted or wanted != catalog_fingerprint(root):
+        return False
+    staging = root / "library_fts.importing"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    for item in src.glob("shard*.db"):
+        _copy_file(item, staging / item.name, progress)
+    report = src / "build_report.json"
+    if report.is_file():
+        _copy_file(report, staging / report.name, progress)
+    dest = root / "library_fts"
+    shutil.rmtree(dest, ignore_errors=True)
+    staging.replace(dest)
+    return True
+
+
 def import_bundle(folder: Path, root: Path):
     found = locate(folder)
     if not found:
         raise RuntimeError("المجلد لا يحتوي على المكتبة الشاملة")
-    expected = _measure([found["shamela"]])
+    bundle_fts = found["root"] / "library_fts"
+    extra = _measure([bundle_fts]) if bundle_fts.is_dir() else 0
+    expected = _measure([found["shamela"]]) + extra
     message = "جاري استيراد النسخة المحلية"
     progress = _Progress(root, expected, message)
     write_job(root, state="copying", message=message, received=0, expected=expected, error="", path=str(found["root"]))
     _copy_tree(found["shamela"], root / "shamela4_data", progress)
+    if extra:
+        _import_prebuilt_fts(found["root"], root, progress)
     write_job(root, state="done", message="اكتمل الاستيراد. أعد فتح التطبيق.", received=expected, expected=expected, error="")
     _write_bootstrap(root, "ready", "اكتمل النسخ من المجلد المحلي", expected, expected)
 
@@ -237,7 +293,11 @@ def export_bundle(destination: Path, root: Path):
     if bundle.exists():
         shutil.rmtree(bundle, ignore_errors=True)
     bundle.mkdir(parents=True, exist_ok=True)
-    expected = _measure([found["shamela"]])
+    fts_src = _fts_source(root)
+    fingerprint = catalog_fingerprint(root) if fts_src else None
+    if not fingerprint:
+        fts_src = None
+    expected = _measure([found["shamela"]]) + (_measure([fts_src]) if fts_src else 0)
     free = shutil.disk_usage(destination).free
     if free < expected + 1024 ** 3:
         raise RuntimeError("المساحة في مجلد الحفظ لا تكفي لهذه النسخة")
@@ -247,9 +307,20 @@ def export_bundle(destination: Path, root: Path):
     _copy_tree(found["shamela"], bundle / "shamela", progress)
     manifest = {
         "kind": "almoghni-local",
-        "version": 2,
+        "version": 3,
         "parts": ["shamela"],
     }
+    if fts_src:
+        fts_dest = bundle / "library_fts"
+        fts_dest.mkdir(parents=True, exist_ok=True)
+        shards = sorted(fts_src.glob("shard*.db"))
+        for item in shards:
+            _copy_file(item, fts_dest / item.name, progress)
+        report = fts_src / "build_report.json"
+        if report.is_file():
+            _copy_file(report, fts_dest / report.name, progress)
+        manifest["parts"].append("library_fts")
+        manifest["fts"] = {"catalog_sha256": fingerprint, "shards": len(shards)}
     (bundle / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     write_job(root, state="done", message="تم حفظ النسخة المحلية", received=expected, expected=expected, error="", path=str(bundle))
 

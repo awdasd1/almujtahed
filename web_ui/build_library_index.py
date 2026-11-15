@@ -94,23 +94,60 @@ def _balance_by_size(books, workers):
     return [s for s in shards if s]
 
 
+def _shard_progress(shard_path, payload):
+    path = shard_path + ".progress.json"
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
 def _build_shard(args):
     shard_path, books = args
+    # استئناف: شظية قائمة من بناء متقطع تُستكمل من كتبها المنجزة، لا تُبنى من صفر
+    con = None
+    done = set()
+    started = time.time()
     if os.path.exists(shard_path):
-        os.remove(shard_path)
-    con = sqlite3.connect(shard_path)
+        try:
+            con = sqlite3.connect(shard_path)
+            done = {r[0] for r in con.execute("SELECT book_id FROM _built")}
+            con.execute("SELECT COUNT(*) FROM pages_fts").fetchone()
+            try:
+                with open(shard_path + ".progress.json", encoding="utf-8") as f:
+                    started = float(json.load(f).get("started_at") or started)
+            except (OSError, ValueError):
+                pass
+        except sqlite3.Error:
+            if con is not None:
+                con.close()
+            con = None
+            done = set()
+            try:
+                os.remove(shard_path)
+            except OSError:
+                pass
+    if con is None:
+        con = sqlite3.connect(shard_path)
     con.execute("PRAGMA journal_mode=OFF")
     con.execute("PRAGMA synchronous=OFF")
     con.execute("PRAGMA cache_size=-65536")  # ٦٤ ميغابايت لكل عامل كحد أقصى
     con.execute("PRAGMA temp_store=MEMORY")
     con.execute("PRAGMA page_size=8192")
-    con.execute("CREATE VIRTUAL TABLE pages_fts USING fts5(text, book_id UNINDEXED, page_id UNINDEXED, part UNINDEXED, page_num UNINDEXED, seq UNINDEXED, tokenize='unicode61')")
-    con.execute("CREATE VIRTUAL TABLE headings_fts USING fts5(text, book_id UNINDEXED, page_id UNINDEXED, tokenize='unicode61')")
+    con.execute("CREATE TABLE IF NOT EXISTS _built (book_id INTEGER PRIMARY KEY)")
+    con.execute("CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(text, book_id UNINDEXED, page_id UNINDEXED, part UNINDEXED, page_num UNINDEXED, seq UNINDEXED, tokenize='unicode61')")
+    con.execute("CREATE VIRTUAL TABLE IF NOT EXISTS headings_fts USING fts5(text, book_id UNINDEXED, page_id UNINDEXED, tokenize='unicode61')")
     for table in ("pages_fts", "headings_fts"):
         con.execute(f"INSERT INTO {table}({table}, rank) VALUES('automerge', 0)")
         con.execute(f"INSERT INTO {table}({table}, rank) VALUES('crisismerge', 1000000)")
-    npages = 0
+    con.commit()
+    npages = con.execute("SELECT COUNT(*) FROM pages_fts").fetchone()[0]
     for b in books:
+        if b["book_id"] in done:
+            continue
         bdir = _book_dir(b["rel_path"])
         try:
             with open(os.path.join(bdir, "pages.jsonl"), encoding="utf-8") as f:
@@ -140,9 +177,16 @@ def _build_shard(args):
                                 hb = []
                     if hb:
                         con.executemany("INSERT INTO headings_fts VALUES (?,?,?)", hb)
+            con.execute("INSERT OR IGNORE INTO _built VALUES (?)", (b["book_id"],))
+            con.commit()
+            done.add(b["book_id"])
         except Exception as ex:
+            con.rollback()
             print(f"[FTS] book fail {b['book_id']}: {ex}", flush=True)
-    con.commit()
+        _shard_progress(shard_path, {
+            "books_done": len(done), "books_total": len(books), "pages": npages,
+            "started_at": started, "updated_at": time.time(),
+        })
     for table in ("pages_fts", "headings_fts"):
         for _ in range(10000):
             before = con.total_changes
@@ -150,6 +194,10 @@ def _build_shard(args):
             if con.total_changes - before < 2:
                 break
     con.commit()
+    _shard_progress(shard_path, {
+        "books_done": len(done), "books_total": len(books), "pages": npages,
+        "started_at": started, "updated_at": time.time(), "complete": True,
+    })
     con.close()
     return npages
 

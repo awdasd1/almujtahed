@@ -14,6 +14,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -46,7 +47,30 @@ def index_status() -> dict:
     """حالة الفهرس: جاهز / يُبنى الآن (عند أول تشغيل) / غير مبني."""
     shards = glob.glob(os.path.join(FTS_DIR, "shard*.db"))
     building = os.path.exists(os.path.join(FTS_DIR, ".building"))
-    return {"available": bool(shards), "building": building, "shards": len(shards), "dir": FTS_DIR}
+    status = {"available": bool(shards), "building": building, "shards": len(shards), "dir": FTS_DIR}
+    if building:
+        books_done = books_total = pages = 0
+        started = None
+        for path in glob.glob(os.path.join(FTS_DIR, "shard*.db.progress.json")):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, ValueError):
+                continue
+            books_done += int(data.get("books_done") or 0)
+            books_total += int(data.get("books_total") or 0)
+            pages += int(data.get("pages") or 0)
+            ts = data.get("started_at")
+            if ts and (started is None or ts < started):
+                started = ts
+        if books_total:
+            progress = {"books_done": books_done, "books_total": books_total, "pages": pages,
+                        "percent": round(100 * books_done / books_total, 1)}
+            if started and books_done:
+                elapsed = max(1.0, time.time() - started)
+                progress["eta_sec"] = round(elapsed * (books_total - books_done) / books_done)
+            status["progress"] = progress
+    return status
 
 
 _BUILD_STARTED = False
