@@ -67,6 +67,32 @@ function Test-RealPython([string]$Path) {
     return ((Get-Item -LiteralPath $Path).Length -gt 30000)
 }
 
+function Wait-QuietProcess($Process, [int]$Seconds) {
+    if (-not $Process) { return -1 }
+    if (-not $Process.WaitForExit($Seconds * 1000)) {
+        & taskkill.exe /T /F /PID $Process.Id 2>$null | Out-Null
+        try { [void]$Process.WaitForExit(5000) } catch { }
+        return -1
+    }
+    try { return [int]$Process.ExitCode } catch { return -1 }
+}
+
+function Get-PythonVersionText([string]$Path) {
+    if (-not (Test-RealPython $Path)) { return '' }
+    $out = Join-Path $env:TEMP 'almoghni-py-run.txt'
+    $err = Join-Path $env:TEMP 'almoghni-py-run.err'
+    Remove-Item -LiteralPath $out, $err -Force -ErrorAction SilentlyContinue
+    $proc = Start-QuietProcess $Path @('-c', 'import sys; print("%d.%d.%d" % sys.version_info[:3])') '' $out $err
+    $code = Wait-QuietProcess $proc 20
+    if ($code -ne 0 -or -not (Test-Path -LiteralPath $out)) { return '' }
+    return ((Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue) -as [string]).Trim()
+}
+
+function Test-SupportedPython([string]$Path) {
+    $text = Get-PythonVersionText $Path
+    return $text -match '^3\.(1[2-9]|[2-9]\d)\.\d+'
+}
+
 function Find-RealPython {
     foreach ($ver in @('3.12', '3.13', '3.11', '3.10')) {
         foreach ($root in @('HKCU:\Software\Python\PythonCore', 'HKLM:\Software\Python\PythonCore')) {
@@ -76,7 +102,7 @@ function Find-RealPython {
             try { $dir = (Get-ItemProperty -LiteralPath $install -ErrorAction Stop).'(default)' } catch { }
             if ([string]::IsNullOrWhiteSpace($dir)) { continue }
             $exe = Join-Path $dir 'python.exe'
-            if (Test-RealPython $exe) { return $exe }
+            if (Test-SupportedPython $exe) { return $exe }
         }
     }
     $localRoot = Join-Path $env:LOCALAPPDATA 'Programs\Python'
@@ -91,14 +117,14 @@ function Find-RealPython {
         'C:\Program Files\Python310\python.exe'
     )
     foreach ($exe in $fixed) {
-        if (Test-RealPython $exe) { return $exe }
+        if (Test-SupportedPython $exe) { return $exe }
     }
     if (Test-Path -LiteralPath $localRoot) {
-        $found = Get-ChildItem -LiteralPath $localRoot -Filter python.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue |
-            Where-Object { Test-RealPython $_.FullName } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-        if ($found) { return $found.FullName }
+        $candidates = @(Get-ChildItem -LiteralPath $localRoot -Filter python.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending)
+        foreach ($candidate in $candidates) {
+            if (Test-SupportedPython $candidate.FullName) { return $candidate.FullName }
+        }
     }
     $py = Get-Command py -ErrorAction SilentlyContinue
     if ($py -and $py.Source -notlike '*\WindowsApps\*') {
@@ -106,10 +132,10 @@ function Find-RealPython {
         $pyErr = Join-Path $env:TEMP 'almoghni-py-which.err'
         Remove-Item -LiteralPath $pyOut, $pyErr -Force -ErrorAction SilentlyContinue
         $which = Start-QuietProcess $py.Source @('-3', '-c', 'import sys; print(sys.executable)') '' $pyOut $pyErr
-        $which.WaitForExit()
+        Wait-QuietProcess $which 12 | Out-Null
         $exe = ''
         if (Test-Path -LiteralPath $pyOut) { $exe = (Get-Content -LiteralPath $pyOut -Raw -ErrorAction SilentlyContinue).Trim() }
-        if (Test-RealPython $exe) { return $exe }
+        if (Test-SupportedPython $exe) { return $exe }
     }
     return $null
 }
@@ -118,7 +144,7 @@ function Save-WithProgress([string]$Url, [string]$Dest, [int]$FromPercent, [int]
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     if (Test-Path -LiteralPath $Dest) {
         $existing = (Get-Item -LiteralPath $Dest).Length
-        if ($existing -gt 8000000) { return }
+        if ($existing -gt 24000000) { return }
         Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
     }
     Add-Type -AssemblyName System.Net.Http
@@ -148,12 +174,84 @@ function Save-WithProgress([string]$Url, [string]$Dest, [int]$FromPercent, [int]
     }
 }
 
+function Write-PythonLog([string]$LogFile, [string]$Message) {
+    if ($LogFile) { Add-Content -LiteralPath $LogFile -Value $Message -Encoding UTF8 }
+}
+
+function Invoke-QuietInstaller([string]$File, [string[]]$ArgumentList, [int]$Seconds, [string]$LogFile, [string]$Label) {
+    if (-not (Test-Path -LiteralPath $File)) {
+        Write-PythonLog $LogFile "$Label missing"
+        return -1
+    }
+    $proc = Start-QuietProcess $File $ArgumentList '' '' ''
+    $code = Wait-QuietProcess $proc $Seconds
+    Write-PythonLog $LogFile "$Label exit $code"
+    return $code
+}
+
+function Split-InstallerCommand([string]$Command) {
+    $command = $Command.Trim()
+    $file = ''
+    $rest = ''
+    if ($command.StartsWith('"')) {
+        $end = $command.IndexOf('"', 1)
+        if ($end -gt 1) {
+            $file = $command.Substring(1, $end - 1)
+            $rest = $command.Substring($end + 1).Trim()
+        }
+    } elseif ($command) {
+        $parts = $command.Split(' ', 2)
+        $file = $parts[0]
+        if ($parts.Length -gt 1) { $rest = $parts[1] }
+    }
+    $argList = @()
+    if ($rest) {
+        $argList = @([regex]::Matches($rest, '"[^"]*"|\S+') | ForEach-Object { $_.Value.Trim('"') })
+    }
+    return @{ File = $file; Args = $argList }
+}
+
+function Clear-Python312Registration {
+    $root = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+    if (Test-Path -LiteralPath $root) {
+        foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+            $prop = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+            $name = [string]$prop.DisplayName
+            if ($name -notmatch '^Python 3\.12') { continue }
+            $location = [string]$prop.InstallLocation
+            if ($location -and $location -notlike '*\Programs\Python\Python312*') { continue }
+            Remove-Item -LiteralPath $key.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Remove-Item -LiteralPath 'HKCU:\Software\Python\PythonCore\3.12' -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+function Remove-StalePython312([string]$Installer, [string]$LogFile) {
+    $root = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+    if (Test-Path -LiteralPath $root) {
+        foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+            $prop = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+            $name = [string]$prop.DisplayName
+            if ($name -notmatch '^Python 3\.12') { continue }
+            $location = [string]$prop.InstallLocation
+            if ($location -and $location -notlike '*\Programs\Python\Python312*') { continue }
+            $command = [string]$prop.QuietUninstallString
+            if (-not $command) { $command = [string]$prop.UninstallString }
+            if (-not $command) { continue }
+            $parsed = Split-InstallerCommand $command
+            if (-not $parsed.File) { continue }
+            $argList = @($parsed.Args)
+            if ($argList -notcontains '/quiet' -and $argList -notcontains '/silent') { $argList += '/quiet' }
+            Invoke-QuietInstaller $parsed.File $argList 120 $LogFile 'python registry uninstall' | Out-Null
+        }
+    }
+    Invoke-QuietInstaller $Installer @('/uninstall', '/quiet') 120 $LogFile 'python bundle uninstall' | Out-Null
+}
+
 function Install-UserPython([string]$LogFile) {
     $version = '3.12.10'
     $installer = Join-Path $env:TEMP "python-$version-amd64.exe"
     $url = "https://www.python.org/ftp/python/$version/python-$version-amd64.exe"
-    if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 20 }
-    Save-WithProgress $url $installer 20 26
     $target = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312'
     $python = Join-Path $target 'python.exe'
     $installArgs = @(
@@ -166,32 +264,34 @@ function Install-UserPython([string]$LogFile) {
         'Shortcuts=0',
         "TargetDir=$target"
     )
-    if (-not (Test-RealPython $python)) {
+    if ((Test-Path -LiteralPath $python) -and -not (Test-SupportedPython $python)) {
+        if (Get-Command Set-Status -ErrorAction SilentlyContinue) { Set-Status 'جاري إصلاح بايثون' }
         if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 26 }
-        $repair = Start-QuietProcess $installer @('/repair', '/quiet') '' '' ''
-        $repair.WaitForExit()
-        if ($LogFile) {
-            Add-Content -LiteralPath $LogFile -Value "python repair exit $($repair.ExitCode)" -Encoding UTF8
-        }
+        Save-WithProgress $url $installer 20 26
+        Invoke-QuietInstaller $installer @('/repair', '/quiet') 150 $LogFile 'python repair' | Out-Null
+        if (Test-SupportedPython $python) { return $python }
     }
-    if (-not (Test-RealPython $python)) {
-        $remove = Start-QuietProcess $installer @('/uninstall', '/quiet') '' '' ''
-        $remove.WaitForExit()
-        if ($LogFile) {
-            Add-Content -LiteralPath $LogFile -Value "python uninstall exit $($remove.ExitCode)" -Encoding UTF8
-        }
-        if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 27 }
-        $proc = Start-QuietProcess $installer $installArgs '' '' ''
-        $proc.WaitForExit()
-        if ($LogFile) {
-            Add-Content -LiteralPath $LogFile -Value "python installer exit $($proc.ExitCode)" -Encoding UTF8
-        }
-        if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-            throw "python installer exit $($proc.ExitCode)"
-        }
+    if (Test-SupportedPython $python) { return $python }
+    if (Get-Command Set-Status -ErrorAction SilentlyContinue) { Set-Status 'جاري تثبيت بايثون' }
+    if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 20 }
+    Save-WithProgress $url $installer 20 26
+    if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 27 }
+    Remove-StalePython312 $installer $LogFile
+    if (Test-SupportedPython $python) { return $python }
+    if (Test-Path -LiteralPath $target) {
+        Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if (-not (Test-RealPython $python)) {
-        throw 'python missing after install'
+    Clear-Python312Registration
+    $code = Invoke-QuietInstaller $installer $installArgs 180 $LogFile 'python installer'
+    if (-not (Test-SupportedPython $python)) {
+        Clear-Python312Registration
+        if (Test-Path -LiteralPath $target) {
+            Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        $code = Invoke-QuietInstaller $installer $installArgs 180 $LogFile 'python installer retry'
+    }
+    if (-not (Test-SupportedPython $python)) {
+        throw "python missing after install ($code)"
     }
     return $python
 }

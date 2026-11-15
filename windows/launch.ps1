@@ -95,11 +95,14 @@ Set-SetupProgress 18
 $venvPython = Join-Path $Runtime '.venv\Scripts\python.exe'
 . (Join-Path $AppRoot 'python_setup.ps1')
 $python = Find-RealPython
-if (-not $python) {
-    Set-Status 'جاري تثبيت الملفات'
+if ($python) {
+    Add-Content -LiteralPath $LogFile -Value "python found $python" -Encoding UTF8
+} else {
+    Set-Status 'جاري تثبيت بايثون'
     Set-SetupProgress 20
     try {
         $python = Install-UserPython $LogFile
+        Add-Content -LiteralPath $LogFile -Value "python installed $python" -Encoding UTF8
     } catch {
         Add-Content -LiteralPath $LogFile -Value $_ -Encoding UTF8
         Set-Status 'تعذر تشغيل التطبيق'
@@ -114,8 +117,8 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
         Remove-Item -LiteralPath $venvDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     $venvProc = Start-QuietProcess $python @('-m', 'venv', $venvDir) $Runtime $LogFile (Join-Path $LogDir 'venv-err.log')
-    $venvProc.WaitForExit()
-    if ($venvProc.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $venvPython)) {
+    $venvCode = Wait-QuietProcess $venvProc 180
+    if ($venvCode -ne 0 -or -not (Test-Path -LiteralPath $venvPython)) {
         Set-Status 'تعذر تشغيل التطبيق'
         exit 1
     }
