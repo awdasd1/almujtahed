@@ -556,7 +556,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Almoghni", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.592")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.593")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -569,13 +569,24 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// مستقرة هناك تُفتح كما هي ولا تُستبدل.
     private var relocating = false
 
+    private func removeLegacyBundles(in appsDir: String) {
+        let fm = FileManager.default
+        let running = Bundle.main.bundleURL.standardizedFileURL.path
+        for name in ["amoghni.app", "المغني.app"] {
+            let legacy = URL(fileURLWithPath: appsDir).appendingPathComponent(name).standardizedFileURL
+            if legacy.path == running { continue }
+            if Bundle(url: legacy)?.bundleIdentifier == "com.almoghni.desktop" {
+                try? fm.removeItem(at: legacy)
+            }
+        }
+    }
+
     private func relocateToApplicationsIfNeeded() -> Bool {
         if ProcessInfo.processInfo.environment["ALMOGHNI_NO_RELOCATE"] == "1" { return false }
         let fm = FileManager.default
         let bundle = Bundle.main.bundleURL
         let homeApps = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path
         let appsDirs = ["/Applications", homeApps]
-        if appsDirs.contains(where: { bundle.path.hasPrefix($0 + "/") }) { return false }
         let myVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         // LaunchServices قد يرسل «إعادة فتح» لنسختنا الجارية بدل تشغيل المنقولة
         // (نفس معرّف الحزمة)، لذا نطلق المنقولة قسريًا كعملية جديدة ثم نخرج.
@@ -588,27 +599,33 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DispatchQueue.main.async { NSApp.terminate(nil) }
             return true
         }
-        for appsDir in appsDirs {
-            let dest = URL(fileURLWithPath: appsDir).appendingPathComponent("amoghni.app")
+        func install(into appsDir: String) -> Bool {
+            let dest = URL(fileURLWithPath: appsDir).appendingPathComponent("almoghni.app")
+            if bundle.standardizedFileURL.path == dest.standardizedFileURL.path {
+                for dir in appsDirs { removeLegacyBundles(in: dir) }
+                return false
+            }
             if let existing = Bundle(url: dest),
                let ev = existing.infoDictionary?["CFBundleShortVersionString"] as? String,
                ev.compare(myVersion, options: .numeric) != .orderedAscending {
-                if launchRelocated(dest) { return true }
-                continue
+                for dir in appsDirs { removeLegacyBundles(in: dir) }
+                return launchRelocated(dest)
             }
             do {
                 try fm.createDirectory(atPath: appsDir, withIntermediateDirectories: true)
                 if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
                 try fm.copyItem(at: bundle, to: dest)
-                let legacy = URL(fileURLWithPath: appsDir).appendingPathComponent("المغني.app")
-                if legacy.path != dest.path,
-                   Bundle(url: legacy)?.bundleIdentifier == "com.almoghni.desktop" {
-                    try? fm.removeItem(at: legacy)
-                }
-                if launchRelocated(dest) { return true }
+                for dir in appsDirs { removeLegacyBundles(in: dir) }
+                return launchRelocated(dest)
             } catch {
-                continue
+                return false
             }
+        }
+        if let appsDir = appsDirs.first(where: { bundle.path.hasPrefix($0 + "/") }) {
+            return install(into: appsDir)
+        }
+        for appsDir in appsDirs {
+            if install(into: appsDir) { return true }
         }
         return false
     }
@@ -693,7 +710,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.592"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.593"
     }
 
     private func buildWindow() {

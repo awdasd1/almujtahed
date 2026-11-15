@@ -45,7 +45,8 @@ static class Program
         // مثبّت بنفس نسخة ما على الجهاز؟ شغّل التطبيق مباشرة بلا نافذة تنصيب.
         var existing = Installer.FindExisting();
         if (!extractOnly && !args.Any(arg => arg == "--setup")
-            && existing is { } found && found.version == Installer.CurrentVersion)
+            && existing is { } found && found.version == Installer.CurrentVersion
+            && !Installer.IsMisspelledFolder(found.folder))
         {
             // حتى لو كانت النسخة مثبتة، نصلح الاختصارات وقيد التطبيقات المثبتة
             // عند كل تشغيل للمثبّت؛ فقد تكون نسخة سابقة ثُبّتت قبل اكتمال التسجيل.
@@ -63,18 +64,44 @@ static class Installer
 
     public static string DefaultFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Programs", "almoghni");
+
+    public static string MisspelledFolder => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Programs", "amoghni");
 
     public static string LegacyFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Programs", "المغني");
 
+    public static bool IsMisspelledFolder(string folder)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(folder),
+                Path.GetFullPath(MisspelledFolder),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    public static string AppExe(string folder)
+    {
+        foreach (var name in new[] { "almoghni.exe", "amoghni.exe", "Almoghni.exe" })
+        {
+            var path = Path.Combine(folder, name);
+            if (File.Exists(path)) return path;
+        }
+        return Path.Combine(folder, "almoghni.exe");
+    }
+
     public static string CurrentVersion =>
         Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "";
 
     public static (string folder, string version)? FindExisting()
     {
-        var candidates = new List<string> { DefaultFolder, LegacyFolder };
+        var candidates = new List<string> { DefaultFolder, MisspelledFolder, LegacyFolder };
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(UninstallKeyPath);
@@ -85,8 +112,7 @@ static class Installer
 
         foreach (var folder in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            if (!File.Exists(Path.Combine(folder, "amoghni.exe")) &&
-                !File.Exists(Path.Combine(folder, "Almoghni.exe"))) continue;
+            if (!File.Exists(AppExe(folder))) continue;
             var marker = Path.Combine(folder, MarkerName);
             var version = "";
             try { version = File.Exists(marker) ? File.ReadAllText(marker).Trim() : ""; } catch { }
@@ -128,7 +154,7 @@ static class Installer
 
     public static void CreateShortcuts(string folder)
     {
-        var exe = Path.Combine(folder, "amoghni.exe");
+        var exe = AppExe(folder);
         var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : exe;
         var links = new[]
         {
@@ -229,7 +255,7 @@ static class Installer
             key.SetValue("DisplayVersion", CurrentVersion);
             key.SetValue("Publisher", "المغني");
             key.SetValue("InstallLocation", folder);
-            var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : Path.Combine(folder, "amoghni.exe");
+            var iconPath = File.Exists(IconPath(folder)) ? IconPath(folder) : AppExe(folder);
             key.SetValue("DisplayIcon", $"\"{iconPath}\",0");
             key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
             // ملف الإلغاء يعيش داخل مجلد التثبيت نفسه، لا عند ملف التنزيلات
@@ -274,9 +300,11 @@ static class Installer
             var name = Path.GetFileName(link);
             if (name.Contains("(Mac)", StringComparison.OrdinalIgnoreCase)) continue;
             var named = name.Equals("المغني.lnk", StringComparison.Ordinal)
+                || name.Equals("almoghni.lnk", StringComparison.OrdinalIgnoreCase)
                 || name.Equals("amoghni.lnk", StringComparison.OrdinalIgnoreCase);
             var target = ShortcutTarget(link);
             var aimed = folders.Any(folder => target.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+                || target.Contains(@"\Programs\almoghni\", StringComparison.OrdinalIgnoreCase)
                 || target.Contains(@"\Programs\amoghni\", StringComparison.OrdinalIgnoreCase)
                 || target.Contains(@"\Programs\المغني\", StringComparison.OrdinalIgnoreCase);
             if (!named && !aimed) continue;
@@ -335,7 +363,7 @@ static class Installer
             .ToList();
         foreach (var folder in targets)
         {
-            foreach (var name in new[] { "amoghni", "Almoghni" })
+            foreach (var name in new[] { "almoghni", "amoghni" })
             {
                 foreach (var process in Process.GetProcessesByName(name))
                 {
@@ -354,16 +382,31 @@ static class Installer
         var body = new StringBuilder();
         body.AppendLine("$ErrorActionPreference = 'SilentlyContinue'");
         body.AppendLine("Start-Sleep -Seconds 2");
-        body.AppendLine("Get-Process -Name amoghni,Almoghni | Stop-Process -Force");
+        body.AppendLine("$folders = @(");
         foreach (var folder in targets)
-        {
-            var literal = folder.Replace("'", "''");
-            body.AppendLine("for ($try = 0; $try -lt 12; $try++) {");
-            body.AppendLine($"  if (-not (Test-Path -LiteralPath '{literal}')) {{ break }}");
-            body.AppendLine($"  Remove-Item -LiteralPath '{literal}' -Recurse -Force -ErrorAction SilentlyContinue");
-            body.AppendLine("  Start-Sleep -Seconds 1");
-            body.AppendLine("}");
-        }
+            body.AppendLine($"  '{folder.Replace("'", "''")}',");
+        body.AppendLine(")");
+        body.AppendLine("function Test-Under([string]$path) {");
+        body.AppendLine("  foreach ($folder in $folders) {");
+        body.AppendLine("    if ($path.StartsWith($folder, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }");
+        body.AppendLine("  }");
+        body.AppendLine("  return $false");
+        body.AppendLine("}");
+        body.AppendLine("for ($try = 0; $try -lt 12; $try++) {");
+        body.AppendLine("  Get-CimInstance Win32_Process | ForEach-Object {");
+        body.AppendLine("    $exe = [string]$_.ExecutablePath");
+        body.AppendLine("    if ($exe -and (Test-Under $exe)) { & taskkill.exe /T /F /PID $_.ProcessId | Out-Null }");
+        body.AppendLine("  }");
+        body.AppendLine("  $alive = $false");
+        body.AppendLine("  foreach ($folder in $folders) {");
+        body.AppendLine("    if (Test-Path -LiteralPath $folder) {");
+        body.AppendLine("      Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue");
+        body.AppendLine("      if (Test-Path -LiteralPath $folder) { $alive = $true }");
+        body.AppendLine("    }");
+        body.AppendLine("  }");
+        body.AppendLine("  if (-not $alive) { break }");
+        body.AppendLine("  Start-Sleep -Seconds 1");
+        body.AppendLine("}");
         body.AppendLine("Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue");
         File.WriteAllText(script, body.ToString(), new UTF8Encoding(true));
         Process.Start(new ProcessStartInfo
@@ -409,7 +452,7 @@ static class Installer
 
     public static void Launch(string folder)
     {
-        var exe = Path.Combine(Path.GetFullPath(folder), "amoghni.exe");
+        var exe = AppExe(Path.GetFullPath(folder));
         Process.Start(new ProcessStartInfo(exe)
         {
             WorkingDirectory = Path.GetDirectoryName(exe)!,
@@ -455,7 +498,7 @@ sealed class SetupForm : Form
         pathBox.Text = Installer.DefaultFolder;
         if (existing is { } found)
         {
-            pathBox.Text = found.folder;
+            pathBox.Text = Installer.IsMisspelledFolder(found.folder) ? Installer.DefaultFolder : found.folder;
             install.Text = found.version == Installer.CurrentVersion ? "إعادة التثبيت" : "تحديث";
             status.Text = found.version == Installer.CurrentVersion
                 ? "التطبيق مثبّت بهذه النسخة — يمكنك إعادة تثبيته أو تشغيله من قائمة ابدأ"
@@ -499,6 +542,12 @@ sealed class SetupForm : Form
             Installer.EnsureInstalledIntegration(folder);
             status.Text = "اكتمل التثبيت";
             Installer.Launch(folder);
+            var leftovers = new[] { Installer.MisspelledFolder, Installer.LegacyFolder }
+                .Where(path => !string.Equals(
+                    Path.GetFullPath(path),
+                    Path.GetFullPath(folder),
+                    StringComparison.OrdinalIgnoreCase));
+            Installer.ScheduleFolderDeletes(leftovers);
             Close();
         }
         catch (Exception ex)
@@ -546,6 +595,7 @@ sealed class UninstallForm : Form
         var folders = new List<string>();
         if (Installer.FindExisting() is { } found) folders.Add(found.folder);
         folders.Add(Installer.DefaultFolder);
+        folders.Add(Installer.MisspelledFolder);
         folders.Add(Installer.LegacyFolder);
         Installer.RemoveShortcuts(folders);
         Installer.UnregisterUninstallEntry();

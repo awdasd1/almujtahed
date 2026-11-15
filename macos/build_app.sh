@@ -3,12 +3,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="${1:-$HOME/Downloads/amoghni.app}"
+DEST="${1:-$HOME/Downloads/almoghni.app}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 swiftc -O -target arm64-apple-macosx13.0 -framework Cocoa -framework WebKit \
-  -o "$STAGE/amoghni" "$ROOT/macos/AlmoghniLauncher.swift"
+  -o "$STAGE/almoghni" "$ROOT/macos/AlmoghniLauncher.swift"
 
 mkdir -p "$STAGE/source"
 git -C "$ROOT" archive --format=tar HEAD | tar -xf - -C "$STAGE/source"
@@ -56,7 +56,7 @@ chmod +x "$STAGE/source/start_local.sh" "$STAGE/source/start_local.py"
 
 rm -rf "$DEST"
 mkdir -p "$DEST/Contents/MacOS" "$DEST/Contents/Resources/fonts"
-cp "$STAGE/amoghni" "$DEST/Contents/MacOS/amoghni"
+cp "$STAGE/almoghni" "$DEST/Contents/MacOS/almoghni"
 cp "$ROOT/macos/launch.sh" "$DEST/Contents/Resources/launch.sh"
 mkdir -p "$DEST/Contents/Resources/mcp_daemon"
 cp "$ROOT/macos/mcp_daemon/com.almoghni.mcp.plist.template" "$ROOT/macos/mcp_daemon/install_mcp_daemon.sh" "$ROOT/macos/mcp_daemon/uninstall_mcp_daemon.sh" "$DEST/Contents/Resources/mcp_daemon/"
@@ -65,7 +65,7 @@ cp "$ROOT/macos/Info.plist" "$DEST/Contents/Info.plist"
 cp "$ROOT/macos/AppIcon.icns" "$DEST/Contents/Resources/AppIcon.icns"
 cp "$ROOT/macos/open-board.png" "$DEST/Contents/Resources/open-board.png"
 cp "$ROOT/web_ui/static/fonts/Almarai-Regular.ttf" "$ROOT/web_ui/static/fonts/Almarai-Bold.ttf" "$DEST/Contents/Resources/fonts/"
-chmod +x "$DEST/Contents/MacOS/amoghni" "$DEST/Contents/Resources/launch.sh"
+chmod +x "$DEST/Contents/MacOS/almoghni" "$DEST/Contents/Resources/launch.sh"
 rsync -a "$STAGE/source/" "$DEST/Contents/Resources/source/"
 xattr -cr "$DEST" || true
 
@@ -83,7 +83,7 @@ if [ -n "$SIGN_ID" ]; then
   echo "🔏 التوقيع بهوية: $SIGN_ID"
   codesign --force --options runtime --timestamp \
     --entitlements "$ROOT/macos/entitlements.plist" \
-    --sign "$SIGN_ID" "$DEST/Contents/MacOS/amoghni"
+    --sign "$SIGN_ID" "$DEST/Contents/MacOS/almoghni"
   codesign --force --options runtime --timestamp \
     --entitlements "$ROOT/macos/entitlements.plist" \
     --sign "$SIGN_ID" "$DEST"
@@ -107,9 +107,9 @@ else
 fi
 DMG="${DEST%.app}.dmg"
 DMG_STAGE="$(mktemp -d)"
-cp -R "$DEST" "$DMG_STAGE/amoghni.app"
+cp -R "$DEST" "$DMG_STAGE/almoghni.app"
 rm -f "$DMG"
-hdiutil create -volname amoghni -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG" >/dev/null
+hdiutil create -volname almoghni -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$DMG_STAGE"
 echo "$DEST"
 echo "$DMG"

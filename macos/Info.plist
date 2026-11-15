@@ -7,9 +7,9 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>ar</string>
 	<key>CFBundleDisplayName</key>
-	<string>amoghni</string>
+	<string>almoghni</string>
 	<key>CFBundleExecutable</key>
-	<string>amoghni</string>
+	<string>almoghni</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
@@ -17,13 +17,13 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>amoghni</string>
+	<string>almoghni</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.10.592</string>
+	<string>1.10.593</string>
 	<key>CFBundleVersion</key>
-	<string>1692</string>
+	<string>1693</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.education</string>
 	<key>LSMinimumSystemVersion</key>
