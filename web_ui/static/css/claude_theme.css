@@ -452,6 +452,7 @@ body[data-theme="dark"] {
 .brand-section {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
   min-width: 0;
   flex-shrink: 0;
@@ -471,22 +472,17 @@ body[data-theme="dark"] {
 }
 
 .brand-mark {
-  height: 92px;
+  height: 108px;
   width: auto;
-  max-width: min(280px, 46vw);
+  max-width: min(460px, 58vw);
   display: block;
   object-fit: contain;
-  object-position: right center;
-}
-
-[data-theme="dark"] .brand-mark,
-[data-theme="charcoal"] .brand-mark {
-  background: #fbf7f0;
-  border-radius: 8px;
-  padding: 2px 6px;
+  object-position: center;
 }
 
 .brand-subtitle-1 {
+  width: 100%;
+  text-align: center;
   font-size: 12px;
   font-weight: 600;
   color: var(--accent-clay);
