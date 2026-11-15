@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="${1:-$HOME/Downloads/المغني.app}"
+DEST="${1:-$HOME/Downloads/amoghni.app}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
@@ -105,4 +105,11 @@ if [ -n "$SIGN_ID" ]; then
 else
   echo "⚠️ لا شهادة Developer ID في سلسلة المفاتيح — التطبيق غير موقّع"
 fi
+DMG="${DEST%.app}.dmg"
+DMG_STAGE="$(mktemp -d)"
+cp -R "$DEST" "$DMG_STAGE/amoghni.app"
+rm -f "$DMG"
+hdiutil create -volname amoghni -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG" >/dev/null
+rm -rf "$DMG_STAGE"
 echo "$DEST"
+echo "$DMG"

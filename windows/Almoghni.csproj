@@ -9,8 +9,8 @@
     <AssemblyName>amoghni</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <RootNamespace>Almoghni</RootNamespace>
-    <Version>1.10.585</Version>
-    <InformationalVersion>1.10.585</InformationalVersion>
+    <Version>1.10.586</Version>
+    <InformationalVersion>1.10.586</InformationalVersion>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
