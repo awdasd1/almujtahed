@@ -556,7 +556,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Al-Mujtahed", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.574")!
+    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.575")!
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -687,7 +687,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.574"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.10.575"
     }
 
     private func buildWindow() {
@@ -821,8 +821,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 height: CGFloat(rep?.pixelsHigh ?? 602)
             )
             let scale = max(NSScreen.main?.backingScaleFactor ?? 2, 1)
-            let grow = Launcher.boardGrow
-            let point = NSSize(width: pixels.width * grow / scale, height: pixels.height * grow / scale)
+            let point = NSSize(width: pixels.width / scale, height: pixels.height / scale)
             image.size = point
             window.setContentSize(point)
             content.frame = NSRect(origin: .zero, size: point)
@@ -1110,18 +1109,14 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         stopListener(port: 8085, marker: "server.py")
     }
 
-    /// تكبير اللوحة مع الرسم على بكسلات الشاشة حتى تبقى حادّة.
-    private static let boardGrow: CGFloat = 1.25
-
-    /// شريط بني تحت العبارة، ويُرسم مع اللوحة على مقاسها المكبر.
+    /// اللوحة على بكسلاتها كما هي. الخط والشريط يبقيان بالحجم الظاهر الحالي.
     private func paintBoard(percent: Double) {
         guard let base = boardBase, let boardView else { return }
         let shown = Int(percent.rounded())
         if shown == boardShown { return }
         boardShown = shown
-        let grow = Launcher.boardGrow
-        let width = Int((CGFloat(base.width) * grow).rounded())
-        let height = Int((CGFloat(base.height) * grow).rounded())
+        let width = base.width
+        let height = base.height
         guard let ctx = CGContext(
             data: nil,
             width: width,
@@ -1131,14 +1126,14 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             space: base.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
         ) else { return }
-        ctx.interpolationQuality = .high
+        ctx.interpolationQuality = .none
         ctx.draw(base, in: CGRect(x: 0, y: 0, width: width, height: height))
         let brown = CGColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
         let brownInk = NSColor(srgbRed: 91 / 255, green: 51 / 255, blue: 16 / 255, alpha: 1)
-        drawBoardText("النسخة: \(appVersion)", at: CGPoint(x: 48 * grow, y: CGFloat(height) - 168 * grow), context: ctx, color: brownInk, size: 22 * grow, bold: true)
-        let track = CGRect(x: 120 * grow, y: CGFloat(height) - 412 * grow, width: 784 * grow, height: 32 * grow)
+        drawBoardText("النسخة: \(appVersion)", at: CGPoint(x: 48, y: CGFloat(height) - 172), context: ctx, color: brownInk, size: 28, bold: true)
+        let track = CGRect(x: 120, y: CGFloat(height) - 420, width: 784, height: 40)
         let caption = "جارٍ إعداد التطبيق فضلاً انتظر ..."
-        let captionFont = CTFontCreateWithName(almarai(24 * grow, bold: false).fontName as CFString, 24 * grow, nil)
+        let captionFont = CTFontCreateWithName(almarai(30, bold: false).fontName as CFString, 30, nil)
         let captionLine = CTLineCreateWithAttributedString(NSAttributedString(string: caption, attributes: [
             .font: captionFont,
             .foregroundColor: brownInk
@@ -1147,16 +1142,16 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         var captionDescent: CGFloat = 0
         let captionWidth = CGFloat(CTLineGetTypographicBounds(captionLine, &captionAscent, &captionDescent, nil))
         ctx.textMatrix = .identity
-        ctx.textPosition = CGPoint(x: track.maxX - captionWidth, y: track.maxY + 18 * grow)
+        ctx.textPosition = CGPoint(x: track.maxX - captionWidth, y: track.maxY + 18)
         CTLineDraw(captionLine, ctx)
         ctx.setStrokeColor(brown)
-        ctx.setLineWidth(2.5 * grow)
-        ctx.addPath(CGPath(roundedRect: track, cornerWidth: 16 * grow, cornerHeight: 16 * grow, transform: nil))
+        ctx.setLineWidth(3)
+        ctx.addPath(CGPath(roundedRect: track, cornerWidth: 20, cornerHeight: 20, transform: nil))
         ctx.strokePath()
         let fraction = max(0, min(1, percent / 100))
-        let inner = track.insetBy(dx: 4 * grow, dy: 4 * grow)
+        let inner = track.insetBy(dx: 5, dy: 5)
         ctx.saveGState()
-        ctx.addPath(CGPath(roundedRect: inner, cornerWidth: 12 * grow, cornerHeight: 12 * grow, transform: nil))
+        ctx.addPath(CGPath(roundedRect: inner, cornerWidth: 15, cornerHeight: 15, transform: nil))
         ctx.clip()
         let fillWidth = inner.width * CGFloat(fraction)
         if fillWidth > 0 {
@@ -1167,7 +1162,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let ink = fraction >= 0.5
             ? NSColor(srgbRed: 241 / 255, green: 230 / 255, blue: 210 / 255, alpha: 1)
             : brownInk
-        let font = CTFontCreateWithName(almarai(18 * grow, bold: true).fontName as CFString, 18 * grow, nil)
+        let font = CTFontCreateWithName(almarai(22, bold: true).fontName as CFString, 22, nil)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: "\(shown)٪", attributes: [
             .font: font,
             .foregroundColor: ink
