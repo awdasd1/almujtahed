@@ -1744,11 +1744,23 @@ function handleTemplateUpload(e) {
     try {
       if (file.name.endsWith('.json')) {
         const custom = JSON.parse(evt.target.result);
+        if (custom.theme) applyVisualThemePreset(custom.theme, { silent: true });
         if (custom.colors) {
           for (const [k, v] of Object.entries(custom.colors)) {
-            document.documentElement.style.setProperty(k, v);
+            if (String(k).startsWith('--') && v) {
+              document.documentElement.style.setProperty(k, v);
+            }
           }
         }
+        if (custom.fonts && typeof custom.fonts === 'object') {
+          if (custom.fonts.heading) currentSettings.fontHeading = custom.fonts.heading;
+          if (custom.fonts.app) currentSettings.fontApp = custom.fonts.app;
+          if (custom.fonts.reading) currentSettings.fontReading = custom.fonts.reading;
+          if (typeof populateFontSelects === 'function') populateFontSelects();
+          applyFontRoles();
+          persistFontSettings();
+        }
+        if (custom.textSize) updateTextSize(custom.textSize);
         showToast('تم تحميل وتطبيق التمبلت بنجاح');
       } else if (file.name.endsWith('.css')) {
         const style = document.createElement('style');
@@ -1761,7 +1773,50 @@ function handleTemplateUpload(e) {
     }
   };
   reader.readAsText(file);
+  e.target.value = '';
 }
+
+function exportVisualTemplate() {
+  const styles = getComputedStyle(document.documentElement);
+  const colors = {};
+  const remember = (name) => {
+    if (!name || !String(name).startsWith('--')) return;
+    const value = styles.getPropertyValue(name).trim();
+    if (value) colors[name] = value;
+  };
+  for (const sheet of document.styleSheets) {
+    let rules;
+    try { rules = sheet.cssRules; } catch { continue; }
+    for (const rule of rules || []) {
+      if (!rule.style) continue;
+      for (let i = 0; i < rule.style.length; i += 1) remember(rule.style[i]);
+    }
+  }
+  for (let i = 0; i < document.documentElement.style.length; i += 1) {
+    remember(document.documentElement.style[i]);
+  }
+  const payload = {
+    app: 'almoghni-visual-template',
+    theme: document.documentElement.getAttribute('data-theme') || 'sand',
+    textSize: parseInt(localStorage.getItem(STORAGE_KEYS.FONT_SIZE) || '19', 10),
+    fonts: {
+      heading: currentSettings.fontHeading || '',
+      app: currentSettings.fontApp || '',
+      reading: currentSettings.fontReading || '',
+    },
+    colors,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'almoghni-visual-template.json';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  showToast('تم تصدير التمبلت');
+}
+window.exportVisualTemplate = exportVisualTemplate;
 
 // عرض رسالة سريعة Toast
 function showToast(msg, duration = 3500) {
