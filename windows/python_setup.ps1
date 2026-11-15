@@ -264,17 +264,16 @@ function Install-UserPython([string]$LogFile) {
         'Shortcuts=0',
         "TargetDir=$target"
     )
-    if ((Test-Path -LiteralPath $python) -and -not (Test-SupportedPython $python)) {
-        if (Get-Command Set-Status -ErrorAction SilentlyContinue) { Set-Status 'جاري إصلاح بايثون' }
-        if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 26 }
-        Save-WithProgress $url $installer 20 26
-        Invoke-QuietInstaller $installer @('/repair', '/quiet') 150 $LogFile 'python repair' | Out-Null
-        if (Test-SupportedPython $python) { return $python }
-    }
     if (Test-SupportedPython $python) { return $python }
-    if (Get-Command Set-Status -ErrorAction SilentlyContinue) { Set-Status 'جاري تثبيت بايثون' }
     if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 20 }
     Save-WithProgress $url $installer 20 26
+    # حذف مجلد بايثون يدوياً يترك تسجيل ويندوز سليماً، فيخرج التنصيب العادي بنجاح
+    # دون إعادة أي ملف. الإصلاح وحده يعيد الملفات المحذوفة، لذا يأتي أولاً دائماً.
+    if (Get-Command Set-Status -ErrorAction SilentlyContinue) { Set-Status 'جاري إصلاح بايثون' }
+    if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 26 }
+    Invoke-QuietInstaller $installer @('/repair', '/quiet') 240 $LogFile 'python repair' | Out-Null
+    if (Test-SupportedPython $python) { return $python }
+    if (Get-Command Set-Status -ErrorAction SilentlyContinue) { Set-Status 'جاري تثبيت بايثون' }
     if (Get-Command Set-SetupProgress -ErrorAction SilentlyContinue) { Set-SetupProgress 27 }
     Remove-StalePython312 $installer $LogFile
     if (Test-SupportedPython $python) { return $python }
@@ -282,13 +281,17 @@ function Install-UserPython([string]$LogFile) {
         Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
     }
     Clear-Python312Registration
-    $code = Invoke-QuietInstaller $installer $installArgs 180 $LogFile 'python installer'
+    $code = Invoke-QuietInstaller $installer $installArgs 300 $LogFile 'python installer'
+    if (-not (Test-SupportedPython $python)) {
+        Invoke-QuietInstaller $installer @('/repair', '/quiet') 240 $LogFile 'python repair after install' | Out-Null
+    }
     if (-not (Test-SupportedPython $python)) {
         Clear-Python312Registration
         if (Test-Path -LiteralPath $target) {
             Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
         }
-        $code = Invoke-QuietInstaller $installer $installArgs 180 $LogFile 'python installer retry'
+        $code = Invoke-QuietInstaller $installer $installArgs 300 $LogFile 'python installer retry'
+        Invoke-QuietInstaller $installer @('/repair', '/quiet') 240 $LogFile 'python repair after retry' | Out-Null
     }
     if (-not (Test-SupportedPython $python)) {
         throw "python missing after install ($code)"
