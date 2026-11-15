@@ -7,13 +7,20 @@
 
 import os
 import sys
-_setup_progress = os.environ.get("ALMOGHNI_PROGRESS_FILE", "").strip()
-if _setup_progress:
+def _bump_setup_progress(value):
+    path = os.environ.get("ALMOGHNI_PROGRESS_FILE", "").strip()
+    if not path:
+        return
     try:
-        with open(_setup_progress, "w", encoding="utf-8") as _progress_handle:
-            _progress_handle.write("93")
-    except OSError:
+        current = 0
+        if os.path.exists(path):
+            current = int(open(path, encoding="utf-8").read().strip() or 0)
+        if value > current:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(str(value))
+    except (OSError, ValueError):
         pass
+_bump_setup_progress(93)
 import asyncio
 import json
 import time
@@ -7638,7 +7645,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.590"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.591"},
         },
     })
     if opened.get("error"):
@@ -26637,12 +26644,6 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8085))
     print(f"🚀 تشغيل منظومة المغني الحية على المنفذ: http://localhost:{port}")
-    _ready_progress = os.environ.get("ALMOGHNI_PROGRESS_FILE", "").strip()
-    if _ready_progress:
-        try:
-            with open(_ready_progress, "w", encoding="utf-8") as _progress_handle:
-                _progress_handle.write("96")
-        except OSError:
-            pass
+    _bump_setup_progress(96)
     uvicorn.run(app, host="127.0.0.1", port=port)
 

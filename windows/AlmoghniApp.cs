@@ -670,8 +670,11 @@ sealed class InstallerForm : Form
         {
             Directory.CreateDirectory(Paths.Support);
             File.WriteAllText(Paths.StatusFile, "جاري تهيئة التطبيق");
-            File.WriteAllText(Paths.SetupProgressFile, "1");
-            boardProgress = 1;
+            if (boardProgress <= 0)
+            {
+                File.WriteAllText(Paths.SetupProgressFile, "0");
+                boardProgress = 0;
+            }
         }
         catch { }
         if (!File.Exists(script))
@@ -758,7 +761,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.590");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.591");
         tray.Visible = false;
         ShowInTaskbar = false;
         Hide();

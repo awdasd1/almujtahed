@@ -33,9 +33,17 @@ $ProgressFile = Join-Path $Support 'setup-progress.txt'
 $env:ALMOGHNI_PROGRESS_FILE = $ProgressFile
 function Set-SetupProgress([int]$Value) {
     $clamped = [Math]::Max(0, [Math]::Min(96, $Value))
+    if ($clamped -le $script:setupFloor) { return }
+    $script:setupFloor = $clamped
     [System.IO.File]::WriteAllText($ProgressFile, "$clamped", [System.Text.UTF8Encoding]::new($false))
 }
-Set-SetupProgress 1
+$script:setupFloor = 0
+if (Test-Path -LiteralPath $ProgressFile) {
+    $prior = 0
+    if ([int]::TryParse((Get-Content -LiteralPath $ProgressFile -Raw).Trim(), [ref]$prior)) {
+        $script:setupFloor = [Math]::Max(0, [Math]::Min(96, $prior))
+    }
+}
 $env:ALMOGHNI_STATUS_FILE = $Status
 $env:ALMOGHNI_INIT_PID_FILE = Join-Path $Support 'init.pid'
 $env:PYTHONUTF8 = '1'
@@ -141,13 +149,23 @@ if ($importExit -ne 0) {
     }
     function Update-PipProgress {
         $text = (Read-SharedText $pipOut) + (Read-SharedText $pipErr)
-        $seen = ([regex]::Matches($text, '(?m)^Collecting ')).Count
-        if ($seen -gt 0) {
-            $span = [Math]::Min($seen, $packageTotal)
-            Set-SetupProgress (36 + [int](48.0 * $span / $packageTotal))
+        $collecting = ([regex]::Matches($text, '(?m)^Collecting ')).Count
+        if ($collecting -gt $script:pipPackages) { $script:pipPackages = $collecting }
+        $total = [Math]::Max($packageTotal, $script:pipPackages)
+        if ($total -lt 1) { $total = 1 }
+        $slot = 60.0 / $total
+        $tail = $text
+        $mark = $text.LastIndexOf("Collecting ")
+        if ($mark -ge 0) { $tail = $text.Substring($mark) }
+        $intra = 0
+        $percents = [regex]::Matches($tail, '(?<![0-9])(\d{1,3})%')
+        if ($percents.Count -gt 0) {
+            $intra = [Math]::Min(100, [int]$percents[$percents.Count - 1].Groups[1].Value)
         }
-        if ($text -match 'Installing collected packages') { Set-SetupProgress 86 }
+        $done = [Math]::Max(0, $script:pipPackages - 1)
+        Set-SetupProgress ([int](30 + ($done * $slot) + ($intra / 100.0 * $slot)))
     }
+    $script:pipPackages = 0
     $upgrade = Start-QuietProcess $venvPython @('-m', 'pip', 'install', '--disable-pip-version-check', '--progress-bar', 'off', '--upgrade', 'pip') $Runtime $pipOut $pipErr
     while (-not $upgrade.HasExited) {
         Update-PipProgress
@@ -158,8 +176,6 @@ if ($importExit -ne 0) {
         Set-Status 'تعذر تشغيل التطبيق'
         exit $upgrade.ExitCode
     }
-    Set-SetupProgress 36
-    Remove-Item -LiteralPath $pipOut, $pipErr -Force -ErrorAction SilentlyContinue
     $install = Start-QuietProcess $venvPython @(
         '-m', 'pip', 'install', '--disable-pip-version-check', '--progress-bar', 'off',
         '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/cpu',
