@@ -58,6 +58,10 @@ static class Installer
 
     public static string DefaultFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Programs", "amoghni");
+
+    public static string LegacyFolder => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Programs", "المغني");
 
     public static string CurrentVersion =>
@@ -65,7 +69,7 @@ static class Installer
 
     public static (string folder, string version)? FindExisting()
     {
-        var candidates = new List<string> { DefaultFolder };
+        var candidates = new List<string> { DefaultFolder, LegacyFolder };
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(UninstallKeyPath);
@@ -250,16 +254,71 @@ static class Installer
 
     public static void RemoveShortcuts()
     {
-        var links = new[]
+        var dirs = new[]
         {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                @"Microsoft\Windows\Start Menu\Programs", "المغني.lnk"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "المغني.lnk")
+            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+            Environment.GetFolderPath(Environment.SpecialFolder.Programs),
+            Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),
         };
-        foreach (var link in links)
+        foreach (var dir in dirs.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            try { if (File.Exists(link)) File.Delete(link); } catch { }
+            if (!Directory.Exists(dir)) continue;
+            IEnumerable<string> links;
+            try { links = Directory.EnumerateFiles(dir, "*.lnk", SearchOption.AllDirectories); }
+            catch { continue; }
+            foreach (var link in links)
+            {
+                var name = Path.GetFileName(link);
+                var named = name.Contains("المغني", StringComparison.Ordinal) || name.Contains("amoghni", StringComparison.OrdinalIgnoreCase);
+                var target = ShortcutTarget(link);
+                var aimed = target.Contains("amoghni.exe", StringComparison.OrdinalIgnoreCase)
+                    || target.Contains("Almoghni.exe", StringComparison.OrdinalIgnoreCase);
+                if (!named && !aimed) continue;
+                try { File.Delete(link); } catch { }
+            }
         }
+    }
+
+    static string ShortcutTarget(string linkPath)
+    {
+        try
+        {
+            dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
+            dynamic shortcut = shell.CreateShortcut(linkPath);
+            return (string)(shortcut.TargetPath ?? "");
+        }
+        catch { return ""; }
+    }
+
+    public static void ScheduleFolderDelete(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) return;
+        foreach (var name in new[] { "amoghni", "Almoghni" })
+        {
+            foreach (var process in Process.GetProcessesByName(name))
+            {
+                try
+                {
+                    var path = process.MainModule?.FileName ?? "";
+                    if (path.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+                        process.Kill(entireProcessTree: true);
+                }
+                catch { }
+            }
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/c timeout /t 3 /nobreak >nul & rmdir /s /q \"" + folder + "\"",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+        }
+        catch { }
     }
 
     public static void Extract(string folder, IProgress<int>? progress)
@@ -429,32 +488,17 @@ sealed class UninstallForm : Form
 
     void DoUninstall()
     {
-        var existing = Installer.FindExisting();
+        var folders = new List<string>();
+        if (Installer.FindExisting() is { } found) folders.Add(found.folder);
+        folders.Add(Installer.DefaultFolder);
+        folders.Add(Installer.LegacyFolder);
         Installer.RemoveShortcuts();
         Installer.UnregisterUninstallEntry();
-        if (existing is { } found)
-        {
-            try { Directory.Delete(found.folder, true); } catch { }
-            // إن كان ملف الإلغاء نفسه داخل المجلد بقيت بقايا مقفلة أثناء
-            // تشغيله، فتُحذف بعملية منفصلة بعد خروجه.
-            if (Directory.Exists(found.folder))
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "cmd.exe",
-                        Arguments = $"/c ping -n 4 127.0.0.1 >nul & rmdir /s /q \"{found.folder}\"",
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        WindowStyle = ProcessWindowStyle.Hidden
-                    });
-                }
-                catch { }
-            }
-        }
         MessageBox.Show(this, "تم إلغاء تثبيت المغني.", "المغني", MessageBoxButtons.OK, MessageBoxIcon.Information,
             MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+        foreach (var folder in folders.Distinct(StringComparer.OrdinalIgnoreCase))
+            Installer.ScheduleFolderDelete(folder);
         Close();
+        Environment.Exit(0);
     }
 }
