@@ -29,6 +29,13 @@ function Set-Status([string]$Message) {
 }
 
 Set-Status 'جاري تهيئة التطبيق'
+$ProgressFile = Join-Path $Support 'setup-progress.txt'
+$env:ALMOGHNI_PROGRESS_FILE = $ProgressFile
+function Set-SetupProgress([int]$Value) {
+    $clamped = [Math]::Max(0, [Math]::Min(96, $Value))
+    [System.IO.File]::WriteAllText($ProgressFile, "$clamped", [System.Text.UTF8Encoding]::new($false))
+}
+Set-SetupProgress 1
 $env:ALMOGHNI_STATUS_FILE = $Status
 $env:ALMOGHNI_INIT_PID_FILE = Join-Path $Support 'init.pid'
 $env:PYTHONUTF8 = '1'
@@ -53,19 +60,27 @@ $skipFile = @(
     'web_ui\init.log'
 )
 
-Get-ChildItem -LiteralPath $Source -Recurse -File | ForEach-Object {
-    $rel = $_.FullName.Substring($Source.Length).TrimStart('\', '/')
+$files = @(Get-ChildItem -LiteralPath $Source -Recurse -File)
+$copied = 0
+foreach ($file in $files) {
+    $rel = $file.FullName.Substring($Source.Length).TrimStart('\', '/')
+    $skip = $false
     foreach ($prefix in $skipPrefix) {
-        if ($rel.StartsWith($prefix)) { return }
+        if ($rel.StartsWith($prefix)) { $skip = $true; break }
     }
-    if ($skipFile -contains $rel) { return }
-    if ($rel -like '*\__pycache__\*' -or $rel.EndsWith('.pyc')) { return }
+    if ($skip) { continue }
+    if ($skipFile -contains $rel) { continue }
+    if ($rel -like '*\__pycache__\*' -or $rel.EndsWith('.pyc')) { continue }
     $dest = Join-Path $Runtime $rel
     $destDir = Split-Path -Parent $dest
     if (-not (Test-Path -LiteralPath $destDir)) {
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     }
-    Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
+    Copy-Item -LiteralPath $file.FullName -Destination $dest -Force
+    $copied++
+    if ($files.Count -gt 0 -and ($copied % 20 -eq 0 -or $copied -eq $files.Count)) {
+        Set-SetupProgress (2 + [int](16.0 * $copied / $files.Count))
+    }
 }
 
 $venvPython = Join-Path $Runtime '.venv\Scripts\python.exe'
@@ -73,6 +88,7 @@ $venvPython = Join-Path $Runtime '.venv\Scripts\python.exe'
 $python = Find-RealPython
 if (-not $python) {
     Set-Status 'جاري تثبيت الملفات'
+    Set-SetupProgress 20
     try {
         $python = Install-UserPython $LogFile
     } catch {
@@ -83,6 +99,7 @@ if (-not $python) {
 }
 if (-not (Test-Path -LiteralPath $venvPython)) {
     Set-Status 'جاري تثبيت الملفات'
+    Set-SetupProgress 28
     $venvDir = Join-Path $Runtime '.venv'
     if (Test-Path -LiteralPath $venvDir) {
         Remove-Item -LiteralPath $venvDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -95,6 +112,8 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
 }
 
 Set-Location -LiteralPath $Runtime
+Set-SetupProgress 91
+Set-Status 'جاري تثبيت الملفات'
 $previous = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 & $venvPython -c "import fastapi, uvicorn, huggingface_hub, dotenv, llama_cpp" | Out-Null
@@ -102,8 +121,12 @@ $importExit = $LASTEXITCODE
 $ErrorActionPreference = $previous
 if ($importExit -ne 0) {
     Set-Status 'جاري تثبيت الملفات'
+    Set-SetupProgress 32
     $req = Join-Path $Runtime 'requirements-desktop.txt'
     if (-not (Test-Path -LiteralPath $req)) { $req = Join-Path $Runtime 'requirements.txt' }
+    $packageTotal = @(Get-Content -LiteralPath $req | Where-Object { $_ -match '^[A-Za-z0-9]' }).Count
+    if ($packageTotal -lt 1) { $packageTotal = 1 }
+    $packagesSeen = 0
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     & $venvPython -m pip install --upgrade pip *>> $LogFile
@@ -112,13 +135,25 @@ if ($importExit -ne 0) {
         Set-Status 'تعذر تشغيل التطبيق'
         exit $LASTEXITCODE
     }
-    & $venvPython -m pip install --extra-index-url "https://abetlen.github.io/llama-cpp-python/whl/cpu" --only-binary=llama-cpp-python -r $req *>> $LogFile
+    Set-SetupProgress 36
+    & $venvPython -m pip install --extra-index-url "https://abetlen.github.io/llama-cpp-python/whl/cpu" --only-binary=llama-cpp-python -r $req 2>&1 | ForEach-Object {
+        $line = "$_"
+        Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
+        if ($line -match '^Collecting ') {
+            $packagesSeen++
+            $span = [Math]::Min($packagesSeen, $packageTotal)
+            Set-SetupProgress (36 + [int](50.0 * $span / $packageTotal))
+        } elseif ($line -match 'Installing collected packages') {
+            Set-SetupProgress 88
+        }
+    }
     $pipExit = $LASTEXITCODE
     $ErrorActionPreference = $previous
     if ($pipExit -ne 0) {
         Set-Status 'تعذر تشغيل التطبيق'
         exit $pipExit
     }
+    Set-SetupProgress 90
 }
 
 $script = Join-Path $Runtime 'start_local.py'

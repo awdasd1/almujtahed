@@ -107,6 +107,7 @@ static class Paths
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Almoghni");
     public static string Runtime => Path.Combine(Support, "runtime");
     public static string StatusFile => Path.Combine(Support, "status.txt");
+    public static string SetupProgressFile => Path.Combine(Support, "setup-progress.txt");
     public static string BootstrapFile => Path.Combine(Runtime, "web_ui", "bootstrap_status.json");
 
     public static void MigrateLegacy()
@@ -665,6 +666,14 @@ sealed class InstallerForm : Form
     void StartEngine()
     {
         var script = Path.Combine(AppContext.BaseDirectory, "launch.ps1");
+        try
+        {
+            Directory.CreateDirectory(Paths.Support);
+            File.WriteAllText(Paths.StatusFile, "جاري تهيئة التطبيق");
+            File.WriteAllText(Paths.SetupProgressFile, "1");
+            boardProgress = 1;
+        }
+        catch { }
         if (!File.Exists(script))
         {
             phaseLabel.Text = "تعذر تشغيل المغني";
@@ -748,7 +757,7 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.586");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.587");
         tray.Visible = false;
         ShowInTaskbar = false;
         Hide();
@@ -957,6 +966,9 @@ sealed class InstallerForm : Form
 
     double DisplayedPercent(string message, Transfer transfer)
     {
+        var reported = ReadSetupProgress();
+        if (reported >= 0)
+            return Math.Min(96, reported);
         var phase = ReadBootstrap()?.Phase;
         if ((phase == "download" || phase == "install" || phase == "local") && transfer.Expected > 0)
             return Math.Min(90, Math.Max(transfer.Received, 0) / (double)transfer.Expected * 90);
@@ -965,12 +977,23 @@ sealed class InstallerForm : Form
         if (message.Contains("بيئة بايثون", StringComparison.Ordinal)) return 8;
         if (message.Contains("مكتبات", StringComparison.Ordinal)) return 20;
         if (message.Contains("موجود", StringComparison.Ordinal) || message.Contains("الشاملة", StringComparison.Ordinal)) return 88;
-        if (message.Contains("الواجهة", StringComparison.Ordinal) || message.Contains("فتح التطبيق", StringComparison.Ordinal)) return 94;
+        if (message.Contains("الواجهة", StringComparison.Ordinal) || message.Contains("فتح التطبيق", StringComparison.Ordinal)) return 90;
         if (message.Contains("تثبيت الملفات", StringComparison.Ordinal) || message.Contains("تثبيت", StringComparison.Ordinal)) return 22;
         if (message.Contains("تهيئة", StringComparison.Ordinal) || message.Contains("تجهيز", StringComparison.Ordinal)) return 8;
         if (transfer.Expected > 0 && transfer.Received > 0)
             return Math.Min(90, transfer.Received / (double)transfer.Expected * 90);
         return 4;
+    }
+
+    static int ReadSetupProgress()
+    {
+        try
+        {
+            if (!File.Exists(Paths.SetupProgressFile)) return -1;
+            var text = File.ReadAllText(Paths.SetupProgressFile).Trim();
+            return int.TryParse(text, out var value) ? value : -1;
+        }
+        catch { return -1; }
     }
 
     void MarkReady()
