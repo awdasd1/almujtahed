@@ -7479,14 +7479,30 @@ function buildAcademicPaperHtml(runData, options) {
         if (!bmByText[key]) { bmN += 1; bmByText[key] = 'H' + bmN; }
         return bmByText[key];
       };
-      var emitChapter = function (label, name) {
+      var tocBookmarkFromEl = function (el) {
+        if (!el) return '';
+        var id = String((el.getAttribute && el.getAttribute('id')) || '');
+        var m = id.match(/paper-toc-h(\d+)/i);
+        if (m) return 'T' + m[1];
+        var inner = el.querySelector && el.querySelector('[id^="paper-toc-h"]');
+        if (!inner) return '';
+        m = String(inner.getAttribute('id') || '').match(/paper-toc-h(\d+)/i);
+        return m ? ('T' + m[1]) : '';
+      };
+      var tocBookmarkFromHref = function (el) {
+        var a = el && el.querySelector && el.querySelector('a[href*="paper-toc-h"]');
+        if (!a) return '';
+        var m = String(a.getAttribute('href') || '').match(/paper-toc-h(\d+)/i);
+        return m ? ('T' + m[1]) : '';
+      };
+      var emitChapter = function (label, name, el) {
         label = String(label || '').replace(/\s+/g, ' ').trim();
         name = String(name || '').replace(/\s+/g, ' ').trim().replace(/^[:：]\s*/, '');
         var key = (label + '|' + name).trim();
         if (!label || seenChapter[key]) return;
         seenChapter[key] = true;
         var full = name ? (label + ': ' + name) : label;
-        payload.blocks.push({ kind: 'chapter', bookmark: bookmarkFor(full), runs: [{ t: name ? (label + '\n' + name) : label, b: true }] });
+        payload.blocks.push({ kind: 'chapter', bookmark: tocBookmarkFromEl(el) || bookmarkFor(full), runs: [{ t: name ? (label + '\n' + name) : label, b: true }] });
       };
       roots.forEach(function (root) {
         if (!root) return;
@@ -7511,21 +7527,24 @@ function buildAcademicPaperHtml(runData, options) {
               if (tocPageEl) tocText = tocText.replace(tocPageEl.textContent, '').replace(/\s+/g, ' ').trim();
               if (tocText) {
                 var tocLvl = el.classList.contains('toc-l3') ? 3 : (el.classList.contains('toc-l2') ? 2 : 1);
-                var normKey = function (s) {
-                  return stripOrdinal(s).replace(/[:：]/g, ' ').replace(/\s+/g, ' ').trim();
-                };
-                var tocKey = normKey(tocText);
-                var tocBmName = bmByText[stripOrdinal(tocText)] || bmByText[tocKey] || '';
-                if (!tocBmName && tocKey) {
-                  var bestLen = 0;
-                  Object.keys(bmByText).forEach(function (k) {
-                    var nk = normKey(k);
-                    if (!nk) return;
-                    if (nk === tocKey || nk.indexOf(tocKey) === 0 || tocKey.indexOf(nk) === 0) {
-                      var len = Math.min(nk.length, tocKey.length);
-                      if (len > bestLen) { bestLen = len; tocBmName = bmByText[k]; }
-                    }
-                  });
+                var tocBmName = tocBookmarkFromHref(el);
+                if (!tocBmName) {
+                  var normKey = function (s) {
+                    return stripOrdinal(s).replace(/[:：]/g, ' ').replace(/\s+/g, ' ').trim();
+                  };
+                  var tocKey = normKey(tocText);
+                  tocBmName = bmByText[stripOrdinal(tocText)] || bmByText[tocKey] || '';
+                  if (!tocBmName && tocKey) {
+                    var bestLen = 0;
+                    Object.keys(bmByText).forEach(function (k) {
+                      var nk = normKey(k);
+                      if (!nk) return;
+                      if (nk === tocKey || nk.indexOf(tocKey) === 0 || tocKey.indexOf(nk) === 0) {
+                        var len = Math.min(nk.length, tocKey.length);
+                        if (len > bestLen) { bestLen = len; tocBmName = bmByText[k]; }
+                      }
+                    });
+                  }
                 }
                 var tocPage = tocPageEl ? String(tocPageEl.textContent || '').trim() : '';
                 payload.blocks.push({ kind: 'tocItem', lvl: tocLvl, bookmark: tocBmName, page: tocPage, runs: [{ t: tocText }] });
@@ -7539,7 +7558,7 @@ function buildAcademicPaperHtml(runData, options) {
             var whole = el.textContent.replace(/\s+/g, ' ').trim();
             var labelText = labelEl ? labelEl.textContent.replace(/\s+/g, ' ').trim() : (whole.match(/^الفصل\s+\S+/) || [''])[0];
             var nameText = nameEl ? nameEl.textContent.replace(/\s+/g, ' ').trim() : whole.replace(labelText, '').trim();
-            emitChapter(labelText || whole, nameText);
+            emitChapter(labelText || whole, nameText, el);
             return;
           }
           var kind = 'p';
@@ -7562,18 +7581,19 @@ function buildAcademicPaperHtml(runData, options) {
             var partName = /الخاتمة/.test(plain) ? 'الخاتمة' : 'المقدمة';
             if (partSeen[partName]) return;
             partSeen[partName] = true;
-            payload.blocks.push({ kind: 'partTitle', bookmark: bookmarkFor(partName), runs: [{ t: partName, b: true }] });
+            payload.blocks.push({ kind: 'partTitle', bookmark: tocBookmarkFromEl(el) || bookmarkFor(partName), runs: [{ t: partName, b: true }] });
             return;
           }
           if (bare === 'صلب البحث' || plain === 'ثانيًا: صلب البحث' || plain === 'ثانيا: صلب البحث') return;
           var chapPlain = plain.match(/^(الفصل\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|[0-9٠-٩]+))\s*[:：]?\s*(.*)$/);
           if (chapPlain && plain.length <= 140) {
-            emitChapter(chapPlain[1], chapPlain[2]);
+            emitChapter(chapPlain[1], chapPlain[2], el);
             return;
           }
           if (el.classList.contains('ms-matn-start')) payload.blocks.push({ kind: 'pageBreak', runs: [] });
           var block = { kind: kind, runs: cleaned };
-          if (kind === 'h') block.bookmark = bookmarkFor(bare || plain);
+          block.bookmark = tocBookmarkFromEl(el) || (kind === 'h' ? bookmarkFor(bare || plain) : '');
+          if (!block.bookmark) delete block.bookmark;
           payload.blocks.push(block);
         });
       });

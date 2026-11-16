@@ -2698,6 +2698,22 @@ function buildWordPayload(doc) {
     ? pages.map((p) => p.querySelector('.pagedjs_area') || p)
     : [doc.querySelector('.paper-sheet') || doc.body];
   const blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
+  const tocBookmarkFromEl = (node) => {
+    if (!node) return '';
+    const id = String((node.getAttribute && node.getAttribute('id')) || '');
+    let m = id.match(/paper-toc-h(\d+)/i);
+    if (m) return `T${m[1]}`;
+    const inner = node.querySelector && node.querySelector('[id^="paper-toc-h"]');
+    if (!inner) return '';
+    m = String(inner.getAttribute('id') || '').match(/paper-toc-h(\d+)/i);
+    return m ? `T${m[1]}` : '';
+  };
+  const tocBookmarkFromHref = (node) => {
+    const a = node && node.querySelector && node.querySelector('a[href*="paper-toc-h"]');
+    if (!a) return '';
+    const m = String(a.getAttribute('href') || '').match(/paper-toc-h(\d+)/i);
+    return m ? `T${m[1]}` : '';
+  };
   roots.forEach((root) => {
     if (!root) return;
     root.querySelectorAll(blockSel).forEach((el) => {
@@ -2722,6 +2738,7 @@ function buildWordPayload(doc) {
             payload.blocks.push({
               kind: 'tocItem',
               lvl: tocLvl,
+              bookmark: tocBookmarkFromHref(el),
               page: tocPageEl ? String(tocPageEl.textContent || '').trim() : '',
               runs: [{ t: tocText }],
             });
@@ -2742,7 +2759,10 @@ function buildWordPayload(doc) {
       if (!cleaned.length) return;
       // «النص المحقق» في المخطوطات يبدأ صفحة جديدة في وورد أيضًا
       if (el.classList.contains('ms-matn-start')) payload.blocks.push({ kind: 'pageBreak', runs: [] });
-      payload.blocks.push({ kind, runs: cleaned });
+      const block = { kind, runs: cleaned };
+      const hid = tocBookmarkFromEl(el);
+      if (hid) block.bookmark = hid;
+      payload.blocks.push(block);
     });
   });
   // لا فواصل صفحات قسرية: يصفّح وورد بتدفق طبيعي فيملأ الصفحات

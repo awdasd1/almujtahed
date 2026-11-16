@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.641"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.642"},
         },
     })
     if opened.get("error"):
@@ -27504,11 +27504,13 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
 
 
 def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = None) -> str:
-    """فهرس وورد: الجدول والنصوص والخلايا في الوسط أفقيًا وعموديًا."""
+    """فهرس وورد: البند يرتبط بعلامة الموضوع كارتباط الحاشية بالمتن، والرقم صفحة وورد الفعلية."""
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     rpr = _docx_rpr(body)
+    rpr_field = rpr.replace("<w:rtl/>", "")
     brd = 'w:val="single" w:sz="8" w:space="0" w:color="888888"'
     rlm = "\u200f"
+    known = known_bookmarks or set()
     ppr_mid = (
         '<w:pPr><w:bidi w:val="1"/>'
         '<w:spacing w:before="60" w:line="360" w:lineRule="auto" w:after="60"/>'
@@ -27518,14 +27520,27 @@ def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = Non
     for it in items:
         text = "".join(str(r.get("t") or "") for r in (it.get("runs") or []) if isinstance(r, dict))
         shown = str(it.get("page") or "").strip() or "-"
-        topic = (
-            f"<w:p>{ppr_mid}"
-            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + text)}</w:t></w:r></w:p>'
+        bm = re.sub(r"[^A-Za-z0-9_]", "", str(it.get("bookmark") or ""))[:40]
+        if bm not in known:
+            bm = ""
+        topic_inner = (
+            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + text)}</w:t></w:r>'
         )
-        page = (
-            f"<w:p>{ppr_mid}"
-            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + shown)}</w:t></w:r></w:p>'
-        )
+        if bm:
+            topic_inner = f'<w:hyperlink w:anchor="{bm}" w:history="1">{topic_inner}</w:hyperlink>'
+            page_inner = (
+                f'<w:r>{rpr_field}<w:fldChar w:fldCharType="begin"/></w:r>'
+                f'<w:r>{rpr_field}<w:instrText xml:space="preserve"> PAGEREF {bm} \\h </w:instrText></w:r>'
+                f'<w:r>{rpr_field}<w:fldChar w:fldCharType="separate"/></w:r>'
+                f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(shown)}</w:t></w:r>'
+                f'<w:r>{rpr_field}<w:fldChar w:fldCharType="end"/></w:r>'
+            )
+        else:
+            page_inner = (
+                f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + shown)}</w:t></w:r>'
+            )
+        topic = f"<w:p>{ppr_mid}{topic_inner}</w:p>"
+        page = f"<w:p>{ppr_mid}{page_inner}</w:p>"
         rows.append(
             '<w:tr><w:trPr><w:cantSplit/>'
             '<w:trHeight w:val="360" w:hRule="atLeast"/></w:trPr>'
