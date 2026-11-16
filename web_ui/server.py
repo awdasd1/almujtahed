@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.633"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.634"},
         },
     })
     if opened.get("error"):
@@ -27712,16 +27712,60 @@ def build_docx_bytes(payload: dict) -> bytes:
     return buf.getvalue()
 
 
+def _aspose_python_bin() -> str | None:
+    """مفسّر بيئة Aspose (Python 3.13): العجلة لا تدعم 3.14 الذي عليه التطبيق."""
+    env = (os.environ.get("ALMOGHNI_ASPOSE_PYTHON") or "").strip()
+    if env and Path(env).is_file():
+        return env
+    home = Path.home()
+    for c in (
+        home / "Library/Application Support/Almoghni/aspose-venv/bin/python",
+        home / "AppData/Roaming/Almoghni/aspose-venv/Scripts/python.exe",
+        home / ".almoghni/aspose-venv/bin/python",
+    ):
+        if c.is_file():
+            return str(c)
+    return None
+
+
+def build_docx_bytes_aspose(payload: dict) -> bytes:
+    """توليد DOCX عبر عامل Aspose.Words المستقل؛ المكتبة الأولى لا تُمس."""
+    py = _aspose_python_bin()
+    if not py:
+        raise RuntimeError("aspose python missing")
+    script = Path(__file__).resolve().parent / "export_docx_aspose.py"
+    if not script.is_file():
+        raise RuntimeError("aspose worker missing")
+    with tempfile.TemporaryDirectory(prefix="almoghni-aspose-") as td:
+        inp = Path(td) / "in.json"
+        outp = Path(td) / "out.docx"
+        inp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        r = subprocess.run(
+            [py, str(script), str(inp), str(outp)],
+            capture_output=True, timeout=180, check=False,
+        )
+        if r.returncode != 0 or not outp.is_file() or outp.stat().st_size < 800:
+            err = (r.stderr or b"").decode("utf-8", "replace").strip()[:800]
+            raise RuntimeError(err or f"aspose exit {r.returncode}")
+        return outp.read_bytes()
+
+
 @app.post("/api/projects/export-docx")
 async def export_project_docx_endpoint(req: ExportDocxRequest):
     """تصدير البحث ملف وورد (DOCX) بنفس تنسيق ورقة الطباعة وبحواشٍ سفلية حقيقية"""
     safe_title = re.sub(r'[\s/\\:*?"<>|]', "_", (req.title or "almojtahed_report").strip()) or "almojtahed_report"
+    payload = {"styles": req.styles, "blocks": req.blocks, "footnotes": req.footnotes, "footnote_restart": req.footnote_restart}
     try:
-        data = build_docx_bytes({"styles": req.styles, "blocks": req.blocks, "footnotes": req.footnotes, "footnote_restart": req.footnote_restart})
-    except ValueError:
-        raise HTTPException(status_code=413, detail="حجم البحث أكبر من حد تصدير وورد")
-    except Exception:
-        raise HTTPException(status_code=500, detail="فشل توليد ملف وورد")
+        data = await asyncio.to_thread(build_docx_bytes_aspose, payload)
+        print("[export-docx] aspose-words", flush=True)
+    except Exception as aspose_err:
+        print(f"[export-docx] aspose تعذر، المكتبة الأولى: {aspose_err}", flush=True)
+        try:
+            data = build_docx_bytes(payload)
+        except ValueError:
+            raise HTTPException(status_code=413, detail="حجم البحث أكبر من حد تصدير وورد")
+        except Exception:
+            raise HTTPException(status_code=500, detail="فشل توليد ملف وورد")
     encoded_filename = urllib.parse.quote(f"{safe_title}.docx")
     return Response(
         content=data,
