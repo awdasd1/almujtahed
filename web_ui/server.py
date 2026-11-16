@@ -7699,7 +7699,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.610"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.611"},
         },
     })
     if opened.get("error"):
@@ -7949,6 +7949,61 @@ def _mcp_research_evidence(args: Dict[str, Any], request: Request) -> Dict[str, 
             api_key = owner_openrouter_key(request, None) or api_key
         except Exception:
             pass
+
+    def _evidence_items(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """قراءة الصفحات ومطابقتها بالتوازي: التوثيق محلي بلا كلفة نموذج."""
+        def _one(hit):
+            page_text = fetch_page_body(hit.get("rel_path") or "", hit.get("part_raw"), hit.get("page_num_raw"))
+            phrase = (hit.get("snippet") or "")[:70].strip()
+            check = {}
+            if phrase and hit.get("book_id"):
+                try:
+                    check = shamela_local_mcp.verify_quote(book=str(hit["book_id"]), quote_text=phrase, part=hit.get("part_raw"), page_hint=hit.get("page_num_raw"))
+                except Exception:
+                    check = {}
+            status = check.get("match_status") or "UNCHECKED"
+            return {
+                "book_id": hit.get("book_id"), "title": hit.get("title"), "author": hit.get("author"),
+                "part": hit.get("part_raw"), "page_num": hit.get("page_num_raw"),
+                "text": (page_text or hit.get("snippet") or "")[:1400],
+                "verification": status,
+                "citation": shamela_local_mcp.resolve_book(str(hit["book_id"])) if status in ("MATCH_EXACT", "MATCH_NORMALIZED") and hit.get("book_id") else None,
+            }
+        chosen = list(hits or [])[:limit]
+        if len(chosen) <= 1:
+            return [_one(h) for h in chosen]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(chosen))) as executor:
+            return list(executor.map(_one, chosen))
+
+    # المسار النحيف أولًا: بحث مباشر بلا لجنة مراسٍ، فإن أثمر شواهد موثقة
+    # كافية أُغلق الطلب في ثوانٍ؛ وإلا سقط للمسار الموسّع كما كان.
+    _t0 = time.monotonic()
+    try:
+        direct_hits = run_rag_search(
+            query=args.get("query") or "",
+            selected_books=titles,
+            pool_size=max(limit * 4, 200),
+            top_k=limit,
+            use_reranker=False,
+            dynamic_anchors=list(args.get("anchors") or []) or None,
+            use_hybrid=True,
+            honor_agent_limit=True,
+        )
+    except Exception:
+        direct_hits = []
+    if direct_hits:
+        items = _evidence_items(direct_hits)
+        verified = [i for i in items if i["verification"] in ("MATCH_EXACT", "MATCH_NORMALIZED")]
+        if len(verified) >= min(limit, 3):
+            return {
+                "status": "ok",
+                "evidence": items,
+                "ledger": {"scope_books": len(titles), "anchors_used": list(args.get("anchors") or []),
+                           "returned": len(items), "verified": len(verified), "mode": "lean_direct",
+                           "elapsed_sec": round(time.monotonic() - _t0, 2)},
+                "note": "لا يعتمد إلا ما حالته MATCH_EXACT أو MATCH_NORMALIZED بعد قراءة نصه كاملاً.",
+            }
+
     buckets, anchors = expand_query_with_anchor_rounds(
         query=args.get("query") or "",
         scopes=[{"name": "scope", "books": titles, "top_k": limit, "pool_size": max(limit * 4, 200)}],
@@ -7959,28 +8014,12 @@ def _mcp_research_evidence(args: Dict[str, Any], request: Request) -> Dict[str, 
         honor_agent_limit=True,
         run_id=args.get("chat_id") or args.get("run_id"),
     )
-    items = []
-    for hit in (buckets.get("scope") or [])[:limit]:
-        page_text = fetch_page_body(hit.get("rel_path") or "", hit.get("part_raw"), hit.get("page_num_raw"))
-        phrase = (hit.get("snippet") or "")[:70].strip()
-        check = {}
-        if phrase and hit.get("book_id"):
-            try:
-                check = shamela_local_mcp.verify_quote(book=str(hit["book_id"]), quote_text=phrase, page_hint=hit.get("page_num_raw"))
-            except Exception:
-                check = {}
-        status = check.get("match_status") or "UNCHECKED"
-        items.append({
-            "book_id": hit.get("book_id"), "title": hit.get("title"), "author": hit.get("author"),
-            "part": hit.get("part_raw"), "page_num": hit.get("page_num_raw"),
-            "text": (page_text or hit.get("snippet") or "")[:1400],
-            "verification": status,
-            "citation": shamela_local_mcp.resolve_book(str(hit["book_id"])) if status in ("MATCH_EXACT", "MATCH_NORMALIZED") and hit.get("book_id") else None,
-        })
+    items = _evidence_items(buckets.get("scope") or [])
     return {
         "status": "ok",
         "evidence": items,
-        "ledger": {"scope_books": len(titles), "anchors_used": anchors, "returned": len(items)},
+        "ledger": {"scope_books": len(titles), "anchors_used": anchors, "returned": len(items),
+                   "mode": "expanded", "elapsed_sec": round(time.monotonic() - _t0, 2)},
         "note": "لا يعتمد إلا ما حالته MATCH_EXACT أو MATCH_NORMALIZED بعد قراءة نصه كاملاً.",
     }
 

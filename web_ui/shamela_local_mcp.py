@@ -534,11 +534,35 @@ def verify_quote(book: Any, quote_text: str, part: Optional[str] = None, page_hi
         if bid:
             import library_search
             li = library_search.get_index()
-            r = li.search(quote_text, mode="words", book_ids=[int(bid)], limit=16)
+            # استعلام مرشحين من كلمات النقل المنظّفة الأولى: العبارة الخام
+            # بتشكيلها وأقواسها قد لا توقّع أي نتيجة في الفهرس فينهار
+            # المسار إلى مسح الكتاب كله (تسعون ألف صفحة في الكتب الضخمة).
+            _sig = [w for w in clean_arabic_text(quote_text).split() if len(w) >= 3]
+            r = {"results": []}
+            for _n in (6, 3, 2):
+                if not _sig:
+                    break
+                r = li.search(" ".join(_sig[:_n]), mode="words", book_ids=[int(bid)], limit=48)
+                if r.get("results"):
+                    break
             pos_by_pid = {e.get("page_id"): i for i, e in enumerate(entries)}
+            # فهارس بُنيت من مصدر الشاملة تحمل معرّف صفحة أجنبيًا عن ملفاتنا؛
+            # مفتاح (الجزء، رقم الصفحة) يربط المرشح بمدخله عندئذ.
+            def _pp(e):
+                try:
+                    return (str(e.get("part")), int(e.get("page_num")))
+                except Exception:
+                    return None
+            pos_by_pp = {}
+            for i, e in enumerate(entries):
+                k = _pp(e)
+                if k is not None and k not in pos_by_pp:
+                    pos_by_pp[k] = i
             seen_off, cand = set(), []
             for h in r.get("results", []):
                 i = pos_by_pid.get(h.get("page_id"))
+                if i is None:
+                    i = pos_by_pp.get(_pp(h))
                 if i is None:
                     continue
                 for j in (i - 1, i, i + 1):
@@ -553,6 +577,7 @@ def verify_quote(book: Any, quote_text: str, part: Optional[str] = None, page_hi
 
     matches = []
     q_words = set(w for w in clean_target.split() if len(w) >= 3)
+    target_word_set = set(target_words)
     best = None
     try:
         with open(pages_file, "rb") as f:
@@ -563,14 +588,24 @@ def verify_quote(book: Any, quote_text: str, part: Optional[str] = None, page_hi
                     data = json.loads(line.decode("utf-8"))
                     body = data.get("body", "")
                     clean_b = clean_arabic_text(body)
-                    plain = re.sub(r"<[^>]+>", " ", body)
-                    plain = re.sub(r"\s+", " ", plain).strip()
                     if q_words:
                         overlap = len(q_words & set(clean_b.split())) / len(q_words)
                         if best is None or overlap > best["score"]:
-                            best = {"score": round(overlap, 3), "part": entry["part"], "page_num": entry["page_num"], "snippet": plain[:400]}
+                            plain = re.sub(r"<[^>]+>", " ", body)
+                            plain = re.sub(r"\s+", " ", plain).strip()
+                            best = {"score": round(overlap, 3), "part": entry["part"], "page_num": entry["page_num"], "snippet": plain[:400], "seq": entry.get("seq")}
 
-                    if clean_target in clean_b or clean_target_np in _strip_parens(clean_b) or _seq_match(_words(clean_b), target_words):
+                    matched = clean_target in clean_b or clean_target_np in _strip_parens(clean_b)
+                    if not matched and target_word_set:
+                        # بوابة رخيصة قبل مطابقة التتابع: توكنة الصفحة كاملة
+                        # ومطابقة التتابع غاليتان، فلا تُشغَّلان إلا في صفحة
+                        # تحوي أغلب كلمات النقل أصلًا (بتجريد علامات الترقيم).
+                        cheap = {w.strip(_PUNCT) for w in clean_b.split()}
+                        if len(target_word_set & cheap) / len(target_word_set) >= 0.6:
+                            matched = _seq_match(_words(clean_b), target_words)
+                    if matched:
+                        plain = re.sub(r"<[^>]+>", " ", body)
+                        plain = re.sub(r"\s+", " ", plain).strip()
                         pos = clean_b.find(clean_target)
                         exact = quote_text.strip() in plain
                         matches.append({
@@ -589,16 +624,17 @@ def verify_quote(book: Any, quote_text: str, part: Optional[str] = None, page_hi
     except Exception as e:
         return {"error": f"خطأ أثناء التحقق من الاقتباس: {e}"}
 
-    if not matches and len(entries) > 1:
-        # نقل يمتد عبر صفحتين متتاليتين: افحص أزواج الصفحات المتجاورة بالترتيب الطبيعي
+    if not matches and len(entries) > 1 and best and best.get("score", 0) >= 0.4:
+        # نقل يمتد عبر صفحتين متتاليتين: افحص أزواج الصفحات المتجاورة حول
+        # أفضل صفحة مرشحة فقط؛ مسح الكتاب كله ثانيةً لأجل احتمال الامتداد
+        # كان يضاعف كلفة الرفض في الكتب الضخمة بلا طائل غالبًا.
         try:
-            hot = set()
-            if best and best.get("score", 0) >= 0.4:
-                hot = {e["offset"] for e in entries
-                       if q_words and e.get("offset") is not None}
+            _seq_pos = {e.get("seq"): i for i, e in enumerate(entries)}
+            _bi = _seq_pos.get(best.get("seq"), 0)
+            pair_entries = entries[max(0, _bi - 60):_bi + 61]
             prev = None
             with open(pages_file, "rb") as f:
-                for entry in entries:
+                for entry in pair_entries:
                     f.seek(entry["offset"])
                     line = f.readline()
                     if not line:
@@ -611,7 +647,10 @@ def verify_quote(book: Any, quote_text: str, part: Optional[str] = None, page_hi
                         pe, pc = prev
                         same_part = str(pe.get("part")) == str(entry.get("part"))
                         tw_set = set(target_words)
-                        ov = (len(tw_set & set(_words(pc)) | (tw_set & set(_words(clean_b)))) / len(tw_set)) if tw_set else 0
+                        # بوابة رخيصة قبل توكنة الصفحتين: لا حساب دقيق إلا
+                        # حين تحوي الصفحتان معًا قسطًا معتبرًا من كلمات النقل.
+                        _cheap = {w.strip(_PUNCT) for w in pc.split()} | {w.strip(_PUNCT) for w in clean_b.split()}
+                        ov = (len(tw_set & set(_words(pc)) | (tw_set & set(_words(clean_b)))) / len(tw_set)) if tw_set and len(tw_set & _cheap) / len(tw_set) >= 0.4 else 0
                         if ov >= 0.5:
                             joined = pc + " " + clean_b
                             if clean_target in joined or clean_target_np in _strip_parens(joined) or _seq_match(_words(joined), target_words):
