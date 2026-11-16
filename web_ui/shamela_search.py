@@ -27,6 +27,39 @@ _LOCK = threading.Lock()
 _STATE = {"jpype": None, "reader": None, "searcher": None, "sf": None, "root": None,
           "executor": None}
 
+
+def _total_ram_gb() -> float:
+    """ذاكرة الجهاز الكلية بالجيجا (لضبط حجم حوض الجسور وسقف JVM تلقائيًا:
+    جهاز 8GB لا يحتمل ثلاثة جسور بسقوف كاملة، وفهرس Lucene نفسه mmap)."""
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / float(1024 ** 3)
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        class _MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_uint32), ("dwMemoryLoad", ctypes.c_uint32),
+                        ("ullTotalPhys", ctypes.c_uint64), ("ullAvailPhys", ctypes.c_uint64),
+                        ("ullTotalPageFile", ctypes.c_uint64), ("ullAvailPageFile", ctypes.c_uint64),
+                        ("ullTotalVirtual", ctypes.c_uint64), ("ullAvailVirtual", ctypes.c_uint64),
+                        ("ullAvailExtendedVirtual", ctypes.c_uint64)]
+
+        _ms = _MEMORYSTATUSEX()
+        _ms.dwLength = ctypes.sizeof(_ms)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(_ms))
+        return _ms.ullTotalPhys / float(1024 ** 3)
+    except Exception:
+        return 0.0
+
+
+_RAM_GB = _total_ram_gb()
+_LOW_RAM = 0 < _RAM_GB <= 9.5
+
+
+def _jvm_heap() -> str:
+    return os.environ.get("ALMOGHNI_BRIDGE_XMX") or ("512m" if _LOW_RAM else "768m")
+
 # --- طبقة التوسيع (1.10.270): الجسر كان ينهار تحت التوازي العالي لثلاث علل:
 # (1) كل نتيجة تفتح اتصال SQLite ومسح مجلد جديدًا في _part_page،
 # (2) مثال StoredFields واحد مشترك يفسد فكّ ضغطه تحت التزامن (DataFormatException)،
@@ -134,7 +167,8 @@ def _ensure_reader():
         if not jpype.isJVMStarted():
             # سقف ذاكرة متواضع لكل JVM: مع تعدد جسور العمال لا يجوز أن
             # يستأثر كلٌّ منها بربع ذاكرة الجهاز؛ الفهرس نفسه mmap خارج الكومة.
-            jpype.startJVM(jvm, "-Xmx768m", classpath=jars, convertStrings=True)
+            # أجهزة ≤9.5GB تأخذ سقفًا أخف (512m) تلقائيًا.
+            jpype.startJVM(jvm, f"-Xmx{_jvm_heap()}", classpath=jars, convertStrings=True)
         _attach()
         Paths = jpype.JClass("java.nio.file.Paths")
         FSDirectory = jpype.JClass("org.apache.lucene.store.FSDirectory")
@@ -208,9 +242,11 @@ import tempfile as _tempfile
 
 _POOL = {"workers": [], "lock": threading.Lock(), "started": False}
 try:
-    _POOL_N = int(os.environ.get("ALMOGHNI_BRIDGE_WORKERS", "3") or 3)
+    # افتراضي واعٍ بالذاكرة: 3 عمال، و2 فقط على أجهزة ≤9.5GB؛ ومتغير
+    # البيئة ALMOGHNI_BRIDGE_WORKERS يتجاوز الافتراضي متى ضُبط صراحة.
+    _POOL_N = int(os.environ.get("ALMOGHNI_BRIDGE_WORKERS") or (2 if _LOW_RAM else 3))
 except Exception:
-    _POOL_N = 3
+    _POOL_N = 2 if _LOW_RAM else 3
 
 
 class _BridgeWorker:
@@ -312,6 +348,8 @@ def _pool_start() -> bool:
             return bool(_POOL["workers"])
         _POOL["started"] = True
         _reap_orphan_workers()
+        print(f"🌉 [Shamela Bridge] حوض جسور: {_POOL_N} عاملًا، سقف JVM {_jvm_heap()}، "
+              f"ذاكرة الجهاز {_RAM_GB:.0f}GB{' (وضع خفيف تلقائي)' if _LOW_RAM else ''}", flush=True)
         try:
             _POOL["workers"] = [_BridgeWorker(i) for i in range(_POOL_N)]
         except Exception:
