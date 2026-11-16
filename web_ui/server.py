@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.627"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.628"},
         },
     })
     if opened.get("error"):
@@ -27367,7 +27367,7 @@ def _docx_style(styles: dict, key: str, fallback: dict) -> dict:
     out = dict(fallback or {})
     st = styles.get(key) if isinstance(styles, dict) else None
     if isinstance(st, dict):
-        for k in ("font", "size", "weight", "color"):
+        for k in ("font", "size", "weight", "color", "lh"):
             if st.get(k) not in (None, ""):
                 out[k] = st[k]
     return out
@@ -27441,22 +27441,32 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     base = _docx_style(styles, key, body)
     align = "center" if kind in ("title", "meta", "bismillah", "biblioTitle", "tocTitle") else (
         "right" if kind == "tocItem" else "both")
-    ppr = []
-    if page_break or kind in ("biblioTitle", "tocTitle"):
-        ppr.append("<w:pageBreakBefore/>")
+    # ارتفاع سطر وورد من ارتفاع سطر الورقة المقيس (نسبة كسرية): كان
+    # ثابتًا على سطر مفرد فانضغط تصفيح وورد واختلّت صفحاته عن المطبوعة
+    try:
+        _lh = float(base.get("lh") or body.get("lh") or 0)
+    except Exception:
+        _lh = 0
+    _line = int(round(_lh * 240)) if 1.0 < _lh < 3.6 else 240
+    toc_lvl = 1
     if kind == "tocItem":
-        # بند فهرس: جدولة يسارية بزخرفة نقطية إلى رقم الصفحة في آخر
-        # السطر، وإزاحة يمنى (جهة البدء) بحسب عمق البند
         try:
             toc_lvl = int(block.get("lvl") or 1)
         except Exception:
             toc_lvl = 1
-        ppr.append('<w:tabs><w:tab w:val="left" w:leader="dot" w:pos="9800"/></w:tabs>')
-        if toc_lvl > 1:
-            ppr.append(f'<w:ind w:right="{(toc_lvl - 1) * 420}"/>')
+    # ترتيب خصائص الفقرة على تسلسل OOXML المعياري (keepNext قبل
+    # pageBreakBefore، والجدولة قبل bidi، والتباعد قبل الإزاحة قبل
+    # المحاذاة): خلافه يسقط الجدولة المنقطة والإزاحة في وورد فتتكدس
+    # بنود الفهرس بلا نقاط وباتجاه مضطرب
+    ppr = []
     if kind == "h":
         # العنوان لا ينفصل عن فقرته التالية عند كسر الصفحة
         ppr.append("<w:keepNext/>")
+    if page_break or kind in ("biblioTitle", "tocTitle"):
+        ppr.append("<w:pageBreakBefore/>")
+    if kind == "tocItem":
+        # بند فهرس: جدولة يسارية بزخرفة نقطية إلى رقم الصفحة في آخر السطر
+        ppr.append('<w:tabs><w:tab w:val="left" w:leader="dot" w:pos="9800"/></w:tabs>')
     ppr.append("<w:bidi/>")
     if kind == "h":
         # سطر فارغ كامل قبل العنوان يفصله عن آخر سطر في الفقرة
@@ -27466,10 +27476,14 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
         except Exception:
             body_size = 12
         before_twips = max(200, min(600, int(round(body_size * 20))))
-        ppr.append(f'<w:spacing w:before="{before_twips}" w:line="240" w:lineRule="auto" w:after="60"/>')
+        ppr.append(f'<w:spacing w:before="{before_twips}" w:line="{_line}" w:lineRule="auto" w:after="60"/>')
     else:
-        ppr.append('<w:spacing w:line="240" w:lineRule="auto" w:after="60"/>')
-    if kind == "p":
+        ppr.append(f'<w:spacing w:line="{_line}" w:lineRule="auto" w:after="60"/>')
+    if kind == "tocItem":
+        # إزاحة يمنى (جهة البدء في RTL) بحسب عمق البند
+        if toc_lvl > 1:
+            ppr.append(f'<w:ind w:right="{(toc_lvl - 1) * 420}"/>')
+    elif kind == "p":
         ppr.append('<w:ind w:firstLine="300"/>')
     ppr.append(f'<w:jc w:val="{align}"/>')
     runs = _docx_runs(block.get("runs"), base, styles, fn_count)

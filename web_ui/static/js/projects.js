@@ -6947,25 +6947,34 @@ function buildAcademicPaperHtml(runData, options) {
     const tocRaw = [];
     let seq = 0;
     const injectTocIds = (htmlText) => htmlText.replace(
-      /<(h2|h3)([^>]*)>([\s\S]*?)<\/\1>|<p class="academic-subheading">([\s\S]*?)<\/p>/g,
-      (match, tag, attrs, inner, subInner) => {
-        const isSub = tag === undefined;
-        const rawInner = isSub ? subInner : inner;
+      /<(h2|h3)([^>]*)>([\s\S]*?)<\/\1>|<p class="academic-subheading">([\s\S]*?)<\/p>|<span class="academic-inline-heading"><(b|strong)>([\s\S]*?)<\/\5><\/span>|<p([^>]*)>\s*<(b|strong)>([\s\S]*?)<\/\8>\s*<\/p>/g,
+      (match, tag, attrs, inner, subInner, iTag, iInner, pAttrs, pbTag, pbInner) => {
+        const isInline = iTag !== undefined;
+        const isBoldPara = pbTag !== undefined;
+        const isSub = tag === undefined && !isInline && !isBoldPara;
+        const rawInner = isInline ? iInner : (isBoldPara ? pbInner : (isSub ? subInner : inner));
         const title = String(rawInner || '').replace(/<[^>]+>/g, ' ')
           .replace(/\s+/g, ' ').trim().replace(/[:：]\s*$/, '');
-        if (!title || title.length > 110 || title === 'فهرس البحث' || /^[«﴿"']/.test(title)) return match;
+        if (!title || title.length > 110 || title === 'فهرس البحث' || /^[«﴿"']/.test(title) || title.includes('﴿')) return match;
         let lvl;
-        if (!isSub && /academic-round-title/.test(attrs || '')) lvl = 1;
-        else if (!isSub && tag === 'h3') lvl = 3;
+        let explicit = true;
+        if (!isSub && !isInline && !isBoldPara && /academic-round-title/.test(attrs || '')) lvl = 1;
+        else if (!isSub && !isInline && !isBoldPara && tag === 'h3') lvl = 3;
         else if (/^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا|المقدمة|الخاتمة)(?=[^ا-ي]|$)/.test(title) || title === 'المصادر والمراجع') lvl = 1;
         else if (title.indexOf('الفصل') >= 0 && title.indexOf('الفصل') < 14) lvl = 2;
         else if (/^[0-9٠-٩]+\s*[-–—]\s*[0-9٠-٩]+/.test(title)) lvl = 3;
         else if (/^[0-9٠-٩]+\s*[-–—]/.test(title)) lvl = 2;
         else if (/^(أهم النتائج|أبرز النتائج|التوصيات)/.test(title)) lvl = 2;
-        else lvl = 2;
+        else { lvl = 2; explicit = false; }
+        /* فقرة عريضة واقفة لم تتحول عنوانًا فرعيًا (طال عنوانها عن
+           حد التحويل): لا تدخل الفهرس إلا بنمط عنوان صريح (فصل/ترقيم/
+           مقدمة...) — فلا تتسلل نقول عريضة إلى الفهرس */
+        if (isBoldPara && !explicit) return match;
         seq += 1;
         const id = `paper-toc-h${seq}`;
         tocRaw.push({ lvl, title, id });
+        if (isInline) return `<span class="academic-inline-heading" id="${id}"><${iTag}>${iInner}</${iTag}></span>`;
+        if (isBoldPara) return `<p${pAttrs || ''} id="${id}"><${pbTag}>${pbInner}</${pbTag}></p>`;
         if (isSub) return `<p class="academic-subheading" id="${id}">${subInner}</p>`;
         return `<${tag}${attrs || ''} id="${id}">${inner}</${tag}>`;
       });
@@ -7270,7 +7279,11 @@ function buildAcademicPaperHtml(runData, options) {
         var cs = getComputedStyle(el);
         var font = (cs.fontFamily || '').split(',')[0].replace(/["']/g, '').trim();
         if (!font) return null;
-        return { font: font, size: Math.round(parseFloat(cs.fontSize || '16') * 0.75 * 2) / 2, weight: parseInt(cs.fontWeight, 10) || 400, color: wordRgbToHex(cs.color) };
+        var fsPx = parseFloat(cs.fontSize || '16');
+        var lhPx = parseFloat(cs.lineHeight || '');
+        var out = { font: font, size: Math.round(fsPx * 0.75 * 2) / 2, weight: parseInt(cs.fontWeight, 10) || 400, color: wordRgbToHex(cs.color) };
+        if (fsPx > 0 && isFinite(lhPx) && lhPx > 0) out.lh = Math.round((lhPx / fsPx) * 100) / 100;
+        return out;
       } catch (e) { return null; }
     }
     function wordCleanRuns(runs) {
