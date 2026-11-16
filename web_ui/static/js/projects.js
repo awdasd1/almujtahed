@@ -6946,8 +6946,8 @@ function buildAcademicPaperHtml(runData, options) {
           ? `<span class="chapter-label">${escapeHtml(chap[1])}</span><br><span class="chapter-name">${escapeHtml(chap[2])}</span>`
           : escapeHtml(title);
         chapterCount += 1;
-        /* الفصل الأول يتبع المقدمة، وكل فصل بعده صفحة مستقلة */
-        const chapBrk = chapterCount > 1 ? ' style="break-before: page; page-break-before: always;"' : '';
+        /* كل فصل صفحة مستقلة وعنوانه في أعلاها */
+        const chapBrk = ' style="break-before: page; page-break-before: always;"';
         if (isInline) return `</p><h2 class="academic-chapter-title"${chapBrk}>${chapInner}</h2><p class="academic-paragraph">`;
         return `<h2 class="academic-chapter-title"${chapBrk}>${chapInner}</h2>`;
       }
@@ -7458,10 +7458,28 @@ function buildAcademicPaperHtml(runData, options) {
       }
       var roots = pages.length ? pages.map(function (p) { return p.querySelector('.pagedjs_area') || p; }) : [doc.querySelector('.paper-sheet') || doc.body];
       var blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
-      var chapterSeen = 0;
       var partSeen = {};
+      var seenChapter = {};
+      var bmByText = {};
+      var bmN = 0;
       var stripOrdinal = function (t) {
-        return String(t || '').replace(/^(?:أول|ثان|ثالث|رابع|خامس)\S{0,4}\s*[:：.\-]?\s*/, '').replace(/[:：]\s*$/, '').trim();
+        return String(t || '').replace(/^(?:أول|ثان|ثالث|رابع|خامس)\S{0,6}\s*[:：.\-]?\s*/, '').replace(/[:：]\s*$/, '').trim();
+      };
+      var bookmarkFor = function (text) {
+        var key = stripOrdinal(text).replace(/\s+/g, ' ');
+        if (!key) return '';
+        if (!bmByText[key]) { bmN += 1; bmByText[key] = 'H' + bmN; }
+        return bmByText[key];
+      };
+      var emitChapter = function (label, name) {
+        label = String(label || '').replace(/\s+/g, ' ').trim();
+        name = String(name || '').replace(/\s+/g, ' ').trim().replace(/^[:：]\s*/, '');
+        var key = (label + '|' + name).trim();
+        if (!label || seenChapter[key]) return;
+        seenChapter[key] = true;
+        var full = name ? (label + ': ' + name) : label;
+        payload.blocks.push({ kind: 'pageBreak', runs: [] });
+        payload.blocks.push({ kind: 'chapter', bookmark: bookmarkFor(full), runs: [{ t: name ? (label + '\n' + name) : label, b: true }] });
       };
       roots.forEach(function (root) {
         if (!root) return;
@@ -7481,7 +7499,15 @@ function buildAcademicPaperHtml(runData, options) {
               var tocBm = String((tocLink && tocLink.getAttribute('href')) || '').replace(/^#/, '');
               if (tocText) {
                 var tocLvl = el.classList.contains('toc-l3') ? 3 : (el.classList.contains('toc-l2') ? 2 : 1);
-                payload.blocks.push({ kind: 'tocItem', lvl: tocLvl, bookmark: tocBm, runs: [{ t: tocText }] });
+                var tocKey = stripOrdinal(tocText);
+                var tocBmName = bmByText[tocKey] || '';
+                if (!tocBmName) {
+                  Object.keys(bmByText).some(function (k) {
+                    if (tocKey && (k.indexOf(tocKey) >= 0 || tocKey.indexOf(k) >= 0)) { tocBmName = bmByText[k]; return true; }
+                    return false;
+                  });
+                }
+                payload.blocks.push({ kind: 'tocItem', lvl: tocLvl, bookmark: tocBmName, runs: [{ t: tocText }] });
               }
             }
             return;
@@ -7489,13 +7515,10 @@ function buildAcademicPaperHtml(runData, options) {
           if (el.classList.contains('academic-chapter-title')) {
             var labelEl = el.querySelector('.chapter-label');
             var nameEl = el.querySelector('.chapter-name');
-            var labelText = labelEl ? labelEl.textContent.replace(/\s+/g, ' ').trim() : '';
-            var nameText = (nameEl ? nameEl.textContent : el.textContent).replace(/\s+/g, ' ').trim();
-            chapterSeen += 1;
-            if (chapterSeen > 1) payload.blocks.push({ kind: 'pageBreak', runs: [] });
-            var chapBm = /^paper-toc-h/.test(el.id || '') ? el.id : '';
-            if (labelText) payload.blocks.push({ kind: 'chapterLabel', bookmark: chapBm, runs: [{ t: labelText, b: true }] });
-            if (nameText && nameText !== labelText) payload.blocks.push({ kind: 'chapterName', bookmark: labelText ? '' : chapBm, runs: [{ t: nameText, b: true }] });
+            var whole = el.textContent.replace(/\s+/g, ' ').trim();
+            var labelText = labelEl ? labelEl.textContent.replace(/\s+/g, ' ').trim() : (whole.match(/^الفصل\s+\S+/) || [''])[0];
+            var nameText = nameEl ? nameEl.textContent.replace(/\s+/g, ' ').trim() : whole.replace(labelText, '').trim();
+            emitChapter(labelText || whole, nameText);
             return;
           }
           var kind = 'p';
@@ -7514,17 +7537,23 @@ function buildAcademicPaperHtml(runData, options) {
           var bare = stripOrdinal(plain);
           /* «أولًا: المقدمة» تُختزل إلى «المقدمة» مرة واحدة في أعلى
              صفحتها، ومثلها الخاتمة، و«صلب البحث» لا يُكتب */
-          if ((kind === 'h' || kind === 'partTitle' || plain.length <= 40) && (bare === 'المقدمة' || bare === 'الخاتمة')) {
-            if (partSeen[bare]) return;
-            partSeen[bare] = true;
+          if (plain.length <= 48 && /المقدمة|الخاتمة/.test(plain) && /^(?:أول|ثان|ثالث|رابع|خامس|المقدمة|الخاتمة)/.test(plain)) {
+            var partName = /الخاتمة/.test(plain) ? 'الخاتمة' : 'المقدمة';
+            if (partSeen[partName]) return;
+            partSeen[partName] = true;
             payload.blocks.push({ kind: 'pageBreak', runs: [] });
-            payload.blocks.push({ kind: 'partTitle', bookmark: /^paper-toc-h/.test(el.id || '') ? el.id : '', runs: [{ t: bare, b: true }] });
+            payload.blocks.push({ kind: 'partTitle', bookmark: bookmarkFor(partName), runs: [{ t: partName, b: true }] });
             return;
           }
-          if (bare === 'صلب البحث') return;
+          if (bare === 'صلب البحث' || plain === 'ثانيًا: صلب البحث' || plain === 'ثانيا: صلب البحث') return;
+          var chapPlain = plain.match(/^(الفصل\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|[0-9٠-٩]+))\s*[:：]?\s*(.*)$/);
+          if (chapPlain && plain.length <= 120 && (kind === 'h' || kind === 'partTitle')) {
+            emitChapter(chapPlain[1], chapPlain[2]);
+            return;
+          }
           if (el.classList.contains('ms-matn-start')) payload.blocks.push({ kind: 'pageBreak', runs: [] });
           var block = { kind: kind, runs: cleaned };
-          if (/^paper-toc-h/.test(el.id || '')) block.bookmark = el.id;
+          if (kind === 'h') block.bookmark = bookmarkFor(bare || plain);
           payload.blocks.push(block);
         });
       });

@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.631"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.632"},
         },
     })
     if opened.get("error"):
@@ -27437,7 +27437,8 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     kind = str(block.get("kind") or "p")
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     key = {"title": "title", "meta": "meta", "h": "h", "biblioTitle": "h", "biblioItem": "biblio",
-           "tocTitle": "h", "partTitle": "h", "chapterLabel": "h", "chapterName": "h"}.get(kind, "body")
+           "tocTitle": "h", "partTitle": "h", "chapter": "h",
+           "chapterLabel": "h", "chapterName": "h"}.get(kind, "body")
     base = _docx_style(styles, key, body)
     if kind == "chapterLabel":
         base = dict(base)
@@ -27449,9 +27450,9 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     # في أقصى اليمين و«الأول» في أقصى اليسار
     align = "center" if kind in (
         "title", "meta", "bismillah", "biblioTitle", "tocTitle", "partTitle",
-        "chapterLabel", "chapterName") else "both"
+        "chapter", "chapterLabel", "chapterName") else "both"
     ppr = []
-    if kind in ("h", "chapterLabel", "chapterName", "partTitle"):
+    if kind == "h":
         ppr.append("<w:keepNext/>")
     if page_break or kind in ("biblioTitle", "tocTitle"):
         ppr.append("<w:pageBreakBefore/>")
@@ -27488,7 +27489,7 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     return f'<w:p><w:pPr>{"".join(ppr)}</w:pPr>{runs}</w:p>'
 
 
-def _docx_toc_table(items: list, styles: dict) -> str:
+def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = None) -> str:
     """فهرس وورد جدولًا من عمودين: الموضوع ٩٠٪ ورقم الصفحة ١٠٪، والرقم
     حقل PAGEREF يحدّثه وورد على صفحاته هو لا على صفحات PDF."""
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
@@ -27508,7 +27509,7 @@ def _docx_toc_table(items: list, styles: dict) -> str:
             f'{ind}<w:jc w:val="right"/></w:pPr>'
             f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(text)}</w:t></w:r></w:p>'
         )
-        if bm:
+        if bm and (known_bookmarks is None or bm in known_bookmarks):
             page = (
                 '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/>'
                 '<w:spacing w:line="240" w:lineRule="auto" w:after="0"/></w:pPr>'
@@ -27551,6 +27552,12 @@ def build_docx_bytes(payload: dict) -> bytes:
 
     # كتل pageBreak لا تُرسم: تُرفع علمًا يجعل الفقرة التالية تبدأ
     # صفحة جديدة، فيتطابق تصفيح وورد مع صفحات التطبيق صفحةً صفحة
+    known_bookmarks = set()
+    for _b in blocks:
+        if isinstance(_b, dict) and str(_b.get("kind") or "") != "tocItem":
+            _nm = re.sub(r"[^A-Za-z0-9_]", "", str(_b.get("bookmark") or ""))[:40]
+            if _nm:
+                known_bookmarks.add(_nm)
     para_parts = []
     pending_break = False
     biblio_counter = 0
@@ -27569,7 +27576,7 @@ def build_docx_bytes(payload: dict) -> bytes:
             while i < len(blocks) and isinstance(blocks[i], dict) and str(blocks[i].get("kind") or "") == "tocItem":
                 group.append(blocks[i])
                 i += 1
-            para_parts.append(_docx_toc_table(group, styles))
+            para_parts.append(_docx_toc_table(group, styles, known_bookmarks))
             pending_break = False
             continue
         if kind == "biblioItem":
