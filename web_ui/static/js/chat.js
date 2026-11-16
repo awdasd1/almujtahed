@@ -4587,6 +4587,11 @@ async function downloadChatResearchReport(idx) {
     L.push('');
     L.push('ثانيًا: مؤشرات التدقيق التوثيقي');
     L.push(`مفحوص: ${a.checked ?? '—'} · مربوط بحواشيه: ${a.linked ?? '—'} · ثابت: ${a.verified ?? '—'} · في غير موضعه: ${a.relocated ?? '—'} · غير ثابت آليًا: ${a.unverified ?? '—'} · نسبة الثبوت: ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪) · تنبيهات وسيط وحيد: ${a.tier_warnings ?? 0} · دعاوى إجماع: ${a.ijma_flags ?? 0} · اتفاق مطلق بلا نسبة: ${a.ijma_unattributed ?? 0}`);
+    L.push(`حزم مدير الأدوات: ${a.packages_present ? ((a.packages_count ?? 0) + ' حزمة · توثيق مذكور ' + (a.packages_verified_mentions ?? 0) + ' · نقول مسودة لم تمر بالحزم: ' + (a.draft_quotes_unbundled_n ?? 0)) : 'لم يعمل مدير أدوات في هذه الجولة'}`);
+    if ((a.draft_quotes_unbundled || []).length) {
+      L.push('نقول المسودة خارج الحزم:');
+      a.draft_quotes_unbundled.slice(0, 8).forEach(q => L.push(`- «${q}»`));
+    }
     if ((entry.audit_failures || []).length) {
       L.push('');
       L.push('مواضع منبّهة من التدقيق (للمراجعة البشرية):');

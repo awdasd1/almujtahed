@@ -4141,7 +4141,65 @@ def _documentation_record(stats: dict) -> str:
         lines.append(f"تنبيه: ورد ادعاء إجماع أو اتفاق في {stats['ijma_flags']} موضعًا بلا نقل ظاهر من كتب الإجماع (كإجماع ابن المنذر ومراتب ابن حزم والاستذكار والتمهيد) في الشواهد، فليُحرَّر قبل الاعتماد.")
     if stats.get("ijma_unattributed"):
         lines.append(f"تنبيه اتفاق مطلق: {len(stats['ijma_unattributed'])} دعوى اتفاق/إجماع مطلقة بلا نسبة لقائل أو كتاب إجماع في جملتها (نحو: «{stats['ijma_unattributed'][0]}…»)؛ الأثبت تحريرها بنقل من كتب الإجماع أو تخفيفها إلى «الجمهور» قبل الاعتماد.")
+    if stats.get("packages_present"):
+        lines.append(
+            f"سجل حزم مدير الأدوات: {stats.get('packages_count') or 0} حزمة داخلية موسومة المصدر، "
+            f"فيها {stats.get('packages_verified_mentions') or 0} ذكر توثيق MATCH_EXACT/NORMALIZED."
+        )
+        n_unb = int(stats.get("draft_quotes_unbundled_n") or 0)
+        if n_unb:
+            sample = "؛ ".join(f"«{q}»" for q in (stats.get("draft_quotes_unbundled") or [])[:4])
+            lines.append(
+                f"تنبيه مراقب: {n_unb} نقلًا في المسودة لم يُرَ في حزم مدير الأدوات (عينات: {sample}) — "
+                "يُراجع قبل الاعتماد: إما يُوثَّق بأدواتنا أو يُصرَّح بغيابه."
+            )
+        else:
+            lines.append("مقابلة الحزم بالمسودة: لم يُرصد نقل ظاهر في المسودة خارج حزم مدير الأدوات.")
+    elif stats.get("packages_present") is False:
+        lines.append("تنبيه مراقب: لا مدير أدوات في هذه الجولة؛ التوثيق من بوابة المطابقة الخادمية وحدها بلا حزم مسبقة.")
     return "\n".join(lines)
+
+
+def _tools_package_ledger(dossiers: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """سجل حزم مدير الأدوات: مصدرها داخلي موسوم، وعدد ما وُثّق فيها."""
+    packages: List[Dict[str, Any]] = []
+    for d in dossiers or []:
+        if not d.get("is_tools_manager"):
+            continue
+        for raw in d.get("packages") or []:
+            text = str(raw or "")
+            packages.append({
+                "agent": d.get("name") or "مدير الأدوات",
+                "verified_mentions": text.count("MATCH_EXACT") + text.count("MATCH_NORMALIZED"),
+                "not_found": text.count("NOT_FOUND") + text.count("UNCHECKED"),
+                "preview": re.sub(r"\s+", " ", text)[:280],
+            })
+    return {
+        "count": len(packages),
+        "verified_mentions": sum(p["verified_mentions"] for p in packages),
+        "items": packages[:12],
+        "present": any(d.get("is_tools_manager") for d in (dossiers or [])),
+    }
+
+
+def _attach_package_audit(stats: Dict[str, Any], ledger: Dict[str, Any], reply_text: str) -> None:
+    """يربط بوابة التوثيق بسجل حزم مدير الأدوات: نقول المسودة التي لم تمر بالحزم."""
+    stats["packages_count"] = int(ledger.get("count") or 0)
+    stats["packages_verified_mentions"] = int(ledger.get("verified_mentions") or 0)
+    stats["packages_present"] = bool(ledger.get("present"))
+    blob = " ".join(p.get("preview") or "" for p in (ledger.get("items") or []))
+    blob_f = _fold_ar(blob) if blob else ""
+    quotes = re.findall(r"[«\"]([^»\"]{12,180})[»\"]", reply_text or "")
+    unbound = []
+    for q in quotes[:40]:
+        qf = _fold_ar(q)
+        if len(qf) < 8:
+            continue
+        if blob_f and qf[:24] in blob_f:
+            continue
+        unbound.append(q[:90])
+    stats["draft_quotes_unbundled"] = unbound[:12]
+    stats["draft_quotes_unbundled_n"] = len(unbound)
 
 
 def parse_book_card(betaka: str) -> dict:
@@ -7699,7 +7757,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.613"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.614"},
         },
     })
     if opened.get("error"):
@@ -12497,6 +12555,17 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
             "missing_terms", "منخفضة", "ألفاظ متقدمين موثقة غابت عن المتن",
             "لم يظهر لها أثر في الجواب: " + "، ".join(f"«{t}»" for t in _mt[:8]),
             "مفتوح", "يُراجع ما وراءها من نصوص صريحة وإن لم تدخل الصياغة"))
+    _unb = int(gs.get("draft_quotes_unbundled_n") or 0)
+    if _unb:
+        ev.append(_risk_event(
+            "draft_unbundled", "متوسطة", "نقول في المسودة لم تمر بحزم مدير الأدوات",
+            f"{_unb} نقلًا ظاهرًا في المسودة لم يُرَ في الحزم الموسومة المصدر",
+            "مفتوح", "يوثَّق بأدوات المغني الداخلية أو يُصرَّح بغيابه قبل الاعتماد"))
+    if gs.get("packages_present") is False:
+        ev.append(_risk_event(
+            "no_tools_manager", "منخفضة", "جولة بلا مدير أدوات",
+            "لم يعمل مدير أدوات في هذه الجولة؛ التوثيق من بوابة المطابقة وحدها",
+            "موثق", "عيّن مدير أدوات في المجموعة ليغذي الفريق بحزم موثقة قبل المسودة"))
     # — نطاق ومدة
     if disabled_agents:
         ev.append(_risk_event(
@@ -12569,12 +12638,18 @@ def _risk_officer_memo(events, *, question, group, manager_model, ledger,
         + "\n\nجدول الفريق:\n" + "\n".join(agents_lines)
         + ("\n\nمواضع منبهة من بوابة التوثيق:\n" + "\n".join(fails) if fails else "")
         + ("\n\nالنقول المستبعدة (خارج المكتبة — عينات):\n" + "\n".join(excl) if excl else "")
+        + "\n\nسجل حزم مدير الأدوات (المصدر الداخلي الموسوم؛ يقابل عليه المسودة):\n"
+        + (f"{gs.get('packages_count') or 0} حزمة، توثيق مذكور {gs.get('packages_verified_mentions') or 0}، "
+           f"نقول مسودة لم تمر بالحزم: {gs.get('draft_quotes_unbundled_n') or 0}"
+           + ((" — " + "؛ ".join(f"«{q}»" for q in (gs.get('draft_quotes_unbundled') or [])[:6]))
+              if gs.get("draft_quotes_unbundled") else ""))
         + "\n\nسجل الأدلة المنظم الذي بُني عليه البحث (للحكم النوعي على التغطية والترجيحات العارية):\n"
         + (ledger or "— لم يُبنَ سجل أدلة —")
     )[:60000]
     _sys = (
         "أنت مسؤول إدارة المخاطر في حوكمة منظومة «المغني» البحثية، مستقل تمامًا عن مدير البحث وفريقه: لا تجامل ولا تهوّل. "
-        "يصلك حصاد آلي من طبقات قياس المنظومة (أحداث مرشحة بأدلتها الرقمية، جدول الفريق، منبهات التوثيق، سجل الأدلة)، ومهمتك:\n"
+        "يصلك حصاد آلي من طبقات قياس المنظومة (أحداث مرشحة بأدلتها الرقمية، جدول الفريق، منبهات التوثيق، سجل حزم مدير الأدوات، سجل الأدلة)، ومهمتك:\n"
+        "اقرأ ثلاثة مصادر معًا ولا تغب عن أحدها: المسودة (عبر أحداث التشريح)، وتقرير التوثيق الآلي، وسجل حزم مدير الأدوات. علّم كل نقل في المسودة لم يثبت آليًا أو لم يمر بحزمة داخلية موسومة.\n"
         "١) أكّد كل حدث مرشح أو ارفضه إن كان دليله لا يقوم، ولك إعادة تصنيفه (عالية/متوسطة/منخفضة) مع تعليل من سطر.\n"
         "٢) أضف من سجل الأدلة مخاطر نوعية لا تلتقطها العدّادات إن وجدت: ترجيح بلا بطاقة، تغطية مذهبية ناقصة، تناقض بين وكيلين مرّ صامتًا، دعوى بلا سند — بحد أقصى أربع، وبتصنيفها ودليلها من السجل.\n"
         "٣) اكتب مذكرة رسمية إلى «صاحب البحث» بصيغة إدارة مخاطر تنبّه المسؤول الأول: تبدأ بسطر «الحكم العام» (صالح للاعتماد / صالح بتنبيهات / لا يُعتمد قبل معالجة العالية المفتوحة) ثم المخاطر العالية فالمتوسطة فالمنخفضة (أمام كل ملاحظة أيقونتها 🔴/🟡/⚪ وخطورتها ودليلها وحالتها: عولجت آليًا أم مفتوحة)، ثم قسم «قرارات مطلوبة من صاحب البحث» بما لا يعالج إلا بقراره.\n"
@@ -17356,6 +17431,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         if req.mcp_for_agents:
             print("🧭 [Independence] خيار «MCP للوكلاء» ملغى: الأدوات بيد مدير الأدوات وحده", flush=True)
 
+        _last_harvested: List[str] = []
+
         def _subagent_reply_with_tools(ag_model: str, sub_sys: str, sub_user: str, ag_temp: float, ag_max_tokens: int, ag_thinking: str = None, is_manager: bool = False) -> str:
             # لا يستدعي هذا المسار إلا مدير الأدوات وبكتالوجه الداخلي وحده.
             _tools = manager_tools if is_manager else []
@@ -17364,6 +17441,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
             def _finish_report(text: str) -> str:
                 # نصوص الأدوات التي قرأها الوكيل تصعد إلى الرئيسي كما هي، لا تضيع في ملخصه.
+                _last_harvested.clear()
+                if is_manager and harvested:
+                    _last_harvested.extend(harvested)
                 if not harvested:
                     return text
                 appendix = "\n\n".join(harvested[:6])[:7000]
@@ -17449,6 +17529,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             ag_top_k = int(ag.get("top_k") or ag.get("topK") or ag.get("scanned_texts") or ag.get("extract_count") or ag.get("extractCount") or 150)
             ag_thinking = str(ag.get("thinking") or ag.get("thinking_level") or "").strip() or None
             _is_manager = _is_tools_manager_agent(ag)
+            _packages: List[str] = []
             cits = (anchor_prefetch or {}).get(str(idx), [])
             if cits:
                 # حصص متكافئة: لا يبتلع كتاب واحد قائمة شواهد الوكيل ما دامت
@@ -17580,6 +17661,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 try:
                     if _is_manager and manager_tools:
                         rep = _subagent_reply_with_tools(_try_model, sub_sys, sub_user, ag_temp, ag_max_tokens, _try_thinking, is_manager=True) or ""
+                        _packages = list(_last_harvested)
                     else:
                         rep = call_openrouter_raw(
                             model_id=_try_model,
@@ -17625,7 +17707,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "report": rep,
                 "failed": ag_failed,
                 "rescued_by": _rescued_by,
-                "fail_reason": ag_fail_reason if ag_failed else ""
+                "fail_reason": ag_fail_reason if ag_failed else "",
+                "is_tools_manager": bool(_is_manager),
+                "packages": _packages,
             }
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(active_agents), 12)) as executor:
@@ -18997,6 +19081,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 # تنبيه ختامي ظاهر، بلا حذف ولا جولة إصلاح تستبدل البحث.
                 try:
                     reply_text, _gate_stats = _documentation_gate(reply_text, witness_rows)
+                    try:
+                        _pkg_ledger = _tools_package_ledger(subagents_dossiers)
+                        _attach_package_audit(_gate_stats, _pkg_ledger, reply_text)
+                    except Exception as _pkg_err:
+                        print(f"🧰 [Package Audit] تعذر ربط الحزم بتقرير التوثيق: {_pkg_err}", flush=True)
                     if locals().get("_hadith_project"):
                         _gate_stats["skip_madhhab_coverage"] = True
                     # سجل التدقيق وتنبيها اكتمال الفريق والنطاق لا تُختم في
@@ -19109,7 +19198,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                      "citations": len(d.get("citations") or []),
                      "failed": bool(d.get("failed")),
                      "fail_reason": d.get("fail_reason", ""),
-                     "rescued_by": d.get("rescued_by", "")}
+                     "rescued_by": d.get("rescued_by", ""),
+                     "is_tools_manager": bool(d.get("is_tools_manager")),
+                     "packages": len(d.get("packages") or [])}
                     for d in subagents_dossiers],
             })
             print(f"🏛 [Risk Office] {_risk_officer}: {len(_risk_events)} حدث مخاطرة "
@@ -19161,6 +19252,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "semantic_channel": locals().get("_sem_state") or "",
                 "semantic_witnesses": _gs.get("semantic_witnesses") or 0,
                 "unresolved_citations": _unresolved_citations,
+                "packages_count": _gs.get("packages_count") or 0,
+                "packages_verified_mentions": _gs.get("packages_verified_mentions") or 0,
+                "packages_present": bool(_gs.get("packages_present")),
+                "draft_quotes_unbundled_n": _gs.get("draft_quotes_unbundled_n") or 0,
+                "draft_quotes_unbundled": (_gs.get("draft_quotes_unbundled") or [])[:8],
             },
         })
 
