@@ -7757,7 +7757,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.616"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.617"},
         },
     })
     if opened.get("error"):
@@ -12376,14 +12376,78 @@ def _build_evidence_ledger_deterministic(
             f"شواهده {_cit_n}\n{body[:6500]}")
     if not blocks:
         return ""
+    # خريطة إحالات معيارية: كل رقم كتاب ورد في البطاقات بعنوانه الرسمي في
+    # كتالوج المكتبة — حتى ينسخ المدير الإحالة برقمها وعنوانها الرسمي فلا
+    # تُقصى عند بوابة التدقيق لاختلاف صياغة حرة (كلّف اختلافها 49 إحالة
+    # مستبعدة في قياس 1.10.616).
+    _ids: List[int] = []
+    _seen_ids = set()
+    for d in dossiers:
+        for m in re.finditer(r"#(\d{1,7})\b", _ledger_cards_part(str(d.get("report") or ""))):
+            _i = int(m.group(1))
+            if _i not in _seen_ids:
+                _seen_ids.add(_i)
+                _ids.append(_i)
+    _cmap: List[str] = []
+    _db = None
+    try:
+        _db = get_db()
+    except Exception:
+        _db = None
+    for _i in _ids[:240]:
+        _t = ""
+        if _db is not None:
+            try:
+                _row = _db.execute(
+                    "SELECT title_ar, main_author_name_ar FROM books WHERE book_id = ? LIMIT 1",
+                    (_i,)).fetchone()
+                if _row and _row["title_ar"]:
+                    _t = str(_row["title_ar"]).strip()
+                    if _row["main_author_name_ar"]:
+                        _t += f" — {str(_row['main_author_name_ar']).strip()}"
+            except Exception:
+                _t = ""
+        if not _t:
+            _t = _bibliography_title(_i)
+        if _t:
+            _cmap.append(f"#{_i} {_t}")
+    # الصفرات وحدود المادة حتميًا: تقارير بلا بطاقات، وبطاقات بلا توثيق
+    # مطابقة، ووكلاء بلا شواهد، وأسطر إحالة بلا رقم كتاب لا تُحل آليًا.
+    _gaps: List[str] = []
+    for d in dossiers:
+        _rep = str(d.get("report") or "")
+        _cards = _ledger_cards_part(_rep)
+        _nm = str(d.get("name") or "")
+        _cit = d.get("citations")
+        _cit_n = len(_cit) if isinstance(_cit, list) else (int(_cit) if _cit else 0)
+        if not _cards.strip():
+            _gaps.append(f"تقرير «{_nm}» بلا بطاقات أدلة في مطلعه — صفر معلن عند صاحبه.")
+            continue
+        if _cit_n == 0:
+            _gaps.append(f"«{_nm}» بلا شواهد مرجعية محصودة — مادته دعاوى بلا بطاقات.")
+        if d.get("is_tools_manager") and "MATCH" not in _cards:
+            _gaps.append(f"مدير الأدوات «{_nm}» لم يوثّق بطاقاته بحالة مطابقة (لا MATCH) — حزمه غير موثقة منه.")
+    _unresolved = 0
+    for d in dossiers:
+        for _ln in _ledger_cards_part(str(d.get("report") or "")).splitlines():
+            if "الإحالة" in _ln and "#" not in _ln:
+                _unresolved += 1
+    if _unresolved:
+        _gaps.append(f"{_unresolved} سطر إحالة في البطاقات بلا رقم كتاب (#) — لا يُحل آليًا إلى موضع في المكتبة.")
     head = (
         f"# سجل الأدلة لمسألة: {query}\n"
         "(تجميع حتمي فوري من بطاقات تقارير الفريق كما وردت — بلا نموذج وسيط. "
         "رتّب منه: الأقوال والمنسوبات ببطاقاتها وكتبها وطبقاتها، والأدلة الحديثية "
         "بدرجاتها من بطاقاتها، ودعاوى الإجماع بمستنداتها؛ وما لم تجد له بطاقة هنا "
-        "فهو صفري عند الفريق فصرّح به ولا تسدّه من ذاكرتك.)\n"
+        "فهو صفري عند الفريق فصرّح به ولا تسدّه من ذاكرتك. "
+        "والإحالة المعتمدة تُنسخ من «خريطة الإحالات المعيارية» الآتية حرفيًا برقمها وعنوانها الرسمي.)\n"
     )
-    return head + "\n\n---\n\n".join(blocks)
+    if _cmap:
+        head += "\n## خريطة الإحالات المعيارية (من كتالوج المكتبة)\n" + "\n".join(_cmap) + "\n"
+    tail = ""
+    if _gaps:
+        tail = "\n\n## الصفرات وحدود المادة (رصد حتمي)\n" + "\n".join(f"- {g}" for g in _gaps)
+    return head + "\n\n---\n\n".join(blocks) + tail
 
 
 def _build_evidence_ledger(
@@ -17698,7 +17762,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             ag_max_tokens = 65536 if raw_output_tokens > 131072 else max(1024, raw_output_tokens)
 
             if _is_manager and manager_tools:
-                sub_sys += "\nأنت مدير الأدوات في فريقك: لديك أدوات المغني الداخلية المركّبة والتوثيقية وحدك. مهمتك جلب حزم شواهد موثقة للمسألة (research_evidence أولًا بنطاق كتب مغلق، واستشارة locate_in_book لتحديد مدى باب المسألة في الكتب الضخمة قبل القراءة، وقراءة الصفحات ومطابقتها عند الحاجة) وإعادتها إلى مدير المشروع بعزوها وحالة مطابقتها كما هي. لا تكتب التحليل النهائي ولا الترجيح، ولا تنقل في تقريرك إلا ما حالته MATCH_EXACT أو MATCH_NORMALIZED، وصرّح بما تعذر توثيقه."
+                sub_sys += "\nأنت مدير الأدوات في فريقك: لديك أدوات المغني الداخلية المركّبة والتوثيقية وحدك. مهمتك جلب حزم شواهد موثقة للمسألة (research_evidence أولًا بنطاق كتب مغلق، واستشارة locate_in_book لتحديد مدى باب المسألة في الكتب الضخمة قبل القراءة، وقراءة الصفحات ومطابقتها عند الحاجة) وإعادتها إلى مدير المشروع بعزوها وحالة مطابقتها كما هي. لا تكتب التحليل النهائي ولا الترجيح، ولا تنقل في تقريرك إلا ما حالته MATCH_EXACT أو MATCH_NORMALIZED، وصرّح بما تعذر توثيقه. واختم تقريرك بقسم عنوانه حرفيًا «ما تعذر» تذكر فيه بنطاقات صريحة ما بحثت عنه ولم تجده أو لم يثبت."
 
             # سُلّم إنقاذ الوكيل الساقط (قرار المنتج): إعادة الجولة بنفس
             # النموذج، ثم نموذج احتياطي، ثم نموذج مختص يعيد كتابة التقرير،
