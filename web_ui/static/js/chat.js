@@ -2703,6 +2703,32 @@ function buildWordPayload(doc) {
     root.querySelectorAll(blockSel).forEach((el) => {
       if (el.closest('.pagedjs_footnote_area')) return;
       if (el.closest('.footnote-list') || el.classList.contains('footnote-line') || el.classList.contains('footnote-item')) return;
+      const isTocTitle = el.classList.contains('paper-toc-title');
+      const isTocRow = el.tagName === 'LI' && (
+        el.closest('.paper-toc')
+        || /\btoc-l[123]\b/.test(el.className || '')
+        || el.querySelector('.toc-title, .toc-page, .toc-num')
+      );
+      if (isTocTitle || isTocRow) {
+        if (isTocTitle) {
+          payload.blocks.push({ kind: 'tocTitle', runs: [{ t: 'فهرس البحث', b: true }] });
+        } else {
+          const tocTitleEl = el.querySelector('.toc-title');
+          const tocPageEl = el.querySelector('.toc-page');
+          let tocText = (tocTitleEl ? tocTitleEl.textContent : el.textContent).replace(/\s+/g, ' ').trim();
+          if (tocPageEl) tocText = tocText.replace(tocPageEl.textContent, '').replace(/\s+/g, ' ').trim();
+          if (tocText) {
+            const tocLvl = el.classList.contains('toc-l3') ? 3 : (el.classList.contains('toc-l2') ? 2 : 1);
+            payload.blocks.push({
+              kind: 'tocItem',
+              lvl: tocLvl,
+              page: tocPageEl ? String(tocPageEl.textContent || '').trim() : '',
+              runs: [{ t: tocText }],
+            });
+          }
+        }
+        return;
+      }
       let kind = 'p';
       if (el.classList.contains('paper-main-title')) kind = 'title';
       else if (el.classList.contains('paper-sub-meta')) kind = 'meta';

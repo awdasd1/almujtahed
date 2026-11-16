@@ -556,7 +556,10 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Almoghni", isDirectory: true)
     private var statusURL: URL { support.appendingPathComponent("status.txt") }
-    private let interfaceURL = URL(string: "http://127.0.0.1:8085/?v=1.10.633")!
+    private var interfaceURL: URL {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"
+        return URL(string: "http://127.0.0.1:8085/?v=\(v)")!
+    }
     private let ink = NSColor(srgbRed: 0.165, green: 0.133, blue: 0.102, alpha: 1)
     private let clay = NSColor(srgbRed: 0.710, green: 0.416, blue: 0.298, alpha: 1)
     private let emerald = NSColor(srgbRed: 0.184, green: 0.435, blue: 0.369, alpha: 1)
@@ -1054,6 +1057,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func startEngine() {
+        stopListener(port: 8085, marker: "server.py")
         let script = Bundle.main.resourceURL!.appendingPathComponent("launch.sh")
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/bash")

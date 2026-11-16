@@ -7495,8 +7495,14 @@ function buildAcademicPaperHtml(runData, options) {
           if (el.closest('.footnote-list') || el.classList.contains('footnote-line') || el.classList.contains('footnote-item')) return;
           // فهرس البحث (آخر الورقة): عنوانه صفحة جديدة، وبنوده بجدولة
           // منقّطة إلى رقم الصفحة كما في نافذة الطباعة
-          if (el.closest('.paper-toc')) {
-            if (el.classList.contains('paper-toc-title')) {
+          var isTocTitle = el.classList.contains('paper-toc-title');
+          var isTocRow = el.tagName === 'LI' && (
+            el.closest('.paper-toc')
+            || /\btoc-l[123]\b/.test(el.className || '')
+            || el.querySelector('.toc-title, .toc-page, .toc-num')
+          );
+          if (isTocTitle || isTocRow) {
+            if (isTocTitle) {
               payload.blocks.push({ kind: 'tocTitle', runs: [{ t: 'فهرس البحث', b: true }] });
             } else if (el.tagName === 'LI') {
               var tocTitleEl = el.querySelector('.toc-title');

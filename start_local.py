@@ -80,7 +80,43 @@ def _serve_web():
     os.execv(sys.executable, [sys.executable, "server.py"])
 
 
+def stop_existing_server(port=8085):
+    """لا تُترك عملية server.py القديمة على المنفذ بعد تحديث الملفات."""
+    import signal
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return
+    for raw in out.split():
+        try:
+            pid = int(raw)
+        except ValueError:
+            continue
+        try:
+            cmd = subprocess.check_output(
+                ["ps", "-p", str(pid), "-o", "command="],
+                text=True, stderr=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        if "server.py" not in cmd:
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            continue
+        for _ in range(30):
+            if not port_open(port):
+                break
+            time.sleep(0.1)
+
+
 def start_web():
+    stop_existing_server(8085)
     if port_open(8085):
         log("واجهة المغني تعمل بالفعل على http://localhost:8085")
         if os.name == "nt":
