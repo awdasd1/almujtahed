@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.630"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.631"},
         },
     })
     if opened.get("error"):
@@ -27437,53 +27437,39 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     kind = str(block.get("kind") or "p")
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     key = {"title": "title", "meta": "meta", "h": "h", "biblioTitle": "h", "biblioItem": "biblio",
-           "tocTitle": "h", "partTitle": "h"}.get(kind, "body")
+           "tocTitle": "h", "partTitle": "h", "chapterLabel": "h", "chapterName": "h"}.get(kind, "body")
     base = _docx_style(styles, key, body)
-    align = "center" if kind in ("title", "meta", "bismillah", "biblioTitle", "tocTitle", "partTitle") else (
-        "right" if kind == "tocItem" else "both")
-    # ارتفاع سطر وورد من ارتفاع سطر الورقة المقيس (نسبة كسرية): كان
-    # ثابتًا على سطر مفرد فانضغط تصفيح وورد واختلّت صفحاته عن المطبوعة
-    try:
-        _lh = float(base.get("lh") or body.get("lh") or 0)
-    except Exception:
-        _lh = 0
-    _line = int(round(_lh * 240)) if 1.0 < _lh < 3.6 else 240
-    toc_lvl = 1
-    if kind == "tocItem":
+    if kind == "chapterLabel":
+        base = dict(base)
         try:
-            toc_lvl = int(block.get("lvl") or 1)
+            base["size"] = max(11, round(float(base.get("size") or 16) * 0.65, 1))
         except Exception:
-            toc_lvl = 1
-    # ترتيب خصائص الفقرة على تسلسل OOXML المعياري (keepNext قبل
-    # pageBreakBefore، والجدولة قبل bidi، والتباعد قبل الإزاحة قبل
-    # المحاذاة): خلافه يسقط الجدولة المنقطة والإزاحة في وورد فتتكدس
-    # بنود الفهرس بلا نقاط وباتجاه مضطرب
+            pass
+    # التوسيط للعناوين والفصول: الضبط من الجانبين كان يبعثر «الفصل»
+    # في أقصى اليمين و«الأول» في أقصى اليسار
+    align = "center" if kind in (
+        "title", "meta", "bismillah", "biblioTitle", "tocTitle", "partTitle",
+        "chapterLabel", "chapterName") else "both"
     ppr = []
-    if kind == "h":
-        # العنوان لا ينفصل عن فقرته التالية عند كسر الصفحة
+    if kind in ("h", "chapterLabel", "chapterName", "partTitle"):
         ppr.append("<w:keepNext/>")
     if page_break or kind in ("biblioTitle", "tocTitle"):
         ppr.append("<w:pageBreakBefore/>")
-    if kind == "tocItem":
-        # بند فهرس: جدولة يسارية بزخرفة نقطية إلى رقم الصفحة في آخر السطر
-        ppr.append('<w:tabs><w:tab w:val="left" w:leader="dot" w:pos="9800"/></w:tabs>')
     ppr.append("<w:bidi/>")
     if kind == "h":
-        # سطر فارغ كامل قبل العنوان يفصله عن آخر سطر في الفقرة
-        # السابقة: مسافة علوية بارتفاع سطر من المتن
         try:
             body_size = float(body.get("size") or 12)
         except Exception:
             body_size = 12
         before_twips = max(200, min(600, int(round(body_size * 20))))
-        ppr.append(f'<w:spacing w:before="{before_twips}" w:line="{_line}" w:lineRule="auto" w:after="60"/>')
+        ppr.append(f'<w:spacing w:before="{before_twips}" w:line="240" w:lineRule="auto" w:after="60"/>')
+    elif kind in ("chapterLabel", "partTitle"):
+        # في أعلى الصفحة بلا مسافة علوية تدفعه إلى وسطها
+        ppr.append('<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="40"/>')
     else:
-        ppr.append(f'<w:spacing w:line="{_line}" w:lineRule="auto" w:after="60"/>')
-    if kind == "tocItem":
-        # إزاحة يمنى (جهة البدء في RTL) بحسب عمق البند
-        if toc_lvl > 1:
-            ppr.append(f'<w:ind w:right="{(toc_lvl - 1) * 420}"/>')
-    elif kind == "p":
+        # قياس الفقرة: سطر مفرد
+        ppr.append('<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="60"/>')
+    if kind == "p":
         ppr.append('<w:ind w:firstLine="300"/>')
     ppr.append(f'<w:jc w:val="{align}"/>')
     runs = _docx_runs(block.get("runs"), base, styles, fn_count)
@@ -27493,7 +27479,63 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
         # ترقيم قائمة المراجع في وورد بأرقام عربية مشرقية: ١- …
         num_ar = str(biblio_num).translate(str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩"))
         runs = f'<w:r>{_docx_rpr(base)}<w:t xml:space="preserve">{num_ar}- </w:t></w:r>' + runs
+    bm = re.sub(r"[^A-Za-z0-9_]", "", str(block.get("bookmark") or ""))[:40]
+    if bm:
+        _docx_paragraph._bm = getattr(_docx_paragraph, "_bm", 0) + 1
+        bid = _docx_paragraph._bm
+        runs = (f'<w:bookmarkStart w:id="{bid}" w:name="{bm}"/>{runs}'
+                f'<w:bookmarkEnd w:id="{bid}"/>')
     return f'<w:p><w:pPr>{"".join(ppr)}</w:pPr>{runs}</w:p>'
+
+
+def _docx_toc_table(items: list, styles: dict) -> str:
+    """فهرس وورد جدولًا من عمودين: الموضوع ٩٠٪ ورقم الصفحة ١٠٪، والرقم
+    حقل PAGEREF يحدّثه وورد على صفحاته هو لا على صفحات PDF."""
+    body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
+    rpr = _docx_rpr(body)
+    rows = []
+    for it in items:
+        try:
+            lvl = max(1, min(3, int(it.get("lvl") or 1)))
+        except Exception:
+            lvl = 1
+        bm = re.sub(r"[^A-Za-z0-9_]", "", str(it.get("bookmark") or ""))[:40]
+        text = "".join(str(r.get("t") or "") for r in (it.get("runs") or []) if isinstance(r, dict))
+        ind = f'<w:ind w:right="{(lvl - 1) * 300}"/>' if lvl > 1 else ""
+        topic = (
+            '<w:p><w:pPr><w:bidi/>'
+            '<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="40"/>'
+            f'{ind}<w:jc w:val="right"/></w:pPr>'
+            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(text)}</w:t></w:r></w:p>'
+        )
+        if bm:
+            page = (
+                '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/>'
+                '<w:spacing w:line="240" w:lineRule="auto" w:after="0"/></w:pPr>'
+                '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+                f'<w:r>{rpr}<w:instrText xml:space="preserve"> PAGEREF {bm} \\h </w:instrText></w:r>'
+                '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+                f'<w:r>{rpr}<w:t> </w:t></w:r>'
+                '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+            )
+        else:
+            page = f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r>{rpr}<w:t>-</w:t></w:r></w:p>'
+        rows.append(
+            "<w:tr>"
+            '<w:tc><w:tcPr><w:tcW w:w="4500" w:type="pct"/></w:tcPr>' + topic + "</w:tc>"
+            '<w:tc><w:tcPr><w:tcW w:w="500" w:type="pct"/></w:tcPr>' + page + "</w:tc>"
+            "</w:tr>"
+        )
+    return (
+        '<w:tbl><w:tblPr><w:bidiVisual/>'
+        '<w:tblW w:w="5000" w:type="pct"/>'
+        '<w:tblBorders>'
+        '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>'
+        '<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/>'
+        '</w:tblBorders></w:tblPr>'
+        '<w:tblGrid><w:gridCol w:w="8879"/><w:gridCol w:w="987"/></w:tblGrid>'
+        + "".join(rows) + "</w:tbl>"
+    )
 
 
 def build_docx_bytes(payload: dict) -> bytes:
@@ -27512,13 +27554,25 @@ def build_docx_bytes(payload: dict) -> bytes:
     para_parts = []
     pending_break = False
     biblio_counter = 0
-    for b in blocks:
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        i += 1
         if not isinstance(b, dict):
             continue
-        if str(b.get("kind") or "") == "pageBreak":
+        kind = str(b.get("kind") or "")
+        if kind == "pageBreak":
             pending_break = True
             continue
-        if str(b.get("kind") or "") == "biblioItem":
+        if kind == "tocItem":
+            group = [b]
+            while i < len(blocks) and isinstance(blocks[i], dict) and str(blocks[i].get("kind") or "") == "tocItem":
+                group.append(blocks[i])
+                i += 1
+            para_parts.append(_docx_toc_table(group, styles))
+            pending_break = False
+            continue
+        if kind == "biblioItem":
             biblio_counter += 1
             para_parts.append(_docx_paragraph(b, styles, fn_count, page_break=pending_break, biblio_num=biblio_counter))
         else:
@@ -27597,6 +27651,7 @@ def build_docx_bytes(payload: dict) -> bytes:
     settings_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:updateFields w:val="true"/>'
         "<w:compat/></w:settings>"
     )
     content_types = (

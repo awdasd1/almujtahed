@@ -6916,6 +6916,7 @@ function buildAcademicPaperHtml(runData, options) {
      بلا ترقيم ترتيبي (أولًا/ثالثًا) */
   const normalizePaperHeadings = (htmlText) => {
     const seenParts = new Set();
+    let chapterCount = 0;
     return htmlText.replace(
     /<(h2|h3)([^>]*)>([\s\S]*?)<\/\1>|<p class="academic-subheading">([\s\S]*?)<\/p>|<span class="academic-inline-heading"><(b|strong)>([\s\S]*?)<\/\5><\/span>|<p([^>]*)>\s*<(b|strong)>([\s\S]*?)<\/\8>\s*<\/p>/g,
     (match, tag, attrs, inner, subInner, iTag, iInner, pAttrs, pbTag, pbInner) => {
@@ -6926,7 +6927,7 @@ function buildAcademicPaperHtml(runData, options) {
       const title = String(rawInner || '').replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ').trim().replace(/[:：]\s*$/, '');
       if (!title) return match;
-      const bare = title.replace(/^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا)\s*[:：]?\s*/, '');
+      const bare = title.replace(/^(?:أول|ثان|ثالث|رابع|خامس)\S{0,4}\s*[:：.\-]?\s*/, '');
       if (bare === 'صلب البحث') return '';
       if (bare === 'المقدمة' || bare === 'الخاتمة') {
         // لا تتكرر: قد يكتبها المولّف مرتين («أولًا: المقدمة» ثم
@@ -6944,10 +6945,11 @@ function buildAcademicPaperHtml(runData, options) {
         const chapInner = chap && chap[2]
           ? `<span class="chapter-label">${escapeHtml(chap[1])}</span><br><span class="chapter-name">${escapeHtml(chap[2])}</span>`
           : escapeHtml(title);
-        if (isInline) return `</p><h2 class="academic-chapter-title" style="break-before: page; page-break-before: always;">${chapInner}</h2><p class="academic-paragraph">`;
-        if (isSub) return `<h2 class="academic-chapter-title" style="break-before: page; page-break-before: always;">${chapInner}</h2>`;
-        if (isBoldPara) return `<h2 class="academic-chapter-title" style="break-before: page; page-break-before: always;">${chapInner}</h2>`;
-        return `<h2 class="academic-chapter-title" style="break-before: page; page-break-before: always;">${chapInner}</h2>`;
+        chapterCount += 1;
+        /* الفصل الأول يتبع المقدمة، وكل فصل بعده صفحة مستقلة */
+        const chapBrk = chapterCount > 1 ? ' style="break-before: page; page-break-before: always;"' : '';
+        if (isInline) return `</p><h2 class="academic-chapter-title"${chapBrk}>${chapInner}</h2><p class="academic-paragraph">`;
+        return `<h2 class="academic-chapter-title"${chapBrk}>${chapInner}</h2>`;
       }
       return match;
     });
@@ -7456,6 +7458,11 @@ function buildAcademicPaperHtml(runData, options) {
       }
       var roots = pages.length ? pages.map(function (p) { return p.querySelector('.pagedjs_area') || p; }) : [doc.querySelector('.paper-sheet') || doc.body];
       var blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
+      var chapterSeen = 0;
+      var partSeen = {};
+      var stripOrdinal = function (t) {
+        return String(t || '').replace(/^(?:أول|ثان|ثالث|رابع|خامس)\S{0,4}\s*[:：.\-]?\s*/, '').replace(/[:：]\s*$/, '').trim();
+      };
       roots.forEach(function (root) {
         if (!root) return;
         root.querySelectorAll(blockSel).forEach(function (el) {
@@ -7468,15 +7475,27 @@ function buildAcademicPaperHtml(runData, options) {
               payload.blocks.push({ kind: 'pageBreak', runs: [] });
               payload.blocks.push({ kind: 'tocTitle', runs: [{ t: 'فهرس البحث', b: true }] });
             } else if (el.tagName === 'LI') {
-              var tocRuns = [];
-              wordRunsFromNode(el, ctx, tocRuns);
-              var tocClean = wordCleanRuns(tocRuns);
-              if (tocClean.length) {
-                if (tocClean.length > 1) tocClean.splice(tocClean.length - 1, 0, { t: '\t' });
+              var tocTitleEl = el.querySelector('.toc-title');
+              var tocLink = el.querySelector('a');
+              var tocText = (tocTitleEl ? tocTitleEl.textContent : el.textContent).replace(/\s+/g, ' ').trim();
+              var tocBm = String((tocLink && tocLink.getAttribute('href')) || '').replace(/^#/, '');
+              if (tocText) {
                 var tocLvl = el.classList.contains('toc-l3') ? 3 : (el.classList.contains('toc-l2') ? 2 : 1);
-                payload.blocks.push({ kind: 'tocItem', lvl: tocLvl, runs: tocClean });
+                payload.blocks.push({ kind: 'tocItem', lvl: tocLvl, bookmark: tocBm, runs: [{ t: tocText }] });
               }
             }
+            return;
+          }
+          if (el.classList.contains('academic-chapter-title')) {
+            var labelEl = el.querySelector('.chapter-label');
+            var nameEl = el.querySelector('.chapter-name');
+            var labelText = labelEl ? labelEl.textContent.replace(/\s+/g, ' ').trim() : '';
+            var nameText = (nameEl ? nameEl.textContent : el.textContent).replace(/\s+/g, ' ').trim();
+            chapterSeen += 1;
+            if (chapterSeen > 1) payload.blocks.push({ kind: 'pageBreak', runs: [] });
+            var chapBm = /^paper-toc-h/.test(el.id || '') ? el.id : '';
+            if (labelText) payload.blocks.push({ kind: 'chapterLabel', bookmark: chapBm, runs: [{ t: labelText, b: true }] });
+            if (nameText && nameText !== labelText) payload.blocks.push({ kind: 'chapterName', bookmark: labelText ? '' : chapBm, runs: [{ t: nameText, b: true }] });
             return;
           }
           var kind = 'p';
@@ -7491,9 +7510,22 @@ function buildAcademicPaperHtml(runData, options) {
           wordRunsFromNode(el, ctx, runs);
           var cleaned = wordCleanRuns(runs);
           if (!cleaned.length) return;
-          // «النص المحقق» في المخطوطات وكل فصل جديد يبدآن صفحة جديدة في وورد أيضًا
-          if (el.classList.contains('ms-matn-start') || el.classList.contains('academic-chapter-title')) payload.blocks.push({ kind: 'pageBreak', runs: [] });
-          payload.blocks.push({ kind: kind, runs: cleaned });
+          var plain = cleaned.map(function (r) { return r.t || ''; }).join('').replace(/\s+/g, ' ').trim();
+          var bare = stripOrdinal(plain);
+          /* «أولًا: المقدمة» تُختزل إلى «المقدمة» مرة واحدة في أعلى
+             صفحتها، ومثلها الخاتمة، و«صلب البحث» لا يُكتب */
+          if ((kind === 'h' || kind === 'partTitle' || plain.length <= 40) && (bare === 'المقدمة' || bare === 'الخاتمة')) {
+            if (partSeen[bare]) return;
+            partSeen[bare] = true;
+            payload.blocks.push({ kind: 'pageBreak', runs: [] });
+            payload.blocks.push({ kind: 'partTitle', bookmark: /^paper-toc-h/.test(el.id || '') ? el.id : '', runs: [{ t: bare, b: true }] });
+            return;
+          }
+          if (bare === 'صلب البحث') return;
+          if (el.classList.contains('ms-matn-start')) payload.blocks.push({ kind: 'pageBreak', runs: [] });
+          var block = { kind: kind, runs: cleaned };
+          if (/^paper-toc-h/.test(el.id || '')) block.bookmark = el.id;
+          payload.blocks.push(block);
         });
       });
       // بلا فواصل قسرية: تصفيح وورد متدفق وترقيمه متجدد كل صفحة
@@ -7712,7 +7744,7 @@ function buildAcademicPaperHtml(runData, options) {
     .paper-toc { break-before: page; }
     /* كل فصل جديد يبدأ صفحة جديدة وعنوانه في وسط أعلىها، وعنوانا
        المقدمة والخاتمة في الوسط */
-    .academic-chapter-title { break-before: page; page-break-before: always; text-align: center; margin-top: 0; text-indent: 0 !important; }
+    .academic-chapter-title { text-align: center; margin-top: 0; text-indent: 0 !important; }
     .academic-chapter-title .chapter-label { display: block; font-size: 0.6em; margin-bottom: 8px; }
     .academic-chapter-title .chapter-name { display: block; }
     .paper-part-title { text-align: center; }
