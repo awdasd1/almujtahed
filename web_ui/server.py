@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.637"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.638"},
         },
     })
     if opened.get("error"):
@@ -27504,11 +27504,12 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
 
 
 def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = None) -> str:
-    """فهرس وورد: صف واحد لكل بند، العمود الأيسر رقم الصفحة والأيمن
-    الموضوع (بلا bidiVisual حتى لا ينعكس العمودان فيتوهّم الرقم لغير
-    عنوانه). في خلية الموضوع جدولة منقّطة إلى حافة الرقم."""
+    """فهرس وورد جدولًا عربيًا: الموضوع يمينًا والصفحة يسارًا في الصف نفسه،
+    بحدود ظاهرة وجدولة منقّطة. الرقم يُحاذى أعلى الصف حتى لا ينزاح عن عنوانه
+    إذا التفّ العنوان سطرين."""
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     rpr = _docx_rpr(body)
+    brd = 'w:val="single" w:sz="8" w:space="0" w:color="888888"'
     rows = []
     for it in items:
         try:
@@ -27523,15 +27524,18 @@ def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = Non
             "<w:p><w:pPr>"
             '<w:tabs><w:tab w:val="left" w:leader="dot" w:pos="0"/></w:tabs>'
             "<w:bidi/>"
-            '<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="40"/>'
+            '<w:spacing w:before="60" w:line="360" w:lineRule="auto" w:after="60"/>'
             f'{ind}<w:jc w:val="right"/></w:pPr>'
             f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(text)}</w:t></w:r>'
             f"<w:r>{rpr}<w:tab/></w:r></w:p>"
         )
+        page_ppr = (
+            "<w:pPr><w:bidi/><w:jc w:val=\"center\"/>"
+            '<w:spacing w:before="60" w:line="360" w:lineRule="auto" w:after="60"/></w:pPr>'
+        )
         if bm and (known_bookmarks is None or bm in known_bookmarks):
             page = (
-                '<w:p><w:pPr><w:jc w:val="center"/>'
-                '<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="0"/></w:pPr>'
+                f"<w:p>{page_ppr}"
                 '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
                 f'<w:r>{rpr}<w:instrText xml:space="preserve"> PAGEREF {bm} \\h </w:instrText></w:r>'
                 '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
@@ -27540,27 +27544,30 @@ def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = Non
             )
         else:
             page = (
-                '<w:p><w:pPr><w:jc w:val="center"/>'
-                '<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="0"/></w:pPr>'
+                f"<w:p>{page_ppr}"
                 f'<w:r>{rpr}<w:t>{_docx_esc(shown if shown.strip() else "-")}</w:t></w:r></w:p>'
             )
         rows.append(
-            "<w:tr><w:trPr><w:cantSplit/></w:trPr>"
-            '<w:tc><w:tcPr><w:tcW w:w="700" w:type="pct"/><w:vAlign w:val="center"/>'
-            "<w:noWrap/></w:tcPr>" + page + "</w:tc>"
-            '<w:tc><w:tcPr><w:tcW w:w="4300" w:type="pct"/><w:vAlign w:val="center"/>'
-            "</w:tcPr>" + topic + "</w:tc>"
+            '<w:tr><w:trPr><w:cantSplit/>'
+            '<w:trHeight w:val="320" w:hRule="atLeast"/></w:trPr>'
+            '<w:tc><w:tcPr><w:tcW w:w="4300" w:type="pct"/>'
+            '<w:vAlign w:val="top"/></w:tcPr>' + topic + "</w:tc>"
+            '<w:tc><w:tcPr><w:tcW w:w="700" w:type="pct"/>'
+            '<w:vAlign w:val="top"/><w:noWrap/></w:tcPr>' + page + "</w:tc>"
             "</w:tr>"
         )
     return (
-        "<w:tbl><w:tblPr>"
+        "<w:tbl><w:tblPr><w:bidiVisual/>"
         '<w:tblW w:w="5000" w:type="pct"/>'
         '<w:tblLayout w:type="fixed"/>'
         "<w:tblBorders>"
-        '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>'
-        '<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/>'
-        "</w:tblBorders></w:tblPr>"
-        '<w:tblGrid><w:gridCol w:w="1381"/><w:gridCol w:w="8485"/></w:tblGrid>'
+        f"<w:top {brd}/><w:left {brd}/><w:bottom {brd}/>"
+        f"<w:right {brd}/><w:insideH {brd}/><w:insideV {brd}/>"
+        "</w:tblBorders>"
+        '<w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>'
+        '<w:bottom w:w="40" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar>'
+        "</w:tblPr>"
+        '<w:tblGrid><w:gridCol w:w="8485"/><w:gridCol w:w="1381"/></w:tblGrid>'
         + "".join(rows) + "</w:tbl>"
     )
 
