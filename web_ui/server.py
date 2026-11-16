@@ -7757,7 +7757,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.615"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.616"},
         },
     })
     if opened.get("error"):
@@ -11858,6 +11858,7 @@ def _consult_research_advisors(
     )
 
     def _one_think(ag):
+        _at0 = time.time()
         try:
             raw = call_openrouter_raw(
                 model_id=normalize_model_id(ag.get("model") or "google/gemini-2.5-pro"),
@@ -11871,9 +11872,12 @@ def _consult_research_advisors(
             ) or ""
             parsed = _parse_advisor_json(raw)
             parsed["advisor"] = str(ag.get("name") or "")
+            print(f"🧭 [Advisors] «{ag.get('name')}» ({ag.get('model')}) في "
+                  f"{time.time() - _at0:.0f}s: {len(parsed.get('books') or [])} كتابًا، "
+                  f"{len(parsed.get('anchors') or [])} مرساة", flush=True)
             return parsed
         except Exception as exc:
-            print(f"🧭 [Advisors] تعذر مستشار «{ag.get('name')}»: {exc}", flush=True)
+            print(f"🧭 [Advisors] تعذر مستشار «{ag.get('name')}» بعد {time.time() - _at0:.0f}s: {exc}", flush=True)
             return {"books": [], "anchors": [], "advisor": str(ag.get("name") or "")}
 
     proposals: List[Dict[str, Any]] = []
@@ -12090,6 +12094,7 @@ def _consult_research_advisors(
                 "الاتفاق قوة ترجيح لا حكم نهائي، والانفراد ليس ضعفًا بذاته: قيّم كل لقطة فريدة بمادتها في المسألة، وقبولك أو ردّك لها معلن بسببك. إن لم يكن بين المرشحين كتاب الترشيح بعينه فردّ الترشيح ولا تختر قريب الاسم. والأصول تُسند للمتخصصين لا لهيئة المناظرة ولا للطباعة إلا ما مادته المناظرة بعينها.\n"
                 'أخرج JSON حصراً بلا شرح: {"decisions":[{"n":1,"book_id":123,"agent":"اسم الوكيل حرفيًا","reason":"سبب قصير"}], "rejected":[{"n":1,"reason":"سبب الرد"}]}'
             )
+            _dt0 = time.time()
             raw_dir = call_openrouter_raw(
                 model_id=normalize_model_id(director_model),
                 messages=[{"role": "system", "content": _dsys},
@@ -12097,6 +12102,8 @@ def _consult_research_advisors(
                 api_key=api_key, temperature=0.1, max_tokens=20000, timeout=300,
                 thinking_level="high",
             ) or ""
+            print(f"🧭 [Advisors] مطابقة المدير وإسناده ({director_model}) في "
+                  f"{time.time() - _dt0:.0f}s على {len(_pile)} ترشيحًا متنازعًا", flush=True)
             spec_by_name = {str(a.get("name") or "").strip(): a for a in specialists}
             by_n = {v["n"]: v for v in props_v}
             for obj in reversed(_extract_json_objects(raw_dir)):
@@ -12325,6 +12332,60 @@ def _synthesis_degenerate(reply: str, dossiers: list) -> bool:
     return len(text) < reports_chars * 0.10 and notes < 10
 
 
+def _ledger_cards_part(rep: str) -> str:
+    # بطاقات الأدلة في مطلع كل تقرير قبل «التحرير»: هي مادة السجل وحدها.
+    m = re.search(r"(?:^|\n)#{0,3}\s*(?:\*\*)?التحرير(?:\s|المبني|\*\*|$)", rep)
+    part = rep[:m.start()] if m else rep[:14000]
+    return part[:22000]
+
+
+_LEDGER_SALIENT = re.compile(
+    r"الدعوى|الإحالة|المطابقة|MATCH|الكتاب|الجزء|الصفحة|درجت|إجماع|المذهب|الطبقة|النوع")
+
+
+def _build_evidence_ledger_deterministic(
+    dossiers: List[Dict[str, Any]],
+    query: str,
+) -> str:
+    """سجل أدلة حتمي فوري (بلا استدعاء نموذج): يجمع بطاقات التقارير كما هي —
+    دعاوى وإحالات ونصوصًا وحالات مطابقة — تحت عناوين أصحابها، فيلغي جولة
+    النموذج الوسيط التي كلّفت ~12 دقيقة (40٪ من زمن البحث) وهي تكرر على
+    المدير مادة تصله كاملة في التقارير نفسها. الصقل النموذجي القديم يبقى
+    متاحًا بمفتاح البيئة ALMOGHNI_LEDGER_MODEL=1 لمن أراد المقارنة."""
+    blocks = []
+    for d in dossiers:
+        rep = str(d.get("report") or "")
+        cards = _ledger_cards_part(rep)
+        if not cards.strip():
+            continue
+        kept = []
+        for ln in cards.splitlines():
+            s = ln.strip()
+            if not s:
+                continue
+            if s.startswith("#") or s.startswith("**البطاقة") or s.startswith("البطاقة") \
+                    or _LEDGER_SALIENT.search(s) or (s.startswith("- **") and len(s) < 320):
+                kept.append(ln)
+        body = "\n".join(kept).strip()
+        if len(body) < 400:
+            body = cards[:3000]
+        _cit = d.get("citations")
+        _cit_n = len(_cit) if isinstance(_cit, list) else (int(_cit) if _cit else 0)
+        blocks.append(
+            f"### بطاقات تقرير «{d.get('name') or ''}» ({d.get('model') or ''}) — "
+            f"شواهده {_cit_n}\n{body[:6500]}")
+    if not blocks:
+        return ""
+    head = (
+        f"# سجل الأدلة لمسألة: {query}\n"
+        "(تجميع حتمي فوري من بطاقات تقارير الفريق كما وردت — بلا نموذج وسيط. "
+        "رتّب منه: الأقوال والمنسوبات ببطاقاتها وكتبها وطبقاتها، والأدلة الحديثية "
+        "بدرجاتها من بطاقاتها، ودعاوى الإجماع بمستنداتها؛ وما لم تجد له بطاقة هنا "
+        "فهو صفري عند الفريق فصرّح به ولا تسدّه من ذاكرتك.)\n"
+    )
+    return head + "\n\n---\n\n".join(blocks)
+
+
 def _build_evidence_ledger(
     dossiers: List[Dict[str, Any]],
     query: str,
@@ -12336,8 +12397,20 @@ def _build_evidence_ledger(
     وكتابه وطبقته، وكل دليل حديثي بدرجته من بطاقته، ودعاوى الإجماع
     بمواضعها، والصفرات والادعاءات بلا بطاقة معلنة. لا يرجّح ولا يصوغ ولا
     يضيف من عنده؛ فالترجيح والصياغة يبقيان للمدير الواحد فوق هذا السجل."""
-    if not dossiers or not (model or "").strip() or not (api_key or "").strip():
+    if not dossiers:
         return ""
+    if os.environ.get("ALMOGHNI_LEDGER_MODEL") != "1":
+        _lt0 = time.time()
+        raw_fast = _build_evidence_ledger_deterministic(dossiers, query)
+        if raw_fast:
+            print(f"📒 [Evidence Ledger] سجل حتمي فوري من {len(dossiers)} تقريرًا "
+                  f"({len(raw_fast)} حرفًا) في {time.time() - _lt0:.1f}s — بلا استدعاء نموذج", flush=True)
+            return raw_fast
+        print("📒 [Evidence Ledger] تعذر التجميع الحتمي — يُتجاوز", flush=True)
+        return ""
+    if not (model or "").strip() or not (api_key or "").strip():
+        return ""
+    print(f"📒 [Evidence Ledger] بدء بناء السجل بنموذج «{model}» (تفكير عالٍ)…", flush=True)
 
     def _cards_part(rep: str) -> str:
         # بطاقات الأدلة في مطلع كل تقرير قبل «التحرير»: هي مادة السجل وحدها.
@@ -19179,6 +19252,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 duration_s=time.time() - _chat_t0,
                 targeted_map=locals().get("_targeted_map") or {},
                 unresolved_citations=_unresolved_citations)
+            _mark("synthesis")
+            print("⏱ [Stage Times Final] " + " | ".join(
+                f"{k}:{v}s" for k, v in _stage_marks), flush=True)
             _risk_memo, _risk_officer = _risk_officer_memo(
                 _risk_events, question=(last_user_msg or "")[:200],
                 group=group_name or "", manager_model=call_model,
