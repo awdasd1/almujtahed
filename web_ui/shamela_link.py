@@ -867,6 +867,11 @@ def convert(book_ids=None, force: bool = False, out_dir: Path = None, progress=p
             _atomic_write(bdir / "manifest.json", json.dumps(
                 {**meta_out, "page_count": npages, "toc_count": len(toc_found)},
                 ensure_ascii=False, indent=1))
+            try:  # خريطة مواضع الكتاب تُبنى مع استخراجه لا عند أول بحث فيه
+                import shamela_local_mcp as _SLM
+                _SLM.build_book_map(our_id, force=True)
+            except Exception:
+                pass
             report["converted"].append(tid)
             report["pages"] += npages
             progress(json.dumps({"stage": "book", "i": n, "of": len(targets), "book_id": tid,

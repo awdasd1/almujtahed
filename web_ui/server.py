@@ -7699,7 +7699,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.612"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.613"},
         },
     })
     if opened.get("error"):
@@ -17544,7 +17544,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             ag_max_tokens = 65536 if raw_output_tokens > 131072 else max(1024, raw_output_tokens)
 
             if _is_manager and manager_tools:
-                sub_sys += "\nأنت مدير الأدوات في فريقك: لديك أدوات المغني الداخلية المركّبة والتوثيقية وحدك. مهمتك جلب حزم شواهد موثقة للمسألة (research_evidence أولًا بنطاق كتب مغلق، وقراءة الصفحات ومطابقتها عند الحاجة) وإعادتها إلى مدير المشروع بعزوها وحالة مطابقتها كما هي. لا تكتب التحليل النهائي ولا الترجيح، ولا تنقل في تقريرك إلا ما حالته MATCH_EXACT أو MATCH_NORMALIZED، وصرّح بما تعذر توثيقه."
+                sub_sys += "\nأنت مدير الأدوات في فريقك: لديك أدوات المغني الداخلية المركّبة والتوثيقية وحدك. مهمتك جلب حزم شواهد موثقة للمسألة (research_evidence أولًا بنطاق كتب مغلق، واستشارة locate_in_book لتحديد مدى باب المسألة في الكتب الضخمة قبل القراءة، وقراءة الصفحات ومطابقتها عند الحاجة) وإعادتها إلى مدير المشروع بعزوها وحالة مطابقتها كما هي. لا تكتب التحليل النهائي ولا الترجيح، ولا تنقل في تقريرك إلا ما حالته MATCH_EXACT أو MATCH_NORMALIZED، وصرّح بما تعذر توثيقه."
 
             # سُلّم إنقاذ الوكيل الساقط (قرار المنتج): إعادة الجولة بنفس
             # النموذج، ثم نموذج احتياطي، ثم نموذج مختص يعيد كتابة التقرير،

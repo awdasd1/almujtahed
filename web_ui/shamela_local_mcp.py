@@ -437,6 +437,143 @@ def get_book_toc(book: Any) -> Dict[str, Any]:
         "toc": toc_items[:400]  # إرجاع أول 400 عنوان وباب رئيسي
     }
 
+
+# ---------------------------------------------------------------------------
+# خريطة مواضع الكتاب: كل باب/فصل ← جزؤه ومدى صفحاته، مبنية مرة واحدة من
+# toc.jsonl ومحفوظة بجانب صفحات الكتاب (book_map.json). البحث في كتاب ضخم
+# يستشيرها أولًا فينحصر في مدى الباب بدل مسح الكتاب كله.
+# ---------------------------------------------------------------------------
+_BOOK_MAP_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def build_book_map(book: Any, force: bool = False) -> Dict[str, Any]:
+    """بناء (أو تحميل) خريطة مواضع الكتاب: أقسام مرتبة بمديات صفحاتها."""
+    b_dir = resolve_book_files(book)
+    if not b_dir:
+        return {"status": "error", "error": f"تعذر العثور على ملفات الكتاب: {book}"}
+    key = str(b_dir)
+    pages_file = b_dir / "pages.jsonl"
+    map_file = b_dir / "book_map.json"
+    if not force and key in _BOOK_MAP_CACHE:
+        return _BOOK_MAP_CACHE[key]
+    if not force and map_file.exists():
+        try:
+            if map_file.stat().st_mtime >= pages_file.stat().st_mtime:
+                data = json.loads(map_file.read_text(encoding="utf-8"))
+                if data.get("sections"):
+                    _BOOK_MAP_CACHE[key] = data
+                    return data
+        except Exception:
+            pass
+    toc_file = b_dir / "toc.jsonl"
+    if not toc_file.exists():
+        out = {"status": "ok", "book_dir": key, "sections": [],
+               "message": "لا فهرس أبواب لهذا الكتاب؛ البحث فيه مسحي كامل."}
+        _BOOK_MAP_CACHE[key] = out
+        return out
+    idx = get_book_index(b_dir)
+    entries = idx["entries"]
+    pos_by_pid = {e.get("page_id"): i for i, e in enumerate(entries)}
+    raw_toc = []
+    try:
+        with open(toc_file, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    raw_toc.append(json.loads(line))
+    except Exception as e:
+        return {"status": "error", "error": f"فشل قراءة فهرس الكتاب: {e}"}
+    parent_of = {it.get("title_id"): it.get("parent_id") for it in raw_toc}
+
+    def _depth(tid, seen=0):
+        d, cur = 0, tid
+        while parent_of.get(cur) is not None and seen < 30:
+            cur = parent_of.get(cur)
+            d += 1
+            seen += 1
+        return d
+
+    anchored = []
+    for it in raw_toc:
+        i = pos_by_pid.get(it.get("page_id"))
+        if i is None:
+            continue
+        anchored.append((i, str(it.get("title_text") or "").strip(), it.get("title_id")))
+    anchored.sort(key=lambda x: x[0])
+    sections = []
+    for n, (i, title, tid) in enumerate(anchored):
+        if not title:
+            continue
+        end_i = (anchored[n + 1][0] - 1) if n + 1 < len(anchored) else len(entries) - 1
+        if end_i < i:
+            end_i = i
+        s_e, e_e = entries[i], entries[end_i]
+        sections.append({
+            "title": title,
+            "depth": _depth(tid),
+            "seq_start": s_e.get("seq"), "seq_end": e_e.get("seq"),
+            "part": s_e.get("part"), "start_page": s_e.get("page_num"),
+            "end_part": e_e.get("part"), "end_page": e_e.get("page_num"),
+            "pages": end_i - i + 1,
+        })
+    card = {}
+    try:
+        card = resolve_book(book) or {}
+    except Exception:
+        card = {}
+    out = {
+        "status": "ok",
+        "book_id": card.get("book_id"),
+        "book_title": idx["meta"].get("title_ar") or b_dir.name.split("__")[-1].replace("-", " "),
+        "book_dir": key,
+        "total_pages": len(entries),
+        "sections": sections,
+    }
+    try:
+        map_file.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass  # مجلد كتاب للقراءة فقط: تبقى الخريطة في ذاكرة العملية
+    _BOOK_MAP_CACHE[key] = out
+    return out
+
+
+def locate_in_book(book: Any, issue: str, limit: int = 6) -> Dict[str, Any]:
+    """دلالة موضع المسألة في الكتاب من خريطة مواضعه قبل أي بحث نصي."""
+    bmap = build_book_map(book)
+    if bmap.get("status") == "error":
+        return bmap
+    sections = bmap.get("sections") or []
+    if not sections:
+        return {"status": "ok", "book_title": bmap.get("book_title"), "located": [],
+                "message": "لا خريطة مواضع لهذا الكتاب؛ يُبحث فيه مسحيًا كاملًا."}
+    issue_stems = set(_tok_stems(clean_arabic_text(issue or "")))
+    scored = []
+    for s in sections:
+        h_stems = set(_tok_stems(s.get("title") or ""))
+        if not issue_stems or not h_stems:
+            continue
+        inter = len(issue_stems & h_stems)
+        if not inter:
+            continue
+        score = inter / len(issue_stems)
+        scored.append((score, s))
+    scored.sort(key=lambda x: (-x[0], -int(x[1].get("depth") or 0), int(x[1].get("pages") or 10 ** 9)))
+    top = [{
+        "title": s["title"], "depth": s.get("depth"),
+        "part": s.get("part"), "start_page": s.get("start_page"),
+        "end_part": s.get("end_part"), "end_page": s.get("end_page"),
+        "seq_start": s.get("seq_start"), "seq_end": s.get("seq_end"),
+        "pages": s.get("pages"), "score": round(sc, 2),
+    } for sc, s in scored[:max(1, min(int(limit or 6), 20))]]
+    return {
+        "status": "ok",
+        "book_id": bmap.get("book_id"),
+        "book_title": bmap.get("book_title"),
+        "total_pages": bmap.get("total_pages"),
+        "sections_total": len(sections),
+        "located": top,
+        "note": "مديات مرشحة من فهرس أبواب الكتاب: ابحث واقرأ داخلها أولًا، فإن خلت فوسّع إلى بقية الكتاب.",
+    }
+
 def verify_quote(book: Any, quote_text: str, part: Optional[str] = None, page_hint: Optional[int] = None) -> Dict[str, Any]:
     """
     أداة 3: مطابقة نص الاقتباس الحرفي داخل صفحات الكتاب بدقة 100%.
@@ -1262,12 +1399,27 @@ def search_in_book(book: Any, query: str, limit: int = 10) -> Dict[str, Any]:
     clean_q = clean_arabic_text(query)
     q_words = clean_q.split()
 
+    # خريطة المواضع أولًا: إن دلّ فهرس الأبواب على مدى المسألة فُحص قبله
+    # بقية الكتاب؛ الترتيب لا الدقة هو ما يتغير، فالمسح الكامل احتياط باقٍ.
+    scan_entries = entries
+    try:
+        loc = locate_in_book(book, query, limit=3)
+        wins = [(s.get("seq_start"), s.get("seq_end")) for s in (loc.get("located") or [])
+                if (s.get("score") or 0) >= 0.34 and s.get("seq_start") is not None]
+        if wins:
+            in_win = [e for e in entries if any(a <= (e.get("seq") or 0) <= b for a, b in wins)]
+            if in_win:
+                _seen = {e.get("seq") for e in in_win}
+                scan_entries = in_win + [e for e in entries if e.get("seq") not in _seen]
+    except Exception:
+        scan_entries = entries
+
     pages_file = b_dir / "pages.jsonl"
     hits = []
 
     try:
         with open(pages_file, "rb") as f:
-            for entry in entries:
+            for entry in scan_entries:
                 f.seek(entry["offset"])
                 line = f.readline()
                 if line:
@@ -1337,6 +1489,22 @@ SHAMELA_MCP_TOOLS_SPEC = [
                     "book": {"type": "string", "description": "اسم الكتاب أو رقمه المعياري في الشاملة"}
                 },
                 "required": ["book"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "locate_in_book",
+            "description": "دلالة موضع مسألة في كتاب من خريطة مواضعه (فهرس أبوابه بمديات صفحاتها) قبل أي بحث نصي: تعيد الأبواب المرشحة وأجزاءها ومديات صفحاتها لينحصر البحث والقراءة فيها أولًا.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "book": {"type": "string", "description": "اسم الكتاب أو رقمه"},
+                    "issue": {"type": "string", "description": "المسألة أو عبارة الباب المطلوب تحديد موضعها"},
+                    "limit": {"type": "integer", "description": "أقصى عدد للمديات المرشحة (افتراضياً 6)"}
+                },
+                "required": ["book", "issue"]
             }
         }
     },
@@ -1902,7 +2070,7 @@ SHAMELA_MCP_TOOLS_SPEC = [
 # العملاء الخارجيين عبر /mcp. طبقة البحث الداخلي: وظائف خادم وواجهة فقط،
 # ولا تدخل كتالوج أدوات أي نموذج أو وكيل داخل التطبيق.
 INTERNAL_READ_VERIFY_TOOL_NAMES = frozenset({
-    "get_page_range", "get_book_toc", "verify_quote", "get_surrounding_context",
+    "get_page_range", "get_book_toc", "locate_in_book", "verify_quote", "get_surrounding_context",
     "resolve_book", "get_book_card", "get_page", "get_issue_heading",
     "get_pack_slice", "verify_batch", "get_book_coverage",
 })
@@ -2515,6 +2683,12 @@ def _execute_mcp_tool_impl(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         )
     elif name == "get_book_toc":
         return get_book_toc(book=args.get("book"))
+    elif name == "locate_in_book":
+        return locate_in_book(
+            book=args.get("book"),
+            issue=args.get("issue") or args.get("query") or "",
+            limit=int(args.get("limit") or 6)
+        )
     elif name == "verify_quote":
         return verify_quote(
             book=args.get("book"),
