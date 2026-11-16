@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.642"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.643"},
         },
     })
     if opened.get("error"):
@@ -27504,10 +27504,9 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
 
 
 def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = None) -> str:
-    """فهرس وورد: البند يرتبط بعلامة الموضوع كارتباط الحاشية بالمتن، والرقم صفحة وورد الفعلية."""
+    """فهرس وورد: الموضوع ورقمه يرتبطان بعلامة العنوان، والرقم صفحة ذلك العنوان."""
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     rpr = _docx_rpr(body)
-    rpr_field = rpr.replace("<w:rtl/>", "")
     brd = 'w:val="single" w:sz="8" w:space="0" w:color="888888"'
     rlm = "\u200f"
     known = known_bookmarks or set()
@@ -27526,19 +27525,12 @@ def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = Non
         topic_inner = (
             f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + text)}</w:t></w:r>'
         )
+        page_inner = (
+            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + shown)}</w:t></w:r>'
+        )
         if bm:
             topic_inner = f'<w:hyperlink w:anchor="{bm}" w:history="1">{topic_inner}</w:hyperlink>'
-            page_inner = (
-                f'<w:r>{rpr_field}<w:fldChar w:fldCharType="begin"/></w:r>'
-                f'<w:r>{rpr_field}<w:instrText xml:space="preserve"> PAGEREF {bm} \\h </w:instrText></w:r>'
-                f'<w:r>{rpr_field}<w:fldChar w:fldCharType="separate"/></w:r>'
-                f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(shown)}</w:t></w:r>'
-                f'<w:r>{rpr_field}<w:fldChar w:fldCharType="end"/></w:r>'
-            )
-        else:
-            page_inner = (
-                f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + shown)}</w:t></w:r>'
-            )
+            page_inner = f'<w:hyperlink w:anchor="{bm}" w:history="1">{page_inner}</w:hyperlink>'
         topic = f"<w:p>{ppr_mid}{topic_inner}</w:p>"
         page = f"<w:p>{ppr_mid}{page_inner}</w:p>"
         rows.append(
@@ -27619,8 +27611,10 @@ def build_docx_bytes(payload: dict) -> bytes:
     sect = (
         "<w:sectPr>"
         f'<w:footnotePr><w:numFmt w:val="arabic"/><w:numRestart w:val="{_restart}"/></w:footnotePr>'
+        '<w:footerReference w:type="default" r:id="rId4"/>'
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="1134" w:right="1020" w:bottom="1361" w:left="1020" w:header="720" w:footer="720" w:gutter="0"/>'
+        '<w:pgNumType w:fmt="hindi" w:start="1"/>'
         "<w:bidi/><w:rtlGutter/>"
         '<w:docGrid w:linePitch="360"/>'
         "</w:sectPr>"
@@ -27684,10 +27678,22 @@ def build_docx_bytes(payload: dict) -> bytes:
         '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'
         "</w:styles>"
     )
+    rpr_field = body_rpr.replace("<w:rtl/>", "")
+    footer_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/>'
+        '<w:spacing w:before="0" w:after="0"/></w:pPr>'
+        f'<w:r>{rpr_field}<w:fldChar w:fldCharType="begin"/></w:r>'
+        f'<w:r>{rpr_field}<w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
+        f'<w:r>{rpr_field}<w:fldChar w:fldCharType="separate"/></w:r>'
+        f'<w:r>{body_rpr}<w:t>١</w:t></w:r>'
+        f'<w:r>{rpr_field}<w:fldChar w:fldCharType="end"/></w:r>'
+        "</w:p></w:ftr>"
+    )
     settings_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-        '<w:updateFields w:val="true"/>'
         '<w:themeFontLang w:val="ar-SA" w:eastAsia="ar-SA" w:bidi="ar-SA"/>'
         "<w:compat/></w:settings>"
     )
@@ -27698,6 +27704,7 @@ def build_docx_bytes(payload: dict) -> bytes:
         '<Default Extension="xml" ContentType="application/xml"/>'
         '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
         '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>'
+        '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
         '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
         '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
         "</Types>"
@@ -27714,6 +27721,7 @@ def build_docx_bytes(payload: dict) -> bytes:
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>'
         '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
         '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
+        '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>'
         "</Relationships>"
     )
     buf = _io.BytesIO()
@@ -27722,6 +27730,7 @@ def build_docx_bytes(payload: dict) -> bytes:
         z.writestr("_rels/.rels", rels)
         z.writestr("word/document.xml", document_xml)
         z.writestr("word/footnotes.xml", footnotes_xml)
+        z.writestr("word/footer1.xml", footer_xml)
         z.writestr("word/styles.xml", styles_xml)
         z.writestr("word/settings.xml", settings_xml)
         z.writestr("word/_rels/document.xml.rels", doc_rels)
