@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.638"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.639"},
         },
     })
     if opened.get("error"):
@@ -27504,9 +27504,8 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
 
 
 def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = None) -> str:
-    """فهرس وورد جدولًا عربيًا: الموضوع يمينًا والصفحة يسارًا في الصف نفسه،
-    بحدود ظاهرة وجدولة منقّطة. الرقم يُحاذى أعلى الصف حتى لا ينزاح عن عنوانه
-    إذا التفّ العنوان سطرين."""
+    """فهرس وورد: وورد للماك يتجاهل bidiVisual فيبقى العمود الأول يسارًا،
+    لذلك تُرتَّب الخلايا كما تظهر: الرقم يسارًا والموضوع يمينًا، بحدود ظاهرة."""
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     rpr = _docx_rpr(body)
     brd = 'w:val="single" w:sz="8" w:space="0" w:color="888888"'
@@ -27550,14 +27549,15 @@ def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = Non
         rows.append(
             '<w:tr><w:trPr><w:cantSplit/>'
             '<w:trHeight w:val="320" w:hRule="atLeast"/></w:trPr>'
-            '<w:tc><w:tcPr><w:tcW w:w="4300" w:type="pct"/>'
-            '<w:vAlign w:val="top"/></w:tcPr>' + topic + "</w:tc>"
             '<w:tc><w:tcPr><w:tcW w:w="700" w:type="pct"/>'
             '<w:vAlign w:val="top"/><w:noWrap/></w:tcPr>' + page + "</w:tc>"
+            '<w:tc><w:tcPr><w:tcW w:w="4300" w:type="pct"/>'
+            '<w:vAlign w:val="top"/></w:tcPr>' + topic + "</w:tc>"
             "</w:tr>"
         )
     return (
-        "<w:tbl><w:tblPr><w:bidiVisual/>"
+        "<w:tbl><w:tblPr>"
+        '<w:jc w:val="right"/>'
         '<w:tblW w:w="5000" w:type="pct"/>'
         '<w:tblLayout w:type="fixed"/>'
         "<w:tblBorders>"
@@ -27567,7 +27567,7 @@ def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = Non
         '<w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>'
         '<w:bottom w:w="40" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar>'
         "</w:tblPr>"
-        '<w:tblGrid><w:gridCol w:w="8485"/><w:gridCol w:w="1381"/></w:tblGrid>'
+        '<w:tblGrid><w:gridCol w:w="1381"/><w:gridCol w:w="8485"/></w:tblGrid>'
         + "".join(rows) + "</w:tbl>"
     )
 
@@ -27626,6 +27626,7 @@ def build_docx_bytes(payload: dict) -> bytes:
         f'<w:footnotePr><w:numFmt w:val="arabic"/><w:numRestart w:val="{_restart}"/></w:footnotePr>'
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="1134" w:right="1020" w:bottom="1361" w:left="1020" w:header="720" w:footer="720" w:gutter="0"/>'
+        "<w:bidi/><w:rtlGutter/>"
         '<w:docGrid w:linePitch="360"/>'
         "</w:sectPr>"
     )
