@@ -6914,7 +6914,9 @@ function buildAcademicPaperHtml(runData, options) {
      الشكل وفي وسط أعلى صفحة جديدة، و«صلب البحث» لا يُكتب (يبدأ الفصل
      الأول بعد المقدمة مباشرة)، والمقدمة والخاتمة عنوانان في الوسط
      بلا ترقيم ترتيبي (أولًا/ثالثًا) */
-  const normalizePaperHeadings = (htmlText) => htmlText.replace(
+  const normalizePaperHeadings = (htmlText) => {
+    const seenParts = new Set();
+    return htmlText.replace(
     /<(h2|h3)([^>]*)>([\s\S]*?)<\/\1>|<p class="academic-subheading">([\s\S]*?)<\/p>|<span class="academic-inline-heading"><(b|strong)>([\s\S]*?)<\/\5><\/span>|<p([^>]*)>\s*<(b|strong)>([\s\S]*?)<\/\8>\s*<\/p>/g,
     (match, tag, attrs, inner, subInner, iTag, iInner, pAttrs, pbTag, pbInner) => {
       const isInline = iTag !== undefined;
@@ -6927,19 +6929,29 @@ function buildAcademicPaperHtml(runData, options) {
       const bare = title.replace(/^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا)\s*[:：]?\s*/, '');
       if (bare === 'صلب البحث') return '';
       if (bare === 'المقدمة' || bare === 'الخاتمة') {
+        // لا تتكرر: قد يكتبها المولّف مرتين («أولًا: المقدمة» ثم
+        // «المقدمة») فتبقى الأولى وتسقط كل لاحقة
+        if (seenParts.has(bare)) return '';
+        seenParts.add(bare);
         if (isInline) return `<span class="academic-inline-heading"><${iTag}>${bare}</${iTag}></span>`;
         if (isSub || isBoldPara) return `<p class="academic-subheading paper-part-title">${bare}</p>`;
         return `<h2 class="paper-part-title">${bare}</h2>`;
       }
       if (title.indexOf('الفصل') >= 0 && title.indexOf('الفصل') < 14
           && /الفصل\s+(الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|[0-9٠-٩]+)/.test(title)) {
-        if (isInline) return `</p><h2 class="academic-chapter-title">${iInner}</h2><p class="academic-paragraph">`;
-        if (isSub) return `<h2 class="academic-chapter-title">${subInner}</h2>`;
-        if (isBoldPara) return `<h2 class="academic-chapter-title">${pbInner}</h2>`;
-        return `<h2 class="academic-chapter-title">${inner}</h2>`;
+        // «الفصل الأول» كلمة مستقلة في سطر، وعنوان الفصل تحتها
+        const chap = title.match(/^(الفصل\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|[0-9٠-٩]+))\s*[:：]?\s*([\s\S]*)$/);
+        const chapInner = chap && chap[2]
+          ? `<span class="chapter-label">${escapeHtml(chap[1])}</span><br><span class="chapter-name">${escapeHtml(chap[2])}</span>`
+          : escapeHtml(title);
+        if (isInline) return `</p><h2 class="academic-chapter-title" style="break-before: page; page-break-before: always;">${chapInner}</h2><p class="academic-paragraph">`;
+        if (isSub) return `<h2 class="academic-chapter-title" style="break-before: page; page-break-before: always;">${chapInner}</h2>`;
+        if (isBoldPara) return `<h2 class="academic-chapter-title" style="break-before: page; page-break-before: always;">${chapInner}</h2>`;
+        return `<h2 class="academic-chapter-title" style="break-before: page; page-break-before: always;">${chapInner}</h2>`;
       }
       return match;
     });
+  };
   roundsBodyHtml = normalizePaperHeadings(roundsBodyHtml);
   // صفحة ختامية مستقلة بأسماء المصادر والمراجع من شواهد الجواب نفسه
   // (حين لا يحمل المتن ثبتًا خاصًا به) — تبدأ صفحة جديدة بقاعدة الكسر.
@@ -7700,7 +7712,9 @@ function buildAcademicPaperHtml(runData, options) {
     .paper-toc { break-before: page; }
     /* كل فصل جديد يبدأ صفحة جديدة وعنوانه في وسط أعلىها، وعنوانا
        المقدمة والخاتمة في الوسط */
-    .academic-chapter-title { break-before: page; text-align: center; margin-top: 0; text-indent: 0 !important; }
+    .academic-chapter-title { break-before: page; page-break-before: always; text-align: center; margin-top: 0; text-indent: 0 !important; }
+    .academic-chapter-title .chapter-label { display: block; font-size: 0.6em; margin-bottom: 8px; }
+    .academic-chapter-title .chapter-name { display: block; }
     .paper-part-title { text-align: center; }
     .paper-toc-title { text-align: center; font-size: 17pt; margin: 0 0 14px; text-indent: 0; }
     .paper-toc ul { list-style: none; margin: 0; padding: 0; font-size: 12.5pt; line-height: 2.05; }
