@@ -3954,6 +3954,14 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                 if _title_in_library(um.group(1)):
                     continue
                 # كتاب خارج المكتبة: تُستبعد إحالته من الحاشية فورًا.
+                # يُسجَّل نص الإحالة كما كتبه المولّف (حتى 60) تشخيصًا:
+                # عددٌ أصم (45 في قياسين) لم يكشف أهي كتب غائبة حقًا أم
+                # صيغ أسماء لا تطابق الكتالوج.
+                _drop_txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1)).replace("⚠", " ")).strip()
+                if len(stats.get("excluded_items") or []) < 60:
+                    stats.setdefault("excluded_items", []).append(
+                        {"quote": _drop_txt[:160], "book_id": "", "num": d.get("num"),
+                         "via": "footnote_unresolved"})
                 pieces.append(body[pos:um.start()])
                 pos = um.end()
                 changed = True
@@ -4013,6 +4021,8 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
     if _dropped_n:
         stats["excluded_outside"] = stats.get("excluded_outside", 0) + _dropped_n
         print(f"🚧 [Documentation Audit] استُبعدت {_dropped_n} إحالة كتابها خارج المكتبة", flush=True)
+        for _xs in (stats.get("excluded_items") or [])[:8]:
+            print(f"🚧   مستبعد: «{str(_xs.get('quote') or '')[:110]}»", flush=True)
     _no_bid = sum(1 for j in failed if not j.get("bid"))
     if failed:
         print(f"🚧 [Documentation Audit] تشخيص: بلا كتاب إحالة={_no_bid}/{len(failed)}", flush=True)
@@ -4192,6 +4202,8 @@ def _attach_package_audit(stats: Dict[str, Any], ledger: Dict[str, Any], reply_t
     quotes = re.findall(r"[«\"]([^»\"]{12,180})[»\"]", reply_text or "")
     unbound = []
     for q in quotes[:40]:
+        if re.match(r"^\s*[a-zA-Z-]+\s*:\s*[^ ]+$", q.strip()):
+            continue  # شظية صفة HTML/CSS («text-indent:30px») ليست نقلًا
         qf = _fold_ar(q)
         if len(qf) < 8:
             continue
@@ -7757,7 +7769,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.617"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.618"},
         },
     })
     if opened.get("error"):
@@ -17819,6 +17831,15 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         ) or ""
                     if len(rep.strip()) < 40:
                         raise RuntimeError(f"أرجع الوكيل ردًا فارغًا أو شبه فارغ ({len(rep.strip())} حرفًا)")
+                    if _is_manager and manager_tools and not _packages and _li < len(_ladder) - 1:
+                        # إلزام برمجي: مدير أدوات أنهى بلا استدعاء أداة واحدة
+                        # (حدث في قياس 1.10.617: كتب من التطعيم فقط) محاولةٌ
+                        # فاشلة تدخل سُلّم الإنقاذ بتنبيه صريح، لا نجاح صامت.
+                        print(f"🧰 [Tools Manager] أنهى «{ag_name}» درجة «{_label}» بلا استدعاء أي أداة داخلية — تُعد فاشلة وتُعاد", flush=True)
+                        sub_sys += ("\nتنبيه صارم: محاولتك السابقة لم تستعمل أيًّا من أدواتك الداخلية، "
+                                    "وهذا إخلال بمهمتك الوحيدة. ابدأ الآن بـ research_evidence بنطاق كتب مغلق، "
+                                    "وطابق نقولك بـ verify_batch/verify_quote، ولا تُعد تقريرًا لم يمر بأدواتك.")
+                        raise RuntimeError("مدير أدوات أنهى بلا استدعاء أي أداة داخلية")
                     print(f"✅ [Subagent Dispatch] Agent '{ag_name}' completed using '{_try_model}' ({len(rep)} chars)" + (f" [بدرجة إنقاذ: {_label}]" if _li else ""))
                     ag_failed = False
                     _rescued_by = _label if _li else ""
@@ -18118,6 +18139,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "(أقوال ببطاقاتها وكتبها وطبقاتها، وأدلة حديثية بدرجاتها من بطاقاتها، ودعاوى إجماع بمستنداتها، وصفرات وادعاءات بلا بطاقة معلنة). "
                 "ابنِ هيكل بحثك على هذا السجل: لا تنسب قولًا ولا ترفع درجة حديث فوق سطر فيه، وما عُدّ فيه صفرًا أو بلا بطاقة فصرّح به في موضعه ولا تسدّه من ذاكرتك، "
                 "وما سجّله تعارضًا فافصل فيه أنت عند الترجيح. وارجع إلى التقارير أعلاه لنصوص البطاقات الحرفية عند النقل والتحرير.\n"
+                "وكل إحالة في متنك تُنسخ من «خريطة الإحالات المعيارية» في صدر السجل برقمها (#) وعنوانها الرسمي حرفيًا، "
+                "وكل دعوى محورية تُسند بنقل حرفي بين علامتي اقتباس من بطاقة شاهد بعينها؛ فلا إحالة من الذاكرة ولا عنوانًا مختصرًا من عندك، "
+                "وما لم تجد له بطاقة في السجل فلا تنقله ولا تُحل إليه.\n"
                 + _evidence_ledger + "\n"
             )
         agent_routing_instruction += (
@@ -19358,7 +19382,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             "risk_verdict": _risk_verdict(_risk_events) if _risk_events else "",
             "risk_events": _risk_events,
             "risk_memo": _risk_memo,
-            "excluded_items": (_gs.get("excluded_items") or [])[:26],
+            "excluded_items": (_gs.get("excluded_items") or [])[:60],
             "duration_s": round(time.time() - _chat_t0),
             "answer_chars": len(reply_text or ""),
             "witnesses": len(witness_rows or []),
