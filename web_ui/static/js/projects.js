@@ -2793,6 +2793,7 @@ async function applyStudioBlueprint() {
       // خارجها): يقود التوليف بنموذجه وتفكيره وتوجيهه، ولا يُرسل وكيلَ جمع،
       // وتعطيله من قائمة الوكلاء يعيد القيادة لنموذج المحادثة.
       ensureToolsManagerAgent(mappedAgents);
+      ensurePlannerAgent(mappedAgents);
       if (bp.director) {
         mappedAgents.unshift({
           id: `director_${targetGroupId}`,
@@ -2979,6 +2980,34 @@ function ensureToolsManagerAgent(agents) {
   return agents;
 }
 
+// ضمان وكيل خطة البحث ومراجعته وفهرسته في كل فريق: يضع الخطة الأكاديمية
+// من سجل الأدلة قبل التوليف ويراجع المسودة عليها ويفهرسها.
+function ensurePlannerAgent(agents) {
+  if (!Array.isArray(agents)) return agents;
+  if (agents.some(a => a && (a.role === 'planner' || a.kind === 'planner' || a.role === 'research_planner' || a.kind === 'research_planner'))) return agents;
+  const prompt = 'أنت وكيل خطة البحث ومراجعته وفهرسته في هذا الفريق. لا تجمع شواهد ولا تكتب متن البحث؛ مهمتك ثلاث: (١) قبل كتابة مدير المشروع: ضع من سجل الأدلة خطة بحث أكاديمية ملزمة — مقدمة بموضوع البحث وأهميته ومشكلته ومنهجه، وصلبًا مقسمًا فصولًا ومباحث بعناوين من ألفاظ المسألة ومادة كل مبحث من البطاقات، وخاتمة بأهم النتائج والتوصيات، وما خلت منه البطاقات سمّه فجوة معلنة ولا تخترع له مبحثًا. (٢) بعد المسودة: راجعها على خطتك — مبحث غائب أو مدمج، مقدمة بلا أهمية أو مشكلة، خاتمة بلا نتائج مرقمة أو توصيات، نتيجة بلا سند في الصلب — واحكم بسطر أخير: ملتزمة بالخطة / ملتزمة بملاحظات / منقوصة بمبحث. (٣) الفهرس يُبنى من عناوين المسودة نفسها في صدر الجواب. التزم الصرامة المحكّمة: لا مجاملة ولا اختراع مادة.';
+  agents.unshift({
+    id: 'planner_' + Date.now(),
+    name: 'وكيل خطة البحث ومراجعته وفهرسته',
+    desc: 'يضع خطة البحث الأكاديمية من سجل الأدلة ويراجع المسودة عليها ويفهرس البحث',
+    model: '~anthropic/claude-sonnet-latest',
+    role: 'planner',
+    kind: 'planner',
+    enabled: true,
+    active: true,
+    books: [],
+    booksScope: [],
+    scope_summary: 'يعمل على سجل الأدلة والمسودة — لا نطاق كتب',
+    thinking: 'high',
+    temp: 0.2,
+    max_tokens: 32768,
+    maxTokens: 32768,
+    system_prompt: prompt,
+    systemPrompt: prompt
+  });
+  return agents;
+}
+
 // تحديث كروت المشروع الحالي المفتوح فورياً بالخطة المعدلة دون إنشاء مشروع جديد
 async function updateActiveProjectCardsFromBlueprint() {
   if (!activeProjectId) {
@@ -3076,6 +3105,7 @@ async function updateActiveProjectCardsFromBlueprint() {
       };
     });
     ensureToolsManagerAgent(mappedAgents);
+    ensurePlannerAgent(mappedAgents);
 
     let groups = window.agentGroups || [];
     let gid = project.linked_group_id || `group_${project.id}`;

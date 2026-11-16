@@ -1089,6 +1089,8 @@ function editAgent(id) {
   if (_dir) _dir.checked = !!(agent.is_director || agent.role === 'director' || agent.kind === 'director');
   const _tm = document.getElementById('agentToolsManagerInput');
   if (_tm) _tm.checked = (agent.role === 'tools_manager' || agent.kind === 'tools_manager');
+  const _pl = document.getElementById('agentPlannerInput');
+  if (_pl) _pl.checked = (agent.role === 'planner' || agent.kind === 'planner' || agent.role === 'research_planner' || agent.kind === 'research_planner');
 
   // تعيين النموذج ومستوى التفكير المخزنين
   const modelToSet = agent.model || 'anthropic/claude-3.7-sonnet';
@@ -1295,10 +1297,11 @@ function saveAgentFromModal() {
 
   const _isDirector = !!document.getElementById('agentDirectorInput')?.checked;
   const _isToolsManager = !!document.getElementById('agentToolsManagerInput')?.checked && !_isDirector;
+  const _isPlanner = !!document.getElementById('agentPlannerInput')?.checked && !_isDirector && !_isToolsManager;
   const _searchMode = document.getElementById('agentSearchModeSelect')?.value || 'hybrid';
   const agentData = {
     is_director: _isDirector,
-    role: _isDirector ? 'director' : (_isToolsManager ? 'tools_manager' : ''),
+    role: _isDirector ? 'director' : (_isToolsManager ? 'tools_manager' : (_isPlanner ? 'planner' : '')),
     search_mode: _searchMode,
     use_hybrid: _searchMode !== 'semantic',
     extract_count: parseInt(document.getElementById('agentTopRerankInput').value || document.getElementById('agentTopKInput').value || 40),
@@ -1336,6 +1339,19 @@ function saveAgentFromModal() {
     currentGroup.agents.push(agentData);
   }
 
+  // تثبيت دور وكيل الخطة أو نزعه صراحة عند التعديل (لا يبقى من حفظ سابق)
+  const _savedPlannerAgent = currentGroup.agents.find(a => a.id === (id || agentData.id));
+  if (_savedPlannerAgent) {
+    if (_isPlanner) {
+      _savedPlannerAgent.role = 'planner';
+      _savedPlannerAgent.kind = 'planner';
+    } else if (_savedPlannerAgent.role === 'planner' || _savedPlannerAgent.kind === 'planner' ||
+               _savedPlannerAgent.role === 'research_planner' || _savedPlannerAgent.kind === 'research_planner') {
+      _savedPlannerAgent.role = '';
+      _savedPlannerAgent.kind = '';
+    }
+  }
+
   // قائد واحد في المجموعة: نزع القيادة عن غير المعيّن
   if (_isDirector) {
     const savedId = id || agentData.id;
@@ -1354,6 +1370,19 @@ function saveAgentFromModal() {
       if (a.id !== savedId && (a.role === 'tools_manager' || a.kind === 'tools_manager')) {
         a.role = '';
         if (a.kind === 'tools_manager') a.kind = '';
+      }
+    });
+  }
+
+  // وكيل خطة واحد في المجموعة: نزع الدور عن غير المعيّن
+  if (_isPlanner) {
+    agentData.kind = 'planner';
+    const savedId = id || agentData.id;
+    (currentGroup.agents || []).forEach(a => {
+      if (a.id !== savedId && (a.role === 'planner' || a.kind === 'planner' ||
+          a.role === 'research_planner' || a.kind === 'research_planner')) {
+        a.role = '';
+        if (a.kind === 'planner' || a.kind === 'research_planner') a.kind = '';
       }
     });
   }

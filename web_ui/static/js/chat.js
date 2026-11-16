@@ -4592,6 +4592,18 @@ async function downloadChatResearchReport(idx) {
       L.push('نقول المسودة خارج الحزم:');
       a.draft_quotes_unbundled.slice(0, 8).forEach(q => L.push(`- «${q}»`));
     }
+    if (entry.research_plan) {
+      L.push('');
+      L.push('🗺 خطة البحث المعتمدة (وكيل خطة البحث ومراجعته وفهرسته):');
+      L.push('--------------------------------------------------');
+      L.push(entry.research_plan.replace(/\*\*/g, ''));
+    }
+    if (entry.plan_review) {
+      L.push('');
+      L.push('🗺 مراجعة المسودة على الخطة (محكّم الخطة):');
+      L.push('--------------------------------------------------');
+      L.push(entry.plan_review.replace(/\*\*/g, ''));
+    }
     if ((entry.audit_failures || []).length) {
       L.push('');
       L.push('مواضع منبّهة من التدقيق (للمراجعة البشرية):');

@@ -8051,7 +8051,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.621"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.622"},
         },
     })
     if opened.get("error"):
@@ -11953,6 +11953,17 @@ def _is_tools_manager_agent(a: Optional[Dict[str, Any]]) -> bool:
     return kind in ("tools_manager", "tool_manager", "mcp_manager")
 
 
+def _is_planner_agent(a: Optional[Dict[str, Any]]) -> bool:
+    """وكيل خطة البحث ومراجعته وفهرسته: لا يجمع شواهد مع المتخصصين؛ يضع
+    خطة البحث الأكاديمية من سجل الأدلة قبل توليف المدير، ويراجع المسودة
+    عليها بعدها، ويُبنى فهرس البحث من عناوينها. (حُمل هذا الدور عن وكيل
+    الطباعة الذي كان ينتج بطاقات فقه مكررة قبل وجود أي مسودة يطبعها.)"""
+    if not isinstance(a, dict):
+        return False
+    kind = str(a.get("kind") or a.get("role") or "").strip().lower()
+    return kind in ("planner", "research_planner", "plan_reviewer")
+
+
 def _is_tavily_advisor(a: Optional[Dict[str, Any]]) -> bool:
     if not isinstance(a, dict):
         return False
@@ -12812,6 +12823,126 @@ def _build_evidence_ledger(
         return ""
     print(f"📒 [Evidence Ledger] بُني سجل الأدلة من {len(blocks)} تقريرًا ({len(raw)} حرفًا)", flush=True)
     return raw
+
+
+def _build_research_plan(
+    query: str,
+    ledger: str,
+    dossiers: List[Dict[str, Any]],
+    model: str,
+    api_key: str,
+) -> str:
+    """خطة البحث الأكاديمية الملزمة من وكيل الخطة: مقدمة بعناصرها (الموضوع
+    وأهميته ومشكلته ومنهجه)، وصلب مقسّم فصولًا ومباحث بمادة كل مبحث من
+    البطاقات، وخاتمة بالنتائج والتوصيات — من سجل الأدلة وحده، فلا هيكل
+    من خارج المادة. تعثّر النموذج يعيد خطة هيكلية حتمية من أقسام السجل."""
+    material = (ledger or "").strip()
+    if not material:
+        blocks = []
+        for d in dossiers:
+            cards = _ledger_cards_part(str(d.get("report") or ""))
+            if cards.strip():
+                blocks.append(f"### بطاقات «{d.get('name') or ''}»\n{cards[:6000]}")
+        material = "\n\n".join(blocks)
+    if not material or not (model or "").strip() or not (api_key or "").strip():
+        return ""
+    _sys = (
+        "أنت وكيل خطة البحث في فريق تحرير أكاديمي محكّم. مهمتك وضع هيكل البحث لا كتابته: "
+        "تقرأ «سجل الأدلة» (بطاقات الفريق بإحالاتها) وتصوغ منه خطة بحث ملزمة لمدير المشروع، بهذا الترتيب:\n"
+        "١) المقدمة: موضوع البحث وحدوده، وأهميته وسبب اختياره، ومشكلة البحث وأسئلته، ومنهج الفريق فيه، وخطة عرضه باختصار.\n"
+        "٢) صلب البحث: فصول مرقمة، وكل فصل مباحث مرقمة بعناوين دقيقة من ألفاظ المسألة التراثية، وتحت كل مبحث سطر واحد: مادته من البطاقات (أقوال/أدلة/خلاف) بلا نصوص طويلة.\n"
+        "٣) الخاتمة: أهم النتائج التي تسمح بها المادة مرقمة، ثم التوصيات (ما يحتاج مزيد تحرير أو توثيق).\n"
+        "قواعد صارمة: لا مبحث بلا مادة في السجل؛ ما خلت منه البطاقات يُذكر في «فجوات معلنة» آخر الخطة ولا يُخترع له مبحث؛ "
+        "العناوين بصياغة الباحث المحررة لا عناوين كتب؛ الترتيب منطقي من التأسيس (نصوص وأصول) إلى الخلاف إلى الترجيح والتطبيقات."
+    )
+    try:
+        raw = call_openrouter_raw(
+            model_id=normalize_model_id(model),
+            messages=[{"role": "system", "content": _sys},
+                      {"role": "user", "content": f"المسألة: {query}\n\nسجل الأدلة:\n{material[:130000]}"}],
+            api_key=api_key, temperature=0.2, max_tokens=24000, timeout=300,
+            thinking_level="high",
+        ) or ""
+    except Exception as _perr:
+        print(f"🗺 [Research Plan] تعذر وضع الخطة: {_perr}", flush=True)
+        return ""
+    raw = raw.strip()
+    if len(raw) < 300:
+        print(f"🗺 [Research Plan] خطة شبه فارغة ({len(raw)} حرفًا) — تُتجاوز", flush=True)
+        return ""
+    print(f"🗺 [Research Plan] وضع وكيل الخطة خطة من {len(raw)} حرفًا بنموذج {model}", flush=True)
+    return raw
+
+
+def _review_research_output(
+    query: str,
+    plan: str,
+    reply: str,
+    model: str,
+    api_key: str,
+) -> str:
+    """مراجعة المسودة على الخطة من وكيل الخطة نفسه (محكّم لا كاتب): تغطية
+    الفصول والمباحث، وعناصر المقدمة والخاتمة، ونتائج بلا سند ظاهرة —
+    تقرير بنود قصير يُحفظ مع الحزمة ولا يمسّ المتن."""
+    if not plan or not reply or not (model or "").strip() or not (api_key or "").strip():
+        return ""
+    _sys = (
+        "أنت محكّم أكاديمي يراجع مسودة بحث على خطته المعتمدة، لا تعيد كتابة شيء ولا تضف مادة. "
+        "قارن وقضِ ببنود قصيرة بهذا الترتيب:\n"
+        "١) تغطية الصلب: كل فصل ومبحث في الخطة — حاضر بعنوانه ومادته، أم مدمج، أم غائب (سمِّ الغائب باسمه).\n"
+        "٢) المقدمة: أفيها موضوع البحث وأهميته ومشكلته ومنهجه؟ ما نقص سمِّه.\n"
+        "٣) الخاتمة: أفيها أهم النتائج مرقمة والتوصيات؟ وهل كل نتيجة فيها لها أثر في الصلب؟\n"
+        "٤) نتائج أو دعاوى في المسودة لا تقابلها مادة في الخطة (تجاوز للمادة) — إن وجدت.\n"
+        "اختم بسطر «حكم المراجعة:» يليه أحد: ملتزمة بالخطة / ملتزمة بملاحظات / منقوصة بمبحث (مع التسمية)."
+    )
+    try:
+        raw = call_openrouter_raw(
+            model_id=normalize_model_id(model),
+            messages=[{"role": "system", "content": _sys},
+                      {"role": "user", "content": f"المسألة: {query}\n\nالخطة المعتمدة:\n{plan[:30000]}\n\nالمسودة:\n{reply[:120000]}"}],
+            api_key=api_key, temperature=0.1, max_tokens=12000, timeout=300,
+            thinking_level="medium",
+        ) or ""
+    except Exception as _rerr:
+        print(f"🗺 [Plan Review] تعذرت مراجعة المسودة على الخطة: {_rerr}", flush=True)
+        return ""
+    raw = raw.strip()
+    if len(raw) < 120:
+        return ""
+    print(f"🗺 [Plan Review] راجع وكيل الخطة المسودة على الخطة ({len(raw)} حرفًا)", flush=True)
+    return raw
+
+
+def _answer_toc(reply: str) -> str:
+    """فهرس البحث من عناوين المسودة النهائية نفسها، مرقّمًا بالفصول
+    والمباحث — حتمي فوري. أرقام الصفحات محلّها نسخة الطباعة المصفّحة."""
+    heads = []
+    for ln in (reply or "").splitlines():
+        m = re.match(r"^(#{1,3})\s+(.+?)\s*$", ln)
+        if not m:
+            continue
+        title = re.sub(r"[*_`#>]", "", m.group(2)).strip()
+        if title and "فهرس البحث" not in title:
+            heads.append((len(m.group(1)), title))
+    if len(heads) < 4:
+        return ""
+    # العنوان الرئيس الأول (#) اسم البحث نفسه: يُعرض بلا ترقيم داخلي
+    lines = ["## فهرس البحث", ""]
+    if heads and heads[0][0] == 1:
+        lines.append(f"**{heads[0][1]}**")
+        heads = heads[1:]
+    if len(heads) < 3:
+        return ""
+    base = min(lvl for lvl, _ in heads)
+    counters = [0, 0, 0]
+    for lvl, title in heads[:48]:
+        depth = min(3, lvl - base + 1)
+        counters[depth - 1] += 1
+        for i in range(depth, 3):
+            counters[i] = 0
+        num = ".".join(str(counters[i]) for i in range(depth))
+        lines.append(f"{'    ' * (depth - 1)}{num}. {title}")
+    return "\n".join(lines) + "\n\n---\n\n"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -17393,6 +17524,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     _focus_topic = (req.custom_focus_topics or "").strip()[:200]
     subagents_dossiers = []
     _evidence_ledger = ""
+    _planner_agent = None
+    _research_plan = ""
+    _plan_review = ""
     _unresolved_citations = 0
     _failed_agents = []
     _gate_stats = None
@@ -17511,7 +17645,16 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         # وأدواتها (التفكير وسقف الوفاة وعدد الشواهد) حتى لا تتنازع قيادتان.
         # المستشارون متفرغون للتفكير والمظانّ والمراسي: لا يجمعون نصوصًا مع المتخصصين.
         _advisor_agents = [a for a in _all_group_agents if (not _is_director_agent(a)) and _is_advisor_agent(a)]
-        active_agents = [a for a in _all_group_agents if not _is_director_agent(a) and not _is_advisor_agent(a)]
+        # وكيل الخطة لا يجمع شواهد: يضع خطة البحث من السجل قبل التوليف
+        # ويراجع المسودة عليها بعده، فلا يدخل الإرسال المتوازي.
+        _planner_candidates = [a for a in _all_group_agents
+                               if (not _is_director_agent(a)) and _is_planner_agent(a)]
+        _planner_agent = _planner_candidates[0] if _planner_candidates else None
+        if _planner_agent:
+            print(f"🗺 [Research Plan] وكيل الخطة والمراجعة والفهرسة: «{_planner_agent.get('name')}» "
+                  f"({normalize_model_id(_planner_agent.get('model') or '')})", flush=True)
+        active_agents = [a for a in _all_group_agents if not _is_director_agent(a)
+                         and not _is_advisor_agent(a) and not _is_planner_agent(a)]
         if _group_director:
             _director_prompt = str(_group_director.get("system_prompt") or _group_director.get("systemPrompt") or "").strip()
             _dm = normalize_model_id(_group_director.get("model") or "")
@@ -18269,6 +18412,13 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             _evidence_ledger = _build_evidence_ledger(
                 subagents_dossiers, search_query, str(req.model or ""), api_key_to_use)
             _mark("ledger")
+            # 🗺 وكيل الخطة يضع هيكل البحث من السجل قبل أن يكتب المدير:
+            # مقدمة بعناصرها وصلب مفصّل وخاتمة بنتائج وتوصيات.
+            if _planner_agent:
+                _research_plan = _build_research_plan(
+                    search_query, _evidence_ledger, subagents_dossiers,
+                    normalize_model_id(_planner_agent.get("model") or ""), api_key_to_use)
+                _mark("plan")
 
         # دمج شواهد كافة الوكلاء في قائمة المراجع الموحدة
         seen_snippets = set()
@@ -18436,6 +18586,14 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "وكل دعوى محورية تُسند بنقل حرفي بين علامتي اقتباس من بطاقة شاهد بعينها؛ فلا إحالة من الذاكرة ولا عنوانًا مختصرًا من عندك، "
                 "وما لم تجد له بطاقة في السجل فلا تنقله ولا تُحل إليه.\n"
                 + _evidence_ledger + "\n"
+            )
+        if _research_plan:
+            agent_routing_instruction += (
+                "\n🗺 [خطة البحث الملزمة — وضعها وكيل خطة البحث من سجل الأدلة]:\n"
+                + _research_plan
+                + "\nالتزم هذه الخطة هيكلًا وعناوين وترتيبًا: مقدمة بعناصرها المذكورة، وفصول ومباحث بعناوينها، "
+                "وخاتمة بأهم النتائج مرقمة ثم التوصيات؛ ولا تستحدث مبحثًا خارجها ولا تحذف مبحثًا منها بصمت — "
+                "إن اضطرتك المادة إلى دمج أو تقديم فاذكره في موضعه.\n"
             )
         agent_routing_instruction += (
             "\n🚫 [قاعدة المكتبة الحاكمة]: النقل والاستشهاد من كتب مكتبة الشاملة وحدها؛ ما كان خارجها يُستبعد فورًا ولا يُنقل منه ولا يُحال إليه ولو صحّ في نفسه. "
@@ -19541,6 +19699,20 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         _attach_package_audit(_gate_stats, _pkg_ledger, reply_text)
                     except Exception as _pkg_err:
                         print(f"🧰 [Package Audit] تعذر ربط الحزم بتقرير التوثيق: {_pkg_err}", flush=True)
+                    # 🗺 مراجعة المسودة على الخطة وفهرسها في صدر الجواب.
+                    if _planner_agent and _research_plan and reply_text:
+                        _plan_review = _review_research_output(
+                            search_query, _research_plan, reply_text,
+                            normalize_model_id(_planner_agent.get("model") or ""), api_key_to_use)
+                        _toc = _answer_toc(reply_text)
+                        if _toc:
+                            _rlines = reply_text.split("\n", 1)
+                            if _rlines and _rlines[0].startswith("# "):
+                                reply_text = (_rlines[0] + "\n\n" + _toc
+                                              + (_rlines[1] if len(_rlines) > 1 else ""))
+                            else:
+                                reply_text = _toc + reply_text
+                            print("🗺 [TOC] أُدرج فهرس البحث في صدر الجواب", flush=True)
                     if locals().get("_hadith_project"):
                         _gate_stats["skip_madhhab_coverage"] = True
                     # سجل التدقيق وتنبيها اكتمال الفريق والنطاق لا تُختم في
@@ -19650,6 +19822,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "risk_verdict": _risk_verdict(_risk_events),
                 "risk_events": _risk_events, "risk_memo": _risk_memo,
                 "ledger": locals().get("_evidence_ledger") or "",
+                "research_plan": locals().get("_research_plan") or "",
+                "plan_review": locals().get("_plan_review") or "",
                 "dossiers": [
                     {"name": d.get("name", ""), "model": d.get("model", ""),
                      "report": d.get("report") or "",
@@ -19692,6 +19866,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             ],
             "stage_s": {k: v for k, v in _stage_marks},
             "ledger_chars": len(_evidence_ledger or ""),
+            "research_plan": locals().get("_research_plan") or "",
+            "plan_review": locals().get("_plan_review") or "",
             "audit_record": _audit_record_text,
             "audit_failures": [
                 {"quote": f.get("quote", ""), "reason": f.get("reason", "")}
@@ -25103,7 +25279,8 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
         '    "academic_pdf": true\n'
         '  }\n'
         "}\n\n"
-        "ولازم في \"agents\": وكيل واحد «مدير الأدوات — جامع الشواهد الموثقة» بحقل \"role\": \"tools_manager\" و\"kind\": \"tools_manager\"، نموذجه google/gemini-3.8-flash، وتوجيهه: جلب حزم الشواهد الموثقة بأدوات المغني الداخلية المركّبة والتوثيقية وحده (بحث مغلق وقراءة ومطابقة) وإعادتها بعزوها وحالة مطابقتها، بلا تحليل ولا ترجيح ولا نقل إلا MATCH_EXACT أو MATCH_NORMALIZED.\n\n"
+        "ولازم في \"agents\": وكيل واحد «مدير الأدوات — جامع الشواهد الموثقة» بحقل \"role\": \"tools_manager\" و\"kind\": \"tools_manager\"، نموذجه google/gemini-3.8-flash، وتوجيهه: جلب حزم الشواهد الموثقة بأدوات المغني الداخلية المركّبة والتوثيقية وحده (بحث مغلق وقراءة ومطابقة) وإعادتها بعزوها وحالة مطابقتها، بلا تحليل ولا ترجيح ولا نقل إلا MATCH_EXACT أو MATCH_NORMALIZED.\n"
+        "ولازم أيضًا: وكيل واحد «وكيل خطة البحث ومراجعته وفهرسته» بحقل \"role\": \"planner\" و\"kind\": \"planner\"، نموذجه ~anthropic/claude-sonnet-latest، وتوجيهه: وضع خطة البحث الأكاديمية من سجل الأدلة (مقدمة بموضوعها وأهميتها ومشكلتها ومنهجها، وصلب بفصوله ومباحثه، وخاتمة بأهم النتائج والتوصيات) ومراجعة المسودة عليها وفهرستها؛ لا يجمع شواهد ولا يكتب متنًا.\n\n"
         "بعد كتلة الـ JSON، اكتب شرحاً تفصيلياً تحليلياً باللغة العربية الفصحى للباحث يبيّن خطة السير خطوة بخطوة، والمسوغات العلمية لاختيار الكتب وتوزيع الوكلاء."
     )
 
@@ -26566,6 +26743,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
     architect_system_prompt += _architect_adaptive_profile_section()
     architect_system_prompt += (
         "ولازم في كل مخطط: وكيل واحد «مدير الأدوات — جامع الشواهد الموثقة» بحقل \"role\": \"tools_manager\" كما في مثال المخطط؛ لا مخطط بلا مدير أدوات، وهو وحده الممسك بأدوات المغني الداخلية المركّبة والتوثيقية، ولا وكيل غيره بأي أداة.\n"
+        "ولازم أيضًا في كل مخطط: وكيل واحد «وكيل خطة البحث ومراجعته وفهرسته» بحقل \"role\": \"planner\" و\"kind\": \"planner\"، نموذجه ~anthropic/claude-sonnet-latest؛ يضع خطة البحث الأكاديمية من سجل الأدلة ويراجع المسودة عليها ويفهرسها، ولا يجمع شواهد.\n"
         f"\nسياق الاستيعاب المعتمد لهذا المشروع: {resolve_context_tokens(req.context_tokens)} رمز. "
         "اجعل context_tokens في بطاقة المدير وكل وكيل بهذه القيمة إلا إذا طلب الباحث تغييرها، ولا تضع هذا الرقم في max_tokens لأن ذلك حد الإخراج لا حد الشواهد.\n"
         "إذا أرسل الباحث رسالة تبدأ بـ «أضف هذه الكتب لدى الوكيل المناسب»، فأضف كل كتاب كما ورد برقمه المعياري وعنوانه إلى حقل books لدى الوكيل الأنسب لفن الكتاب، ولا تستبدل الرقم ولا تُسقط الكتاب.\n"
