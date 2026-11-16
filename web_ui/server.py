@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.640"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.641"},
         },
     })
     if opened.get("error"):
@@ -27504,54 +27504,48 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
 
 
 def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = None) -> str:
-    """فهرس وورد: اتجاه النص داخل الخلية عربي يمينًا. جدولة يسار وحقل
-    PAGEREF الإنجليزي كانا يقلبان فقرة الخلية إلى اليسار."""
+    """فهرس وورد: الجدول والنصوص والخلايا في الوسط أفقيًا وعموديًا."""
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     rpr = _docx_rpr(body)
     brd = 'w:val="single" w:sz="8" w:space="0" w:color="888888"'
     rlm = "\u200f"
-    ppr_rtl = (
+    ppr_mid = (
         '<w:pPr><w:bidi w:val="1"/>'
         '<w:spacing w:before="60" w:line="360" w:lineRule="auto" w:after="60"/>'
-        '{ind}<w:jc w:val="right"/></w:pPr>'
+        '<w:jc w:val="center"/></w:pPr>'
     )
     rows = []
     for it in items:
-        try:
-            lvl = max(1, min(3, int(it.get("lvl") or 1)))
-        except Exception:
-            lvl = 1
         text = "".join(str(r.get("t") or "") for r in (it.get("runs") or []) if isinstance(r, dict))
         shown = str(it.get("page") or "").strip() or "-"
-        ind = f'<w:ind w:right="{(lvl - 1) * 300}"/>' if lvl > 1 else ""
         topic = (
-            "<w:p>" + ppr_rtl.format(ind=ind)
-            + f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + text)}</w:t></w:r></w:p>'
+            f"<w:p>{ppr_mid}"
+            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + text)}</w:t></w:r></w:p>'
         )
         page = (
-            "<w:p>" + ppr_rtl.format(ind="")
-            + f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + shown)}</w:t></w:r></w:p>'
+            f"<w:p>{ppr_mid}"
+            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + shown)}</w:t></w:r></w:p>'
         )
         rows.append(
             '<w:tr><w:trPr><w:cantSplit/>'
-            '<w:trHeight w:val="320" w:hRule="atLeast"/></w:trPr>'
+            '<w:trHeight w:val="360" w:hRule="atLeast"/></w:trPr>'
             '<w:tc><w:tcPr><w:tcW w:w="700" w:type="pct"/>'
-            '<w:vAlign w:val="top"/><w:noWrap/></w:tcPr>' + page + "</w:tc>"
+            '<w:vAlign w:val="center"/><w:noWrap/></w:tcPr>' + page + "</w:tc>"
             '<w:tc><w:tcPr><w:tcW w:w="4300" w:type="pct"/>'
-            '<w:vAlign w:val="top"/></w:tcPr>' + topic + "</w:tc>"
+            '<w:vAlign w:val="center"/></w:tcPr>' + topic + "</w:tc>"
             "</w:tr>"
         )
     return (
         "<w:tbl><w:tblPr>"
-        '<w:jc w:val="right"/>'
+        '<w:jc w:val="center"/>'
         '<w:tblW w:w="5000" w:type="pct"/>'
         '<w:tblLayout w:type="fixed"/>'
         "<w:tblBorders>"
         f"<w:top {brd}/><w:left {brd}/><w:bottom {brd}/>"
         f"<w:right {brd}/><w:insideH {brd}/><w:insideV {brd}/>"
         "</w:tblBorders>"
-        '<w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>'
-        '<w:bottom w:w="40" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar>'
+        '<w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>'
+        '<w:bottom w:w="60" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar>'
         "</w:tblPr>"
         '<w:tblGrid><w:gridCol w:w="1381"/><w:gridCol w:w="8485"/></w:tblGrid>'
         + "".join(rows) + "</w:tbl>"
