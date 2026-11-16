@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.635"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.636"},
         },
     })
     if opened.get("error"):
@@ -27504,8 +27504,9 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
 
 
 def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = None) -> str:
-    """فهرس وورد جدولًا من عمودين: الموضوع ٩٠٪ ورقم الصفحة ١٠٪، والرقم
-    حقل PAGEREF يحدّثه وورد على صفحاته هو لا على صفحات PDF."""
+    """فهرس وورد: صف واحد لكل بند، العمود الأيسر رقم الصفحة والأيمن
+    الموضوع (بلا bidiVisual حتى لا ينعكس العمودان فيتوهّم الرقم لغير
+    عنوانه). في خلية الموضوع جدولة منقّطة إلى حافة الرقم."""
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     rpr = _docx_rpr(body)
     rows = []
@@ -27516,39 +27517,50 @@ def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = Non
             lvl = 1
         bm = re.sub(r"[^A-Za-z0-9_]", "", str(it.get("bookmark") or ""))[:40]
         text = "".join(str(r.get("t") or "") for r in (it.get("runs") or []) if isinstance(r, dict))
+        shown = str(it.get("page") or "").strip() or " "
         ind = f'<w:ind w:right="{(lvl - 1) * 300}"/>' if lvl > 1 else ""
         topic = (
-            '<w:p><w:pPr><w:bidi/>'
+            "<w:p><w:pPr>"
+            '<w:tabs><w:tab w:val="left" w:leader="dot" w:pos="0"/></w:tabs>'
+            "<w:bidi/>"
             '<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="40"/>'
             f'{ind}<w:jc w:val="right"/></w:pPr>'
-            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(text)}</w:t></w:r></w:p>'
+            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(text)}</w:t></w:r>'
+            f"<w:r>{rpr}<w:tab/></w:r></w:p>"
         )
         if bm and (known_bookmarks is None or bm in known_bookmarks):
             page = (
-                '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/>'
-                '<w:spacing w:line="240" w:lineRule="auto" w:after="0"/></w:pPr>'
+                '<w:p><w:pPr><w:jc w:val="center"/>'
+                '<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="0"/></w:pPr>'
                 '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
                 f'<w:r>{rpr}<w:instrText xml:space="preserve"> PAGEREF {bm} \\h </w:instrText></w:r>'
                 '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-                f'<w:r>{rpr}<w:t> </w:t></w:r>'
+                f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(shown)}</w:t></w:r>'
                 '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
             )
         else:
-            page = f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r>{rpr}<w:t>-</w:t></w:r></w:p>'
+            page = (
+                '<w:p><w:pPr><w:jc w:val="center"/>'
+                '<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="0"/></w:pPr>'
+                f'<w:r>{rpr}<w:t>{_docx_esc(shown if shown.strip() else "-")}</w:t></w:r></w:p>'
+            )
         rows.append(
-            "<w:tr>"
-            '<w:tc><w:tcPr><w:tcW w:w="4500" w:type="pct"/></w:tcPr>' + topic + "</w:tc>"
-            '<w:tc><w:tcPr><w:tcW w:w="500" w:type="pct"/></w:tcPr>' + page + "</w:tc>"
+            "<w:tr><w:trPr><w:cantSplit/></w:trPr>"
+            '<w:tc><w:tcPr><w:tcW w:w="700" w:type="pct"/><w:vAlign w:val="center"/>'
+            "<w:noWrap/></w:tcPr>" + page + "</w:tc>"
+            '<w:tc><w:tcPr><w:tcW w:w="4300" w:type="pct"/><w:vAlign w:val="center"/>'
+            "</w:tcPr>" + topic + "</w:tc>"
             "</w:tr>"
         )
     return (
-        '<w:tbl><w:tblPr><w:bidiVisual/>'
+        "<w:tbl><w:tblPr>"
         '<w:tblW w:w="5000" w:type="pct"/>'
-        '<w:tblBorders>'
+        '<w:tblLayout w:type="fixed"/>'
+        "<w:tblBorders>"
         '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>'
         '<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/>'
-        '</w:tblBorders></w:tblPr>'
-        '<w:tblGrid><w:gridCol w:w="8879"/><w:gridCol w:w="987"/></w:tblGrid>'
+        "</w:tblBorders></w:tblPr>"
+        '<w:tblGrid><w:gridCol w:w="1381"/><w:gridCol w:w="8485"/></w:tblGrid>'
         + "".join(rows) + "</w:tbl>"
     )
 

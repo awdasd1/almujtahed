@@ -7500,20 +7500,29 @@ function buildAcademicPaperHtml(runData, options) {
               payload.blocks.push({ kind: 'tocTitle', runs: [{ t: 'فهرس البحث', b: true }] });
             } else if (el.tagName === 'LI') {
               var tocTitleEl = el.querySelector('.toc-title');
-              var tocLink = el.querySelector('a');
+              var tocPageEl = el.querySelector('.toc-page');
               var tocText = (tocTitleEl ? tocTitleEl.textContent : el.textContent).replace(/\s+/g, ' ').trim();
-              var tocBm = String((tocLink && tocLink.getAttribute('href')) || '').replace(/^#/, '');
+              if (tocPageEl) tocText = tocText.replace(tocPageEl.textContent, '').replace(/\s+/g, ' ').trim();
               if (tocText) {
                 var tocLvl = el.classList.contains('toc-l3') ? 3 : (el.classList.contains('toc-l2') ? 2 : 1);
-                var tocKey = stripOrdinal(tocText);
-                var tocBmName = bmByText[tocKey] || '';
-                if (!tocBmName) {
-                  Object.keys(bmByText).some(function (k) {
-                    if (tocKey && (k.indexOf(tocKey) >= 0 || tocKey.indexOf(k) >= 0)) { tocBmName = bmByText[k]; return true; }
-                    return false;
+                var normKey = function (s) {
+                  return stripOrdinal(s).replace(/[:：]/g, ' ').replace(/\s+/g, ' ').trim();
+                };
+                var tocKey = normKey(tocText);
+                var tocBmName = bmByText[stripOrdinal(tocText)] || bmByText[tocKey] || '';
+                if (!tocBmName && tocKey) {
+                  var bestLen = 0;
+                  Object.keys(bmByText).forEach(function (k) {
+                    var nk = normKey(k);
+                    if (!nk) return;
+                    if (nk === tocKey || nk.indexOf(tocKey) === 0 || tocKey.indexOf(nk) === 0) {
+                      var len = Math.min(nk.length, tocKey.length);
+                      if (len > bestLen) { bestLen = len; tocBmName = bmByText[k]; }
+                    }
                   });
                 }
-                payload.blocks.push({ kind: 'tocItem', lvl: tocLvl, bookmark: tocBmName, runs: [{ t: tocText }] });
+                var tocPage = tocPageEl ? String(tocPageEl.textContent || '').trim() : '';
+                payload.blocks.push({ kind: 'tocItem', lvl: tocLvl, bookmark: tocBmName, page: tocPage, runs: [{ t: tocText }] });
               }
             }
             return;
