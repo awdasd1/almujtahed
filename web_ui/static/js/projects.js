@@ -6899,12 +6899,16 @@ function buildAcademicPaperHtml(runData, options) {
   const rounds = (runData.rounds && runData.rounds.length > 0)
     ? runData.rounds
     : [{ round: 1, name: 'المرحلة التحريرية الكاملة', output: runData.rawOutput }];
-  const roundsBodyHtml = pagedPaperTransform(rounds.map(r => `
+  let roundsBodyHtml = pagedPaperTransform(rounds.map(r => `
     <section class="academic-round-section">
       ${r.name === '' ? '' : `<h2 class="academic-round-title">${escapeHtml(r.name || `الجولة رقم ${toArabicIndicDigits(r.round)}`)}</h2>`}
       <div class="academic-text-content">${formatAcademicBody(r.output || '')}</div>
     </section>
   `).join(''));
+  /* فهرس الجواب المزروع في المتن (١.١٠.٦٢٢) بلا صفحات: يُحذف من الورقة
+     ويحل محله فهرس الورقة الصفحي تحت — لا فهرسان في مطبوعة واحدة */
+  roundsBodyHtml = roundsBodyHtml.replace(
+    /<h2>فهرس البحث<\/h2>\s*<div style="line-height:1\.9">[\s\S]*?<\/div>\s*<hr\s*\/?>/, '');
   // صفحة ختامية مستقلة بأسماء المصادر والمراجع من شواهد الجواب نفسه
   // (حين لا يحمل المتن ثبتًا خاصًا به) — تبدأ صفحة جديدة بقاعدة الكسر.
   let biblioHtml = '';
@@ -6933,6 +6937,53 @@ function buildAcademicPaperHtml(runData, options) {
       // ترتيب القائمة على الحروف الأبجدية بعناوين الكتب
       biblioItems.sort((a, b) => compareBiblioTitles(a.sortTitle, b.sortTitle));
       biblioHtml = `<section class="academic-round-section"><h2 class="biblio-title">المصادر والمراجع</h2><ol class="biblio-list">${biblioItems.map((item) => item.html).join('')}</ol></section>`;
+    }
+  }
+  /* فهرس البحث بأرقام الصفحات: تُزرع معرّفات في عناوين الورقة ويُبنى
+     الفهرس منها، ويحسم محرك التقسيم Paged.js رقم صفحة كل عنوان عند
+     التقسيم (target-counter) فتطابق الأرقام صفحات المطبوعة نفسها */
+  let tocHtml = '';
+  {
+    const tocRaw = [];
+    let seq = 0;
+    const injectTocIds = (htmlText) => htmlText.replace(
+      /<(h2|h3)([^>]*)>([\s\S]*?)<\/\1>|<p class="academic-subheading">([\s\S]*?)<\/p>/g,
+      (match, tag, attrs, inner, subInner) => {
+        const isSub = tag === undefined;
+        const rawInner = isSub ? subInner : inner;
+        const title = String(rawInner || '').replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ').trim().replace(/[:：]\s*$/, '');
+        if (!title || title.length > 110 || title === 'فهرس البحث' || /^[«﴿"']/.test(title)) return match;
+        let lvl;
+        if (!isSub && /academic-round-title/.test(attrs || '')) lvl = 1;
+        else if (!isSub && tag === 'h3') lvl = 3;
+        else if (/^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا|المقدمة|الخاتمة)(?=[^ا-ي]|$)/.test(title) || title === 'المصادر والمراجع') lvl = 1;
+        else if (title.indexOf('الفصل') >= 0 && title.indexOf('الفصل') < 14) lvl = 2;
+        else if (/^[0-9٠-٩]+\s*[-–—]\s*[0-9٠-٩]+/.test(title)) lvl = 3;
+        else if (/^[0-9٠-٩]+\s*[-–—]/.test(title)) lvl = 2;
+        else if (/^(أهم النتائج|أبرز النتائج|التوصيات)/.test(title)) lvl = 2;
+        else lvl = 2;
+        seq += 1;
+        const id = `paper-toc-h${seq}`;
+        tocRaw.push({ lvl, title, id });
+        if (isSub) return `<p class="academic-subheading" id="${id}">${subInner}</p>`;
+        return `<${tag}${attrs || ''} id="${id}">${inner}</${tag}>`;
+      });
+    roundsBodyHtml = injectTocIds(roundsBodyHtml);
+    if (biblioHtml) biblioHtml = injectTocIds(biblioHtml);
+    if (tocRaw.length >= 4) {
+      const counters = [0, 0, 0];
+      let prev = 0;
+      const items = tocRaw.slice(0, 90).map((it) => {
+        let depth = Math.min(3, it.lvl);
+        if (depth > prev + 1) depth = prev + 1;
+        counters[depth - 1] += 1;
+        for (let i = depth; i < 3; i++) counters[i] = 0;
+        prev = depth;
+        const num = counters.slice(0, depth).join('.');
+        return `<li class="toc-l${depth}"><a href="#${it.id}"><span class="toc-num">${toArabicIndicDigits(num)}.</span><span class="toc-title">${escapeHtml(it.title)}</span><span class="dots"></span></a></li>`;
+      }).join('');
+      tocHtml = `<section class="paper-toc"><h2 class="paper-toc-title">فهرس البحث</h2><ul>${items}</ul></section>`;
     }
   }
   const printExtras = paperPrintCss();
@@ -7577,7 +7628,19 @@ function buildAcademicPaperHtml(runData, options) {
     body { direction: ltr; }
     .paper-sheet { direction: rtl; text-align: right; max-width: none; margin: 0; padding: 0; }
     @page { size: A4; margin: 20mm 18mm 24mm 18mm;
-      @footnote { border-top: none; padding-top: 8pt; margin-top: 12pt; } }
+      @footnote { border-top: none; padding-top: 8pt; margin-top: 12pt; }
+      @bottom-center { content: counter(page, arabic-indic); font-size: 10pt; color: #444; } }
+    /* فهرس البحث الصفحي: أرقامه من target-counter على معرّفات العناوين،
+       فيحسمها تقسيم Paged.js نفسه وتطابق أرقام ذيل الصفحات */
+    .paper-toc { break-after: page; }
+    .paper-toc-title { text-align: center; font-size: 17pt; margin: 0 0 14px; text-indent: 0; }
+    .paper-toc ul { list-style: none; margin: 0; padding: 0; font-size: 12.5pt; line-height: 2.05; }
+    .paper-toc li.toc-l2 { padding-inline-start: 22px; }
+    .paper-toc li.toc-l3 { padding-inline-start: 44px; }
+    .paper-toc a { color: inherit; text-decoration: none; display: flex; align-items: baseline; gap: 6px; }
+    .paper-toc a .toc-num { font-weight: 700; }
+    .paper-toc a .dots { flex: 1; border-bottom: 1.5px dotted #9ca3af; transform: translateY(-3px); }
+    .paper-toc a::after { content: target-counter(attr(href), page, arabic-indic); font-weight: 700; }
     .pg-fn { float: footnote; }
     /* الخط الفاصل بين المتن والحواشي: ٣٠٪ افتراضيًا من جهة البدء،
        وعرضه من تبويب «الطباعة» في إعدادات المنظومة */
@@ -7628,7 +7691,7 @@ function buildAcademicPaperHtml(runData, options) {
     <div class="paper-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
     <h1 class="paper-main-title">${escapeHtml(title)}</h1>
   </header>
-  <main>${roundsBodyHtml}${biblioHtml}</main>
+  <main>${tocHtml}${roundsBodyHtml}${biblioHtml}</main>
   </div>
   <script>
   window.__paperBg = ${JSON.stringify(printExtras.bg || null).replace(/</g, '\\u003c')};
