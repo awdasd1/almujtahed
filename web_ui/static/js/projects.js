@@ -6940,7 +6940,7 @@ function buildAcademicPaperHtml(runData, options) {
   <header class="top-action-bar no-print-toolbar">
     <div class="bar-actions">
       ${settings.printable === false ? '' : `<button class="btn-act btn-primary" type="button" onclick="window.print()">
-        <span>🖨️ طباعة / حفظ كـ PDF</span>
+        <span>🖨️ ${settings.printable === 'draft' ? 'طباعة مبدئية / حفظ كـ PDF' : 'طباعة / حفظ كـ PDF'}</span>
       </button>
       <button class="btn-act" type="button" onclick="printRawPaper()" title="طباعة الورقة نفسها لكن بأرقام حواشٍ غير مرتبطة: نص خام بلا روابط بين المتن والحاشية">
         <span>🖨️ طباعة خام</span>
@@ -7623,6 +7623,7 @@ function buildAcademicPaperHtml(runData, options) {
 <body>
   ${toolbar}
   <div class="paper-sheet" dir="rtl">
+  ${settings.printable === 'draft' ? `<div style="border:1.5px dashed #b45309;color:#92400e;background:#fffbeb;border-radius:8px;padding:6px 12px;margin:0 0 14px;text-align:center;font-weight:700;font-size:13.5px">🔖 طباعة مبدئية — مسودة هذه الجولة للمراجعة والتدقيق، وليست النسخة المعتمدة</div>` : ''}
   <header class="print-cover-header">
     <div class="paper-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
     <h1 class="paper-main-title">${escapeHtml(title)}</h1>
@@ -7727,7 +7728,7 @@ function openAcademicPaperWindow(runData, printable) {
      («قراءة») كانت تومض ولا يصلها شريط الأدوات بثبات */
   if (typeof openChatReadingOverlay === 'function') {
     openChatReadingOverlay(fullPrintHtml, printable);
-    showToast(printable === false ? 'تم فتح البحث للقراءة' : 'تم فتح البحث. اطبع من زر الطباعة في أعلى الصفحة');
+    showToast(printable === false ? 'تم فتح البحث للقراءة' : (printable === 'draft' ? 'تم فتح الطباعة المبدئية — مسودة غير معتمدة، اطبع من زر الطباعة في أعلى الصفحة' : 'تم فتح البحث. اطبع من زر الطباعة في أعلى الصفحة'));
     return;
   }
   const printWin = window.open('', '_blank');

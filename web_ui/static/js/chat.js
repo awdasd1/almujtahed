@@ -1355,7 +1355,8 @@ function chatAnswerStages(session) {
   return out;
 }
 
-/* الطباعة حق للإجابة المعتمدة وحدها: جواب إقفال المناقشة النهائي */
+/* الإجابة المعتمدة: جواب إقفال المناقشة النهائي — طباعتها بلا وسم،
+   وما عداها يُطبع «طباعة مبدئية» موسومًا مسودة في الورقة نفسها */
 function isFinalApprovedAnswer(session, idx) {
   return chatAnswerStages(session).some((s) => s.idx === idx && s.kind === 'final');
 }
@@ -2299,10 +2300,12 @@ function renderSessionMessages(sessionId, options) {
           📄 قراءة
         </button>
         <!-- أزرار مخفية بقرار المستخدم (تُركت في الكود وقد تُزال لاحقًا): الظاهر فقط قراءة، نسخ، مناقشة، بحث، تقرير، حذف.
-             واستثناء مرسوم سلفًا: الطباعة تظهر عند إقفال المناقشة للإجابة المعتمدة النهائية وحدها -->
+             الطباعة مع كل جولة بقرار المستخدم: للإجابة المعتمدة «طباعة»، ولغيرها «طباعة مبدئية» موسومة مسودة -->
         ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="طباعة هذه النتيجة بحواشٍ لكل صفحة أو حفظها PDF">
           🖨️ طباعة
-        </button>` : ''}
+        </button>` : `<button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="طباعة مسودة هذه الجولة (تُوسم داخل الورقة بأنها مبدئية غير معتمدة) بحواشٍ لكل صفحة أو حفظها PDF">
+          🖨️ طباعة مبدئية
+        </button>`}
         ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="generateAudioSummary(${idx}, this)" title="اختصار هذه الإجابة المعتمدة بنموذج Gemini 3.8 Flash اختصارًا دقيقًا غير مخلّ، ثم تحويلها إلى ملف صوتي بصوت Algieba يُرفق بجانب زمن الإجابة لتسمعه وتنزّله وتشاركه">
           🔊 ملخص صوتي
         </button>` : ''}
@@ -2811,11 +2814,16 @@ function openChatReadingOverlay(htmlContent, printable) {
     });
     document.body.appendChild(overlay);
   }
-  /* الطباعة من التراكب للإجابة المعتمدة فقط؛ تصدير وورد يبقى متاحًا */
+  /* الطباعة من التراكب: للإجابة المعتمدة بلا وسم، ولغيرها «طباعة
+     مبدئية» متاحة موسومة داخل الورقة؛ القراءة وحدها بلا طباعة */
   const canPrint = printable !== false;
   overlay.querySelectorAll('.chat-reading-print:not(.chat-reading-word)').forEach((b) => {
     b.style.display = canPrint ? '' : 'none';
   });
+  const mainPrintBtn = overlay.querySelector('.chat-reading-print:not(.chat-reading-print-raw):not(.chat-reading-word)');
+  if (mainPrintBtn) {
+    mainPrintBtn.textContent = printable === 'draft' ? '🖨️ طباعة مبدئية / حفظ PDF' : '🖨️ طباعة / حفظ PDF';
+  }
   const frame = overlay.querySelector('#chatReadingFrame');
   overlay.hidden = false;
   frame.onload = () => {
@@ -2871,7 +2879,8 @@ async function exportChatMessagePdf(idx) {
   if (!paper) return;
   if (typeof window.openAcademicPaperWindow === 'function') {
     const session = chatSessions.find(s => s.id === activeSessionId);
-    window.openAcademicPaperWindow(paper.runData, session ? isFinalApprovedAnswer(session, idx) : true);
+    const approved = session ? isFinalApprovedAnswer(session, idx) : true;
+    window.openAcademicPaperWindow(paper.runData, approved ? true : 'draft');
     return;
   }
   showToast('تعذر تجهيز صفحة البحث للطباعة');
