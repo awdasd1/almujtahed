@@ -7612,6 +7612,11 @@ async def get_mcp_tools_catalog():
         "status": "ok",
         "server": "almoghni_mcp",
         "description": "خادم المغني MCP: بحث منغلق النطاق وقراءة صفحات ومطابقة اقتباس على الشاملة المحلية",
+        "layers": {
+            "read_verify": sorted(shamela_local_mcp.INTERNAL_READ_VERIFY_TOOL_NAMES),
+            "search": sorted(shamela_local_mcp.INTERNAL_SEARCH_TOOL_NAMES),
+            "note": "فصل المسارين: أدوات البحث الداخلي وظائف خادم وواجهة فقط ولا تدخل كتالوج أدوات النماذج والوكلاء داخل التطبيق. طبقة القراءة والتوثيق تُستدعى من خطوط الخادم الحتمية بعد المسودة ومن العملاء الخارجيين عبر /mcp.",
+        },
         "tools": shamela_local_mcp.SHAMELA_MCP_TOOLS_SPEC + ALMOGHNI_MCP_EXTRA_TOOLS
     }
 
@@ -7694,7 +7699,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.608"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.609"},
         },
     })
     if opened.get("error"):
@@ -7742,14 +7747,23 @@ def mcp_call_tool(url: str, session_id: Optional[str], tool_name: str, arguments
     return text[:12000] or "أعادت الأداة نتيجة فارغة"
 
 
-def mcp_openai_tools(servers: List[dict]) -> Tuple[List[dict], Dict[str, dict]]:
-    """يفتح جلسات الخوادم المحددة ويحوّل أدواتها إلى صيغة استدعاء النموذج."""
+def mcp_openai_tools(servers: List[dict], allow_internal: bool = False) -> Tuple[List[dict], Dict[str, dict]]:
+    """يفتح جلسات الخوادم المحددة ويحوّل أدواتها إلى صيغة استدعاء النموذج.
+
+    فصل المسارين (المرحلة ١): خادم المغني الداخلي لا يدخل كتالوج أدوات
+    النماذج والوكلاء داخل التطبيق؛ أدواته تُدار من خطوط الخادم الحتمية
+    وحدها. الاستثناء الصريح الوحيد مسار «MCP الخام» المحفوظ كخط رجعة
+    (allow_internal=True)، ويبقى /mcp مفتوحًا للعملاء الخارجيين.
+    """
     catalog = []
     mapping = {}
     for index, server in enumerate(servers or []):
         if not isinstance(server, dict):
             continue
         url = str(server.get("url") or "").strip()
+        if url and _is_internal_mcp_url(url) and not allow_internal:
+            print("🧭 [MCP Separation] تُرك خادم المغني الداخلي خارج كتالوج أدوات النماذج والوكلاء", flush=True)
+            continue
         chosen = {str(name) for name in (server.get("tools") or []) if str(name).strip()}
         try:
             clean, session, tools = mcp_open_session(url)
@@ -16460,7 +16474,7 @@ def _raw_mcp_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
         return {**base, "reply": "⚠️ وضع MCP الخام يحتاج مفتاح OpenRouter مضبوطًا في حسابك."}
     port = os.environ.get("PORT", "8085")
     try:
-        tools, mapping = mcp_openai_tools([{"url": f"http://127.0.0.1:{port}/mcp", "name": "المغني"}])
+        tools, mapping = mcp_openai_tools([{"url": f"http://127.0.0.1:{port}/mcp", "name": "المغني"}], allow_internal=True)
     except Exception as exc:
         return {**base, "reply": f"⚠️ تعذر تجهيز أدوات MCP: {exc}"}
     if not tools:

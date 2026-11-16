@@ -4785,6 +4785,17 @@ async function addChatMcp(event) {
     if (typeof showToast === 'function') showToast('اكتب اسم الخادم ورابطه', 2200);
     return;
   }
+  // فصل المسارين: خادم المغني الداخلي لا يُضاف كخادم MCP خارجي؛ أدواته
+  // الداخلية تُدار من الخادم نفسه ولا تُعطى للنماذج أو الوكلاء.
+  try {
+    const parsedMcpUrl = new URL(url);
+    const isLocalHost = ['127.0.0.1', 'localhost', '::1'].includes(parsedMcpUrl.hostname);
+    if (isLocalHost && parsedMcpUrl.pathname.replace(/\/$/, '') === '/mcp'
+        && (parsedMcpUrl.port === window.location.port || parsedMcpUrl.port === '8085')) {
+      if (typeof showToast === 'function') showToast('خادم المغني الداخلي لا يُضاف هنا: أدواته الداخلية يديرها الخادم نفسه، وهذه القائمة للخوادم الخارجية فقط', 4000);
+      return;
+    }
+  } catch (e) { /* رابط غير صالح: سيتولاه فحص الخادم */ }
   if (button) button.disabled = true;
   try {
     const response = await fetch('/api/mcp/inspect', {

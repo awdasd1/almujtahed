@@ -1858,6 +1858,35 @@ SHAMELA_MCP_TOOLS_SPEC = [
     }
 ]
 
+# فصل المسارين (المرحلة ١): أدواتنا الداخلية طبقتان لا تُخلطان.
+# طبقة القراءة والتوثيق: تُستدعى من خطوط الخادم الحتمية بعد المسودة ومن
+# العملاء الخارجيين عبر /mcp. طبقة البحث الداخلي: وظائف خادم وواجهة فقط،
+# ولا تدخل كتالوج أدوات أي نموذج أو وكيل داخل التطبيق.
+INTERNAL_READ_VERIFY_TOOL_NAMES = frozenset({
+    "get_page_range", "get_book_toc", "verify_quote", "get_surrounding_context",
+    "resolve_book", "get_book_card", "get_page", "get_issue_heading",
+    "get_pack_slice", "verify_batch", "get_book_coverage",
+})
+INTERNAL_SEARCH_TOOL_NAMES = frozenset({
+    "search_in_book", "search_books_scoped", "anchor_lookup", "anchor_search",
+    "trace_hadith", "search_library", "search_headings", "search_batch",
+    "survey_topic", "dossier_topic", "ayah_dossier", "word_dossier",
+    "fiqh_dossier", "hadith_dossier", "ayah_loci", "attestations",
+    "hadith_loci", "qawaid_search", "creed_search", "fiqh_topics",
+    "fiqh_topic_locations", "creed_issue", "lugha_search", "tarikh_search",
+    "madhhab_authorities", "authority_books",
+})
+
+
+def tool_layer(name: str) -> str:
+    """طبقة الأداة الداخلية: read_verify أو search أو extra أو unknown."""
+    if name in INTERNAL_READ_VERIFY_TOOL_NAMES:
+        return "read_verify"
+    if name in INTERNAL_SEARCH_TOOL_NAMES:
+        return "search"
+    return "unknown"
+
+
 def get_surrounding_context(book: Any, page_num: int, part: Optional[str] = None, before_pages: int = 2, after_pages: int = 2) -> Dict[str, Any]:
     """تقليب واستيفاء الصفحات السابقة واللاحقة لكشف سياق المسألة أو الحولية"""
     p_int = max(1, int(page_num or 1))
