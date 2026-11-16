@@ -1762,6 +1762,7 @@ const LAB_VARS = [
   '--lab-page-bg', '--lab-btn-fill', '--lab-btn-text', '--lab-btn2-fill', '--lab-btn2-text',
   '--lab-btn2-border', '--lab-btn2-width', '--lab-light-width', '--lab-light-border',
   '--lab-mid-width', '--lab-mid-border', '--lab-dark-bg', '--lab-dark-width', '--lab-dark-border',
+  '--lab-header-bg', '--lab-chat-bg',
   '--lab-color-tabs', '--lab-color-heading', '--lab-color-sub', '--lab-color-reading',
   '--bg-canvas', '--bg-surface', '--bg-surface-hover', '--bg-muted', '--border-subtle', '--border-hover',
   '--btn-bg', '--btn-text',
@@ -1847,6 +1848,8 @@ function readVisualLabForm() {
       light: { fill: labHex('boxLightFill', '#FBF7F0'), fillAlpha: labNum('boxLightFillA', 100), border: labHex('boxLightBorder', '#D6CBB8'), borderAlpha: labNum('boxLightBorderA', 100), width: labNum('boxLightWidth', 1) },
       mid: { fill: labHex('boxMidFill', '#E7DCCB'), fillAlpha: labNum('boxMidFillA', 100), border: labHex('boxMidBorder', '#BFAE96'), borderAlpha: labNum('boxMidBorderA', 100), width: labNum('boxMidWidth', 1) },
       dark: { fill: labHex('boxDarkFill', '#2A221A'), fillAlpha: labNum('boxDarkFillA', 92), border: labHex('boxDarkBorder', '#1C1611'), borderAlpha: labNum('boxDarkBorderA', 100), width: labNum('boxDarkWidth', 1) },
+      header: { fill: labHex('boxHeaderFill', '#FBF7F0'), fillAlpha: labNum('boxHeaderFillA', 92) },
+      chat: { fill: labHex('boxChatFill', '#FBF7F0'), fillAlpha: labNum('boxChatFillA', 100) },
     },
     fontColors: {
       tabs: { color: labHex('fontTabsColor', '#6A5C4D'), alpha: labNum('fontTabsAlpha', 100) },
@@ -1885,6 +1888,12 @@ function writeVisualLabForm(lab) {
     setLabField(`${prefix}Border`, box.border); setLabField(`${prefix}BorderA`, box.borderAlpha);
     setLabField(`${prefix}Width`, box.width);
   });
+  const headerBox = boxes.header || {};
+  const chatBox = boxes.chat || {};
+  setLabField('boxHeaderFill', headerBox.fill || boxes.dark?.fill);
+  setLabField('boxHeaderFillA', headerBox.fillAlpha ?? boxes.dark?.fillAlpha);
+  setLabField('boxChatFill', chatBox.fill || boxes.light?.fill);
+  setLabField('boxChatFillA', chatBox.fillAlpha ?? boxes.light?.fillAlpha);
   const fonts = lab.fontColors || {};
   setLabField('fontTabsColor', fonts.tabs?.color); setLabField('fontTabsAlpha', fonts.tabs?.alpha);
   setLabField('fontHeadingColor', fonts.heading?.color); setLabField('fontHeadingAlpha', fonts.heading?.alpha);
@@ -1918,6 +1927,8 @@ function seedVisualLabForm() {
       light: { fill: surface.hex, fillAlpha: 100, border: border.hex, borderAlpha: 100, width: 1 },
       mid: { fill: muted.hex, fillAlpha: 100, border: borderHover.hex, borderAlpha: 100, width: 1 },
       dark: { fill: glass.hex, fillAlpha: glass.alpha, border: border.hex, borderAlpha: 100, width: 1 },
+      header: { fill: glass.hex, fillAlpha: glass.alpha },
+      chat: { fill: surface.hex, fillAlpha: 100 },
     },
     fontColors: {
       tabs: mutedText, heading: ink, subheading: text, reading: text,
@@ -1992,6 +2003,10 @@ function applyVisualLab() {
   set('--lab-dark-bg', labRgba(dark.fill, dark.fillAlpha));
   set('--lab-dark-border', labRgba(dark.border, dark.borderAlpha));
   set('--lab-dark-width', `${Number(dark.width) || 0}px`);
+  const header = boxes.header || {};
+  const chat = boxes.chat || {};
+  set('--lab-header-bg', labRgba(header.fill || dark.fill, header.fillAlpha ?? dark.fillAlpha));
+  set('--lab-chat-bg', labRgba(chat.fill || light.fill, chat.fillAlpha ?? light.fillAlpha));
   set('--lab-color-tabs', labRgba(fonts.tabs?.color, fonts.tabs?.alpha));
   set('--lab-color-heading', labRgba(fonts.heading?.color, fonts.heading?.alpha));
   set('--lab-color-sub', labRgba(fonts.subheading?.color, fonts.subheading?.alpha));

@@ -11483,10 +11483,14 @@ html[data-visual-lab="on"] .form-textarea {
 }
 
 html[data-visual-lab="on"] .app-header {
-  background: var(--lab-dark-bg) !important;
+  background: var(--lab-header-bg) !important;
   border-bottom-width: var(--lab-dark-width);
   border-bottom-style: solid;
   border-bottom-color: var(--lab-dark-border);
+}
+
+html[data-visual-lab="on"] .chat-main {
+  background: var(--lab-chat-bg) !important;
 }
 
 html[data-visual-lab="on"] .nav-tab-btn,
