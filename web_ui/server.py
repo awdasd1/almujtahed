@@ -3265,7 +3265,8 @@ def _footnote_icon_sweep(text: str):
     return text, stats
 
 
-def _documentation_gate(text: str, witness_rows: List[dict]):
+def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
+                        judge_model: str = "google/gemini-3.8-flash"):
     """يطابق كل نقل منقول على كتاب إحالته، ويُصلح مواضع الإحالات، ويستبعد
     ما كان مصدره خارج المكتبة.
 
@@ -3365,6 +3366,98 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         if bid and str(bid) not in witness_ids:
             witness_ids.append(str(bid))
 
+    # ── جدول مقابلة الكتب (وسيلة ضبط الإحالات التامة): مفاتيح مولّدة من
+    # كتالوج المكتبة نفسه (العنوان الرسمي، نصفه قبل لاحقة الطبعة، شطرا
+    # العنوان المزدوج) + أسماء بديلة متعلَّمة تُحفظ بين الجولات، فكل صيغة
+    # انحلّت مرة لا تعود لغزًا. والحلّ مرحلي: متعلَّم ← مولّد ← ضبابي ←
+    # حكم نموذج بين مرشحين حقيقيين فقط (لا يخترع رقمًا أبدًا).
+    _learned_aliases: Dict[str, int] = {}
+    try:
+        _aconn = _ensure_app_memory()
+        try:
+            _arow = _aconn.execute(
+                "SELECT payload FROM kv_documents WHERE key='book_aliases:v1'").fetchone()
+            if _arow is not None:
+                _learned_aliases = {str(k): int(v) for k, v in
+                                    (json.loads(_arow["payload"]) or {}).items()}
+        finally:
+            _aconn.close()
+    except Exception:
+        _learned_aliases = {}
+    _alias_state = {"dirty": False}
+    _book_index_cache: Dict[str, Any] = {}
+
+    def _book_key_index():
+        if _book_index_cache:
+            return _book_index_cache
+        idx: Dict[str, set] = {}
+        meta: Dict[int, dict] = {}
+        db = get_db()
+        if db is not None:
+            try:
+                for row in db.execute(
+                        "SELECT book_id, title_ar, main_author_name_ar, rel_path FROM books"):
+                    bid = int(row["book_id"])
+                    title = str(row["title_ar"] or "")
+                    meta[bid] = {"bid": str(bid), "title": title,
+                                 "author": str(row["main_author_name_ar"] or ""),
+                                 "rel_path": str(row["rel_path"] or "")}
+                    keys = {_stamp_title_key(title)}
+                    for piece in re.split(r"\s+(?:أو|=)\s+", title):
+                        keys.add(_stamp_title_key(piece))
+                    keys.add(_stamp_title_key(re.split(r"\s+[-–—]\s+", title)[0]))
+                    for k in keys:
+                        if k:
+                            idx.setdefault(k, set()).add(bid)
+            except Exception:
+                pass
+        _book_index_cache.update({"idx": idx, "meta": meta})
+        return _book_index_cache
+
+    def _learn_alias(raw_title: str, bid: int) -> None:
+        kk = _stamp_title_key(raw_title or "")
+        if kk and _learned_aliases.get(kk) != bid:
+            _learned_aliases[kk] = bid
+            _alias_state["dirty"] = True
+
+    def _resolve_title_staged(title_seg: str, author_seg: str = ""):
+        """متعلَّم ← جدول مولّد، بانفراد واتفاق مؤلف؛ يعيد بيانات الكتاب أو None."""
+        variants: List[str] = []
+
+        def _addv(s):
+            s = (s or "").strip(" ،,؛:")
+            for v in (s, re.sub(r"^[وف](?=\S)", "", s)):
+                if len(v) >= 5 and v not in variants:
+                    variants.append(v)
+
+        _addv(title_seg)
+        for piece in re.split(r"\s+(?:أو|=|/)\s+", title_seg or ""):
+            _addv(piece)
+        author_tokens = ({t for t in re.split(r"\W+", _fold_ar(author_seg)) if len(t) >= 3}
+                         if author_seg else set())
+
+        def _author_ok(bid: int) -> bool:
+            if not author_tokens:
+                return True
+            row_author = {t for t in re.split(
+                r"\W+", _fold_ar(_book_key_index()["meta"].get(bid, {}).get("author", "")))
+                if len(t) >= 3}
+            return bool(author_tokens & row_author)
+
+        for v in variants:
+            bid = _learned_aliases.get(_stamp_title_key(v))
+            if bid and _author_ok(bid):
+                meta = _book_key_index()["meta"].get(bid)
+                if meta:
+                    return dict(meta)
+        idx = _book_key_index()["idx"]
+        meta_all = _book_key_index()["meta"]
+        for v in variants:
+            ok_bids = [b for b in (idx.get(_stamp_title_key(v)) or set()) if _author_ok(b)]
+            if len(ok_bids) == 1:
+                return dict(meta_all[ok_bids[0]])
+        return None
+
     def _parse_unresolved(raw):
         """«الموافقات، الشاطبي، 2، 413» → كتابها وموضعها: يُفصل المؤلف عن
         العنوان تباعًا (فهو ما أضلّ المطابقة)، ويُقبل حلٌّ يطابق عنوانه."""
@@ -3414,6 +3507,12 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         if _am and len(_am.group(1)) >= 6:
             title_seg = _am.group(1).strip(" ،,؛:")
             author_seg = _am.group(2).strip(" ،,؛:")
+        _staged = _resolve_title_staged(title_seg, author_seg)
+        if _staged:
+            _learn_alias(title_seg, int(_staged["bid"]))
+            return {"bid": _staged["bid"], "part": part, "page": page,
+                    "title": _staged["title"], "author": _staged["author"],
+                    "rel_path": _staged["rel_path"]}
         candidates: List[str] = []
 
         def _add(s):
@@ -3442,6 +3541,7 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                                if len(t) >= 3}
                 if not (_author_tokens & _row_author):
                     continue
+            _learn_alias(title_seg, int(row["book_id"]))
             return {"bid": str(row["book_id"]), "part": part, "page": page,
                     "title": row.get("title") or "", "author": row.get("author") or "",
                     "rel_path": row.get("rel_path") or ""}
@@ -3991,6 +4091,78 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
     # أيقونة التصفح وتدخل كتبَ التحقق، وشاهدُ متنها يُفحص بمهامه كالمعتاد.
     _heal_quotes = {j["num"]: j["quote"] for j in _heals}
     _defs_now = _footnote_defs(text)
+    # حكم النموذج (المرحلة الأخيرة من ضبط الإحالات): ما عجز عنه الحلّ
+    # الحتمي بمراحله يُعرض — مرة واحدة دفعة — على نموذج رخيص سريع مع
+    # أفضل مرشحي الكتالوج لكل إحالة، فيختار منها أو يردّها كلها؛ لا
+    # يستطيع اختراع كتاب غير معروض عليه. بلا مفتاح يُتخطى بصمت.
+    _judged: Dict[str, dict] = {}
+    if api_key:
+        _judge_failures: List[Any] = []
+        _judge_seen = set()
+        for _jd in _defs_now:
+            if "cit-unresolved" not in _jd["body"]:
+                continue
+            for _um in re.finditer(r'<span class="cit-unresolved"[^>]*>(.*?)</span>', _jd["body"], re.S):
+                _plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", _um.group(1)).replace("⚠", " ")).strip()
+                if not _plain or _plain in _judge_seen:
+                    continue
+                _judge_seen.add(_plain)
+                if _parse_unresolved(_um.group(1)) or _fuzzy_resolve_unresolved(_um.group(1)):
+                    continue
+                _lm = _STAMP_LOCATOR.search(_plain)
+                if _lm and len(_STAMP_LOCATOR.sub("", _plain).strip(" ،؛:و")) <= 2:
+                    continue  # موضع عارٍ: يرث كتاب ما قبله في حلقة الشفاء
+                _head_j = (_plain[:_lm.start()] if _lm else _plain).strip(" ،,؛:")
+                _am_j = re.match(r"^(.*?)\s+ل(?=[اإآا-ي])(.+)$", _head_j)
+                _title_j = (_am_j.group(1) if _am_j and len(_am_j.group(1)) >= 6 else _head_j)
+                _words = {t for t in re.split(r"\W+", _fold_ar(_title_j)) if len(t) >= 4}
+                if not _words:
+                    continue
+                _scored = []
+                for _bid_j, _meta_j in _book_key_index()["meta"].items():
+                    _twords = {t for t in re.split(r"\W+", _fold_ar(_meta_j["title"])) if len(t) >= 4}
+                    _sc = len(_words & _twords)
+                    if _sc >= 2:
+                        _scored.append((-_sc, _bid_j, _meta_j))
+                _scored.sort(key=lambda x: (x[0], x[1]))
+                _cands = [_m for _s, _b, _m in _scored[:5]]
+                if _cands:
+                    _judge_failures.append((_plain, _cands))
+        if _judge_failures:
+            try:
+                _jlines = []
+                for _i, (_plain_j, _cands_j) in enumerate(_judge_failures[:24]):
+                    _jlines.append(f"[{_i}] الإحالة: «{_plain_j[:120]}»\n" + "\n".join(
+                        f"   - {_c['bid']}: {_c['title']} — {_c['author']}" for _c in _cands_j))
+                _jraw = call_openrouter_raw(
+                    model_id=judge_model,
+                    messages=[
+                        {"role": "system", "content": (
+                            "أنت أمين فهرس مكتبة تراثية. لكل إحالة معطاة اختر رقم الكتاب المطابق لها "
+                            "من مرشحيها المعروضين فقط، أو 0 إن لم يطابقها أي مرشح. لا تختر كتابًا غير "
+                            "معروض، ولا تخترع رقمًا. أخرج JSON حصرًا: "
+                            "{\"decisions\":[{\"n\":0,\"book_id\":123}]}")},
+                        {"role": "user", "content": "\n\n".join(_jlines)}],
+                    api_key=api_key, temperature=0.0, max_tokens=2500, timeout=90,
+                    thinking_level="low") or ""
+                _jby_n = {i: c for i, (_p, c) in enumerate(_judge_failures[:24])}
+                for _obj in _extract_json_objects(_jraw):
+                    if not isinstance(_obj.get("decisions"), list):
+                        continue
+                    for _dec in _obj["decisions"]:
+                        try:
+                            _n_j, _bid_j = int(_dec.get("n")), int(_dec.get("book_id"))
+                        except Exception:
+                            continue
+                        _cand_j = {_c["bid"]: _c for _c in _jby_n.get(_n_j, [])}
+                        if str(_bid_j) in _cand_j:
+                            _judged[_judge_failures[_n_j][0]] = dict(_cand_j[str(_bid_j)])
+                    break
+                if _judged:
+                    stats["judge_decisions"] = len(_judged)
+                    print(f"🧭 [Citation Judge] حكم النموذج ({judge_model}) في {len(_judge_failures[:24])} إحالة عجز عنها الحل الحتمي: قُبل {len(_judged)}", flush=True)
+            except Exception as _jerr:
+                print(f"🧭 [Citation Judge] تعذر حكم النموذج: {_jerr}", flush=True)
     _edits = []
     _healed_n = 0
     _dropped_n = 0
@@ -4013,6 +4185,33 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                             {"quote": re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1))).strip()[:140],
                              "book_id": info["bid"], "title": info["title"], "num": d.get("num")})
                 else:
+                    _plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1)).replace("⚠", " ")).strip()
+                    _jmeta = _judged.get(_plain)
+                    if _jmeta:
+                        _pp2, _pg2 = _locator_parts(_STAMP_LOCATOR.search(_plain))
+                        info = {"bid": _jmeta["bid"], "title": _jmeta["title"],
+                                "author": _jmeta["author"], "rel_path": _jmeta["rel_path"],
+                                "part": _pp2, "page": _pg2}
+                        stats["judge_healed"] = stats.get("judge_healed", 0) + 1
+                    else:
+                        # موضع عارٍ بلا اسم كتاب («(3-81)» بعد إحالة محلولة):
+                        # يرث كتاب آخر cit-src قبله في الحاشية نفسها بموضعه هو.
+                        _lm3 = _STAMP_LOCATOR.search(_plain)
+                        if _lm3 and len(_STAMP_LOCATOR.sub("", _plain).strip(" ،؛:و")) <= 2:
+                            _prior = None
+                            for _sm in re.finditer(
+                                    r'<span class="cit-src"[^>]*data-book-id="(\d+)"', body[:um.start()]):
+                                _prior = _sm
+                            if _prior:
+                                _meta3 = _book_key_index()["meta"].get(int(_prior.group(1)))
+                                if _meta3:
+                                    _pp3, _pg3 = _locator_parts(_lm3)
+                                    info = {"bid": _meta3["bid"], "title": _meta3["title"],
+                                            "author": _meta3["author"],
+                                            "rel_path": _meta3["rel_path"],
+                                            "part": _pp3, "page": _pg3}
+                                    stats["inherited_healed"] = stats.get("inherited_healed", 0) + 1
+                if not info:
                     # كتاب خارج المكتبة: تُستبعد إحالته من الحاشية فورًا.
                     # يُسجَّل نص الإحالة كما كتبه المولّف (حتى 60) تشخيصًا:
                     # عددٌ أصم (45 في قياسين) لم يكشف أهي كتب غائبة حقًا أم
@@ -4142,6 +4341,25 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
             cited_titles.append(seg)
     stats["cited_book_ids"] = cited
     stats["cited_titles"] = cited_titles
+    if stats.get("judge_healed"):
+        print(f"🧭 [Citation Judge] شُفيت {stats['judge_healed']} إحالة بحكم النموذج بين مرشحين", flush=True)
+    if stats.get("inherited_healed"):
+        print(f"🚧 [Documentation Audit] ورثت {stats['inherited_healed']} مواضع عارية كتاب إحالتها السابقة في حاشيتها", flush=True)
+    if _alias_state.get("dirty"):
+        # حفظ الأسماء البديلة المتعلَّمة: صيغة انحلّت مرة لا تعود لغزًا.
+        try:
+            _sconn = _ensure_app_memory()
+            try:
+                _sconn.execute(
+                    "INSERT INTO kv_documents (key, payload, updated_at) VALUES (?, ?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
+                    ("book_aliases:v1", json.dumps(_learned_aliases, ensure_ascii=False),
+                     datetime.now().isoformat()))
+                _sconn.commit()
+            finally:
+                _sconn.close()
+        except Exception:
+            pass
     return text, stats
 
 
@@ -7833,7 +8051,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.620"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.621"},
         },
     })
     if opened.get("error"):
@@ -19316,7 +19534,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 # تدقيق توثيق غير مدمّر: مطابقة النقول على صفحات كتبها وسجل
                 # تنبيه ختامي ظاهر، بلا حذف ولا جولة إصلاح تستبدل البحث.
                 try:
-                    reply_text, _gate_stats = _documentation_gate(reply_text, witness_rows)
+                    reply_text, _gate_stats = _documentation_gate(
+                        reply_text, witness_rows, api_key=api_key_to_use)
                     try:
                         _pkg_ledger = _tools_package_ledger(subagents_dossiers)
                         _attach_package_audit(_gate_stats, _pkg_ledger, reply_text)
@@ -19486,6 +19705,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "excluded_outside": _gs.get("excluded_outside", 0), "tier_warnings": _gs.get("tier_warnings", 0),
                 "fuzzy_healed": _gs.get("fuzzy_healed", 0),
                 "fuzzy_healed_items": (_gs.get("fuzzy_healed_items") or [])[:20],
+                "judge_healed": _gs.get("judge_healed", 0),
+                "inherited_healed": _gs.get("inherited_healed", 0),
                 "ijma_flags": _gs.get("ijma_flags", 0),
                 "ijma_unattributed": len(_gs.get("ijma_unattributed") or []),
                 "cited_books": len(_gs.get("cited_book_ids") or []),
