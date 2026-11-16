@@ -176,11 +176,18 @@ async function testCurrentProviderKey() {
   button.textContent = 'اختبار';
   let ok = false;
   try {
-    const res = await fetch('/api/config/providers/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, key })
-    });
+    // مهلة عميلة صلبة: زر الاختبار لا يعلّق أبدًا بصمت مهما تعثّرت الشبكة.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    let res;
+    try {
+      res = await fetch('/api/config/providers/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, key }),
+        signal: ctrl.signal
+      });
+    } finally { clearTimeout(timer); }
     const data = await res.json().catch(() => ({}));
     ok = res.ok && data.ok === true;
   } catch (err) {
@@ -215,11 +222,17 @@ async function testSocialKey(provider) {
   button.textContent = 'اختبار';
   let ok = false;
   try {
-    const res = await fetch('/api/config/providers/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, key })
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    let res;
+    try {
+      res = await fetch('/api/config/providers/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, key }),
+        signal: ctrl.signal
+      });
+    } finally { clearTimeout(timer); }
     const data = await res.json().catch(() => ({}));
     ok = res.ok && data.ok === true;
   } catch (err) {

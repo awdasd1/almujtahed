@@ -7769,7 +7769,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.618"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.619"},
         },
     })
     if opened.get("error"):
@@ -19547,6 +19547,59 @@ async def download_local_model(req: LocalModelDownloadRequest, request: Request)
     return {"status": "ok", "message": "بدأ سحب النموذج", "download": _local_download_view()}
 
 
+def _fetch_openrouter_models(key: str) -> dict:
+    """جلب نماذج OpenRouter وتحليلها (متزامن — يُستدعى في خيط حصرًا).
+    كان هذا الجلب يجري داخل المعالج غير المتزامن نفسه على حلقة الأحداث،
+    فإذا تعثّر اتصال الشبكة تجمّدت الواجهة كلها خلفه (منها زر اختبار
+    المفتاح) كما حدث في قياس 1.10.618."""
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/models",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "HTTP-Referer": "http://localhost:8085",
+            "X-Title": "Almoghni Sharia Engine"
+        }
+    )
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        raw = json.loads(resp.read().decode("utf-8"))
+        models_raw = raw.get("data", [])
+
+    parsed = []
+    for m in models_raw:
+        pricing = m.get("pricing", {})
+        prompt_token = float(pricing.get("prompt") or 0.0)
+        comp_token = float(pricing.get("completion") or 0.0)
+        benchmarks = m.get("benchmarks") or {}
+        art_analysis = benchmarks.get("artificial_analysis") or {}
+
+        parsed.append({
+            "id": m.get("id"),
+            "canonical_slug": m.get("canonical_slug") or m.get("id"),
+            "name": m.get("name") or m.get("id"),
+            "description": m.get("description", ""),
+            "context_length": m.get("context_length", 0),
+            "pricing": {
+                "prompt_per_token": prompt_token,
+                "completion_per_token": comp_token,
+                "prompt_per_1m": round(prompt_token * 1_000_000, 4),
+                "completion_per_1m": round(comp_token * 1_000_000, 4)
+            },
+            "benchmarks": {
+                "intelligence_index": art_analysis.get("intelligence_index"),
+                "coding_index": art_analysis.get("coding_index"),
+                "agentic_index": art_analysis.get("agentic_index"),
+                "design_arena": benchmarks.get("design_arena") or []
+            },
+            "top_provider": m.get("top_provider") or {},
+            "reasoning": remember_model_reasoning(m.get("id"), m.get("reasoning"))
+        })
+        slug = m.get("canonical_slug")
+        if slug and slug != m.get("id"):
+            OPENROUTER_REASONING[slug] = OPENROUTER_REASONING.get(m.get("id"))
+
+    return {"status": "ok", "count": len(parsed), "models": parsed}
+
+
 @app.get("/api/openrouter/models")
 async def get_openrouter_models(request: Request, api_key: Optional[str] = None):
     """جلب قائمة نماذج OpenRouter بمفتاح الحساب الحالي"""
@@ -19561,52 +19614,7 @@ async def get_openrouter_models(request: Request, api_key: Optional[str] = None)
         return openrouter_cache["data"]
 
     try:
-        req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/models",
-            headers={
-                "Authorization": f"Bearer {key}",
-                "HTTP-Referer": "http://localhost:8085",
-                "X-Title": "Almoghni Sharia Engine"
-            }
-        )
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            raw = json.loads(resp.read().decode("utf-8"))
-            models_raw = raw.get("data", [])
-
-        parsed = []
-        for m in models_raw:
-            pricing = m.get("pricing", {})
-            prompt_token = float(pricing.get("prompt") or 0.0)
-            comp_token = float(pricing.get("completion") or 0.0)
-            benchmarks = m.get("benchmarks") or {}
-            art_analysis = benchmarks.get("artificial_analysis") or {}
-
-            parsed.append({
-                "id": m.get("id"),
-                "canonical_slug": m.get("canonical_slug") or m.get("id"),
-                "name": m.get("name") or m.get("id"),
-                "description": m.get("description", ""),
-                "context_length": m.get("context_length", 0),
-                "pricing": {
-                    "prompt_per_token": prompt_token,
-                    "completion_per_token": comp_token,
-                    "prompt_per_1m": round(prompt_token * 1_000_000, 4),
-                    "completion_per_1m": round(comp_token * 1_000_000, 4)
-                },
-                "benchmarks": {
-                    "intelligence_index": art_analysis.get("intelligence_index"),
-                    "coding_index": art_analysis.get("coding_index"),
-                    "agentic_index": art_analysis.get("agentic_index"),
-                    "design_arena": benchmarks.get("design_arena") or []
-                },
-                "top_provider": m.get("top_provider") or {},
-                "reasoning": remember_model_reasoning(m.get("id"), m.get("reasoning"))
-            })
-            slug = m.get("canonical_slug")
-            if slug and slug != m.get("id"):
-                OPENROUTER_REASONING[slug] = OPENROUTER_REASONING.get(m.get("id"))
-
-        res_data = {"status": "ok", "count": len(parsed), "models": parsed}
+        res_data = await asyncio.to_thread(_fetch_openrouter_models, key)
         if key == (OPENROUTER_DEFAULT_KEY or ""):
             openrouter_cache["data"] = res_data
             openrouter_cache["timestamp"] = now
@@ -19886,11 +19894,12 @@ async def get_openrouter_model_about(model_id: str, request: Request):
     if cached:
         return {"status": "ok", "id": model_id, "description": cached}
 
-    english = _english_model_about(model_id)
+    english = await asyncio.to_thread(_english_model_about, model_id)
     if not english:
         raise HTTPException(status_code=404, detail="لم يُعثر على وصف لهذا النموذج")
     try:
-        arabic = _translate_model_about_to_arabic(english, owner_openrouter_key(request))
+        arabic = await asyncio.to_thread(
+            _translate_model_about_to_arabic, english, owner_openrouter_key(request))
     except Exception as e:
         print(f"Error translating model about for {model_id}: {e}")
         raise HTTPException(status_code=502, detail="تعذر تجهيز وصف النموذج")
@@ -19900,13 +19909,8 @@ async def get_openrouter_model_about(model_id: str, request: Request):
     return {"status": "ok", "id": model_id, "description": arabic}
 
 
-@app.get("/api/openrouter/credits")
-async def get_openrouter_credits(request: Request, api_key: Optional[str] = None):
-    """جلب رصيد حساب OpenRouter الخاص بالعضو الحالي"""
-    import urllib.request
-    key = owner_openrouter_key(request, api_key)
-    if not key:
-        raise HTTPException(status_code=400, detail="أدخل مفتاح OpenRouter الخاص بحسابك")
+def _fetch_openrouter_credits(key: str) -> dict:
+    """جلب رصيد OpenRouter (متزامن — يُستدعى في خيط حصرًا، كأخيه نماذج)."""
     SAR_RATE = 3.75
 
     headers = {
@@ -19966,6 +19970,15 @@ async def get_openrouter_credits(request: Request, api_key: Optional[str] = None
         "limit": auth_data.get("limit"),
         "free_requests": auth_data.get("free_model_daily_requests") or {"used": 0, "limit": 1000, "remaining": 1000}
     }
+
+
+@app.get("/api/openrouter/credits")
+async def get_openrouter_credits(request: Request, api_key: Optional[str] = None):
+    """جلب رصيد حساب OpenRouter الخاص بالعضو الحالي"""
+    key = owner_openrouter_key(request, api_key)
+    if not key:
+        raise HTTPException(status_code=400, detail="أدخل مفتاح OpenRouter الخاص بحسابك")
+    return await asyncio.to_thread(_fetch_openrouter_credits, key)
 
 
 # =============================================================================
