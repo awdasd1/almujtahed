@@ -3406,6 +3406,7 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                     for piece in re.split(r"\s+(?:أو|=)\s+", title):
                         keys.add(_stamp_title_key(piece))
                     keys.add(_stamp_title_key(re.split(r"\s+[-–—]\s+", title)[0]))
+                    keys.add(_stamp_title_key(re.split(r"\s+ت\s+", title)[0]))
                     for k in keys:
                         if k:
                             idx.setdefault(k, set()).add(bid)
@@ -3420,6 +3421,21 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
             _learned_aliases[kk] = bid
             _alias_state["dirty"] = True
 
+    def _tokset(s, minlen=3):
+        """رموز كلمة موسّعة بسوابقها المحتملة: الإحالة البشرية تلصق بالمؤلف
+        لام الجر وبالتعريف («للماوردي» يفصلها المحلل «لماوردي») وببالعنوان
+        واو العطف («والحاوي»)، فلا يلتقي الرمز بنظيره الكتالوجي الحافي إلا
+        بتجريد السوابق من الطرفين."""
+        out = set()
+        for t in re.split(r"\W+", _fold_ar(s or "")):
+            if len(t) < minlen:
+                continue
+            out.add(t)
+            for pre in ("ال", "لل", "ل", "و", "ف", "ب", "ك"):
+                if t.startswith(pre) and len(t) - len(pre) >= minlen:
+                    out.add(t[len(pre):])
+        return out
+
     def _resolve_title_staged(title_seg: str, author_seg: str = ""):
         """متعلَّم ← جدول مولّد، بانفراد واتفاق مؤلف؛ يعيد بيانات الكتاب أو None."""
         variants: List[str] = []
@@ -3433,15 +3449,12 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
         _addv(title_seg)
         for piece in re.split(r"\s+(?:أو|=|/)\s+", title_seg or ""):
             _addv(piece)
-        author_tokens = ({t for t in re.split(r"\W+", _fold_ar(author_seg)) if len(t) >= 3}
-                         if author_seg else set())
+        author_tokens = _tokset(author_seg) if author_seg else set()
 
         def _author_ok(bid: int) -> bool:
             if not author_tokens:
                 return True
-            row_author = {t for t in re.split(
-                r"\W+", _fold_ar(_book_key_index()["meta"].get(bid, {}).get("author", "")))
-                if len(t) >= 3}
+            row_author = _tokset(_book_key_index()["meta"].get(bid, {}).get("author", ""))
             return bool(author_tokens & row_author)
 
         for v in variants:
@@ -3524,8 +3537,7 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
         for _piece in re.split(r"\s+(?:أو|=|/)\s+", title_seg):
             _add(_piece)
         _add(head)
-        _author_tokens = ({t for t in re.split(r"\W+", _fold_ar(author_seg)) if len(t) >= 3}
-                          if author_seg else set())
+        _author_tokens = _tokset(author_seg) if author_seg else set()
         for att in candidates[:8]:
             try:
                 row = shamela_local_mcp.resolve_book(att)
@@ -3537,8 +3549,7 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
             if not (ak and rk and (ak == rk or f" {rk} " in f" {ak} " or f" {ak} " in f" {rk} ")):
                 continue
             if _author_tokens:
-                _row_author = {t for t in re.split(r"\W+", _fold_ar(str(row.get("author") or "")))
-                               if len(t) >= 3}
+                _row_author = _tokset(str(row.get("author") or ""))
                 if not (_author_tokens & _row_author):
                     continue
             _learn_alias(title_seg, int(row["book_id"]))
@@ -4115,24 +4126,29 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                 _head_j = (_plain[:_lm.start()] if _lm else _plain).strip(" ،,؛:")
                 _am_j = re.match(r"^(.*?)\s+ل(?=[اإآا-ي])(.+)$", _head_j)
                 _title_j = (_am_j.group(1) if _am_j and len(_am_j.group(1)) >= 6 else _head_j)
-                _words = {t for t in re.split(r"\W+", _fold_ar(_title_j)) if len(t) >= 4}
-                if not _words:
+                _author_j = (_am_j.group(2) if _am_j and len(_am_j.group(1)) >= 6 else "")
+                _words = _tokset(_title_j, 4) if _title_j else set()
+                _awords = _tokset(_author_j, 3) if _author_j else set()
+                if not _words and not _awords:
                     continue
                 _scored = []
                 for _bid_j, _meta_j in _book_key_index()["meta"].items():
-                    _twords = {t for t in re.split(r"\W+", _fold_ar(_meta_j["title"])) if len(t) >= 4}
-                    _sc = len(_words & _twords)
-                    if _sc >= 2:
-                        _scored.append((-_sc, _bid_j, _meta_j))
+                    _tsc = len(_words & _tokset(_meta_j["title"], 4)) if _words else 0
+                    _asc = 1 if (_awords and (_awords & _tokset(_meta_j["author"], 3))) else 0
+                    if _tsc >= 2 or (_tsc >= 1 and _asc) or (not _words and _asc):
+                        _scored.append((-(_tsc * 2 + _asc), _bid_j, _meta_j))
                 _scored.sort(key=lambda x: (x[0], x[1]))
                 _cands = [_m for _s, _b, _m in _scored[:5]]
                 if _cands:
-                    _judge_failures.append((_plain, _cands))
+                    _quote_j = " ".join(str(_heal_quotes.get(_jd["num"]) or "").split())[:160]
+                    _judge_failures.append((_plain, _cands, _quote_j))
         if _judge_failures:
             try:
                 _jlines = []
-                for _i, (_plain_j, _cands_j) in enumerate(_judge_failures[:24]):
-                    _jlines.append(f"[{_i}] الإحالة: «{_plain_j[:120]}»\n" + "\n".join(
+                for _i, (_plain_j, _cands_j, _quote_j) in enumerate(_judge_failures[:24]):
+                    _jlines.append(f"[{_i}] الإحالة: «{_plain_j[:120]}»"
+                                   + (f"\n   سياق النقل: «{_quote_j}»" if _quote_j else "")
+                                   + "\n" + "\n".join(
                         f"   - {_c['bid']}: {_c['title']} — {_c['author']}" for _c in _cands_j))
                 _jraw = call_openrouter_raw(
                     model_id=judge_model,
@@ -4140,12 +4156,13 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                         {"role": "system", "content": (
                             "أنت أمين فهرس مكتبة تراثية. لكل إحالة معطاة اختر رقم الكتاب المطابق لها "
                             "من مرشحيها المعروضين فقط، أو 0 إن لم يطابقها أي مرشح. لا تختر كتابًا غير "
-                            "معروض، ولا تخترع رقمًا. أخرج JSON حصرًا: "
+                            "معروض، ولا تخترع رقمًا. وإن كانت الإحالة باسم المؤلف وحده فاختر من كتبه "
+                            "بسياق النقل المعروض معها، فإن لم يكفِ السياق فاختر 0. أخرج JSON حصرًا: "
                             "{\"decisions\":[{\"n\":0,\"book_id\":123}]}")},
                         {"role": "user", "content": "\n\n".join(_jlines)}],
                     api_key=api_key, temperature=0.0, max_tokens=2500, timeout=90,
                     thinking_level="low") or ""
-                _jby_n = {i: c for i, (_p, c) in enumerate(_judge_failures[:24])}
+                _jby_n = {i: c for i, (_p, c, _q) in enumerate(_judge_failures[:24])}
                 for _obj in _extract_json_objects(_jraw):
                     if not isinstance(_obj.get("decisions"), list):
                         continue
@@ -8051,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.622"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.623"},
         },
     })
     if opened.get("error"):
@@ -12915,32 +12932,83 @@ def _review_research_output(
 
 def _answer_toc(reply: str) -> str:
     """فهرس البحث من عناوين المسودة النهائية نفسها، مرقّمًا بالفصول
-    والمباحث — حتمي فوري. أرقام الصفحات محلّها نسخة الطباعة المصفّحة."""
+    والمباحث — حتمي فوري. المسودة تصل HTML بعناوين <b> قائمة وحدها في
+    فقراتها (وقد تصل Markdown بعناوين #)، فيُقرأ الشكلان ويخرج الفهرس
+    بشكل النص نفسه. أرقام الصفحات محلّها نسخة الطباعة المصفّحة."""
+    src = reply or ""
+    is_html = ("<b>" in src[:6000] and "<p" in src[:6000]) or "<h1" in src[:6000] or "<h2" in src[:6000]
     heads = []
-    for ln in (reply or "").splitlines():
-        m = re.match(r"^(#{1,3})\s+(.+?)\s*$", ln)
-        if not m:
-            continue
-        title = re.sub(r"[*_`#>]", "", m.group(2)).strip()
-        if title and "فهرس البحث" not in title:
-            heads.append((len(m.group(1)), title))
+    if is_html:
+        for m in re.finditer(r"<h([1-3])[^>]*>(.*?)</h\1>|<p[^>]*>\s*<b>(.*?)</b>", src, re.S):
+            if m.group(1):
+                title = re.sub(r"<[^>]+>", "", m.group(2) or "").strip()
+                lvl = int(m.group(1))
+            else:
+                title = re.sub(r"<[^>]+>", "", m.group(3) or "").strip()
+                if not title or len(title) > 110 or title[0] in "«\"'﴿":
+                    continue
+                if re.match(r"^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا|المقدمة|الخاتمة)\b", title) \
+                        or "صلب البحث" in title[:20]:
+                    lvl = 1
+                elif "الفصل" in title[:14] or title.startswith(("أهم النتائج", "أبرز النتائج", "التوصيات")):
+                    lvl = 2
+                elif re.match(r"^[0-9٠-٩]+\s*[-–—]\s*[0-9٠-٩]+", title):
+                    lvl = 3
+                elif re.match(r"^[0-9٠-٩]+\s*[-–—]", title):
+                    lvl = 2
+                else:
+                    continue
+            title = re.sub(r"[*_`#>]", "", title).strip().rstrip(":")
+            if title and "فهرس البحث" not in title:
+                heads.append((lvl, title))
+    else:
+        for ln in src.splitlines():
+            m = re.match(r"^(#{1,3})\s+(.+?)\s*$", ln)
+            if not m:
+                continue
+            title = re.sub(r"[*_`#>]", "", m.group(2)).strip()
+            if title and "فهرس البحث" not in title:
+                heads.append((len(m.group(1)), title))
     if len(heads) < 4:
         return ""
-    # العنوان الرئيس الأول (#) اسم البحث نفسه: يُعرض بلا ترقيم داخلي
-    lines = ["## فهرس البحث", ""]
-    if heads and heads[0][0] == 1:
-        lines.append(f"**{heads[0][1]}**")
+    # العنوان الرئيس الأول اسم البحث نفسه: يُعرض بلا ترقيم داخلي
+    main_title = ""
+    if is_html and heads and heads[0][0] == 1 and not re.match(r"^(أولًا|ثانيًا|ثالثًا)", heads[0][1]):
+        main_title = heads[0][1]
+        heads = heads[1:]
+    elif not is_html and heads and heads[0][0] == 1:
+        main_title = heads[0][1]
         heads = heads[1:]
     if len(heads) < 3:
         return ""
     base = min(lvl for lvl, _ in heads)
     counters = [0, 0, 0]
-    for lvl, title in heads[:48]:
+    items = []
+    prev_depth = 0
+    for lvl, title in heads[:90]:
         depth = min(3, lvl - base + 1)
+        if depth > prev_depth + 1:
+            depth = prev_depth + 1
         counters[depth - 1] += 1
         for i in range(depth, 3):
             counters[i] = 0
+        prev_depth = depth
         num = ".".join(str(counters[i]) for i in range(depth))
+        items.append((depth, num, title))
+    if is_html:
+        lines = ["<h2>فهرس البحث</h2>", '<div style="line-height:1.9">']
+        if main_title:
+            lines.append(f'<p style="margin:2px 0"><b>{html.escape(main_title)}</b></p>')
+        for depth, num, title in items:
+            lines.append(
+                f'<p style="margin:2px 0;padding-inline-start:{(depth - 1) * 22}px">'
+                f'{num}. {html.escape(title)}</p>')
+        lines.append("</div><hr>")
+        return "\n".join(lines) + "\n"
+    lines = ["## فهرس البحث", ""]
+    if main_title:
+        lines.append(f"**{main_title}**")
+    for depth, num, title in items:
         lines.append(f"{'    ' * (depth - 1)}{num}. {title}")
     return "\n".join(lines) + "\n\n---\n\n"
 
