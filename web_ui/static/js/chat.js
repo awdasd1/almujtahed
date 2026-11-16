@@ -4876,13 +4876,19 @@ function toggleSingleChatMcp(mcpId, isChecked) {
 }
 
 function setMcpForAgents(checked) {
-  localStorage.setItem('almojtahed_mcp_for_agents', checked ? '1' : '0');
+  // الاستقلال التام: لا أدوات MCP بأيدي الوكلاء؛ الخيار ملغى ويبقى مطفأً.
+  localStorage.setItem('almojtahed_mcp_for_agents', '0');
+  const box = document.getElementById('chatMcpForAgentsCheckbox');
+  if (box) box.checked = false;
+  if (checked && typeof showToast === 'function') {
+    showToast('هذا الخيار ملغى: الأدوات بيد «مدير الأدوات» في المجموعة وحده، وبأدوات المغني الداخلية فقط', 3500);
+  }
 }
 window.setMcpForAgents = setMcpForAgents;
 
 function syncMcpForAgentsCheckbox() {
   const box = document.getElementById('chatMcpForAgentsCheckbox');
-  if (box) box.checked = localStorage.getItem('almojtahed_mcp_for_agents') === '1';
+  if (box) box.checked = false;
 }
 window.syncMcpForAgentsCheckbox = syncMcpForAgentsCheckbox;
 

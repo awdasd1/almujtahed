@@ -1087,6 +1087,8 @@ function editAgent(id) {
   if (_sm) _sm.value = agent.search_mode || ((agent.use_hybrid === false) ? 'semantic' : 'hybrid');
   const _dir = document.getElementById('agentDirectorInput');
   if (_dir) _dir.checked = !!(agent.is_director || agent.role === 'director' || agent.kind === 'director');
+  const _tm = document.getElementById('agentToolsManagerInput');
+  if (_tm) _tm.checked = (agent.role === 'tools_manager' || agent.kind === 'tools_manager');
 
   // تعيين النموذج ومستوى التفكير المخزنين
   const modelToSet = agent.model || 'anthropic/claude-3.7-sonnet';
@@ -1292,10 +1294,11 @@ function saveAgentFromModal() {
   }
 
   const _isDirector = !!document.getElementById('agentDirectorInput')?.checked;
+  const _isToolsManager = !!document.getElementById('agentToolsManagerInput')?.checked && !_isDirector;
   const _searchMode = document.getElementById('agentSearchModeSelect')?.value || 'hybrid';
   const agentData = {
     is_director: _isDirector,
-    role: _isDirector ? 'director' : '',
+    role: _isDirector ? 'director' : (_isToolsManager ? 'tools_manager' : ''),
     search_mode: _searchMode,
     use_hybrid: _searchMode !== 'semantic',
     extract_count: parseInt(document.getElementById('agentTopRerankInput').value || document.getElementById('agentTopKInput').value || 40),
@@ -1340,6 +1343,17 @@ function saveAgentFromModal() {
       if (a.id !== savedId && (a.is_director || a.role === 'director')) {
         a.is_director = false;
         if (a.role === 'director') a.role = '';
+      }
+    });
+  }
+
+  // مدير أدوات واحد في المجموعة: نزع الدور عن غير المعيّن
+  if (_isToolsManager) {
+    const savedId = id || agentData.id;
+    (currentGroup.agents || []).forEach(a => {
+      if (a.id !== savedId && (a.role === 'tools_manager' || a.kind === 'tools_manager')) {
+        a.role = '';
+        if (a.kind === 'tools_manager') a.kind = '';
       }
     });
   }

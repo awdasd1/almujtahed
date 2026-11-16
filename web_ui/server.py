@@ -7699,7 +7699,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.611"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.612"},
         },
     })
     if opened.get("error"):
@@ -7788,6 +7788,25 @@ def mcp_openai_tools(servers: List[dict], allow_internal: bool = False) -> Tuple
             })
             mapping[safe] = {"url": clean, "session": session, "name": original, "server": server.get("name") or clean}
     return catalog, mapping
+
+
+# كتالوج مدير الأدوات (المرحلة ٢ — الاستقلال التام): أدواتنا المركّبة
+# (بحث+قراءة+مطابقة في استدعاء واحد) وطبقة القراءة والتوثيق فقط.
+# طبقة البحث الداخلي الخام لا تُعطى لأي نموذج؛ بحثها يجري خادميًا
+# داخل الأدوات المركّبة نفسها.
+MANAGER_INTERNAL_TOOL_NAMES = frozenset({
+    "almoghni_guide", "search_passages", "research_evidence",
+}) | shamela_local_mcp.INTERNAL_READ_VERIFY_TOOL_NAMES
+
+
+def _manager_internal_tools() -> Tuple[List[dict], Dict[str, dict]]:
+    """كتالوج أدوات المغني الداخلية المخصص لمدير الأدوات وحده."""
+    port = os.environ.get("PORT", "8085")
+    catalog, mapping = mcp_openai_tools(
+        [{"url": f"http://127.0.0.1:{port}/mcp", "name": "المغني"}], allow_internal=True)
+    keep = {k: v for k, v in mapping.items() if v.get("name") in MANAGER_INTERNAL_TOOL_NAMES}
+    catalog = [c for c in catalog if (c.get("function") or {}).get("name") in keep]
+    return catalog, keep
 
 
 class MCPInspectRequest(BaseModel):
@@ -11568,6 +11587,18 @@ def _is_advisor_agent(a: Optional[Dict[str, Any]]) -> bool:
     if kind in ("advisor", "consultant", "tavily", "web_advisor"):
         return True
     return "مستشار" in name
+
+
+def _is_tools_manager_agent(a: Optional[Dict[str, Any]]) -> bool:
+    """مدير الأدوات: الوكيل الوحيد الممسك بأدوات المغني الداخلية في مجموعته.
+
+    الاستقلال التام (المرحلة ٢): لا وكيل يمسك أداة MCP خارجية، ولا أداة
+    داخلية إلا هذا الوكيل، وبكتالوج مركّب وتوثيقي لا طبقة بحث خام.
+    """
+    if not isinstance(a, dict):
+        return False
+    kind = str(a.get("kind") or a.get("role") or "").strip().lower()
+    return kind in ("tools_manager", "tool_manager", "mcp_manager")
 
 
 def _is_tavily_advisor(a: Optional[Dict[str, Any]]) -> bool:
@@ -17004,6 +17035,12 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             any("حديث" in str(a.get("name") or "") or "تخريج" in str(a.get("name") or "") for a in active_agents)
             and not any("فقه" in str(a.get("name") or "") for a in active_agents)
         )
+        # الاستقلال التام (المرحلة ٢): بحث بمجموعة وكلاء لا يمسّ أي خادم
+        # MCP خارجي — لا الوكلاء ولا نموذج التوليف. أدوات المغني الداخلية
+        # وحدها، وبيد مدير الأدوات في المجموعة إن وُجد.
+        if req.mcp_servers:
+            print("🧭 [Independence] بحث بمجموعة وكلاء: عُطّلت خوادم MCP الخارجية لهذا الطلب — الداخلي وحده", flush=True)
+            req.mcp_servers = []
 
     # حزمة بحث مغلقة مكتملة لهذه المحادثة: أي متابعة تولّف من المقاطع المحفوظة
     # فقط — بلا جولات مراسٍ ولا لجنة ولا وكلاء — إلا إذا طلب المستخدم بحثًا
@@ -17303,20 +17340,26 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         print(f"🚀 [Multi-Agent Parallel Dispatch] Dispatching {len(active_agents)} subagents in parallel with their dedicated models...")
         api_key_to_use = owner_openrouter_key(request, req.api_key)
 
-        # خيار المستخدم: تمكين الوكلاء المساعدين أنفسهم من أدوات MCP المحددة أثناء عملهم،
-        # فلا ينفرد النموذج الرئيسي بالجمع والقراءة والمطابقة.
-        agent_mcp_tools: List[dict] = []
-        agent_mcp_map: Dict[str, dict] = {}
-        if req.mcp_for_agents and (req.mcp_servers or []):
-            try:
-                agent_mcp_tools, agent_mcp_map = mcp_openai_tools(req.mcp_servers)
-                if agent_mcp_tools:
-                    print(f"🧰 [Subagent MCP] Enabled {len(agent_mcp_tools)} MCP tools for subagents")
-            except Exception as exc:
-                print(f"⚠️ [Subagent MCP] Failed to open tools: {exc}")
-                agent_mcp_tools, agent_mcp_map = [], {}
+        # الاستقلال التام (المرحلة ٢): لا أدوات في يد أي وكيل مساعد — لا
+        # خارجية ولا داخلية — إلا «مدير الأدوات» في المجموعة، وله كتالوج
+        # المغني الداخلي المركّب والتوثيقي وحده. خيار mcp_for_agents
+        # القديم (توزيع MCP على كل الوكلاء) أُلغي ولا أثر له بعد اليوم.
+        manager_tools: List[dict] = []
+        manager_map: Dict[str, dict] = {}
+        try:
+            manager_tools, manager_map = _manager_internal_tools()
+            if manager_tools:
+                print(f"🧰 [Tools Manager] كتالوج مدير الأدوات جاهز: {len(manager_tools)} أداة داخلية مركّبة وتوثيقية", flush=True)
+        except Exception as exc:
+            print(f"⚠️ [Tools Manager] تعذر تجهيز كتالوج مدير الأدوات: {exc}")
+            manager_tools, manager_map = [], {}
+        if req.mcp_for_agents:
+            print("🧭 [Independence] خيار «MCP للوكلاء» ملغى: الأدوات بيد مدير الأدوات وحده", flush=True)
 
-        def _subagent_reply_with_tools(ag_model: str, sub_sys: str, sub_user: str, ag_temp: float, ag_max_tokens: int, ag_thinking: str = None) -> str:
+        def _subagent_reply_with_tools(ag_model: str, sub_sys: str, sub_user: str, ag_temp: float, ag_max_tokens: int, ag_thinking: str = None, is_manager: bool = False) -> str:
+            # لا يستدعي هذا المسار إلا مدير الأدوات وبكتالوجه الداخلي وحده.
+            _tools = manager_tools if is_manager else []
+            _tmap = manager_map if is_manager else {}
             harvested: List[str] = []
 
             def _finish_report(text: str) -> str:
@@ -17324,6 +17367,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 if not harvested:
                     return text
                 appendix = "\n\n".join(harvested[:6])[:7000]
+                if is_manager:
+                    return f"{text}\n\n— حزم الشواهد التي جلبها مدير الأدوات بأدوات المغني الداخلية (موسومة المصدر؛ لا يُنقل منها إلا ما حالته MATCH_EXACT أو MATCH_NORMALIZED):\n{appendix}"
                 return f"{text}\n\n— نصوص قرأها هذا الوكيل بأدواته أثناء عمله (تُعامل كنصوص خام للتحرير):\n{appendix}"
 
             dialog: List[dict] = [
@@ -17335,7 +17380,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "messages": dialog,
                 "temperature": ag_temp,
                 "max_tokens": ag_max_tokens,
-                "tools": agent_mcp_tools,
+                "tools": _tools,
                 "tool_choice": "auto",
             }
             attach_reasoning(payload, ag_model, ag_thinking)
@@ -17364,7 +17409,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 dialog.append({"role": "assistant", "content": msg_obj.get("content") or "", "tool_calls": calls})
                 for call in calls:
                     fn = (call.get("function") or {})
-                    mapped = agent_mcp_map.get(fn.get("name") or "")
+                    mapped = _tmap.get(fn.get("name") or "")
                     try:
                         args = json.loads(fn.get("arguments") or "{}")
                     except Exception:
@@ -17377,7 +17422,10 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         except Exception as exc:
                             output = f"تعذر استدعاء الأداة: {exc}"
                         if output and not output.startswith("تعذر"):
-                            harvested.append(f"[{mapped['name']}] {output[:1500]}")
+                            if is_manager:
+                                harvested.append(f"[حزمة داخلية موثّقة | المصدر: أدوات المغني الداخلية | الأداة: {mapped['name']}] {output[:1500]}")
+                            else:
+                                harvested.append(f"[{mapped['name']}] {output[:1500]}")
                     else:
                         output = "الأداة غير متاحة في الخوادم المحددة"
                     dialog.append({"role": "tool", "tool_call_id": call.get("id") or fn.get("name") or "tool", "content": output})
@@ -17400,6 +17448,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             ag_books = [str(b).strip() for b in (ag.get("booksScope") or ag.get("books") or []) if str(b).strip()]
             ag_top_k = int(ag.get("top_k") or ag.get("topK") or ag.get("scanned_texts") or ag.get("extract_count") or ag.get("extractCount") or 150)
             ag_thinking = str(ag.get("thinking") or ag.get("thinking_level") or "").strip() or None
+            _is_manager = _is_tools_manager_agent(ag)
             cits = (anchor_prefetch or {}).get(str(idx), [])
             if cits:
                 # حصص متكافئة: لا يبتلع كتاب واحد قائمة شواهد الوكيل ما دامت
@@ -17494,8 +17543,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             raw_output_tokens = int(ag.get("max_tokens") or 65536)
             ag_max_tokens = 65536 if raw_output_tokens > 131072 else max(1024, raw_output_tokens)
 
-            if agent_mcp_tools:
-                sub_sys += "\nلديك أدوات MCP متاحة أثناء عملك: استخدمها لقراءة صفحات كتبك ومطابقة الاقتباسات والبحث داخل نطاقك عند الحاجة، والتزم كتبك المخصصة لك ولا تخرج عنها."
+            if _is_manager and manager_tools:
+                sub_sys += "\nأنت مدير الأدوات في فريقك: لديك أدوات المغني الداخلية المركّبة والتوثيقية وحدك. مهمتك جلب حزم شواهد موثقة للمسألة (research_evidence أولًا بنطاق كتب مغلق، وقراءة الصفحات ومطابقتها عند الحاجة) وإعادتها إلى مدير المشروع بعزوها وحالة مطابقتها كما هي. لا تكتب التحليل النهائي ولا الترجيح، ولا تنقل في تقريرك إلا ما حالته MATCH_EXACT أو MATCH_NORMALIZED، وصرّح بما تعذر توثيقه."
 
             # سُلّم إنقاذ الوكيل الساقط (قرار المنتج): إعادة الجولة بنفس
             # النموذج، ثم نموذج احتياطي، ثم نموذج مختص يعيد كتابة التقرير،
@@ -17529,8 +17578,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 if _li:
                     print(f"🔁 [Subagent Dispatch] إنقاذ '{ag_name}' — درجة «{_label}» بالنموذج '{_m}' وتفكير {_th or 'default'}...")
                 try:
-                    if agent_mcp_tools:
-                        rep = _subagent_reply_with_tools(_try_model, sub_sys, sub_user, ag_temp, ag_max_tokens, _try_thinking) or ""
+                    if _is_manager and manager_tools:
+                        rep = _subagent_reply_with_tools(_try_model, sub_sys, sub_user, ag_temp, ag_max_tokens, _try_thinking, is_manager=True) or ""
                     else:
                         rep = call_openrouter_raw(
                             model_id=_try_model,

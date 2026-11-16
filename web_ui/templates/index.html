@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.611">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.612">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.611" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.612" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.611</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.612</span>
             </div>
 
             <div class="header-actions">
@@ -626,9 +626,9 @@
                                                     <!-- يتم التوليد البرمجي عبر populateSubAgentsDropdown -->
                                                 </div>
 
-                                                <label class="chat-checklist-mcp-toggle" title="حين تُفعَّل يستطيع كل وكيل مساعد استدعاء أدوات MCP المحددة (قراءة الصفحات، المطابقة، البحث المنغلق) أثناء عمله، بدل انفراد النموذج الرئيسي بها">
+                                                <label class="chat-checklist-mcp-toggle" title="أُلغي هذا الخيار: لا أدوات MCP بأيدي الوكلاء — أدوات المغني الداخلية بيد «مدير الأدوات» في المجموعة وحده، والخارجي لا يدخل بحوث المجموعات">
                                                     <input type="checkbox" id="chatMcpForAgentsCheckbox" onchange="setMcpForAgents(this.checked)">
-                                                    <span>تمكين الوكلاء المساعدين من أدوات MCP المحددة أثناء عملهم</span>
+                                                    <span>أدوات MCP للوكلاء المساعدين — ملغى (الأدوات بيد مدير الأدوات وحده)</span>
                                                 </label>
 
                                                 <div class="chat-checklist-footer">
@@ -4614,6 +4614,10 @@
                             <input type="checkbox" id="agentDirectorInput">
                             <span>هذا الوكيل <b>مدير المشروع قائد الفريق</b> (قائد واحد في المجموعة، وتتعطل لأجله أدوات نموذج المحادثة)</span>
                         </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-weight: 400; margin-top: 8px;">
+                            <input type="checkbox" id="agentToolsManagerInput">
+                            <span>هذا الوكيل <b>مدير الأدوات</b> (وحده يمسك أدوات المغني الداخلية المركّبة والتوثيقية ويغذي الفريق بحزم شواهد موسومة المصدر؛ مدير أدوات واحد في المجموعة)</span>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -6360,7 +6364,7 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.611"></script>
+    <script src="/static/js/app.js?v=1.10.612"></script>
     <script src="/static/js/search.js?v=1.10.493"></script>
     <script src="/static/js/reader.js?v=1.10.493"></script>
     <script src="/static/js/force3d.js?v=1.10.493"></script>
@@ -6368,16 +6372,16 @@
     <script src="/static/js/chat.js?v=1.10.493"></script>
     <script src="/static/js/designs.js?v=1.10.493"></script>
     <script src="/static/js/texts.js?v=1.10.493"></script>
-    <script src="/static/js/agents.js?v=1.10.611"></script>
+    <script src="/static/js/agents.js?v=1.10.612"></script>
     <script src="/static/js/providers.js?v=1.10.493"></script>
     <script src="/static/js/tools.js?v=1.10.493"></script>
     <script src="/static/js/shamela_link.js?v=1.10.493"></script>
     <script src="/static/js/projects.js?v=1.10.493"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.611"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.612"></script>
     <script src="/static/js/archive.js?v=1.10.493"></script>
     <script src="/static/js/compare.js?v=1.10.493"></script>
     <script src="/static/js/local_models.js?v=1.10.493"></script>
-    <script src="/static/js/changelog.js?v=1.10.611"></script>
+    <script src="/static/js/changelog.js?v=1.10.612"></script>
 
     <script>
         window.refreshLucideIcons = function () {
