@@ -6940,8 +6940,8 @@ function buildAcademicPaperHtml(runData, options) {
     }
   }
   /* فهرس البحث بأرقام الصفحات: تُزرع معرّفات في عناوين الورقة ويُبنى
-     الفهرس منها، ويحسم محرك التقسيم Paged.js رقم صفحة كل عنوان عند
-     التقسيم (target-counter) فتطابق الأرقام صفحات المطبوعة نفسها */
+     الفهرس منها في آخر البحث، وتُحقن أرقام الصفحات بعد تقسيم Paged.js
+     من مواضع العناوين الفعلية (داخل سكربت الورقة) فتطابق المطبوعة */
   let tocHtml = '';
   {
     const tocRaw = [];
@@ -7404,6 +7404,24 @@ function buildAcademicPaperHtml(runData, options) {
         root.querySelectorAll(blockSel).forEach(function (el) {
           if (el.closest('.pagedjs_footnote_area')) return;
           if (el.closest('.footnote-list') || el.classList.contains('footnote-line') || el.classList.contains('footnote-item')) return;
+          // فهرس البحث (آخر الورقة): عنوانه صفحة جديدة، وبنوده بجدولة
+          // منقّطة إلى رقم الصفحة كما في نافذة الطباعة
+          if (el.closest('.paper-toc')) {
+            if (el.classList.contains('paper-toc-title')) {
+              payload.blocks.push({ kind: 'pageBreak', runs: [] });
+              payload.blocks.push({ kind: 'tocTitle', runs: [{ t: 'فهرس البحث', b: true }] });
+            } else if (el.tagName === 'LI') {
+              var tocRuns = [];
+              wordRunsFromNode(el, ctx, tocRuns);
+              var tocClean = wordCleanRuns(tocRuns);
+              if (tocClean.length) {
+                if (tocClean.length > 1) tocClean.splice(tocClean.length - 1, 0, { t: '\t' });
+                var tocLvl = el.classList.contains('toc-l3') ? 3 : (el.classList.contains('toc-l2') ? 2 : 1);
+                payload.blocks.push({ kind: 'tocItem', lvl: tocLvl, runs: tocClean });
+              }
+            }
+            return;
+          }
           var kind = 'p';
           if (el.classList.contains('paper-main-title')) kind = 'title';
           else if (el.classList.contains('paper-sub-meta')) kind = 'meta';
@@ -7630,9 +7648,10 @@ function buildAcademicPaperHtml(runData, options) {
     @page { size: A4; margin: 20mm 18mm 24mm 18mm;
       @footnote { border-top: none; padding-top: 8pt; margin-top: 12pt; }
       @bottom-center { content: counter(page, arabic-indic); font-size: 10pt; color: #444; } }
-    /* فهرس البحث الصفحي: أرقامه من target-counter على معرّفات العناوين،
-       فيحسمها تقسيم Paged.js نفسه وتطابق أرقام ذيل الصفحات */
-    .paper-toc { break-after: page; }
+    /* فهرس البحث الصفحي في آخر البحث على صفحة مستقلة (نسق البحوث
+       العربية): أرقامه تُحقن بعد تقسيم Paged.js من مواضع العناوين
+       الفعلية في الصفحات، فتطابق أرقام ذيل الصفحات */
+    .paper-toc { break-before: page; }
     .paper-toc-title { text-align: center; font-size: 17pt; margin: 0 0 14px; text-indent: 0; }
     .paper-toc ul { list-style: none; margin: 0; padding: 0; font-size: 12.5pt; line-height: 2.05; }
     .paper-toc li.toc-l2 { padding-inline-start: 22px; }
@@ -7640,7 +7659,7 @@ function buildAcademicPaperHtml(runData, options) {
     .paper-toc a { color: inherit; text-decoration: none; display: flex; align-items: baseline; gap: 6px; }
     .paper-toc a .toc-num { font-weight: 700; }
     .paper-toc a .dots { flex: 1; border-bottom: 1.5px dotted #9ca3af; transform: translateY(-3px); }
-    .paper-toc a::after { content: target-counter(attr(href), page, arabic-indic); font-weight: 700; }
+    .paper-toc a .toc-page { font-weight: 700; }
     .pg-fn { float: footnote; }
     /* الخط الفاصل بين المتن والحواشي: ٣٠٪ افتراضيًا من جهة البدء،
        وعرضه من تبويب «الطباعة» في إعدادات المنظومة */
@@ -7691,7 +7710,7 @@ function buildAcademicPaperHtml(runData, options) {
     <div class="paper-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
     <h1 class="paper-main-title">${escapeHtml(title)}</h1>
   </header>
-  <main>${tocHtml}${roundsBodyHtml}${biblioHtml}</main>
+  <main>${roundsBodyHtml}${biblioHtml}${tocHtml}</main>
   </div>
   <script>
   window.__paperBg = ${JSON.stringify(printExtras.bg || null).replace(/</g, '\\u003c')};
@@ -7742,6 +7761,22 @@ function buildAcademicPaperHtml(runData, options) {
             }
           });
         }
+      } catch (e) {}
+      // أرقام صفحات الفهرس من مواضع العناوين بعد التقسيم فعليًا: رقم
+      // صفحة Paged.js التي وقع فيها كل عنوان يُحقن في سطر فهرسه
+      try {
+        var pageList = Array.from(document.querySelectorAll('.pagedjs_page'));
+        document.querySelectorAll('.paper-toc a[href^="#"]').forEach(function (a) {
+          if (a.querySelector('.toc-page')) return;
+          var target = document.querySelector(a.getAttribute('href'));
+          if (!target) return;
+          var pageEl = target.closest('.pagedjs_page');
+          if (!pageEl) return;
+          var span = document.createElement('span');
+          span.className = 'toc-page';
+          span.textContent = String(pageList.indexOf(pageEl) + 1).replace(/\\d/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'[+d]; });
+          a.appendChild(span);
+        });
       } catch (e) {}
       // ربط أرقام المتن بحواشيها: أرقام عربية مرفوعة قابلة للنقر تقفز
       // بين الموضعين كنسق نافذة القراءة، بدل عدّادات CSS اللاتينية.

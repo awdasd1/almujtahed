@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.626"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.627"},
         },
     })
     if opened.get("error"):
@@ -27411,11 +27411,14 @@ def _docx_runs(runs, base_style: dict, styles: dict, fn_count: int) -> str:
         style = _docx_style(styles, cls, base_style) if cls in ("quran", "hadith", "quote") else base_style
         if text:
             rpr = _docx_rpr(style, bold=bool(run.get("b")), italic=bool(run.get("i")))
-            for i, seg in enumerate(text.split("\n")):
-                if i:
-                    out.append("<w:r><w:br/></w:r>")
-                if seg:
-                    out.append(f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(seg)}</w:t></w:r>')
+            for ti, tseg in enumerate(text.split("\t")):
+                if ti:
+                    out.append(f"<w:r>{rpr}<w:tab/></w:r>")
+                for i, seg in enumerate(tseg.split("\n")):
+                    if i:
+                        out.append("<w:r><w:br/></w:r>")
+                    if seg:
+                        out.append(f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(seg)}</w:t></w:r>')
         fn = run.get("fn")
         if isinstance(fn, int) and 0 <= fn < fn_count:
             # رقم الحاشية في المتن بين قوسين مرتفعًا: (١)
@@ -27433,12 +27436,24 @@ def _docx_runs(runs, base_style: dict, styles: dict, fn_count: int) -> str:
 def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool = False, biblio_num: int = 0) -> str:
     kind = str(block.get("kind") or "p")
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
-    key = {"title": "title", "meta": "meta", "h": "h", "biblioTitle": "h", "biblioItem": "biblio"}.get(kind, "body")
+    key = {"title": "title", "meta": "meta", "h": "h", "biblioTitle": "h", "biblioItem": "biblio",
+           "tocTitle": "h"}.get(kind, "body")
     base = _docx_style(styles, key, body)
-    align = "center" if kind in ("title", "meta", "bismillah", "biblioTitle") else "both"
+    align = "center" if kind in ("title", "meta", "bismillah", "biblioTitle", "tocTitle") else (
+        "right" if kind == "tocItem" else "both")
     ppr = []
-    if page_break or kind == "biblioTitle":
+    if page_break or kind in ("biblioTitle", "tocTitle"):
         ppr.append("<w:pageBreakBefore/>")
+    if kind == "tocItem":
+        # بند فهرس: جدولة يسارية بزخرفة نقطية إلى رقم الصفحة في آخر
+        # السطر، وإزاحة يمنى (جهة البدء) بحسب عمق البند
+        try:
+            toc_lvl = int(block.get("lvl") or 1)
+        except Exception:
+            toc_lvl = 1
+        ppr.append('<w:tabs><w:tab w:val="left" w:leader="dot" w:pos="9800"/></w:tabs>')
+        if toc_lvl > 1:
+            ppr.append(f'<w:ind w:right="{(toc_lvl - 1) * 420}"/>')
     if kind == "h":
         # العنوان لا ينفصل عن فقرته التالية عند كسر الصفحة
         ppr.append("<w:keepNext/>")
