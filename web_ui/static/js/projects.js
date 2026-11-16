@@ -6855,6 +6855,7 @@ function paperPrintCss() {
   const css = `
     .paper-main-title { font-family: ${stack(s.printH1Font)}; font-size: ${h1Size}pt; font-weight: ${h1W};${col(s.printH1Color)} }
     .academic-round-title { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(13, h1Size - 4)}pt; font-weight: ${h1W};${col(s.printH1Color)} }
+    .academic-text-content .academic-chapter-title { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(12, h1Size - 3)}pt; font-weight: ${h1W};${col(s.printH1Color)} text-align: center; }
     .academic-text-content h1 { font-family: ${stack(s.printH1Font)}; font-size: ${Math.max(12, h1Size - 3)}pt; font-weight: ${h1W};${col(s.printH1Color)} }
     .academic-text-content h2, .academic-text-content .academic-subheading { font-family: ${stack(s.printH2Font)}; font-size: ${h2Size}pt; font-weight: ${h2W};${col(s.printH2Color)} }
     .academic-text-content h3, .academic-text-content h4 { font-family: ${stack(s.printH2Font)}; font-size: ${Math.max(10, h2Size - 2)}pt; font-weight: ${h2W};${col(s.printH2Color)} }
@@ -6909,6 +6910,37 @@ function buildAcademicPaperHtml(runData, options) {
      ويحل محله فهرس الورقة الصفحي تحت — لا فهرسان في مطبوعة واحدة */
   roundsBodyHtml = roundsBodyHtml.replace(
     /<h2>فهرس البحث<\/h2>\s*<div style="line-height:1\.9">[\s\S]*?<\/div>\s*<hr\s*\/?>/, '');
+  /* تنسيق البحوث الشرعية في الورقة: الفصول بخط الطباعة المخصص موحّدة
+     الشكل وفي وسط أعلى صفحة جديدة، و«صلب البحث» لا يُكتب (يبدأ الفصل
+     الأول بعد المقدمة مباشرة)، والمقدمة والخاتمة عنوانان في الوسط
+     بلا ترقيم ترتيبي (أولًا/ثالثًا) */
+  const normalizePaperHeadings = (htmlText) => htmlText.replace(
+    /<(h2|h3)([^>]*)>([\s\S]*?)<\/\1>|<p class="academic-subheading">([\s\S]*?)<\/p>|<span class="academic-inline-heading"><(b|strong)>([\s\S]*?)<\/\5><\/span>|<p([^>]*)>\s*<(b|strong)>([\s\S]*?)<\/\8>\s*<\/p>/g,
+    (match, tag, attrs, inner, subInner, iTag, iInner, pAttrs, pbTag, pbInner) => {
+      const isInline = iTag !== undefined;
+      const isBoldPara = pbTag !== undefined;
+      const isSub = tag === undefined && !isInline && !isBoldPara;
+      const rawInner = isInline ? iInner : (isBoldPara ? pbInner : (isSub ? subInner : inner));
+      const title = String(rawInner || '').replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ').trim().replace(/[:：]\s*$/, '');
+      if (!title) return match;
+      const bare = title.replace(/^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا)\s*[:：]?\s*/, '');
+      if (bare === 'صلب البحث') return '';
+      if (bare === 'المقدمة' || bare === 'الخاتمة') {
+        if (isInline) return `<span class="academic-inline-heading"><${iTag}>${bare}</${iTag}></span>`;
+        if (isSub || isBoldPara) return `<p class="academic-subheading paper-part-title">${bare}</p>`;
+        return `<h2 class="paper-part-title">${bare}</h2>`;
+      }
+      if (title.indexOf('الفصل') >= 0 && title.indexOf('الفصل') < 14
+          && /الفصل\s+(الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|[0-9٠-٩]+)/.test(title)) {
+        if (isInline) return `</p><h2 class="academic-chapter-title">${iInner}</h2><p class="academic-paragraph">`;
+        if (isSub) return `<h2 class="academic-chapter-title">${subInner}</h2>`;
+        if (isBoldPara) return `<h2 class="academic-chapter-title">${pbInner}</h2>`;
+        return `<h2 class="academic-chapter-title">${inner}</h2>`;
+      }
+      return match;
+    });
+  roundsBodyHtml = normalizePaperHeadings(roundsBodyHtml);
   // صفحة ختامية مستقلة بأسماء المصادر والمراجع من شواهد الجواب نفسه
   // (حين لا يحمل المتن ثبتًا خاصًا به) — تبدأ صفحة جديدة بقاعدة الكسر.
   let biblioHtml = '';
@@ -6947,7 +6979,7 @@ function buildAcademicPaperHtml(runData, options) {
     const tocRaw = [];
     let seq = 0;
     const injectTocIds = (htmlText) => htmlText.replace(
-      /<(h2|h3)([^>]*)>([\s\S]*?)<\/\1>|<p class="academic-subheading">([\s\S]*?)<\/p>|<span class="academic-inline-heading"><(b|strong)>([\s\S]*?)<\/\5><\/span>|<p([^>]*)>\s*<(b|strong)>([\s\S]*?)<\/\8>\s*<\/p>/g,
+      /<(h2|h3)([^>]*)>([\s\S]*?)<\/\1>|<p class="academic-subheading[^"]*">([\s\S]*?)<\/p>|<span class="academic-inline-heading"><(b|strong)>([\s\S]*?)<\/\5><\/span>|<p([^>]*)>\s*<(b|strong)>([\s\S]*?)<\/\8>\s*<\/p>/g,
       (match, tag, attrs, inner, subInner, iTag, iInner, pAttrs, pbTag, pbInner) => {
         const isInline = iTag !== undefined;
         const isBoldPara = pbTag !== undefined;
@@ -6961,8 +6993,8 @@ function buildAcademicPaperHtml(runData, options) {
         if (!isSub && !isInline && !isBoldPara && /academic-round-title/.test(attrs || '')) lvl = 1;
         else if (!isSub && !isInline && !isBoldPara && tag === 'h3') lvl = 3;
         else if (/^(أولًا|ثانيًا|ثالثًا|رابعًا|خامسًا|المقدمة|الخاتمة)(?=[^ا-ي]|$)/.test(title) || title === 'المصادر والمراجع') lvl = 1;
-        else if (title.indexOf('الفصل') >= 0 && title.indexOf('الفصل') < 14) lvl = 2;
-        else if (/^[0-9٠-٩]+\s*[-–—]\s*[0-9٠-٩]+/.test(title)) lvl = 3;
+        else if (title.indexOf('الفصل') >= 0 && title.indexOf('الفصل') < 14) lvl = 1;
+        else if (/^[0-9٠-٩]+\s*[-–—]\s*[0-9٠-٩]+/.test(title)) lvl = 2;
         else if (/^[0-9٠-٩]+\s*[-–—]/.test(title)) lvl = 2;
         else if (/^(أهم النتائج|أبرز النتائج|التوصيات)/.test(title)) lvl = 2;
         else { lvl = 2; explicit = false; }
@@ -6975,7 +7007,7 @@ function buildAcademicPaperHtml(runData, options) {
         tocRaw.push({ lvl, title, id });
         if (isInline) return `<span class="academic-inline-heading" id="${id}"><${iTag}>${iInner}</${iTag}></span>`;
         if (isBoldPara) return `<p${pAttrs || ''} id="${id}"><${pbTag}>${pbInner}</${pbTag}></p>`;
-        if (isSub) return `<p class="academic-subheading" id="${id}">${subInner}</p>`;
+        if (isSub) return `<p class="academic-subheading${/paper-part-title/.test(match) ? ' paper-part-title' : ''}" id="${id}">${subInner}</p>`;
         return `<${tag}${attrs || ''} id="${id}">${inner}</${tag}>`;
       });
     roundsBodyHtml = injectTocIds(roundsBodyHtml);
@@ -7441,13 +7473,14 @@ function buildAcademicPaperHtml(runData, options) {
           else if (el.classList.contains('paper-bismillah')) kind = 'bismillah';
           else if (el.classList.contains('biblio-title')) kind = 'biblioTitle';
           else if (el.closest('.biblio-list')) kind = 'biblioItem';
+          else if (el.classList.contains('paper-part-title')) kind = 'partTitle';
           else if (/^H[1-6]$/.test(el.tagName) || el.classList.contains('academic-round-title') || el.classList.contains('academic-subheading')) kind = 'h';
           var runs = [];
           wordRunsFromNode(el, ctx, runs);
           var cleaned = wordCleanRuns(runs);
           if (!cleaned.length) return;
-          // «النص المحقق» في المخطوطات يبدأ صفحة جديدة في وورد أيضًا
-          if (el.classList.contains('ms-matn-start')) payload.blocks.push({ kind: 'pageBreak', runs: [] });
+          // «النص المحقق» في المخطوطات وكل فصل جديد يبدآن صفحة جديدة في وورد أيضًا
+          if (el.classList.contains('ms-matn-start') || el.classList.contains('academic-chapter-title')) payload.blocks.push({ kind: 'pageBreak', runs: [] });
           payload.blocks.push({ kind: kind, runs: cleaned });
         });
       });
@@ -7665,6 +7698,10 @@ function buildAcademicPaperHtml(runData, options) {
        العربية): أرقامه تُحقن بعد تقسيم Paged.js من مواضع العناوين
        الفعلية في الصفحات، فتطابق أرقام ذيل الصفحات */
     .paper-toc { break-before: page; }
+    /* كل فصل جديد يبدأ صفحة جديدة وعنوانه في وسط أعلىها، وعنوانا
+       المقدمة والخاتمة في الوسط */
+    .academic-chapter-title { break-before: page; text-align: center; margin-top: 0; text-indent: 0 !important; }
+    .paper-part-title { text-align: center; }
     .paper-toc-title { text-align: center; font-size: 17pt; margin: 0 0 14px; text-indent: 0; }
     .paper-toc ul { list-style: none; margin: 0; padding: 0; font-size: 12.5pt; line-height: 2.05; }
     .paper-toc li.toc-l2 { padding-inline-start: 22px; }

@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.628"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.629"},
         },
     })
     if opened.get("error"):
@@ -27437,9 +27437,9 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     kind = str(block.get("kind") or "p")
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     key = {"title": "title", "meta": "meta", "h": "h", "biblioTitle": "h", "biblioItem": "biblio",
-           "tocTitle": "h"}.get(kind, "body")
+           "tocTitle": "h", "partTitle": "h"}.get(kind, "body")
     base = _docx_style(styles, key, body)
-    align = "center" if kind in ("title", "meta", "bismillah", "biblioTitle", "tocTitle") else (
+    align = "center" if kind in ("title", "meta", "bismillah", "biblioTitle", "tocTitle", "partTitle") else (
         "right" if kind == "tocItem" else "both")
     # ارتفاع سطر وورد من ارتفاع سطر الورقة المقيس (نسبة كسرية): كان
     # ثابتًا على سطر مفرد فانضغط تصفيح وورد واختلّت صفحاته عن المطبوعة
