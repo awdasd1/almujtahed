@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.632"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.633"},
         },
     })
     if opened.get("error"):
@@ -27408,7 +27408,14 @@ def _docx_runs(runs, base_style: dict, styles: dict, fn_count: int) -> str:
             continue
         text = str(run.get("t") or "")
         cls = run.get("cls")
-        style = _docx_style(styles, cls, base_style) if cls in ("quran", "hadith", "quote") else base_style
+        if cls == "chapterLabel":
+            style = dict(base_style)
+            try:
+                style["size"] = max(11, round(float(style.get("size") or 16) * 0.65, 1))
+            except Exception:
+                pass
+        else:
+            style = _docx_style(styles, cls, base_style) if cls in ("quran", "hadith", "quote") else base_style
         if text:
             rpr = _docx_rpr(style, bold=bool(run.get("b")), italic=bool(run.get("i")))
             for ti, tseg in enumerate(text.split("\t")):
@@ -27440,12 +27447,19 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
            "tocTitle": "h", "partTitle": "h", "chapter": "h",
            "chapterLabel": "h", "chapterName": "h"}.get(kind, "body")
     base = _docx_style(styles, key, body)
-    if kind == "chapterLabel":
-        base = dict(base)
-        try:
-            base["size"] = max(11, round(float(base.get("size") or 16) * 0.65, 1))
-        except Exception:
-            pass
+    if kind == "chapter":
+        # سطر «الفصل الأول» أصغر، وعنوان الفصل بالحجم الكامل — فقرة واحدة فلا تنفصل
+        chap_runs = []
+        for run in block.get("runs") or []:
+            if not isinstance(run, dict):
+                continue
+            parts = str(run.get("t") or "").split("\n", 1)
+            chap_runs.append({**run, "t": parts[0], "cls": "chapterLabel"})
+            if len(parts) > 1 and parts[1]:
+                chap_runs.append({**run, "t": "\n" + parts[1]})
+        if chap_runs:
+            block = dict(block)
+            block["runs"] = chap_runs
     # التوسيط للعناوين والفصول: الضبط من الجانبين كان يبعثر «الفصل»
     # في أقصى اليمين و«الأول» في أقصى اليسار
     align = "center" if kind in (
@@ -27454,7 +27468,9 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     ppr = []
     if kind == "h":
         ppr.append("<w:keepNext/>")
-    if page_break or kind in ("biblioTitle", "tocTitle"):
+    if kind in ("chapter", "partTitle"):
+        ppr.append("<w:keepLines/>")
+    if page_break or kind in ("biblioTitle", "tocTitle", "chapter", "partTitle"):
         ppr.append("<w:pageBreakBefore/>")
     ppr.append("<w:bidi/>")
     if kind == "h":
@@ -27464,11 +27480,9 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
             body_size = 12
         before_twips = max(200, min(600, int(round(body_size * 20))))
         ppr.append(f'<w:spacing w:before="{before_twips}" w:line="240" w:lineRule="auto" w:after="60"/>')
-    elif kind in ("chapterLabel", "partTitle"):
-        # في أعلى الصفحة بلا مسافة علوية تدفعه إلى وسطها
-        ppr.append('<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="40"/>')
+    elif kind in ("chapter", "chapterLabel", "partTitle"):
+        ppr.append('<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="80"/>')
     else:
-        # قياس الفقرة: سطر مفرد
         ppr.append('<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="60"/>')
     if kind == "p":
         ppr.append('<w:ind w:firstLine="300"/>')

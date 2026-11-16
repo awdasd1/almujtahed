@@ -7421,42 +7421,50 @@ function buildAcademicPaperHtml(runData, options) {
         hadith: wordMeasureStyle(doc.querySelector('.hadith-text')),
         quote: wordMeasureStyle(doc.querySelector('.quoted-text'))
       };
-      var ctx = { callMap: new Map(), defMap: new Map() };
-      var pages = Array.from(doc.querySelectorAll('.pagedjs_page'));
-      if (pages.length) {
-        pages.forEach(function (page) {
-          var calls = Array.from(page.querySelectorAll('[data-footnote-call]'));
-          var markers = Array.from(page.querySelectorAll('.pagedjs_footnote_area [data-footnote-marker]'));
-          calls.forEach(function (call, i) {
-            var mk = markers[i];
-            if (!mk) { ctx.callMap.set(call, -1); return; }
-            var clone = mk.cloneNode(true);
-            clone.querySelectorAll('.pg-fn-marker, .btn-verify-citation, .btn-mcp-verify, script, style').forEach(function (n) { n.remove(); });
-            var runs = [];
-            wordRunsFromNode(clone, { callMap: new Map(), defMap: new Map() }, runs);
-            ctx.callMap.set(call, payload.footnotes.length);
-            payload.footnotes.push({ runs: wordCleanRuns(runs), n: i + 1 });
-          });
-        });
-      } else {
-        Array.from(doc.querySelectorAll('.footnote-list .footnote-item, p.footnote-line')).forEach(function (defEl) {
-          var num = '';
-          var idm = (defEl.getAttribute('id') || '').match(/(\\d+)/);
-          var tm = (defEl.textContent || '').trim().match(/^\\((\\d+|[٠-٩]+)\\)/);
-          if (idm) num = idm[1];
-          if (tm) num = String(tm[1]).replace(/[٠-٩]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); });
-          if (!num) return;
-          var clone = defEl.cloneNode(true);
-          clone.querySelectorAll('a.chat-fn-back, .btn-verify-citation, .btn-mcp-verify, script, style').forEach(function (n) { n.remove(); });
-          var runs = [];
-          wordRunsFromNode(clone, { callMap: new Map(), defMap: new Map() }, runs);
-          var cleaned = wordCleanRuns(runs);
-          if (cleaned.length && cleaned[0].t) cleaned[0].t = cleaned[0].t.replace(/^\\s*\\((?:\\d+|[٠-٩]+)\\)\\s*/, '');
-          ctx.defMap.set(num, payload.footnotes.length);
-          payload.footnotes.push({ runs: cleaned, n: payload.footnotes.length + 1 });
-        });
+      /* وورد يُبنى من أصل الورقة قبل تقسيم Paged.js: المشي على الصفحات
+         المقسّمة كان يقطع عنوان الفصل نصفين (صفحة بيضاء ثم عنوان) ويعيد
+         «المقدمة» كلما تكررت في فيض الصفحة */
+      var srcDoc = doc;
+      var root = null;
+      try {
+        var raw = (typeof window.__readingSource === 'string' && window.__readingSource) ? window.__readingSource : '';
+        if (raw) {
+          var parsed = new DOMParser().parseFromString(raw, 'text/html');
+          root = parsed.querySelector('.paper-sheet');
+          if (root) srcDoc = parsed;
+        }
+      } catch (e) { root = null; }
+      if (!root) {
+        var live = doc.querySelector('.paper-sheet');
+        if (live && !live.closest('.pagedjs_page')) root = live;
       }
-      var roots = pages.length ? pages.map(function (p) { return p.querySelector('.pagedjs_area') || p; }) : [doc.querySelector('.paper-sheet') || doc.body];
+      if (!root) root = doc.querySelector('.paper-sheet') || doc.body;
+      var ctx = { callMap: new Map(), defMap: new Map() };
+      root.querySelectorAll('.pg-fn').forEach(function (fnEl) {
+        var clone = fnEl.cloneNode(true);
+        clone.querySelectorAll('.pg-fn-marker, .btn-verify-citation, .btn-mcp-verify, script, style').forEach(function (n) { n.remove(); });
+        var runs = [];
+        wordRunsFromNode(clone, { callMap: new Map(), defMap: new Map() }, runs);
+        var idx = payload.footnotes.length;
+        payload.footnotes.push({ runs: wordCleanRuns(runs), n: idx + 1 });
+        var prev = fnEl.previousElementSibling;
+        if (prev && prev.hasAttribute('data-footnote-call')) ctx.callMap.set(prev, idx);
+      });
+      root.querySelectorAll('.footnote-list .footnote-item, p.footnote-line').forEach(function (defEl) {
+        var idm = (defEl.getAttribute('id') || '').match(/(\\d+)/);
+        var tm = (defEl.textContent || '').trim().match(/^\\((\\d+|[٠-٩]+)\\)/);
+        var num = idm ? idm[1] : (tm ? String(tm[1]).replace(/[٠-٩]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); }) : '');
+        if (!num || ctx.defMap.has(num)) return;
+        var clone = defEl.cloneNode(true);
+        clone.querySelectorAll('a.chat-fn-back, .btn-verify-citation, .btn-mcp-verify, script, style').forEach(function (n) { n.remove(); });
+        var runs = [];
+        wordRunsFromNode(clone, { callMap: new Map(), defMap: new Map() }, runs);
+        var cleaned = wordCleanRuns(runs);
+        if (cleaned.length && cleaned[0].t) cleaned[0].t = cleaned[0].t.replace(/^\\s*\\((?:\\d+|[٠-٩]+)\\)\\s*/, '');
+        ctx.defMap.set(num, payload.footnotes.length);
+        payload.footnotes.push({ runs: cleaned, n: payload.footnotes.length + 1 });
+      });
+      var roots = [root];
       var blockSel = '.paper-main-title, .paper-bismillah, .paper-sub-meta, h1, h2, h3, h4, h5, h6, p, li';
       var partSeen = {};
       var seenChapter = {};
@@ -7478,7 +7486,6 @@ function buildAcademicPaperHtml(runData, options) {
         if (!label || seenChapter[key]) return;
         seenChapter[key] = true;
         var full = name ? (label + ': ' + name) : label;
-        payload.blocks.push({ kind: 'pageBreak', runs: [] });
         payload.blocks.push({ kind: 'chapter', bookmark: bookmarkFor(full), runs: [{ t: name ? (label + '\n' + name) : label, b: true }] });
       };
       roots.forEach(function (root) {
@@ -7490,7 +7497,6 @@ function buildAcademicPaperHtml(runData, options) {
           // منقّطة إلى رقم الصفحة كما في نافذة الطباعة
           if (el.closest('.paper-toc')) {
             if (el.classList.contains('paper-toc-title')) {
-              payload.blocks.push({ kind: 'pageBreak', runs: [] });
               payload.blocks.push({ kind: 'tocTitle', runs: [{ t: 'فهرس البحث', b: true }] });
             } else if (el.tagName === 'LI') {
               var tocTitleEl = el.querySelector('.toc-title');
@@ -7541,13 +7547,12 @@ function buildAcademicPaperHtml(runData, options) {
             var partName = /الخاتمة/.test(plain) ? 'الخاتمة' : 'المقدمة';
             if (partSeen[partName]) return;
             partSeen[partName] = true;
-            payload.blocks.push({ kind: 'pageBreak', runs: [] });
             payload.blocks.push({ kind: 'partTitle', bookmark: bookmarkFor(partName), runs: [{ t: partName, b: true }] });
             return;
           }
           if (bare === 'صلب البحث' || plain === 'ثانيًا: صلب البحث' || plain === 'ثانيا: صلب البحث') return;
           var chapPlain = plain.match(/^(الفصل\s+(?:الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|[0-9٠-٩]+))\s*[:：]?\s*(.*)$/);
-          if (chapPlain && plain.length <= 120 && (kind === 'h' || kind === 'partTitle')) {
+          if (chapPlain && plain.length <= 140) {
             emitChapter(chapPlain[1], chapPlain[2]);
             return;
           }
