@@ -267,6 +267,42 @@ class _BridgeWorker:
             pass
 
 
+def _reap_orphan_workers() -> int:
+    """حصد عمال جسور يتامى (PPID=1) من جلسات سابقة قبل تشغيل حوضنا.
+
+    العامل الجديد يموت بموت أبيه بحارس داخلي، لكن نسخًا من أبنية أقدم
+    بلا حارس قد تبقى؛ هذا الحصد عند بدء الحوض يمنع تراكمها عبر الجلسات.
+    POSIX فقط، وأي خطأ يُبتلع حتى لا يعطّل بدء البحث.
+    """
+    if os.name != "posix":
+        return 0
+    reaped = 0
+    try:
+        out = _subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,command="],
+            capture_output=True, text=True, timeout=10).stdout
+        for line in out.splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) < 3:
+                continue
+            pid_s, ppid_s, cmd = parts
+            if ppid_s != "1" or "shamela_bridge_worker.py" not in cmd:
+                continue
+            try:
+                pid = int(pid_s)
+                if pid == os.getpid():
+                    continue
+                os.kill(pid, 15)
+                reaped += 1
+            except Exception:
+                continue
+    except Exception:
+        return reaped
+    if reaped:
+        print(f"🧹 [Bridge Pool] حُصد {reaped} عامل جسر يتيم من جلسات سابقة", flush=True)
+    return reaped
+
+
 def _pool_start() -> bool:
     """تشغيل عمال الجسور مرة واحدة + نبض تسخين لكل عامل. False إن تعذّر."""
     if _POOL_N <= 0 or os.environ.get("ALMOGHNI_BRIDGE_WORKER") == "1":
@@ -275,6 +311,7 @@ def _pool_start() -> bool:
         if _POOL["started"]:
             return bool(_POOL["workers"])
         _POOL["started"] = True
+        _reap_orphan_workers()
         try:
             _POOL["workers"] = [_BridgeWorker(i) for i in range(_POOL_N)]
         except Exception:

@@ -10,6 +10,8 @@
 import json
 import os
 import sys
+import threading
+import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -19,7 +21,21 @@ os.environ["ALMOGHNI_BRIDGE_WORKER"] = "1"
 _PROTO = sys.stdout
 
 
+def _parent_watchdog():
+    """يموت العامل بموت أبيه: خيوط JVM غير الوحيدة كانت تُبقي العامل حيًا
+    يتيمًا بعد موت الخادم حتى مع إغلاق stdin، فتتراكم نسخ من كل جلسة."""
+    initial_ppid = os.getppid()
+    while True:
+        time.sleep(2)
+        try:
+            if os.getppid() != initial_ppid:
+                os._exit(0)
+        except Exception:
+            os._exit(0)
+
+
 def main():
+    threading.Thread(target=_parent_watchdog, daemon=True).start()
     # مطبوعات المكتبات كلها إلى stderr حتى لا تلوّث قناة البروتوكول
     sys.stdout = sys.stderr
     import shamela_search as SS
@@ -54,6 +70,9 @@ def main():
             _PROTO.flush()
         except Exception:
             break
+    # أُغلق stdin (مات الأب أو طلب الإيقاف): خروج قسري فوري، فخيوط JVM
+    # غير الوحيدة تمنع انتهاء العملية لو تُركت لنهاية المفسّر الطبيعية.
+    os._exit(0)
 
 
 if __name__ == "__main__":
