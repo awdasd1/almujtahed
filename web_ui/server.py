@@ -8068,7 +8068,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.639"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.640"},
         },
     })
     if opened.get("error"):
@@ -27504,48 +27504,34 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
 
 
 def _docx_toc_table(items: list, styles: dict, known_bookmarks: set | None = None) -> str:
-    """فهرس وورد: وورد للماك يتجاهل bidiVisual فيبقى العمود الأول يسارًا،
-    لذلك تُرتَّب الخلايا كما تظهر: الرقم يسارًا والموضوع يمينًا، بحدود ظاهرة."""
+    """فهرس وورد: اتجاه النص داخل الخلية عربي يمينًا. جدولة يسار وحقل
+    PAGEREF الإنجليزي كانا يقلبان فقرة الخلية إلى اليسار."""
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     rpr = _docx_rpr(body)
     brd = 'w:val="single" w:sz="8" w:space="0" w:color="888888"'
+    rlm = "\u200f"
+    ppr_rtl = (
+        '<w:pPr><w:bidi w:val="1"/>'
+        '<w:spacing w:before="60" w:line="360" w:lineRule="auto" w:after="60"/>'
+        '{ind}<w:jc w:val="right"/></w:pPr>'
+    )
     rows = []
     for it in items:
         try:
             lvl = max(1, min(3, int(it.get("lvl") or 1)))
         except Exception:
             lvl = 1
-        bm = re.sub(r"[^A-Za-z0-9_]", "", str(it.get("bookmark") or ""))[:40]
         text = "".join(str(r.get("t") or "") for r in (it.get("runs") or []) if isinstance(r, dict))
-        shown = str(it.get("page") or "").strip() or " "
+        shown = str(it.get("page") or "").strip() or "-"
         ind = f'<w:ind w:right="{(lvl - 1) * 300}"/>' if lvl > 1 else ""
         topic = (
-            "<w:p><w:pPr>"
-            '<w:tabs><w:tab w:val="left" w:leader="dot" w:pos="0"/></w:tabs>'
-            "<w:bidi/>"
-            '<w:spacing w:before="60" w:line="360" w:lineRule="auto" w:after="60"/>'
-            f'{ind}<w:jc w:val="right"/></w:pPr>'
-            f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(text)}</w:t></w:r>'
-            f"<w:r>{rpr}<w:tab/></w:r></w:p>"
+            "<w:p>" + ppr_rtl.format(ind=ind)
+            + f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + text)}</w:t></w:r></w:p>'
         )
-        page_ppr = (
-            "<w:pPr><w:bidi/><w:jc w:val=\"center\"/>"
-            '<w:spacing w:before="60" w:line="360" w:lineRule="auto" w:after="60"/></w:pPr>'
+        page = (
+            "<w:p>" + ppr_rtl.format(ind="")
+            + f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(rlm + shown)}</w:t></w:r></w:p>'
         )
-        if bm and (known_bookmarks is None or bm in known_bookmarks):
-            page = (
-                f"<w:p>{page_ppr}"
-                '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
-                f'<w:r>{rpr}<w:instrText xml:space="preserve"> PAGEREF {bm} \\h </w:instrText></w:r>'
-                '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-                f'<w:r>{rpr}<w:t xml:space="preserve">{_docx_esc(shown)}</w:t></w:r>'
-                '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
-            )
-        else:
-            page = (
-                f"<w:p>{page_ppr}"
-                f'<w:r>{rpr}<w:t>{_docx_esc(shown if shown.strip() else "-")}</w:t></w:r></w:p>'
-            )
         rows.append(
             '<w:tr><w:trPr><w:cantSplit/>'
             '<w:trHeight w:val="320" w:hRule="atLeast"/></w:trPr>'
@@ -27693,6 +27679,7 @@ def build_docx_bytes(payload: dict) -> bytes:
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
         '<w:updateFields w:val="true"/>'
+        '<w:themeFontLang w:val="ar-SA" w:eastAsia="ar-SA" w:bidi="ar-SA"/>'
         "<w:compat/></w:settings>"
     )
     content_types = (
