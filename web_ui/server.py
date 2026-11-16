@@ -7757,7 +7757,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.614"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.615"},
         },
     })
     if opened.get("error"):
@@ -24628,6 +24628,7 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
         '    "academic_pdf": true\n'
         '  }\n'
         "}\n\n"
+        "ولازم في \"agents\": وكيل واحد «مدير الأدوات — جامع الشواهد الموثقة» بحقل \"role\": \"tools_manager\" و\"kind\": \"tools_manager\"، نموذجه google/gemini-3.8-flash، وتوجيهه: جلب حزم الشواهد الموثقة بأدوات المغني الداخلية المركّبة والتوثيقية وحده (بحث مغلق وقراءة ومطابقة) وإعادتها بعزوها وحالة مطابقتها، بلا تحليل ولا ترجيح ولا نقل إلا MATCH_EXACT أو MATCH_NORMALIZED.\n\n"
         "بعد كتلة الـ JSON، اكتب شرحاً تفصيلياً تحليلياً باللغة العربية الفصحى للباحث يبيّن خطة السير خطوة بخطوة، والمسوغات العلمية لاختيار الكتب وتوزيع الوكلاء."
     )
 
@@ -26029,6 +26030,21 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '        "system_prompt": "التوجيه الحرفي للوكيل في استخراج نصوص المسألة"\n'
         '      },\n'
         '      {\n'
+        '        "name": "مدير الأدوات — جامع الشواهد الموثقة",\n'
+        '        "desc": "الوكيل الوحيد الممسك بأدوات المغني الداخلية المركّبة والتوثيقية: يجلب حزم الشواهد الموثقة ويغذي الفريق بها موسومة المصدر",\n'
+        '        "role": "tools_manager",\n'
+        '        "kind": "tools_manager",\n'
+        '        "model": "google/gemini-3.8-flash",\n'
+        '        "thinking": "high",\n'
+        '        "search_mode": "hybrid",\n'
+        '        "extract_count": 40,\n'
+        '        "context_tokens": 262144,\n'
+        '        "books": [],\n'
+        '        "pool_size": 250,\n'
+        '        "top_k": 40,\n'
+        '        "system_prompt": "أنت مدير الأدوات في هذا الفريق، والوكيل الوحيد الممسك بأدوات المغني الداخلية المركّبة والتوثيقية (research_evidence وlocate_in_book وقراءة الصفحات والمطابقة). مهمتك جلب حزم الشواهد الموثقة للمسألة لا تحليلها: حدّد عبارات التراث، واستدعِ research_evidence بنطاق كتب مغلق من كتب فريقك، وفي الكتب الضخمة استشر locate_in_book لتحديد مدى الباب ثم اقرأ داخله، وطابق كل نقل قبل إعادته. أعد لمدير المشروع حزمًا مرقمة: الدعوى، الإحالة (الكتاب، الجزء، الصفحة)، النص الحرفي، حالة المطابقة. لا تحليل ولا ترجيح ولا نقل إلا MATCH_EXACT أو MATCH_NORMALIZED، وما لم تجده صرّح بغيابه ولا تكمل من الذاكرة."\n'
+        '      },\n'
+        '      {\n'
         '        "name": "عضو مجلس المستشارين — Gemini Argon",\n'
         '        "desc": "عضو مجلس يصله السؤال كاملًا كإخوانه: تفكير للمدير فقط في أهم كتب مظانّ المسألة ومراسي البحث التراثية، بلا تقسيم فنون بين الأعضاء",\n'
         '        "kind": "advisor",\n'
@@ -26074,6 +26090,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
     architect_system_prompt += _architect_agent_tuning_section()
     architect_system_prompt += _architect_adaptive_profile_section()
     architect_system_prompt += (
+        "ولازم في كل مخطط: وكيل واحد «مدير الأدوات — جامع الشواهد الموثقة» بحقل \"role\": \"tools_manager\" كما في مثال المخطط؛ لا مخطط بلا مدير أدوات، وهو وحده الممسك بأدوات المغني الداخلية المركّبة والتوثيقية، ولا وكيل غيره بأي أداة.\n"
         f"\nسياق الاستيعاب المعتمد لهذا المشروع: {resolve_context_tokens(req.context_tokens)} رمز. "
         "اجعل context_tokens في بطاقة المدير وكل وكيل بهذه القيمة إلا إذا طلب الباحث تغييرها، ولا تضع هذا الرقم في max_tokens لأن ذلك حد الإخراج لا حد الشواهد.\n"
         "إذا أرسل الباحث رسالة تبدأ بـ «أضف هذه الكتب لدى الوكيل المناسب»، فأضف كل كتاب كما ورد برقمه المعياري وعنوانه إلى حقل books لدى الوكيل الأنسب لفن الكتاب، ولا تستبدل الرقم ولا تُسقط الكتاب.\n"

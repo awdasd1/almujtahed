@@ -2767,6 +2767,7 @@ async function applyStudioBlueprint() {
           name: ag.name || `وكيل ${i + 1}`,
           desc: ag.desc || 'استخراج نصوص الشاملة',
           model: ag.model || 'google/gemini-2.5-flash',
+          role: ag.role || ag.kind || '',
           enabled: true,
           active: true,
           books: canonicalBooks,
@@ -2791,6 +2792,7 @@ async function applyStudioBlueprint() {
       // مدير المشروع بطاقة قائد داخل مجموعة الوكلاء نفسها (لا سلطة موازية
       // خارجها): يقود التوليف بنموذجه وتفكيره وتوجيهه، ولا يُرسل وكيلَ جمع،
       // وتعطيله من قائمة الوكلاء يعيد القيادة لنموذج المحادثة.
+      ensureToolsManagerAgent(mappedAgents);
       if (bp.director) {
         mappedAgents.unshift({
           id: `director_${targetGroupId}`,
@@ -2942,6 +2944,41 @@ async function applyStudioBlueprint() {
   }
 }
 
+// كل مشروع يبنيه مهندس المشروع يحمل مدير أدوات معيّنًا: إن نسيه المخطط
+// زُرع افتراضيًا بهذا التوجيه، فلا يولد فريق بلا ممسك وحيد لأدوات المغني.
+function ensureToolsManagerAgent(agents) {
+  if (!Array.isArray(agents)) return agents;
+  if (agents.some(a => a && (a.role === 'tools_manager' || a.kind === 'tools_manager'))) return agents;
+  const prompt = 'أنت مدير الأدوات في هذا الفريق، والوكيل الوحيد الممسك بأدوات المغني الداخلية المركّبة والتوثيقية (research_evidence وlocate_in_book وقراءة الصفحات والمطابقة). مهمتك جلب حزم الشواهد الموثقة للمسألة لا تحليلها: (١) حدّد عبارات التراث للمسألة، (٢) استدعِ research_evidence بنطاق كتب مغلق من كتب فريقك، (٣) في الكتب الضخمة استشر locate_in_book لتحديد مدى الباب ثم اقرأ داخله، (٤) طابق كل نقل قبل إعادته بـ verify_quote أو verify_batch. أعد لمدير المشروع حزمًا مرقمة: الدعوى، الإحالة (اسم الكتاب، الجزء، الصفحة)، النص الحرفي، حالة المطابقة. حدودك الصارمة: لا تحليل ولا ترجيح ولا فتوى، ولا تنقل إلا ما حالته MATCH_EXACT أو MATCH_NORMALIZED، وما لم تجده صرّح «لم أقف عليه في النطاق» ولا تكمل من الذاكرة؛ ومتن الحديث من كتابه الأصلي لا من كتب الفقه والشروح إلا بتصريح تعذر الأصل.';
+  agents.unshift({
+    id: 'tools_manager_' + Date.now(),
+    name: 'مدير الأدوات — جامع الشواهد الموثقة',
+    desc: 'يجلب حزم الشواهد الموثقة بأدوات المغني الداخلية المركّبة والتوثيقية ويغذي الفريق بها موسومة المصدر',
+    model: 'google/gemini-3.8-flash',
+    role: 'tools_manager',
+    kind: 'tools_manager',
+    enabled: true,
+    active: true,
+    books: [],
+    booksScope: [],
+    scope_summary: 'كامل مصادر الشاملة عبر أدوات المغني الداخلية',
+    pool_size: 250,
+    poolSize: 250,
+    top_k: 40,
+    topK: 40,
+    thinking: 'high',
+    search_mode: 'hybrid',
+    use_hybrid: true,
+    temp: 0.2,
+    max_tokens: 65536,
+    maxTokens: 65536,
+    context_tokens: 262144,
+    system_prompt: prompt,
+    systemPrompt: prompt
+  });
+  return agents;
+}
+
 // تحديث كروت المشروع الحالي المفتوح فورياً بالخطة المعدلة دون إنشاء مشروع جديد
 async function updateActiveProjectCardsFromBlueprint() {
   if (!activeProjectId) {
@@ -3017,6 +3054,7 @@ async function updateActiveProjectCardsFromBlueprint() {
         name: ag.name || `وكيل ${i + 1}`,
         desc: ag.desc || 'استخراج نصوص الشاملة',
         model: ag.model || 'google/gemini-2.5-flash',
+        role: ag.role || ag.kind || '',
         enabled: true,
         active: true,
         books: canonicalBooks,
@@ -3037,6 +3075,7 @@ async function updateActiveProjectCardsFromBlueprint() {
         systemPrompt: prompt
       };
     });
+    ensureToolsManagerAgent(mappedAgents);
 
     let groups = window.agentGroups || [];
     let gid = project.linked_group_id || `group_${project.id}`;
