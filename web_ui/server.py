@@ -3395,6 +3395,58 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
                             "rel_path": row.get("rel_path") or ""}
         return None
 
+    def _fuzzy_resolve_unresolved(raw):
+        """شفاء ضبابي لإحالة حاشية بصيغة بشرية حرة («المحلى بالآثار لابن حزم
+        (12-166)»): محلل الختم لا يجرّب إلا فصل المؤلف بالفواصل، فتسقط صيغ
+        «العنوان للمؤلف» كلها وإن كان كتابها في المكتبة (38 إحالة في قياس
+        1.10.619 وكلها كتب موجودة). هنا محاولات أوسع: حذف واو العطف، وفصل
+        المؤلف بـ«لـ»، وتفكيك العنوان المزدوج («أو»/«=»)، وحلّ كل مرشح في
+        المكتبة مع اشتراط اتفاق المؤلف إن ذُكر — فلا يُشفى إلا منفرد واثق."""
+        txt = re.sub(r"<[^>]+>", " ", raw or "").replace("⚠", " ")
+        txt = re.sub(r"\s+", " ", txt).strip()
+        m = _STAMP_LOCATOR.search(txt)
+        part, page = _locator_parts(m)
+        head = (txt[:m.start()] if m else txt).strip(" ،,؛:")
+        head = re.sub(r"^[وف](?=\s*ال)", "", head)
+        author_seg = ""
+        title_seg = head
+        _am = re.match(r"^(.*?)\s+ل(?=[اإآا-ي])(.+)$", head)
+        if _am and len(_am.group(1)) >= 6:
+            title_seg = _am.group(1).strip(" ،,؛:")
+            author_seg = _am.group(2).strip(" ،,؛:")
+        candidates: List[str] = []
+
+        def _add(s):
+            s = (s or "").strip(" ،,؛:")
+            if len(s) >= 5 and s not in candidates:
+                candidates.append(s)
+
+        _add(title_seg)
+        for _piece in re.split(r"\s+(?:أو|=|/)\s+", title_seg):
+            _add(_piece)
+        _add(head)
+        _author_tokens = ({t for t in re.split(r"\W+", _fold_ar(author_seg)) if len(t) >= 3}
+                          if author_seg else set())
+        for att in candidates[:8]:
+            try:
+                row = shamela_local_mcp.resolve_book(att)
+            except Exception:
+                row = None
+            if not (row and row.get("status") == "ok" and row.get("book_id")):
+                continue
+            ak, rk = _stamp_title_key(att), _stamp_title_key(row.get("title") or "")
+            if not (ak and rk and (ak == rk or f" {rk} " in f" {ak} " or f" {ak} " in f" {rk} ")):
+                continue
+            if _author_tokens:
+                _row_author = {t for t in re.split(r"\W+", _fold_ar(str(row.get("author") or "")))
+                               if len(t) >= 3}
+                if not (_author_tokens & _row_author):
+                    continue
+            return {"bid": str(row["book_id"]), "part": part, "page": page,
+                    "title": row.get("title") or "", "author": row.get("author") or "",
+                    "rel_path": row.get("rel_path") or ""}
+        return None
+
     _span_books_cache: Dict[Any, list] = {}
 
     def footnote_span_books(num):
@@ -3953,21 +4005,29 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
             if not info:
                 if _title_in_library(um.group(1)):
                     continue
-                # كتاب خارج المكتبة: تُستبعد إحالته من الحاشية فورًا.
-                # يُسجَّل نص الإحالة كما كتبه المولّف (حتى 60) تشخيصًا:
-                # عددٌ أصم (45 في قياسين) لم يكشف أهي كتب غائبة حقًا أم
-                # صيغ أسماء لا تطابق الكتالوج.
-                _drop_txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1)).replace("⚠", " ")).strip()
-                if len(stats.get("excluded_items") or []) < 60:
-                    stats.setdefault("excluded_items", []).append(
-                        {"quote": _drop_txt[:160], "book_id": "", "num": d.get("num"),
-                         "via": "footnote_unresolved"})
-                pieces.append(body[pos:um.start()])
-                pos = um.end()
-                changed = True
-                _dropped_here += 1
-                _dropped_n += 1
-                continue
+                info = _fuzzy_resolve_unresolved(um.group(1))
+                if info:
+                    stats["fuzzy_healed"] = stats.get("fuzzy_healed", 0) + 1
+                    if len(stats.get("fuzzy_healed_items") or []) < 30:
+                        stats.setdefault("fuzzy_healed_items", []).append(
+                            {"quote": re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1))).strip()[:140],
+                             "book_id": info["bid"], "title": info["title"], "num": d.get("num")})
+                else:
+                    # كتاب خارج المكتبة: تُستبعد إحالته من الحاشية فورًا.
+                    # يُسجَّل نص الإحالة كما كتبه المولّف (حتى 60) تشخيصًا:
+                    # عددٌ أصم (45 في قياسين) لم يكشف أهي كتب غائبة حقًا أم
+                    # صيغ أسماء لا تطابق الكتالوج.
+                    _drop_txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1)).replace("⚠", " ")).strip()
+                    if len(stats.get("excluded_items") or []) < 60:
+                        stats.setdefault("excluded_items", []).append(
+                            {"quote": _drop_txt[:160], "book_id": "", "num": d.get("num"),
+                             "via": "footnote_unresolved"})
+                    pieces.append(body[pos:um.start()])
+                    pos = um.end()
+                    changed = True
+                    _dropped_here += 1
+                    _dropped_n += 1
+                    continue
             inner = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1)).replace("⚠", " ")).strip()
             q = " ".join(str(_heal_quotes.get(d["num"]) or "").split())[:120]
             if not q:
@@ -4018,6 +4078,10 @@ def _documentation_gate(text: str, witness_rows: List[dict]):
         stats["repaired"] = stats.get("repaired", 0) + _healed_n
         stats["healed"] = _healed_n
         print(f"🚧 [Documentation Audit] شُفيت {_healed_n} إحالة معلَّمة: حُلّ كتابها في المكتبة فخُتمت كاملة", flush=True)
+    if stats.get("fuzzy_healed"):
+        print(f"🚧 [Documentation Audit] شُفيت {stats['fuzzy_healed']} إحالة بصيغة بشرية حرة بمطابقة ضبابية في كتالوج المكتبة", flush=True)
+        for _fh in (stats.get("fuzzy_healed_items") or [])[:6]:
+            print(f"🚧   شُفيت: «{str(_fh.get('quote') or '')[:80]}» ← #{_fh.get('book_id')} {_fh.get('title')}", flush=True)
     if _dropped_n:
         stats["excluded_outside"] = stats.get("excluded_outside", 0) + _dropped_n
         print(f"🚧 [Documentation Audit] استُبعدت {_dropped_n} إحالة كتابها خارج المكتبة", flush=True)
@@ -7769,7 +7833,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.619"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.620"},
         },
     })
     if opened.get("error"):
@@ -17610,7 +17674,10 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "temperature": ag_temp,
                 "max_tokens": ag_max_tokens,
                 "tools": _tools,
-                "tool_choice": "auto",
+                # مدير الأدوات يُجبَر على جولة أدوات أولى (Flash كتب مرارًا من
+                # الشواهد المطعَّمة بلا أي استدعاء رغم التنبيه)؛ ومن لم يدعم
+                # الإجبار من المزودين يُعاد طلبه بـ auto في موضع القراءة.
+                "tool_choice": "required" if is_manager else "auto",
             }
             attach_reasoning(payload, ag_model, ag_thinking)
 
@@ -17628,7 +17695,14 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 with urllib.request.urlopen(o_req, timeout=120) as resp:
                     return json.loads(resp.read().decode("utf-8"))
 
-            resp_data = _read(payload)
+            try:
+                resp_data = _read(payload)
+            except Exception:
+                if is_manager and payload.get("tool_choice") == "required":
+                    payload["tool_choice"] = "auto"
+                    resp_data = _read(payload)
+                else:
+                    raise
             for _round in range(5):
                 choice = resp_data.get("choices", [{}])[0]
                 msg_obj = choice.get("message", {}) or {}
@@ -17659,6 +17733,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         output = "الأداة غير متاحة في الخوادم المحددة"
                     dialog.append({"role": "tool", "tool_call_id": call.get("id") or fn.get("name") or "tool", "content": output})
                 payload["messages"] = dialog
+                payload["tool_choice"] = "auto"  # الإجبار للجولة الأولى فقط
                 resp_data = _read(payload)
             # انتهت الجولات: كتابة التقرير بلا أدوات
             dialog.append({"role": "system", "content": "انتهت جولات الأدوات. اكتب الآن تقريرك النهائي مما جمعته، ولا تطلب أداة أخرى."})
@@ -19409,6 +19484,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "relocated": _gs.get("relocated", 0), "repaired": _gs.get("repaired", 0),
                 "verified_unbound": _gs.get("verified_unbound", 0),
                 "excluded_outside": _gs.get("excluded_outside", 0), "tier_warnings": _gs.get("tier_warnings", 0),
+                "fuzzy_healed": _gs.get("fuzzy_healed", 0),
+                "fuzzy_healed_items": (_gs.get("fuzzy_healed_items") or [])[:20],
                 "ijma_flags": _gs.get("ijma_flags", 0),
                 "ijma_unattributed": len(_gs.get("ijma_unattributed") or []),
                 "cited_books": len(_gs.get("cited_book_ids") or []),
