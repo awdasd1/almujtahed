@@ -7831,6 +7831,97 @@ async def designs_delete(req: DesignFileRequest, request: Request):
     return {"deleted": name}
 
 
+class DesignAnimateRequest(BaseModel):
+    image_url: str
+    api_key: Optional[str] = None
+    model: str = "alibaba/wan-2.7"
+
+
+def _design_motion_frame(path: Path) -> str:
+    """يجهّز إطار البداية لنموذج الفيديو: صورة أصغر حتى يُقبل الطلب."""
+    from PIL import Image
+    import io
+    image = Image.open(path).convert("RGB")
+    image.thumbnail((1280, 1280))
+    buffer = io.BytesIO()
+    image.save(buffer, "JPEG", quality=85)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _animate_design_sync(image_path: Path, key: str, model: str, owner_id: str) -> Dict[str, Any]:
+    prompt = (
+        "Slow gentle camera push-in across this finished Arabic infographic. "
+        "Keep the map, the orange route, the seated figure, the title, and every Arabic label exactly as drawn. "
+        "Add only a soft glow traveling along the existing route. "
+        "Do not rewrite text, do not add objects, and do not change the layout."
+    )
+    submitted = _openrouter_json(
+        "https://openrouter.ai/api/v1/videos",
+        key,
+        {
+            "model": model,
+            "prompt": prompt,
+            "duration": 5,
+            "resolution": "720p",
+            "aspect_ratio": "16:9",
+            "frame_images": [{
+                "type": "image_url",
+                "image_url": {"url": _design_motion_frame(image_path)},
+                "frame_type": "first_frame",
+            }],
+        },
+        90,
+    )
+    polling = str(submitted.get("polling_url") or "")
+    job_id = str(submitted.get("id") or "")
+    if polling.startswith("/"):
+        polling = "https://openrouter.ai" + polling
+    if not polling and job_id:
+        polling = f"https://openrouter.ai/api/v1/videos/{job_id}"
+    if not polling:
+        raise RuntimeError("قُبل الطلب بلا رابط متابعة")
+    status = submitted
+    for _poll in range(40):
+        state = str(status.get("status") or "").lower()
+        if state in ("completed", "succeeded", "success", "failed", "error", "cancelled", "canceled"):
+            break
+        time.sleep(6)
+        status = _openrouter_json(polling, key, None, 40)
+    state = str(status.get("status") or "").lower()
+    if state in ("failed", "error", "cancelled", "canceled"):
+        raise RuntimeError(str(status.get("error") or "فشل توليد الفيديو")[:240])
+    if state not in ("completed", "succeeded", "success"):
+        raise RuntimeError("انتهت مهلة انتظار الفيديو")
+    urls = status.get("unsigned_urls") or []
+    content = str(urls[0]) if urls else (f"https://openrouter.ai/api/v1/videos/{job_id}/content" if job_id else "")
+    if not content:
+        raise RuntimeError("اكتمل التوليد بلا رابط فيديو")
+    raw = _download_bytes(content, key, 180)
+    if not raw:
+        raise RuntimeError("ملف الفيديو فارغ")
+    return {"video_url": _save_chat_media(owner_id, raw, "mp4"), "model": model}
+
+
+@app.post("/api/designs/animate")
+async def designs_animate(req: DesignAnimateRequest, request: Request):
+    """يحرّك صورة تصميم جاهزة: تُرسل أول إطار إلى نموذج فيديو ويُحفظ المقطع."""
+    folder = _designs_dir(request).resolve()
+    name = Path(urllib.parse.unquote(req.image_url or "")).name
+    target = (folder / name).resolve()
+    if target.parent != folder or not target.is_file():
+        raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
+    key = owner_openrouter_key(request, req.api_key)
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في تبويب الخدمات")
+    model = (req.model or "alibaba/wan-2.7").strip() or "alibaba/wan-2.7"
+    try:
+        result = await asyncio.to_thread(_animate_design_sync, target, key, model, current_owner_id(request))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"تعذر تحريك التصميم: {exc}")
+    return {"ok": True, **result}
+
+
 def _owner_ayrshare_key(request: Request) -> str:
     return (load_provider_keys(current_owner_id(request)).get("ayrshare") or "").strip()
 
@@ -8627,7 +8718,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.666"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.667"},
         },
     })
     if opened.get("error"):

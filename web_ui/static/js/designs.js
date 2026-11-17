@@ -740,6 +740,8 @@ function renderDesignMessages() {
           ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="fold" data-idx="${idx}">${msg.collapsed ? '👁️ عرض الصورة' : '🙈 طي الصورة'}</button>` : ''}
           ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="zoom" data-idx="${idx}">🔍 تكبير</button>` : ''}
           ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="share" data-idx="${idx}">🔗 مشاركة</button>` : ''}
+          ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="animate" data-idx="${idx}">🎬 تحريك</button>` : ''}
+          ${msg.video_url ? `<button type="button" class="design-mini-btn" data-design-action="publish-video" data-idx="${idx}">📤 نشر الفيديو</button>` : ''}
           ${msg.image_url ? `<button type="button" class="design-mini-btn" data-design-action="publish" data-idx="${idx}">📤 نشر</button>` : ''}
           ${msg.image_url ? `<a class="design-download" href="${escapeHtml(msg.image_url)}" download>⬇️ تنزيل</a>` : ''}
           <button type="button" class="design-mini-btn" data-design-action="archive" data-idx="${idx}">🗄️ أرشفة</button>
@@ -747,6 +749,7 @@ function renderDesignMessages() {
         </div>
       </div>
       ${msg.image_url && !msg.collapsed ? `<img class="design-image" src="${escapeHtml(msg.image_url)}" alt="تصميم المغني" loading="lazy" data-design-zoom="${idx}" title="انقر للتكبير">` : ''}
+      ${msg.video_url ? `<video class="design-video" controls playsinline preload="metadata" src="${escapeHtml(msg.video_url)}"></video>` : ''}
       ${books ? `<div class="design-books">📚 من كتب: ${books}</div>` : ''}
       ${msg.sources && msg.sources.length ? `<div class="design-sources"><div class="design-sources-title">📚 المصادر التي اعتمدها نموذج الصياغة:</div><ul>${msg.sources.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>` : ''}
       ${msg.prompt ? `<details class="design-prompt"><summary>توجيه الصورة الذي أُرسل للنموذج</summary><p dir="ltr">${escapeHtml(msg.prompt)}</p></details>` : ''}
@@ -1291,6 +1294,37 @@ function closeDesignLightbox() {
   if (box) box.hidden = true;
 }
 
+async function animateDesignImage(idx, btn) {
+  const msg = designMessages[idx];
+  if (!msg || !msg.image_url) return;
+  if (msg.video_url && !window.confirm('يوجد فيديو لهذه الصورة. هل تريد توليد مقطع جديد؟')) return;
+  if (!window.confirm('سيُحرَّك هذا التصميم كمقطع قصير يبدأ من الصورة نفسها. يستهلك ذلك رصيد OpenRouter وقد يستغرق بضع دقائق، والنصوص قد تتحرك قليلًا.')) return;
+  const original = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ جارٍ التحريك…'; }
+  startDesignTimer('جارٍ تحويل التصميم إلى فيديو. قد يستغرق هذا دقائق');
+  try {
+    let apiKey = '';
+    try { apiKey = readProviderKeys().openrouter || ''; } catch (e) {}
+    const resp = await fetch('/api/designs/animate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_url: msg.image_url, api_key: apiKey })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.video_url) throw new Error(data.detail || 'تعذر التحريك');
+    msg.video_url = data.video_url;
+    msg.video_model = data.model || '';
+    saveDesignMessages();
+    renderDesignMessages();
+    if (typeof showToast === 'function') showToast('🎬 الفيديو جاهز تحت الصورة');
+  } catch (err) {
+    if (typeof showToast === 'function') showToast(err.message || 'تعذر التحريك', 8000);
+  } finally {
+    stopDesignTimer();
+    if (btn) { btn.disabled = false; btn.textContent = original || '🎬 تحريك'; }
+  }
+}
+
 async function onDesignCardAction(event) {
   const zoomImg = event.target.closest('[data-design-zoom]');
   if (zoomImg) {
@@ -1308,6 +1342,10 @@ async function onDesignCardAction(event) {
     openDesignLightbox(msg.image_url);
   } else if (action === 'publish') {
     openDesignPublish(idx);
+  } else if (action === 'publish-video') {
+    if (typeof openDesignVideoPublish === 'function') openDesignVideoPublish(msg.video_url, msg.title || '');
+  } else if (action === 'animate') {
+    animateDesignImage(idx, btn);
   } else if (action === 'fold') {
     msg.collapsed = !msg.collapsed;
     saveDesignMessages();
