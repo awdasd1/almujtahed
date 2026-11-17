@@ -1847,6 +1847,7 @@ class ChatRequest(BaseModel):
     library_query: Optional[str] = None
     mcp_servers: Optional[List[Dict[str, Any]]] = None
     mcp_for_agents: bool = False
+    media_kind: Optional[str] = None  # image أو video حين يختار الباحث نموذج توليد لا نموذج نص
 
 
 class BookResolveRequest(BaseModel):
@@ -8626,7 +8627,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.665"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.666"},
         },
     })
     if opened.get("error"):
@@ -18089,6 +18090,137 @@ def _record_research_metrics(owner_id: str, entry: dict) -> None:
         print(f"📏 [Research Metrics] {_rm_err}", flush=True)
 
 
+def _openrouter_json(url: str, key: str, payload: Optional[dict] = None, timeout: int = 120) -> dict:
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "HTTP-Referer": "http://localhost:8085",
+        "X-Title": "Almoghni Chat Media",
+    }
+    data = None
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(url, headers=headers, data=data)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="ignore")[:400]
+        raise RuntimeError(f"HTTP {error.code}: {detail or error.reason}") from None
+
+
+def _download_bytes(url: str, key: str, timeout: int = 180) -> bytes:
+    def _get(headers: Dict[str, str]) -> bytes:
+        request = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            return resp.read()
+    try:
+        return _get({"Authorization": f"Bearer {key}"})
+    except urllib.error.HTTPError as error:
+        if error.code not in (401, 403):
+            detail = error.read().decode("utf-8", errors="ignore")[:240]
+            raise RuntimeError(f"HTTP {error.code}: {detail or error.reason}") from None
+        return _get({})
+
+
+def _save_chat_media(owner_id: str, raw: bytes, ext: str) -> str:
+    folder = UPLOADS_BUCKET_DIR / owner_id / "chat-media"
+    folder.mkdir(parents=True, exist_ok=True)
+    filename = f"media-{int(time.time())}-{secrets.token_hex(4)}.{ext}"
+    (folder / filename).write_bytes(raw)
+    return f"/uploads/{owner_id}/chat-media/{filename}"
+
+
+def _image_extension(raw: bytes) -> str:
+    if raw.startswith(b"\x89PNG"):
+        return "png"
+    if raw.startswith(b"\xff\xd8"):
+        return "jpg"
+    if raw.startswith(b"RIFF") and b"WEBP" in raw[:16]:
+        return "webp"
+    return "png"
+
+
+def _generate_chat_media_sync(req: "ChatRequest", request: Request, kind: str) -> Dict[str, Any]:
+    """توليد صورة أو فيديو من نموذج OpenRouter المختار وعرضه مسارًا محفوظًا في المحادثة."""
+    base = {"model": req.model, "provider": req.provider or "openrouter", "free_mode": True, "witnesses": []}
+    prompt = ""
+    for message in reversed(req.messages or []):
+        if message.role == "user" and (message.content or "").strip():
+            prompt = message.content.strip()
+            break
+    if not prompt:
+        return {**base, "reply": "⚠️ اكتب وصف الصورة أو الفيديو ثم أعد الإرسال."}
+    key = owner_openrouter_key(request, req.api_key)
+    if not key:
+        return {**base, "reply": "⚠️ توليد الصور والفيديو يحتاج مفتاح OpenRouter في تبويب الخدمات."}
+    owner_id = current_owner_id(request)
+    model = req.model
+    try:
+        if kind == "image":
+            payload = {"model": model, "prompt": prompt[:4000]}
+            try:
+                data = _openrouter_json("https://openrouter.ai/api/v1/images", key, {**payload, "size": "1024x1024"}, 180)
+            except RuntimeError:
+                data = _openrouter_json("https://openrouter.ai/api/v1/images", key, payload, 180)
+            image_b64 = ""
+            remote = ""
+            for item in data.get("data") or []:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("b64_json"):
+                    image_b64 = item["b64_json"]
+                    break
+                if item.get("url"):
+                    remote = item["url"]
+                    break
+            raw = base64.b64decode(image_b64) if image_b64 else (_download_bytes(remote, key) if remote else b"")
+            if not raw:
+                return {**base, "reply": "⚠️ لم يُرجع نموذج الصورة ملفًا قابلًا للعرض."}
+            url = _save_chat_media(owner_id, raw, _image_extension(raw))
+            return {**base, "reply": "🖼️ الصورة الجاهزة.", "media": {"kind": "image", "url": url, "model": model}}
+        submitted = _openrouter_json(
+            "https://openrouter.ai/api/v1/videos", key,
+            {"model": model, "prompt": prompt[:4000]}, 60,
+        )
+        polling = str(submitted.get("polling_url") or "")
+        job_id = str(submitted.get("id") or "")
+        if polling.startswith("/"):
+            polling = "https://openrouter.ai" + polling
+        if not polling and job_id:
+            polling = f"https://openrouter.ai/api/v1/videos/{job_id}"
+        if not polling:
+            return {**base, "reply": "⚠️ قبل النموذج طلب الفيديو بلا رابط متابعة."}
+        status = submitted
+        for _poll in range(40):
+            state = str(status.get("status") or "").lower()
+            if state in ("completed", "succeeded", "success", "failed", "error", "cancelled", "canceled"):
+                break
+            time.sleep(6)
+            status = _openrouter_json(polling, key, None, 40)
+        state = str(status.get("status") or "").lower()
+        if state in ("failed", "error", "cancelled", "canceled"):
+            return {**base, "reply": f"⚠️ تعذر توليد الفيديو: {str(status.get('error') or 'فشل لدى النموذج')[:240]}"}
+        if state not in ("completed", "succeeded", "success"):
+            return {**base, "reply": "⚠️ ما زال توليد الفيديو جاريًا بعد مهلة الانتظار. أعد المحاولة بعد قليل."}
+        content = ""
+        urls = status.get("unsigned_urls") or []
+        if urls:
+            content = str(urls[0])
+        elif job_id:
+            content = f"https://openrouter.ai/api/v1/videos/{job_id}/content"
+        if not content:
+            return {**base, "reply": "⚠️ اكتمل التوليد بلا رابط فيديو."}
+        raw = _download_bytes(content, key, 180)
+        if not raw:
+            return {**base, "reply": "⚠️ ملف الفيديو فارغ."}
+        url = _save_chat_media(owner_id, raw, "mp4")
+        return {**base, "reply": "🎬 الفيديو الجاهز.", "media": {"kind": "video", "url": url, "model": model}}
+    except Exception as exc:
+        label = "الصورة" if kind == "image" else "الفيديو"
+        return {**base, "reply": f"⚠️ تعذر توليد {label}: {exc}"}
+
+
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest, request: Request):
     _chat_t0 = time.time()
@@ -18096,6 +18228,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
     def _mark(stage: str):
         _stage_marks.append((stage, round(time.time() - _chat_t0)))
+    media_kind = (req.media_kind or "").strip().lower()
+    if media_kind in ("image", "video"):
+        return await asyncio.to_thread(_generate_chat_media_sync, req, request, media_kind)
     if req.free_mode:
         return await asyncio.to_thread(_free_chat_sync, req, request)
     if req.raw_mcp:

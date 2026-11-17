@@ -2293,7 +2293,13 @@ function renderSessionMessages(sessionId, options) {
       </div>
     ` : '';
 
-    const actionsBar = !isUser ? `
+    const mediaHtml = chatMediaHtml(msg);
+    const actionsBar = (!isUser && msg.media && msg.media.url) ? `
+      <div class="chat-msg-actions-bar" style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px dashed var(--border-subtle); padding-top: 8px; flex-wrap: wrap;">
+        <a class="btn-msg-export" href="${escapeHtml(msg.media.url)}" download title="تنزيل الملف">⬇️ تنزيل</a>
+        <button type="button" class="btn-msg-export btn-msg-delete" onclick="deleteChatMessage(${idx})" title="حذف هذه الرسالة" aria-label="حذف">حذف</button>
+      </div>
+    ` : !isUser ? `
       <div class="chat-msg-actions-bar" style="display: flex; gap: 8px; margin-top: 10px; border-top: 1px dashed var(--border-subtle); padding-top: 8px; flex-wrap: wrap;">
         ${msg.rewriting ? `<span class="chat-rewrite-status">جارٍ ${escapeHtml(msg.rewriting)}...</span>` : ''}
         <button type="button" class="btn-msg-export" onclick="exportChatMessageHtml(${idx})" title="قراءة هذه النتيجة في صفحة قراءة">
@@ -2373,6 +2379,7 @@ function renderSessionMessages(sessionId, options) {
           ` : ''}
           ${briefTitleHtml}
           ${parsedText}
+          ${mediaHtml}
           ${msg.tool_figure ? `<div class="applied-tool-mount" data-tool-figure="1" data-tool-index="${idx}" style="min-height:780px;"></div>` : ''}
           ${msg.tool_html && !msg.tool_figure ? `<div class="applied-tool-mount" data-tool-html="1" data-tool-index="${idx}"></div>` : ''}
           ${msg.tool_web ? `<div class="applied-tool-mount" data-tool-web="1" data-tool-index="${idx}"></div>` : ''}
@@ -3946,10 +3953,15 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
   } else if (mcpPayload.length) {
     typingMessage = `جارٍ ربط خوادم MCP: «<strong>${escapeHtml(mcpPayload.map(item => item.name).join('، '))}</strong>» مع «<strong>${escapeHtml(modelDisplayName)}</strong>»...`;
   }
-  if (freeMode) {
+  const selectedRecord = (window.openrouterModelsList || []).find(model => model && model.id === executionModel);
+  const mediaKind = (typeof modelOutputKind === 'function') ? modelOutputKind(selectedRecord || { output_modalities: ['text'] }) : 'text';
+  if (mediaKind === 'image') {
+    typingMessage = `🖼️ جارٍ توليد الصورة بنموذج «<strong>${escapeHtml(modelDisplayName)}</strong>»…`;
+  } else if (mediaKind === 'video') {
+    typingMessage = `🎬 جارٍ توليد الفيديو بنموذج «<strong>${escapeHtml(modelDisplayName)}</strong>». قد يستغرق هذا دقائق…`;
+  } else if (freeMode) {
     typingMessage = `💬 بحث حر: جارٍ إرسال رسالتك إلى «<strong>${escapeHtml(modelDisplayName)}</strong>» ليجيب من ذاكرته مباشرة...` + (chatWebSearchOn ? ' وأداة بحث الويب 🌐 بيده إن عجزت ذاكرته.' : '');
-  }
-  if (customMode) {
+  } else if (customMode) {
     typingMessage = `🔎 بحث مخصص عبر «<strong>${escapeHtml(modelDisplayName)}</strong>» في حدودك: ${customResearch.books.length ? customResearch.books.length + ' كتابًا مختارًا' : 'المكتبة كلها'}، وحتى ${CUSTOM_LENGTH_WITNESSES[customResearch.length] || 150} شاهدًا...`;
   }
 
@@ -4004,6 +4016,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
         agent_group: (freeMode || customMode) ? null : (window.chatRawMcp ? null : assignedGroupPayload),
         mcp_servers: (freeMode || customMode) ? [] : (window.chatRawMcp ? [] : mcpPayload),
         raw_mcp: !!window.chatRawMcp,
+        media_kind: mediaKind === 'image' || mediaKind === 'video' ? mediaKind : null,
         mcp_for_agents: localStorage.getItem('almojtahed_mcp_for_agents') === '1',
         agent_dispatch_mode: window.chatAgentDispatchMode || 'parallel',
         attachments: (attachments || []).map(a => ({
@@ -4036,6 +4049,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
       thinking_effort: data.thinking_effort || '',
       thinking_label: (typeof thinkingEffortLabel === 'function') ? thinkingEffortLabel(data.thinking_effort) : '',
       witnesses: Array.isArray(data.witnesses) ? data.witnesses : [],
+      media: (data.media && data.media.url) ? { kind: data.media.kind === 'video' ? 'video' : 'image', url: data.media.url, model: data.media.model || '' } : undefined,
       regenerated: !!options.regenerated,
       stage: (options && options.discussionMode === 'finalize') ? 'final'
         : (((options && options.discussionMode === 'open') || discussionState(session.id) === 'open') ? 'discussion' : undefined)
@@ -8328,6 +8342,16 @@ async function runTreeImageJob(selected, options) {
     if (typingBubble.parentNode) typingBubble.remove();
     if (typeof showToast === 'function') showToast('❌ ' + (e.message || 'تعذر التشجير المصور'), 8000);
   }
+}
+
+function chatMediaHtml(msg) {
+  const media = msg && msg.media;
+  if (!media || !media.url) return '';
+  const url = escapeHtml(media.url);
+  if (media.kind === 'video') {
+    return `<div class="chat-media-view"><video controls playsinline preload="metadata" src="${url}"></video></div>`;
+  }
+  return `<div class="chat-media-view"><img src="${url}" alt="صورة مولّدة" loading="lazy" onclick="zoomTreeImage('${url}', this)"></div>`;
 }
 
 // شبكة المشجّرات المصوّرة داخل رسالة: صور مصغرة تقسم المساحة، والضغط على أي صورة يكبّرها ملء الشاشة
