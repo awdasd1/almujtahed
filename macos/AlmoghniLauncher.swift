@@ -478,6 +478,15 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard !quitting else { return true }
+        // الزر الأحمر قرار إغلاق كامل لا إخفاء صامت: يُشرح للمستخدم أن
+        // التطبيق وخادمه سيتوقفان، فلا يبقى سيرفر عالقًا يربك التشغيل التالي.
+        let alert = NSAlert()
+        alert.messageText = "إغلاق المغني؟"
+        alert.informativeText = "سيتم إغلاق التطبيق وإيقاف خادمه المحلي حتى لا يبقى عالقًا في الخلفية. أبحاثك وإعداداتك محفوظة وتعود كما هي عند التشغيل القادم."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "إغلاق التطبيق")
+        alert.addButton(withTitle: "إلغاء")
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
         quitting = true
         onQuit?()
         return false
@@ -571,6 +580,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// ثم خرج، فتكون أيقونته هناك هي ما يشغّله دائمًا. نسخة أحدث أو مساوية
     /// مستقرة هناك تُفتح كما هي ولا تُستبدل.
     private var relocating = false
+    private var quitConfirmed = false
 
     private func removeLegacyBundles(in appsDir: String) {
         let fm = FileManager.default
@@ -685,7 +695,18 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        true
+        if sender !== window || relocating || quitConfirmed { return true }
+        // نافذة المشغّل نفسها: إغلاقها بالزر الأحمر يخضع لتأكيد نافذة
+        // التطبيق نفسه، حتى لا يتوقف الإعداد أو السيرفر بلا علم المستخدم.
+        let alert = NSAlert()
+        alert.messageText = "إغلاق المغني؟"
+        alert.informativeText = "سيتم إغلاق التطبيق وإيقاف خادمه المحلي حتى لا يبقى عالقًا في الخلفية. أبحاثك وإعداداتك محفوظة وتعود كما هي عند التشغيل القادم."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "إغلاق التطبيق")
+        alert.addButton(withTitle: "إلغاء")
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        quitApplication()
+        return false
     }
 
     private func registerAlmarai() {
@@ -1096,6 +1117,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func quitApplication() {
+        quitConfirmed = true
         phaseLabel.stringValue = "سيتم إغلاق التطبيق"
         shutdownServices()
         NSApp.terminate(nil)

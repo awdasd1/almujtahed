@@ -183,6 +183,21 @@ static class Palette
     public static readonly Color Danger = Color.FromArgb(140, 59, 51);
 }
 
+// تأكيد إغلاق موحّد: الزر الأحمر في أي نافذة قرار إغلاق كامل مشروح،
+// لا اختفاء صامت يبقي السيرفر عالقًا ويُربك التشغيل التالي.
+static class QuitPrompt
+{
+    public static bool Confirm(IWin32Window owner) =>
+        MessageBox.Show(
+            owner,
+            "سيتم إغلاق تطبيق المغني وإيقاف خادمه المحلي حتى لا يبقى عالقًا في الخلفية.\nأبحاثك وإعداداتك محفوظة وتعود كما هي عند التشغيل القادم.",
+            "إغلاق المغني",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign) == DialogResult.Yes;
+}
+
 sealed class InstallerForm : Form
 {
     readonly Label statusLabel;
@@ -494,11 +509,12 @@ sealed class InstallerForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (e.CloseReason == CloseReason.UserClosing && ready && !quitting)
+        // الزر الأحمر: تأكيد مشروح أولًا؛ الموافقة إغلاق كامل بالسيرفر،
+        // والرفض بقاء كما أنت — لم يعد إخفاءً صامتًا في الدرج.
+        if (e.CloseReason == CloseReason.UserClosing && !quitting)
         {
             e.Cancel = true;
-            Hide();
-            tray.Visible = true;
+            if (QuitPrompt.Confirm(this)) QuitApplication(skipConfirm: true);
             return;
         }
         if (!quitting && !ready)
@@ -761,14 +777,16 @@ sealed class InstallerForm : Form
             appWindow = new AppForm();
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.659");
+        appWindow.RequestQuit = () => QuitApplication(skipConfirm: true);
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.660");
         tray.Visible = false;
         ShowInTaskbar = false;
         Hide();
     }
 
-    void QuitApplication()
+    void QuitApplication(bool skipConfirm = false)
     {
+        if (!skipConfirm && !QuitPrompt.Confirm(this)) return;
         phaseLabel.Text = "سيتم إغلاق التطبيق";
         quitting = true;
         ShutdownServices();
@@ -1319,13 +1337,17 @@ sealed class AppForm : Form
         }
     }
 
+    // يُضبط من نافذة التنصيب: طلب خروج كامل (سيرفر + تطبيق) بعد التأكيد.
+    public Action? RequestQuit;
+
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (e.CloseReason == CloseReason.UserClosing)
         {
             e.Cancel = true;
             SaveBounds();
-            Hide();
+            if (QuitPrompt.Confirm(this)) RequestQuit?.Invoke();
+            return;
         }
         base.OnFormClosing(e);
     }
