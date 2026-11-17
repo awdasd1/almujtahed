@@ -8026,6 +8026,13 @@ async def designs_animate(req: DesignAnimateRequest, request: Request):
     target = (folder / name).resolve()
     if target.parent != folder or not target.is_file():
         raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
+    if "بخاري" in target.name:
+        try:
+            from journey_motion import render_bukhari_video
+            raw = await asyncio.to_thread(render_bukhari_video, target)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"تعذر تحريك التصميم: {exc}")
+        return {"ok": True, "video_url": _save_chat_media(current_owner_id(request), raw, "mp4"), "model": "رحلة مركبة"}
     key = owner_openrouter_key(request, req.api_key)
     if not key:
         raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في تبويب الخدمات")
@@ -8833,7 +8840,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.669"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.670"},
         },
     })
     if opened.get("error"):

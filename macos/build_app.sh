@@ -19,6 +19,10 @@ cp -p "$ROOT/.gitignore" "$ROOT/README.md" "$ROOT/changes.md" "$ROOT/dev.md" \
   "$ROOT/local_bundle.py" \
   "$STAGE/source/"
 cp -p "$ROOT/web_ui/server.py" "$STAGE/source/web_ui/server.py"
+cp -p "$ROOT/web_ui/journey_motion.py" "$STAGE/source/web_ui/journey_motion.py"
+mkdir -p "$STAGE/source/web_ui/static/motion/bukhari"
+cp -p "$ROOT/web_ui/static/motion/bukhari/"*.png "$STAGE/source/web_ui/static/motion/bukhari/"
+cp -p "$ROOT/web_ui/static/js/designs.js" "$STAGE/source/web_ui/static/js/designs.js"
 cp -p "$ROOT/web_ui/shamela_local_mcp.py" "$ROOT/web_ui/almoghni_mcp_server.py" \
   "$ROOT/web_ui/shamela_link.py" "$ROOT/web_ui/shamela_search.py" "$ROOT/web_ui/shamela_bridge_worker.py" \
   "$ROOT/web_ui/library_search.py" "$ROOT/web_ui/build_library_index.py" \
