@@ -11329,7 +11329,29 @@ body::-webkit-scrollbar,
   --ms-border-alpha: 55%;
   --ms-title-size: 22px;
   font-family: var(--ms-text-font, inherit);
+  font-size: var(--ms-text-size, 15px);
   color: var(--ms-text-color, inherit);
+}
+#paneManuscripts .ms-sub,
+#paneManuscripts .ms-hint,
+#paneManuscripts .ms-models-note,
+#paneManuscripts .ms-auto-step,
+#paneManuscripts .ms-auto-log,
+#paneManuscripts .ms-discuss-user,
+#paneManuscripts .ms-discuss-ai,
+#paneManuscripts .ms-stage-node,
+#paneManuscripts .ms-group-agent,
+#paneManuscripts .ms-empty,
+#paneManuscripts p,
+#paneManuscripts li,
+#paneManuscripts label,
+#paneManuscripts summary,
+#paneManuscripts button,
+#paneManuscripts input,
+#paneManuscripts textarea,
+#paneManuscripts select {
+  font-family: var(--ms-text-font, inherit) !important;
+  font-size: var(--ms-text-size, 15px) !important;
 }
 #paneManuscripts::before {
   content: "";
@@ -11352,9 +11374,14 @@ body::-webkit-scrollbar,
 #paneManuscripts .ms-create-title,
 #paneManuscripts .ms-project-card-title,
 #paneManuscripts .ms-margin-title {
-  font-family: var(--ms-title-font, var(--ms-text-font, inherit));
-  font-size: var(--ms-title-size);
-  color: var(--ms-title-color, inherit);
+  font-family: var(--ms-title-font, var(--ms-text-font, inherit)) !important;
+  font-size: var(--ms-title-size) !important;
+  color: var(--ms-title-color, var(--ms-text-color, inherit)) !important;
+}
+#paneManuscripts h2.ms-title {
+  font-family: var(--ms-main-font, var(--ms-text-font, var(--ms-title-font, inherit))) !important;
+  font-size: var(--ms-title-size) !important;
+  color: var(--ms-main-color, var(--ms-text-color, var(--ms-title-color, inherit))) !important;
 }
 /* حاويات التبويب: لونها وحدودها من الإعدادات */
 #paneManuscripts .ms-create-card,

@@ -66,7 +66,7 @@ const DEFAULT_SETTINGS = {
   msBgUrl: '', msBgMode: 'cover', msBgSize: 100, msBgOpacity: 55, msBgBlur: 0,
   msCardColor: '#fdfaf4', msCardOpacity: 12, msBorderColor: '#c9c2b8', msBorderOpacity: 55,
   msTitleFont: 'google:Amiri', msTitleSize: 22, msTitleColor: '',
-  msTextFont: '', msTextColor: '',
+  msTextFont: '', msTextSize: 15, msTextColor: '',
   textSize: 19,
   providers: {
     claude: '',
@@ -867,7 +867,9 @@ function applyMsVisual() {
   pane.style.setProperty('--ms-border-alpha', `${Math.max(0, Math.min(100, parseInt(s.msBorderOpacity, 10) || 0))}%`);
   pane.style.setProperty('--ms-title-font', stackForFontChoice(s.msTitleFont || 'google:Amiri'));
   pane.style.setProperty('--ms-title-size', `${Math.max(14, Math.min(40, parseInt(s.msTitleSize, 10) || 22))}px`);
+  pane.style.setProperty('--ms-main-font', stackForFontChoice(s.msTextFont || s.msTitleFont || 'google:Amiri'));
   const textFont = s.msTextFont ? stackForFontChoice(s.msTextFont) : '';
+  pane.style.setProperty('--ms-text-size', `${Math.max(12, Math.min(28, parseInt(s.msTextSize, 10) || 15))}px`);
   if (textFont) pane.style.setProperty('--ms-text-font', textFont);
   else pane.style.removeProperty('--ms-text-font');
   const textColor = msHex(s.msTextColor, '');
@@ -876,6 +878,9 @@ function applyMsVisual() {
   const titleColor = msHex(s.msTitleColor, '');
   if (titleColor) pane.style.setProperty('--ms-title-color', titleColor);
   else pane.style.removeProperty('--ms-title-color');
+  const mainColor = textColor || titleColor;
+  if (mainColor) pane.style.setProperty('--ms-main-color', mainColor);
+  else pane.style.removeProperty('--ms-main-color');
   const preview = document.getElementById('msTitlePreview');
   if (preview) {
     preview.style.setProperty('font-family', stackForFontChoice(s.msTitleFont || 'google:Amiri'), 'important');
@@ -885,6 +890,7 @@ function applyMsVisual() {
   const textPreview = document.getElementById('msTextPreview');
   if (textPreview) {
     textPreview.style.setProperty('font-family', textFont || 'inherit', 'important');
+    textPreview.style.setProperty('font-size', pane.style.getPropertyValue('--ms-text-size'), 'important');
     textPreview.style.setProperty('color', textColor || '', 'important');
   }
 }
@@ -908,6 +914,8 @@ function populateMsVisual() {
   setTxt('msBorderOpacityVal', `${toArabicDigits(s.msBorderOpacity ?? 55)}٪`);
   setVal('msTitleSize', String(s.msTitleSize ?? 22));
   setTxt('msTitleSizeVal', `${toArabicDigits(s.msTitleSize ?? 22)} بكسل`);
+  setVal('msTextSize', String(s.msTextSize ?? 15));
+  setTxt('msTextSizeVal', `${toArabicDigits(s.msTextSize ?? 15)} بكسل`);
   setVal('msTextColor', msHex(s.msTextColor, '#2A221A'));
   setVal('msTitleColor', msHex(s.msTitleColor, '#1C1611'));
   fillMsFontSelect('msTitleFontSelect', s.msTitleFont || 'google:Amiri', false);
@@ -948,7 +956,7 @@ function fillMsFontSelect(selectId, selected, allowCurrent) {
 }
 
 function handleMsSetting(key, value) {
-  const numeric = ['msBgOpacity', 'msBgSize', 'msBgBlur', 'msCardOpacity', 'msBorderOpacity', 'msTitleSize'];
+  const numeric = ['msBgOpacity', 'msBgSize', 'msBgBlur', 'msCardOpacity', 'msBorderOpacity', 'msTitleSize', 'msTextSize'];
   currentSettings[key] = numeric.includes(key) ? parseInt(value, 10) : value;
   if (key === 'msTextColor' || key === 'msTitleColor') {
     const el = document.getElementById(key);
