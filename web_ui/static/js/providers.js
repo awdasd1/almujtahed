@@ -1387,7 +1387,7 @@ async function testTavilyConnection() {
         badge.style.color = '#10b981';
       }
     } else {
-      showToast(`فشل الاتصال بـ Tavily: ${data.detail || data.error || 'خطأ غير معروف'}`);
+      showToast(`فشل الاتصال بـ Tavily: ${data.message || data.detail || data.error || 'خطأ غير معروف'}`);
     }
   } catch (err) {
     showToast(`خطأ في الاتصال: ${err.message}`);

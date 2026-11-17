@@ -8626,7 +8626,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.663"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.664"},
         },
     })
     if opened.get("error"):
@@ -23197,23 +23197,41 @@ def _registry_result(url: str) -> bool:
     return any(host == domain or host.endswith("." + domain) for domain in TOOL_REGISTRY_DOMAINS)
 
 
-def _tavily_search_sync(query: str, key: str, max_results: int = 5, include_domains: Optional[List[str]] = None, timeout: int = 35) -> Dict[str, Any]:
+def _tavily_search_sync(query: str, key: str, max_results: int = 5, include_domains: Optional[List[str]] = None, timeout: int = 35, search_depth: str = "advanced") -> Dict[str, Any]:
+    # العقد الحالي ترويسة Bearer. إن رُفض المفتاح بها تُعاد المحاولة داخل الجسم للمفاتيح الأقدم.
     payload = {
-        "api_key": key,
         "query": query,
-        "search_depth": "advanced",
+        "search_depth": search_depth if search_depth in ("basic", "advanced") else "advanced",
         "include_answer": True,
         "max_results": max(1, min(int(max_results or 5), 8)),
     }
     if include_domains:
         payload["include_domains"] = include_domains
-    request = urllib.request.Request(
-        "https://api.tavily.com/search",
-        headers={"Content-Type": "application/json"},
-        data=json.dumps(payload).encode("utf-8"),
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    def _call(headers: Dict[str, str], extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        body = dict(payload)
+        if extra:
+            body.update(extra)
+        request = urllib.request.Request(
+            "https://api.tavily.com/search",
+            headers=headers,
+            data=json.dumps(body).encode("utf-8"),
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")[:300]
+            err = RuntimeError(f"HTTP {exc.code}: {detail or exc.reason}")
+            err.code = exc.code
+            raise err from None
+
+    try:
+        return _call({"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    except RuntimeError as exc:
+        if getattr(exc, "code", None) != 401:
+            raise
+        # مفاتيح أقدم ما زالت تُقبل داخل الجسم فقط.
+        return _call({"Content-Type": "application/json"}, {"api_key": key})
 
 
 @app.post("/api/tools/architect/chat")
@@ -26360,32 +26378,21 @@ async def tavily_search(req: TavilySearchRequest):
     if not key:
         return {"status": "error", "message": "يرجى إدخال مفتاح Tavily API"}
 
-    payload = {
-        "api_key": key,
-        "query": req.query,
-        "search_depth": req.search_depth or "advanced",
-        "include_answer": True,
-        "max_results": req.max_results or 5
-    }
-    if req.include_domains:
-        payload["include_domains"] = req.include_domains
-
     try:
-        t_req = urllib.request.Request(
-            "https://api.tavily.com/search",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps(payload).encode("utf-8")
+        data = await asyncio.to_thread(
+            _tavily_search_sync, req.query, key, req.max_results or 5, req.include_domains or None, 30, req.search_depth or "advanced"
         )
-        with urllib.request.urlopen(t_req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return {
-                "status": "ok",
-                "answer": data.get("answer", ""),
-                "results": data.get("results", [])
-            }
+        return {
+            "status": "ok",
+            "answer": data.get("answer", ""),
+            "results": data.get("results", [])
+        }
     except Exception as e:
         print(f"Tavily search error: {e}")
-        return {"status": "error", "message": str(e)}
+        msg = str(e)
+        if "401" in msg:
+            msg = "رفضت Tavily المفتاح (401): المفتاح غير صالح أو غير مكتمل. أنشئ مفتاحًا من حساب Tavily والصقه كاملًا ثم احفظه."
+        return {"status": "error", "message": msg}
 class AstronomyVerifyRequest(BaseModel):
     event_text: str
     year: Optional[int] = None
@@ -27184,23 +27191,10 @@ def _search_similar_research(query: str, tavily_key: str, max_results: int = 5) 
     if not key:
         return {"error": "مفتاح بحث الويب غير مضبوط. أخبر الباحث بإضافته في تبويب الخدمات.", "results": []}
     limit = min(max(int(max_results or 5), 3), 6)
-    payload = {
-        "api_key": key,
-        "query": (query or "")[:400],
-        "search_depth": "advanced",
-        "include_answer": True,
-        "max_results": limit
-    }
-    request = urllib.request.Request(
-        "https://api.tavily.com/search",
-        headers={"Content-Type": "application/json"},
-        data=json.dumps(payload).encode("utf-8")
-    )
     try:
-        with urllib.request.urlopen(request, timeout=25) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = _tavily_search_sync((query or "")[:400], key, limit, timeout=25)
     except Exception as exc:
-        return {"error": f"تعذر بحث الويب: {type(exc).__name__}", "results": []}
+        return {"error": f"تعذر بحث الويب: {exc}", "results": []}
     results = []
     for item in (data.get("results") or [])[:limit]:
         results.append({
