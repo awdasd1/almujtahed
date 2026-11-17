@@ -867,7 +867,6 @@ function applyMsVisual() {
   pane.style.setProperty('--ms-border-alpha', `${Math.max(0, Math.min(100, parseInt(s.msBorderOpacity, 10) || 0))}%`);
   pane.style.setProperty('--ms-title-font', stackForFontChoice(s.msTitleFont || 'google:Amiri'));
   pane.style.setProperty('--ms-title-size', `${Math.max(14, Math.min(40, parseInt(s.msTitleSize, 10) || 22))}px`);
-  pane.style.setProperty('--ms-main-font', stackForFontChoice(s.msTextFont || s.msTitleFont || 'google:Amiri'));
   const textFont = s.msTextFont ? stackForFontChoice(s.msTextFont) : '';
   pane.style.setProperty('--ms-text-size', `${Math.max(12, Math.min(28, parseInt(s.msTextSize, 10) || 15))}px`);
   if (textFont) pane.style.setProperty('--ms-text-font', textFont);
@@ -878,9 +877,6 @@ function applyMsVisual() {
   const titleColor = msHex(s.msTitleColor, '');
   if (titleColor) pane.style.setProperty('--ms-title-color', titleColor);
   else pane.style.removeProperty('--ms-title-color');
-  const mainColor = textColor || titleColor;
-  if (mainColor) pane.style.setProperty('--ms-main-color', mainColor);
-  else pane.style.removeProperty('--ms-main-color');
   const preview = document.getElementById('msTitlePreview');
   if (preview) {
     preview.style.setProperty('font-family', stackForFontChoice(s.msTitleFont || 'google:Amiri'), 'important');

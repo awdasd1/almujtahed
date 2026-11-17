@@ -11126,6 +11126,11 @@ body::-webkit-scrollbar,
 /* ===== تحقيق المخطوطات ===== */
 .ms-wrap { max-width: 1180px; margin: 0 auto; padding: 18px 14px 40px; }
 .ms-title { margin: 0 0 6px; font-size: 22px; }
+#paneManuscripts > h2.ms-title {
+  margin: 0;
+  padding: 18px 20px 6px;
+  text-align: center;
+}
 .ms-sub { margin: 0 0 16px; opacity: .8; font-size: 13.5px; max-width: 760px; }
 .ms-create-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
 .ms-mode-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
@@ -11374,14 +11379,9 @@ body::-webkit-scrollbar,
 #paneManuscripts .ms-create-title,
 #paneManuscripts .ms-project-card-title,
 #paneManuscripts .ms-margin-title {
-  font-family: var(--ms-title-font, var(--ms-text-font, inherit)) !important;
+  font-family: var(--ms-title-font, inherit) !important;
   font-size: var(--ms-title-size) !important;
-  color: var(--ms-title-color, var(--ms-text-color, inherit)) !important;
-}
-#paneManuscripts h2.ms-title {
-  font-family: var(--ms-main-font, var(--ms-text-font, var(--ms-title-font, inherit))) !important;
-  font-size: var(--ms-title-size) !important;
-  color: var(--ms-main-color, var(--ms-text-color, var(--ms-title-color, inherit))) !important;
+  color: var(--ms-title-color, inherit) !important;
 }
 /* حاويات التبويب: لونها وحدودها من الإعدادات */
 #paneManuscripts .ms-create-card,
