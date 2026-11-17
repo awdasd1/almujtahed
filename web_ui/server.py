@@ -4856,6 +4856,17 @@ def _canon_supports_query(query_norm: str, canon: str) -> bool:
         return True
     return len(query_norm) >= 10 and query_norm in canon_norm
 
+def _book_identity_resolve(query: str):
+    """محلّل هوية الكتب الجديد؛ None عند إطفائه أو عطله ليكمل خط الرجعة القديم."""
+    try:
+        import book_identity
+        if not book_identity.enabled():
+            return None
+        return book_identity.resolve_book(str(query or ""), str(DB_INDEX_PATH))
+    except Exception:
+        return None
+
+
 def _choose_book_rel_path(book_title: str) -> Optional[str]:
     ranked = _rank_book_rel_paths(book_title)
     return ranked[0][0] if ranked else None
@@ -4984,6 +4995,24 @@ def _rank_book_rel_paths(book_title: str) -> List[Tuple[str, int]]:
             if score >= 500 and row["rel_path"]:
                 ranked.append((row["rel_path"], score))
         ranked.sort(key=lambda item: item[1], reverse=True)
+        if ranked and ranked[0][1] >= 1800:
+            return ranked[:6]
+        # خط جديد فوق القديم: هوية هجينة (اسم مشهور/طبعة مختلفة/مؤلف).
+        # المطابقة القديمة القوية (>=1800) تبقى كما هي خطَّ رجعة، والضعيفة
+        # (شذرات قد تلتقط كتابًا آخر) يعلو عليها حسم الهوية إن ثبت،
+        # وعند الشك يُسجَّل المرشحون ولا يُستبعد الكتاب بصمت
+        ident = _book_identity_resolve(primary)
+        if ident and ident.get("status") == "resolved" and ident.get("book_ids"):
+            try:
+                cursor.execute("SELECT rel_path FROM books WHERE book_id = ? LIMIT 1", (ident["book_ids"][0],))
+                row = cursor.fetchone()
+                if row and row["rel_path"]:
+                    return [(row["rel_path"], 2500)] + ranked[:5]
+            except Exception:
+                pass
+        elif ident and ident.get("candidates"):
+            tops = "؛ ".join(f"{c['title']} ({c['confidence']})" for c in ident["candidates"][:3])
+            print(f"📚 [BookIdentity] مرشحون بلا حسم لـ«{primary}»: {tops}", flush=True)
         return ranked[:6]
     except Exception as e:
         print(f"Error resolving book path from db: {e}")
@@ -8068,7 +8097,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.649"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.650"},
         },
     })
     if opened.get("error"):
@@ -9794,7 +9823,14 @@ def resolve_canonical_book_name(name: str, cursor=None) -> str:
             return r["title_ar"] if hasattr(r, "__getitem__") else r[0]
     except Exception as e:
         print(f"Book resolve error for '{name}': {e}")
-        
+
+    # آخر شبكة: هوية هجينة (اسم مشهور/بداية مختلفة/طبعة) قبل رد الاسم كما هو
+    ident = _book_identity_resolve(lookup_name)
+    if ident and ident.get("status") == "resolved" and ident.get("title"):
+        return ident["title"]
+    if ident and ident.get("candidates"):
+        tops = "؛ ".join(f"{c['title']} ({c['confidence']})" for c in ident["candidates"][:3])
+        print(f"📚 [BookIdentity] «{lookup_name}» مرشحون بلا حسم: {tops}", flush=True)
     return lookup_name
 
 
@@ -10475,6 +10511,21 @@ def _selected_book_ids(selected_books, cursor) -> List[str]:
             row = None
         if row and str(row["book_id"]) not in ids:
             ids.append(str(row["book_id"]))
+    # هوية هجينة فوق المسار القديم: اسم مشهور أو طبعة مختلفة لا يُسقط الكتاب،
+    # وطبعات العمل المحسوم تُضمّ، والملتبس يُسجَّل بمرشحيه بدل حذفه بصمت
+    for b in selected_books:
+        ident = _book_identity_resolve(str(b))
+        if not ident:
+            continue
+        if ident.get("status") == "resolved":
+            for bid in ident.get("book_ids") or []:
+                if str(bid) not in ids:
+                    ids.append(str(bid))
+        elif ident.get("candidates"):
+            tops = "؛ ".join(f"{c['title']} ({c['confidence']})" for c in ident["candidates"][:3])
+            print(f"📚 [BookIdentity] «{b}» بلا حسم آلي — مرشحون: {tops}", flush=True)
+        else:
+            print(f"📚 [BookIdentity] «{b}» لم يُحلّ في فهرس الهوية ولا في المسار القديم", flush=True)
     return ids
 
 
