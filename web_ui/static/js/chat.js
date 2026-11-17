@@ -4314,7 +4314,7 @@ function buildRiskRegisterMd(events, opts) {
   if (opts.verdict) meta.push('**الحكم العام:** ' + opts.verdict);
   if (opts.officer) meta.push('**مسؤول المخاطر:** ' + opts.officer);
   if (meta.length) L.push(meta.join(' · '), '');
-  L.push('## 📊 ملخص السجل', '', '| الخطورة | البنود | مفتوحة | عولجت آليًا |', '|---|---|---|---|');
+  L.push('## 📊 ملخص السجل', '', '| الخطورة | البنود | مفتوحة | أُغلقت / عولجت |', '|---|---|---|---|');
   ['عالية', 'متوسطة', 'منخفضة'].forEach(cls => {
     const grp = ev.filter(e => e.cls === cls);
     if (!grp.length) return;
@@ -4370,25 +4370,40 @@ async function runResearchAutofix() {
     const s = data.summary || {};
     if (s.changed) {
       msg.content = data.html;
-      if (typeof saveChatSessions === 'function') saveChatSessions();
       renderSessionMessages(activeSessionId);
     }
+    // تُحفظ نتيجة الإصلاح على الجلسة: إعادة فتح النافذة تُظهر أثره ونسبته
+    // بدل قائمة جامدة لا تدل على ما عولج فعلًا.
+    session.lastAutofix = { ts: new Date().toISOString(), summary: s };
+    if (typeof saveChatSessions === 'function') saveChatSessions();
     const fixed = [];
     if (s.takhrij_fixed) fixed.push(`ضبط تخريج وطبعاته: ${s.takhrij_fixed}`);
     if (s.repaired) fixed.push(`مواضع إحالات صُححت: ${s.repaired}`);
     if (s.healed) fixed.push(`إحالات شُفيت وخُتمت: ${s.healed}`);
     if (s.excluded_outside) fixed.push(`نقول خارج المكتبة استُبعدت: ${s.excluded_outside}`);
-    const remain = [];
-    if (s.unverified) remain.push(`نقول لم تثبت آليًا وبقيت للمراجعة: ${s.unverified}`);
-    if (s.sahihayn_missed) remain.push(`تخريجات ناقصة (ثابتة في الصحيحين): ${s.sahihayn_missed}`);
-    (s.madhhab_gaps || []).forEach(g => remain.push(`قصور استغراق ${g.madhhab}: ${g.books} كتابًا في ${g.layers} طبقة — يحتاج بحثًا تكميليًا`));
+    if (s.tier_resolved) fixed.push(`وسيط وحيد وُجد له أصل: ${s.tier_resolved}`);
+    const ratio = s.checked ? Math.round(100 * (s.checked - (s.unverified || 0)) / s.checked) : null;
+    const cell = x => String(x || '').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 150);
     const md = ['## 🔧 نتيجة الإصلاح الآلي الشامل', '',
-      s.changed ? 'طُبّق على الإجابة المحفوظة وحُفظت مصححة.' : 'لا تغيير: الإجابة مطابقة لبوابة التوثيق أصلًا.', '',
-      fixed.length ? '### ✅ ما أُصلح\n' + fixed.map(x => '- ' + x).join('\n') : '### ✅ ما أُصلح\n- لا بنود قابلة للإصلاح الآلي ظهرت.',
-      '',
-      remain.length ? '### ⚠️ ما بقي — يحتاج بحثًا تكميليًا أو قرارًا\n' + remain.map(x => '- ' + x).join('\n') : '### ⚠️ ما بقي\n- لا شيء مفتوحًا في فحص التوثيق.',
-      '', '---', '', data.record || ''].join('\n');
-    if (panel) renderMarkdownInto(panel, md);
+      s.changed ? 'طُبّق على الإجابة المحفوظة وحُفظت مصححة.' : 'لا تغيير: الإجابة مطابقة لبوابة التوثيق أصلًا.',
+      ratio !== null ? `**نسبة إغلاق فحص التوثيق: ${ratio}٪** — فُحص ${s.checked} نقلًا، ثبت أو صُحّح منها ${s.checked - (s.unverified || 0)}، وبقي ${s.unverified || 0} للمراجعة البشرية.` : '', '',
+      fixed.length ? '### ✅ ما أُصلح في هذه الجولة\n' + fixed.map(x => '- ' + x).join('\n') : '### ✅ ما أُصلح في هذه الجولة\n- لا بنود قابلة للإصلاح الآلي ظهرت.', ''];
+    const fails = s.failures || [];
+    if (fails.length) {
+      md.push('### ⚠️ ما بقي — يحتاج بحثًا تكميليًا أو قرارًا', '', '| النقل | رقم الحاشية | سبب البقاء |', '|---|---|---|');
+      fails.slice(0, 12).forEach(f => md.push(`| «${cell((f.quote || '').slice(0, 90))}» | ${f.num ?? '—'} | ${cell(f.reason)} |`));
+      md.push('');
+    } else md.push('### ⚠️ ما بقي\n- لا شيء مفتوحًا في فحص التوثيق.', '');
+    if ((s.madhhab_gaps || []).length) md.push('قصور استغراق باقٍ: ' + s.madhhab_gaps.map(g => `${g.madhhab} (${g.books} كتابًا في ${g.layers} طبقة)`).join('، ') + ' — يحتاج بحثًا تكميليًا لا إصلاحًا آليًا.', '');
+    if ((s.hadith_core_gaps || []).length) md.push('أصول حديثية غائبة بلا بطاقة ولا تصريح خلو: ' + s.hadith_core_gaps.map(g => g.work).join('، ') + '.', '');
+    // المراجع لا تُعاد طباعتها كاملة عند كل إصلاح: دلتا فقط.
+    if (s.refs_after !== undefined) {
+      md.push(`**المراجع المستشهد بها في الجواب: ${s.refs_before} ← ${s.refs_after} كتابًا**`
+        + ((s.refs_added || []).length ? `؛ أُضيف أو صُحّح إليها في هذه الجولة: ${s.refs_added.map(r => r.title).join('، ')}` : '؛ لا مراجع مضافة')
+        + (s.refs_removed ? `؛ وحُذف منها ${s.refs_removed} باستبعاد نقولها` : '')
+        + '. القائمة الكاملة كما هي تحت الجواب، ولا تُعاد طباعتها هنا.');
+    }
+    if (panel) renderMarkdownInto(panel, md.join('\n'));
     if (typeof showToast === 'function') showToast(s.changed ? 'اكتمل الإصلاح الآلي وحُفظت الإجابة مصححة' : 'الإجابة سليمة توثيقيًا — لا إصلاح لزم', 4000);
   } catch (e) {
     if (panel) panel.innerHTML = '<div style="padding:6px;">تعذر الإصلاح الآلي: ' + String(e && e.message || e) + '</div>';
@@ -4416,26 +4431,64 @@ async function toggleRiskControlPanel() {
   }
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const events = pkg.risk_events || [];
-  let h = '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">'
-    + '<button type="button" class="btn-msg-export" onclick="runResearchAutofix()" style="font-weight:700;">🔧 إصلاح آلي شامل</button>'
-    + '<span style="font-size:11.5px; opacity:.85;">يمرّر الإجابة على بوابة التوثيق: ضبط التخريج والطبعات والمواضع، شفاء الإحالات، استبعاد ما خارج المكتبة — وما لا يصلحه إلا بحث أو قرار يبقى مذكورًا بصراحة.</span></div>';
+  const isDone = e => /^(مُغلق|عولج آليًا|موثق بقرار)/.test(e.status || '');
+  const doneN = events.filter(isDone).length;
+  const pct = events.length ? Math.round(100 * doneN / events.length) : 100;
+  const treats = pkg.risk_treatments || [];
+  const lastTreat = treats.length ? treats[treats.length - 1] : null;
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  const la = session && session.lastAutofix ? session.lastAutofix : null;
+  let h = '<div style="border:1px solid rgba(150,130,90,.35); border-radius:10px; padding:10px 12px; margin-bottom:10px;">'
+    + `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px;"><b>📊 نسبة المعالجة: ${pct}٪</b><span style="font-size:12px;">أُغلق ${doneN} من ${events.length} بندًا · المفتوح ${events.length - doneN}</span></div>`
+    + `<div style="height:8px; background:rgba(150,130,90,.18); border-radius:6px; margin-top:7px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:linear-gradient(90deg,#b98a2f,#d9a400);"></div></div>`;
+  if (lastTreat) {
+    const closedT = (lastTreat.items || []).filter(t => t.verdict === 'مُغلق').length;
+    h += `<div style="font-size:12px; margin-top:7px;">آخر معالجة عبر المدير (${esc(String(lastTreat.ts || '').slice(0, 10))}): أُغلق ${closedT} من ${(lastTreat.items || []).length} بندًا مرسلًا — وما بقي مفتوحًا سببه مكتوب تحت كل بند أدناه.</div>`;
+  }
+  if (la && la.summary) {
+    const s = la.summary;
+    const r = s.checked ? Math.round(100 * (s.checked - (s.unverified || 0)) / s.checked) : null;
+    h += `<div style="font-size:12px; margin-top:5px;">آخر إصلاح آلي (${esc(String(la.ts || '').slice(0, 16).replace('T', ' '))}): نسبة إغلاق فحص التوثيق ${r !== null ? r + '٪' : '—'}، بقي ${(s.failures || []).length} موضعًا منبّهًا، والمراجع ${s.refs_before} ← ${s.refs_after}.</div>`;
+  }
+  h += '<div style="font-size:11.5px; opacity:.85; margin-top:7px;">ترتيب العمل: الإصلاح الآلي أولًا (ثوانٍ، من المحفوظ وحده)، ثم لا يُرسل إلى المدير إلا ما بقي بعده — وإرسال البنود للمدير جولة بحث جديدة بطيئة لا تُستعمل إلا لما يستحيل من المحفوظ.</div></div>';
+  h += '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">'
+    + '<button type="button" class="btn-msg-export" onclick="runResearchAutofix()" style="font-weight:700;">🔧 إصلاح آلي شامل (من المحفوظ — ثوانٍ)</button>'
+    + '<button type="button" class="btn-msg-export" onclick="produceFinalResearch()" style="font-weight:700;">🔒 إنشاء البحث النهائي القابل للطباعة</button>'
+    + '<button type="button" class="btn-msg-export" onclick="toggleRiskControlPanel()">إغلاق النافذة</button>'
+    + '<span style="font-size:11.5px; opacity:.85;">«إغلاق النافذة» يخفي هذا اللوح فقط ولا يغيّر شيئًا؛ والزر الأخير قبله هو وحده الذي يقفل العمل ويصوغ البحث النهائي النظيف للطباعة.</span></div>';
   panel.innerHTML = h + '<div id="riskRegisterView"></div><div id="riskChecklist"></div>';
   renderMarkdownInto(document.getElementById('riskRegisterView'),
     buildRiskRegisterMd(events, { verdict: pkg.risk_verdict, officer: pkg.risk_officer }));
   const list = document.getElementById('riskChecklist');
   if (!events.length) { list.innerHTML = '<div style="padding:4px;">لا أحداث مخاطر مسجلة في هذا البحث ضمن الحدود المعتمدة.</div>'; return; }
-  let c = '<div style="font-weight:700; margin:10px 0 5px;">معالجة بحثية عبر مدير المشروع — علّم ما لا يصلحه الإصلاح الآلي:</div>';
+  let c = '<div style="font-weight:700; margin:10px 0 5px;">معالجة بحثية عبر مدير المشروع — علّم ما لا يصلحه الإصلاح الآلي (البنود المُغلقة لا تظهر هنا):</div>';
   events.map((e, i) => [e, i]).forEach(([e, i]) => {
-    const st = e.status || '';
-    const done = st.startsWith('مُغلق') || st.startsWith('عولج آليًا') || st.startsWith('موثق بقرار');
-    if (done) return;
+    if (isDone(e)) return;
     const dot = e.cls === 'عالية' ? '#dc2626' : (e.cls === 'متوسطة' ? '#d9a400' : '#9ca3af');
+    const note = (e.status || '').replace(/^مفتوح[:：]?\s*/, '');
     c += `<label style="display:flex; gap:8px; align-items:flex-start; padding:6px 8px; border:1px solid rgba(150,130,90,.3); border-radius:8px; margin-bottom:5px;">
       <input type="checkbox" class="risk-item-check" value="${i}" style="margin-top:5px;">
-      <span style="flex:1;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${dot}; margin-left:5px;"></span><b>${esc(e.title)}</b><br><small>${esc(e.evidence)}</small></span></label>`;
+      <span style="flex:1;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${dot}; margin-left:5px;"></span><b>${esc(e.title)}</b><br><small>${esc(e.evidence)}</small>${note ? `<br><small style="color:#b3541e;">سبب البقاء — آخر تحقق: ${esc(note.slice(0, 220))}</small>` : ''}</span></label>`;
   });
-  c += '<div style="margin-top:8px;"><button type="button" class="btn-msg-export" onclick="sendRiskControlItems()">📨 إرسال البنود المعلّمة إلى مدير المشروع للمعالجة الفورية</button></div>';
+  c += '<div style="margin-top:8px;"><button type="button" class="btn-msg-export" onclick="sendRiskControlItems()">📨 إرسال البنود المعلّمة إلى مدير المشروع (بحث تكميلي — دقائق)</button></div>';
   list.innerHTML = c;
+}
+
+async function produceFinalResearch() {
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  if (!session) return;
+  const panel = document.getElementById('riskControlPanel');
+  if (panel) panel.style.display = 'none';
+  if (discussionState(activeSessionId) === 'open') { await finalizeDiscussion(); return; }
+  session.messages.push({
+    role: 'user',
+    content: '🔒 أعد صياغة البحث كاملًا صياغة نهائية معتمدة قابلة للطباعة النهائية، مستوعبًا حزمة البحث المحفوظة وتقارير الفريق وما اتفقنا عليه، ومعالجًا نواقص سجل التدقيق، ورقةً علمية محكمة بلا أي لغة من لغات عملية البحث والمناقشة وبلا تعليقات نقص أو خلل.'
+  });
+  setDiscussionState(activeSessionId, 'closed');
+  renderSessionMessages(activeSessionId);
+  if (typeof saveChatSessions === 'function') saveChatSessions();
+  await triggerChatCompletion(session, [], { discussionMode: 'finalize' });
+  if (typeof showToast === 'function') showToast('🔒 صيغ البحث النهائي القابل للطباعة', 3500);
 }
 
 async function sendRiskControlItems() {
