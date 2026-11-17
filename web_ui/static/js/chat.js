@@ -4482,11 +4482,16 @@ async function produceFinalResearch() {
   // النسخة النهائية من المحفوظ نفسه (بوابة + تنقية موضعية في ثوانٍ)،
   // لا إعادة كتابة مدير من سياق المحادثة تختصر البحث وتطول دقائق طويلة.
   const msgs = session.messages || [];
-  let src = null;
+  let src = null, srcIdx = -1;
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i];
-    if (m.role === 'assistant' && m.stage !== 'discussion' && (m.content || '').length > 500) { src = m; break; }
+    if (m.role === 'assistant' && m.stage !== 'discussion' && (m.content || '').length > 500) { src = m; srcIdx = i; break; }
   }
+  // مواد المناقشة اللاحقة للبحث: لا تدخل النهائية إلا بكتل توجيه
+  // ⟦إدراج-نهائي⟧ الصريحة من المدير، وتُزرع في مواضعها المعلنة.
+  const discussionTexts = msgs.slice(srcIdx + 1)
+    .filter(m => m.role === 'assistant' && m.stage === 'discussion')
+    .map(m => m.content || '');
   if (!src) { if (typeof showToast === 'function') showToast('لا بحث محفوظ في هذه المحادثة لإعداد نسخته النهائية', 3000); return; }
   if (typeof showToast === 'function') showToast('🔒 جارٍ إعداد النسخة النهائية من المحفوظ (بوابة التوثيق والتنقية)…', 3000);
   const t0 = Date.now();
@@ -4494,7 +4499,7 @@ async function produceFinalResearch() {
     const res = await fetch('/api/research-finalize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html: src.content, witnesses: src.witnesses || [] })
+      body: JSON.stringify({ html: src.content, witnesses: src.witnesses || [], discussion_texts: discussionTexts })
     });
     if (!res.ok) throw new Error('finalize ' + res.status);
     const data = await res.json();
@@ -4511,6 +4516,8 @@ async function produceFinalResearch() {
     if (s.takhrij_fixed) bits.push(`ضُبط ${s.takhrij_fixed} تخريجًا`);
     if (s.repaired) bits.push(`صُحّح ${s.repaired} موضعًا`);
     if (s.purged_paras) bits.push(`نُقّيت ${s.purged_paras} فقرة`);
+    if ((s.insertions_applied || []).length) bits.push(`أُدرجت ${s.insertions_applied.length} مادة من المناقشة في مواضعها (بعد حواشٍ ${s.insertions_applied.join('، ')})`);
+    if ((s.insertions_failed || []).length) bits.push(`تعذر إدراج مادة بعد حاشية ${s.insertions_failed.join('، ')} — راجع رقم الحاشية مع المدير`);
     if (s.unverified) bits.push(`بقي ${s.unverified} موضعًا للمراجعة (في التقرير لا في الورقة)`);
     if (typeof showToast === 'function') showToast('🔒 ' + bits.join(' · '), 6000);
   } catch (e) {
