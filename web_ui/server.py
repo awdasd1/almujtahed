@@ -4561,6 +4561,8 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
             cited_titles.append(seg)
     stats["cited_book_ids"] = cited
     stats["cited_titles"] = cited_titles
+    if not stats.get("skip_madhhab_coverage"):
+        stats["madhhab_coverage_gaps"] = _madhhab_coverage_gaps(cited, cited_titles)
     if stats.get("judge_healed"):
         print(f"🧭 [Citation Judge] شُفيت {stats['judge_healed']} إحالة بحكم النموذج بين مرشحين", flush=True)
     if stats.get("inherited_healed"):
@@ -4627,6 +4629,57 @@ def _authority_coverage_lines(cited_book_ids: List[str], cited_titles: List[str]
     return lines
 
 
+def _madhhab_coverage_gaps(cited_book_ids: List[str], cited_titles: List[str] = None) -> List[dict]:
+    """قصور استغراق المذاهب رقميًا: مذهب دخل البحث فاكتفى بكتاب واحد من
+    كتب طبقاته أو بطبقة واحدة — وهو القصور الذي تتكرر ملاحظته في التقارير
+    بلا محاسبة. مذهب لم يدخل البحث أصلًا (لا كتاب طبقات محالًا إليه) لا
+    يُحاسب هنا فلا ضجيج على بحوث لا فقه فيها."""
+    gaps: List[dict] = []
+    cited_titles_fold = [_fold_ar(t or "") for t in (cited_titles or [])]
+
+    def title_hit(book_title: str) -> bool:
+        words = [w for w in _fold_ar(book_title or "").split() if len(w) >= 4][:4]
+        if len(words) < 2:
+            return False
+        return any(sum(1 for w in words if w in ct) >= 2 for ct in cited_titles_fold)
+
+    try:
+        import library_search
+        cited_set = set(cited_book_ids or [])
+        for madhhab in ("الحنفي", "المالكي", "الشافعي", "الحنبلي", "الظاهري"):
+            data = library_search.madhhab_authorities(madhhab) or {}
+            # طبقات الضبط الاصطلاحي وشواهد النسبة ليست مصادر مذهب تُستغرق:
+            # كتاب مقارنة واحد فيها لا يجعل المذهب «داخلًا» في البحث.
+            layers = [l for l in (data.get("layers") or [])
+                      if "اصطلاح" not in (l.get("name") or "")
+                      and "شواهد" not in (l.get("name") or "")]
+            if not layers:
+                continue
+            hit_books: set = set()
+            hit_layers: List[str] = []
+            for layer in layers:
+                layer_hit = False
+                for b in (layer.get("books") or []):
+                    if str(b.get("book_id")) in cited_set or title_hit(b.get("title") or ""):
+                        hit_books.add(str(b.get("book_id") or b.get("title") or ""))
+                        layer_hit = True
+                if layer_hit:
+                    hit_layers.append(layer.get("name") or "")
+            if not hit_books:
+                continue  # المذهب لم يدخل هذا البحث
+            if len(hit_books) < 3 or len(hit_layers) < 2:
+                gaps.append({
+                    "madhhab": madhhab, "books": len(hit_books),
+                    "layers": len(hit_layers), "hit_layers": hit_layers,
+                    "missing_layers": [l.get("name") or "" for l in layers
+                                       if (l.get("name") or "") not in hit_layers],
+                    "single_book": len(hit_books) == 1,
+                    "single_layer": len(hit_layers) == 1})
+    except Exception:
+        pass
+    return gaps
+
+
 def _documentation_record(stats: dict) -> str:
     unverified = stats.get("unverified", 0)
     relocated = stats.get("relocated", 0)
@@ -4659,6 +4712,13 @@ def _documentation_record(stats: dict) -> str:
             f"ضبط التخريج: {len(_tf)} موضع تخريج لم يكن يحمل النص في طبعته المختومة "
             f"فصُحّح آليًا إلى موضعه ورقمه في الطبعة نفسها ({_samples}) — خلط الطبعات "
             "في الرقم والموضع ممنوع، وما صُحّح هنا كان سيمرّ بفحص «النص في الكتاب» العام.")
+    if stats.get("madhhab_coverage_gaps"):
+        for _g in stats["madhhab_coverage_gaps"]:
+            lines.append(
+                f"تنبيه استغراق المذاهب: المذهب {_g['madhhab']} دخل البحث فاكتفى "
+                f"بـ{_g['books']} كتابًا من كتب طبقاته في {_g['layers']} طبقة اعتماد"
+                + (f" (المفقود: {'، '.join(_g['missing_layers'][:3])})" if _g.get("missing_layers") else "")
+                + "؛ الاستغراق الأدنى: ثلاثة كتب من طبقتين على الأقل، وإلا عُدّ تحرير المذهب ناقصًا.")
     if stats.get("takhrij_sahihayn_missed"):
         _tm = stats["takhrij_sahihayn_missed"]
         _samples = "؛ ".join(
@@ -8317,7 +8377,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.651"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.652"},
         },
     })
     if opened.get("error"):
@@ -13364,6 +13424,15 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
                 f"{_info.get('count')} صفحة طبقات فقط من {len(_info.get('books') or [])} كتابًا لوكيل «{_info.get('agent', '')}»",
                 "مفتوح: تغطية المذهب من الاسترجاع العام أكثر منها من كتب طبقاته",
                 "راجع مراسي المسألة وكتب طبقات المذهب في madhhab_authority"))
+    # — قصور استغراق المذاهب في البحث النهائي (كتاب واحد أو طبقة واحدة)
+    for _g in (gs.get("madhhab_coverage_gaps") or []):
+        ev.append(_risk_event(
+            "madhhab_coverage_gap", "عالية" if _g.get("single_book") else "متوسطة",
+            f"قصور استغراق: المذهب {_g.get('madhhab')}",
+            f"اكتفى البحث بـ{_g.get('books')} كتابًا من كتب طبقات المذهب في {_g.get('layers')} طبقة اعتماد"
+            + (f"؛ المفقود: {'، '.join((_g.get('missing_layers') or [])[:3])}" if _g.get("missing_layers") else ""),
+            "مفتوح: تحرير المذهب في البحث ناقص الاستغراق",
+            "يُستكمل من كتب الطبقات المفقودة عبر وكيل تدقيق الاستغراق قبل الاعتماد، ولا يُقبل اكتفاء بكتاب أو طبقة"))
     # — نقول خارج المكتبة (قاعدة المكتبة الحاكمة)
     _ex = int(gs.get("excluded_outside") or 0)
     if _ex:
