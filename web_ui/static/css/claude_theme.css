@@ -11328,6 +11328,8 @@ body::-webkit-scrollbar,
   --ms-border: #c9c2b8;
   --ms-border-alpha: 55%;
   --ms-title-size: 22px;
+  font-family: var(--ms-text-font, inherit);
+  color: var(--ms-text-color, inherit);
 }
 #paneManuscripts::before {
   content: "";
@@ -11350,8 +11352,9 @@ body::-webkit-scrollbar,
 #paneManuscripts .ms-create-title,
 #paneManuscripts .ms-project-card-title,
 #paneManuscripts .ms-margin-title {
-  font-family: var(--ms-title-font, inherit);
+  font-family: var(--ms-title-font, var(--ms-text-font, inherit));
   font-size: var(--ms-title-size);
+  color: var(--ms-title-color, inherit);
 }
 /* حاويات التبويب: لونها وحدودها من الإعدادات */
 #paneManuscripts .ms-create-card,

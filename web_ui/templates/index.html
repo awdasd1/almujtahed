@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.646">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.647">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.646" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.647" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.646</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.647</span>
             </div>
 
             <div class="header-actions">
@@ -3853,6 +3853,24 @@
                             </div>
                         </div>
 
+                        <div class="settings-section-title" style="margin-top: 15px;">خط القسم</div>
+                        <div class="form-group">
+                            <label for="msTextFontSelect">نوع الخط</label>
+                            <select id="msTextFontSelect" class="form-select" onchange="handleMsSetting('msTextFont', this.value)"></select>
+                            <span class="font-role-preview" id="msTextPreview">نص قسم تحقيق المخطوطات</span>
+                            <input type="file" id="msTextFontUpload" class="form-input"
+                                accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+                                onchange="uploadMsTextFont(event)">
+                            <span class="form-help">نوع خط نصوص القسم. العناوين تبقى بخطها إن عُيّن لها خط مستقل.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="msTextColor">لون الخط</label>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="color" id="msTextColor" class="form-input" style="max-width:90px;padding:2px;height:38px;" value="#2A221A" onchange="handleMsSetting('msTextColor', this.value)">
+                                <button type="button" class="btn-flat-secondary" onclick="handleMsSetting('msTextColor', '')">اللون الافتراضي</button>
+                            </div>
+                        </div>
+
                         <div class="settings-section-title" style="margin-top: 15px;">خط العناوين في قسم المخطوطات</div>
                         <div class="form-group">
                             <label for="msTitleFontSelect">الخط</label>
@@ -3862,6 +3880,13 @@
                                 accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
                                 onchange="uploadMsTitleFont(event)">
                             <span class="form-help">خطوط جوجل من القائمة، أو ارفع خطًا خاصًا (TTF أو OTF أو WOFF) فيُعيَّن لعناوين هذا القسم.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="msTitleColor">لون الخط</label>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="color" id="msTitleColor" class="form-input" style="max-width:90px;padding:2px;height:38px;" value="#1C1611" onchange="handleMsSetting('msTitleColor', this.value)">
+                                <button type="button" class="btn-flat-secondary" onclick="handleMsSetting('msTitleColor', '')">لون القسم</button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label for="msTitleSize">مقاس الخط</label>
@@ -6390,24 +6415,24 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.646"></script>
+    <script src="/static/js/app.js?v=1.10.647"></script>
     <script src="/static/js/search.js?v=1.10.493"></script>
     <script src="/static/js/reader.js?v=1.10.493"></script>
     <script src="/static/js/force3d.js?v=1.10.493"></script>
     <script src="/static/js/share.js?v=1.10.493"></script>
-    <script src="/static/js/chat.js?v=1.10.646"></script>
+    <script src="/static/js/chat.js?v=1.10.647"></script>
     <script src="/static/js/designs.js?v=1.10.493"></script>
     <script src="/static/js/texts.js?v=1.10.493"></script>
-    <script src="/static/js/agents.js?v=1.10.646"></script>
+    <script src="/static/js/agents.js?v=1.10.647"></script>
     <script src="/static/js/providers.js?v=1.10.493"></script>
     <script src="/static/js/tools.js?v=1.10.493"></script>
     <script src="/static/js/shamela_link.js?v=1.10.493"></script>
-    <script src="/static/js/projects.js?v=1.10.646"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.646"></script>
+    <script src="/static/js/projects.js?v=1.10.647"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.647"></script>
     <script src="/static/js/archive.js?v=1.10.493"></script>
     <script src="/static/js/compare.js?v=1.10.493"></script>
     <script src="/static/js/local_models.js?v=1.10.493"></script>
-    <script src="/static/js/changelog.js?v=1.10.646"></script>
+    <script src="/static/js/changelog.js?v=1.10.647"></script>
 
     <script>
         window.refreshLucideIcons = function () {

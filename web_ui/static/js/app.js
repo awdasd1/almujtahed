@@ -65,7 +65,8 @@ const DEFAULT_SETTINGS = {
   printBgUrl: '', printBgMode: 'cover', printBgSize: 100, printBgOpacity: 15,
   msBgUrl: '', msBgMode: 'cover', msBgSize: 100, msBgOpacity: 55, msBgBlur: 0,
   msCardColor: '#fdfaf4', msCardOpacity: 12, msBorderColor: '#c9c2b8', msBorderOpacity: 55,
-  msTitleFont: 'google:Amiri', msTitleSize: 22,
+  msTitleFont: 'google:Amiri', msTitleSize: 22, msTitleColor: '',
+  msTextFont: '', msTextColor: '',
   textSize: 19,
   providers: {
     claude: '',
@@ -866,10 +867,25 @@ function applyMsVisual() {
   pane.style.setProperty('--ms-border-alpha', `${Math.max(0, Math.min(100, parseInt(s.msBorderOpacity, 10) || 0))}%`);
   pane.style.setProperty('--ms-title-font', stackForFontChoice(s.msTitleFont || 'google:Amiri'));
   pane.style.setProperty('--ms-title-size', `${Math.max(14, Math.min(40, parseInt(s.msTitleSize, 10) || 22))}px`);
+  const textFont = s.msTextFont ? stackForFontChoice(s.msTextFont) : '';
+  if (textFont) pane.style.setProperty('--ms-text-font', textFont);
+  else pane.style.removeProperty('--ms-text-font');
+  const textColor = msHex(s.msTextColor, '');
+  if (textColor) pane.style.setProperty('--ms-text-color', textColor);
+  else pane.style.removeProperty('--ms-text-color');
+  const titleColor = msHex(s.msTitleColor, '');
+  if (titleColor) pane.style.setProperty('--ms-title-color', titleColor);
+  else pane.style.removeProperty('--ms-title-color');
   const preview = document.getElementById('msTitlePreview');
   if (preview) {
     preview.style.setProperty('font-family', stackForFontChoice(s.msTitleFont || 'google:Amiri'), 'important');
     preview.style.setProperty('font-size', pane.style.getPropertyValue('--ms-title-size'), 'important');
+    preview.style.setProperty('color', titleColor || textColor || '', 'important');
+  }
+  const textPreview = document.getElementById('msTextPreview');
+  if (textPreview) {
+    textPreview.style.setProperty('font-family', textFont || 'inherit', 'important');
+    textPreview.style.setProperty('color', textColor || '', 'important');
   }
 }
 
@@ -892,28 +908,10 @@ function populateMsVisual() {
   setTxt('msBorderOpacityVal', `${toArabicDigits(s.msBorderOpacity ?? 55)}٪`);
   setVal('msTitleSize', String(s.msTitleSize ?? 22));
   setTxt('msTitleSizeVal', `${toArabicDigits(s.msTitleSize ?? 22)} بكسل`);
-  const select = document.getElementById('msTitleFontSelect');
-  if (select) {
-    const selected = s.msTitleFont || 'google:Amiri';
-    select.replaceChildren();
-    appendFontOption(select, 'system', 'خط النظام', stackForFontChoice('system'));
-    const googleGroup = document.createElement('optgroup');
-    googleGroup.label = 'خطوط جوجل';
-    GOOGLE_FONT_CATALOG.forEach((font) => {
-      appendFontOption(googleGroup, `google:${font.family}`, font.label, stackForFontChoice(`google:${font.family}`));
-    });
-    select.appendChild(googleGroup);
-    if (customFonts.length) {
-      const customGroup = document.createElement('optgroup');
-      customGroup.label = 'خطوط خاصة';
-      customFonts.forEach((font) => {
-        appendFontOption(customGroup, `custom:${font.filename}`, customFontLabel(font), stackForFontChoice(`custom:${font.filename}`));
-      });
-      select.appendChild(customGroup);
-    }
-    if ([...select.options].some((option) => option.value === selected)) select.value = selected;
-    select.dispatchEvent(new CustomEvent('theme-select-sync'));
-  }
+  setVal('msTextColor', msHex(s.msTextColor, '#2A221A'));
+  setVal('msTitleColor', msHex(s.msTitleColor, '#1C1611'));
+  fillMsFontSelect('msTitleFontSelect', s.msTitleFont || 'google:Amiri', false);
+  fillMsFontSelect('msTextFontSelect', s.msTextFont || '', true);
   const thumb = document.getElementById('msBgThumb');
   if (thumb) {
     const url = s.msBgUrl || '/static/img/ms-folio-bg.jpg';
@@ -925,9 +923,37 @@ function populateMsVisual() {
   applyMsVisual();
 }
 
+function fillMsFontSelect(selectId, selected, allowCurrent) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  select.replaceChildren();
+  if (allowCurrent) appendFontOption(select, '', 'خط الواجهة الحالي', 'inherit');
+  appendFontOption(select, 'system', 'خط النظام', stackForFontChoice('system'));
+  const googleGroup = document.createElement('optgroup');
+  googleGroup.label = 'خطوط جوجل';
+  GOOGLE_FONT_CATALOG.forEach((font) => {
+    appendFontOption(googleGroup, `google:${font.family}`, font.label, stackForFontChoice(`google:${font.family}`));
+  });
+  select.appendChild(googleGroup);
+  if (customFonts.length) {
+    const customGroup = document.createElement('optgroup');
+    customGroup.label = 'خطوط خاصة';
+    customFonts.forEach((font) => {
+      appendFontOption(customGroup, `custom:${font.filename}`, customFontLabel(font), stackForFontChoice(`custom:${font.filename}`));
+    });
+    select.appendChild(customGroup);
+  }
+  if ([...select.options].some((option) => option.value === selected)) select.value = selected;
+  select.dispatchEvent(new CustomEvent('theme-select-sync'));
+}
+
 function handleMsSetting(key, value) {
   const numeric = ['msBgOpacity', 'msBgSize', 'msBgBlur', 'msCardOpacity', 'msBorderOpacity', 'msTitleSize'];
   currentSettings[key] = numeric.includes(key) ? parseInt(value, 10) : value;
+  if (key === 'msTextColor' || key === 'msTitleColor') {
+    const el = document.getElementById(key);
+    if (el) el.value = msHex(value, key === 'msTitleColor' ? '#1C1611' : '#2A221A');
+  }
   persistFontSettings();
   applyMsVisual();
 }
@@ -988,6 +1014,30 @@ async function uploadMsTitleFont(event) {
     persistFontSettings();
     populateFontSelects();
     showToast('تم حفظ الخط وتعيينه لعناوين قسم المخطوطات');
+  } catch (error) {
+    showToast('تعذر رفع الخط');
+  }
+}
+
+async function uploadMsTextFont(event) {
+  const input = event.target;
+  const file = (input.files || [])[0];
+  input.value = '';
+  if (!file) return;
+  const body = new FormData();
+  body.append('file', file);
+  try {
+    const response = await fetch('/api/fonts/upload', { method: 'POST', body });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.font) {
+      showToast(apiErrorDetail(data, 'تعذر رفع الخط'));
+      return;
+    }
+    try { await loadCustomFonts(); } catch (error) {}
+    currentSettings.msTextFont = `custom:${data.font.filename}`;
+    persistFontSettings();
+    populateFontSelects();
+    showToast('تم حفظ الخط وتعيينه لنصوص قسم المخطوطات');
   } catch (error) {
     showToast('تعذر رفع الخط');
   }
@@ -1326,6 +1376,7 @@ async function deleteCustomFont(filename) {
     }
   });
   if (currentSettings.msTitleFont === `custom:${filename}`) currentSettings.msTitleFont = 'google:Amiri';
+  if (currentSettings.msTextFont === `custom:${filename}`) currentSettings.msTextFont = '';
   persistFontSettings();
   try {
     await loadCustomFonts();
