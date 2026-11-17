@@ -92,6 +92,28 @@ foreach ($file in $files) {
 }
 Set-SetupProgress 18
 
+# بذرة الحالة الافتراضية المشحونة مع المثبّت (وكلاء وبحوث ومشاريع وحزم
+# مخاطر بصورتها الحالية): تُعتمد فقط عند غياب البيانات الحية — تثبيت
+# نظيف — ولا تمسّ قاعدة مستخدم قائمة أبدًا.
+$seedDb = Join-Path $Runtime 'web_ui\seed_app_memory.db'
+$liveDb = Join-Path $Runtime 'web_ui\app_memory.db'
+if ((Test-Path -LiteralPath $seedDb) -and -not (Test-Path -LiteralPath $liveDb)) {
+    Copy-Item -LiteralPath $seedDb -Destination $liveDb -Force
+}
+foreach ($bgName in @('visual_background', 'print_background', 'ms_background')) {
+    $srcBg = Join-Path $Runtime "web_ui\seed_backgrounds\$bgName"
+    $dstBg = Join-Path $Runtime "web_ui\$bgName"
+    if ((Test-Path -LiteralPath $srcBg) -and -not (Test-Path -LiteralPath (Join-Path $dstBg 'background.jpg'))) {
+        New-Item -ItemType Directory -Force -Path $dstBg | Out-Null
+        Copy-Item -LiteralPath (Join-Path $srcBg '*') -Destination $dstBg -Recurse -Force
+    }
+}
+$seedUploads = Join-Path $Runtime 'web_ui\seed_uploads'
+$liveUploads = Join-Path $Runtime 'web_ui\uploads'
+if ((Test-Path -LiteralPath $seedUploads) -and -not (Test-Path -LiteralPath $liveUploads)) {
+    Copy-Item -LiteralPath $seedUploads -Destination $liveUploads -Recurse -Force
+}
+
 $venvPython = Join-Path $Runtime '.venv\Scripts\python.exe'
 Set-Location -LiteralPath $Runtime
 try { [System.IO.Directory]::SetCurrentDirectory($Runtime) } catch { }

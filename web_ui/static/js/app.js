@@ -1693,9 +1693,11 @@ document.addEventListener('keydown', (event) => {
 });
 
 function loadSettings() {
+  let stored = false;
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (raw) {
+      stored = true;
       const parsed = JSON.parse(raw);
       delete parsed.providers;
       migrateFontSettings(parsed);
@@ -1706,6 +1708,21 @@ function loadSettings() {
     console.error('Error reading settings from localStorage:', e);
   }
   applyMsVisual();
+  // بذرة الضبط المشحونة مع النسخة الافتراضية (خطوط وألوان وصور): تُزرع
+  // مرة واحدة عند أول تشغيل بلا ضبط محفوظ، ولا تعلو على ضبط المستخدم.
+  if (!stored && !window.__almoghniSeedSettingsTried) {
+    window.__almoghniSeedSettingsTried = true;
+    fetch('/static/default_settings.json').then(r => (r.ok ? r.json() : null)).then(seed => {
+      if (!seed || localStorage.getItem(STORAGE_KEYS.SETTINGS)) return;
+      delete seed.providers;
+      if (seed.visualLab && seed.visualLab.schema !== 2) delete seed.visualLab;
+      currentSettings = { ...DEFAULT_SETTINGS, ...seed, providers: {} };
+      try { localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(currentSettings)); } catch (e) { }
+      applyMsVisual();
+      if (typeof applyVisualLab === 'function') applyVisualLab();
+      if (typeof syncSettingsToUI === 'function') syncSettingsToUI();
+    }).catch(() => { });
+  }
 }
 
 // عكس الإعدادات على عناصر واجهة المستخدم في Modal
