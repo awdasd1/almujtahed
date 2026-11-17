@@ -7834,7 +7834,7 @@ async def designs_delete(req: DesignFileRequest, request: Request):
 class DesignAnimateRequest(BaseModel):
     image_url: str
     api_key: Optional[str] = None
-    model: str = "alibaba/wan-2.7"
+    model: str = ""
 
 
 def _design_motion_frame(path: Path) -> str:
@@ -7849,6 +7849,69 @@ def _design_motion_frame(path: Path) -> str:
     return f"data:image/jpeg;base64,{encoded}"
 
 
+_MOTION_PREFERENCE = (
+    "google/veo-3.1-fast",
+    "google/veo-3.1-lite",
+    "alibaba/wan-2.7",
+    "bytedance/seedance-2.0-fast",
+    "alibaba/wan-3.0",
+    "alibaba/wan-2.6",
+    "google/veo-3.1",
+)
+_MOTION_SKIP = ("avatar", "upscale", "edit", "heygen-video")
+
+
+def _motion_candidates(key: str) -> List[dict]:
+    data = _openrouter_json("https://openrouter.ai/api/v1/videos/models", key, None, 25)
+    rows = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError("حساب OpenRouter لم يُرجع أي نموذج فيديو")
+    by_id = {str(row.get("id") or ""): row for row in rows if row.get("id")}
+    ordered = [by_id[model_id] for model_id in _MOTION_PREFERENCE if model_id in by_id]
+    if ordered:
+        return ordered
+    fallback = []
+    for model_id, row in by_id.items():
+        if any(part in model_id.lower() for part in _MOTION_SKIP):
+            continue
+        fallback.append(row)
+        if len(fallback) >= 4:
+            break
+    if not fallback:
+        raise RuntimeError("لا يوجد في حسابك نموذج فيديو يقبل تحريك صورة")
+    return fallback
+
+
+def _motion_payload(row: dict, frame: str, prompt: str) -> dict:
+    durations = [item for item in (row.get("supported_durations") or []) if isinstance(item, int) and item > 0]
+    resolutions = [str(item) for item in (row.get("supported_resolutions") or []) if item]
+    aspects = [str(item) for item in (row.get("supported_aspect_ratios") or []) if item]
+    payload = {
+        "model": row.get("id"),
+        "prompt": prompt,
+        "frame_images": [{
+            "type": "image_url",
+            "image_url": {"url": frame},
+            "frame_type": "first_frame",
+        }],
+    }
+    if 5 in durations:
+        payload["duration"] = 5
+    elif 4 in durations:
+        payload["duration"] = 4
+    elif durations:
+        payload["duration"] = durations[0]
+    if "720p" in resolutions:
+        payload["resolution"] = "720p"
+    elif resolutions:
+        payload["resolution"] = resolutions[0]
+    if "16:9" in aspects:
+        payload["aspect_ratio"] = "16:9"
+    elif aspects:
+        payload["aspect_ratio"] = aspects[0]
+    return payload
+
+
 def _animate_design_sync(image_path: Path, key: str, model: str, owner_id: str) -> Dict[str, Any]:
     prompt = (
         "Slow gentle camera push-in across this finished Arabic infographic. "
@@ -7856,23 +7919,30 @@ def _animate_design_sync(image_path: Path, key: str, model: str, owner_id: str) 
         "Add only a soft glow traveling along the existing route. "
         "Do not rewrite text, do not add objects, and do not change the layout."
     )
-    submitted = _openrouter_json(
-        "https://openrouter.ai/api/v1/videos",
-        key,
-        {
-            "model": model,
-            "prompt": prompt,
-            "duration": 5,
-            "resolution": "720p",
-            "aspect_ratio": "16:9",
-            "frame_images": [{
-                "type": "image_url",
-                "image_url": {"url": _design_motion_frame(image_path)},
-                "frame_type": "first_frame",
-            }],
-        },
-        90,
-    )
+    frame = _design_motion_frame(image_path)
+    candidates = _motion_candidates(key)
+    if model:
+        pinned = [row for row in candidates if row.get("id") == model]
+        rest = [row for row in candidates if row.get("id") != model]
+        candidates = pinned + rest
+    submitted = None
+    errors = []
+    for row in candidates[:4]:
+        payload = _motion_payload(row, frame, prompt)
+        try:
+            submitted = _openrouter_json("https://openrouter.ai/api/v1/videos", key, payload, 90)
+            model = str(payload.get("model") or model)
+            if submitted.get("id") or submitted.get("polling_url"):
+                print(f"🎬 [Animate] قُبل التحريك بنموذج {model}", flush=True)
+                break
+            errors.append(f"{model}: بلا رقم مهمة")
+            submitted = None
+        except Exception as exc:
+            errors.append(f"{payload.get('model')}: {exc}")
+            print(f"🎬 [Animate] رُفض {payload.get('model')}: {exc}", flush=True)
+            submitted = None
+    if not submitted:
+        raise RuntimeError("لا يوجد نموذج فيديو قبل الصورة. " + " | ".join(errors)[:500])
     polling = str(submitted.get("polling_url") or "")
     job_id = str(submitted.get("id") or "")
     if polling.startswith("/"):
@@ -7914,7 +7984,7 @@ async def designs_animate(req: DesignAnimateRequest, request: Request):
     key = owner_openrouter_key(request, req.api_key)
     if not key:
         raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في تبويب الخدمات")
-    model = (req.model or "alibaba/wan-2.7").strip() or "alibaba/wan-2.7"
+    model = (req.model or "").strip()
     try:
         result = await asyncio.to_thread(_animate_design_sync, target, key, model, current_owner_id(request))
     except Exception as exc:
@@ -8718,7 +8788,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.667"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.668"},
         },
     })
     if opened.get("error"):
