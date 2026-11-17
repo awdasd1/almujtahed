@@ -7940,12 +7940,11 @@ def _motion_payload(row: dict, frame: str, prompt: str) -> dict:
             "frame_type": "first_frame",
         }],
     }
-    if 5 in durations:
-        payload["duration"] = 5
-    elif 4 in durations:
-        payload["duration"] = 4
+    longer = [item for item in durations if item <= 10]
+    if longer:
+        payload["duration"] = max(longer)
     elif durations:
-        payload["duration"] = durations[0]
+        payload["duration"] = max(durations)
     if "720p" in resolutions:
         payload["resolution"] = "720p"
     elif resolutions:
@@ -8026,9 +8025,9 @@ async def designs_animate(req: DesignAnimateRequest, request: Request):
     target = (folder / name).resolve()
     if target.parent != folder or not target.is_file():
         raise HTTPException(status_code=404, detail="الصورة غير موجودة في مجلد التصاميم")
-    if "بخاري" in target.name:
+    from journey_motion import is_bukhari_poster, render_bukhari_video
+    if is_bukhari_poster(target):
         try:
-            from journey_motion import render_bukhari_video
             raw = await asyncio.to_thread(render_bukhari_video, target)
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"تعذر تحريك التصميم: {exc}")
@@ -8840,7 +8839,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.670"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.671"},
         },
     })
     if opened.get("error"):

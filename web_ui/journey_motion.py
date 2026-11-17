@@ -10,7 +10,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
-ASSETS = Path(__file__).resolve().parent / "static" / "motion" / "bukhari"
+_MOTION = Path(__file__).resolve().parent / "static" / "motion"
+ASSETS = _MOTION / "bukhari"
 # مواضع المحطات على اللوحة الأصلية ١٥٣٦×١٠٢٤، مرتّبة من كرمينية غربًا مع نزول إلى الحجاز.
 _STOPS = (
     ("kalyan", 1392, 388, "left"),
@@ -36,8 +37,47 @@ _TRAVEL = 2.4
 _DWELL = 2.6
 
 
+_SCHOLARS_STOPS = (
+    ("nishapur", 1227, 182, "left"),
+    ("sarakhs", 1112, 219, "below"),
+    ("wasit", 1073, 299, "above"),
+    ("baghdad", 934, 334, "below"),
+    ("harran", 731, 272, "above"),
+    ("aleppo", 667, 295, "left"),
+    ("homs", 657, 361, "right"),
+    ("thaghr", 610, 413, "left"),
+    ("medina", 750, 587, "above"),
+)
+_SCHOLARS_FIGURE = {
+    "nishapur": (-40, -8),
+    "sarakhs": (8, -28),
+    "wasit": (18, -26),
+    "baghdad": (28, 18),
+    "harran": (6, 26),
+    "aleppo": (34, -18),
+    "homs": (30, 14),
+    "thaghr": (22, -30),
+    "medina": (40, -16),
+}
+
+
+def _profiles():
+    return (
+        {"test": lambda name: "بخاري" in name, "dir": ASSETS, "stops": _STOPS, "figure": _FIGURE},
+        {"test": lambda name: "طلب" in name and "حديث" in name, "dir": _MOTION / "scholars", "stops": _SCHOLARS_STOPS, "figure": _SCHOLARS_FIGURE},
+    )
+
+
+def journey_profile(path: Path):
+    name = path.name
+    for profile in _profiles():
+        if profile["test"](name):
+            return profile
+    return None
+
+
 def is_bukhari_poster(path: Path) -> bool:
-    return "بخاري" in path.name
+    return journey_profile(path) is not None
 
 
 def _ffmpeg() -> str:
@@ -76,10 +116,10 @@ def _glow_sprite(size: int, color: tuple, power: float = 2.0) -> Image.Image:
     return img
 
 
-def _stops(width: int, height: int):
+def _stops(profile, width: int, height: int):
     sx = width / 1536
     sy = height / 1024
-    return [(name, int(x * sx), int(y * sy), place) for name, x, y, place in _STOPS]
+    return [(name, int(x * sx), int(y * sy), place) for name, x, y, place in profile["stops"]]
 
 
 def _snap(orange, x: int, y: int, radius: int = 8):
@@ -285,7 +325,9 @@ def render_bukhari_video(image_path: Path) -> bytes:
     ffmpeg = _ffmpeg()
     if not ffmpeg:
         raise RuntimeError("محرك الفيديو غير متوفر")
-    if not (ASSETS / "traveler.png").is_file():
+    profile = journey_profile(image_path) or _profiles()[0]
+    assets = profile["dir"]
+    if not (assets / "traveler.png").is_file():
         raise RuntimeError("أصول حركة الرحلة غير موجودة")
     base = Image.open(image_path).convert("RGB")
     if base.width > 1280:
@@ -294,18 +336,18 @@ def render_bukhari_video(image_path: Path) -> bytes:
         base = base.resize((1280, max(2, height)), Image.Resampling.LANCZOS)
     if base.width % 2 or base.height % 2:
         base = base.crop((0, 0, base.width - base.width % 2, base.height - base.height % 2))
-    stops = _stops(*base.size)
+    stops = _stops(profile, *base.size)
     route = _route(base, stops)
     _total, marks = _lengths(route)
     frames = _timeline(stops, route, marks)
-    traveler = Image.open(ASSETS / "traveler.png").convert("RGBA")
+    traveler = Image.open(assets / "traveler.png").convert("RGBA")
     sprite_h = max(84, int(base.height * 0.115))
     sprite_w = max(1, int(traveler.width * sprite_h / traveler.height))
     traveler = traveler.resize((sprite_w, sprite_h), Image.Resampling.LANCZOS)
     cards = {}
     card_w = max(168, int(base.width * 0.16))
     for name, _x, _y, _place in stops:
-        card = Image.open(ASSETS / f"{name}.png").convert("RGBA")
+        card = Image.open(assets / f"{name}.png").convert("RGBA")
         card_h = max(1, int(card.height * card_w / card.width))
         cards[name] = card.resize((card_w, card_h), Image.Resampling.LANCZOS)
     glow = _glow_sprite(150, (255, 176, 64), 2.2)
@@ -335,7 +377,7 @@ def render_bukhari_video(image_path: Path) -> bytes:
                 card = cards[name]
                 origin = _card_origin(sx, sy, place, card.width, card.height, frame.width, frame.height)
                 frame.paste(_with_alpha(card, card_alpha), origin, _with_alpha(card, card_alpha))
-            park_x, park_y = _FIGURE.get(name, (0, -16))
+            park_x, park_y = profile["figure"].get(name, (0, -16))
             blend = card_alpha if card_alpha > 0 else 0.0
             shift_x = int(park_x * blend)
             shift_y = int(-16 + (park_y + 16) * blend)

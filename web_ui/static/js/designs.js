@@ -1298,7 +1298,9 @@ async function animateDesignImage(idx, btn) {
   const msg = designMessages[idx];
   if (!msg || !msg.image_url) return;
   if (msg.video_url && !window.confirm('يوجد فيديو لهذه الصورة. هل تريد توليد مقطع جديد؟')) return;
-  const journey = /بخاري/.test(msg.image_url || '') || /بخاري/.test(msg.title || '');
+  let journeyText = `${msg.image_url || ''} ${msg.title || ''}`;
+  try { journeyText = decodeURIComponent(journeyText); } catch (e) {}
+  const journey = /بخاري/.test(journeyText) || /طلب[\s-]*الحديث/.test(journeyText);
   const ask = journey
     ? 'ستُبنى حركة الرحلة على اللوحة: يسير الرجل على الخط، يضاء اسم كل مدينة، وتظهر صورة أشهر معلم فيها، مع صوت الريح. يستغرق ذلك أقل من دقيقة ولا يستهلك رصيد OpenRouter.'
     : 'سيُحرَّك هذا التصميم كمقطع قصير يبدأ من الصورة نفسها. يستهلك ذلك رصيد OpenRouter وقد يستغرق بضع دقائق، والنصوص قد تتحرك قليلًا.';
