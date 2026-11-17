@@ -5991,6 +5991,25 @@ def _png_encode_rgba(width: int, height: int, pixels: bytearray) -> bytes:
             + chunk(b"IDAT", _zlib.compress(bytes(rows), 6)) + chunk(b"IEND", b""))
 
 
+def _rgba_fit(width: int, height: int, pixels: bytearray, max_edge: int = 1280):
+    """يصغّر صورة RGBA حتى أطول ضلع دون مكتبات صور."""
+    if width <= max_edge and height <= max_edge:
+        return width, height, pixels
+    scale = max_edge / max(width, height)
+    nw = max(1, int(width * scale))
+    nh = max(1, int(height * scale))
+    out = bytearray(nw * nh * 4)
+    for y in range(nh):
+        sy = min(height - 1, int(y * height / nh))
+        row = sy * width
+        for x in range(nw):
+            sx = min(width - 1, int(x * width / nw))
+            s = (row + sx) * 4
+            d = (y * nw + x) * 4
+            out[d:d + 4] = pixels[s:s + 4]
+    return nw, nh, out
+
+
 def _brand_design_image_png(raw: bytes, logo_bytes: bytes) -> bytes:
     """الختم بمركّب PNG خالص — يعمل على كل جهاز ولو غابت Pillow."""
     w, h, px = _png_decode_rgba(raw)
@@ -7838,15 +7857,41 @@ class DesignAnimateRequest(BaseModel):
 
 
 def _design_motion_frame(path: Path) -> str:
-    """يجهّز إطار البداية لنموذج الفيديو: صورة أصغر حتى يُقبل الطلب."""
-    from PIL import Image
-    import io
-    image = Image.open(path).convert("RGB")
-    image.thumbnail((1280, 1280))
-    buffer = io.BytesIO()
-    image.save(buffer, "JPEG", quality=85)
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}"
+    """يجهّز إطار البداية. Pillow إن وُجدت، وإلا أداة النظام، وإلا مركّب PNG الخالص."""
+    try:
+        from PIL import Image
+        import io
+        image = Image.open(path).convert("RGB")
+        image.thumbnail((1280, 1280))
+        buffer = io.BytesIO()
+        image.save(buffer, "JPEG", quality=85)
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return f"data:image/jpeg;base64,{encoded}"
+    except Exception:
+        pass
+    if shutil.which("sips"):
+        fd, name = tempfile.mkstemp(suffix=".jpg")
+        os.close(fd)
+        try:
+            proc = subprocess.run(
+                ["sips", "-Z", "1280", "-s", "format", "jpeg", "-s", "formatOptions", "70", str(path), "--out", name],
+                capture_output=True, timeout=40,
+            )
+            data = Path(name).read_bytes() if proc.returncode == 0 else b""
+        finally:
+            try:
+                os.remove(name)
+            except OSError:
+                pass
+        if data[:2] == b"\xff\xd8":
+            return "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")
+    raw = path.read_bytes()
+    if raw[:8] != b"\x89PNG\r\n\x1a\n":
+        raise RuntimeError("تعذر تجهيز الصورة: مكتبة الصور غير مثبتة")
+    width, height, pixels = _png_decode_rgba(raw)
+    width, height, pixels = _rgba_fit(width, height, pixels, 1280)
+    encoded = base64.b64encode(_png_encode_rgba(width, height, pixels)).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 _MOTION_PREFERENCE = (
@@ -8788,7 +8833,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.668"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.669"},
         },
     })
     if opened.get("error"):
