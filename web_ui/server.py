@@ -1934,6 +1934,8 @@ CITATION_FORMAT_RULE = """
    أ. في الصحاح والسنن والمصنفات المبوبة: «أخرجه البخاري، كتاب الصلاة، باب الأذان، حديث رقم (367)، (3-405)» — المخرِّج باسمه المشهور، ثم الكتاب والباب ورقم الحديث منسوخة من متن الصفحة المرفقة وعناوينها لا من الذاكرة، ثم (جزء-صفحة) بصيغة الموضع القياسية.
    ب. في المسانيد: «أخرجه أحمد في المسند حديث رقم (11356)، (15-127)» — بلا كتاب ولا باب فالمسند على الرواة.
    وإن لم يظهر رقم الحديث أو الكتاب والباب في الشاهد المرفق فاختصر القالب بحذف الغائب ولا تخترعه، والموضع (جزء-صفحة) لا يسقط بحال لأنه مفتاح التصفح.
+   ج. سياسة الاكتفاء في التخريج: إن كان الحديث في البخاري ومسلم أو في أحدهما فذلك أهم تخريج ويُكتفى به وحده. وما لم يكن فيهما وجب تخريجه من الكتب الستة وصحيح ابن خزيمة وصحيح ابن حبان ومستدرك الحاكم، فإن خلا منها فمن تمام التسعة (أحمد ومالك والدارمي)، ثم سنن الدارقطني، ثم سنن البيهقي، ثم معاجم الطبراني الثلاثة، ثم المصنفات والآثار. ولا يُعزَ حديث إلى كتاب دونه في الترتيب وفي الأعلى شاهد واصل إليك، ولا تُسقِط الأعلى اكتفاءً بالأدنى.
+   د. رقم الحديث وموضعه تابعان لطبعة الشاهد الذي بين يديك حصرًا: فلا تجمع رقم طبعة وموضع طبعة أخرى في إحالة واحدة، فإن اختلفت الطبعة المذكورة عن طبعة شاهدك فخذ الرقم والموضع من طبعة شاهدك أو صرّح بالطبعة.
 5. في المتن الرقم المرتفع وحده. يُمنع ذكر اسم الكتاب أو المؤلف أو الجزء أو الصفحة في المتن. تقارير الاستخراج تُبقي سطر الإحالة المعتمدة كما هو.
 ═══════════════════════════════════════════════════════════
 """
@@ -2595,6 +2597,67 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
         _quote_cache[key] = q
         return q
 
+    _takhrij_body_cache: Dict[tuple, str] = {}
+
+    def _takhrij_page_body(row: dict, part: str, page: Any) -> str:
+        key = (str(row.get("book_id") or ""), str(part or ""), str(page or ""))
+        if key in _takhrij_body_cache:
+            return _takhrij_body_cache[key]
+        body = ""
+        try:
+            if key[0].isdigit() and str(page or "").isdigit():
+                import hadith_takhrij as _HT0
+                body = _HT0.page_text(int(key[0]), part, page)
+        except Exception:
+            body = ""
+        _takhrij_body_cache[key] = body
+        return body
+
+    def _resolve_takhrij(canonical: str, segment: str, part: str, page: str) -> Optional[dict]:
+        """حلّ كتاب التخريج بطبعة شاهد الكاتب لا بطبعة معيارية مفروضة:
+        رقم الحديث المكتوب في القالب بصمة الطبعة؛ تُجرَّب طبعات العمل كلها
+        ويُختار من تحمل صفحته (أو سابقتها، لحديث بدأ قبلها) ذلك الرقم.
+        فإن لم يثبت الرقم في أي طبعة بقي أول مرشح كما كان (خط رجعة)،
+        وفحص التدقيق بعده هو من يضبط الموضع والرقم ضبطًا أخيرًا."""
+        rows: List[dict] = []
+        ident = _book_identity_resolve(canonical)
+        _cand_ids = []
+        if ident:
+            _cand_ids = [str(b) for b in (ident.get("book_ids") or [])]
+            if not _cand_ids and ident.get("candidates"):
+                # أفضل عنقود هو العمل نفسه وطبعاته كلها في قائمته
+                _cand_ids = [str(b) for b in
+                             (ident["candidates"][0].get("book_ids") or [])]
+        for _bid in _cand_ids[:6]:
+            _r = _resolve(f"#{_bid}")
+            if _r:
+                rows.append(_r)
+        if not rows:
+            _r = _resolve(canonical)
+            if _r:
+                rows.append(_r)
+        if not rows:
+            return None
+        _nms = re.findall(r"(?:حديث|برقم|رقم)\s*\(?\s*([0-9٠-٩]{2,5})", segment or "")
+        _num = None
+        if _nms:
+            try:
+                _num = int(_nms[-1].translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")))
+            except Exception:
+                _num = None
+        if _num and str(page or "").isdigit():
+            try:
+                import hadith_takhrij as _HT
+                for _r in rows:
+                    if _HT.page_has_number(_takhrij_page_body(_r, part, page), _num):
+                        return _r
+                    if int(page) > 1 and _HT.page_has_number(
+                            _takhrij_page_body(_r, part, int(page) - 1), _num):
+                        return _r
+            except Exception:
+                pass
+        return rows[0]
+
     def _resolve(candidate: str) -> Optional[dict]:
         key = (candidate or "").strip()
         if key in _cache:
@@ -2678,7 +2741,7 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
                 _trow = None
                 for _cn, _cb in _TAKHRIJ_BOOKS:
                     if _cn in segment:
-                        _trow = _resolve(_cb)
+                        _trow = _resolve_takhrij(_cb, segment, part, page)
                         if _trow:
                             break
                 if _trow:
@@ -3792,8 +3855,89 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
         _match_cache[key] = ok
         return ok
 
+    # ——— ضبط التخريج قبل المطابقة العامة ———
+    # المطابقة العامة تكتفي بوجود النص في الكتاب في أي موضع، فتمرّ بها
+    # إحالة جمعت رقم طبعة وموضع طبعة أخرى. هنا يُفحص كل تخريج على طبعته
+    # المختومة نفسها: موضع لا يحمل النص يُصحَّح إلى موضعه الحقيقي في
+    # الطبعة نفسها برقم حديثها، وحديث ثابت في الصحيحين لم يُخرَّج منهما
+    # يُنبَّه عليه على سياسة الاكتفاء — وكلاهما يصل سجلَ المراقب.
+    _takhrij_repairs: List[dict] = []
+    try:
+        import hadith_takhrij as _HTA
+    except Exception:
+        _HTA = None
+    if _HTA is not None:
+        _tk_done_nums = set()
+        for job in jobs:
+            _num = job.get("num")
+            if not _num or _num in _tk_done_nums:
+                continue
+            _d = next((x for x in defs if x["num"] == _num), None)
+            if not _d or not _is_takhrij_context(_d["body"]):
+                continue
+            _spans = [sp for sp in footnote_span_books(_num) if sp.get("bid")]
+            if not _spans:
+                continue
+            _tk_done_nums.add(_num)
+            _all_ok = True
+            _used_idx: Dict[str, int] = {}
+            for sp in _spans:
+                if sp.get("kind") != "src":
+                    continue
+                # حارس المحافظة: موضع يحمل المتن فعلًا (ولو بلفظ رواية
+                # أخرى) صحيح لا يُمسّ؛ الإصلاح لمن خلت صفحته من النص.
+                _ptxt = _HTA.page_text(int(sp["bid"]), sp.get("part"), sp.get("page"))
+                if _ptxt and _HTA.page_contains_text(_ptxt, job["quote"]):
+                    continue
+                _locs = _HTA.locate_in_book(int(sp["bid"]), job["quote"], limit=6)
+                if not _locs:
+                    _all_ok = False
+                    continue
+                if any(str(l["part"]) == str(sp.get("part") or "")
+                       and str(l["page"]) == str(sp.get("page") or "") for l in _locs):
+                    continue
+                _idx = _used_idx.get(sp["bid"], 0)
+                _used_idx[sp["bid"]] = _idx + 1
+                _loc = _locs[min(_idx, len(_locs) - 1)]
+                _takhrij_repairs.append({
+                    "num": _num, "bid": sp["bid"], "loc": _loc,
+                    "old_part": sp.get("part") or "", "old_page": sp.get("page") or ""})
+                stats.setdefault("takhrij_locator_fixed", []).append({
+                    "quote": job["quote"][:100], "num": _num,
+                    "from": f"{sp.get('part') or ''}-{sp.get('page') or ''}",
+                    "to": f"{_loc['part']}-{_loc['page']}",
+                    "number": _loc.get("number")})
+            if _all_ok and not any(r["num"] == _num for r in _takhrij_repairs):
+                job["takhrij_done"] = True
+            try:
+                _sah = _HTA.takhrij(job["quote"], str(DB_INDEX_PATH))
+                if _sah.get("sufficient"):
+                    # الاكتفاء بأحد الصحيحين تام: لا تنبيه إلا إذا غابا معًا
+                    # عن الحاشية والحديث ثابت في أحدهما أو كليهما.
+                    _meta_all = _book_key_index()["meta"]
+                    _cited_titles = " ".join(
+                        str((_meta_all.get(int(sp["bid"])) or {}).get("title") or "")
+                        for sp in _spans if str(sp["bid"]).isdigit())
+                    _in_sahih = _sah.get("in_sahih") or []
+                    if _in_sahih and not any(_h["work"] in _cited_titles for _h in _in_sahih):
+                        _h = _in_sahih[0]
+                        stats.setdefault("takhrij_sahihayn_missed", []).append({
+                            "quote": job["quote"][:100], "num": _num,
+                            "book": _h["work"], "part": _h["part"],
+                            "page": _h["page"], "number": _h.get("number")})
+                        stats["failures"].append({
+                            "quote": job["quote"][:120],
+                            "reason": (f"حديث ثابت في «{_h['work']}» "
+                                       f"({_h['part']}-{_h['page']}) ولم يُخرَّج من "
+                                       "الصحيحين في حاشيته: تخريج ناقص على سياسة الاكتفاء")})
+            except Exception:
+                pass
+
     pending = []
     for job in jobs:
+        if job.get("takhrij_done"):
+            stats["verified"] += 1
+            continue
         profile = footnote_profile(job["num"])
         job["bid"] = profile.get("cited")
         if profile.get("any_tier"):
@@ -4097,6 +4241,65 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
         stats["repaired"] = len(_edits)
         if _edits:
             print(f"🚧 [Documentation Audit] أُصلح موضع {len(_edits)} إحالة إلى موضعها المثبت في فهرس المكتبة", flush=True)
+    if _takhrij_repairs:
+        # تصحيح مواضع التخريج داخل طبعاتها المختومة: الوسم بموضعه الجديد،
+        # ورقم الحديث الذي يسبقه برقم الطبعة نفسها — فلا تبقى إحالة تجمع
+        # رقم طبعة وموضع أخرى. تُجمع إصلاحات الحاشية الواحدة في تعديل
+        # واحد حتى لا يمحو ثانيها أولها.
+        _defs_now = _footnote_defs(text)
+        _edits = []
+        _by_num: Dict[Any, list] = {}
+        for _tr in _takhrij_repairs:
+            _by_num.setdefault(_tr["num"], []).append(_tr)
+        for _rnum, _rlist in _by_num.items():
+            d = next((x for x in _defs_now if x["num"] == _rnum), None)
+            if not d:
+                continue
+            body = d["body"]
+            _changed = False
+            for _tr in _rlist:
+                _loc = _tr["loc"]
+                _meta = _book_key_index()["meta"].get(int(_tr["bid"])) or {}
+                for _sm in re.finditer(r'<span class="cit-src"[^>]*data-book-id="' + re.escape(str(_tr["bid"])) + r'"[^>]*>(.*?)</span>', body, re.S):
+                    _tag = _sm.group(0)
+                    if f'data-page="{_tr["old_page"]}"' not in _tag:
+                        continue
+                    try:
+                        import hadith_takhrij as _HTB
+                        _q = " ".join(str(_HTB._page_body(int(_tr["bid"]), _loc["page"], _loc["part"]) or "").split())[:120]
+                    except Exception:
+                        _q = ""
+                    _new_span = (
+                        '<span class="cit-src" '
+                        f'data-book="{html.escape(str(_meta.get("title") or ""), quote=True)}" '
+                        f'data-rel-path="{html.escape(str(_meta.get("rel_path") or ""), quote=True)}" '
+                        f'data-book-id="{_tr["bid"]}" '
+                        f'data-part="{html.escape(str(_loc["part"]), quote=True)}" '
+                        f'data-page="{_loc["page"]}" '
+                        f'data-quote="{html.escape(_q, quote=True)}">'
+                        f'{html.escape(canonical_locator(str(_loc["part"]), str(_loc["page"])))}</span>')
+                    _prefix = body[:_sm.start()]
+                    if _loc.get("number"):
+                        # الرقم المعني هو آخر رقم حديث قبل هذا الوسم بعينه
+                        _matches = list(re.finditer(
+                            r"(حديث\s*(?:رقم\s*)?\(?\s*)([0-9٠-٩]{2,5})(\s*\)?)", _prefix))
+                        if _matches:
+                            _lm = _matches[-1]
+                            _prefix = (_prefix[:_lm.start()] + _lm.group(1)
+                                       + str(_loc["number"]) + _lm.group(3)
+                                       + _prefix[_lm.end():])
+                    body = _prefix + _new_span + body[_sm.end():]
+                    _changed = True
+                    break
+            if _changed:
+                _slice = text[d["start"]:d["end"]]
+                if body and body != d["body"] and d["body"] in _slice:
+                    _edits.append((d["start"], d["end"], _slice.replace(d["body"], body, 1)))
+        for s, e, new in sorted(_edits, key=lambda x: x[0], reverse=True):
+            text = text[:s] + new + text[e:]
+        if _edits:
+            stats["takhrij_fixed_applied"] = len(_edits)
+            print(f"🚧 [Documentation Audit] صُحح موضع ورقم {len(_edits)} تخريج إلى موضعه في طبعته المختومة", flush=True)
     # شفاء الحواشي المعلَّمة ⚠: علامتها معناها «لم يُحلّ كتابها في المكتبة»،
     # فمتى حُلّ الكتاب بموضعه المذكور ارتفع سببها: تُختم ختمًا كاملًا فتظهر
     # أيقونة التصفح وتدخل كتبَ التحقق، وشاهدُ متنها يُفحص بمهامه كالمعتاد.
@@ -4446,6 +4649,23 @@ def _documentation_record(stats: dict) -> str:
             lines.append(f"تغطية طبقات الاعتماد (استرشادية) — {cov}.")
     if stats.get("tier_footnotes"):
         lines.append(f"مقارنة مرجعية: {stats['tier_footnotes']} حاشية فيها مصادر وسيطة (موسوعات مقارنة ونحوها) للمقابلة والضبط، وهي مشروعة بجانب الأصل؛ وما كان منها سندًا وحيدًا عُدّ تنبيهًا أعلاه وأُبقي بلا حذف.")
+    if stats.get("takhrij_locator_fixed"):
+        _tf = stats["takhrij_locator_fixed"]
+        _samples = "؛ ".join(
+            f"حاشية ({x.get('num')}): من ({x.get('from')}) إلى ({x.get('to')})"
+            + (f" برقم حديث ({x.get('number')})" if x.get("number") else "")
+            for x in _tf[:4])
+        lines.append(
+            f"ضبط التخريج: {len(_tf)} موضع تخريج لم يكن يحمل النص في طبعته المختومة "
+            f"فصُحّح آليًا إلى موضعه ورقمه في الطبعة نفسها ({_samples}) — خلط الطبعات "
+            "في الرقم والموضع ممنوع، وما صُحّح هنا كان سيمرّ بفحص «النص في الكتاب» العام.")
+    if stats.get("takhrij_sahihayn_missed"):
+        _tm = stats["takhrij_sahihayn_missed"]
+        _samples = "؛ ".join(
+            f"«{x.get('book')}» ({x.get('part')}-{x.get('page')})" for x in _tm[:4])
+        lines.append(
+            f"تنبيه تخريج ناقص: {len(_tm)} حديث ثابت في الصحيحين لم يُخرَّج منه في حاشيته "
+            f"({_samples})؛ على سياسة الاكتفاء يُقدَّم تخريج الصحيحين على ما دونهما.")
     if stats.get("ijma_flags"):
         lines.append(f"تنبيه: ورد ادعاء إجماع أو اتفاق في {stats['ijma_flags']} موضعًا بلا نقل ظاهر من كتب الإجماع (كإجماع ابن المنذر ومراتب ابن حزم والاستذكار والتمهيد) في الشواهد، فليُحرَّر قبل الاعتماد.")
     if stats.get("ijma_unattributed"):
@@ -8097,7 +8317,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.650"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.651"},
         },
     })
     if opened.get("error"):
