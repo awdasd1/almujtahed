@@ -4514,16 +4514,9 @@ async function produceFinalResearch() {
     if (s.unverified) bits.push(`بقي ${s.unverified} موضعًا للمراجعة (في التقرير لا في الورقة)`);
     if (typeof showToast === 'function') showToast('🔒 ' + bits.join(' · '), 6000);
   } catch (e) {
-    if (typeof showToast === 'function') showToast('تعذر الإعداد السريع؛ تُستعمل صياغة المدير الكاملة (أبطأ)', 4000);
-    if (discussionState(activeSessionId) === 'open') { await finalizeDiscussion(); return; }
-    session.messages.push({
-      role: 'user',
-      content: '🔒 أعد صياغة البحث كاملًا صياغة نهائية معتمدة قابلة للطباعة النهائية، مستوعبًا حزمة البحث المحفوظة وتقارير الفريق وما اتفقنا عليه، ومعالجًا نواقص سجل التدقيق، ورقةً علمية محكمة بلا أي لغة من لغات عملية البحث والمناقشة وبلا تعليقات نقص أو خلل.'
-    });
-    setDiscussionState(activeSessionId, 'closed');
-    renderSessionMessages(activeSessionId);
-    if (typeof saveChatSessions === 'function') saveChatSessions();
-    await triggerChatCompletion(session, [], { discussionMode: 'finalize' });
+    // لا بديل إعادة كتابة بعد اليوم: تعذّر الإعداد من المحفوظ يُعلن
+    // ويبقى البحث كما هو، ولا تُستبدل به صياغة مولّدة تختصره.
+    if (typeof showToast === 'function') showToast('تعذر إعداد النسخة النهائية من المحفوظ — بحثك كما هو لم يُمسّ؛ أعد المحاولة بعد لحظات', 5000);
   }
 }
 
@@ -4545,18 +4538,21 @@ async function sendRiskControlItems() {
 async function finalizeDiscussion() {
   const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
   if (!session) return;
-  if (discussionState(activeSessionId) !== 'open') return;
-  session.messages.push({
-    role: 'user',
-    content: '🔒 أقفل جلسة المناقشة باتفاقنا: أعد صياغة البحث كاملًا صياغة نهائية معتمدة مستوعبًا ما اتفقنا عليه في هذه المناقشة وتقارير الوكلاء المستكملة، ومعالجًا نواقص سجل التدقيق، ورقةً علمية محكمة بلا أي لغة من لغات عملية البحث والمناقشة.'
-  });
-  setDiscussionState(activeSessionId, 'closed');
-  const input = document.getElementById('chatInputText');
-  if (input) input.placeholder = 'اسأل المغني في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
-  renderSessionMessages(activeSessionId);
-  if (typeof saveChatSessions === 'function') saveChatSessions();
-  await triggerChatCompletion(session, [], { discussionMode: 'finalize' });
-  if (typeof showToast === 'function') showToast('🔒 أُقفلت المناقشة وصيغت الصياغة النهائية؛ وتستطيع فتح مناقشة جديدة عليها بزر «المناقشة»', 3500);
+  // إقفال المناقشة = إعداد النهائي من المحفوظ نفسه بإصلاحاته (مسار
+  // سريع واحد لا ثاني له)؛ أُلغيت إعادة الصياغة التوليدية التي كانت
+  // تختصر البحث إلى خمسه وتستغرق دقائق طويلة.
+  if (discussionState(activeSessionId) === 'open') {
+    session.messages.push({
+      role: 'user',
+      content: '🔒 أُقفلت جلسة المناقشة باتفاقنا، وطُلب إعداد النسخة النهائية من البحث المحفوظ نفسه مع إصلاحاته التوثيقية.'
+    });
+    setDiscussionState(activeSessionId, 'closed');
+    const input = document.getElementById('chatInputText');
+    if (input) input.placeholder = 'اسأل المغني في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
+    renderSessionMessages(activeSessionId);
+    if (typeof saveChatSessions === 'function') saveChatSessions();
+  }
+  await produceFinalResearch();
 }
 
 // =============================================================================
