@@ -9,7 +9,7 @@ let compareAgentsRendering = false;
 const compareFolded = new Set();
 
 function compareModelCatalog() {
-  const live = (window.openrouterModelsList || []).filter(model => model && model.id && model.id !== 'local-almojtahed-8b');
+  const live = (window.openrouterModelsList || []).filter(model => model && model.id && model.id !== 'local-almojtahed-8b' && (typeof modelOutputKind !== 'function' || modelOutputKind(model) === 'text'));
   const base = live.length ? live : (window.SUGGESTED_MODELS || [
     { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
     { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash' },

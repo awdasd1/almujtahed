@@ -2185,10 +2185,16 @@ async function populateOpenRouterModelDropdown(selectEl, selectedVal) {
   }
 
   const topIds = new Set(topFive.map(m => m.id));
-  const otherModels = (allModels || []).filter(m => !topIds.has(m.id));
+  const parts = typeof partitionMediaModels === 'function'
+    ? partitionMediaModels(allModels)
+    : { text: allModels || [], image: [], video: [] };
+  const otherModels = parts.text.filter(m => !topIds.has(m.id));
   otherModels.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+  const sortByName = (rows) => rows.slice().sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+  const imageModels = sortByName(parts.image);
+  const videoModels = sortByName(parts.video);
 
-  const exists = topFive.some(m => m.id === currentVal) || otherModels.some(m => m.id === currentVal);
+  const exists = topFive.some(m => m.id === currentVal) || otherModels.some(m => m.id === currentVal) || imageModels.some(m => m.id === currentVal) || videoModels.some(m => m.id === currentVal);
   let customOption = '';
   if (!exists && currentVal) {
     customOption = `<option value="${currentVal}" selected>${escapeHtml(currentVal)} (محدد حالياً)</option>`;
@@ -2198,10 +2204,13 @@ async function populateOpenRouterModelDropdown(selectEl, selectedVal) {
     `<option value="${m.id}" ${m.id === currentVal ? 'selected' : ''}>${escapeHtml(m.name)}</option>`
   ).join('');
 
-  const otherHtml = otherModels.map(m => {
+  const mediaOption = (m) => {
     const label = m.name ? `${m.name} (${m.id})` : m.id;
     return `<option value="${m.id}" ${m.id === currentVal ? 'selected' : ''}>${escapeHtml(label)}</option>`;
-  }).join('');
+  };
+  const otherHtml = otherModels.map(mediaOption).join('');
+  const imageHtml = imageModels.map(mediaOption).join('');
+  const videoHtml = videoModels.map(mediaOption).join('');
 
   selectEl.innerHTML = `
     ${customOption}
@@ -2211,6 +2220,8 @@ async function populateOpenRouterModelDropdown(selectEl, selectedVal) {
     <optgroup label="🌐 كافة نماذج OpenRouter المتاحة (${otherModels.length} نموذج)">
       ${otherHtml}
     </optgroup>
+    ${imageHtml ? `<optgroup label="🖼️ نماذج الصور (${imageModels.length})">${imageHtml}</optgroup>` : ''}
+    ${videoHtml ? `<optgroup label="🎬 نماذج الفيديو (${videoModels.length})">${videoHtml}</optgroup>` : ''}
   `;
   selectEl.value = currentVal;
 }

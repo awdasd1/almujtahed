@@ -8626,7 +8626,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.664"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.665"},
         },
     })
     if opened.get("error"):
@@ -20981,13 +20981,13 @@ async def download_local_model(req: LocalModelDownloadRequest, request: Request)
     return {"status": "ok", "message": "بدأ سحب النموذج", "download": _local_download_view()}
 
 
-def _fetch_openrouter_models(key: str) -> dict:
-    """جلب نماذج OpenRouter وتحليلها (متزامن — يُستدعى في خيط حصرًا).
-    كان هذا الجلب يجري داخل المعالج غير المتزامن نفسه على حلقة الأحداث،
-    فإذا تعثّر اتصال الشبكة تجمّدت الواجهة كلها خلفه (منها زر اختبار
-    المفتاح) كما حدث في قياس 1.10.618."""
+def _openrouter_catalog(key: str, modality: str = "") -> list:
+    """كتالوج OpenRouter. بلا modality يرجع نماذج النص؛ image وvideo كتالوجان منفصلان لا يدخلان الافتراضي."""
+    url = "https://openrouter.ai/api/v1/models"
+    if modality:
+        url += "?output_modalities=" + urllib.parse.quote(modality)
     req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/models",
+        url,
         headers={
             "Authorization": f"Bearer {key}",
             "HTTP-Referer": "http://localhost:8085",
@@ -20996,42 +20996,82 @@ def _fetch_openrouter_models(key: str) -> dict:
     )
     with urllib.request.urlopen(req, timeout=12) as resp:
         raw = json.loads(resp.read().decode("utf-8"))
-        models_raw = raw.get("data", [])
+    data = raw.get("data") or []
+    return data if isinstance(data, list) else []
 
-    parsed = []
-    for m in models_raw:
-        pricing = m.get("pricing", {})
-        prompt_token = float(pricing.get("prompt") or 0.0)
-        comp_token = float(pricing.get("completion") or 0.0)
-        benchmarks = m.get("benchmarks") or {}
-        art_analysis = benchmarks.get("artificial_analysis") or {}
 
-        parsed.append({
-            "id": m.get("id"),
-            "canonical_slug": m.get("canonical_slug") or m.get("id"),
-            "name": m.get("name") or m.get("id"),
-            "description": m.get("description", ""),
-            "context_length": m.get("context_length", 0),
-            "pricing": {
-                "prompt_per_token": prompt_token,
-                "completion_per_token": comp_token,
-                "prompt_per_1m": round(prompt_token * 1_000_000, 4),
-                "completion_per_1m": round(comp_token * 1_000_000, 4)
-            },
-            "benchmarks": {
-                "intelligence_index": art_analysis.get("intelligence_index"),
-                "coding_index": art_analysis.get("coding_index"),
-                "agentic_index": art_analysis.get("agentic_index"),
-                "design_arena": benchmarks.get("design_arena") or []
-            },
-            "top_provider": m.get("top_provider") or {},
-            "reasoning": remember_model_reasoning(m.get("id"), m.get("reasoning"))
-        })
-        slug = m.get("canonical_slug")
-        if slug and slug != m.get("id"):
-            OPENROUTER_REASONING[slug] = OPENROUTER_REASONING.get(m.get("id"))
+def _parse_openrouter_model(m: dict) -> dict:
+    pricing = m.get("pricing") or {}
+    prompt_token = float(pricing.get("prompt") or 0.0)
+    comp_token = float(pricing.get("completion") or 0.0)
+    benchmarks = m.get("benchmarks") or {}
+    art_analysis = benchmarks.get("artificial_analysis") or {}
+    outputs = [str(item) for item in ((m.get("architecture") or {}).get("output_modalities") or []) if str(item or "").strip()]
+    return {
+        "id": m.get("id"),
+        "canonical_slug": m.get("canonical_slug") or m.get("id"),
+        "name": m.get("name") or m.get("id"),
+        "description": m.get("description", ""),
+        "context_length": m.get("context_length", 0),
+        "output_modalities": outputs or ["text"],
+        "pricing": {
+            "prompt_per_token": prompt_token,
+            "completion_per_token": comp_token,
+            "prompt_per_1m": round(prompt_token * 1_000_000, 4),
+            "completion_per_1m": round(comp_token * 1_000_000, 4)
+        },
+        "benchmarks": {
+            "intelligence_index": art_analysis.get("intelligence_index"),
+            "coding_index": art_analysis.get("coding_index"),
+            "agentic_index": art_analysis.get("agentic_index"),
+            "design_arena": benchmarks.get("design_arena") or []
+        },
+        "top_provider": m.get("top_provider") or {},
+        "reasoning": remember_model_reasoning(m.get("id"), m.get("reasoning"))
+    }
 
-    return {"status": "ok", "count": len(parsed), "models": parsed}
+
+def _fetch_openrouter_models(key: str) -> dict:
+    """جلب نماذج OpenRouter النصية ثم صورها وفيديواتها (متزامن — يُستدعى في خيط حصرًا).
+    كان هذا الجلب يجري داخل المعالج غير المتزامن نفسه على حلقة الأحداث،
+    فإذا تعثّر اتصال الشبكة تجمّدت الواجهة كلها خلفه (منها زر اختبار
+    المفتاح) كما حدث في قياس 1.10.618."""
+    catalogs = [("", _openrouter_catalog(key))]
+    for modality in ("image", "video"):
+        try:
+            catalogs.append((modality, _openrouter_catalog(key, modality)))
+        except Exception as exc:
+            print(f"OpenRouter {modality} models: {exc}")
+
+    by_id: Dict[str, dict] = {}
+    order: List[str] = []
+    for _modality, models_raw in catalogs:
+        for raw in models_raw:
+            item = _parse_openrouter_model(raw)
+            model_id = str(item.get("id") or "").strip()
+            if not model_id:
+                continue
+            slug = raw.get("canonical_slug")
+            if slug and slug != model_id:
+                OPENROUTER_REASONING[slug] = OPENROUTER_REASONING.get(model_id)
+            current = by_id.get(model_id)
+            if current:
+                merged: List[str] = []
+                for token in (current.get("output_modalities") or []) + (item.get("output_modalities") or []):
+                    if token not in merged:
+                        merged.append(token)
+                current["output_modalities"] = merged or ["text"]
+                continue
+            by_id[model_id] = item
+            order.append(model_id)
+    parsed = [by_id[model_id] for model_id in order]
+    return {
+        "status": "ok",
+        "count": len(parsed),
+        "image_count": sum(1 for model in parsed if "image" in (model.get("output_modalities") or []) and "text" not in (model.get("output_modalities") or [])),
+        "video_count": sum(1 for model in parsed if "video" in (model.get("output_modalities") or []) and "text" not in (model.get("output_modalities") or [])),
+        "models": parsed,
+    }
 
 
 @app.get("/api/openrouter/models")
@@ -27213,6 +27253,9 @@ def _architect_model_roster() -> str:
     )
     lines = []
     for model in ranked:
+        outputs = model.get("output_modalities") or ["text"]
+        if "text" not in outputs:
+            continue
         if len(lines) >= 24:
             break
         intel = (model.get("benchmarks") or {}).get("intelligence_index")

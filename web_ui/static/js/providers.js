@@ -64,8 +64,32 @@ function modelsWithSuggestedFirst(list, keepMissing = true) {
   return pinned.concat(source.filter(model => model && !pinnedIds.has(model.id)));
 }
 
+function modelOutputKind(model) {
+  const outs = Array.isArray(model && model.output_modalities) ? model.output_modalities : ['text'];
+  const hasText = outs.includes('text');
+  if (outs.includes('video') && !hasText) return 'video';
+  if (outs.includes('image') && !hasText) return 'image';
+  return 'text';
+}
+
+function partitionMediaModels(list) {
+  const text = [];
+  const image = [];
+  const video = [];
+  (Array.isArray(list) ? list : []).forEach(model => {
+    if (!model) return;
+    const kind = modelOutputKind(model);
+    if (kind === 'video') video.push(model);
+    else if (kind === 'image') image.push(model);
+    else text.push(model);
+  });
+  return { text, image, video };
+}
+
 window.SUGGESTED_MODELS = SUGGESTED_MODELS;
 window.modelsWithSuggestedFirst = modelsWithSuggestedFirst;
+window.modelOutputKind = modelOutputKind;
+window.partitionMediaModels = partitionMediaModels;
 let openrouterRankedIds = [];
 let currentSelectedModelData = null;
 
@@ -395,10 +419,11 @@ function renderOpenRouterSelectOptions(list) {
     return;
   }
 
+  const parts = partitionMediaModels(list);
   const priorityIds = openrouterRankedIds;
-  const pinned = modelsWithSuggestedFirst(list, false).filter(model => SUGGESTED_MODELS.some(item => item.id === model.id));
+  const pinned = modelsWithSuggestedFirst(parts.text, false).filter(model => SUGGESTED_MODELS.some(item => item.id === model.id));
   const pinnedIds = new Set(pinned.map(model => model.id));
-  const remainder = list.filter(model => !pinnedIds.has(model.id));
+  const remainder = parts.text.filter(model => !pinnedIds.has(model.id));
 
   const priorityModels = [];
   const otherModels = [];
@@ -421,9 +446,13 @@ function renderOpenRouterSelectOptions(list) {
   const optionHtml = (model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name || model.id)}</option>`;
   const pinnedHtml = pinned.map(optionHtml).join('');
   const restHtml = sortedRest.map(optionHtml).join('');
+  const imageHtml = parts.image.map(optionHtml).join('');
+  const videoHtml = parts.video.map(optionHtml).join('');
   modelsSelect.innerHTML = `
     ${pinnedHtml ? `<optgroup label="⭐ النماذج المقترحة">${pinnedHtml}</optgroup>` : ''}
     ${restHtml ? `<optgroup label="كافة النماذج">${restHtml}</optgroup>` : ''}
+    ${imageHtml ? `<optgroup label="🖼️ نماذج الصور (${parts.image.length})">${imageHtml}</optgroup>` : ''}
+    ${videoHtml ? `<optgroup label="🎬 نماذج الفيديو (${parts.video.length})">${videoHtml}</optgroup>` : ''}
   `;
 }
 
@@ -860,7 +889,8 @@ function syncChatModelDropdown(provider = null, targetModelId = null) {
 
   if (activeProvider === 'openrouter') {
     if (openrouterModelsList && openrouterModelsList.length > 0) {
-      const ordered = modelsWithSuggestedFirst(openrouterModelsList, true);
+      const parts = partitionMediaModels(openrouterModelsList);
+      const ordered = modelsWithSuggestedFirst(parts.text, true);
       const suggested = ordered.slice(0, SUGGESTED_MODELS.length);
       const otherModels = ordered.slice(SUGGESTED_MODELS.length);
 
@@ -874,6 +904,12 @@ function syncChatModelDropdown(provider = null, targetModelId = null) {
           title: `📋 كافة نماذج OpenRouter المتاحة (${otherModels.length} نموذج)`,
           models: otherModels
         });
+      }
+      if (parts.image.length > 0) {
+        groups.push({ title: `🖼️ نماذج الصور (${parts.image.length})`, models: parts.image });
+      }
+      if (parts.video.length > 0) {
+        groups.push({ title: `🎬 نماذج الفيديو (${parts.video.length})`, models: parts.video });
       }
     } else {
       groups.push({

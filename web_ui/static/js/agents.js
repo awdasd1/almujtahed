@@ -826,9 +826,12 @@ function populateAgentModelDropdown(targetModelId = null) {
 
     if (modelsList.length > 0) {
       const suggested = window.SUGGESTED_MODELS || [];
+      const parts = typeof partitionMediaModels === 'function'
+        ? partitionMediaModels(modelsList)
+        : { text: modelsList, image: [], video: [] };
       const ordered = typeof modelsWithSuggestedFirst === 'function'
-        ? modelsWithSuggestedFirst(modelsList, true)
-        : modelsList;
+        ? modelsWithSuggestedFirst(parts.text, true)
+        : parts.text;
       const priorityModels = ordered.slice(0, suggested.length);
       const otherModels = ordered.slice(suggested.length);
 
@@ -842,6 +845,12 @@ function populateAgentModelDropdown(targetModelId = null) {
           title: `📋 كافة نماذج OpenRouter المتاحة (${otherModels.length} نموذج)`,
           models: otherModels
         });
+      }
+      if (parts.image.length > 0) {
+        groups.push({ title: `🖼️ نماذج الصور (${parts.image.length})`, models: parts.image });
+      }
+      if (parts.video.length > 0) {
+        groups.push({ title: `🎬 نماذج الفيديو (${parts.video.length})`, models: parts.video });
       }
     } else {
       // جلب النماذج الحية في الخلفية تلقائياً إذا لم تكن محملة بعد
