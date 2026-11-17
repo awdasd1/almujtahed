@@ -4295,45 +4295,104 @@ function closeDiscussion() {
   if (input) input.placeholder = 'اسأل المغني في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل...';
   if (typeof showToast === 'function') showToast('أُنهيت المناقشة مؤقتًا؛ محادثتها محفوظة وتستطيع استئنافها بزر «المناقشة» متى شئت', 3000);
 }
-// 📋 زر الباحث المختصر: يجلب ثغرات تقرير البحث وفجواته من سجل القياس
-// مرقمةً واحدة تلو الأخرى، ويرفعها إلى مدير المشروع دفعة واحدة في رسالة
-// واحدة ليعالجها معه في جلسة المناقشة بندًا بندًا.
-async function sendAuditGapsToDirector() {
-  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
-  if (!session) return;
-  let entry = null;
-  try {
-    const res = await fetch('/api/research-metrics');
-    if (res.ok) {
-      const data = await res.json();
-      const mine = (data.items || []).filter(it => it.chat_id === activeSessionId);
-      entry = mine.length ? mine[mine.length - 1] : null;
-    }
-  } catch (e) { }
-  if (!entry) {
-    if (typeof showToast === 'function') showToast('لا يوجد تقرير بحث آلي محفوظ لهذه المحادثة بعد — الثغرات تُجلب من تقارير البحوث المنفذة بالوكلاء', 3500);
-    return;
+// 🏛 سجل مخاطر إدارة المخاطر بجداول ماركداون — يُبنى من أحداث الحزمة
+// مدمجةً بلا تكرار، ويُعرض ملوّنًا في اللوحة والتقارير.
+function buildRiskRegisterMd(events, opts) {
+  opts = opts || {};
+  const seen = new Map();
+  (events || []).forEach(e => {
+    const key = (e.kind || '') + '|' + (e.title || '');
+    if (seen.has(key)) { seen.get(key)._dup = (seen.get(key)._dup || 1) + 1; return; }
+    seen.set(key, Object.assign({}, e));
+  });
+  const ev = Array.from(seen.values());
+  const icons = { 'عالية': '🔴', 'متوسطة': '🟡', 'منخفضة': '⚪' };
+  const cell = s => String(s || '').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 180);
+  const done = e => /^(مُغلق|عولج آليًا|موثق بقرار)/.test(e.status || '');
+  const L = ['# 🏛 سجل مخاطر إدارة المخاطر', ''];
+  const meta = [];
+  if (opts.verdict) meta.push('**الحكم العام:** ' + opts.verdict);
+  if (opts.officer) meta.push('**مسؤول المخاطر:** ' + opts.officer);
+  if (meta.length) L.push(meta.join(' · '), '');
+  L.push('## 📊 ملخص السجل', '', '| الخطورة | البنود | مفتوحة | عولجت آليًا |', '|---|---|---|---|');
+  ['عالية', 'متوسطة', 'منخفضة'].forEach(cls => {
+    const grp = ev.filter(e => e.cls === cls);
+    if (!grp.length) return;
+    const d = grp.filter(done).length;
+    L.push(`| ${icons[cls]} ${cls} | ${grp.length} | ${grp.length - d} | ${d} |`);
+  });
+  ['عالية', 'متوسطة', 'منخفضة'].forEach(cls => {
+    const grp = ev.filter(e => e.cls === cls && !done(e));
+    if (!grp.length) return;
+    L.push('', `## ${icons[cls]} مخاطر ${cls} مفتوحة (${grp.length})`, '', '| # | الخطر | الدليل | الإجراء المطلوب |', '|---|---|---|---|');
+    grp.forEach((e, i) => L.push(`| ${i + 1} | ${cell(e.title)}${e._dup ? ' (×' + e._dup + ')' : ''} | ${cell(e.evidence)} | ${cell(e.action)} |`));
+  });
+  const doneAll = ev.filter(done);
+  if (doneAll.length) {
+    L.push('', `## ✅ عولجت آليًا أو وُثّقت بقرار (${doneAll.length}) — لا إجراء`, '', '| الخطر | الخطورة | ما تم |', '|---|---|---|');
+    doneAll.forEach(e => L.push(`| ${cell(e.title)} | ${icons[e.cls] || ''} ${cell(e.cls)} | ${cell(e.status)} |`));
   }
-  if (discussionState(activeSessionId) !== 'open') setDiscussionState(activeSessionId, 'open');
-  const a = entry.audit || {};
-  const items = [];
-  (entry.agents_failed || []).forEach(n => items.push(`وكيل سقط في البحث الأصلي: «${n}» — ما أثر سقوطه في مادته وكيف يُستكمل؟`));
-  (entry.audit_failures || []).forEach(f => items.push(`نقل لم يثبت آليًا في كتاب إحالته: «${(f.quote || '').slice(0, 140)}» — تحقق منه بتقليب صفحته أو استبدل به ثابتًا موثقًا.`));
-  if (a.ijma_unattributed) items.push(`دعاوى اتفاق/إجماع مطلقة بلا نسبة: ${a.ijma_unattributed} — انسبها إلى قائلها أو كتاب إجماعها أو خففها إلى «الجمهور».`);
-  if (a.unverified) items.push(`نقول فُحصت ولم تثبت آليًا: ${a.unverified} من ${a.checked || 0} مفحوصًا — راجع مواضعها قبل الاعتماد.`);
-  if (a.relocated) items.push(`نقول ثابتة في غير موضع إحالتها: ${a.relocated} — صحح إحالاتها إلى مواضعها الصحيحة.`);
-  if (a.tier_warnings) items.push(`تنبيهات طبقة اعتماد (وسيط أو ناقل وحيد): ${a.tier_warnings} — لا يبقى متن حديث أو قول مذهب أو إجماع معلقًا بوسيط أو شرح معاصر أو شرح ناقل (كمغلطاي عن أبي داود وسعيد بن منصور) وحده؛ ائتِ بأصله التراثي مباشرة أو صرّح بالواسطة.`);
-  if ((a.missing_terms || []).length) items.push(`ألفاظ متقدمين موثقة في المكتبة غابت عن متن الإجابة: ${a.missing_terms.map(t => '«' + t + '»').join('، ')} — ابحث عما وراءها من نصوص صريحة في كتب الطبقات (فقد يكون وراء اللفظ نص في عين المسألة كنص المرداوي في تقبيل الفرج) وائتِ بها أو صرّح بخلوّها بعد الفحص.`);
-  const zeroLines = (entry.audit_record || '').split('\n').filter(l => l.includes('صفرية'));
-  zeroLines.forEach(l => items.push(`خلية صفرية موثقة في تغطية الطبقات: ${l.replace(/^.*?—/, '').trim().slice(0, 220)}`));
-  if (!items.length) items.push('لا ثغرات مسجلة في التقرير الآلي؛ راجع معي مع ذلك مواضع العزو بالواسطة من الشروح المعاصرة والموسوعات، وأي نقل تشك في طبقة سنده.');
-  items.push('قاعدة طبقات صارمة لهذه الجلسة: لا تعتمد عزوًا بالواسطة من شرح معاصر أو موسوعة أو تفريغ دروس (كالعباد والهرري والهيميد والبسام) سندًا لمتن حديث أو حكم مذهب أو دعوى إجماع؛ ائتِ بالنص من أصله التراثي مباشرة بتقليب صفحته أو بطلب وكيله، وإلا صرّح بخلوّه.');
-  const body = 'هذه ملحوظات تقرير البحث الآلي وثغراته، أرفعها إليك دفعة واحدة. عالجها معي واحدة تلو الأخرى بالترتيب، ولكل بند: ما ستفعله، وهل تحتاج طلب وكيل أو تقليب صفحة، وما سيتغير في الصياغة النهائية بسببه:\n\n'
-    + items.map((t, i) => `${i + 1}- ${t}`).join('\n');
-  session.messages.push({ role: 'user', content: body });
-  renderSessionMessages(activeSessionId);
-  if (typeof saveChatSessions === 'function') saveChatSessions();
-  await triggerChatCompletion(session, [], { discussionMode: 'open' });
+  if (!ev.length) L.push('لم يُرصد حدث مخاطرة في هذا البحث ضمن الحدود المعتمدة.');
+  return L.join('\n');
+}
+
+function renderMarkdownInto(el, md) {
+  if (!el) return;
+  let html = md;
+  if (typeof marked !== 'undefined' && (marked.parse || typeof marked === 'function')) {
+    try { html = (marked.parse || marked)(md); } catch (e) { }
+  }
+  el.innerHTML = '<div class="md-report">' + html + '</div>';
+}
+
+// 🔧 الإصلاح الآلي الشامل: تمرير آخر إجابة بحث على بوابة التوثيق خادميًا
+// (ضبط تخريج وطبعات ومواضع، شفاء إحالات، استبعاد خارج المكتبة) وحفظها
+// مصححة مكانها، بملخص ما أُصلح وما بقي مما يحتاج بحثًا أو قرارًا.
+async function runResearchAutofix() {
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  const panel = document.getElementById('riskControlPanel');
+  if (!session) return;
+  const msgs = session.messages || [];
+  let msg = null;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'assistant' && (msgs[i].content || '').length > 200) { msg = msgs[i]; break; }
+  }
+  if (!msg) { if (typeof showToast === 'function') showToast('لا إجابة بحث محفوظة في هذه المحادثة للإصلاح', 3000); return; }
+  if (panel) { panel.style.display = 'block'; panel.innerHTML = '<div style="padding:6px;">🔧 جارٍ الإصلاح الآلي الشامل على بوابة التوثيق…</div>'; }
+  try {
+    const res = await fetch('/api/research-autofix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html: msg.content, witnesses: msg.witnesses || [] })
+    });
+    if (!res.ok) throw new Error('autofix ' + res.status);
+    const data = await res.json();
+    const s = data.summary || {};
+    if (s.changed) {
+      msg.content = data.html;
+      if (typeof saveChatSessions === 'function') saveChatSessions();
+      renderSessionMessages(activeSessionId);
+    }
+    const fixed = [];
+    if (s.takhrij_fixed) fixed.push(`ضبط تخريج وطبعاته: ${s.takhrij_fixed}`);
+    if (s.repaired) fixed.push(`مواضع إحالات صُححت: ${s.repaired}`);
+    if (s.healed) fixed.push(`إحالات شُفيت وخُتمت: ${s.healed}`);
+    if (s.excluded_outside) fixed.push(`نقول خارج المكتبة استُبعدت: ${s.excluded_outside}`);
+    const remain = [];
+    if (s.unverified) remain.push(`نقول لم تثبت آليًا وبقيت للمراجعة: ${s.unverified}`);
+    if (s.sahihayn_missed) remain.push(`تخريجات ناقصة (ثابتة في الصحيحين): ${s.sahihayn_missed}`);
+    (s.madhhab_gaps || []).forEach(g => remain.push(`قصور استغراق ${g.madhhab}: ${g.books} كتابًا في ${g.layers} طبقة — يحتاج بحثًا تكميليًا`));
+    const md = ['## 🔧 نتيجة الإصلاح الآلي الشامل', '',
+      s.changed ? 'طُبّق على الإجابة المحفوظة وحُفظت مصححة.' : 'لا تغيير: الإجابة مطابقة لبوابة التوثيق أصلًا.', '',
+      fixed.length ? '### ✅ ما أُصلح\n' + fixed.map(x => '- ' + x).join('\n') : '### ✅ ما أُصلح\n- لا بنود قابلة للإصلاح الآلي ظهرت.',
+      '',
+      remain.length ? '### ⚠️ ما بقي — يحتاج بحثًا تكميليًا أو قرارًا\n' + remain.map(x => '- ' + x).join('\n') : '### ⚠️ ما بقي\n- لا شيء مفتوحًا في فحص التوثيق.',
+      '', '---', '', data.record || ''].join('\n');
+    if (panel) renderMarkdownInto(panel, md);
+    if (typeof showToast === 'function') showToast(s.changed ? 'اكتمل الإصلاح الآلي وحُفظت الإجابة مصححة' : 'الإجابة سليمة توثيقيًا — لا إصلاح لزم', 4000);
+  } catch (e) {
+    if (panel) panel.innerHTML = '<div style="padding:6px;">تعذر الإصلاح الآلي: ' + String(e && e.message || e) + '</div>';
+  }
 }
 
 // 🏛 زر الضبط في المناقشة: سجل مخاطر هذا البحث من حزمته المحفوظة مقطعًا
@@ -4357,26 +4416,26 @@ async function toggleRiskControlPanel() {
   }
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const events = pkg.risk_events || [];
-  const dots = { 'عالية': '#dc2626', 'متوسطة': '#d9a400', 'منخفضة': '#9ca3af' };
-  let h = '<div style="font-weight:700;">🏛 سجل مخاطر هذا البحث — علّم ما تريد معالجته فورًا'
-    + (pkg.risk_verdict ? ' · الحكم العام: ' + esc(pkg.risk_verdict) : '')
-    + (pkg.risk_officer ? ' · مسؤول المخاطر: ' + esc(pkg.risk_officer) : '') + '</div>';
-  h += '<div style="font-size:11.5px; opacity:.85;">المذكرة الكاملة في زر «📏 تقرير البحث» أسفل الجواب. البنود المعلّمة تصل مدير المشروع بتوجيه إدارة المخاطر: يعالجها من حزمة البحث المحفوظة أو يطلب الوكيل المعني بسدّها مع إشعاره أن الخطر لُوحظ عليه، ويُحاسَب المتسبب، ثم يتحقق مسؤول المخاطر من الإغلاق في هذا السجل.</div>';
-  if (!events.length) h += '<div style="padding:4px;">لا أحداث مخاطر مسجلة في هذا البحث ضمن الحدود المعتمدة.</div>';
-  ['عالية', 'متوسطة', 'منخفضة'].forEach(cls => {
-    const rows = events.map((e, i) => [e, i]).filter(([e]) => e.cls === cls);
-    if (!rows.length) return;
-    h += `<div style="margin:9px 0 4px; font-weight:700;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${dots[cls]}; margin-left:5px;"></span>${cls === 'عالية' ? '⚠️ ' : ''}مخاطر ${cls} (${rows.length})</div>`;
-    rows.forEach(([e, i]) => {
-      const st = e.status || '';
-      const done = st.startsWith('مُغلق') || st.startsWith('عولج آليًا') || st.startsWith('موثق بقرار');
-      h += `<label style="display:flex; gap:8px; align-items:flex-start; padding:6px 8px; border:1px solid rgba(150,130,90,.3); border-radius:8px; margin-bottom:5px; ${done ? 'opacity:.6;' : ''}">
-        <input type="checkbox" class="risk-item-check" value="${i}" ${done ? 'disabled' : ''} style="margin-top:5px;">
-        <span style="flex:1;"><b>${esc(e.title)}</b><br><small>${esc(e.evidence)}</small><br><small>الحالة: ${esc(st || 'مفتوح')}${done ? ' — لا معالجة مطلوبة' : ''}</small></span></label>`;
-    });
+  let h = '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">'
+    + '<button type="button" class="btn-msg-export" onclick="runResearchAutofix()" style="font-weight:700;">🔧 إصلاح آلي شامل</button>'
+    + '<span style="font-size:11.5px; opacity:.85;">يمرّر الإجابة على بوابة التوثيق: ضبط التخريج والطبعات والمواضع، شفاء الإحالات، استبعاد ما خارج المكتبة — وما لا يصلحه إلا بحث أو قرار يبقى مذكورًا بصراحة.</span></div>';
+  panel.innerHTML = h + '<div id="riskRegisterView"></div><div id="riskChecklist"></div>';
+  renderMarkdownInto(document.getElementById('riskRegisterView'),
+    buildRiskRegisterMd(events, { verdict: pkg.risk_verdict, officer: pkg.risk_officer }));
+  const list = document.getElementById('riskChecklist');
+  if (!events.length) { list.innerHTML = '<div style="padding:4px;">لا أحداث مخاطر مسجلة في هذا البحث ضمن الحدود المعتمدة.</div>'; return; }
+  let c = '<div style="font-weight:700; margin:10px 0 5px;">معالجة بحثية عبر مدير المشروع — علّم ما لا يصلحه الإصلاح الآلي:</div>';
+  events.map((e, i) => [e, i]).forEach(([e, i]) => {
+    const st = e.status || '';
+    const done = st.startsWith('مُغلق') || st.startsWith('عولج آليًا') || st.startsWith('موثق بقرار');
+    if (done) return;
+    const dot = e.cls === 'عالية' ? '#dc2626' : (e.cls === 'متوسطة' ? '#d9a400' : '#9ca3af');
+    c += `<label style="display:flex; gap:8px; align-items:flex-start; padding:6px 8px; border:1px solid rgba(150,130,90,.3); border-radius:8px; margin-bottom:5px;">
+      <input type="checkbox" class="risk-item-check" value="${i}" style="margin-top:5px;">
+      <span style="flex:1;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${dot}; margin-left:5px;"></span><b>${esc(e.title)}</b><br><small>${esc(e.evidence)}</small></span></label>`;
   });
-  if (events.length) h += '<div style="margin-top:8px;"><button type="button" class="btn-msg-export" onclick="sendRiskControlItems()">📨 إرسال البنود المعلّمة إلى مدير المشروع للمعالجة الفورية</button></div>';
-  panel.innerHTML = h;
+  c += '<div style="margin-top:8px;"><button type="button" class="btn-msg-export" onclick="sendRiskControlItems()">📨 إرسال البنود المعلّمة إلى مدير المشروع للمعالجة الفورية</button></div>';
+  list.innerHTML = c;
 }
 
 async function sendRiskControlItems() {
@@ -4605,6 +4664,34 @@ function jumpToAnswerMark(i) {
 }
 function stepAnswerSearch(dir) { jumpToAnswerMark((_answerSearch.current < 0 ? 0 : _answerSearch.current) + dir); }
 
+// 📏 تقرير البحث: وثيقة ماركداون واحدة بجداول مرتبة — تُعرض ملوّنة في
+// نافذة التقرير وتُحفظ بامتداد ‎.md‎.
+function showMarkdownReport(md, filename) {
+  let ov = document.getElementById('mdReportOverlay');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'mdReportOverlay';
+  ov.className = 'md-report-overlay';
+  ov.innerHTML = '<div class="md-report-box">'
+    + '<div class="md-report-head"><b>📏 تقرير البحث</b>'
+    + '<span style="flex:1"></span>'
+    + '<button type="button" class="btn-msg-export" id="mdReportDownload">⬇ تنزيل ‎.md‎</button>'
+    + '<button type="button" class="btn-msg-export" id="mdReportClose">إغلاق ✕</button></div>'
+    + '<div class="md-report-body" dir="rtl"></div></div>';
+  document.body.appendChild(ov);
+  renderMarkdownInto(ov.querySelector('.md-report-body'), md);
+  ov.querySelector('#mdReportClose').onclick = () => ov.remove();
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  ov.querySelector('#mdReportDownload').onclick = () => {
+    const blob = new Blob(['\ufeff' + md], { type: 'text/markdown;charset=utf-8' });
+    const dl = document.createElement('a');
+    dl.href = URL.createObjectURL(blob);
+    dl.download = filename || 'تقرير-بحث.md';
+    dl.click();
+    URL.revokeObjectURL(dl.href);
+  };
+}
+
 async function downloadChatResearchReport(idx) {
   const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
   const msg = session && session.messages ? session.messages[idx] : null;
@@ -4617,9 +4704,9 @@ async function downloadChatResearchReport(idx) {
       entry = mine.length ? mine[mine.length - 1] : null;
     }
   } catch (e) { }
+  const cell = s => String(s ?? '—').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 160);
   const L = [];
-  L.push('تقرير بحث — المغني');
-  L.push('====================');
+  L.push('# 📏 تقرير بحث — المغني');
   L.push('');
   if (entry) {
     const a = entry.audit || {};
@@ -4629,73 +4716,81 @@ async function downloadChatResearchReport(idx) {
     let verdict = 'قوي';
     if (failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
     else if (failed.length === 2 || (ratio !== null && ratio < 65) || (a.ijma_unattributed || 0) > 0) verdict = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
-    L.push(`البحث: ${entry.question || '—'}`);
-    L.push(`التاريخ: ${entry.ts || '—'} · المجموعة: ${entry.group || '—'} · نموذج المدير: ${entry.manager_model || '—'}`);
-    L.push(`المدة: ${entry.duration_s ? Math.round(entry.duration_s / 60 * 10) / 10 + ' دقيقة' : '—'} · حروف الجواب: ${entry.answer_chars ?? '—'} · الشواهد: ${entry.witnesses ?? '—'}`);
+    L.push('| البند | القيمة |', '|---|---|');
+    L.push(`| البحث | ${cell(entry.question)} |`);
+    L.push(`| التاريخ | ${cell(entry.ts)} |`);
+    L.push(`| المجموعة | ${cell(entry.group)} |`);
+    L.push(`| نموذج المدير | ${cell(entry.manager_model)} |`);
+    L.push(`| المدة | ${entry.duration_s ? Math.round(entry.duration_s / 60 * 10) / 10 + ' دقيقة' : '—'} |`);
+    L.push(`| حجم الجواب | ${entry.answer_chars ?? '—'} حرفًا · ${entry.witnesses ?? '—'} شاهدًا |`);
     L.push('');
-    L.push('الحكم العام: ' + verdict);
+    L.push('> ## الحكم العام: ' + verdict);
     L.push('');
-    L.push('أولًا: اكتمال الفريق');
-    L.push(`الوكلاء المرسلون: ${entry.agents_total ?? '—'} · الساقطون تقنيًا: ${failed.length}${failed.length ? ' (' + failed.join('، ') + ')' : ''} · المعطّلون بقرار المستخدم: ${disabled.length}${disabled.length ? ' (' + disabled.join('، ') + ')' : ''}`);
-    if (failed.length) L.push('الساقطون بُنيت أقسامهم على بطاقات شواهدهم وبطاقات الخلاف والمقارنة، والبديل العملي لكل منهم في تقرير هذا البحث من سجل القياس بإحصائيات المغني.');
-    if (disabled.length) L.push('المعطّلون قرارك أنت: لم يُطلب منهم شيء ولم يُعوّض دورهم، والبحث مبني على النطاق المقلّص بقرارك.');
+    L.push('## 👥 أولًا: اكتمال الفريق');
     L.push('');
-    L.push('ثانيًا: مؤشرات التدقيق التوثيقي');
-    L.push(`مفحوص: ${a.checked ?? '—'} · مربوط بحواشيه: ${a.linked ?? '—'} · ثابت: ${a.verified ?? '—'} · في غير موضعه: ${a.relocated ?? '—'} · غير ثابت آليًا: ${a.unverified ?? '—'} · نسبة الثبوت: ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪) · تنبيهات وسيط وحيد: ${a.tier_warnings ?? 0} · دعاوى إجماع: ${a.ijma_flags ?? 0} · اتفاق مطلق بلا نسبة: ${a.ijma_unattributed ?? 0}`);
-    L.push(`حزم مدير الأدوات: ${a.packages_present ? ((a.packages_count ?? 0) + ' حزمة · توثيق مذكور ' + (a.packages_verified_mentions ?? 0) + ' · نقول مسودة لم تمر بالحزم: ' + (a.draft_quotes_unbundled_n ?? 0)) : 'لم يعمل مدير أدوات في هذه الجولة'}`);
-    if ((a.draft_quotes_unbundled || []).length) {
-      L.push('نقول المسودة خارج الحزم:');
-      a.draft_quotes_unbundled.slice(0, 8).forEach(q => L.push(`- «${q}»`));
+    L.push('| المؤشر | العدد |', '|---|---|');
+    L.push(`| الوكلاء المرسلون | ${entry.agents_total ?? '—'} |`);
+    L.push(`| الساقطون تقنيًا | ${failed.length}${failed.length ? ' (' + cell(failed.join('، ')) + ')' : ''} |`);
+    L.push(`| المعطّلون بقرار المستخدم | ${disabled.length}${disabled.length ? ' (' + cell(disabled.join('، ')) + ')' : ''} |`);
+    if (failed.length) L.push('', '> الساقطون بُنيت أقسامهم على بطاقات شواهدهم وبطاقات الخلاف والمقارنة.');
+    if (disabled.length) L.push('', '> المعطّلون قرارك أنت: البحث مبني على النطاق المقلّص بقرارك.');
+    L.push('');
+    L.push('## 🔎 ثانيًا: مؤشرات التدقيق التوثيقي');
+    L.push('');
+    L.push('| المؤشر | القيمة |', '|---|---|');
+    L.push(`| نقول مفحوصة | ${a.checked ?? '—'} (مربوطة بحواشيها: ${a.linked ?? '—'}) |`);
+    L.push(`| ثابتة في كتب إحالتها | ${a.verified ?? '—'} |`);
+    L.push(`| ثابتة في غير موضعها | ${a.relocated ?? '—'} |`);
+    L.push(`| غير ثابتة آليًا | ${a.unverified ?? '—'} |`);
+    L.push(`| نسبة الثبوت | ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪) |`);
+    L.push(`| تنبيهات وسيط وحيد | ${a.tier_warnings ?? 0} |`);
+    L.push(`| دعاوى إجماع / اتفاق بلا نسبة | ${a.ijma_flags ?? 0} / ${a.ijma_unattributed ?? 0} |`);
+    L.push(`| حزم مدير الأدوات | ${a.packages_present ? ((a.packages_count ?? 0) + ' حزمة · توثيق ' + (a.packages_verified_mentions ?? 0) + ' · نقول خارج الحزم ' + (a.draft_quotes_unbundled_n ?? 0)) : 'لم يعمل في هذه الجولة'} |`);
+    if ((a.madhhab_coverage_gaps || []).length) {
+      L.push('', '### قصور استغراق المذاهب', '', '| المذهب | كتب مستعملة | طبقات | المفقود |', '|---|---|---|---|');
+      a.madhhab_coverage_gaps.forEach(g => L.push(`| ${cell(g.madhhab)} | ${g.books} | ${g.layers} | ${cell((g.missing_layers || []).join('، '))} |`));
     }
-    if (entry.research_plan) {
-      L.push('');
-      L.push('🗺 خطة البحث المعتمدة (وكيل خطة البحث ومراجعته وفهرسته):');
-      L.push('--------------------------------------------------');
-      L.push(entry.research_plan.replace(/\*\*/g, ''));
-    }
-    if (entry.plan_review) {
-      L.push('');
-      L.push('🗺 مراجعة المسودة على الخطة (محكّم الخطة):');
-      L.push('--------------------------------------------------');
-      L.push(entry.plan_review.replace(/\*\*/g, ''));
+    if ((a.takhrij_locator_fixed || []).length) {
+      L.push('', `### ضبط تخريج صُحّح آليًا (${a.takhrij_locator_fixed.length})`, '', '| الحاشية | من | إلى | رقم الحديث |', '|---|---|---|---|');
+      a.takhrij_locator_fixed.slice(0, 10).forEach(x => L.push(`| ${x.num ?? '—'} | ${cell(x.from)} | ${cell(x.to)} | ${x.number ?? '—'} |`));
     }
     if ((entry.audit_failures || []).length) {
-      L.push('');
-      L.push('مواضع منبّهة من التدقيق (للمراجعة البشرية):');
-      entry.audit_failures.slice(0, 12).forEach(f => L.push(`- «${(f.quote || '').slice(0, 90)}» — ${f.reason || ''}`));
+      L.push('', '### مواضع منبّهة للمراجعة البشرية', '', '| النقل | سبب التنبيه |', '|---|---|');
+      entry.audit_failures.slice(0, 12).forEach(f => L.push(`| «${cell((f.quote || '').slice(0, 90))}» | ${cell(f.reason)} |`));
     }
+    if ((entry.excluded_items || []).length) {
+      L.push('', '### نقول استُبعدت لخارجها عن المكتبة', '');
+      entry.excluded_items.slice(0, 20).forEach(x => L.push('- «' + cell((x.quote || '').slice(0, 110)) + '»'));
+    }
+    L.push('');
+    L.push(buildRiskRegisterMd(entry.risk_events || [], { verdict: entry.risk_verdict, officer: entry.risk_officer }));
     if (entry.risk_memo) {
-      L.push('');
-      L.push('ثالثًا: 🏛 مذكرة إدارة المخاطر إلى صاحب البحث (مسؤول المخاطر: ' + (entry.risk_officer || '—') + (entry.risk_verdict ? ' · الحكم: ' + entry.risk_verdict : '') + ')');
-      L.push('--------------------------------------------------');
-      L.push(entry.risk_memo.replace(/\*\*/g, ''));
-      if ((entry.excluded_items || []).length) {
-        L.push('');
-        L.push('النقول المستبعدة لخارجها عن المكتبة (قاعدة: لا نقل من خارجها):');
-        entry.excluded_items.slice(0, 26).forEach(x => L.push('- «' + (x.quote || '').slice(0, 110) + '»'));
-      }
+      L.push('', '## 🏛 مذكرة مسؤول المخاطر', '', entry.risk_memo);
+    }
+    if (entry.research_plan) {
+      L.push('', '## 🗺 خطة البحث المعتمدة', '', entry.research_plan);
+    }
+    if (entry.plan_review) {
+      L.push('', '## 🗺 مراجعة المسودة على الخطة', '', entry.plan_review);
     }
     if (entry.audit_record) {
-      L.push('');
-      L.push((entry.risk_memo ? 'رابعًا' : 'ثالثًا') + ': سجل التدقيق الآلي الكامل (كما خرج من المنظومة)');
-      L.push('--------------------------------------------------');
-      L.push(entry.audit_record.replace(/\*\*/g, ''));
+      L.push('', '## 📜 سجل التدقيق الآلي الكامل', '', entry.audit_record);
     }
   } else {
     L.push('لا سجل قياس محفوظ لهذه الإجابة: إما أنها أُنجزت قبل نظام التقرير المنفصل، أو أنها ليست بحث وكلاء موثقًا.');
     if (msg) {
-      L.push(`النموذج: ${msg.model || '—'} · المجموعة: ${msg.agent_group || '—'} · زمن الإجابة: ${msg.duration_ms ? Math.round(msg.duration_ms / 1000) + ' ثانية' : '—'} · الشواهد: ${(msg.witnesses || []).length}`);
+      L.push('');
+      L.push('| البند | القيمة |', '|---|---|');
+      L.push(`| النموذج | ${cell(msg.model)} |`);
+      L.push(`| المجموعة | ${cell(msg.agent_group)} |`);
+      L.push(`| زمن الإجابة | ${msg.duration_ms ? Math.round(msg.duration_ms / 1000) + ' ثانية' : '—'} |`);
+      L.push(`| الشواهد | ${(msg.witnesses || []).length} |`);
     }
-    L.push('لبحوثك القادمة: يخرج هذا الزر تقريرًا كاملًا بمؤشرات التدقيق وتنبيهات الفريق والنطاق.');
   }
   L.push('');
-  L.push('تنبيه: التقرير بوصلة تنبيه من مؤشرات آلية، لا بديل عن قراءة متن البحث.');
-  const blob = new Blob(['\ufeff' + L.join('\n')], { type: 'text/plain;charset=utf-8' });
-  const dl = document.createElement('a');
-  dl.href = URL.createObjectURL(blob);
-  dl.download = 'تقرير-بحث-' + (activeSessionId || 'chat') + '.txt';
-  dl.click();
-  URL.revokeObjectURL(dl.href);
+  L.push('---');
+  L.push('> تنبيه: التقرير بوصلة تنبيه من مؤشرات آلية، لا بديل عن قراءة متن البحث.');
+  showMarkdownReport(L.join('\n'), 'تقرير-بحث-' + (activeSessionId || 'chat') + '.md');
 }
 
 function buildChatAgentGroupPayload() {

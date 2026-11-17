@@ -11591,3 +11591,20 @@ html[data-visual-lab="on"] .message-content,
 html[data-visual-lab="on"] .compare-msg {
   color: var(--lab-color-reading);
 }
+
+/* ——— تقارير الماركداون: سجل المخاطر وتقرير البحث ——— */
+.md-report { font-size: 13px; line-height: 1.9; color: inherit; }
+.md-report h1 { font-size: 19px; margin: 4px 0 10px; color: #7c5a1e; border-bottom: 2px solid rgba(184,150,60,.55); padding-bottom: 6px; }
+.md-report h2 { font-size: 15.5px; margin: 16px 0 7px; color: #8a6d1f; }
+.md-report h3 { font-size: 13.5px; margin: 12px 0 5px; }
+.md-report table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 12.3px; background: rgba(255,255,255,.55); }
+.md-report th { background: linear-gradient(180deg, #b8953c, #96762a); color: #fff; padding: 6px 8px; text-align: right; border: 1px solid rgba(140,110,40,.5); }
+.md-report td { padding: 5px 8px; border: 1px solid rgba(150,130,90,.35); vertical-align: top; }
+.md-report tbody tr:nth-child(even), .md-report tr:nth-child(even) { background: rgba(184,150,60,.08); }
+.md-report blockquote { border-inline-start: 4px solid #b8953c; background: rgba(184,150,60,.10); margin: 10px 0; padding: 8px 12px; border-radius: 6px; }
+.md-report ul, .md-report ol { margin: 6px 0 10px; padding-inline-start: 22px; }
+.md-report code { background: rgba(120,90,20,.12); padding: 1px 5px; border-radius: 4px; }
+.md-report hr { border: none; border-top: 1px solid rgba(150,130,90,.4); margin: 14px 0; }
+.md-report-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(30,22,8,.55); display: flex; align-items: flex-start; justify-content: center; overflow: auto; padding: 28px 12px; }
+.md-report-box { background: #fdf8ec; color: #2b2110; width: min(960px, 96vw); border-radius: 14px; border: 1px solid rgba(184,150,60,.6); box-shadow: 0 18px 50px rgba(0,0,0,.35); padding: 18px 22px 22px; }
+.md-report-head { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(150,130,90,.4); padding-bottom: 10px; margin-bottom: 10px; font-size: 15px; }

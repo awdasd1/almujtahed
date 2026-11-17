@@ -8377,7 +8377,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.652"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.653"},
         },
     })
     if opened.get("error"):
@@ -13548,7 +13548,7 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
             f"{round(duration_s / 60, 1)} دقيقة مقابل سقف معتاد {round(_RISK_DURATION_S / 60)} دقيقة",
             "مفتوح", "راجع مراحل التوقيت في سجل القياس عند تكرارها"))
     ev.sort(key=lambda e: _RISK_CLS_ORDER.get(e["cls"], 3))
-    return ev
+    return _risk_events_dedup(ev)
 
 
 def _risk_verdict(events) -> str:
@@ -13559,23 +13559,81 @@ def _risk_verdict(events) -> str:
     return "صالح للاعتماد"
 
 
-def _risk_memo_fallback(events, officer_model: str) -> str:
-    """مذكرة آلية عند تعذر مسؤول المخاطر: نفس البنية بلا حكم نموذجي."""
-    lines = ["# مذكرة إدارة المخاطر — تنبيه لصاحب البحث",
-             f"الحكم العام: **{_risk_verdict(events)}** (مذكرة آلية؛ تعذر مسؤول المخاطر النموذجي)",
-             ""]
-    if not events:
-        lines.append("لم يرصد الحصاد الآلي حدث مخاطرة في هذا البحث ضمن الحدود المعتمدة.")
+def _risk_events_dedup(events):
+    """إزالة تكرار الحصاد: الحدث الواحد بنوعه وعنوانه يُدمج مرة بعدّ مراته،
+    فلا يتضخم السجل ببنود متماثلة في كل بحث."""
+    seen: Dict[tuple, dict] = {}
+    out: List[dict] = []
+    for e in events or []:
+        key = (e.get("kind") or "", e.get("title") or "")
+        if key in seen:
+            seen[key]["_dup"] = int(seen[key].get("_dup") or 1) + 1
+            continue
+        item = dict(e)
+        seen[key] = item
+        out.append(item)
+    return out
+
+
+def _risk_register_markdown(events, question: str = "", officer: str = "") -> str:
+    """سجل مخاطر إدارة المخاطر بجداول ماركداون: يُبنى حتميًا من الحصاد
+    المرقّى فلا اجتهاد فيه ولا تكرار، ويُختم بمذكرة المسؤول القصيرة."""
+    ev = _risk_events_dedup(events)
+    icons = {"عالية": "🔴", "متوسطة": "🟡", "منخفضة": "⚪"}
+    def cell(s: Any) -> str:
+        return " ".join(str(s or "").split()).replace("|", "¦")[:180]
+    def is_done(e: dict) -> bool:
+        st = e.get("status") or ""
+        return st.startswith("مُغلق") or st.startswith("عولج آليًا") or st.startswith("موثق بقرار")
+    lines = ["# 🏛 سجل مخاطر إدارة المخاطر", ""]
+    meta = [f"**الحكم العام:** {_risk_verdict(ev)}"]
+    if question:
+        meta.append(f"**البحث:** {question}")
+    if officer:
+        meta.append(f"**مسؤول المخاطر:** {officer}")
+    lines.append(" · ".join(meta))
+    lines.append("")
+    lines.append("## 📊 ملخص السجل")
+    lines.append("")
+    lines.append("| الخطورة | البنود | مفتوحة | عولجت آليًا |")
+    lines.append("|---|---|---|---|")
     for cls in ("عالية", "متوسطة", "منخفضة"):
-        grp = [e for e in events if e["cls"] == cls]
+        grp = [e for e in ev if e.get("cls") == cls]
         if not grp:
             continue
-        lines.append(f"## {_RISK_ICONS[cls]} مخاطر {cls} ({len(grp)})")
-        for e in grp:
-            lines.append(f"- **{e['title']}** — الدليل: {e['evidence']} · الحالة: {e['status']} · الإجراء: {e['action']}")
+        done = sum(1 for e in grp if is_done(e))
+        lines.append(f"| {icons[cls]} {cls} | {len(grp)} | {len(grp) - done} | {done} |")
+    lines.append("")
+    for cls in ("عالية", "متوسطة", "منخفضة"):
+        grp = [e for e in ev if e.get("cls") == cls and not is_done(e)]
+        if not grp:
+            continue
+        lines.append(f"## {icons[cls]} مخاطر {cls} مفتوحة ({len(grp)})")
         lines.append("")
-    lines.append(f"مسؤول المخاطر المعيّن: {officer_model} (تعذرت دعوته — مذكرة احتياطية من الحصاد الحتمي)")
+        lines.append("| # | الخطر | الدليل | الإجراء المطلوب |")
+        lines.append("|---|---|---|---|")
+        for i, e in enumerate(grp, 1):
+            dup = f" (×{e['_dup']})" if e.get("_dup") else ""
+            lines.append(f"| {i} | {cell(e.get('title'))}{dup} | {cell(e.get('evidence'))} | {cell(e.get('action'))} |")
+        lines.append("")
+    done_all = [e for e in ev if is_done(e)]
+    if done_all:
+        lines.append(f"## ✅ عولجت آليًا أو وُثّقت بقرار ({len(done_all)}) — لا إجراء")
+        lines.append("")
+        lines.append("| الخطر | الخطورة | ما تم |")
+        lines.append("|---|---|---|")
+        for e in done_all:
+            lines.append(f"| {cell(e.get('title'))} | {icons.get(e.get('cls'), '')} {cell(e.get('cls'))} | {cell(e.get('status'))} |")
+        lines.append("")
+    if not ev:
+        lines.append("لم يُرصد حدث مخاطرة في هذا البحث ضمن الحدود المعتمدة.")
     return "\n".join(lines)
+
+
+def _risk_memo_fallback(events, officer_model: str) -> str:
+    """مذكرة آلية عند تعذر مسؤول المخاطر: السجل الجدولي نفسه بلا حكم نموذجي."""
+    return (_risk_register_markdown(events, officer=officer_model)
+            + "\n\n> مذكرة احتياطية من الحصاد الحتمي؛ تعذرت دعوة مسؤول المخاطر النموذجي.")
 
 
 def _risk_officer_memo(events, *, question, group, manager_model, ledger,
@@ -13622,7 +13680,7 @@ def _risk_officer_memo(events, *, question, group, manager_model, ledger,
         "اقرأ ثلاثة مصادر معًا ولا تغب عن أحدها: المسودة (عبر أحداث التشريح)، وتقرير التوثيق الآلي، وسجل حزم مدير الأدوات. علّم كل نقل في المسودة لم يثبت آليًا أو لم يمر بحزمة داخلية موسومة.\n"
         "١) أكّد كل حدث مرشح أو ارفضه إن كان دليله لا يقوم، ولك إعادة تصنيفه (عالية/متوسطة/منخفضة) مع تعليل من سطر.\n"
         "٢) أضف من سجل الأدلة مخاطر نوعية لا تلتقطها العدّادات إن وجدت: ترجيح بلا بطاقة، تغطية مذهبية ناقصة، تناقض بين وكيلين مرّ صامتًا، دعوى بلا سند — بحد أقصى أربع، وبتصنيفها ودليلها من السجل.\n"
-        "٣) اكتب مذكرة رسمية إلى «صاحب البحث» بصيغة إدارة مخاطر تنبّه المسؤول الأول: تبدأ بسطر «الحكم العام» (صالح للاعتماد / صالح بتنبيهات / لا يُعتمد قبل معالجة العالية المفتوحة) ثم المخاطر العالية فالمتوسطة فالمنخفضة (أمام كل ملاحظة أيقونتها 🔴/🟡/⚪ وخطورتها ودليلها وحالتها: عولجت آليًا أم مفتوحة)، ثم قسم «قرارات مطلوبة من صاحب البحث» بما لا يعالج إلا بقراره.\n"
+        "٣) اكتب مذكرة ماركداون قصيرة محكمة إلى «صاحب البحث» لا تتجاوز ٢٢٠٠ حرف، بهذا الهيكل حصرًا: سطر «## الحكم العام» وجملة واحدة بعده (صالح للاعتماد / صالح بتنبيهات / لا يُعتمد قبل معالجة العالية المفتوحة مع السبب)، ثم «## أخطر ما يجب معالجته» وفيه ثلاثة إلى خمسة بنود مرقمة فقط (الخطر ودليله الرقمي وإجراء واحد لكل بند)، ثم «## قرارات مطلوبة من صاحب البحث» إن وجد ما لا يعالج إلا بقراره. سجلّ الأحداث الكامل يرفق بعد مذكرتك جدولًا آليًا فلا تعيد سرده ولا تكرر حدثًا واحدًا في موضعين، ولا تكتب مقدمات عن المنظومة ولا وصفًا عامًا لعملها.\n"
         "التزم الأرقام الواردة حرفيًا ولا تخترع عددًا ولا اسمًا، واختم بسطر: مسؤول المخاطر: " + officer + ".\n"
         "تنبيه ضبط مذهبي ملزم لحكمك: مصدر فروع الظاهرية في هذه المكتبة هو «المحلى» وحده (كتب داود الظاهري غير موجودة فيها)، وكتب نقلتها شواهد نسبة؛ فلا تُعدّ غياب «النبذة الكافية» أو «مراتب الإجماع» أو «الإحكام» في مسألة فرعية خطرًا على وكيل الظاهرية — فهي كتب أصول وإجماع لا فروع — وإنما الخطر غياب المحلى نفسه أو انقطاع النقلة عنه."
     )
@@ -20303,6 +20361,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "packages_present": bool(_gs.get("packages_present")),
                 "draft_quotes_unbundled_n": _gs.get("draft_quotes_unbundled_n") or 0,
                 "draft_quotes_unbundled": (_gs.get("draft_quotes_unbundled") or [])[:8],
+                "takhrij_locator_fixed": (_gs.get("takhrij_locator_fixed") or [])[:20],
+                "takhrij_sahihayn_missed": (_gs.get("takhrij_sahihayn_missed") or [])[:10],
+                "madhhab_coverage_gaps": _gs.get("madhhab_coverage_gaps") or [],
             },
         })
 
@@ -20383,6 +20444,40 @@ async def research_metrics_endpoint(request: Request):
         "ijma_unattributed_total": sum((it.get("audit") or {}).get("ijma_unattributed", 0) for it in items),
     }
     return {"status": "ok", "summary": summary, "items": items[-50:]}
+
+
+class ResearchAutofixRequest(BaseModel):
+    html: str
+    witnesses: Optional[List[dict]] = None
+
+
+@app.post("/api/research-autofix")
+async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Request):
+    """الإصلاح الآلي الشامل لبحث محفوظ: تمرّ الإجابة على بوابة التوثيق
+    كاملة (ضبط تخريج ومواضع وطبعات، شفاء إحالات، استبعاد خارج المكتبة)
+    فتعود مصححة بملخص ما أُصلح وما بقي مما لا يصلحه إلا بحث أو قرار."""
+    current_owner_id(request)
+    html = (req.html or "").strip()
+    if len(html) < 200:
+        raise HTTPException(status_code=400, detail="نص الإجابة قصير جدًا للإصلاح")
+    fixed, stats = await asyncio.to_thread(
+        _documentation_gate, html, req.witnesses or [], "")
+    summary = {
+        "checked": stats.get("checked") or 0,
+        "verified": stats.get("verified") or 0,
+        "repaired": stats.get("repaired") or 0,
+        "takhrij_fixed": len(stats.get("takhrij_locator_fixed") or []),
+        "healed": stats.get("healed") or 0,
+        "excluded_outside": stats.get("excluded_outside") or 0,
+        "unverified": stats.get("unverified") or 0,
+        "relocated": stats.get("relocated") or 0,
+        "madhhab_gaps": stats.get("madhhab_coverage_gaps") or [],
+        "sahihayn_missed": len(stats.get("takhrij_sahihayn_missed") or []),
+        "failures": (stats.get("failures") or [])[:20],
+        "changed": fixed != html,
+    }
+    return {"status": "ok", "html": fixed, "summary": summary,
+            "record": _documentation_record(stats)}
 
 
 # =============================================================================

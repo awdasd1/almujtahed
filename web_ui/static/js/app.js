@@ -2580,8 +2580,7 @@ function downloadResearchReport(idx) {
   if (failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
   else if (failed.length === 2 || (ratio !== null && ratio < 65) || (a.ijma_unattributed || 0) > 0) verdict = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
   const L = [];
-  L.push('تقرير بحث خاص — سجل قياس البحوث في المغني');
-  L.push('==========================================');
+  L.push('# 📏 تقرير بحث خاص — سجل قياس البحوث في المغني');
   L.push('');
   L.push(`البحث: ${it.question || '—'}`);
   L.push(`التاريخ: ${it.ts || '—'} · المجموعة: ${it.group || '—'} · نموذج المدير: ${it.manager_model || '—'}`);
@@ -2622,13 +2621,13 @@ function downloadResearchReport(idx) {
     L.push('');
     L.push('خامسًا: سجل التدقيق الآلي الكامل (كما خرج من المنظومة)');
     L.push('--------------------------------------------------');
-    L.push(it.audit_record.replace(/\*\*/g, ''));
+    L.push(it.audit_record);
   }
   if (it.risk_memo) {
     L.push('');
     L.push('سادسًا: 🏛 مذكرة إدارة المخاطر إلى صاحب البحث (مسؤول المخاطر: ' + (it.risk_officer || '—') + (it.risk_verdict ? ' · الحكم: ' + it.risk_verdict : '') + ')');
     L.push('--------------------------------------------------');
-    L.push(it.risk_memo.replace(/\*\*/g, ''));
+    L.push(it.risk_memo);
     if ((it.excluded_items || []).length) {
       L.push('');
       L.push('النقول المستبعدة لخارجها عن المكتبة (قاعدة: لا نقل من خارجها):');
@@ -2637,10 +2636,10 @@ function downloadResearchReport(idx) {
   }
   L.push('');
   L.push('تنبيه: هذا التقرير بوصلة تنبيه من مؤشرات آلية، لا بديل عن قراءة متن البحث.');
-  const blob = new Blob(['\ufeff' + L.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const blob = new Blob(['\ufeff' + L.join('\n')], { type: 'text/markdown;charset=utf-8' });
   const dl = document.createElement('a');
   dl.href = URL.createObjectURL(blob);
-  dl.download = 'تقرير-بحث-' + (it.chat_id || idx) + '.txt';
+  dl.download = 'تقرير-بحث-' + (it.chat_id || idx) + '.md';
   dl.click();
   URL.revokeObjectURL(dl.href);
 }
