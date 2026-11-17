@@ -1936,6 +1936,8 @@ CITATION_FORMAT_RULE = """
    وإن لم يظهر رقم الحديث أو الكتاب والباب في الشاهد المرفق فاختصر القالب بحذف الغائب ولا تخترعه، والموضع (جزء-صفحة) لا يسقط بحال لأنه مفتاح التصفح.
    ج. سياسة الاكتفاء في التخريج: إن كان الحديث في البخاري ومسلم أو في أحدهما فذلك أهم تخريج ويُكتفى به وحده. وما لم يكن فيهما وجب تخريجه من الكتب الستة وصحيح ابن خزيمة وصحيح ابن حبان ومستدرك الحاكم، فإن خلا منها فمن تمام التسعة (أحمد ومالك والدارمي)، ثم سنن الدارقطني، ثم سنن البيهقي، ثم معاجم الطبراني الثلاثة، ثم المصنفات والآثار. ولا يُعزَ حديث إلى كتاب دونه في الترتيب وفي الأعلى شاهد واصل إليك، ولا تُسقِط الأعلى اكتفاءً بالأدنى.
    د. رقم الحديث وموضعه تابعان لطبعة الشاهد الذي بين يديك حصرًا: فلا تجمع رقم طبعة وموضع طبعة أخرى في إحالة واحدة، فإن اختلفت الطبعة المذكورة عن طبعة شاهدك فخذ الرقم والموضع من طبعة شاهدك أو صرّح بالطبعة.
+   هـ. النقل من موسوعة مقارنة أو كتاب جامع متأخر لا يقوم وحده سندًا لقول مذهب ولا لمتن حديث: ائتِ بأصله من كتب فنه، فإن تعذّر الوقوف عليه صرّح في الحاشية بـ«بالواسطة» صراحة، ولا تقدّمه للقارئ أصلًا وهو وسيط.
+   و. دعوى الاتفاق والإجماع لا تُطلق بلا نسبة: انسبها إلى قائلها أو كتاب إجماعها باسم وموضع، فإن لم تقف على نسبتها فخفّفها إلى «الجمهور» ولا تبنِ عليها ترجيحًا.
 5. في المتن الرقم المرتفع وحده. يُمنع ذكر اسم الكتاب أو المؤلف أو الجزء أو الصفحة في المتن. تقارير الاستخراج تُبقي سطر الإحالة المعتمدة كما هو.
 ═══════════════════════════════════════════════════════════
 """
@@ -3881,24 +3883,53 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
             _tk_done_nums.add(_num)
             _all_ok = True
             _used_idx: Dict[str, int] = {}
-            for sp in _spans:
+            _tags = list(re.finditer(r'<span class="cit-src"[^>]*>', _d["body"]))
+            for _sp_i, sp in enumerate(_spans):
                 if sp.get("kind") != "src":
                     continue
                 # حارس المحافظة: موضع يحمل المتن فعلًا (ولو بلفظ رواية
                 # أخرى) صحيح لا يُمسّ؛ الإصلاح لمن خلت صفحته من النص.
                 _ptxt = _HTA.page_text(int(sp["bid"]), sp.get("part"), sp.get("page"))
                 if _ptxt and _HTA.page_contains_text(_ptxt, job["quote"]):
-                    continue
+                    # ولو حملت الصفحة المتن، فالرقم المكتوب في جملة هذا الوسم
+                    # يجب أن يكون رقم حديثه في هذه الطبعة: رقم طبعة أجنبية
+                    # على هذه الصفحة خلط طبعات يُصلَح ولو صحّ الموضع.
+                    _wnum = None
+                    if _sp_i < len(_tags):
+                        _seg0 = _tags[_sp_i - 1].end() if _sp_i else 0
+                        _cl = _d["body"][_seg0:_tags[_sp_i].start()]
+                        _cl = _cl[max(_cl.rfind("؛") + 1, _cl.rfind(";") + 1):]
+                        _nm = list(re.finditer(
+                            r"حديث\s+رقم\s*\(?\s*(\d+)\s*\)?", _cl))
+                        if _nm:
+                            _wnum = int(_nm[-1].group(1))
+                    if _wnum is None:
+                        continue
+                    _num_ok = _HTA.page_has_number(_ptxt, _wnum)
+                    if not _num_ok:
+                        try:
+                            _prev = _HTA.page_text(
+                                int(sp["bid"]), sp.get("part"),
+                                int(sp.get("page") or 0) - 1)
+                        except Exception:
+                            _prev = ""
+                        _num_ok = bool(_prev) and _HTA.page_has_number(_prev, _wnum)
+                    if _num_ok:
+                        continue
                 _locs = _HTA.locate_in_book(int(sp["bid"]), job["quote"], limit=6)
                 if not _locs:
                     _all_ok = False
                     continue
-                if any(str(l["part"]) == str(sp.get("part") or "")
-                       and str(l["page"]) == str(sp.get("page") or "") for l in _locs):
-                    continue
-                _idx = _used_idx.get(sp["bid"], 0)
-                _used_idx[sp["bid"]] = _idx + 1
-                _loc = _locs[min(_idx, len(_locs) - 1)]
+                _same = next((l for l in _locs
+                              if str(l["part"]) == str(sp.get("part") or "")
+                              and str(l["page"]) == str(sp.get("page") or "")), None)
+                if _same is not None:
+                    # الموضع نفسه صحيح والعيب في الرقم وحده: إصلاح رقمٍ لا موضع.
+                    _loc = _same
+                else:
+                    _idx = _used_idx.get(sp["bid"], 0)
+                    _used_idx[sp["bid"]] = _idx + 1
+                    _loc = _locs[min(_idx, len(_locs) - 1)]
                 _takhrij_repairs.append({
                     "num": _num, "bid": sp["bid"], "loc": _loc,
                     "old_part": sp.get("part") or "", "old_page": sp.get("page") or ""})
@@ -4280,14 +4311,22 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                         f'{html.escape(canonical_locator(str(_loc["part"]), str(_loc["page"])))}</span>')
                     _prefix = body[:_sm.start()]
                     if _loc.get("number"):
-                        # الرقم المعني هو آخر رقم حديث قبل هذا الوسم بعينه
+                        # حارس الجملة: الرقم المعني هو رقم جملة هذا الوسم
+                        # وحدها — بعد آخر فاصل إحالات (؛) أو وسم سابق —
+                        # فلا يزحف رقم كتاب إلى إحالة كتاب آخر في الحاشية
+                        # نفسها (كسابقة رقم المصنف مكان رقم البخاري).
+                        _clause_start = max(
+                            _prefix.rfind("؛") + 1, _prefix.rfind(";") + 1,
+                            _prefix.rfind("</span>") + len("</span>"))
+                        _clause = _prefix[_clause_start:]
                         _matches = list(re.finditer(
-                            r"(حديث\s*(?:رقم\s*)?\(?\s*)([0-9٠-٩]{2,5})(\s*\)?)", _prefix))
+                            r"(حديث\s*(?:رقم\s*)?\(?\s*)([0-9٠-٩]{2,5})(\s*\)?)", _clause))
                         if _matches:
                             _lm = _matches[-1]
-                            _prefix = (_prefix[:_lm.start()] + _lm.group(1)
+                            _clause = (_clause[:_lm.start()] + _lm.group(1)
                                        + str(_loc["number"]) + _lm.group(3)
-                                       + _prefix[_lm.end():])
+                                       + _clause[_lm.end():])
+                            _prefix = _prefix[:_clause_start] + _clause
                     body = _prefix + _new_span + body[_sm.end():]
                     _changed = True
                     break
@@ -4667,7 +4706,11 @@ def _madhhab_coverage_gaps(cited_book_ids: List[str], cited_titles: List[str] = 
                     hit_layers.append(layer.get("name") or "")
             if not hit_books:
                 continue  # المذهب لم يدخل هذا البحث
-            if len(hit_books) < 3 or len(hit_layers) < 2:
+            # معايرة أحادية المصدر: الظاهري فروعها من «المحلى» أصلًا شبه
+            # وحيد، فاكتفاؤها بكتابين من طبقتين استغراق لا قصور — وإلا
+            # ضجّ السجل بإنذار يعرف قارئه بطلانه فيفقد مصداقيته.
+            _min_books = 2 if madhhab == "الظاهري" else 3
+            if len(hit_books) < _min_books or len(hit_layers) < 2:
                 gaps.append({
                     "madhhab": madhhab, "books": len(hit_books),
                     "layers": len(hit_layers), "hit_layers": hit_layers,
@@ -4718,7 +4761,7 @@ def _documentation_record(stats: dict) -> str:
                 f"تنبيه استغراق المذاهب: المذهب {_g['madhhab']} دخل البحث فاكتفى "
                 f"بـ{_g['books']} كتابًا من كتب طبقاته في {_g['layers']} طبقة اعتماد"
                 + (f" (المفقود: {'، '.join(_g['missing_layers'][:3])})" if _g.get("missing_layers") else "")
-                + "؛ الاستغراق الأدنى: ثلاثة كتب من طبقتين على الأقل، وإلا عُدّ تحرير المذهب ناقصًا.")
+                + "؛ الاستغراق الأدنى: ثلاثة كتب من طبقتين على الأقل (وللمذهب أحادي مصدر الفروع كالظاهري: كتابان من طبقتين)، وإلا عُدّ تحرير المذهب ناقصًا.")
     if stats.get("takhrij_sahihayn_missed"):
         _tm = stats["takhrij_sahihayn_missed"]
         _samples = "؛ ".join(
@@ -8377,7 +8420,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.653"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.654"},
         },
     })
     if opened.get("error"):
