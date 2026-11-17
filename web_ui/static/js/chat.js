@@ -4743,7 +4743,7 @@ async function downloadChatResearchReport(idx) {
     L.push(`| ثابتة في غير موضعها | ${a.relocated ?? '—'} |`);
     L.push(`| غير ثابتة آليًا | ${a.unverified ?? '—'} |`);
     L.push(`| نسبة الثبوت | ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪) |`);
-    L.push(`| تنبيهات وسيط وحيد | ${a.tier_warnings ?? 0} |`);
+    L.push(`| تنبيهات وسيط وحيد | ${a.tier_warnings ?? 0}${a.tier_resolved ? ` (و${a.tier_resolved} وسيط وجد له أصل فعولج)` : ''} |`);
     L.push(`| دعاوى إجماع / اتفاق بلا نسبة | ${a.ijma_flags ?? 0} / ${a.ijma_unattributed ?? 0} |`);
     L.push(`| حزم مدير الأدوات | ${a.packages_present ? ((a.packages_count ?? 0) + ' حزمة · توثيق ' + (a.packages_verified_mentions ?? 0) + ' · نقول خارج الحزم ' + (a.draft_quotes_unbundled_n ?? 0)) : 'لم يعمل في هذه الجولة'} |`);
     if ((a.madhhab_coverage_gaps || []).length) {
@@ -4755,8 +4755,8 @@ async function downloadChatResearchReport(idx) {
       a.takhrij_locator_fixed.slice(0, 10).forEach(x => L.push(`| ${x.num ?? '—'} | ${cell(x.from)} | ${cell(x.to)} | ${x.number ?? '—'} |`));
     }
     if ((entry.audit_failures || []).length) {
-      L.push('', '### مواضع منبّهة للمراجعة البشرية', '', '| النقل | سبب التنبيه |', '|---|---|');
-      entry.audit_failures.slice(0, 12).forEach(f => L.push(`| «${cell((f.quote || '').slice(0, 90))}» | ${cell(f.reason)} |`));
+      L.push('', '### مواضع منبّهة للمراجعة البشرية', '', '| النقل | رقم الحاشية | سبب التنبيه |', '|---|---|---|');
+      entry.audit_failures.slice(0, 16).forEach(f => L.push(`| «${cell((f.quote || '').slice(0, 90))}» | ${f.num ?? '—'} | ${cell(f.reason)} |`));
     }
     if ((entry.excluded_items || []).length) {
       L.push('', '### نقول استُبعدت لخارجها عن المكتبة', '');

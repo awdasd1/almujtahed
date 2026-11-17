@@ -3957,7 +3957,7 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                             "book": _h["work"], "part": _h["part"],
                             "page": _h["page"], "number": _h.get("number")})
                         stats["failures"].append({
-                            "quote": job["quote"][:120],
+                            "quote": job["quote"][:120], "num": job.get("num"),
                             "reason": (f"حديث ثابت في «{_h['work']}» "
                                        f"({_h['part']}-{_h['page']}) ولم يُخرَّج من "
                                        "الصحيحين في حاشيته: تخريج ناقص على سياسة الاكتفاء")})
@@ -3974,10 +3974,10 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
         if profile.get("any_tier"):
             stats["tier_corroborated"] = stats.get("tier_corroborated", 0) + 1
         if profile["tier_only"]:
-            # الوسيط وحده تنبيه ضبط لا سبب حذف: يبقى النقل ويُفحص على كتابه،
-            # ويُعلَّم في السجل أنه يحتاج أصلًا يسنده قبل الاعتماد.
-            stats["tier_warnings"] = stats.get("tier_warnings", 0) + 1
-            stats["failures"].append({"quote": job["quote"][:120], "reason": "وسيط سندًا وحيدًا: تنبيه ضبط، أُبقي بلا حذف"})
+            # الوسيط وحده لا يُعدّ تنبيهًا هنا: يُرحَّل الحكم إلى ما بعد
+            # المطابقة والترحيل، فمن وُجد له أصل في كتب الشواهد عولج،
+            # ومن تعذّر أصله بقي تنبيه ضبط (يُبقى النقل بلا حذف دائمًا).
+            job["tier_only"] = True
         pending.append(job)
 
     def _match_variants(bid, quote, part, page):
@@ -4039,6 +4039,7 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
             for i, (job, status) in enumerate(ex.map(_phase_a, pending)):
                 if status == "MATCH":
                     stats["verified"] += 1
+                    job["phase_a_match"] = True
                     if job.get("heal"):
                         _heals.append(job)
                 else:
@@ -4056,7 +4057,9 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                 return None
             import shamela_search
             words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", _fold_ar(job["quote"]))]
-            if len(words) < 5:
+            # 3 كلمات فأكثر: أحاديث قصيرة مشهورة («الولد للفراش…») كانت
+            # تسقط عند عتبة الخمس، والتحقق من متن الصفحة هو الحارس الحقيقي.
+            if len(words) < 3:
                 return None
             ids = [int(w) for w in witness_ids if str(w).isdigit()][:48]
             if not ids:
@@ -4107,7 +4110,7 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                 return None
             import shamela_search
             words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", _fold_ar(job["quote"]))]
-            if len(words) < 5:
+            if len(words) < 3:
                 return None
 
             def _loc(h):
@@ -4201,9 +4204,10 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
     if failed:
         with ThreadPoolExecutor(max_workers=8) as ex:
             for job, status, loc in ex.map(_phase_b, failed):
+                job["phase_b_status"] = status
                 if status == "RELOCATED":
                     stats["relocated"] = stats.get("relocated", 0) + 1
-                    stats["failures"].append({"quote": job["quote"][:120], "reason": "ثابت في غير كتاب إحالته أو موضعه: تنبيه ربط، أُبقي بلا حذف"})
+                    stats["failures"].append({"quote": job["quote"][:120], "num": job.get("num"), "reason": "ثابت في غير كتاب إحالته أو موضعه: تنبيه ربط، أُبقي بلا حذف"})
                 elif status == "REPAIRABLE" and loc:
                     _repairs.append((job, loc))
                 elif status == "UNBOUND_FOUND" and loc:
@@ -4211,7 +4215,7 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                     stats.setdefault("unbound_found", []).append(
                         {"quote": job["quote"][:100], "book": loc["title"],
                          "part": loc["part"], "page": loc["page"]})
-                    stats["failures"].append({"quote": job["quote"][:120],
+                    stats["failures"].append({"quote": job["quote"][:120], "num": job.get("num"),
                                                "reason": f"ثابت في «{loc['title']}» {loc['part']}/{loc['page']} بفهرس المكتبة لكنه ورد في المتن بلا إحالة مربوطة"})
                 elif _outside_library(job):
                     # قاعدة المكتبة: مصدر خارجها يُستبعد ولا يُنقل منه.
@@ -4227,7 +4231,49 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                          "num": job.get("num")})
                 else:
                     stats["unverified"] = stats.get("unverified", 0) + 1
-                    stats["failures"].append({"quote": job["quote"][:120], "reason": "لم يثبت آليًا في كتاب إحالته ولا في كتب الشواهد: أُبقي للمراجعة"})
+                    stats["failures"].append({"quote": job["quote"][:120], "num": job.get("num"), "reason": "لم يثبت آليًا في كتاب إحالته ولا في كتب الشواهد: أُبقي للمراجعة"})
+
+    # ——— الوسيط الوحيد: لا تنبيه قبل محاولة إيجاد أصل يسنده ———
+    # النقل القائم على موسوعة مقارنة وحدها كان يُنبَّه عليه ولو كان ثابتًا
+    # في أصل من كتب الشواهد، فيتضخم عدد التنبيهات ويفقد التنبيه وزنه.
+    # الحكم الآن: ثابت في أصل (مطابقة أو ترحيل أو بحث جسور) = عولج ويُدلّ
+    # على أصله لنقل سند الحاشية إليه؛ وغير ذلك تنبيه ضبط واحد لكل نقل.
+    _repaired_job_ids = {id(j) for j, _loc in _repairs}
+    for job in pending:
+        if not job.get("tier_only"):
+            continue
+        if id(job) in _repaired_job_ids:
+            stats["tier_resolved"] = stats.get("tier_resolved", 0) + 1
+            stats["failures"].append({
+                "quote": job["quote"][:120], "num": job.get("num"),
+                "reason": "إحالته على وسيط وحده، وقد صُحّح موضع إحالته آليًا إلى أصل ثابت في كتب الشواهد"})
+            continue
+        if job.get("phase_b_status"):
+            continue  # ناله تنبيه مرحلة الترحيل بعينه، فلا تنبيه ثانٍ للنقل نفسه
+        if not job.get("phase_a_match"):
+            continue
+        _origin = None
+        if _time.time() - _t0 <= 300:
+            try:
+                _cand = _relocate_via_bridge(job)
+            except Exception:
+                _cand = None
+            if _cand and not any(p in (_cand.get("title") or "")
+                                 for p in _TIER_BLOCK_PATTERNS):
+                _origin = _cand
+        if _origin:
+            stats["tier_resolved"] = stats.get("tier_resolved", 0) + 1
+            stats["failures"].append({
+                "quote": job["quote"][:120], "num": job.get("num"),
+                "reason": (f"إحالته على وسيط وحده في الحاشية، لكن النص ثابت في أصله "
+                           f"«{_origin.get('title') or ''}» "
+                           f"({_origin.get('part') or ''}-{_origin.get('page') or ''}): "
+                           "يُنقل سند الحاشية إلى الأصل عند التحرير")})
+        else:
+            stats["tier_warnings"] = stats.get("tier_warnings", 0) + 1
+            stats["failures"].append({
+                "quote": job["quote"][:120], "num": job.get("num"),
+                "reason": "وسيط سندًا وحيدًا ولم يُعثر له على أصل في كتب الشواهد: تنبيه ضبط، أُبقي بلا حذف"})
     if _excluded:
         # الاستبعاد الفوري: يُقطع النقل بعلامة حاشيته من المتن وتُزال حاشيته،
         # بعد أن فشل كل ترحيل له إلى كتاب من كتب المكتبة في المراحل السابقة.
@@ -4789,6 +4835,23 @@ def _documentation_record(stats: dict) -> str:
             lines.append("مقابلة الحزم بالمسودة: لم يُرصد نقل ظاهر في المسودة خارج حزم مدير الأدوات.")
     elif stats.get("packages_present") is False:
         lines.append("تنبيه مراقب: لا مدير أدوات في هذه الجولة؛ التوثيق من بوابة المطابقة الخادمية وحدها بلا حزم مسبقة.")
+    if stats.get("tier_resolved"):
+        lines.append(f"وسيط وحيد عولج: {stats['tier_resolved']} نقلًا قامت إحالته على وسيط وحده فثبت في أصل من كتب الشواهد، ودُلّ على أصله في جدول المواضع المنبّهة أدناه لنقل سند الحاشية إليه.")
+    _fails = stats.get("failures") or []
+    if _fails:
+        _cell = lambda s: re.sub(r"\s+", " ", str(s or "")).replace("|", "¦")
+        lines.append("")
+        lines.append("**مواضع منبّهة للمراجعة البشرية:**")
+        lines.append("")
+        lines.append("| النقل | رقم الحاشية | سبب التنبيه |")
+        lines.append("|---|---|---|")
+        for _f in _fails[:24]:
+            lines.append(
+                f"| «{_cell((_f.get('quote') or '')[:110])}» "
+                f"| {_f.get('num') if _f.get('num') not in (None, '') else '—'} "
+                f"| {_cell(_f.get('reason') or '')} |")
+        if len(_fails) > 24:
+            lines.append(f"| … | — | وبقية المواضع ({len(_fails) - 24}) في سجل القياسات الكامل |")
     return "\n".join(lines)
 
 
@@ -4805,6 +4868,9 @@ def _tools_package_ledger(dossiers: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "verified_mentions": text.count("MATCH_EXACT") + text.count("MATCH_NORMALIZED"),
                 "not_found": text.count("NOT_FOUND") + text.count("UNCHECKED"),
                 "preview": re.sub(r"\s+", " ", text)[:280],
+                # النص الكامل (مقصوصًا بسقف سخي) لمقابلة نقول المسودة:
+                # الاكتفاء بالمعاينة كان يُظهر نقولًا موثقة «خارج الحزم» كذبًا.
+                "text": text[:60000],
             })
     return {
         "count": len(packages),
@@ -4819,11 +4885,12 @@ def _attach_package_audit(stats: Dict[str, Any], ledger: Dict[str, Any], reply_t
     stats["packages_count"] = int(ledger.get("count") or 0)
     stats["packages_verified_mentions"] = int(ledger.get("verified_mentions") or 0)
     stats["packages_present"] = bool(ledger.get("present"))
-    blob = " ".join(p.get("preview") or "" for p in (ledger.get("items") or []))
+    blob = " ".join((p.get("text") or p.get("preview") or "")
+                    for p in (ledger.get("items") or []))
     blob_f = _fold_ar(blob) if blob else ""
     quotes = re.findall(r"[«\"]([^»\"]{12,180})[»\"]", reply_text or "")
     unbound = []
-    for q in quotes[:40]:
+    for q in quotes[:80]:
         if re.match(r"^\s*[a-zA-Z-]+\s*:\s*[^ ]+$", q.strip()):
             continue  # شظية صفة HTML/CSS («text-indent:30px») ليست نقلًا
         qf = _fold_ar(q)
@@ -8420,7 +8487,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.654"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.655"},
         },
     })
     if opened.get("error"):
@@ -20379,8 +20446,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             "plan_review": locals().get("_plan_review") or "",
             "audit_record": _audit_record_text,
             "audit_failures": [
-                {"quote": f.get("quote", ""), "reason": f.get("reason", "")}
-                for f in ((_gate_stats or {}).get("failures") or [])[:20]
+                {"quote": f.get("quote", ""), "reason": f.get("reason", ""),
+                 "num": f.get("num")}
+                for f in ((_gate_stats or {}).get("failures") or [])[:24]
             ],
             "audit": {
                 "checked": _gs.get("checked", 0), "linked": _gs.get("linked"),
@@ -20388,6 +20456,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "relocated": _gs.get("relocated", 0), "repaired": _gs.get("repaired", 0),
                 "verified_unbound": _gs.get("verified_unbound", 0),
                 "excluded_outside": _gs.get("excluded_outside", 0), "tier_warnings": _gs.get("tier_warnings", 0),
+                "tier_resolved": _gs.get("tier_resolved", 0),
                 "fuzzy_healed": _gs.get("fuzzy_healed", 0),
                 "fuzzy_healed_items": (_gs.get("fuzzy_healed_items") or [])[:20],
                 "judge_healed": _gs.get("judge_healed", 0),
