@@ -11483,12 +11483,44 @@ html[data-visual-lab="on"] .form-textarea {
 }
 
 html[data-visual-lab="on"] .app-header {
-  background: var(--lab-header-bg) !important;
+  overflow: clip;
+  background: var(--lab-page-shield, var(--lab-page-bg)) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   border-bottom-width: var(--lab-dark-width);
   border-bottom-style: solid;
   border-bottom-color: var(--lab-dark-border);
+}
+
+html[data-visual-lab="on"] .app-header::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  inset-inline-start: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  background-image: var(--lab-page-image, none);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: var(--lab-image-size, cover);
+  opacity: var(--lab-image-opacity, 0);
+  filter: blur(var(--lab-image-blur, 0px));
+}
+
+html[data-visual-lab="on"] .app-header::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: var(--lab-header-bg);
+}
+
+html[data-visual-lab="on"] .app-header > * {
+  position: relative;
+  z-index: 2;
 }
 
 html[data-visual-lab="on"] body:has(#paneChat.active) .main-content,

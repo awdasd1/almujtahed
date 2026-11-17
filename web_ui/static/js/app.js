@@ -1766,7 +1766,7 @@ const LAB_VARS = [
   '--lab-color-tabs', '--lab-color-heading', '--lab-color-sub', '--lab-color-reading',
   '--bg-canvas', '--bg-surface', '--bg-surface-hover', '--bg-muted', '--border-subtle', '--border-hover',
   '--btn-bg', '--btn-text',
-  '--lab-page-image', '--lab-image-opacity', '--lab-image-size', '--lab-image-blur',
+  '--lab-page-image', '--lab-image-opacity', '--lab-image-size', '--lab-image-blur', '--lab-page-shield',
 ];
 
 let visualLabBinding = false;
@@ -1973,8 +1973,16 @@ function applyVisualLab() {
   const page = bg.mode === 'gradient' && stops.length
     ? `linear-gradient(${Number(bg.angle) || 0}deg, ${stops.join(', ')})`
     : labRgba(bg.color, bg.alpha);
+  const shieldStops = colors.slice(0, count).map((color, index) => {
+    const at = count === 1 ? 0 : Math.round((index * 100) / (count - 1));
+    return `${labRgba(color, 100)} ${at}%`;
+  });
+  const shield = bg.mode === 'gradient' && shieldStops.length
+    ? `linear-gradient(${Number(bg.angle) || 0}deg, ${shieldStops.join(', ')})`
+    : labRgba(bg.color, 100);
   const set = (name, value) => root.style.setProperty(name, value);
   set('--lab-page-bg', page);
+  set('--lab-page-shield', shield);
   const imageUrl = String(bg.imageUrl || '').replace(/["\\\n\r]/g, '');
   const fit = bg.imageFit === 'contain' ? 'contain' : (bg.imageFit === 'scale' ? `${Math.max(20, Math.min(200, Number(bg.imageSize) || 100))}%` : 'cover');
   set('--lab-page-image', imageUrl ? `url("${imageUrl}")` : 'none');
