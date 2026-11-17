@@ -4750,6 +4750,14 @@ async function downloadChatResearchReport(idx) {
       L.push('', '### قصور استغراق المذاهب', '', '| المذهب | كتب مستعملة | طبقات | المفقود |', '|---|---|---|---|');
       a.madhhab_coverage_gaps.forEach(g => L.push(`| ${cell(g.madhhab)} | ${g.books} | ${g.layers} | ${cell((g.missing_layers || []).join('، '))} |`));
     }
+    if ((a.hadith_core_gaps || []).length) {
+      L.push('', '### فجوات أصول معلنة (لا بطاقة ولا تصريح خلو)', '', '| العمل | النوع | الحلقة |', '|---|---|---|');
+      a.hadith_core_gaps.forEach(g => L.push(`| ${cell(g.work)} | ${cell(g.kind)} | ${g.ring === 1 ? 'الصحيحان' : g.ring === 2 ? 'السنن الأربعة' : g.ring === 3 ? 'تمام التسعة' : 'شروح'} |`));
+    }
+    if ((a.imam_primary_gaps || []).length) {
+      L.push('', '### أقوال أئمة بواسطة (لا مصدر أول حاضر)', '', '| الإمام | مصادره الأولى الغائبة |', '|---|---|');
+      a.imam_primary_gaps.forEach(g => L.push(`| ${cell(g.imam)} | ${cell((g.sources || []).join('، '))} |`));
+    }
     if ((a.takhrij_locator_fixed || []).length) {
       L.push('', `### ضبط تخريج صُحّح آليًا (${a.takhrij_locator_fixed.length})`, '', '| الحاشية | من | إلى | رقم الحديث |', '|---|---|---|---|');
       a.takhrij_locator_fixed.slice(0, 10).forEach(x => L.push(`| ${x.num ?? '—'} | ${cell(x.from)} | ${cell(x.to)} | ${x.number ?? '—'} |`));

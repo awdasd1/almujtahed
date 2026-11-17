@@ -4648,6 +4648,17 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
     stats["cited_titles"] = cited_titles
     if not stats.get("skip_madhhab_coverage"):
         stats["madhhab_coverage_gaps"] = _madhhab_coverage_gaps(cited, cited_titles)
+    # ——— فجوات الأصول المعلنة: غياب يُصرَّح به لا سكوت يُبنى عليه ———
+    # بطاقة قد تغيب لأن الوكيل لم يبحث، أو بحث فلم يجد، أو وجد فلم يُبلّغ؛
+    # والباحث لا يفرّق بينها من النص وحده. هذان فحصان حتميان على ما حضر
+    # فعلًا (شواهد وإحالات) يعلنان الغياب باسمه بدل أن يمرّ صامتًا.
+    try:
+        _present_ids = set(cited) | {str(w) for w in witness_ids}
+        stats["hadith_core_gaps"] = _hadith_core_coverage(_present_ids, body_plain)
+        stats["imam_primary_gaps"] = _imam_primary_gaps(body_plain, _present_ids)
+    except Exception:
+        stats.setdefault("hadith_core_gaps", [])
+        stats.setdefault("imam_primary_gaps", [])
     if stats.get("judge_healed"):
         print(f"🧭 [Citation Judge] شُفيت {stats['judge_healed']} إحالة بحكم النموذج بين مرشحين", flush=True)
     if stats.get("inherited_healed"):
@@ -4769,6 +4780,94 @@ def _madhhab_coverage_gaps(cited_book_ids: List[str], cited_titles: List[str] = 
     return gaps
 
 
+_HADITH_CORE_WORKS = (
+    ("صحيح البخاري", 1), ("صحيح مسلم", 1),
+    ("سنن أبي داود", 2), ("سنن الترمذي", 2), ("سنن النسائي", 2),
+    ("سنن ابن ماجه", 2),
+    ("مسند أحمد", 3), ("موطأ مالك", 3), ("سنن الدارمي", 3),
+)
+_HADITH_COMMENTARY_WORKS = (
+    "فتح الباري بشرح البخاري", "شرح النووي على مسلم",
+    "عون المعبود", "تحفة الأحوذي",
+)
+_IMAM_PRIMARY_SOURCES = (
+    ("مالك", r"قال مالك|قول مالك|عند مالك|مذهب مالك",
+     ("موطأ مالك", "المدونة")),
+    ("أبو حنيفة", r"قال أبو حنيفة|قول أبي حنيفة|عند أبي حنيفة|مذهب أبي حنيفة",
+     ("الجامع الصغير", "كتاب الآثار")),
+    ("الشافعي", r"قال الشافعي|قول الشافعي|عند الشافعي|نص الشافعي",
+     ("الأم للشافعي", "الرسالة للشافعي")),
+    ("أحمد", r"قال الإمام أحمد|قول أحمد|مذهب أحمد|عن أحمد بن حنبل|رواية عن أحمد",
+     ("مسائل الإمام أحمد",)),
+)
+_WORK_IDS_CACHE: Dict[str, set] = {}
+
+
+def _work_book_ids(work_name: str) -> set:
+    """كل طبعات عملٍ في المكتبة بمحلّل الهوية (مخزَّنًا)؛ فارغ عند التعذر
+    فلا يُعلن غيابُ عملٍ لم يُعرف له وجود في المكتبة أصلًا."""
+    if work_name in _WORK_IDS_CACHE:
+        return _WORK_IDS_CACHE[work_name]
+    ids: set = set()
+    try:
+        import book_identity
+        r = book_identity.resolve_book(work_name, str(DB_INDEX_PATH))
+        w = r.get("work") or {}
+        ids = {str(x) for x in (w.get("book_ids") or []) if x}
+        if not ids:
+            cands = [c for c in (r.get("candidates") or []) if c.get("book_id")]
+            if cands:
+                ids = {str(cands[0]["book_id"])}
+    except Exception:
+        ids = set()
+    _WORK_IDS_CACHE[work_name] = ids
+    return ids
+
+
+def _hadith_core_coverage(present_ids: set, body_plain: str) -> List[dict]:
+    """أصول الحديث وشروحها التي لم تحضر في الشواهد ولا الإحالات: غيابها
+    يُعلن باسمه (لا بطاقة ولا تصريح خلو)، فلا يُبنى على سكوتها نفي ولا
+    درجة. لا يعمل إلا في بحث ذي سياق حديثي ظاهر."""
+    present = {str(x) for x in (present_ids or set())}
+    ctx = False
+    for work, _ring in _HADITH_CORE_WORKS:
+        if _work_book_ids(work) & present:
+            ctx = True
+            break
+    if not ctx:
+        ctx = bool(re.search(
+            r"أخرجه|متفق عليه|حديث رقم|رواه (البخاري|مسلم|أبو داود|الترمذي|النسائي|ابن ماجه|أحمد)",
+            body_plain or ""))
+    if not ctx:
+        return []
+    gaps: List[dict] = []
+    for work, ring in _HADITH_CORE_WORKS:
+        ids = _work_book_ids(work)
+        if ids and not (ids & present):
+            gaps.append({"work": work, "ring": ring, "kind": "أصل حديثي"})
+    for work in _HADITH_COMMENTARY_WORKS:
+        ids = _work_book_ids(work)
+        if ids and not (ids & present):
+            gaps.append({"work": work, "ring": 4, "kind": "شرح حديثي"})
+    return gaps
+
+
+def _imam_primary_gaps(body_plain: str, present_ids: set) -> List[dict]:
+    """قول إمام منسوب في المتن بلا مصدر أول له في الشواهد ولا الإحالات:
+    النقل عنه حينئذ بواسطة كتب متأخرة، فيُعلن كذلك ولا يُقدَّم كنصّه."""
+    present = {str(x) for x in (present_ids or set())}
+    gaps: List[dict] = []
+    for imam, pat, works in _IMAM_PRIMARY_SOURCES:
+        if not re.search(pat, body_plain or ""):
+            continue
+        ids: set = set()
+        for w in works:
+            ids |= _work_book_ids(w)
+        if ids and not (ids & present):
+            gaps.append({"imam": imam, "sources": list(works)})
+    return gaps
+
+
 def _documentation_record(stats: dict) -> str:
     unverified = stats.get("unverified", 0)
     relocated = stats.get("relocated", 0)
@@ -4808,6 +4907,21 @@ def _documentation_record(stats: dict) -> str:
                 f"بـ{_g['books']} كتابًا من كتب طبقاته في {_g['layers']} طبقة اعتماد"
                 + (f" (المفقود: {'، '.join(_g['missing_layers'][:3])})" if _g.get("missing_layers") else "")
                 + "؛ الاستغراق الأدنى: ثلاثة كتب من طبقتين على الأقل (وللمذهب أحادي مصدر الفروع كالظاهري: كتابان من طبقتين)، وإلا عُدّ تحرير المذهب ناقصًا.")
+    if stats.get("hadith_core_gaps"):
+        _hg = stats["hadith_core_gaps"]
+        _names = "، ".join(f"{g['work']} ({g['kind']})" for g in _hg[:10])
+        lines.append(
+            f"فجوات أصول معلنة: لا بطاقة ولا تصريح خلو في هذا البحث من: {_names} — "
+            "غيابها سكوت لا يُبنى عليه نفي وجود النص فيها ولا إثباته، وحديث لم تُحرَّر "
+            "درجته منها أو من شروحها لا تُنسب درجته إليها؛ تُستكمل بطاقاتها أو يُصرَّح بخلوها.")
+    if stats.get("imam_primary_gaps"):
+        _ig = stats["imam_primary_gaps"]
+        _names = "، ".join(
+            f"{g['imam']} (مصادره الأولى: {'، '.join(g['sources'])})" for g in _ig)
+        lines.append(
+            f"أقوال أئمة بواسطة: نُسبت أقوال إلى {_names} ولم يحضر في الشواهد ولا "
+            "الإحالات مصدر أول لها؛ ما ورد منها عن كتب المذهب المتأخرة نقل بواسطة "
+            "يُصرَّح به، ولا يُقدَّم كنص الإمام من كتابه.")
     if stats.get("takhrij_sahihayn_missed"):
         _tm = stats["takhrij_sahihayn_missed"]
         _samples = "؛ ".join(
@@ -8487,7 +8601,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.655"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.656"},
         },
     })
     if opened.get("error"):
@@ -13585,6 +13699,24 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
             f" (وختمت {int(gs.get('swept_stamped') or 0)} كانت صيغ مواضعها خارج القواعد)",
             "مفتوح: موسومة ⚠ في المتن وبعضها بزر تصفح كتابها",
             "راجع صيغ إحالات المدير؛ وتكرارها عيب انضباط صياغة لا عيب مكتبة"))
+    _hcore = gs.get("hadith_core_gaps") or []
+    if _hcore:
+        _ring1 = [g for g in _hcore if g.get("ring") == 1]
+        ev.append(_risk_event(
+            "hadith_core_gap", "متوسطة" if _ring1 else "منخفضة",
+            "أصول حديثية غائبة بلا بطاقة ولا تصريح خلو",
+            "لا حضور في الشواهد ولا الإحالات من: "
+            + "، ".join(f"{g.get('work')} ({g.get('kind')})" for g in _hcore[:8]),
+            "مفتوح",
+            "تُستكمل بطاقات الغائب أو يُصرَّح بخلوه؛ لا يُبنى على سكوته نفي ولا درجة"))
+    _imamp = gs.get("imam_primary_gaps") or []
+    if _imamp:
+        ev.append(_risk_event(
+            "imam_primary_gap", "منخفضة",
+            "أقوال أئمة منقولة بواسطة بلا مصدر أول حاضر",
+            "نُسبت أقوال إلى " + "، ".join(g.get("imam") or "" for g in _imamp)
+            + " ولم يحضر مصدر أول لها في الشواهد ولا الإحالات",
+            "مفتوح", "يُصرَّح بالواسطة أو تُستكمل البطاقة من المصدر الأول"))
     _unb = int(gs.get("unresolved_book") or 0)
     if _unb:
         ev.append(_risk_event(
@@ -20476,6 +20608,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "takhrij_locator_fixed": (_gs.get("takhrij_locator_fixed") or [])[:20],
                 "takhrij_sahihayn_missed": (_gs.get("takhrij_sahihayn_missed") or [])[:10],
                 "madhhab_coverage_gaps": _gs.get("madhhab_coverage_gaps") or [],
+                "hadith_core_gaps": _gs.get("hadith_core_gaps") or [],
+                "imam_primary_gaps": _gs.get("imam_primary_gaps") or [],
             },
         })
 
