@@ -4479,16 +4479,52 @@ async function produceFinalResearch() {
   if (!session) return;
   const panel = document.getElementById('riskControlPanel');
   if (panel) panel.style.display = 'none';
-  if (discussionState(activeSessionId) === 'open') { await finalizeDiscussion(); return; }
-  session.messages.push({
-    role: 'user',
-    content: '🔒 أعد صياغة البحث كاملًا صياغة نهائية معتمدة قابلة للطباعة النهائية، مستوعبًا حزمة البحث المحفوظة وتقارير الفريق وما اتفقنا عليه، ومعالجًا نواقص سجل التدقيق، ورقةً علمية محكمة بلا أي لغة من لغات عملية البحث والمناقشة وبلا تعليقات نقص أو خلل.'
-  });
-  setDiscussionState(activeSessionId, 'closed');
-  renderSessionMessages(activeSessionId);
-  if (typeof saveChatSessions === 'function') saveChatSessions();
-  await triggerChatCompletion(session, [], { discussionMode: 'finalize' });
-  if (typeof showToast === 'function') showToast('🔒 صيغ البحث النهائي القابل للطباعة', 3500);
+  // النسخة النهائية من المحفوظ نفسه (بوابة + تنقية موضعية في ثوانٍ)،
+  // لا إعادة كتابة مدير من سياق المحادثة تختصر البحث وتطول دقائق طويلة.
+  const msgs = session.messages || [];
+  let src = null;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.role === 'assistant' && m.stage !== 'discussion' && (m.content || '').length > 500) { src = m; break; }
+  }
+  if (!src) { if (typeof showToast === 'function') showToast('لا بحث محفوظ في هذه المحادثة لإعداد نسخته النهائية', 3000); return; }
+  if (typeof showToast === 'function') showToast('🔒 جارٍ إعداد النسخة النهائية من المحفوظ (بوابة التوثيق والتنقية)…', 3000);
+  const t0 = Date.now();
+  try {
+    const res = await fetch('/api/research-finalize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html: src.content, witnesses: src.witnesses || [] })
+    });
+    if (!res.ok) throw new Error('finalize ' + res.status);
+    const data = await res.json();
+    const s = data.summary || {};
+    session.messages.push({
+      role: 'assistant', content: data.html, stage: 'final',
+      model: 'إعداد نهائي من المحفوظ (بوابة التوثيق)',
+      duration_ms: Date.now() - t0, witnesses: src.witnesses || []
+    });
+    setDiscussionState(activeSessionId, 'closed');
+    renderSessionMessages(activeSessionId);
+    if (typeof saveChatSessions === 'function') saveChatSessions();
+    const bits = [`اكتمل الإعداد النهائي في ${Math.max(1, Math.round((Date.now() - t0) / 1000))} ثانية من المحفوظ`];
+    if (s.takhrij_fixed) bits.push(`ضُبط ${s.takhrij_fixed} تخريجًا`);
+    if (s.repaired) bits.push(`صُحّح ${s.repaired} موضعًا`);
+    if (s.purged_paras) bits.push(`نُقّيت ${s.purged_paras} فقرة`);
+    if (s.unverified) bits.push(`بقي ${s.unverified} موضعًا للمراجعة (في التقرير لا في الورقة)`);
+    if (typeof showToast === 'function') showToast('🔒 ' + bits.join(' · '), 6000);
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('تعذر الإعداد السريع؛ تُستعمل صياغة المدير الكاملة (أبطأ)', 4000);
+    if (discussionState(activeSessionId) === 'open') { await finalizeDiscussion(); return; }
+    session.messages.push({
+      role: 'user',
+      content: '🔒 أعد صياغة البحث كاملًا صياغة نهائية معتمدة قابلة للطباعة النهائية، مستوعبًا حزمة البحث المحفوظة وتقارير الفريق وما اتفقنا عليه، ومعالجًا نواقص سجل التدقيق، ورقةً علمية محكمة بلا أي لغة من لغات عملية البحث والمناقشة وبلا تعليقات نقص أو خلل.'
+    });
+    setDiscussionState(activeSessionId, 'closed');
+    renderSessionMessages(activeSessionId);
+    if (typeof saveChatSessions === 'function') saveChatSessions();
+    await triggerChatCompletion(session, [], { discussionMode: 'finalize' });
+  }
 }
 
 async function sendRiskControlItems() {

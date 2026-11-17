@@ -8626,7 +8626,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.660"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.661"},
         },
     })
     if opened.get("error"):
@@ -18716,6 +18716,10 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         except Exception as _core_err:
             print(f"🥇 [Core Agents] تعذر الإلحاق الموازي: {_core_err}", flush=True)
         _mark("council_core")
+    # مفتاح المالك يُهيّأ قبل كل الفروع: مسارات المناقشة والإقفال كانت
+    # تصل بوابة التوثيق بلا تعريفه فتسقط البوابة بخطأ متغير غير معرّف
+    # وتخرج النسخة النهائية بلا تدقيق وهي تحسب أنها دُقّقت.
+    api_key_to_use = owner_openrouter_key(request, req.api_key)
     if is_direct_page_reading:
         print(f"📖 [Chat Direct Page Reading Active] Bypass RAG search, serving {len(retrieved_citations)} verbatim pages from Shamela.")
     elif is_parallel_dispatch:
@@ -20769,6 +20773,107 @@ async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Reques
         "refs_after": len(_refs_after),
         "refs_added": _refs_added,
         "refs_removed": len(_refs_before - _refs_after),
+        "changed": fixed != html,
+    }
+    return {"status": "ok", "html": fixed, "summary": summary,
+            "record": _documentation_record(stats)}
+
+
+_FINAL_META_PATS = ("وكيل", "الوكلاء", "المقطع المستخرج", "المقتطف", "الاسترجاع",
+                    "بطاقات الأدلة", "بطاقة", "لم يُرجع", "لم يرجع", "الشواهد المستخرجة",
+                    "نطاق هذا الوكيل", "اتفقنا على", "في مناقشتنا", "جلسة المناقشة",
+                    "مدير المشروع", "انقطع النص", "لم يكتمل لفظ", "سجل التدقيق",
+                    "مسؤول المخاطر", "إدارة المخاطر")
+
+
+@app.post("/api/research-finalize")
+async def research_finalize_endpoint(req: ResearchAutofixRequest, request: Request):
+    """النسخة النهائية من المحفوظ لا من إعادة كتابة: البحث المحفوظ نفسه
+    يمرّ ببوابة التوثيق وتنقية موضعية للفقرات المتسللة إليها لغة العملية
+    (تُعاد صياغة تلك الفقرات وحدها بنموذج سريع) ونزع علامات ⚠، في ثوانٍ —
+    بدل صياغة مدير كاملة تعيد توليد البحث من سياق المحادثة فتطول ربع
+    ساعة وتختصر النص إلى خمسه وتسقط بوابتها بخطأ مفتاح."""
+    current_owner_id(request)
+    html = (req.html or "").strip()
+    if len(html) < 200:
+        raise HTTPException(status_code=400, detail="نص الإجابة قصير جدًا للإعداد النهائي")
+    try:
+        api_key = owner_openrouter_key(request, "")
+    except Exception:
+        api_key = ""
+    fixed, stats = await asyncio.to_thread(
+        _documentation_gate, html, req.witnesses or [], api_key or "")
+
+    # تنقية موضعية: فقرات لغة العملية وحدها (بلا نقل ولا إحالة فيها)،
+    # دفعة واحدة صغيرة — لا تمرير النص كاملًا على نموذج.
+    purged = 0
+    blocks = re.split(r"(?<=</p>)", fixed)
+    targets = []
+    for i, b in enumerate(blocks):
+        if "cit-src" in b or "«" in b or "<li" in b or len(b) > 1500:
+            continue
+        plain = re.sub(r"<[^>]+>", " ", b)
+        if any(p in plain for p in _FINAL_META_PATS):
+            targets.append(i)
+    if targets and api_key:
+        try:
+            numbered = "\n\n".join(
+                f"[[{n + 1}]] {re.sub(r'<[^>]+>', ' ', blocks[i]).strip()}"
+                for n, i in enumerate(targets[:14]))
+            cleaned = await asyncio.to_thread(
+                call_openrouter_raw,
+                model_id="google/gemini-3.8-flash",
+                messages=[
+                    {"role": "system", "content": (
+                        "أنت محرر علمي. تصلك فقرات مرقمة من بحث شرعي تسللت إليها لغة عملية إنتاجه "
+                        "(وكيل، بطاقات، استرجاع، مقاطع، مناقشة). أعد صياغة كل فقرة بلسان ورقة علمية "
+                        "محكمة مغلقة (من جنس: «لم نقف على نص صريح في كتب المذهب المعتمدة في عين المسألة»)، "
+                        "حافظًا على معناها العلمي كاملًا بلا حذف معلومة وبلا إضافة، وأخرج كل فقرة "
+                        "مسبوقة برقمها [[ن]] كما وردت.")},
+                    {"role": "user", "content": numbered},
+                ],
+                api_key=api_key, temperature=0.1, max_tokens=8000,
+                timeout=120, thinking_level="low")
+            parts = {}
+            for m in re.finditer(r"\[\[(\d+)\]\]\s*(.*?)(?=\n\[\[\d+\]\]|\Z)",
+                                 cleaned or "", re.S):
+                parts[int(m.group(1))] = m.group(2).strip()
+            for n, i in enumerate(targets[:14], 1):
+                if parts.get(n):
+                    blocks[i] = f"<p>{parts[n]}</p>"
+                    purged += 1
+            if purged:
+                fixed = "".join(blocks)
+                print(f"🔒 [Fast Finalize] نُقّيت {purged} فقرة عملية موضعيًا", flush=True)
+        except Exception as _fp_err:
+            print(f"🔒 [Fast Finalize] تعذرت التنقية الموضعية: {_fp_err}", flush=True)
+
+    warn_removed = fixed.count("⚠")
+    if warn_removed:
+        fixed = fixed.replace("⚠ ", "").replace("⚠", "")
+
+    def _cited_ids(text):
+        ids = {int(x) for x in re.findall(r'data-book-id="(\d{1,7})"', text or "")}
+        ids |= {int(x) for x in re.findall(r"#(\d{1,7})\b", text or "")}
+        return ids
+
+    _rb, _ra = _cited_ids(html), _cited_ids(fixed)
+    summary = {
+        "checked": stats.get("checked") or 0,
+        "verified": stats.get("verified") or 0,
+        "unverified": stats.get("unverified") or 0,
+        "repaired": stats.get("repaired") or 0,
+        "takhrij_fixed": len(stats.get("takhrij_locator_fixed") or []),
+        "healed": stats.get("healed") or 0,
+        "excluded_outside": stats.get("excluded_outside") or 0,
+        "tier_resolved": stats.get("tier_resolved") or 0,
+        "failures": (stats.get("failures") or [])[:20],
+        "hadith_core_gaps": stats.get("hadith_core_gaps") or [],
+        "imam_primary_gaps": stats.get("imam_primary_gaps") or [],
+        "madhhab_gaps": stats.get("madhhab_coverage_gaps") or [],
+        "purged_paras": purged,
+        "warn_removed": warn_removed,
+        "refs_before": len(_rb), "refs_after": len(_ra),
         "changed": fixed != html,
     }
     return {"status": "ok", "html": fixed, "summary": summary,
