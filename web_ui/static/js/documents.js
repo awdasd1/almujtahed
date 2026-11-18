@@ -605,14 +605,7 @@ function discussDocument(docId, docName) {
 }
 
 // ── نقد ومقارنة: وثيقة مرفوعة × نطاق شاملة محدد (+ ويب)، بضبط صارم خادمي ──
-function docSlashCritique() {
-  const input = document.getElementById('chatInputText');
-  if (input) input.value = input.value.replace(/\\$/, '');
-  const menu = document.getElementById('docSlashMenu');
-  if (menu) menu.style.display = 'none';
-  openCritiqueModal();
-}
-
+// مدخلها قائمة السلاش الأصلية في حقل المحادثة (بحث حر/مخصص/موسع/نقد ومقارنة)
 function closeCritiqueModal() {
   const modal = document.getElementById('docCritiqueModal');
   if (modal) modal.style.display = 'none';
