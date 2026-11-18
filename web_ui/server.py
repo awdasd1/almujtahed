@@ -49,7 +49,7 @@ import concurrent.futures
 import threading
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, Request, HTTPException, Response, UploadFile, File, Body
+from fastapi import FastAPI, Request, HTTPException, Response, UploadFile, File, Body, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8656,7 +8656,7 @@ async def book_pdf_crop_text(payload: dict = Body(...)):
 
 # ===================== رفع وثيقة كاملة وتحويلها نصًا =====================
 @app.post("/api/documents/upload")
-async def documents_upload(request: Request, file: UploadFile = File(...), name: str = ""):
+async def documents_upload(request: Request, file: UploadFile = File(...), name: str = Form("")):
     """رفع وثيقة (PDF أو صورة) وتحويلها نصًا في الخلفية مع تقدم صفحة صفحة."""
     import doc_convert
     owner_id = current_owner_id(request)
@@ -8666,7 +8666,7 @@ async def documents_upload(request: Request, file: UploadFile = File(...), name:
         raise HTTPException(status_code=400, detail="ارفع ملف PDF أو صورة (png/jpg/tiff) أو ملفًا نصيًا")
     folder = UPLOADS_BUCKET_DIR / owner_id / "documents"
     folder.mkdir(parents=True, exist_ok=True)
-    safe = f"{int(time.time() * 1000)}_{re.sub(r'[^\\w.\\-]', '_', original)}"
+    safe = f"{int(time.time() * 1000)}_{re.sub(r'[^\w.\-]', '_', original)}"
     saved = folder / safe
     saved.write_bytes(await file.read())
     meta = doc_convert.register_document(owner_id, (name or "").strip() or Path(original).stem, saved)
@@ -8934,7 +8934,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.682"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.683"},
         },
     })
     if opened.get("error"):
