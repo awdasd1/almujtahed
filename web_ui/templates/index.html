@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.697">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.698">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.697" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.698" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.697</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.698</span>
             </div>
 
             <div class="header-actions">
@@ -5148,6 +5148,24 @@
         </div>
     </div>
 
+    <!-- تنبيه تعذّر نموذج القراءة: لا رجوع صامت للمحرك المحلي قبل موافقة الباحث -->
+    <div class="modal-overlay" id="docFallbackModal" style="display: none; z-index: 100800;" role="dialog" aria-modal="true">
+        <div class="modal-window" style="width: min(520px, 94vw);">
+            <div class="reader-header">
+                <div class="reader-header-info">
+                    <h3 style="margin: 0;">النموذج لا يقرأ</h3>
+                </div>
+            </div>
+            <div class="modal-content" style="padding: 16px;">
+                <p id="docFallbackText" style="font-size: 14px; line-height: 1.9; margin: 0 0 14px;"></p>
+                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button class="btn-flat-secondary" onclick="resolveDocFallback('cancel')">إلغاء</button>
+                    <button class="btn-flat-primary" onclick="resolveDocFallback('accept')">قبول</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- نافذة اختيار نموذج قراءة OpenRouter: قائمة كاملة ببحث وفلترة وتعريف -->
     <div class="modal-overlay" id="docOcrModal" style="display: none; z-index: 100700;" role="dialog" aria-modal="true">
         <div class="modal-window" style="width: min(760px, 96vw); max-height: 92vh; display: flex; flex-direction: column;">
@@ -6648,25 +6666,25 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.697"></script>
-    <script src="/static/js/search.js?v=1.10.697"></script>
-    <script src="/static/js/reader.js?v=1.10.697"></script>
-    <script src="/static/js/force3d.js?v=1.10.697"></script>
-    <script src="/static/js/share.js?v=1.10.697"></script>
-    <script src="/static/js/chat.js?v=1.10.697"></script>
-    <script src="/static/js/documents.js?v=1.10.697"></script>
-    <script src="/static/js/designs.js?v=1.10.697"></script>
-    <script src="/static/js/texts.js?v=1.10.697"></script>
-    <script src="/static/js/agents.js?v=1.10.697"></script>
-    <script src="/static/js/providers.js?v=1.10.697"></script>
-    <script src="/static/js/tools.js?v=1.10.697"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.697"></script>
-    <script src="/static/js/projects.js?v=1.10.697"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.697"></script>
-    <script src="/static/js/archive.js?v=1.10.697"></script>
-    <script src="/static/js/compare.js?v=1.10.697"></script>
-    <script src="/static/js/local_models.js?v=1.10.697"></script>
-    <script src="/static/js/changelog.js?v=1.10.697"></script>
+    <script src="/static/js/app.js?v=1.10.698"></script>
+    <script src="/static/js/search.js?v=1.10.698"></script>
+    <script src="/static/js/reader.js?v=1.10.698"></script>
+    <script src="/static/js/force3d.js?v=1.10.698"></script>
+    <script src="/static/js/share.js?v=1.10.698"></script>
+    <script src="/static/js/chat.js?v=1.10.698"></script>
+    <script src="/static/js/documents.js?v=1.10.698"></script>
+    <script src="/static/js/designs.js?v=1.10.698"></script>
+    <script src="/static/js/texts.js?v=1.10.698"></script>
+    <script src="/static/js/agents.js?v=1.10.698"></script>
+    <script src="/static/js/providers.js?v=1.10.698"></script>
+    <script src="/static/js/tools.js?v=1.10.698"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.698"></script>
+    <script src="/static/js/projects.js?v=1.10.698"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.698"></script>
+    <script src="/static/js/archive.js?v=1.10.698"></script>
+    <script src="/static/js/compare.js?v=1.10.698"></script>
+    <script src="/static/js/local_models.js?v=1.10.698"></script>
+    <script src="/static/js/changelog.js?v=1.10.698"></script>
 
     <script>
         window.refreshLucideIcons = function () {

@@ -8750,7 +8750,7 @@ async def documents_progress(request: Request, doc_id: str):
     meta = doc_convert.get_doc(doc_id, current_owner_id(request))
     if not meta:
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
-    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi", "scope", "ocr_engine", "ocr_model")}
+    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi", "scope", "ocr_engine", "ocr_model", "fallback_prompt", "ocr_fallback")}
     out["volumes"] = len(meta.get("volumes") or [])
     started = meta.get("started")
     if started:
@@ -8803,6 +8803,18 @@ async def documents_cancel(request: Request, doc_id: str):
         if not meta:
             raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
     return {"id": doc_id, "cancelling": ok}
+
+
+@app.post("/api/documents/{doc_id}/fallback")
+async def documents_fallback(request: Request, doc_id: str, payload: dict = Body(...)):
+    """قرار الباحث عند تعذّر نموذج القراءة: قبول التحويل بالمحرك المحلي أو إلغاء التحويل."""
+    import doc_convert
+    if not doc_convert.get_doc(doc_id, current_owner_id(request)):
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    ok = await asyncio.to_thread(
+        doc_convert.resolve_fallback, doc_id, current_owner_id(request),
+        payload.get("decision") or "")
+    return {"id": doc_id, "resolved": ok}
 
 
 @app.get("/api/documents/{doc_id}/page")
@@ -9115,7 +9127,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.697"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.698"},
         },
     })
     if opened.get("error"):

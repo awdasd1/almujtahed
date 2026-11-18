@@ -94,6 +94,39 @@ def delete_doc(doc_id: str, owner: str) -> bool:
 _OCR_RUNTIME: dict = {}
 _CANCEL_EVENTS: dict = {}
 _ACTIVE: dict = {}
+_LAST_OCR_ERROR: dict = {}
+
+
+def _await_fallback_decision(doc_id: str, model: str, reason: str, cancel_ev) -> str:
+    """تعذّر نموذج القراءة: يُعلَّق التحويل ويُعرض على الباحث أن النموذج لا
+    يقرأ وأن البديل هو المحرك الافتراضي لأنظمة ماك (القراءة المحلية)،
+    فيختار قبولًا فيُكمل محليًا أو إلغاءً فيقف التحويل بما تمّ."""
+    _set_meta(doc_id, fallback_prompt={"model": model or "", "reason": reason or ""},
+              fallback_decision="")
+    decision = ""
+    deadline = time.time() + 1800
+    while time.time() < deadline:
+        if cancel_ev is not None and cancel_ev.is_set():
+            decision = "cancel"
+            break
+        got = (get_doc(doc_id) or {}).get("fallback_decision") or ""
+        if got in ("accept", "cancel"):
+            decision = got
+            break
+        time.sleep(0.4)
+    _set_meta(doc_id, fallback_prompt=None)
+    return decision or "cancel"
+
+
+def resolve_fallback(doc_id: str, owner: str, decision: str) -> bool:
+    """قرار الباحث على عرض الرجوع للمحرك المحلي: قبول أو إلغاء."""
+    meta = get_doc(doc_id, owner)
+    if not meta or not meta.get("fallback_prompt"):
+        return False
+    if decision not in ("accept", "cancel"):
+        return False
+    _set_meta(doc_id, fallback_decision=decision)
+    return True
 
 
 class _ConversionCancelled(Exception):
@@ -148,7 +181,10 @@ def _ocr_openrouter_lines(png_path: str, model: str, api_key: str, doc_id: str =
     أو عند رداءة المسح)، سطورًا بمواضع تقريبية متسلسلة."""
     import base64
     import urllib.request
+    import urllib.error
     if not model or not api_key:
+        if doc_id:
+            _LAST_OCR_ERROR[doc_id] = "لم يُضبط مفتاح OpenRouter أو اسم النموذج"
         return []
     try:
         b64 = base64.b64encode(Path(png_path).read_bytes()).decode("ascii")
@@ -178,6 +214,7 @@ def _ocr_openrouter_lines(png_path: str, model: str, api_key: str, doc_id: str =
                 resp.close()
             except Exception:
                 pass
+        _LAST_OCR_ERROR.pop(doc_id, None)
         content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
         if isinstance(content, list):
             content = "".join(str(c.get("text") or "") for c in content if isinstance(c, dict))
@@ -185,18 +222,36 @@ def _ocr_openrouter_lines(png_path: str, model: str, api_key: str, doc_id: str =
         lines = [l for l in lines if not l.startswith("```")]
         total = max(1, len(lines))
         return [{"text": l, "y": i / total} for i, l in enumerate(lines)]
-    except Exception:
+    except Exception as exc:
+        # يُحفظ سبب الفشل ليُعرض على الباحث قبل أي رجوع للمحرك المحلي
+        if doc_id:
+            msg = ""
+            if isinstance(exc, urllib.error.HTTPError):
+                try:
+                    payload = json.loads(exc.read().decode("utf-8", "ignore") or "{}")
+                    msg = str((payload.get("error") or {}).get("message") or "")[:200]
+                except Exception:
+                    msg = ""
+                if not msg:
+                    msg = f"خطأ HTTP {exc.code} من OpenRouter"
+            else:
+                msg = f"{type(exc).__name__}: {exc}"[:200]
+            _LAST_OCR_ERROR[doc_id] = msg
         return []
 
 
-def _ocr_lines(png_path: str, ocr: dict | None = None) -> list:
-    """سطور صورة صفحة بمحرك القراءة المختار: نموذج OpenRouter أو المحلي."""
+def _ocr_lines(png_path: str, ocr: dict | None = None, strict: bool = False):
+    """سطور صورة صفحة بمحرك القراءة المختار: نموذج OpenRouter أو المحلي.
+    عند strict وفشل نموذج OpenRouter يُرجع None (لا رجوع صامت للمحلي)
+    ليعرض التحويلُ الأمرَ على الباحث قبل المتابعة بأي محرك آخر."""
     if ocr and ocr.get("engine") == "openrouter" and ocr.get("model"):
         got = _ocr_openrouter_lines(png_path, ocr["model"],
                                     _OCR_RUNTIME.get(ocr.get("doc_id") or "", ""),
                                     ocr.get("doc_id") or "")
         if got:
             return got
+        if strict:
+            return None
     try:
         import shamela_pdf
         helper = shamela_pdf._ocr_helper()
@@ -229,9 +284,12 @@ def _ocr_lines(png_path: str, ocr: dict | None = None) -> list:
     return out
 
 
-def _ocr_png(png_path: str, ocr: dict | None = None) -> str:
-    """قراءة صورة صفحة بالتعرف البصري، نصًا بأسطره."""
-    return "\n".join(l["text"] for l in _ocr_lines(png_path, ocr))
+def _ocr_png(png_path: str, ocr: dict | None = None, strict: bool = False):
+    """قراءة صورة صفحة بالتعرف البصري، نصًا بأسطره (None عند strict وفشل النموذج)."""
+    lines = _ocr_lines(png_path, ocr, strict=strict)
+    if lines is None:
+        return None
+    return "\n".join(l["text"] for l in lines)
 
 
 def _norm_line(text: str) -> str:
@@ -328,12 +386,35 @@ def _convert_one(src: Path, progress, dpi: int = 300, only=None, ocr: dict | Non
             os.close(fd)
             try:
                 Path(tmp).write_bytes(pix.tobytes("png"))
-                read = _ocr_png(tmp, ocr)
+                read = _ocr_png(tmp, ocr, strict=True)
             finally:
                 try:
                     os.remove(tmp)
                 except OSError:
                     pass
+            if read is None and not (ocr or {}).get("doc_id"):
+                read = _ocr_png(tmp, ocr)  # بلا سياق وثيقة: الرجوع القديم
+            if read is None:
+                # النموذج لا يقرأ: لا رجوع صامت — يُعرض الأمر على الباحث أولًا
+                doc_key = (ocr or {}).get("doc_id") or ""
+                decision = _await_fallback_decision(
+                    doc_key, (ocr or {}).get("model") or "",
+                    _LAST_OCR_ERROR.get(doc_key) or "فشل الاتصال بنموذج القراءة في OpenRouter",
+                    cancel_ev)
+                if decision != "accept":
+                    if cancel_ev is not None:
+                        cancel_ev.set()
+                    break
+                (ocr or {})["engine"] = "local"
+                _set_meta(doc_key, ocr_fallback="local")
+                try:
+                    Path(tmp).write_bytes(pix.tobytes("png"))
+                    read = _ocr_png(tmp, ocr)
+                finally:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
             if cancel_ev is not None and cancel_ev.is_set():
                 # أُسقطت الصفحة قيد القراءة بالإيقاف الفوري: لا تُحسب معالَجة
                 break
@@ -429,6 +510,17 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
     ocr_missing = False
     cancelled = False
     try:
+        if ocr.get("engine") == "openrouter" and str(ocr.get("model") or "").endswith(":batch"):
+            # نماذج :batch لا تُقرأ بالتحويل الفوري أصلًا: التنبيه قبل أي تحويل
+            decision = _await_fallback_decision(
+                doc_id, ocr.get("model") or "",
+                "نماذج اللاحقة :batch لا تعمل عبر التحويل المباشر الفوري؛ تحتاج واجهة Batch غير المتزامنة التي تُسلّم النتائج بعد ساعات",
+                cancel_ev)
+            if decision == "accept":
+                ocr["engine"] = "local"
+                _set_meta(doc_id, ocr_fallback="local")
+            else:
+                raise _ConversionCancelled()
         for vi in range(start_volume, len(volumes)):
             if cancel_ev.is_set():
                 raise _ConversionCancelled()

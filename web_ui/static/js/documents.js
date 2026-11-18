@@ -299,6 +299,38 @@ async function stopDocConversionById(docId) {
   } catch (e) { showToast('تعذر إيقاف التحويل'); }
 }
 
+let docFallbackDocId = null;
+
+function showDocFallback(prompt, docId) {
+  const modal = document.getElementById('docFallbackModal');
+  const text = document.getElementById('docFallbackText');
+  if (!modal || !text) return;
+  const model = prompt?.model ? `«${prompt.model}» ` : '';
+  const reason = prompt?.reason ? ` (${prompt.reason})` : '';
+  text.textContent = `النموذج ${model}لا يستطيع قراءة الصفحات${reason}. سيتم التحويل إلى النموذج الافتراضي لأنظمة ماك (القراءة المحلية على هذا الجهاز). «قبول» يكمل التحويل محليًا، و«إلغاء» يوقف التحويل ويحفظ ما تمّ.`;
+  modal.style.display = 'flex';
+  docFallbackDocId = docId;
+}
+
+function hideDocFallback() {
+  const modal = document.getElementById('docFallbackModal');
+  if (modal) modal.style.display = 'none';
+  docFallbackDocId = null;
+}
+
+async function resolveDocFallback(decision) {
+  const docId = docFallbackDocId;
+  hideDocFallback();
+  if (!docId) return;
+  try {
+    await fetch(`/api/documents/${docId}/fallback`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({decision}),
+    });
+    showToast(decision === 'accept' ? 'سيُكمل التحويل بالمحرك المحلي الافتراضي للماك' : 'أُلغي التحويل وحُفظ ما تمّ');
+  } catch (e) { showToast('تعذر إيصال القرار'); }
+}
+
 function pollDocProgress(docId, docName) {
   docPollingId = docId;
   const bar = document.getElementById('docProgressBar');
@@ -312,6 +344,8 @@ function pollDocProgress(docId, docName) {
     try {
       const res = await fetch(`/api/documents/${docId}/progress`);
       const p = await res.json();
+      if (p.fallback_prompt && docFallbackDocId !== docId) showDocFallback(p.fallback_prompt, docId);
+      if (!p.fallback_prompt && docFallbackDocId === docId) hideDocFallback();
       if (p.status === 'converting' || p.status === 'queued') {
         const pct = p.pages ? Math.max(3, Math.round((p.page / p.pages) * 100)) : 4;
         if (bar) bar.style.width = `${pct}%`;
@@ -367,7 +401,7 @@ async function loadDocumentsList() {
         <span style="font-size:15px;">📄</span>
         <span style="flex:1; min-width:140px;">
           <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}${d.archived ? ' <span style="font-size:10.5px; color:var(--accent-clay);">(مؤرشفة)</span>' : ''}</span>
-          <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${d.ocr_engine === 'openrouter' && d.ocr_model ? ` • قراءة بنموذج <span style="direction:ltr; display:inline-block;">${escapeHtml(d.ocr_model)}</span>` : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : d.status === 'cancelled' ? `أُوقف التحويل عند ${Number(d.page || 0).toLocaleString('ar-EG')} صفحة — حُفظ ما تمّ` : `جارٍ تحويلها… صفحة ${Number(d.page || 0).toLocaleString('ar-EG')} من ${Number(d.pages || 0).toLocaleString('ar-EG')}`}</span>
+          <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${d.ocr_engine === 'openrouter' && d.ocr_model ? ` • قراءة بنموذج <span style="direction:ltr; display:inline-block;">${escapeHtml(d.ocr_model)}</span>` : ''}${d.ocr_fallback ? ' • تعذّر النموذج فحُوّلت بالمحرك المحلي' : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : d.status === 'cancelled' ? `أُوقف التحويل عند ${Number(d.page || 0).toLocaleString('ar-EG')} صفحة — حُفظ ما تمّ` : `جارٍ تحويلها… صفحة ${Number(d.page || 0).toLocaleString('ar-EG')} من ${Number(d.pages || 0).toLocaleString('ar-EG')}`}</span>
         </span>
         ${d.status === 'converting' || d.status === 'queued' ? `<button class="btn-flat-secondary reader-mini-btn" style="color:#c0392b;" onclick="stopDocConversionById('${d.id}')" title="إيقاف فوري: تُسقط الصفحة الجارية ويُحفظ ما قبلها">⏹ إيقاف التحويل</button>` : ''}
         ${done && !d.archived ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
