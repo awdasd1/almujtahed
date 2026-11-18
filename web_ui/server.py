@@ -8883,7 +8883,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.676"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.677"},
         },
     })
     if opened.get("error"):
@@ -9964,6 +9964,14 @@ def _format_endpoint_results(cands, req) -> List[Dict[str, Any]]:
     for i, c in enumerate(cands[:max(1, min(req.top_k, 500))]):
         _m = re.search(r"\d+", c.get("death") or "")
         _body = fetch_page_body(c.get("rel_path") or "", c.get("part_raw"), c.get("page_num_raw")) or c.get("snippet") or ""
+        # الشاهد الحقيقي القابل للتحديد بدقة: عبارة المراسي، أو مقطع حول موضع
+        # المطابقة اللفظية. النتيجة الدلالية لا شاهد حرفيًا لها فتبقى فارغة
+        # فلا يُرسم لها صندوق لا في المتن ولا في المصوّرة
+        _witness = ""
+        if c.get("anchor_phrase"):
+            _witness = str(c.get("anchor_phrase") or "")
+        elif c.get("lexical_hit") or c.get("channel") == "lexical":
+            _witness = str(c.get("snippet") or "")
         out.append({
             "initial_rank": i + 1, "initial_score": c["score"], "rank": i + 1, "reranked": False,
             "book_title": c["title"], "author": c["author"],
@@ -9972,6 +9980,8 @@ def _format_endpoint_results(cands, req) -> List[Dict[str, Any]]:
             "page": str(c.get("page_num_raw") or ""), "score": c["score"],
             "rel_path": c.get("rel_path") or "", "book_id": c.get("book_id"),
             "text": _body,
+            "snippet": str(c.get("snippet") or ""),
+            "witness": _witness,
         })
     return out
 

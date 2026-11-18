@@ -94,7 +94,9 @@ function openBookReaderFromSearch(idx) {
     book_title: item.book_title || item.book || item.title || '',
     part: item.volume || '',
     page_num: parseInt(item.page) || null,
-    highlight: item.text || ''
+    // الشاهد القابل للتحديد وحده، لا نص الصفحة (نص الصفحة مطلعها فيقع
+    // التحديد في أعلى الصفحة دائمًا). الدلالي بلا شاهد فلا تحديد له
+    highlight: item.witness || ''
   });
 }
 
@@ -978,10 +980,8 @@ function highlightReaderPhrase(escaped, phrase) {
     if ('ةه'.includes(ch)) return '[ةه]';
     return escapeRegex(ch);
   };
-  for (const cand of targets) {
-    const wanted = readerState.showTashkeel ? cand : removeTashkeel(cand);
-    const words = wanted.split(/\s+/).filter(Boolean);
-    if (words.length < 2) continue;
+  const tryWords = (words) => {
+    if (words.length < 2) return null;
     const flexible = words.map(w => [...w].map(ch => charPat(ch) + '[\\u064B-\\u065F\\u0670\\u0640]*').join('')).join('\\s+');
     try {
       const exact = new RegExp(`(${flexible})`, 'g');
@@ -989,7 +989,23 @@ function highlightReaderPhrase(escaped, phrase) {
         exact.lastIndex = 0;
         return escaped.replace(exact, '<mark class="reader-highlight">$1</mark>');
       }
-    } catch (e) { /* شاهد معنوي: لا تظليل */ }
+    } catch (e) { /* لا مطابقة حرفية */ }
+    return null;
+  };
+  for (const cand of targets) {
+    const wanted = readerState.showTashkeel ? cand : removeTashkeel(cand);
+    const hit = tryWords(wanted.split(/\s+/).filter(Boolean));
+    if (hit) return hit;
+  }
+  // شاهد طويل (مقطع حول المطابقة): يُظلَّل أول مقطع منطوق بحرفه منه في
+  // موضعه من الصفحة، فإن لم يوجد مقطع حرفي فلا تظليل (شاهد معنوي)
+  const base = readerState.showTashkeel ? target : removeTashkeel(target);
+  const allWords = base.split(/\s+/).filter(Boolean);
+  for (const size of [8, 5]) {
+    for (let off = 0; off + size <= allWords.length; off += 2) {
+      const hit = tryWords(allWords.slice(off, off + size));
+      if (hit) return hit;
+    }
   }
   return escaped;
 }
