@@ -45,6 +45,7 @@ function openDocUpload() {
   if (note) note.style.display = 'none';
   const btn = document.getElementById('btnDocStart');
   if (btn) btn.textContent = 'رفع وتحويل إلى نص';
+  restoreDocOcrUI();
   const modal = document.getElementById('docUploadModal');
   if (modal) modal.style.display = 'flex';
   loadDocumentsList();
@@ -106,6 +107,122 @@ function docScopeLabel(s) {
     : ` • حُوّلت الصفحات ${n(s.from)}–${n(s.to)}${v}`;
 }
 
+// ---------- محرك قراءة الصفحات المصوّرة: محلي أو نموذج OpenRouter ----------
+function docOcrSelection() {
+  const engine = document.querySelector('input[name="docOcrEngine"]:checked')?.value
+    || localStorage.getItem('almojtahed_ocr_engine') || 'local';
+  return { engine, model: localStorage.getItem('almojtahed_ocr_model') || '' };
+}
+
+function docOcrEngineChanged() {
+  const { engine, model } = docOcrSelection();
+  localStorage.setItem('almojtahed_ocr_engine', engine);
+  const btn = document.getElementById('btnDocOcrPick');
+  if (btn) btn.disabled = engine !== 'openrouter';
+  const label = document.getElementById('docOcrModelLabel');
+  if (label) {
+    const rec = (window.openrouterModelsList || []).find(m => m.id === model);
+    label.textContent = engine === 'openrouter' ? (rec ? (rec.name || model) : (model || 'لم يُختر نموذج')) : '';
+  }
+}
+
+function restoreDocOcrUI() {
+  const engine = localStorage.getItem('almojtahed_ocr_engine') || 'local';
+  const radio = document.querySelector(`input[name="docOcrEngine"][value="${engine}"]`);
+  if (radio) radio.checked = true;
+  docOcrEngineChanged();
+}
+
+let docOcrModelsCache = null;
+
+async function loadDocOcrModels(force) {
+  const box = document.getElementById('docOcrList');
+  if (!force && docOcrModelsCache) { renderDocOcrList(); return; }
+  if (box) box.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">تُجلب نماذج OpenRouter…</div>';
+  try {
+    const res = await fetch('/api/openrouter/models');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'تعذر جلب النماذج');
+    docOcrModelsCache = data.models || [];
+    window.openrouterModelsList = docOcrModelsCache;
+    renderDocOcrList();
+  } catch (e) {
+    if (box) box.innerHTML = `<div style="color: var(--text-muted); font-size: 13px;">تعذر جلب النماذج: ${escapeHtml(e.message || String(e))}. تأكد من مفتاح OpenRouter في تبويب الخدمات.</div>`;
+  }
+}
+
+function renderDocOcrList() {
+  const box = document.getElementById('docOcrList');
+  if (!box) return;
+  const q = (document.getElementById('docOcrSearch')?.value || '').toLowerCase().trim();
+  const visionOnly = !!document.getElementById('docOcrVisionOnly')?.checked;
+  const { model } = docOcrSelection();
+  let list = docOcrModelsCache || [];
+  if (visionOnly) list = list.filter(m => (m.input_modalities || []).includes('image'));
+  if (q) list = list.filter(m => (m.id || '').toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q));
+  if (!list.length) {
+    box.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">لا نماذج مطابقة للفلترة.</div>';
+    return;
+  }
+  const price = m => {
+    const p = m.pricing || {};
+    return `$${(p.prompt_per_1m ?? 0).toFixed(2)}/$${(p.completion_per_1m ?? 0).toFixed(2)} لكل مليون`;
+  };
+  box.innerHTML = list.slice(0, 300).map(m => `
+    <div style="display:flex; align-items:center; gap:8px; padding:7px 9px; border:1px solid ${m.id === model ? 'var(--accent-clay)' : 'var(--border-subtle)'}; border-radius:8px; margin-bottom:6px; flex-wrap:wrap;">
+      <span style="flex:1; min-width:200px;">
+        <span style="display:block; font-weight:600;">${escapeHtml(m.name || m.id)}</span>
+        <span style="font-size:11px; color: var(--text-muted); direction:ltr; display:block; text-align:right;">${escapeHtml(m.id)}</span>
+        <span style="font-size:11.5px; color: var(--text-muted);">سياق ${m.context_length ? Number(m.context_length).toLocaleString('ar-EG') : '—'} • ${price(m)}${(m.input_modalities || []).includes('image') ? ' • 📷 يقبل الصور' : ''}</span>
+      </span>
+      <button type="button" class="btn-flat-secondary reader-mini-btn" onclick="showDocOcrInfo('${m.id}')">تعريف</button>
+      <button type="button" class="btn-flat-primary reader-mini-btn" onclick="pickDocOcrModel('${m.id}')">اختيار</button>
+    </div>`).join('');
+}
+
+async function showDocOcrInfo(modelId) {
+  const panel = document.getElementById('docOcrInfo');
+  if (!panel) return;
+  const m = (docOcrModelsCache || []).find(x => x.id === modelId);
+  if (!m) return;
+  const plain = (typeof plainModelDescription === 'function') ? plainModelDescription : (t => String(t || ''));
+  panel.style.display = 'block';
+  panel.innerHTML = `<strong>${escapeHtml(m.name || m.id)}</strong>
+    <span style="direction:ltr; display:inline-block;">(${escapeHtml(m.id)})</span><br>
+    سياق: ${m.context_length ? Number(m.context_length).toLocaleString('ar-EG') : '—'} توكن • إدخال: ${escapeHtml((m.input_modalities || ['text']).join('، '))} • إخراج: ${escapeHtml((m.output_modalities || ['text']).join('، '))}<br>
+    أسعار (لكل مليون توكن): إدخال $${(m.pricing?.prompt_per_1m ?? 0).toFixed(3)} • إخراج $${(m.pricing?.completion_per_1m ?? 0).toFixed(3)}
+    <div id="docOcrAbout" style="margin-top:6px;">${escapeHtml(plain(m.description || '')) || 'يُجلب التعريف…'}</div>`;
+  try {
+    const res = await fetch('/api/openrouter/model-about?model_id=' + encodeURIComponent(modelId));
+    if (res.ok) {
+      const data = await res.json();
+      const el = document.getElementById('docOcrAbout');
+      if (el && data && data.description) el.textContent = plain(data.description);
+    }
+  } catch (e) { /* يبقى وصف الكتالوج */ }
+}
+
+function pickDocOcrModel(modelId) {
+  localStorage.setItem('almojtahed_ocr_model', modelId);
+  localStorage.setItem('almojtahed_ocr_engine', 'openrouter');
+  const radio = document.querySelector('input[name="docOcrEngine"][value="openrouter"]');
+  if (radio) radio.checked = true;
+  docOcrEngineChanged();
+  closeDocOcrPicker();
+  showToast('صار نموذج القراءة: ' + modelId);
+}
+
+function openDocOcrPicker() {
+  const modal = document.getElementById('docOcrModal');
+  if (modal) modal.style.display = 'flex';
+  loadDocOcrModels(false);
+}
+
+function closeDocOcrPicker() {
+  const modal = document.getElementById('docOcrModal');
+  if (modal) modal.style.display = 'none';
+}
+
 function docFileChosen() {
   const file = document.getElementById('docFileInput')?.files?.[0];
   const nameInput = document.getElementById('docNameInput');
@@ -141,6 +258,10 @@ async function startDocUpload() {
     form.append('scope_mode', sc ? sc.mode : 'all');
     if (sc && sc.volume) form.append('scope_volume', sc.volume);
     if (sc) { form.append('scope_from', sc.from); form.append('scope_to', sc.to); }
+    const ocr = docOcrSelection();
+    if (ocr.engine === 'openrouter' && !ocr.model) { showToast('اختر نموذج القراءة من OpenRouter أولاً'); if (btn) btn.disabled = false; return; }
+    form.append('ocr_engine', ocr.engine);
+    if (ocr.model) form.append('ocr_model', ocr.model);
     const url = appendId ? `/api/documents/${appendId}/volumes` : '/api/documents/upload';
     const res = await fetch(url, { method: 'POST', body: form });
     const data = await res.json();
@@ -215,7 +336,7 @@ async function loadDocumentsList() {
         <span style="font-size:15px;">📄</span>
         <span style="flex:1; min-width:140px;">
           <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}${d.archived ? ' <span style="font-size:10.5px; color:var(--accent-clay);">(مؤرشفة)</span>' : ''}</span>
-          <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
+          <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${d.ocr_engine === 'openrouter' && d.ocr_model ? ` • قراءة بنموذج <span style="direction:ltr; display:inline-block;">${escapeHtml(d.ocr_model)}</span>` : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
         </span>
         ${done && !d.archived ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
         ${done ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocBrowse('${d.id}', '${nm}')">تصفح</button>` : ''}
@@ -242,6 +363,8 @@ async function reconvertDocument(docId, docName) {
       body: JSON.stringify({
         dpi: parseInt(document.getElementById('docDpiInput')?.value || '300', 10),
         scope: readDocScope(),
+        ocr_engine: docOcrSelection().engine,
+        ocr_model: docOcrSelection().model,
       }),
     });
     if (!res.ok) throw new Error('تعذر بدء إعادة التحويل');

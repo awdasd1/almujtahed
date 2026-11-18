@@ -8689,17 +8689,31 @@ def _scope_payload(mode, volume, frm, to):
     return {"mode": mode, "volume": volume, "from": frm, "to": to}
 
 
+def _ocr_payload(request: Request, engine, model) -> dict:
+    """اختيار محرك قراءة الصفحات المصوّرة مع مفتاح صاحب الحساب (للذاكرة فقط)."""
+    engine = engine if engine in ("local", "openrouter") else "local"
+    out = {"engine": engine, "model": (model or "") if engine == "openrouter" else ""}
+    if engine == "openrouter":
+        try:
+            out["api_key"] = owner_openrouter_key(request, None) or ""
+        except Exception:
+            out["api_key"] = ""
+    return out
+
+
 @app.post("/api/documents/upload")
 async def documents_upload(request: Request, files: List[UploadFile] = File(...), name: str = Form(""), dpi: int = Form(300),
                            scope_mode: str = Form("all"), scope_volume: Optional[int] = Form(None),
-                           scope_from: Optional[int] = Form(None), scope_to: Optional[int] = Form(None)):
+                           scope_from: Optional[int] = Form(None), scope_to: Optional[int] = Form(None),
+                           ocr_engine: str = Form("local"), ocr_model: str = Form("")):
     """رفع وثيقة بملف واحد أو ملفات أجزاء متعددة، وتحويلها نصًا في الخلفية."""
     import doc_convert
     owner_id = current_owner_id(request)
     saved = await _save_doc_files(request, files)
     meta = doc_convert.register_document(
         owner_id, (name or "").strip() or saved[0].stem, saved, dpi,
-        _scope_payload(scope_mode, scope_volume, scope_from, scope_to))
+        _scope_payload(scope_mode, scope_volume, scope_from, scope_to),
+        _ocr_payload(request, ocr_engine, ocr_model))
     return {"id": meta["id"], "name": meta["name"], "status": meta["status"],
             "volumes": len(saved), "dpi": meta.get("dpi"), "scope": meta.get("scope")}
 
@@ -8707,7 +8721,8 @@ async def documents_upload(request: Request, files: List[UploadFile] = File(...)
 @app.post("/api/documents/{doc_id}/volumes")
 async def documents_append_volumes(request: Request, doc_id: str, files: List[UploadFile] = File(...), dpi: int = Form(300),
                                    scope_mode: str = Form("all"), scope_from: Optional[int] = Form(None),
-                                   scope_to: Optional[int] = Form(None)):
+                                   scope_to: Optional[int] = Form(None),
+                                   ocr_engine: str = Form("local"), ocr_model: str = Form("")):
     """إضافة أجزاء جديدة إلى وثيقة محفوظة وتحويلها ملحقة بنصها."""
     import doc_convert
     owner_id = current_owner_id(request)
@@ -8717,7 +8732,8 @@ async def documents_append_volumes(request: Request, doc_id: str, files: List[Up
     # في الإلحاق يسري النطاق على صفحات الأجزاء الجديدة نفسها بلا رقم جزء
     meta = doc_convert.append_volumes(
         doc_id, owner_id, saved, dpi,
-        _scope_payload(scope_mode, None, scope_from, scope_to))
+        _scope_payload(scope_mode, None, scope_from, scope_to),
+        _ocr_payload(request, ocr_engine, ocr_model))
     return {"id": doc_id, "name": (meta or {}).get("name", ""), "status": "converting",
             "volumes": len((meta or {}).get("volumes") or [])}
 
@@ -8734,7 +8750,7 @@ async def documents_progress(request: Request, doc_id: str):
     meta = doc_convert.get_doc(doc_id, current_owner_id(request))
     if not meta:
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
-    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi", "scope")}
+    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi", "scope", "ocr_engine", "ocr_model")}
     out["volumes"] = len(meta.get("volumes") or [])
     started = meta.get("started")
     if started:
@@ -8760,7 +8776,10 @@ async def documents_reconvert(request: Request, doc_id: str, payload: Optional[d
     import doc_convert
     dpi = (payload or {}).get("dpi")
     scope = (payload or {})["scope"] if payload and "scope" in payload else "keep"
-    if not doc_convert.reconvert_document(doc_id, current_owner_id(request), dpi, scope):
+    ocr = None
+    if payload and ("ocr_engine" in payload or "ocr_model" in payload):
+        ocr = _ocr_payload(request, payload.get("ocr_engine"), payload.get("ocr_model"))
+    if not doc_convert.reconvert_document(doc_id, current_owner_id(request), dpi, scope, ocr):
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
     return {"id": doc_id, "status": "queued"}
 
@@ -9084,7 +9103,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.694"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.695"},
         },
     })
     if opened.get("error"):
@@ -21690,12 +21709,14 @@ def _parse_openrouter_model(m: dict) -> dict:
     benchmarks = m.get("benchmarks") or {}
     art_analysis = benchmarks.get("artificial_analysis") or {}
     outputs = [str(item) for item in ((m.get("architecture") or {}).get("output_modalities") or []) if str(item or "").strip()]
+    inputs = [str(item) for item in ((m.get("architecture") or {}).get("input_modalities") or []) if str(item or "").strip()]
     return {
         "id": m.get("id"),
         "canonical_slug": m.get("canonical_slug") or m.get("id"),
         "name": m.get("name") or m.get("id"),
         "description": m.get("description", ""),
         "context_length": m.get("context_length", 0),
+        "input_modalities": inputs or ["text"],
         "output_modalities": outputs or ["text"],
         "pricing": {
             "prompt_per_token": prompt_token,

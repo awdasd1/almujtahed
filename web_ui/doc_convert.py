@@ -91,8 +91,64 @@ def delete_doc(doc_id: str, owner: str) -> bool:
     return True
 
 
-def _ocr_lines(png_path: str) -> list:
-    """سطور صورة صفحة بالتعرف البصري المحلي مع مواضعها النسبية."""
+_OCR_RUNTIME: dict = {}
+_OCR_PROMPT = (
+    "استخرج نص هذه الصفحة العربية كاملًا كما هو مكتوب، سطرًا سطرًا من أولها "
+    "إلى آخرها شاملاً الحواشي أسفلها وعلاماتها، دون أي شرح أو تعليق أو "
+    "عناوين من عندك، ودون تنسيق ماركداون أو أسوار رمزية."
+)
+
+
+def set_ocr_runtime(doc_id: str, api_key: str) -> None:
+    """مفتاح OpenRouter لمحرك قراءة نموذجي: يُحفظ في الذاكرة فقط لا في السجل."""
+    if api_key:
+        _OCR_RUNTIME[doc_id] = api_key
+
+
+def _ocr_openrouter_lines(png_path: str, model: str, api_key: str) -> list:
+    """قراءة صفحة بنموذج رؤية من OpenRouter (بديل المحلي على ويندوز
+    أو عند رداءة المسح)، سطورًا بمواضع تقريبية متسلسلة."""
+    import base64
+    import urllib.request
+    if not model or not api_key:
+        return []
+    try:
+        b64 = base64.b64encode(Path(png_path).read_bytes()).decode("ascii")
+        body = json.dumps({
+            "model": model,
+            "temperature": 0,
+            "max_tokens": 8000,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": _OCR_PROMPT},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            ]}],
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=body, method="POST",
+            headers={"Authorization": f"Bearer {api_key}",
+                     "Content-Type": "application/json",
+                     "HTTP-Referer": "http://localhost:8085",
+                     "X-Title": "Almoghni Sharia Engine"})
+        with urllib.request.urlopen(req, timeout=240) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        if isinstance(content, list):
+            content = "".join(str(c.get("text") or "") for c in content if isinstance(c, dict))
+        lines = [l.strip() for l in str(content).splitlines() if l.strip()]
+        lines = [l for l in lines if not l.startswith("```")]
+        total = max(1, len(lines))
+        return [{"text": l, "y": i / total} for i, l in enumerate(lines)]
+    except Exception:
+        return []
+
+
+def _ocr_lines(png_path: str, ocr: dict | None = None) -> list:
+    """سطور صورة صفحة بمحرك القراءة المختار: نموذج OpenRouter أو المحلي."""
+    if ocr and ocr.get("engine") == "openrouter" and ocr.get("model"):
+        got = _ocr_openrouter_lines(png_path, ocr["model"], _OCR_RUNTIME.get(ocr.get("doc_id") or "", ""))
+        if got:
+            return got
     try:
         import shamela_pdf
         helper = shamela_pdf._ocr_helper()
@@ -113,9 +169,9 @@ def _ocr_lines(png_path: str) -> list:
     return out
 
 
-def _ocr_png(png_path: str) -> str:
-    """قراءة صورة صفحة بالتعرف البصري المحلي، نصًا بأسطره."""
-    return "\n".join(l["text"] for l in _ocr_lines(png_path))
+def _ocr_png(png_path: str, ocr: dict | None = None) -> str:
+    """قراءة صورة صفحة بالتعرف البصري، نصًا بأسطره."""
+    return "\n".join(l["text"] for l in _ocr_lines(png_path, ocr))
 
 
 def _norm_line(text: str) -> str:
@@ -130,7 +186,7 @@ def _clamp_dpi(value) -> int:
         return 300
 
 
-def _footnote_band_text(page, page_text: str, dpi: int = 300) -> str:
+def _footnote_band_text(page, page_text: str, dpi: int = 300, ocr: dict | None = None) -> str:
     """حواشي أسفل الصفحة المصوّرة: يُعاد قراءة خُمسها الأسفل مكبّرًا، وما جدّ
     من سطوره (ليست في متن الصفحة المقروء) يُرجع ليُلحق بعد خط فاصل كما في
     المطبوع؛ فخط الحواشي الصغير يضيع في قراءة الصفحة كاملة منخفضة الدقة."""
@@ -143,7 +199,7 @@ def _footnote_band_text(page, page_text: str, dpi: int = 300) -> str:
         os.close(fd)
         try:
             Path(tmp).write_bytes(pix.tobytes("png"))
-            lines = _ocr_lines(tmp)
+            lines = _ocr_lines(tmp, ocr)
         finally:
             try:
                 os.remove(tmp)
@@ -173,7 +229,7 @@ def _natural_key(path: Path):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", path.name)]
 
 
-def _convert_one(src: Path, progress, dpi: int = 300, only=None) -> tuple:
+def _convert_one(src: Path, progress, dpi: int = 300, only=None, ocr: dict | None = None) -> tuple:
     """تحويل ملف واحد إلى أجزاء صفحاته، يُرجع (الأجزاء، عدد الصفحات، فشل بصري؟).
     only مجموعة أرقام صفحات (1-based) تُحوَّل وحدها إن أُعطيت، بأرقامها الحقيقية."""
     ext = src.suffix.lower()
@@ -210,14 +266,14 @@ def _convert_one(src: Path, progress, dpi: int = 300, only=None) -> tuple:
             os.close(fd)
             try:
                 Path(tmp).write_bytes(pix.tobytes("png"))
-                read = _ocr_png(tmp)
+                read = _ocr_png(tmp, ocr)
             finally:
                 try:
                     os.remove(tmp)
                 except OSError:
                     pass
             if read:
-                band = _footnote_band_text(page, read, dpi)
+                band = _footnote_band_text(page, read, dpi, ocr)
                 if band:
                     read = read + "\n——————\n" + band
                 parts.append(f"[صفحة {i + 1}]\n{read}")
@@ -284,6 +340,8 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
         return
     volumes = meta.get("volumes") or ([{"file_path": meta.get("file_path")}] if meta.get("file_path") else [])
     dpi = _clamp_dpi(meta.get("dpi"))
+    ocr = {"engine": meta.get("ocr_engine") or "local",
+           "model": meta.get("ocr_model") or "", "doc_id": doc_id}
     scope = _norm_scope(meta.get("scope"))
     multi = len(volumes) > 1
     totals = [_count_pages(Path(v.get("file_path") or "")) for v in volumes]
@@ -307,7 +365,7 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
                 _set_meta(doc_id, volumes=volumes)
                 continue
             vparts, n, miss = _convert_one(
-                Path(volumes[vi].get("file_path") or ""), _tick, dpi, onlys[vi])
+                Path(volumes[vi].get("file_path") or ""), _tick, dpi, onlys[vi], ocr)
             ocr_missing = ocr_missing or miss
             if vparts:
                 if multi:
@@ -334,7 +392,7 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
     kw = {"status": "done", "chars": len(full), "pages": final_pages,
           "page": final_pages, "finished": int(time.time()), "volumes": volumes}
     if ocr_missing:
-        kw["note"] = "بعض الصفحات المصوّرة لم تُقرأ (أداة التعرف البصري خاصة بنسخة Mac)"
+        kw["note"] = "بعض الصفحات المصوّرة لم تُقرأ (تحقق من محرك القراءة المختار: المحلي خاص بنظام Mac، وعلى ويندوز اختر نموذج OpenRouter)"
     _set_meta(doc_id, **kw)
 
 
@@ -343,7 +401,14 @@ def convert_document(doc_id: str) -> None:
     _convert_volumes(doc_id, 0)
 
 
-def register_document(owner: str, name: str, saved, dpi=None, scope=None) -> dict:
+def _apply_ocr_meta(kw: dict, ocr) -> None:
+    """حفظ اختيار محرك القراءة في بيانات الوثيقة ومفتاحه في الذاكرة."""
+    if isinstance(ocr, dict) and ocr.get("engine") in ("local", "openrouter"):
+        kw["ocr_engine"] = ocr["engine"]
+        kw["ocr_model"] = str(ocr.get("model") or "") if ocr["engine"] == "openrouter" else ""
+
+
+def register_document(owner: str, name: str, saved, dpi=None, scope=None, ocr=None) -> dict:
     """تسجيل وثيقة من ملف أو ملفات أجزاء مرتبة بفرز طبيعي لأسمائها."""
     paths = [saved] if isinstance(saved, (str, Path)) else list(saved)
     paths = sorted((Path(p) for p in paths), key=_natural_key)
@@ -357,15 +422,18 @@ def register_document(owner: str, name: str, saved, dpi=None, scope=None) -> dic
         "status": "queued", "page": 0, "pages": 0, "chars": 0,
         "created": int(time.time()), "error": "", "note": "",
     }
+    _apply_ocr_meta(meta, ocr)
     with _LOCK:
         reg = _load_registry()
         reg[doc_id] = meta
         _save_registry(reg)
+    if isinstance(ocr, dict):
+        set_ocr_runtime(doc_id, str(ocr.get("api_key") or ""))
     threading.Thread(target=convert_document, args=(doc_id,), daemon=True).start()
     return dict(meta)
 
 
-def reconvert_document(doc_id: str, owner: str, dpi=None, scope="keep") -> bool:
+def reconvert_document(doc_id: str, owner: str, dpi=None, scope="keep", ocr=None) -> bool:
     """إعادة تحويل وثيقة من ملفاتها الأصلية (لالتقاط ما فات بدقة أعلى مثلًا).
     scope: ‏"keep" للإبقاء على نطاقها، أو None لكامل الوثيقة، أو قاموس نطاق."""
     if not get_doc(doc_id, owner):
@@ -375,12 +443,15 @@ def reconvert_document(doc_id: str, owner: str, dpi=None, scope="keep") -> bool:
         kw["dpi"] = _clamp_dpi(dpi)
     if scope != "keep":
         kw["scope"] = _norm_scope(scope)
+    _apply_ocr_meta(kw, ocr)
     _set_meta(doc_id, **kw)
+    if isinstance(ocr, dict):
+        set_ocr_runtime(doc_id, str(ocr.get("api_key") or ""))
     threading.Thread(target=convert_document, args=(doc_id,), daemon=True).start()
     return True
 
 
-def append_volumes(doc_id: str, owner: str, saved, dpi=None, scope="keep") -> dict | None:
+def append_volumes(doc_id: str, owner: str, saved, dpi=None, scope="keep", ocr=None) -> dict | None:
     """إضافة أجزاء جديدة إلى وثيقة قائمة وتحويلها ملحقة بنصها."""
     meta = get_doc(doc_id, owner)
     if not meta:
@@ -395,7 +466,10 @@ def append_volumes(doc_id: str, owner: str, saved, dpi=None, scope="keep") -> di
         kw["dpi"] = _clamp_dpi(dpi)
     if scope != "keep":
         kw["scope"] = _norm_scope(scope)
+    _apply_ocr_meta(kw, ocr)
     _set_meta(doc_id, **kw)
+    if isinstance(ocr, dict):
+        set_ocr_runtime(doc_id, str(ocr.get("api_key") or ""))
     threading.Thread(target=_convert_volumes, args=(doc_id, start), daemon=True).start()
     out = get_doc(doc_id, owner) or meta
     return dict(out)
