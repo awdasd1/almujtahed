@@ -14,6 +14,15 @@ function initDocSlash() {
     if (!menu) return;
     menu.style.display = /\\$/.test(input.value) ? 'block' : 'none';
   });
+  // استجابة لضغطة المفتاح نفسها أيضًا: لوحات مفاتيح لا يصل منها الحرف
+  // إلى حدث الإدخال بصيغته اللاتينية دائمًا
+  input.addEventListener('keydown', (e) => {
+    if (e.code !== 'Backslash') return;
+    setTimeout(() => {
+      const menu = document.getElementById('docSlashMenu');
+      if (menu) menu.style.display = 'block';
+    }, 30);
+  });
   input.addEventListener('blur', () => {
     setTimeout(() => {
       const menu = document.getElementById('docSlashMenu');
