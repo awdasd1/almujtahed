@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.673">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.674">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.673" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.674" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.673</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.674</span>
             </div>
 
             <div class="header-actions">
@@ -5004,19 +5004,6 @@
                 <pre id="readerBetakaContent" class="reader-betaka-text"></pre>
             </div>
 
-            <!-- لوحة النسخة المصوّرة -->
-            <div id="readerPdfPanel" class="reader-pdf-panel" style="display: none;">
-                <div class="reader-pdf-bar">
-                    <span id="readerPdfMeta" class="reader-pdf-meta">النسخة المصوّرة</span>
-                    <span class="reader-pdf-nav">
-                        <button class="btn-flat-secondary reader-mini-btn" id="btnReaderPdfPrev" onclick="readerPdfNav(-1)">الصفحة السابقة</button>
-                        <button class="btn-flat-secondary reader-mini-btn" id="btnReaderPdfNext" onclick="readerPdfNav(1)">الصفحة اللاحقة</button>
-                        <button class="btn-flat-secondary reader-mini-btn" onclick="toggleReaderPdf()">إغلاق</button>
-                    </span>
-                </div>
-                <img id="readerPdfImg" class="reader-pdf-img" alt="صفحة النسخة المصوّرة" title="مرّر بعجلة الفأرة أو انقر طرفي الصورة للتقليب">
-            </div>
-
             <!-- متن صفحة الكتاب الأصلي -->
             <div class="reader-content-scroll" id="readerContentScroll">
                 <div id="readerPageBody" class="reader-page-body" onmouseup="onReaderTextSelected()"
@@ -5058,6 +5045,59 @@
                 </button>
             </div>
 
+        </div>
+    </div>
+
+    <!-- نافذة النسخة المصوّرة المستقلة -->
+    <div class="modal-overlay" id="pdfViewerModal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="pdfViewerTitle">
+        <div class="modal-window pdf-viewer-window">
+            <div class="reader-header">
+                <div class="reader-header-info">
+                    <div class="reader-title-row">
+                        <span style="font-size: 20px;">📷</span>
+                        <h3 id="pdfViewerTitle" class="reader-book-title">النسخة المصوّرة</h3>
+                        <span id="pdfViewerMeta" class="reader-category-badge"></span>
+                    </div>
+                    <div class="pdf-viewer-tools">
+                        <span class="reader-tool-item">
+                            <label for="pdfPartSelect">الجزء:</label>
+                            <select id="pdfPartSelect" class="filter-select reader-select"></select>
+                        </span>
+                        <span class="reader-tool-item">
+                            <label for="pdfPageInput">الصفحة:</label>
+                            <input type="number" id="pdfPageInput" class="filter-input reader-page-input" min="1" onkeydown="if(event.key==='Enter')pdfViewerGo()">
+                            <button class="btn-flat-secondary reader-mini-btn" onclick="pdfViewerGo()">انتقال</button>
+                        </span>
+                        <button class="btn-flat-secondary reader-tool-btn" onclick="pdfViewerNav(-1)">الصفحة السابقة</button>
+                        <input type="range" id="pdfPageSlider" class="pdf-page-slider" min="1" max="1" value="1" oninput="pdfViewerSlider(this.value)">
+                        <span id="pdfPageLabel" class="reader-pdf-meta"></span>
+                        <button class="btn-flat-secondary reader-tool-btn" onclick="pdfViewerNav(1)">الصفحة اللاحقة</button>
+                    </div>
+                    <div class="pdf-viewer-tools">
+                        <button class="btn-flat-secondary reader-tool-btn" onclick="pdfViewerZoom(-0.2)">تكبير −</button>
+                        <span id="pdfZoomLabel" class="reader-pdf-meta">100%</span>
+                        <button class="btn-flat-secondary reader-tool-btn" onclick="pdfViewerZoom(0.2)">تكبير +</button>
+                        <button class="btn-flat-secondary reader-tool-btn" id="btnPdfLens" onclick="togglePdfLens()">🔍 منظار</button>
+                        <button class="btn-flat-secondary reader-tool-btn" id="btnPdfCrop" onclick="togglePdfCrop()">✂️ قص الشاهد</button>
+                        <button class="btn-flat-secondary reader-tool-btn" id="btnPdfCropGet" onclick="downloadPdfCrop()" style="display: none;">تنزيل القصاصة</button>
+                        <button class="btn-flat-secondary reader-tool-btn" id="btnPdfWitness" onclick="locatePdfWitness(true)">🎯 تحديد الشاهد</button>
+                        <button class="btn-flat-secondary reader-tool-btn" onclick="sendWitnessToChat()">نقل الشاهد نصيًا</button>
+                    </div>
+                </div>
+                <button type="button" class="btn-icon reader-close-btn" onclick="closePdfViewer()" title="إغلاق المصوّرة" aria-label="إغلاق">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="pdf-stage" id="pdfStage">
+                <div class="pdf-page-wrap" id="pdfPageWrap">
+                    <img id="pdfViewerImg" class="pdf-viewer-img" alt="صفحة النسخة المصوّرة">
+                    <div id="pdfWitnessBox" class="pdf-witness-box" style="display: none;"></div>
+                    <div id="pdfCropBox" class="pdf-crop-box" style="display: none;"></div>
+                    <div id="pdfLens" class="pdf-lens" style="display: none;"><img id="pdfLensImg" alt=""></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -6437,24 +6477,24 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.673"></script>
-    <script src="/static/js/search.js?v=1.10.673"></script>
-    <script src="/static/js/reader.js?v=1.10.673"></script>
-    <script src="/static/js/force3d.js?v=1.10.673"></script>
-    <script src="/static/js/share.js?v=1.10.673"></script>
-    <script src="/static/js/chat.js?v=1.10.673"></script>
-    <script src="/static/js/designs.js?v=1.10.673"></script>
-    <script src="/static/js/texts.js?v=1.10.673"></script>
-    <script src="/static/js/agents.js?v=1.10.673"></script>
-    <script src="/static/js/providers.js?v=1.10.673"></script>
-    <script src="/static/js/tools.js?v=1.10.673"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.673"></script>
-    <script src="/static/js/projects.js?v=1.10.673"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.673"></script>
-    <script src="/static/js/archive.js?v=1.10.673"></script>
-    <script src="/static/js/compare.js?v=1.10.673"></script>
-    <script src="/static/js/local_models.js?v=1.10.673"></script>
-    <script src="/static/js/changelog.js?v=1.10.673"></script>
+    <script src="/static/js/app.js?v=1.10.674"></script>
+    <script src="/static/js/search.js?v=1.10.674"></script>
+    <script src="/static/js/reader.js?v=1.10.674"></script>
+    <script src="/static/js/force3d.js?v=1.10.674"></script>
+    <script src="/static/js/share.js?v=1.10.674"></script>
+    <script src="/static/js/chat.js?v=1.10.674"></script>
+    <script src="/static/js/designs.js?v=1.10.674"></script>
+    <script src="/static/js/texts.js?v=1.10.674"></script>
+    <script src="/static/js/agents.js?v=1.10.674"></script>
+    <script src="/static/js/providers.js?v=1.10.674"></script>
+    <script src="/static/js/tools.js?v=1.10.674"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.674"></script>
+    <script src="/static/js/projects.js?v=1.10.674"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.674"></script>
+    <script src="/static/js/archive.js?v=1.10.674"></script>
+    <script src="/static/js/compare.js?v=1.10.674"></script>
+    <script src="/static/js/local_models.js?v=1.10.674"></script>
+    <script src="/static/js/changelog.js?v=1.10.674"></script>
 
     <script>
         window.refreshLucideIcons = function () {

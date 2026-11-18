@@ -348,75 +348,291 @@ async function refreshReaderPdfButton() {
 }
 
 function closeReaderPdfPanel() {
-  const panel = document.getElementById('readerPdfPanel');
-  if (panel) panel.style.display = 'none';
-  readerState.pdfOpen = false;
-  const btn = document.getElementById('btnReaderPdf');
-  if (btn) btn.classList.remove('active');
+  closePdfViewer();
 }
 
-function toggleReaderPdf() {
-  const panel = document.getElementById('readerPdfPanel');
-  if (!panel || !readerState.pdfInfo) return;
-  if (readerState.pdfOpen) { closeReaderPdfPanel(); return; }
-  readerState.pdfOpen = true;
-  panel.style.display = 'block';
-  const btn = document.getElementById('btnReaderPdf');
-  if (btn) btn.classList.add('active');
-  const img = document.getElementById('readerPdfImg');
-  if (img && !img.dataset.navBound) {
-    img.dataset.navBound = '1';
-    let wheelLock = 0;
-    img.addEventListener('wheel', (ev) => {
-      ev.preventDefault();
-      const now = Date.now();
-      if (now - wheelLock < 350) return;
-      wheelLock = now;
-      readerPdfNav(ev.deltaY > 0 ? 1 : -1);
-    }, { passive: false });
-    img.addEventListener('click', (ev) => {
-      const rect = img.getBoundingClientRect();
-      const x = (ev.clientX - rect.left) / rect.width;
-      readerPdfNav(x < 0.5 ? 1 : -1);
-    });
-  }
-  renderReaderPdfPage();
-}
+// نافذة النسخة المصوّرة المستقلة
+const pdfView = {
+  zoom: 1, lens: false, cropMode: false, cropRect: null, witnessText: ''
+};
 
-function renderReaderPdfPage() {
-  const info = readerState.pdfInfo;
-  const img = document.getElementById('readerPdfImg');
-  const meta = document.getElementById('readerPdfMeta');
-  if (!info || !img) return;
+function pdfQuery(pdfPage) {
   const q = new URLSearchParams();
   if (readerState.bookId) q.set('book_id', readerState.bookId);
   if (readerState.relPath) q.set('rel_path', readerState.relPath);
   if (readerState.part) q.set('part', readerState.part);
   if (readerState.pageNum) q.set('page_num', readerState.pageNum);
-  q.set('pdf_page', readerState.pdfPage);
-  img.src = `/api/book/pdf-image?${q.toString()}`;
-  if (meta) {
-    const witness = readerState.highlightText ? 'صفحة الشاهد في النسخة المصوّرة' : 'النسخة المصوّرة';
-    meta.textContent = `${witness} — ص ${readerState.pdfPage} من ${info.pdf_pages || '؟'} (${info.file_name || ''})`;
-  }
-  const prev = document.getElementById('btnReaderPdfPrev');
-  const next = document.getElementById('btnReaderPdfNext');
-  if (prev) prev.disabled = readerState.pdfPage <= 1;
-  if (next) next.disabled = info.pdf_pages ? readerState.pdfPage >= info.pdf_pages : false;
-  // تحميل مسبق للصفحة التالية حتى يكون التقليب سلسًا
+  if (pdfPage) q.set('pdf_page', pdfPage);
+  return q;
+}
+
+function toggleReaderPdf() {
+  if (!readerState.pdfInfo) return;
+  const modal = document.getElementById('pdfViewerModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  readerState.pdfOpen = true;
+  document.getElementById('pdfViewerTitle').textContent =
+    `النسخة المصوّرة — ${readerState.bookTitle || ''}`;
+  const partSel = document.getElementById('pdfPartSelect');
+  const parts = [...(readerState.parts || [])];
+  if (readerState.part && !parts.map(String).includes(String(readerState.part))) parts.unshift(readerState.part);
+  partSel.innerHTML = parts.map(p =>
+    `<option value="${escapeHtml(p)}" ${String(p) === String(readerState.part) ? 'selected' : ''}>${escapeHtml(p ? (isNaN(p) ? p : `الجزء ${p}`) : 'المجلد الرئيسي')}</option>`).join('');
+  document.getElementById('pdfPageInput').value = readerState.pageNum || '';
+  bindPdfPageInteractions();
+  pdfView.cropRect = null;
+  pdfView.witnessText = '';
+  renderReaderPdfPage();
+  if (readerState.highlightText) locatePdfWitness(false);
+}
+
+function closePdfViewer() {
+  const modal = document.getElementById('pdfViewerModal');
+  if (modal) modal.style.display = 'none';
+  readerState.pdfOpen = false;
+  const btn = document.getElementById('btnReaderPdf');
+  if (btn) btn.classList.remove('active');
+}
+
+function renderReaderPdfPage() {
+  const info = readerState.pdfInfo;
+  const img = document.getElementById('pdfViewerImg');
+  if (!info || !img) return;
+  img.src = `/api/book/pdf-image?${pdfQuery(readerState.pdfPage).toString()}`;
+  const meta = document.getElementById('pdfViewerMeta');
+  if (meta) meta.textContent = info.file_name || '';
+  const label = document.getElementById('pdfPageLabel');
+  if (label) label.textContent = `صفحة المصوّرة ${readerState.pdfPage} من ${info.pdf_pages || '؟'}`;
+  const slider = document.getElementById('pdfPageSlider');
+  if (slider) { slider.max = info.pdf_pages || 1; slider.value = readerState.pdfPage; }
+  const lensImg = document.getElementById('pdfLensImg');
+  if (lensImg) lensImg.src = img.src;
+  hidePdfWitnessBox();
+  clearPdfCrop();
+  applyPdfZoom();
   if (info.pdf_pages && readerState.pdfPage < info.pdf_pages) {
     const pre = new Image();
-    const pq = new URLSearchParams(q);
-    pq.set('pdf_page', readerState.pdfPage + 1);
-    pre.src = `/api/book/pdf-image?${pq.toString()}`;
+    pre.src = `/api/book/pdf-image?${pdfQuery(readerState.pdfPage + 1).toString()}`;
   }
 }
 
-function readerPdfNav(dir) {
+function pdfViewerNav(dir) {
   if (!readerState.pdfInfo) return;
   const total = readerState.pdfInfo.pdf_pages || 1;
   readerState.pdfPage = Math.max(1, Math.min(total, (readerState.pdfPage || 1) + dir));
   renderReaderPdfPage();
+}
+
+function readerPdfNav(dir) { pdfViewerNav(dir); }
+
+function pdfViewerSlider(value) {
+  readerState.pdfPage = Number(value) || 1;
+  renderReaderPdfPage();
+}
+
+async function pdfViewerGo() {
+  const part = document.getElementById('pdfPartSelect').value;
+  const pageNum = Number(document.getElementById('pdfPageInput').value);
+  if (!pageNum) { showToast('أدخل رقم الصفحة'); return; }
+  try {
+    const q = new URLSearchParams();
+    if (readerState.bookId) q.set('book_id', readerState.bookId);
+    if (readerState.relPath) q.set('rel_path', readerState.relPath);
+    if (part) q.set('part', part);
+    q.set('page_num', pageNum);
+    const res = await fetch(`/api/book/pdf-info?${q.toString()}`);
+    const info = await res.json();
+    if (!info.available) { showToast(info.reason || 'لا مصوّرة لهذا الموضع', 6000); return; }
+    readerState.pdfInfo = info;
+    readerState.pdfPage = info.pdf_page;
+    renderReaderPdfPage();
+  } catch (e) {
+    showToast('تعذر جلب النسخة المصوّرة');
+  }
+}
+
+function applyPdfZoom() {
+  const wrap = document.getElementById('pdfPageWrap');
+  const label = document.getElementById('pdfZoomLabel');
+  if (wrap) wrap.style.width = `${Math.round(pdfView.zoom * 100)}%`;
+  if (label) label.textContent = `${Math.round(pdfView.zoom * 100)}%`;
+}
+
+function pdfViewerZoom(delta) {
+  pdfView.zoom = Math.max(0.5, Math.min(3, pdfView.zoom + delta));
+  applyPdfZoom();
+}
+
+function togglePdfLens() {
+  pdfView.lens = !pdfView.lens;
+  const btn = document.getElementById('btnPdfLens');
+  if (btn) btn.classList.toggle('active', pdfView.lens);
+  if (!pdfView.lens) document.getElementById('pdfLens').style.display = 'none';
+}
+
+function togglePdfCrop() {
+  pdfView.cropMode = !pdfView.cropMode;
+  const btn = document.getElementById('btnPdfCrop');
+  if (btn) btn.classList.toggle('active', pdfView.cropMode);
+  if (pdfView.cropMode) showToast('اسحب فوق الصورة لتحديد قصاصة الشاهد');
+}
+
+function clearPdfCrop() {
+  pdfView.cropRect = null;
+  const box = document.getElementById('pdfCropBox');
+  if (box) box.style.display = 'none';
+  const get = document.getElementById('btnPdfCropGet');
+  if (get) get.style.display = 'none';
+}
+
+function downloadPdfCrop() {
+  const img = document.getElementById('pdfViewerImg');
+  const rect = pdfView.cropRect;
+  if (!img || !rect || !img.naturalWidth) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(rect.w * img.naturalWidth));
+  canvas.height = Math.max(1, Math.round(rect.h * img.naturalHeight));
+  canvas.getContext('2d').drawImage(
+    img, rect.x * img.naturalWidth, rect.y * img.naturalHeight,
+    rect.w * img.naturalWidth, rect.h * img.naturalHeight, 0, 0, canvas.width, canvas.height);
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = `شاهد-${readerState.bookId || 'كتاب'}-ص${readerState.pdfPage}.png`;
+  a.click();
+}
+
+function hidePdfWitnessBox() {
+  const box = document.getElementById('pdfWitnessBox');
+  if (box) box.style.display = 'none';
+}
+
+async function locatePdfWitness(manual) {
+  const phrase = (readerState.highlightText || '').trim();
+  const btn = document.getElementById('btnPdfWitness');
+  if (!phrase) {
+    if (manual) showToast('افتح الكتاب من نتيجة بحث ليكون الشاهد محددًا');
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ يحدد الشاهد…'; }
+  try {
+    const q = pdfQuery(readerState.pdfPage);
+    q.set('phrase', phrase);
+    const res = await fetch(`/api/book/pdf-locate?${q.toString()}`);
+    const data = await res.json();
+    if (!data.found) {
+      if (manual) showToast(data.reason || 'لم يُعثر على الشاهد في هذه الصفحة', 6000);
+      return;
+    }
+    pdfView.witnessText = data.text || '';
+    const box = document.getElementById('pdfWitnessBox');
+    const r = data.rect;
+    box.style.display = 'block';
+    box.style.left = `${r.x * 100}%`;
+    box.style.top = `${r.y * 100}%`;
+    box.style.width = `${r.w * 100}%`;
+    box.style.height = `${r.h * 100}%`;
+    box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  } catch (e) {
+    if (manual) showToast('تعذر تحديد موضع الشاهد');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🎯 تحديد الشاهد'; }
+  }
+}
+
+// نقل الشاهد وحده نصيًا (لا الصفحة كلها) إلى محادثة جديدة
+function sendWitnessToChat() {
+  const passage = (pdfView.witnessText || readerState.highlightText || '').trim();
+  if (!passage) {
+    showToast('لا شاهد محددًا — افتح الكتاب من نتيجة بحث أولاً');
+    return;
+  }
+  const partText = readerState.part ? `الجزء: ${readerState.part}` : '';
+  const pageText = readerState.pageNum ? `الصفحة: ${readerState.pageNum}` : '';
+  const locParts = [partText, pageText].filter(Boolean).join('، ');
+  const locCitation = locParts ? ` [${locParts}]` : '';
+  const promptMessage = `أرجو شرح وتحرير هذا الشاهد التراثي:\n\n«${passage}»\n\n📚 **المصدر:** «${readerState.bookTitle}» للمصنف ${readerState.author}${readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : ''}${locCitation}`;
+  closePdfViewer();
+  closeBookReader();
+  const bookName = (readerState.bookTitle || 'نص من الكتاب').trim();
+  const sessionTitle = `مطالعة: ${bookName.slice(0, 32)}`;
+  if (typeof startNewChatWithPrompt === 'function') {
+    startNewChatWithPrompt(promptMessage, sessionTitle);
+  } else {
+    switchMainTab('chat');
+    if (typeof createNewChatSession === 'function') createNewChatSession(true, sessionTitle);
+    const chatInput = document.getElementById('chatInputText');
+    if (chatInput) {
+      chatInput.value = promptMessage;
+      chatInput.focus();
+    }
+  }
+  showToast('نُقل الشاهد وحده إلى المحادثة 💬');
+}
+
+function bindPdfPageInteractions() {
+  const wrap = document.getElementById('pdfPageWrap');
+  const img = document.getElementById('pdfViewerImg');
+  if (!wrap || !img || wrap.dataset.bound) return;
+  wrap.dataset.bound = '1';
+  let wheelLock = 0;
+  img.addEventListener('wheel', (ev) => {
+    if (pdfView.lens || pdfView.cropMode) return;
+    ev.preventDefault();
+    const now = Date.now();
+    if (now - wheelLock < 350) return;
+    wheelLock = now;
+    pdfViewerNav(ev.deltaY > 0 ? 1 : -1);
+  }, { passive: false });
+  let dragStart = null;
+  img.addEventListener('mousedown', (ev) => {
+    if (!pdfView.cropMode) return;
+    const rect = img.getBoundingClientRect();
+    dragStart = { x: (ev.clientX - rect.left) / rect.width, y: (ev.clientY - rect.top) / rect.height };
+    ev.preventDefault();
+  });
+  img.addEventListener('mousemove', (ev) => {
+    const lens = document.getElementById('pdfLens');
+    const rect = img.getBoundingClientRect();
+    const rx = (ev.clientX - rect.left) / rect.width;
+    const ry = (ev.clientY - rect.top) / rect.height;
+    if (pdfView.lens && lens) {
+      const wrapRect = wrap.getBoundingClientRect();
+      const size = 190, scale = 2.2;
+      lens.style.display = 'block';
+      lens.style.left = `${ev.clientX - wrapRect.left - size / 2}px`;
+      lens.style.top = `${ev.clientY - wrapRect.top - size / 2}px`;
+      const lensImg = document.getElementById('pdfLensImg');
+      lensImg.style.width = `${rect.width * scale}px`;
+      lensImg.style.height = `${rect.height * scale}px`;
+      lensImg.style.left = `${-rx * rect.width * scale + size / 2}px`;
+      lensImg.style.top = `${-ry * rect.height * scale + size / 2}px`;
+    } else if (lens) {
+      lens.style.display = 'none';
+    }
+    if (pdfView.cropMode && dragStart) {
+      const box = document.getElementById('pdfCropBox');
+      const x = Math.min(dragStart.x, rx), y = Math.min(dragStart.y, ry);
+      const w = Math.abs(rx - dragStart.x), h = Math.abs(ry - dragStart.y);
+      pdfView.cropRect = { x, y, w, h };
+      box.style.display = 'block';
+      box.style.left = `${x * 100}%`;
+      box.style.top = `${y * 100}%`;
+      box.style.width = `${w * 100}%`;
+      box.style.height = `${h * 100}%`;
+    }
+  });
+  img.addEventListener('mouseup', () => {
+    if (pdfView.cropMode && pdfView.cropRect && pdfView.cropRect.w > 0.01) {
+      document.getElementById('btnPdfCropGet').style.display = '';
+    }
+    dragStart = null;
+  });
+  img.addEventListener('click', (ev) => {
+    if (pdfView.lens || pdfView.cropMode) return;
+    const rect = img.getBoundingClientRect();
+    pdfViewerNav((ev.clientX - rect.left) / rect.width < 0.5 ? 1 : -1);
+  });
 }
 
 // عرض متن الصفحة مع التشكيل أو بدونه وإبراز النص المبحوث عنه
@@ -623,8 +839,11 @@ function onReaderTextSelected() {
 // إرسال النص المحدد (أو الصفحة كاملة) إلى نافذة الشات للمناقشة مع النموذج
 function sendReaderSelectionToChat() {
   let passage = readerState.selectedText;
+  if (!passage && readerState.highlightText) {
+    // النقل النصي ينقل الشاهد المحدد وحده لا مطلع الصفحة
+    passage = readerState.highlightText.trim();
+  }
   if (!passage) {
-    // إذا لم يحدد نصاً، نأخذ مقطعاً من الصفحة
     passage = readerState.rawBody.slice(0, 500).trim();
   }
 

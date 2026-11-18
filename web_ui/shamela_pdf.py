@@ -9,9 +9,13 @@ pdf/<المؤلف>/<الكتاب>/. القاعدة المثبتة بالفحص �
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -321,6 +325,115 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
         "clamped": clamped,
     })
     return out
+
+
+def _ocr_helper():
+    env = os.getenv("ALMOGHNI_OCR_HELPER", "").strip()
+    cands = [
+        Path(env) if env else None,
+        _HERE / "tools" / "ocr_locate",
+        _HERE / "ocr_locate",
+    ]
+    for cand in cands:
+        if cand and cand.is_file() and os.access(cand, os.X_OK):
+            return str(cand)
+    return shutil.which("ocr_locate") or ""
+
+
+_LOCATE_CACHE = {}
+
+
+def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
+                   pdf_page=None, phrase: str = "") -> dict:
+    """موضع الشاهد على صفحة المصوّرة بتعرف بصري (Vision عند آبل) إن توفر."""
+    out = {"found": False}
+    helper = _ocr_helper()
+    if not helper:
+        out["reason"] = "أداة التعرف البصري غير متوفرة على هذا الجهاز"
+        return out
+    words = [w for w in re.split(r"\s+", str(phrase or "")) if len(w) >= 3]
+    if not words:
+        out["reason"] = "لا شاهد محددًا للبحث عنه"
+        return out
+    needles = list(dict.fromkeys(words[:4] + sorted(words, key=len, reverse=True)[:4]))[:8]
+    info = resolve_pdf(book_id, rel_path, part, page_num)
+    if not info.get("available"):
+        out["reason"] = info.get("reason") or "لا نسخة مصوّرة"
+        return out
+    page = int(pdf_page or info["pdf_page"])
+    cache_key = (info["pdf_path"], page, tuple(needles))
+    if cache_key in _LOCATE_CACHE:
+        return dict(_LOCATE_CACHE[cache_key])
+    try:
+        import fitz
+        doc = fitz.open(info["pdf_path"])
+        pix = doc[max(0, min(doc.page_count - 1, page - 1))].get_pixmap(dpi=150)
+        doc.close()
+    except Exception as exc:
+        out["reason"] = f"تعذر تصيير الصفحة: {exc}"
+        return out
+    fd, name = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        Path(name).write_bytes(pix.tobytes("png"))
+        proc = subprocess.run(
+            [helper, name, *needles], capture_output=True, text=True, timeout=240)
+        data = json.loads(proc.stdout or "{}")
+    except Exception as exc:
+        out["reason"] = f"تعذر التعرف البصري: {exc}"
+        return out
+    finally:
+        try:
+            os.remove(name)
+        except OSError:
+            pass
+    lines = data.get("lines") or []
+    hits = [i for i in (data.get("hits") or []) if isinstance(i, int) and 0 <= i < len(lines)]
+    if not hits or not lines:
+        out["reason"] = "لم يُعثر على الشاهد في هذه الصفحة"
+        _LOCATE_CACHE[cache_key] = out
+        return out
+
+    def _norm(text: str) -> str:
+        text = re.sub(r"[ً-ٰٓـ]", "", str(text or ""))
+        return (text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+                .replace("ى", "ي").replace("ئ", "ي").replace("ؤ", "و").replace("ة", "ه"))
+
+    # مطابقة مطلع الشاهد نفسه في أسطر الصفحة أضبط من كلمات متفرقة تتكرر
+    phrase_norm = re.sub(r"\s+", " ", _norm(phrase)).strip()
+    joined_parts = []
+    char_line = []
+    for i, line in enumerate(lines):
+        seg = re.sub(r"\s+", " ", _norm(line.get("text") or "")).strip()
+        joined_parts.append(seg)
+        char_line.extend([i] * (len(seg) + 1))
+    joined = " ".join(joined_parts)
+    start = None
+    probe = phrase_norm[:40]
+    pos = joined.find(probe) if probe else -1
+    if pos >= 0:
+        start = char_line[min(pos, len(char_line) - 1)]
+    else:
+        start = min(hits)
+    avg_len = max(20, sum(len(p) for p in joined_parts) // max(1, len(joined_parts)))
+    span = max(1, min(6, -(-len(phrase_norm) // avg_len)))
+    chosen = lines[start:start + span]
+    x0 = min(l["x"] for l in chosen)
+    y0 = min(l["y"] for l in chosen)
+    x1 = max(l["x"] + l["w"] for l in chosen)
+    y1 = max(l["y"] + l["h"] for l in chosen)
+    pad = 0.006
+    out.update({
+        "found": True,
+        "rect": {
+            "x": max(0.0, x0 - pad), "y": max(0.0, y0 - pad),
+            "w": min(1.0, x1 - x0 + 2 * pad), "h": min(1.0, y1 - y0 + 2 * pad),
+        },
+        "text": "\n".join(str(l.get("text") or "") for l in chosen),
+        "pdf_page": page,
+    })
+    _LOCATE_CACHE[cache_key] = out
+    return dict(out)
 
 
 def render_pdf_page(book_id=None, rel_path: str = "", part=None, page_num=None, pdf_page=None) -> bytes:

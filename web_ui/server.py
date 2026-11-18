@@ -8634,6 +8634,16 @@ async def book_pdf_image(book_id: Optional[int] = None, rel_path: Optional[str] 
     return Response(content=raw, media_type="image/png")
 
 
+@app.get("/api/book/pdf-locate")
+async def book_pdf_locate(book_id: Optional[int] = None, rel_path: Optional[str] = None,
+                          part: Optional[str] = None, page_num: Optional[int] = None,
+                          pdf_page: Optional[int] = None, phrase: Optional[str] = None):
+    """موضع الشاهد ملونًا على صفحة المصوّرة بالتعرف البصري، ونصه المقروء."""
+    import shamela_pdf
+    return await asyncio.to_thread(
+        shamela_pdf.locate_witness, book_id, rel_path or "", part, page_num, pdf_page, phrase or "")
+
+
 @app.get("/api/book/surrounding-pages")
 async def get_book_surrounding_pages(
     book_title: Optional[str] = None,
@@ -8863,7 +8873,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.673"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.674"},
         },
     })
     if opened.get("error"):

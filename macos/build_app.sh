@@ -21,6 +21,10 @@ cp -p "$ROOT/.gitignore" "$ROOT/README.md" "$ROOT/changes.md" "$ROOT/dev.md" \
 cp -p "$ROOT/web_ui/server.py" "$STAGE/source/web_ui/server.py"
 cp -p "$ROOT/web_ui/journey_motion.py" "$STAGE/source/web_ui/journey_motion.py"
 cp -p "$ROOT/web_ui/shamela_pdf.py" "$STAGE/source/web_ui/shamela_pdf.py"
+mkdir -p "$STAGE/source/web_ui/tools"
+if command -v swiftc >/dev/null 2>&1; then
+  swiftc -O -o "$STAGE/source/web_ui/tools/ocr_locate" "$ROOT/macos/ocr_locate.swift" 2>/dev/null || true
+fi
 cp -p "$ROOT/web_ui/static/js/reader.js" "$STAGE/source/web_ui/static/js/reader.js"
 mkdir -p "$STAGE/source/web_ui/static/motion/bukhari" "$STAGE/source/web_ui/static/motion/scholars"
 cp -p "$ROOT/web_ui/static/motion/bukhari/"*.png "$STAGE/source/web_ui/static/motion/bukhari/"
