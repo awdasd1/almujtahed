@@ -648,13 +648,14 @@ async function openCritiqueModal() {
 }
 
 function buildCritModels() {
-  const sel = document.getElementById('critModelSelect');
-  if (!sel) return;
+  const box = document.getElementById('critModelList');
+  if (!box) return;
   const src = document.getElementById('chatModelSelect');
-  const cur = src?.value || '';
-  sel.innerHTML = '<option value="">نموذج المحادثة الحالي</option>' + (src
-    ? Array.from(src.options).filter(o => o.value).map(o => `<option value="${escapeHtml(o.value)}"${o.value === cur ? '' : ''}>${escapeHtml(o.textContent)}</option>`).join('')
-    : '');
+  const opts = src ? Array.from(src.options).filter(o => o.value) : [];
+  box.innerHTML = `<label class="crit-model-row"><input type="radio" name="critModelPick" value="" checked><span>نموذج المحادثة الحالي</span></label>`
+    + (opts.length
+      ? opts.map(o => `<label class="crit-model-row"><input type="radio" name="critModelPick" value="${escapeHtml(o.value)}"><span>${escapeHtml(o.textContent)}</span></label>`).join('')
+      : '<div style="font-size: 12px; color: var(--text-muted); padding: 4px 8px;">تُحمّل قائمة النماذج من الخدمات؛ يبقى نموذج المحادثة الحالي خيارًا قائمًا.</div>');
 }
 
 function buildCritCats() {
@@ -724,9 +725,9 @@ async function startCritiqueSession() {
     session.critique = {
       document_id: docId, document_name: docName, scope,
       web: !!document.getElementById('critWebCheck')?.checked,
-      model: document.getElementById('critModelSelect')?.value || '',
-      thinking: document.getElementById('critThinkingSelect')?.value || '',
-      witnesses: parseInt(document.getElementById('critWitnessSelect')?.value || '20', 10),
+      model: document.querySelector('input[name="critModelPick"]:checked')?.value || '',
+      thinking: document.querySelector('input[name="critThinkingPick"]:checked')?.value || '',
+      witnesses: parseInt(document.querySelector('input[name="critWitnessPick"]:checked')?.value || '20', 10),
     };
     if (typeof saveChatSessions === 'function') saveChatSessions();
   }
