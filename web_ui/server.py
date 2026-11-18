@@ -9156,7 +9156,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.699"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.700"},
         },
     })
     if opened.get("error"):
