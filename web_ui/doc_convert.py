@@ -93,14 +93,26 @@ def delete_doc(doc_id: str, owner: str) -> bool:
 
 _OCR_RUNTIME: dict = {}
 _CANCEL_EVENTS: dict = {}
+_ACTIVE: dict = {}
 
 
 class _ConversionCancelled(Exception):
     """أوقف الباحث التحويل يدويًا: يُحفظ ما تمّ ويُختم الحال."""
 
 
+def _register_active(doc_id, handle) -> None:
+    if doc_id and handle is not None:
+        _ACTIVE.setdefault(doc_id, set()).add(handle)
+
+
+def _unregister_active(doc_id, handle) -> None:
+    if doc_id and doc_id in _ACTIVE:
+        _ACTIVE[doc_id].discard(handle)
+
+
 def request_cancel(doc_id: str, owner: str) -> bool:
-    """طلب إيقاف تحويل جارٍ: يقف عند نهاية الصفحة الجارية."""
+    """إيقاف فوري للتحويل: تُقتل قراءة الصفحة الجارية نفسها وتُسقط،
+    ويُكتفى بالصفحات المعالجة قبلها."""
     meta = get_doc(doc_id, owner)
     if not meta or meta.get("status") not in ("queued", "converting"):
         return False
@@ -109,6 +121,14 @@ def request_cancel(doc_id: str, owner: str) -> bool:
         ev = threading.Event()
         _CANCEL_EVENTS[doc_id] = ev
     ev.set()
+    for handle in list(_ACTIVE.get(doc_id, [])):
+        try:
+            if hasattr(handle, "kill"):
+                handle.kill()
+            elif hasattr(handle, "close"):
+                handle.close()
+        except Exception:
+            pass
     return True
 _OCR_PROMPT = (
     "استخرج نص هذه الصفحة العربية كاملًا كما هو مكتوب، سطرًا سطرًا من أولها "
@@ -123,7 +143,7 @@ def set_ocr_runtime(doc_id: str, api_key: str) -> None:
         _OCR_RUNTIME[doc_id] = api_key
 
 
-def _ocr_openrouter_lines(png_path: str, model: str, api_key: str) -> list:
+def _ocr_openrouter_lines(png_path: str, model: str, api_key: str, doc_id: str = "") -> list:
     """قراءة صفحة بنموذج رؤية من OpenRouter (بديل المحلي على ويندوز
     أو عند رداءة المسح)، سطورًا بمواضع تقريبية متسلسلة."""
     import base64
@@ -148,8 +168,16 @@ def _ocr_openrouter_lines(png_path: str, model: str, api_key: str) -> list:
                      "Content-Type": "application/json",
                      "HTTP-Referer": "http://localhost:8085",
                      "X-Title": "Almoghni Sharia Engine"})
-        with urllib.request.urlopen(req, timeout=240) as resp:
+        resp = urllib.request.urlopen(req, timeout=240)
+        _register_active(doc_id, resp)
+        try:
             data = json.loads(resp.read().decode("utf-8"))
+        finally:
+            _unregister_active(doc_id, resp)
+            try:
+                resp.close()
+            except Exception:
+                pass
         content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
         if isinstance(content, list):
             content = "".join(str(c.get("text") or "") for c in content if isinstance(c, dict))
@@ -164,7 +192,9 @@ def _ocr_openrouter_lines(png_path: str, model: str, api_key: str) -> list:
 def _ocr_lines(png_path: str, ocr: dict | None = None) -> list:
     """سطور صورة صفحة بمحرك القراءة المختار: نموذج OpenRouter أو المحلي."""
     if ocr and ocr.get("engine") == "openrouter" and ocr.get("model"):
-        got = _ocr_openrouter_lines(png_path, ocr["model"], _OCR_RUNTIME.get(ocr.get("doc_id") or "", ""))
+        got = _ocr_openrouter_lines(png_path, ocr["model"],
+                                    _OCR_RUNTIME.get(ocr.get("doc_id") or "", ""),
+                                    ocr.get("doc_id") or "")
         if got:
             return got
     try:
@@ -174,11 +204,23 @@ def _ocr_lines(png_path: str, ocr: dict | None = None) -> list:
         helper = ""
     if not helper:
         return []
+    doc_key = (ocr or {}).get("doc_id") or ""
+    proc = None
     try:
-        proc = subprocess.run([helper, png_path, "نص"], capture_output=True, text=True, timeout=240)
-        data = json.loads(proc.stdout or "{}")
+        proc = subprocess.Popen([helper, png_path, "نص"],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        _register_active(doc_key, proc)
+        out, _ = proc.communicate(timeout=240)
+        data = json.loads(out or "{}")
     except Exception:
+        if proc is not None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
         return []
+    finally:
+        _unregister_active(doc_key, proc)
     out = []
     for l in data.get("lines") or []:
         text = str(l.get("text") or "").strip()
@@ -197,11 +239,11 @@ def _norm_line(text: str) -> str:
 
 
 def _clamp_dpi(value) -> int:
-    """دقة قراءة الصفحات المصوّرة بنقطة/بوصة: بين 50 و600، والافتراضي 300."""
+    """دقة قراءة الصفحات المصوّرة بنقطة/بوصة: بين 50 و600، والافتراضي 150."""
     try:
         return max(50, min(600, int(value)))
     except (TypeError, ValueError):
-        return 300
+        return 150
 
 
 def _footnote_band_text(page, page_text: str, dpi: int = 300, ocr: dict | None = None) -> str:
@@ -292,6 +334,9 @@ def _convert_one(src: Path, progress, dpi: int = 300, only=None, ocr: dict | Non
                     os.remove(tmp)
                 except OSError:
                     pass
+            if cancel_ev is not None and cancel_ev.is_set():
+                # أُسقطت الصفحة قيد القراءة بالإيقاف الفوري: لا تُحسب معالَجة
+                break
             if read:
                 band = _footnote_band_text(page, read, dpi, ocr)
                 if band:
@@ -403,14 +448,14 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
         cancelled = True
     except Exception as exc:
         _set_meta(doc_id, status="error", error=str(exc)[:300], finished=int(time.time()))
-        _CANCEL_EVENTS.pop(doc_id, None)
+        _CANCEL_EVENTS.pop(doc_id, None); _ACTIVE.pop(doc_id, None)
         return
     if cancel_ev.is_set():
         cancelled = True
     if scope and not cancelled and start_volume == 0 and state["done"] == 0:
         _set_meta(doc_id, status="error", finished=int(time.time()),
                   error="النطاق المحدد خارج صفحات الوثيقة: لم تُحوَّل أي صفحة")
-        _CANCEL_EVENTS.pop(doc_id, None)
+        _CANCEL_EVENTS.pop(doc_id, None); _ACTIVE.pop(doc_id, None)
         return
     text_path = Path(meta.get("text_path") or "")
     text_path.parent.mkdir(parents=True, exist_ok=True)
@@ -433,7 +478,7 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
     if ocr_missing:
         kw["note"] = "بعض الصفحات المصوّرة لم تُقرأ (تحقق من محرك القراءة المختار: المحلي خاص بنظام Mac، وعلى ويندوز اختر نموذج OpenRouter)"
     _set_meta(doc_id, **kw)
-    _CANCEL_EVENTS.pop(doc_id, None)
+    _CANCEL_EVENTS.pop(doc_id, None); _ACTIVE.pop(doc_id, None)
 
 
 def convert_document(doc_id: str) -> None:

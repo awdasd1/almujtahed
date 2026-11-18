@@ -253,7 +253,7 @@ async function startDocUpload() {
     const form = new FormData();
     files.forEach(f => form.append('files', f));
     form.append('name', name);
-    form.append('dpi', document.getElementById('docDpiInput')?.value || '300');
+    form.append('dpi', document.getElementById('docDpiInput')?.value || '150');
     const sc = readDocScope();
     form.append('scope_mode', sc ? sc.mode : 'all');
     if (sc && sc.volume) form.append('scope_volume', sc.volume);
@@ -292,7 +292,7 @@ async function stopDocConversionById(docId) {
   try {
     const res = await fetch(`/api/documents/${docId}/cancel`, { method: 'POST' });
     if (!res.ok) throw new Error('تعذر');
-    showToast('سيقف التحويل عند نهاية الصفحة الجارية ويُحفظ ما تمّ');
+    showToast('أُوقف التحويل فورًا — يُحفظ ما تمّ من صفحات');
     const stopBtn = document.getElementById('btnDocStop');
     if (stopBtn) stopBtn.disabled = true;
     setTimeout(loadDocumentsList, 1500);
@@ -369,7 +369,7 @@ async function loadDocumentsList() {
           <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}${d.archived ? ' <span style="font-size:10.5px; color:var(--accent-clay);">(مؤرشفة)</span>' : ''}</span>
           <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${d.ocr_engine === 'openrouter' && d.ocr_model ? ` • قراءة بنموذج <span style="direction:ltr; display:inline-block;">${escapeHtml(d.ocr_model)}</span>` : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : d.status === 'cancelled' ? `أُوقف التحويل عند ${Number(d.page || 0).toLocaleString('ar-EG')} صفحة — حُفظ ما تمّ` : `جارٍ تحويلها… صفحة ${Number(d.page || 0).toLocaleString('ar-EG')} من ${Number(d.pages || 0).toLocaleString('ar-EG')}`}</span>
         </span>
-        ${d.status === 'converting' || d.status === 'queued' ? `<button class="btn-flat-secondary reader-mini-btn" style="color:#c0392b;" onclick="stopDocConversionById('${d.id}')" title="إيقاف التحويل عند نهاية الصفحة الجارية وحفظ ما تمّ">⏹ إيقاف التحويل</button>` : ''}
+        ${d.status === 'converting' || d.status === 'queued' ? `<button class="btn-flat-secondary reader-mini-btn" style="color:#c0392b;" onclick="stopDocConversionById('${d.id}')" title="إيقاف فوري: تُسقط الصفحة الجارية ويُحفظ ما قبلها">⏹ إيقاف التحويل</button>` : ''}
         ${done && !d.archived ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
         ${done || d.status === 'cancelled' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocBrowse('${d.id}', '${nm}')">تصفح</button>` : ''}
         ${done || d.status === 'cancelled' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'txt')" title="تصدير النص المحوَّل ملفًا نصيًا">تصدير TXT</button>` : ''}
@@ -393,7 +393,7 @@ async function reconvertDocument(docId, docName) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        dpi: parseInt(document.getElementById('docDpiInput')?.value || '300', 10),
+        dpi: parseInt(document.getElementById('docDpiInput')?.value || '150', 10),
         scope: readDocScope(),
         ocr_engine: docOcrSelection().engine,
         ocr_model: docOcrSelection().model,

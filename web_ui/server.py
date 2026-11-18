@@ -8702,7 +8702,7 @@ def _ocr_payload(request: Request, engine, model) -> dict:
 
 
 @app.post("/api/documents/upload")
-async def documents_upload(request: Request, files: List[UploadFile] = File(...), name: str = Form(""), dpi: int = Form(300),
+async def documents_upload(request: Request, files: List[UploadFile] = File(...), name: str = Form(""), dpi: int = Form(150),
                            scope_mode: str = Form("all"), scope_volume: Optional[int] = Form(None),
                            scope_from: Optional[int] = Form(None), scope_to: Optional[int] = Form(None),
                            ocr_engine: str = Form("local"), ocr_model: str = Form("")):
@@ -8719,7 +8719,7 @@ async def documents_upload(request: Request, files: List[UploadFile] = File(...)
 
 
 @app.post("/api/documents/{doc_id}/volumes")
-async def documents_append_volumes(request: Request, doc_id: str, files: List[UploadFile] = File(...), dpi: int = Form(300),
+async def documents_append_volumes(request: Request, doc_id: str, files: List[UploadFile] = File(...), dpi: int = Form(150),
                                    scope_mode: str = Form("all"), scope_from: Optional[int] = Form(None),
                                    scope_to: Optional[int] = Form(None),
                                    ocr_engine: str = Form("local"), ocr_model: str = Form("")):
@@ -9115,7 +9115,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.696"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.697"},
         },
     })
     if opened.get("error"):
