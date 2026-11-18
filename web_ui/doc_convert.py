@@ -91,22 +91,73 @@ def delete_doc(doc_id: str, owner: str) -> bool:
     return True
 
 
-def _ocr_png(png_path: str) -> str:
-    """قراءة صورة صفحة بالتعرف البصري المحلي، نصًا بأسطره."""
+def _ocr_lines(png_path: str) -> list:
+    """سطور صورة صفحة بالتعرف البصري المحلي مع مواضعها النسبية."""
     try:
         import shamela_pdf
         helper = shamela_pdf._ocr_helper()
     except Exception:
         helper = ""
     if not helper:
-        return ""
+        return []
     try:
         proc = subprocess.run([helper, png_path, "نص"], capture_output=True, text=True, timeout=240)
         data = json.loads(proc.stdout or "{}")
     except Exception:
+        return []
+    out = []
+    for l in data.get("lines") or []:
+        text = str(l.get("text") or "").strip()
+        if text:
+            out.append({"text": text, "y": float(l.get("y") or 0)})
+    return out
+
+
+def _ocr_png(png_path: str) -> str:
+    """قراءة صورة صفحة بالتعرف البصري المحلي، نصًا بأسطره."""
+    return "\n".join(l["text"] for l in _ocr_lines(png_path))
+
+
+def _norm_line(text: str) -> str:
+    return re.sub(r"\s+", " ", _fold(text or "")).strip(" .،:؛»«()")
+
+
+def _footnote_band_text(page, page_text: str) -> str:
+    """حواشي أسفل الصفحة المصوّرة: يُعاد قراءة خُمسها الأسفل مكبّرًا، وما جدّ
+    من سطوره (ليست في متن الصفحة المقروء) يُرجع ليُلحق بعد خط فاصل كما في
+    المطبوع؛ فخط الحواشي الصغير يضيع في قراءة الصفحة كاملة منخفضة الدقة."""
+    try:
+        import fitz
+        rect = page.rect
+        band = fitz.Rect(rect.x0, rect.y0 + rect.height * 0.80, rect.x1, rect.y1)
+        pix = page.get_pixmap(dpi=300, clip=band)
+        fd, tmp = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            Path(tmp).write_bytes(pix.tobytes("png"))
+            lines = _ocr_lines(tmp)
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    except Exception:
         return ""
-    lines = data.get("lines") or []
-    return "\n".join(str(l.get("text") or "").strip() for l in lines if str(l.get("text") or "").strip())
+    page_norm = _norm_line(page_text)
+    page_lines = [_norm_line(l) for l in (page_text or "").splitlines() if l.strip()]
+    novel = []
+    from difflib import SequenceMatcher
+    for l in lines:
+        if l["y"] < 0.30:
+            # أعلى الشريط ذيلُ متنٍ مقروء غالبًا لا حواشٍ
+            continue
+        norm = _norm_line(l["text"])
+        if len(norm) < 4 or norm in page_norm:
+            continue
+        if any(SequenceMatcher(None, norm, pl).ratio() > 0.82 for pl in page_lines):
+            continue
+        novel.append(l["text"])
+    return "\n".join(novel)
 
 
 def _natural_key(path: Path):
@@ -139,7 +190,8 @@ def _convert_one(src: Path, first_page_no: int, progress) -> tuple:
         if len(embedded) >= 20:
             parts.append(f"[صفحة {i + 1}]\n{embedded}")
         else:
-            pix = page.get_pixmap(dpi=150)
+            # 300 نقطة لا 150: خط الحواشي الصغير لا يلتقطه المحرك بالدقة الدنيا
+            pix = page.get_pixmap(dpi=300)
             fd, tmp = tempfile.mkstemp(suffix=".png")
             os.close(fd)
             try:
@@ -151,6 +203,9 @@ def _convert_one(src: Path, first_page_no: int, progress) -> tuple:
                 except OSError:
                     pass
             if read:
+                band = _footnote_band_text(page, read)
+                if band:
+                    read = read + "\n——————\n" + band
                 parts.append(f"[صفحة {i + 1}]\n{read}")
             else:
                 ocr_missing = True
@@ -242,6 +297,15 @@ def register_document(owner: str, name: str, saved) -> dict:
         _save_registry(reg)
     threading.Thread(target=convert_document, args=(doc_id,), daemon=True).start()
     return dict(meta)
+
+
+def reconvert_document(doc_id: str, owner: str) -> bool:
+    """إعادة تحويل وثيقة من ملفاتها الأصلية (لالتقاط ما فات بدقة أعلى مثلًا)."""
+    if not get_doc(doc_id, owner):
+        return False
+    _set_meta(doc_id, status="queued", page=0, chars=0, error="")
+    threading.Thread(target=convert_document, args=(doc_id,), daemon=True).start()
+    return True
 
 
 def append_volumes(doc_id: str, owner: str, saved) -> dict | None:

@@ -8733,6 +8733,15 @@ async def documents_context(request: Request, doc_id: str, payload: dict = Body(
         payload.get("query") or "")
 
 
+@app.post("/api/documents/{doc_id}/reconvert")
+async def documents_reconvert(request: Request, doc_id: str):
+    """إعادة تحويل وثيقة من أصولها بالدقة الحالية (تلتقط الحواشي فائتة)."""
+    import doc_convert
+    if not doc_convert.reconvert_document(doc_id, current_owner_id(request)):
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    return {"id": doc_id, "status": "queued"}
+
+
 @app.delete("/api/documents/{doc_id}")
 async def documents_delete(request: Request, doc_id: str):
     import doc_convert
@@ -8970,7 +8979,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.688"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.689"},
         },
     })
     if opened.get("error"):

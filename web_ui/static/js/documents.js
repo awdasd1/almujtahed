@@ -164,11 +164,21 @@ async function loadDocumentsList() {
         </span>
         ${d.status === 'done' ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
         ${d.status === 'done' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocAppend('${d.id}', '${escapeHtml(d.name || '').replace(/'/g, '')}')" title="إضافة أجزاء جديدة إلى هذه الوثيقة">إضافة جزء</button>` : ''}
+        ${d.status === 'done' || d.status === 'error' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="reconvertDocument('${d.id}', '${escapeHtml(d.name || '').replace(/'/g, '')}')" title="إعادة التحويل من الملفات الأصلية بالدقة الحالية لالتقاط الحواشي">إعادة تحويل</button>` : ''}
         <button class="btn-flat-secondary reader-mini-btn" onclick="deleteDocument('${d.id}')" title="حذف الوثيقة">حذف</button>
       </div>`).join('');
   } catch (e) {
     box.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">تعذر جلب الوثائق.</div>';
   }
+}
+
+async function reconvertDocument(docId, docName) {
+  try {
+    const res = await fetch(`/api/documents/${docId}/reconvert`, { method: 'POST' });
+    if (!res.ok) throw new Error('تعذر بدء إعادة التحويل');
+    showToast('بدأت إعادة التحويل بالدقة العالية — تُستكمل الحواشي هذه المرة');
+    pollDocProgress(docId, docName);
+  } catch (e) { showToast('تعذرت إعادة التحويل'); }
 }
 
 async function deleteDocument(docId) {
