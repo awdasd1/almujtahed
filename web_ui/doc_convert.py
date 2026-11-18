@@ -173,13 +173,16 @@ def _natural_key(path: Path):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", path.name)]
 
 
-def _convert_one(src: Path, first_page_no: int, progress, dpi: int = 300) -> tuple:
-    """تحويل ملف واحد إلى أجزاء صفحاته، يُرجع (الأجزاء، عدد الصفحات، فشل بصري؟)."""
+def _convert_one(src: Path, progress, dpi: int = 300, only=None) -> tuple:
+    """تحويل ملف واحد إلى أجزاء صفحاته، يُرجع (الأجزاء، عدد الصفحات، فشل بصري؟).
+    only مجموعة أرقام صفحات (1-based) تُحوَّل وحدها إن أُعطيت، بأرقامها الحقيقية."""
     ext = src.suffix.lower()
     parts: list[str] = []
     if ext == ".txt":
+        if only is not None and 1 not in only:
+            return parts, 1, False
         parts.append(src.read_text(encoding="utf-8", errors="ignore"))
-        progress(1)
+        progress()
         return parts, 1, False
     if ext != ".pdf" and ext not in _IMG_EXTS:
         raise RuntimeError("صيغة غير مدعومة: ارفع PDF أو صورة أو ملفًا نصيًا")
@@ -188,6 +191,8 @@ def _convert_one(src: Path, first_page_no: int, progress, dpi: int = 300) -> tup
     total = doc.page_count
     ocr_missing = False
     for i in range(total):
+        if only is not None and (i + 1) not in only:
+            continue
         page = doc[i]
         embedded = ""
         if ext == ".pdf":
@@ -219,7 +224,7 @@ def _convert_one(src: Path, first_page_no: int, progress, dpi: int = 300) -> tup
             else:
                 ocr_missing = True
                 parts.append(f"[صفحة {i + 1}]\n[صفحة مصوّرة تعذّرت قراءتها آليًا]")
-        progress(first_page_no + i)
+        progress()
     doc.close()
     return parts, total, ocr_missing
 
@@ -238,34 +243,82 @@ def _count_pages(src: Path) -> int:
     return 1
 
 
+def _norm_scope(scope) -> dict | None:
+    """تطبيع نطاق التحويل: كامل، أو صفحة، أو نطاق — من جزء بعينه أو الكل."""
+    if not isinstance(scope, dict):
+        return None
+    mode = scope.get("mode")
+    if mode not in ("page", "range"):
+        return None
+    def _pos(v):
+        try:
+            n = int(v)
+            return n if n >= 1 else None
+        except (TypeError, ValueError):
+            return None
+    frm = _pos(scope.get("from"))
+    if frm is None:
+        return None
+    to = _pos(scope.get("to")) if mode == "range" else frm
+    if to is None:
+        to = frm
+    if to < frm:
+        frm, to = to, frm
+    return {"mode": mode, "volume": _pos(scope.get("volume")), "from": frm, "to": to}
+
+
+def _scope_only(scope, volume_no: int, total: int):
+    """صفحات جزء ما الواقعة في النطاق، أو None للكل، أو مجموعة فارغة للتخطي."""
+    if not scope:
+        return None
+    if scope.get("volume") and scope["volume"] != volume_no:
+        return set()
+    return set(range(max(1, scope["from"]), min(total, scope["to"]) + 1))
+
+
 def _convert_volumes(doc_id: str, start_volume: int) -> None:
-    """تحويل أجزاء الوثيقة من جزء مبدئي، ملحقة بنصها القائم إن وُجد."""
+    """تحويل أجزاء الوثيقة من جزء مبدئي، ملحقة بنصها القائم إن وُجد،
+    في حدود نطاق التحويل المحفوظ إن اختار الباحث صفحة أو نطاقًا."""
     meta = get_doc(doc_id)
     if not meta:
         return
     volumes = meta.get("volumes") or ([{"file_path": meta.get("file_path")}] if meta.get("file_path") else [])
     dpi = _clamp_dpi(meta.get("dpi"))
+    scope = _norm_scope(meta.get("scope"))
     multi = len(volumes) > 1
     totals = [_count_pages(Path(v.get("file_path") or "")) for v in volumes]
-    grand_total = sum(totals)
-    done_before = sum(totals[:start_volume])
-    _set_meta(doc_id, status="converting", pages=grand_total, page=done_before, error="")
+    onlys = [_scope_only(scope, vi + 1, totals[vi]) for vi in range(len(volumes))]
+    sel = [totals[vi] if onlys[vi] is None else len(onlys[vi]) for vi in range(len(volumes))]
+    done_before = sum(sel[:start_volume])
+    prev_pages = int(meta.get("pages") or 0)
+    state = {"done": done_before, "new": 0}
+    def _tick():
+        state["done"] += 1
+        state["new"] += 1
+        _set_meta(doc_id, page=state["done"])
+    _set_meta(doc_id, status="converting", pages=sum(sel), page=done_before, error="")
     parts: list[str] = []
     ocr_missing = False
     try:
         for vi in range(start_volume, len(volumes)):
-            base = sum(totals[:vi])
+            volumes[vi]["pages"] = totals[vi]
+            if onlys[vi] is not None and not onlys[vi]:
+                _set_meta(doc_id, volumes=volumes)
+                continue
             vparts, n, miss = _convert_one(
-                Path(volumes[vi].get("file_path") or ""), base + 1,
-                lambda p: _set_meta(doc_id, page=p), dpi)
-            volumes[vi]["pages"] = n
+                Path(volumes[vi].get("file_path") or ""), _tick, dpi, onlys[vi])
             ocr_missing = ocr_missing or miss
-            if multi:
-                parts.append(f"[الجزء {vi + 1}]")
-            parts.extend(vparts)
+            if vparts:
+                if multi:
+                    parts.append(f"[الجزء {vi + 1}]")
+                parts.extend(vparts)
             _set_meta(doc_id, volumes=volumes)
     except Exception as exc:
         _set_meta(doc_id, status="error", error=str(exc)[:300])
+        return
+    if scope and start_volume == 0 and state["done"] == 0:
+        _set_meta(doc_id, status="error",
+                  error="النطاق المحدد خارج صفحات الوثيقة: لم تُحوَّل أي صفحة")
         return
     text_path = Path(meta.get("text_path") or "")
     text_path.parent.mkdir(parents=True, exist_ok=True)
@@ -276,8 +329,9 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
     else:
         full = new_text
     text_path.write_text(full, encoding="utf-8")
-    kw = {"status": "done", "chars": len(full), "pages": grand_total,
-          "page": grand_total, "finished": int(time.time()), "volumes": volumes}
+    final_pages = state["done"] if start_volume == 0 else prev_pages + state["new"]
+    kw = {"status": "done", "chars": len(full), "pages": final_pages,
+          "page": final_pages, "finished": int(time.time()), "volumes": volumes}
     if ocr_missing:
         kw["note"] = "بعض الصفحات المصوّرة لم تُقرأ (أداة التعرف البصري خاصة بنسخة Mac)"
     _set_meta(doc_id, **kw)
@@ -288,7 +342,7 @@ def convert_document(doc_id: str) -> None:
     _convert_volumes(doc_id, 0)
 
 
-def register_document(owner: str, name: str, saved, dpi=None) -> dict:
+def register_document(owner: str, name: str, saved, dpi=None, scope=None) -> dict:
     """تسجيل وثيقة من ملف أو ملفات أجزاء مرتبة بفرز طبيعي لأسمائها."""
     paths = [saved] if isinstance(saved, (str, Path)) else list(saved)
     paths = sorted((Path(p) for p in paths), key=_natural_key)
@@ -298,7 +352,7 @@ def register_document(owner: str, name: str, saved, dpi=None) -> dict:
         "id": doc_id, "owner": owner, "name": name or paths[0].stem,
         "file_path": str(paths[0]), "text_path": str(text_path),
         "volumes": [{"file_path": str(p), "pages": 0} for p in paths],
-        "dpi": _clamp_dpi(dpi),
+        "dpi": _clamp_dpi(dpi), "scope": _norm_scope(scope),
         "status": "queued", "page": 0, "pages": 0, "chars": 0,
         "created": int(time.time()), "error": "", "note": "",
     }
@@ -310,19 +364,22 @@ def register_document(owner: str, name: str, saved, dpi=None) -> dict:
     return dict(meta)
 
 
-def reconvert_document(doc_id: str, owner: str, dpi=None) -> bool:
-    """إعادة تحويل وثيقة من ملفاتها الأصلية (لالتقاط ما فات بدقة أعلى مثلًا)."""
+def reconvert_document(doc_id: str, owner: str, dpi=None, scope="keep") -> bool:
+    """إعادة تحويل وثيقة من ملفاتها الأصلية (لالتقاط ما فات بدقة أعلى مثلًا).
+    scope: ‏"keep" للإبقاء على نطاقها، أو None لكامل الوثيقة، أو قاموس نطاق."""
     if not get_doc(doc_id, owner):
         return False
     kw = {"status": "queued", "page": 0, "chars": 0, "error": ""}
     if dpi is not None:
         kw["dpi"] = _clamp_dpi(dpi)
+    if scope != "keep":
+        kw["scope"] = _norm_scope(scope)
     _set_meta(doc_id, **kw)
     threading.Thread(target=convert_document, args=(doc_id,), daemon=True).start()
     return True
 
 
-def append_volumes(doc_id: str, owner: str, saved, dpi=None) -> dict | None:
+def append_volumes(doc_id: str, owner: str, saved, dpi=None, scope="keep") -> dict | None:
     """إضافة أجزاء جديدة إلى وثيقة قائمة وتحويلها ملحقة بنصها."""
     meta = get_doc(doc_id, owner)
     if not meta:
@@ -335,6 +392,8 @@ def append_volumes(doc_id: str, owner: str, saved, dpi=None) -> dict | None:
     kw = {"volumes": volumes, "status": "converting"}
     if dpi is not None:
         kw["dpi"] = _clamp_dpi(dpi)
+    if scope != "keep":
+        kw["scope"] = _norm_scope(scope)
     _set_meta(doc_id, **kw)
     threading.Thread(target=_convert_volumes, args=(doc_id, start), daemon=True).start()
     out = get_doc(doc_id, owner) or meta

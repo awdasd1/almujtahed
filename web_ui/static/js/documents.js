@@ -70,6 +70,42 @@ function closeDocUpload() {
   if (docUploadTimer) { clearInterval(docUploadTimer); docUploadTimer = null; }
 }
 
+function docScopeChanged() {
+  const mode = document.querySelector('input[name="docScopeMode"]:checked')?.value || 'all';
+  const set = (id, on) => { const el = document.getElementById(id); if (el) el.disabled = !on; };
+  set('docScopePage', mode === 'page');
+  set('docScopeVolume1', mode === 'page');
+  set('docScopeFrom', mode === 'range');
+  set('docScopeTo', mode === 'range');
+  set('docScopeVolume2', mode === 'range');
+}
+
+function readDocScope() {
+  const mode = document.querySelector('input[name="docScopeMode"]:checked')?.value || 'all';
+  const num = id => {
+    const v = parseInt(document.getElementById(id)?.value || '', 10);
+    return Number.isFinite(v) && v >= 1 ? v : null;
+  };
+  if (mode === 'page') {
+    const p = num('docScopePage');
+    return p ? { mode, volume: num('docScopeVolume1'), from: p, to: p } : null;
+  }
+  if (mode === 'range') {
+    const f = num('docScopeFrom'), t = num('docScopeTo');
+    return f && t ? { mode, volume: num('docScopeVolume2'), from: f, to: t } : null;
+  }
+  return null;
+}
+
+function docScopeLabel(s) {
+  if (!s) return '';
+  const v = s.volume ? ` من الجزء ${Number(s.volume).toLocaleString('ar-EG')}` : '';
+  const n = x => Number(x).toLocaleString('ar-EG');
+  return s.mode === 'page'
+    ? ` • حُوّلت صفحة ${n(s.from)}${v} فقط`
+    : ` • حُوّلت الصفحات ${n(s.from)}–${n(s.to)}${v}`;
+}
+
 function docFileChosen() {
   const file = document.getElementById('docFileInput')?.files?.[0];
   const nameInput = document.getElementById('docNameInput');
@@ -83,6 +119,8 @@ async function startDocUpload() {
   const files = picked ? [...picked] : [];
   if (!files.length) { showToast('اختر ملف الوثيقة أو ملفات أجزائها أولاً (PDF أو صورة)'); return; }
   const appendId = window._docAppendId || null;
+  const modeSel = document.querySelector('input[name="docScopeMode"]:checked')?.value || 'all';
+  if (modeSel !== 'all' && !readDocScope()) { showToast('أدخل أرقام الصفحات للنطاق المختار أولاً'); return; }
   const name = document.getElementById('docNameInput')?.value.trim() || files[0].name.replace(/\.[^.]+$/, '');
   const btn = document.getElementById('btnDocStart');
   const wrap = document.getElementById('docProgressWrap');
@@ -99,6 +137,10 @@ async function startDocUpload() {
     files.forEach(f => form.append('files', f));
     form.append('name', name);
     form.append('dpi', document.getElementById('docDpiInput')?.value || '300');
+    const sc = readDocScope();
+    form.append('scope_mode', sc ? sc.mode : 'all');
+    if (sc && sc.volume) form.append('scope_volume', sc.volume);
+    if (sc) { form.append('scope_from', sc.from); form.append('scope_to', sc.to); }
     const url = appendId ? `/api/documents/${appendId}/volumes` : '/api/documents/upload';
     const res = await fetch(url, { method: 'POST', body: form });
     const data = await res.json();
@@ -161,7 +203,7 @@ async function loadDocumentsList() {
         <span style="font-size:15px;">📄</span>
         <span style="flex:1; min-width:0;">
           <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}</span>
-          <span style="font-size:11.5px; color: var(--text-muted);">${d.status === 'done' ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
+          <span style="font-size:11.5px; color: var(--text-muted);">${d.status === 'done' ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${docScopeLabel(d.scope)}` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
         </span>
         ${d.status === 'done' ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
         ${d.status === 'done' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocAppend('${d.id}', '${escapeHtml(d.name || '').replace(/'/g, '')}')" title="إضافة أجزاء جديدة إلى هذه الوثيقة">إضافة جزء</button>` : ''}
@@ -178,7 +220,10 @@ async function reconvertDocument(docId, docName) {
     const res = await fetch(`/api/documents/${docId}/reconvert`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dpi: parseInt(document.getElementById('docDpiInput')?.value || '300', 10) }),
+      body: JSON.stringify({
+        dpi: parseInt(document.getElementById('docDpiInput')?.value || '300', 10),
+        scope: readDocScope(),
+      }),
     });
     if (!res.ok) throw new Error('تعذر بدء إعادة التحويل');
     showToast('بدأت إعادة التحويل بالدقة المختارة — تُستكمل الحواشي هذه المرة');

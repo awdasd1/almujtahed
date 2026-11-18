@@ -8682,27 +8682,42 @@ async def _save_doc_files(request: Request, files) -> list:
     return saved
 
 
+def _scope_payload(mode, volume, frm, to):
+    """قاموس نطاق التحويل من حقول النموذج، أو None لكامل الوثيقة."""
+    if mode not in ("page", "range"):
+        return None
+    return {"mode": mode, "volume": volume, "from": frm, "to": to}
+
+
 @app.post("/api/documents/upload")
-async def documents_upload(request: Request, files: List[UploadFile] = File(...), name: str = Form(""), dpi: int = Form(300)):
+async def documents_upload(request: Request, files: List[UploadFile] = File(...), name: str = Form(""), dpi: int = Form(300),
+                           scope_mode: str = Form("all"), scope_volume: Optional[int] = Form(None),
+                           scope_from: Optional[int] = Form(None), scope_to: Optional[int] = Form(None)):
     """رفع وثيقة بملف واحد أو ملفات أجزاء متعددة، وتحويلها نصًا في الخلفية."""
     import doc_convert
     owner_id = current_owner_id(request)
     saved = await _save_doc_files(request, files)
     meta = doc_convert.register_document(
-        owner_id, (name or "").strip() or saved[0].stem, saved, dpi)
+        owner_id, (name or "").strip() or saved[0].stem, saved, dpi,
+        _scope_payload(scope_mode, scope_volume, scope_from, scope_to))
     return {"id": meta["id"], "name": meta["name"], "status": meta["status"],
-            "volumes": len(saved), "dpi": meta.get("dpi")}
+            "volumes": len(saved), "dpi": meta.get("dpi"), "scope": meta.get("scope")}
 
 
 @app.post("/api/documents/{doc_id}/volumes")
-async def documents_append_volumes(request: Request, doc_id: str, files: List[UploadFile] = File(...), dpi: int = Form(300)):
+async def documents_append_volumes(request: Request, doc_id: str, files: List[UploadFile] = File(...), dpi: int = Form(300),
+                                   scope_mode: str = Form("all"), scope_from: Optional[int] = Form(None),
+                                   scope_to: Optional[int] = Form(None)):
     """إضافة أجزاء جديدة إلى وثيقة محفوظة وتحويلها ملحقة بنصها."""
     import doc_convert
     owner_id = current_owner_id(request)
     if not doc_convert.get_doc(doc_id, owner_id):
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
     saved = await _save_doc_files(request, files)
-    meta = doc_convert.append_volumes(doc_id, owner_id, saved, dpi)
+    # في الإلحاق يسري النطاق على صفحات الأجزاء الجديدة نفسها بلا رقم جزء
+    meta = doc_convert.append_volumes(
+        doc_id, owner_id, saved, dpi,
+        _scope_payload(scope_mode, None, scope_from, scope_to))
     return {"id": doc_id, "name": (meta or {}).get("name", ""), "status": "converting",
             "volumes": len((meta or {}).get("volumes") or [])}
 
@@ -8719,7 +8734,7 @@ async def documents_progress(request: Request, doc_id: str):
     meta = doc_convert.get_doc(doc_id, current_owner_id(request))
     if not meta:
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
-    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi")}
+    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi", "scope")}
     out["volumes"] = len(meta.get("volumes") or [])
     return out
 
@@ -8738,7 +8753,8 @@ async def documents_reconvert(request: Request, doc_id: str, payload: Optional[d
     """إعادة تحويل وثيقة من أصولها بالدقة المختارة (تلتقط الحواشي فائتة)."""
     import doc_convert
     dpi = (payload or {}).get("dpi")
-    if not doc_convert.reconvert_document(doc_id, current_owner_id(request), dpi):
+    scope = (payload or {})["scope"] if payload and "scope" in payload else "keep"
+    if not doc_convert.reconvert_document(doc_id, current_owner_id(request), dpi, scope):
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
     return {"id": doc_id, "status": "queued"}
 
@@ -8980,7 +8996,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.690"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.691"},
         },
     })
     if opened.get("error"):
