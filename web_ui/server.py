@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.706"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.707"},
         },
     })
     if opened.get("error"):
@@ -18378,18 +18378,54 @@ def _critique_context_block(req: "ChatRequest", request: Request) -> str:
     _dctx = _dc.relevant_context(str(doc_id), owner, query, budget=7000, embed_key=_ekey)
     doc_chunks = _dctx.get("chunks") or []
     doc_name = crit.get("document_name") or _dctx.get("name") or "الوثيقة"
+    # صفحات الوثيقة كاملة لا مقاطع مجتزأة: مواضع المطابقة من عناوين المقاطع
+    # تُستبدل بنص صفحتها كاملًا (وتتمتها عند انقطاع آخرها) فلا ينقطع سياق
+    doc_pages = []
+    try:
+        _meta = _dc.get_doc(str(doc_id), owner) or {}
+        _full_text = Path(_meta["text_path"]).read_text(encoding="utf-8")
+        _segs = _dc._page_segments(_full_text)
+        _multi = len({v for v, _ in _segs}) > 1
+        _seen_pg, _used_pg = set(), 0
+        for _c in doc_chunks:
+            _m = re.match(r"\[(?:جزء (\d+)|صفحة (\d+)|جزء (\d+)[،,]\s*صفحة (\d+))\]", _c or "")
+            if not _m:
+                continue
+            _vol = int(_m.group(1) or _m.group(3) or 1)
+            _pg = int(_m.group(2) or _m.group(4) or 0)
+            if (_vol, _pg) in _seen_pg or (_vol, _pg) not in _segs:
+                continue
+            _seen_pg.add((_vol, _pg))
+            _label = f"[جزء {_vol}، صفحة {_pg}]" if _multi else f"[صفحة {_pg}]"
+            _body = _segs[(_vol, _pg)]
+            _piece = f"{_label}\n{_body}"
+            if _body and _body[-1] not in ".؟!…»" and (_vol, _pg + 1) in _segs and len(_seen_pg) <= 3:
+                _piece += f"\n[تتمة صفحة {_pg + 1}]\n{_segs[(_vol, _pg + 1)]}"
+                _seen_pg.add((_vol, _pg + 1))
+            if _used_pg + len(_piece) > 13000 and doc_pages:
+                continue
+            doc_pages.append(_piece)
+            _used_pg += len(_piece)
+            if len(doc_pages) >= 5:
+                break
+    except Exception:
+        doc_pages = []
+    if doc_pages:
+        doc_chunks = doc_pages
     # مراسي دلالية من لجنة النماذج الثلاثة كما في البحث المخصص: ثلاثة مولدات
     # مستقلة وحاكم يعتمد خمس مراس حرفية من لسان التراث بفنونها ودرجات ثقتها،
     # تُبحث عباراتها في النطاق فتلتقط مواضع المسألة بألفاظ أصحابها لا بألفاظنا
     adopted = []
+    _panel_q = query + (("\n\nمن متن الوثيقة موضوع النقد: " + doc_chunks[0][:400]) if doc_chunks else "")
     if _ekey:
         try:
-            _panel_q = query + (("\n\nمن متن الوثيقة موضوع النقد: " + doc_chunks[0][:400]) if doc_chunks else "")
             _panel = generate_anchor_panel(
                 _panel_q, _ekey,
                 panel_hint=("الغرض: نقد ومقارنة موقف وثيقة باحث بما في كتب تراث محددة النطاق؛ "
                             "المراسي عبارات حرفية لبحث مواضع المسألة نفسها في كتب النطاق: نصوصها "
-                            "الأصلية في الباب وأسماء أبوابها ومصطلحات أصحابها، لا عبارات وصفية حديثة."))
+                            "الأصلية في الباب وأسماء أبوابها ومصطلحات أصحابها، لا عبارات وصفية حديثة. "
+                            "وإن كانت المسألة حديثية أو قصة إسنادية فألفاظ المتن وأسماء الرواة ومدار "
+                            "السند ومواضعها في كتب التخريج والعلل والرجال والتواريخ أولى المراسي."))
             adopted = _panel.get("adopted") or []
         except Exception:
             adopted = []
@@ -18416,11 +18452,22 @@ def _critique_context_block(req: "ChatRequest", request: Request) -> str:
                 added += 1
                 if added >= cap:
                     break
+    # عبارات من متن الوثيقة نفسه بين «»: قصصها ونصوصها تُبحث حرفيًا في
+    # النطاق فتُدرك مواضعها في كتب التخريج والتواريخ بألفاظها هي
+    _doc_quotes = []
+    for _m in re.finditer(r"«([^»]{10,220})»", "\n".join(doc_chunks)):
+        _q = " ".join((_m.group(1) or "").split()[:9]).strip()
+        if _q and _q not in _doc_quotes:
+            _doc_quotes.append(_q)
+        if len(_doc_quotes) >= 2:
+            break
     if not (mode == "books" and not book_ids):
         for phrase in phrases:
             _run(phrase, "phrase")
         for _a in adopted[:5]:
             _run(_a.get("phrase") or "", "phrase", limit=8, cap=3)
+        for _q in _doc_quotes:
+            _run(_q, "phrase", limit=8, cap=3)
         if len(hits) < 6 and len(qwords) >= 2:
             _run(" ".join(qwords[:4]), "words")
         if len(hits) < 6 and qwords:
@@ -18429,14 +18476,56 @@ def _critique_context_block(req: "ChatRequest", request: Request) -> str:
             _run(" ".join(dwords[:4]), "words")
         if len(hits) < 8 and dwords:
             _run(" ".join(dwords), "any", limit=30, cap=6)
+        if len(hits) < 8 and _ekey:
+            # جولة مراسٍ تكميلية كما في البحث المخصص: تُغيّر ألفاظ البحث بما
+            # يناسب المصدر لسد النقص قبل أن يُبنى النقد على مواد هزيلة
+            try:
+                _panel2 = generate_anchor_panel(
+                    _panel_q, _ekey,
+                    panel_hint=("جولة تكميلية لسد نقص: المواد الملتقطة قليلة. ركّز على مواضع "
+                                "المسألة في كتب التخريج والعلل والرجال والتواريخ والشروح بأسماء "
+                                "أبوابها وألفاظ متونها ومدار أسانيدها، بعبارات لم تُستعمل في الجولة الأولى."))
+                _adopted2 = _panel2.get("adopted") or []
+            except Exception:
+                _adopted2 = []
+            for _a in _adopted2[:5]:
+                if (_a.get("phrase") or "") not in [x.get("phrase") for x in adopted]:
+                    adopted.append(_a)
+                _run(_a.get("phrase") or "", "phrase", limit=8, cap=3)
+    # توسيع أوائل النتائج إلى صفحات كاملة بتتماتها من ملفات الكتب نفسها:
+    # القصاصة لا يبنى عليها تخريج ولا دراسة سند
+    try:
+        import shamela_local_mcp as _mcp
+        for _h in hits[:6]:
+            try:
+                _pg = _mcp.get_page(int(_h.get("book_id") or 0), int(_h.get("page_num") or 0),
+                                    _h.get("part") or None)
+                _body = ((_pg.get("page") or {}).get("body") or "") if _pg.get("status") == "ok" else ""
+            except Exception:
+                _body = ""
+            if _body:
+                _h["_full"] = _body[:2600]
+                if _body[-1] not in ".؟!…»":
+                    try:
+                        _pg2 = _mcp.get_page(int(_h.get("book_id") or 0), int(_h.get("page_num") or 0) + 1,
+                                             _h.get("part") or None)
+                        _body2 = ((_pg2.get("page") or {}).get("body") or "") if _pg2.get("status") == "ok" else ""
+                    except Exception:
+                        _body2 = ""
+                    if _body2:
+                        _h["_next"] = _body2[:1500]
+    except Exception:
+        pass
     book_lines, used = [], 0
-    for h in hits[:10]:
+    for h in hits[:12]:
         death = h.get("author_death_hijri")
         dstr = f" (ت {death})" if death and str(death).isdigit() and int(death) != 99999 else ""
         loc = f"ج{h.get('part')} ص{h.get('page_num')}" if h.get("part") else f"ص{h.get('page_num')}"
-        line = (f"[كتاب: {h.get('title') or ''} — {h.get('author') or ''}{dstr}، {loc}]\n"
-                f"{(h.get('snippet') or '').strip()}")
-        if used + len(line) > 12000 and book_lines:
+        _text = (h.get("_full") or (h.get("snippet") or "")).strip()
+        if h.get("_next"):
+            _text += f"\n[تتمة من الصفحة التالية]\n{h['_next'].strip()}"
+        line = (f"[كتاب: {h.get('title') or ''} — {h.get('author') or ''}{dstr}، {loc}]\n{_text}")
+        if used + len(line) > 17000 and book_lines:
             break
         book_lines.append(line)
         used += len(line)
@@ -18480,6 +18569,9 @@ def _critique_context_block(req: "ChatRequest", request: Request) -> str:
         "- عند تعارض النصوص المُورَدة فرجّح بالأدقّ والألصق بالمسألة وبأمهات الكتب وأشهرها وأقدمها وأغزرها في فنّها، ولا تكرر المصدر نفسه أكثر من ثلاث مرات متى وجد في المواد مصدر آخر في المسألة، ورتّب العرض منهجيًا بحسب الفن والمذهب والطبقة.\n"
         "- وازِن الفنون في المقارنة: أصل المسألة من الحديث أو الآية، وخلاف الفقهاء أو المفسرين فيها، بحسب ما في المواد، ولا تجعل فنًا واحدًا يطغى على بناء النقد.\n"
         "- بنية الجواب: ١) موقف الوثيقة بنصّه وموضعه. ٢) ما في كتب النطاق بنصوصها ومواضعها (موافقة أو مخالفة أو تفصيلًا). ٣) المقارنة والنقد: أوجه الاتفاق والاختلاف وقوة كل قول بدليله من هذه المواد وحدها. ٤) خلاصة منضبطة بما ثبت فيها.\n"
+        "- إن كان موضوع النقد حديثًا أو أثرًا أو قصة إسنادية فالتزم منهج التخريج والدراسة لا العرض العام: (١) نص الحديث أو القصة في الوثيقة وموضعه. (٢) تخريجه من المواد: من أخرجه من أصحاب المصنفات وبأي طرق وردت في النصوص المُورَدة. (٣) مدار السند والرواة الذين يدور عليهم الخلاف كما في المواد. (٤) أقوال أئمة الجرح والتعديل في أولئك الرواة وأحكام المصحّحين والمضعّفين متقدمهم ومتأخرهم كما في المواد بأسمائهم ومواضعها. (٥) العلل الظاهرة والخفية المستفادة من مقابلة الطرق في المواد. (٦) نقد موقف الوثيقة على ضوء ذلك: مواضع إصابته ووهنه بدليلها. (٧) خلاصة بدرجة الثبوت المستفادة من المواد وحدها.\n"
+        "- وإن كان مسألة فقهية: حرّر محل النزاع من الوثيقة، ثم مذاهب أهل العلم وأدلّتهم من المواد، ثم مواضع قوة كل قول وضعفه، ثم نقد اختيار الوثيقة وترجيحها بما في المواد.\n"
+        "- النقد عرضُ أقوال وتلخيصٌ مجرد لا يُقبل: بيّن مواضع القوة والوهن في كلام الوثيقة مقرونة بأدلتها من المواد، وإن أعوزك عنصر من عناصر المنهج فاذكر ما وجدت وحدّد الناقص بدقّة بدل إطلاق «لم أجد»؛ فإطلاقها مع وجود نصوص متصلة في المواد تقصير مردود.\n"
         f"[مقاطع الوثيقة «{doc_name}» الأقرب لطلب الباحث]\n"
         + ("\n\n".join(doc_chunks) if doc_chunks else "(تعذّر استحضار مقاطع الوثيقة)")
     ]
