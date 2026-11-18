@@ -529,9 +529,68 @@ def page_text(doc_id: str, owner: str, volume: int, page: int) -> dict:
     return info
 
 
-def build_docx(doc_id: str, owner: str) -> bytes | None:
-    """تصدير الوثيقة ملف Word: عناوين أجزاء وصفحات بفواصل صفحات، والمتن
-    فقرات، والحواشي بعد خطها الفاصل بخط أصغر — عبر python-docx."""
+_AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+_FN_MARK = re.compile(r"\(\s*([٠-٩0-9]{1,3})\s*\)|\(\s*([٠-٩0-9]{1,3})(?=[\s،.؛:»\"']|$)")
+_FN_START = re.compile(r"^\s*(?:\(\s*([٠-٩0-9]{1,3})\s*\)|([٠-٩0-9]{1,3})\s*[-–.)،:]|([٠-٩0-9]{1,3})\s+)\s*")
+_HEADING_LINE = re.compile(r"^\(?\s*(فصل|باب|مسألة|المسألة|تنبيه|فائدة|خاتمة|مقدمة|المبحث|المطلب|القاعدة)\b")
+
+
+def _fn_entries(fn_lines: list) -> list:
+    """حواشي صفحة من سطورها المقروءة: كل مرقّمة مدخل، وما عداها تتمة سابقه."""
+    entries: list[str] = []
+    for line in fn_lines:
+        m = _FN_START.match(line)
+        num = None
+        if m:
+            raw = next((g for g in m.groups() if g), "")
+            try:
+                num = int(raw.translate(_AR_DIGITS))
+            except ValueError:
+                num = None
+        if m and num is not None and (not entries or num == len(entries) + 1 or num == 1):
+            entries.append(line[m.end():].strip())
+        elif entries:
+            entries[-1] = (entries[-1] + " " + line).strip()
+        else:
+            entries.append(line)
+    return [e for e in entries if e]
+
+
+def _runs_with_refs(par_text: str, fn_start: int, fn_total: int) -> tuple:
+    """مقاطع فقرة بإحالات حواشيها: علامة (ن) المطبوعة في المتن تُستبدل
+    بإحالة Word الحقيقية التي يرسمها الباني رقمًا مرتفعًا بين قوسين."""
+    runs = []
+    pos = 0
+    k = fn_start
+    for m in _FN_MARK.finditer(par_text):
+        if k >= fn_total:
+            break
+        raw = m.group(1) or m.group(2) or ""
+        try:
+            num = int(raw.translate(_AR_DIGITS))
+        except ValueError:
+            continue
+        if num != (k - fn_start) + 1 and fn_total > 1:
+            continue
+        if m.start() > pos:
+            runs.append({"t": par_text[pos:m.start()]})
+        if runs:
+            runs[-1] = {**runs[-1], "fn": k}
+        else:
+            runs.append({"t": "", "fn": k})
+        k += 1
+        pos = m.end()
+    if pos < len(par_text):
+        runs.append({"t": par_text[pos:]})
+    if not runs:
+        runs.append({"t": par_text})
+    return runs, k
+
+
+def document_export_payload(doc_id: str, owner: str) -> dict | None:
+    """حمولة تصدير Word بمحرك طباعة الأبحاث (build_docx_bytes): كتل متن
+    وعناوين صفحات وأجزاء، وحواشٍ سفلية حقيقية مرتبطة بأرقامها في المتن،
+    ترقيمها يعاد كل صفحة كما في الكتاب المطبوع."""
     meta = get_doc(doc_id, owner)
     if not meta:
         return None
@@ -539,76 +598,85 @@ def build_docx(doc_id: str, owner: str) -> bytes | None:
         text = Path(meta["text_path"]).read_text(encoding="utf-8")
     except Exception:
         return None
-    from docx import Document
-    from docx.shared import Pt, RGBColor
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn
-    from docx.oxml import OxmlElement
-    import io
-
-    doc = Document()
-    normal = doc.styles["Normal"]
-    normal.font.name = "Traditional Arabic"
-    normal.font.size = Pt(13)
-    try:
-        normal.element.rPr.rFonts.set(qn("w:cs"), "Traditional Arabic")
-    except Exception:
-        pass
-
-    def rtl(p):
-        pPr = p._p.get_or_add_pPr()
-        bidi = OxmlElement("w:bidi")
-        bidi.set(qn("w:val"), "1")
-        pPr.append(bidi)
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        return p
-
-    def para(txt, size=13, bold=False, gray=False, heading=None):
-        p = doc.add_heading(level=heading) if heading else doc.add_paragraph()
-        run = p.add_run(txt)
-        run.font.name = "Traditional Arabic"
-        run.font.size = Pt(size)
-        run.bold = bold
-        if gray:
-            run.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
-        try:
-            run._element.get_or_add_rPr().rFonts.set(qn("w:cs"), "Traditional Arabic")
-        except Exception:
-            pass
-        return rtl(p)
-
-    para(meta.get("name") or "وثيقة", size=20, bold=True, heading=0)
+    blocks: list[dict] = [{"kind": "title", "runs": [{"t": meta.get("name") or "وثيقة", "b": True}]}]
+    footnotes: list[dict] = []
     multi = "[الجزء " in text
-    first_page = True
-    footnote = False
+    cur_vol = 1
+    page_lines: list[str] = []
+    page_no = None
+
+    def flush_page():
+        nonlocal page_lines, page_no
+        if page_no is None:
+            page_lines = []
+            return
+        fn_at = next((i for i, l in enumerate(page_lines) if l.strip() == "——————"), None)
+        body = page_lines if fn_at is None else page_lines[:fn_at]
+        fn_lines = [] if fn_at is None else page_lines[fn_at + 1:]
+        entries = _fn_entries(fn_lines)
+        fn_start = len(footnotes)
+        for e in entries:
+            footnotes.append({"runs": [{"t": e}]})
+        blocks.append({"kind": "pageBreak"})
+        head = f"صفحة {page_no}" if not multi else f"الجزء {cur_vol} – صفحة {page_no}"
+        blocks.append({"kind": "h", "runs": [{"t": head, "b": True}]})
+        # دمج سطور القراءة فقرات: سطر العناوين الداخلية يبدأ فقرة جديدة
+        paras: list[str] = []
+        for line in body:
+            s = line.strip()
+            if not s:
+                continue
+            if paras and not _HEADING_LINE.match(s) and not (len(s) < 30 and s.startswith("(") and s.endswith(")")):
+                paras[-1] += " " + s
+            else:
+                paras.append(s)
+        k = fn_start
+        for pi, par in enumerate(paras):
+            runs, k = _runs_with_refs(par, k, fn_start + len(entries))
+            if pi == len(paras) - 1:
+                # حواشٍ لم تُعثر على علاماتها في المتن (شوّهتها القراءة):
+                # إحالاتها آخر فقرة الصفحة فلا تضيع
+                while k < fn_start + len(entries):
+                    runs.append({"t": "", "fn": k})
+                    k += 1
+            blocks.append({"kind": "p", "runs": runs})
+        if not paras and entries:
+            runs = []
+            k = fn_start
+            while k < fn_start + len(entries):
+                runs.append({"t": "", "fn": k})
+                k += 1
+            blocks.append({"kind": "p", "runs": runs})
+        page_lines = []
+
     for raw_line in text.splitlines():
-        line = raw_line.strip()
-        mv = re.fullmatch(r"\[الجزء (\d+)\]", line)
+        line = raw_line.rstrip()
+        mv = re.fullmatch(r"\[الجزء (\d+)\]", line.strip())
         if mv:
-            para(f"الجزء {mv.group(1)}", size=16, bold=True, heading=1)
-            footnote = False
+            flush_page()
+            page_no = None
+            cur_vol = int(mv.group(1))
+            blocks.append({"kind": "partTitle", "runs": [{"t": f"الجزء {cur_vol}", "b": True}]})
             continue
-        mp = re.fullmatch(r"\[صفحة (\d+)\]", line)
+        mp = re.fullmatch(r"\[صفحة (\d+)\]", line.strip())
         if mp:
-            if not first_page:
-                doc.add_page_break()
-            first_page = False
-            para(f"صفحة {mp.group(1)}", size=14, bold=True, heading=2)
-            footnote = False
+            flush_page()
+            page_no = int(mp.group(1))
             continue
-        if line == "——————":
-            footnote = True
-            para("——————", size=9, gray=True)
-            continue
-        if not line:
-            continue
-        if footnote:
-            para(line, size=9.5, gray=True)
-        else:
-            para(line, size=13)
-    buf = io.BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
+        if page_no is not None:
+            page_lines.append(line)
+    flush_page()
+    return {
+        "styles": {
+            "body": {"font": "Amiri", "size": 14, "weight": 400},
+            "h": {"font": "Amiri", "size": 15, "weight": 700},
+            "title": {"font": "Amiri", "size": 22, "weight": 700},
+            "fn": {"font": "Amiri", "size": 10, "weight": 400},
+        },
+        "blocks": blocks,
+        "footnotes": footnotes,
+        "footnote_restart": "eachPage",
+    }
 
 
 def relevant_context(doc_id: str, owner: str, query: str, budget: int = 12000) -> dict:

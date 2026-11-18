@@ -8826,14 +8826,20 @@ async def documents_export_txt(request: Request, doc_id: str):
 
 @app.get("/api/documents/{doc_id}/export.docx")
 async def documents_export_docx(request: Request, doc_id: str):
-    """تصدير الوثيقة ملف Word بعناوين الصفحات والأجزاء وحواشيها."""
+    """تصدير الوثيقة ملف Word بمحرك طباعة الأبحاث: حواشٍ سفلية حقيقية
+    مرقّمة بين قوسين في المتن وأسفل الصفحة، واتجاه عربي كامل."""
     import doc_convert
     meta = doc_convert.get_doc(doc_id, current_owner_id(request))
     if not meta:
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
-    raw = await asyncio.to_thread(doc_convert.build_docx, doc_id, current_owner_id(request))
-    if not raw:
+    payload = await asyncio.to_thread(
+        doc_convert.document_export_payload, doc_id, current_owner_id(request))
+    if not payload:
         raise HTTPException(status_code=404, detail="لا نص محوَّلًا بعد")
+    try:
+        raw = await asyncio.to_thread(build_docx_bytes, payload)
+    except ValueError:
+        raise HTTPException(status_code=413, detail="الوثيقة أضخم من حد تصدير Word: صدّرها أجزاءً أو بنطاق")
     from urllib.parse import quote
     fname = quote(f"{meta.get('name') or 'document'}.docx")
     return Response(content=raw,
@@ -9078,7 +9084,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.692"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.693"},
         },
     })
     if opened.get("error"):
