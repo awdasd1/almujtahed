@@ -8657,22 +8657,50 @@ async def book_pdf_crop_text(payload: dict = Body(...)):
 
 
 # ===================== رفع وثيقة كاملة وتحويلها نصًا =====================
-@app.post("/api/documents/upload")
-async def documents_upload(request: Request, file: UploadFile = File(...), name: str = Form("")):
-    """رفع وثيقة (PDF أو صورة) وتحويلها نصًا في الخلفية مع تقدم صفحة صفحة."""
+async def _save_doc_files(request: Request, files) -> list:
+    """حفظ ملفات أجزاء وثيقة في مجلد صاحبها مع التحقق من الصيغ."""
     import doc_convert
     owner_id = current_owner_id(request)
-    original = file.filename or "document"
-    ext = Path(original).suffix.lower()
-    if ext not in (".pdf", ".txt") and ext not in doc_convert._IMG_EXTS:
-        raise HTTPException(status_code=400, detail="ارفع ملف PDF أو صورة (png/jpg/tiff) أو ملفًا نصيًا")
     folder = UPLOADS_BUCKET_DIR / owner_id / "documents"
     folder.mkdir(parents=True, exist_ok=True)
-    safe = f"{int(time.time() * 1000)}_{re.sub(r'[^\w.\-]', '_', original)}"
-    saved = folder / safe
-    saved.write_bytes(await file.read())
-    meta = doc_convert.register_document(owner_id, (name or "").strip() or Path(original).stem, saved)
-    return {"id": meta["id"], "name": meta["name"], "status": meta["status"]}
+    saved = []
+    stamp = int(time.time() * 1000)
+    for i, f in enumerate(files or []):
+        original = f.filename or "document"
+        ext = Path(original).suffix.lower()
+        if ext not in (".pdf", ".txt") and ext not in doc_convert._IMG_EXTS:
+            raise HTTPException(status_code=400, detail="ارفع ملفات PDF أو صور (png/jpg/tiff) أو ملفات نصية")
+        path = folder / f"{stamp}_{i}_{re.sub(r'[^\w.\-]', '_', original)}"
+        path.write_bytes(await f.read())
+        saved.append(path)
+    if not saved:
+        raise HTTPException(status_code=400, detail="اختر ملفًا واحدًا على الأقل")
+    return saved
+
+
+@app.post("/api/documents/upload")
+async def documents_upload(request: Request, files: List[UploadFile] = File(...), name: str = Form("")):
+    """رفع وثيقة بملف واحد أو ملفات أجزاء متعددة، وتحويلها نصًا في الخلفية."""
+    import doc_convert
+    owner_id = current_owner_id(request)
+    saved = await _save_doc_files(request, files)
+    meta = doc_convert.register_document(
+        owner_id, (name or "").strip() or saved[0].stem, saved)
+    return {"id": meta["id"], "name": meta["name"], "status": meta["status"],
+            "volumes": len(saved)}
+
+
+@app.post("/api/documents/{doc_id}/volumes")
+async def documents_append_volumes(request: Request, doc_id: str, files: List[UploadFile] = File(...)):
+    """إضافة أجزاء جديدة إلى وثيقة محفوظة وتحويلها ملحقة بنصها."""
+    import doc_convert
+    owner_id = current_owner_id(request)
+    if not doc_convert.get_doc(doc_id, owner_id):
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    saved = await _save_doc_files(request, files)
+    meta = doc_convert.append_volumes(doc_id, owner_id, saved)
+    return {"id": doc_id, "name": (meta or {}).get("name", ""), "status": "converting",
+            "volumes": len((meta or {}).get("volumes") or [])}
 
 
 @app.get("/api/documents")
@@ -8687,7 +8715,9 @@ async def documents_progress(request: Request, doc_id: str):
     meta = doc_convert.get_doc(doc_id, current_owner_id(request))
     if not meta:
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
-    return {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note")}
+    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note")}
+    out["volumes"] = len(meta.get("volumes") or [])
+    return out
 
 
 @app.post("/api/documents/{doc_id}/context")
@@ -8936,7 +8966,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.686"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.687"},
         },
     })
     if opened.get("error"):
@@ -18100,8 +18130,8 @@ def _document_context_block(req: "ChatRequest", request: Request) -> str:
             "\n\n═══════════════════════════════════════════════════════════\n"
             f"📄 [وثيقة مرفوعة اسمها «{_dname}» يناقشك الباحث فيها الآن — فيما يلي مقاطع من نصّها، "
             "وهي مادتك المرجعية الأولى لهذا الجواب. الباحث رفعها فعلًا وحُوّلت إلى نص وقرأتها المنظومة، "
-            "فلا تقل إنه لم يرفق نصًا أو لم يذكر وثيقة، وأجب من هذه المقاطع واذكر أرقام الصفحات بصيغة "
-            "[صفحة N]، وإن لم تجد الجواب فيها فصرّح بذلك واعرض ما فيها مما يتصل بالسؤال. "
+            "فلا تقل إنه لم يرفق نصًا أو لم يذكر وثيقة، وأجب من هذه المقاطع واذكر مواضعها بصيغة "
+            "[صفحة N] أو [جزء V، صفحة N] في متعددة الأجزاء، وإن لم تجد الجواب فيها فصرّح بذلك واعرض ما فيها مما يتصل بالسؤال. "
             "وإن طلب الباحث نصّ صفحة بعينها وكان نصّها ضمن المقاطع التالية فاعرضه كاملًا بنصّه كما هو، "
             "بلا تلخيص ولا اعتذار عن الذاكرة؛ فالنص أمامك لا يحتاج ذاكرة]\n"
             + "\n\n".join(_ch)

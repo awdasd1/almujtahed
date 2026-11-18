@@ -40,8 +40,27 @@ function docSlashPick() {
 }
 
 function openDocUpload() {
+  window._docAppendId = null;
+  const note = document.getElementById('docAppendNote');
+  if (note) note.style.display = 'none';
+  const btn = document.getElementById('btnDocStart');
+  if (btn) btn.textContent = 'رفع وتحويل إلى نص';
   const modal = document.getElementById('docUploadModal');
   if (modal) modal.style.display = 'flex';
+  loadDocumentsList();
+}
+
+function openDocAppend(docId, docName) {
+  window._docAppendId = docId;
+  const modal = document.getElementById('docUploadModal');
+  if (modal) modal.style.display = 'flex';
+  const note = document.getElementById('docAppendNote');
+  if (note) {
+    note.style.display = 'block';
+    note.textContent = `تُضاف الملفات المختارة أجزاءً جديدة إلى وثيقة «${docName || ''}» بعد أجزائها الحالية.`;
+  }
+  const btn = document.getElementById('btnDocStart');
+  if (btn) btn.textContent = 'إضافة الأجزاء وتحويلها';
   loadDocumentsList();
 }
 
@@ -60,9 +79,11 @@ function docFileChosen() {
 }
 
 async function startDocUpload() {
-  const file = document.getElementById('docFileInput')?.files?.[0];
-  if (!file) { showToast('اختر ملف الوثيقة أولاً (PDF أو صورة)'); return; }
-  const name = document.getElementById('docNameInput')?.value.trim() || file.name.replace(/\.[^.]+$/, '');
+  const picked = document.getElementById('docFileInput')?.files;
+  const files = picked ? [...picked] : [];
+  if (!files.length) { showToast('اختر ملف الوثيقة أو ملفات أجزائها أولاً (PDF أو صورة)'); return; }
+  const appendId = window._docAppendId || null;
+  const name = document.getElementById('docNameInput')?.value.trim() || files[0].name.replace(/\.[^.]+$/, '');
   const btn = document.getElementById('btnDocStart');
   const wrap = document.getElementById('docProgressWrap');
   const bar = document.getElementById('docProgressBar');
@@ -72,14 +93,16 @@ async function startDocUpload() {
   if (wrap) wrap.style.display = 'block';
   if (done) done.style.display = 'none';
   if (bar) bar.style.width = '2%';
-  if (label) label.textContent = 'يُرفع الملف…';
+  if (label) label.textContent = files.length > 1 ? `تُرفع ${files.length} ملفات أجزاء…` : 'يُرفع الملف…';
   try {
     const form = new FormData();
-    form.append('file', file);
+    files.forEach(f => form.append('files', f));
     form.append('name', name);
-    const res = await fetch('/api/documents/upload', { method: 'POST', body: form });
+    const url = appendId ? `/api/documents/${appendId}/volumes` : '/api/documents/upload';
+    const res = await fetch(url, { method: 'POST', body: form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'تعذر الرفع');
+    window._docAppendId = null;
     pollDocProgress(data.id, data.name);
   } catch (e) {
     if (label) label.textContent = `تعذر الرفع: ${e.message || e}`;
@@ -104,7 +127,7 @@ function pollDocProgress(docId, docName) {
       } else if (p.status === 'done') {
         clearInterval(docUploadTimer); docUploadTimer = null;
         if (bar) bar.style.width = '100%';
-        if (label) label.textContent = `اكتمل التحويل: ${p.pages} صفحة، ${Number(p.chars || 0).toLocaleString('ar-EG')} حرفًا.${p.note ? ' ' + p.note : ''}`;
+        if (label) label.textContent = `اكتمل التحويل: ${p.pages} صفحة${p.volumes > 1 ? ` في ${p.volumes} أجزاء` : ''}، ${Number(p.chars || 0).toLocaleString('ar-EG')} حرفًا.${p.note ? ' ' + p.note : ''}`;
         if (done) {
           done.style.display = 'flex';
           const discuss = document.getElementById('btnDocDiscuss');
@@ -137,9 +160,10 @@ async function loadDocumentsList() {
         <span style="font-size:15px;">📄</span>
         <span style="flex:1; min-width:0;">
           <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}</span>
-          <span style="font-size:11.5px; color: var(--text-muted);">${d.status === 'done' ? `${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
+          <span style="font-size:11.5px; color: var(--text-muted);">${d.status === 'done' ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
         </span>
         ${d.status === 'done' ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
+        ${d.status === 'done' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocAppend('${d.id}', '${escapeHtml(d.name || '').replace(/'/g, '')}')" title="إضافة أجزاء جديدة إلى هذه الوثيقة">إضافة جزء</button>` : ''}
         <button class="btn-flat-secondary reader-mini-btn" onclick="deleteDocument('${d.id}')" title="حذف الوثيقة">حذف</button>
       </div>`).join('');
   } catch (e) {

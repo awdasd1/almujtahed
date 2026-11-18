@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.686">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.687">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.686" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.687" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.686</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.687</span>
             </div>
 
             <div class="header-actions">
@@ -5076,8 +5076,10 @@
                 </button>
             </div>
             <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
-                <label style="font-size: 13px; font-weight: 600;">ملف الوثيقة
-                    <input type="file" id="docFileInput" accept=".pdf,.txt,image/*" onchange="docFileChosen()" style="display: block; margin-top: 6px; width: 100%;">
+                <div id="docAppendNote" style="display: none; font-size: 12.5px; color: var(--accent-clay); font-weight: 600;"></div>
+                <label style="font-size: 13px; font-weight: 600;">ملف الوثيقة أو ملفات الأجزاء
+                    <input type="file" id="docFileInput" accept=".pdf,.txt,image/*" multiple onchange="docFileChosen()" style="display: block; margin-top: 6px; width: 100%;">
+                    <span style="display: block; font-size: 11.5px; font-weight: 400; color: var(--text-muted); margin-top: 4px;">للكتاب متعدد الأجزاء: اختر ملفات أجزائه كلها دفعة واحدة (بأسماء مرتبة كجزء١، جزء٢…) فتُحفظ وثيقة واحدة بأجزائها، وتسأل بعدها بصيغة «صفحة ٢٣٠ من جزء ٤».</span>
                 </label>
                 <label style="font-size: 13px; font-weight: 600;">اسم الوثيقة
                     <input type="text" id="docNameInput" class="filter-input" placeholder="اسم يظهر في محادثاتك وقائمة وثائقك" style="display: block; margin-top: 6px; width: 100%;">
@@ -6533,25 +6535,25 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.686"></script>
-    <script src="/static/js/search.js?v=1.10.686"></script>
-    <script src="/static/js/reader.js?v=1.10.686"></script>
-    <script src="/static/js/force3d.js?v=1.10.686"></script>
-    <script src="/static/js/share.js?v=1.10.686"></script>
-    <script src="/static/js/chat.js?v=1.10.686"></script>
-    <script src="/static/js/documents.js?v=1.10.686"></script>
-    <script src="/static/js/designs.js?v=1.10.686"></script>
-    <script src="/static/js/texts.js?v=1.10.686"></script>
-    <script src="/static/js/agents.js?v=1.10.686"></script>
-    <script src="/static/js/providers.js?v=1.10.686"></script>
-    <script src="/static/js/tools.js?v=1.10.686"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.686"></script>
-    <script src="/static/js/projects.js?v=1.10.686"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.686"></script>
-    <script src="/static/js/archive.js?v=1.10.686"></script>
-    <script src="/static/js/compare.js?v=1.10.686"></script>
-    <script src="/static/js/local_models.js?v=1.10.686"></script>
-    <script src="/static/js/changelog.js?v=1.10.686"></script>
+    <script src="/static/js/app.js?v=1.10.687"></script>
+    <script src="/static/js/search.js?v=1.10.687"></script>
+    <script src="/static/js/reader.js?v=1.10.687"></script>
+    <script src="/static/js/force3d.js?v=1.10.687"></script>
+    <script src="/static/js/share.js?v=1.10.687"></script>
+    <script src="/static/js/chat.js?v=1.10.687"></script>
+    <script src="/static/js/documents.js?v=1.10.687"></script>
+    <script src="/static/js/designs.js?v=1.10.687"></script>
+    <script src="/static/js/texts.js?v=1.10.687"></script>
+    <script src="/static/js/agents.js?v=1.10.687"></script>
+    <script src="/static/js/providers.js?v=1.10.687"></script>
+    <script src="/static/js/tools.js?v=1.10.687"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.687"></script>
+    <script src="/static/js/projects.js?v=1.10.687"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.687"></script>
+    <script src="/static/js/archive.js?v=1.10.687"></script>
+    <script src="/static/js/compare.js?v=1.10.687"></script>
+    <script src="/static/js/local_models.js?v=1.10.687"></script>
+    <script src="/static/js/changelog.js?v=1.10.687"></script>
 
     <script>
         window.refreshLucideIcons = function () {

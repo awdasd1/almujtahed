@@ -64,6 +64,8 @@ def list_docs(owner: str) -> list:
     for m in out:
         m.pop("text_path", None)
         m.pop("file_path", None)
+        m["volume_count"] = len(m.get("volumes") or ([1] if m.get("pages") else []))
+        m.pop("volumes", None)
     return out
 
 
@@ -75,10 +77,15 @@ def delete_doc(doc_id: str, owner: str) -> bool:
             return False
         reg.pop(doc_id, None)
         _save_registry(reg)
-    for key in ("text_path", "file_path"):
+    paths = [meta.get("text_path")]
+    for v in (meta.get("volumes") or []):
+        paths.append(v.get("file_path"))
+    if not meta.get("volumes"):
+        paths.append(meta.get("file_path"))
+    for p in paths:
         try:
-            if meta.get(key):
-                os.remove(meta[key])
+            if p:
+                os.remove(p)
         except OSError:
             pass
     return True
@@ -102,75 +109,130 @@ def _ocr_png(png_path: str) -> str:
     return "\n".join(str(l.get("text") or "").strip() for l in lines if str(l.get("text") or "").strip())
 
 
-def convert_document(doc_id: str) -> None:
-    """تحويل الوثيقة نصًا في خيط خلفي مع تحديث التقدم في السجل."""
+def _natural_key(path: Path):
+    """فرز طبيعي لأسماء ملفات الأجزاء: جزء2 قبل جزء10."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", path.name)]
+
+
+def _convert_one(src: Path, first_page_no: int, progress) -> tuple:
+    """تحويل ملف واحد إلى أجزاء صفحاته، يُرجع (الأجزاء، عدد الصفحات، فشل بصري؟)."""
+    ext = src.suffix.lower()
+    parts: list[str] = []
+    if ext == ".txt":
+        parts.append(src.read_text(encoding="utf-8", errors="ignore"))
+        progress(1)
+        return parts, 1, False
+    if ext != ".pdf" and ext not in _IMG_EXTS:
+        raise RuntimeError("صيغة غير مدعومة: ارفع PDF أو صورة أو ملفًا نصيًا")
+    import fitz
+    doc = fitz.open(str(src))
+    total = doc.page_count
+    ocr_missing = False
+    for i in range(total):
+        page = doc[i]
+        embedded = ""
+        if ext == ".pdf":
+            try:
+                embedded = (page.get_text() or "").strip()
+            except Exception:
+                embedded = ""
+        if len(embedded) >= 20:
+            parts.append(f"[صفحة {i + 1}]\n{embedded}")
+        else:
+            pix = page.get_pixmap(dpi=150)
+            fd, tmp = tempfile.mkstemp(suffix=".png")
+            os.close(fd)
+            try:
+                Path(tmp).write_bytes(pix.tobytes("png"))
+                read = _ocr_png(tmp)
+            finally:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            if read:
+                parts.append(f"[صفحة {i + 1}]\n{read}")
+            else:
+                ocr_missing = True
+                parts.append(f"[صفحة {i + 1}]\n[صفحة مصوّرة تعذّرت قراءتها آليًا]")
+        progress(first_page_no + i)
+    doc.close()
+    return parts, total, ocr_missing
+
+
+def _count_pages(src: Path) -> int:
+    ext = src.suffix.lower()
+    if ext == ".pdf":
+        try:
+            import fitz
+            d = fitz.open(str(src))
+            n = d.page_count
+            d.close()
+            return n
+        except Exception:
+            return 0
+    return 1
+
+
+def _convert_volumes(doc_id: str, start_volume: int) -> None:
+    """تحويل أجزاء الوثيقة من جزء مبدئي، ملحقة بنصها القائم إن وُجد."""
     meta = get_doc(doc_id)
     if not meta:
         return
-    src = Path(meta.get("file_path") or "")
-    ext = src.suffix.lower()
-    _set_meta(doc_id, status="converting", page=0, pages=0, error="")
+    volumes = meta.get("volumes") or ([{"file_path": meta.get("file_path")}] if meta.get("file_path") else [])
+    multi = len(volumes) > 1
+    totals = [_count_pages(Path(v.get("file_path") or "")) for v in volumes]
+    grand_total = sum(totals)
+    done_before = sum(totals[:start_volume])
+    _set_meta(doc_id, status="converting", pages=grand_total, page=done_before, error="")
     parts: list[str] = []
+    ocr_missing = False
     try:
-        if ext == ".txt":
-            text = src.read_text(encoding="utf-8", errors="ignore")
-            _set_meta(doc_id, pages=1, page=1)
-            parts.append(text)
-        elif ext == ".pdf" or ext in _IMG_EXTS:
-            import fitz
-            doc = fitz.open(str(src))
-            total = doc.page_count
-            _set_meta(doc_id, pages=total)
-            ocr_missing = False
-            for i in range(total):
-                page = doc[i]
-                embedded = ""
-                if ext == ".pdf":
-                    try:
-                        embedded = (page.get_text() or "").strip()
-                    except Exception:
-                        embedded = ""
-                if len(embedded) >= 20:
-                    parts.append(f"[صفحة {i + 1}]\n{embedded}")
-                else:
-                    pix = page.get_pixmap(dpi=150)
-                    fd, tmp = tempfile.mkstemp(suffix=".png")
-                    os.close(fd)
-                    try:
-                        Path(tmp).write_bytes(pix.tobytes("png"))
-                        read = _ocr_png(tmp)
-                    finally:
-                        try:
-                            os.remove(tmp)
-                        except OSError:
-                            pass
-                    if read:
-                        parts.append(f"[صفحة {i + 1}]\n{read}")
-                    else:
-                        ocr_missing = True
-                        parts.append(f"[صفحة {i + 1}]\n[صفحة مصوّرة تعذّرت قراءتها آليًا]")
-                _set_meta(doc_id, page=i + 1)
-            doc.close()
-            if ocr_missing:
-                _set_meta(doc_id, note="بعض الصفحات المصوّرة لم تُقرأ (أداة التعرف البصري خاصة بنسخة Mac)")
-        else:
-            raise RuntimeError("صيغة غير مدعومة: ارفع PDF أو صورة أو ملفًا نصيًا")
+        for vi in range(start_volume, len(volumes)):
+            base = sum(totals[:vi])
+            vparts, n, miss = _convert_one(
+                Path(volumes[vi].get("file_path") or ""), base + 1,
+                lambda p: _set_meta(doc_id, page=p))
+            volumes[vi]["pages"] = n
+            ocr_missing = ocr_missing or miss
+            if multi:
+                parts.append(f"[الجزء {vi + 1}]")
+            parts.extend(vparts)
+            _set_meta(doc_id, volumes=volumes)
     except Exception as exc:
         _set_meta(doc_id, status="error", error=str(exc)[:300])
         return
-    text = "\n\n".join(parts).strip()
     text_path = Path(meta.get("text_path") or "")
     text_path.parent.mkdir(parents=True, exist_ok=True)
-    text_path.write_text(text, encoding="utf-8")
-    _set_meta(doc_id, status="done", chars=len(text), finished=int(time.time()))
+    new_text = "\n\n".join(parts).strip()
+    if start_volume > 0 and text_path.exists():
+        old = text_path.read_text(encoding="utf-8")
+        full = (old.rstrip() + "\n\n" + new_text).strip() if new_text else old
+    else:
+        full = new_text
+    text_path.write_text(full, encoding="utf-8")
+    kw = {"status": "done", "chars": len(full), "pages": grand_total,
+          "page": grand_total, "finished": int(time.time()), "volumes": volumes}
+    if ocr_missing:
+        kw["note"] = "بعض الصفحات المصوّرة لم تُقرأ (أداة التعرف البصري خاصة بنسخة Mac)"
+    _set_meta(doc_id, **kw)
 
 
-def register_document(owner: str, name: str, saved_path: Path) -> dict:
+def convert_document(doc_id: str) -> None:
+    """تحويل الوثيقة نصًا في خيط خلفي مع تحديث التقدم في السجل."""
+    _convert_volumes(doc_id, 0)
+
+
+def register_document(owner: str, name: str, saved) -> dict:
+    """تسجيل وثيقة من ملف أو ملفات أجزاء مرتبة بفرز طبيعي لأسمائها."""
+    paths = [saved] if isinstance(saved, (str, Path)) else list(saved)
+    paths = sorted((Path(p) for p in paths), key=_natural_key)
     doc_id = f"doc{int(time.time() * 1000)}"
-    text_path = saved_path.parent / f"{doc_id}.txt"
+    text_path = paths[0].parent / f"{doc_id}.txt"
     meta = {
-        "id": doc_id, "owner": owner, "name": name or saved_path.stem,
-        "file_path": str(saved_path), "text_path": str(text_path),
+        "id": doc_id, "owner": owner, "name": name or paths[0].stem,
+        "file_path": str(paths[0]), "text_path": str(text_path),
+        "volumes": [{"file_path": str(p), "pages": 0} for p in paths],
         "status": "queued", "page": 0, "pages": 0, "chars": 0,
         "created": int(time.time()), "error": "", "note": "",
     }
@@ -180,6 +242,22 @@ def register_document(owner: str, name: str, saved_path: Path) -> dict:
         _save_registry(reg)
     threading.Thread(target=convert_document, args=(doc_id,), daemon=True).start()
     return dict(meta)
+
+
+def append_volumes(doc_id: str, owner: str, saved) -> dict | None:
+    """إضافة أجزاء جديدة إلى وثيقة قائمة وتحويلها ملحقة بنصها."""
+    meta = get_doc(doc_id, owner)
+    if not meta:
+        return None
+    paths = [saved] if isinstance(saved, (str, Path)) else list(saved)
+    paths = sorted((Path(p) for p in paths), key=_natural_key)
+    volumes = meta.get("volumes") or ([{"file_path": meta.get("file_path"), "pages": meta.get("pages", 0)}] if meta.get("file_path") else [])
+    start = len(volumes)
+    volumes.extend({"file_path": str(p), "pages": 0} for p in paths)
+    _set_meta(doc_id, volumes=volumes, status="converting")
+    threading.Thread(target=_convert_volumes, args=(doc_id, start), daemon=True).start()
+    out = get_doc(doc_id, owner) or meta
+    return dict(out)
 
 
 _FOLD = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي", "ة": "ه", "ؤ": "و", "ئ": "ي"})
@@ -207,34 +285,53 @@ def _chunks(text: str, size: int = 1200) -> list:
 
 _DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
 _PAGE_RE = re.compile(r"(?:الصفحة|صفحة|صفحه|ص|page)\s*[:\-]?\s*(\d{1,4})", re.IGNORECASE)
+_VOL_RE = re.compile(r"(?:الجزء|جزء|المجلد|مجلد)\s*[:\-]?\s*(\d{1,3})")
+_SLASH_RE = re.compile(r"(\d{1,3})\s*/\s*(\d{1,4})")
 
 
-def _requested_pages(query: str) -> list:
-    """أرقام الصفحات المطلوبة صراحة في السؤال، بالأرقام الغربية أو المشرقية،
-    مع مدى «من صفحة كذا إلى كذا» بحد عشر صفحات."""
+def _requested_refs(query: str) -> list:
+    """مواضع مطلوبة صراحة: [(الجزء أو None، الصفحة)]، بأرقام غربية أو
+    مشرقية، وبصيغ «صفحة ٢٣٠ من جزء ٤» و«٤/٢٣٠»، مع مدى صفحات بحد عشر."""
     q = (query or "").translate(_DIGITS)
-    m = _PAGE_RE.search(q)
-    if not m:
-        return []
-    start = int(m.group(1))
-    m2 = re.search(r"(?:إلى|الى|حتى)\s*(?:الصفحة\s*|صفحة\s*|ص\s*)?(\d{1,4})", q[m.end():])
-    if m2:
-        end = int(m2.group(1))
-        if start < end <= start + 10:
-            return list(range(start, end + 1))
-    return [start]
+    vol = None
+    mv = _VOL_RE.search(q)
+    if mv:
+        vol = int(mv.group(1))
+    mp = _PAGE_RE.search(q)
+    if mp:
+        start = int(mp.group(1))
+        pages = [start]
+        m2 = re.search(r"(?:إلى|الى|حتى)\s*(?:الصفحة\s*|صفحة\s*|ص\s*)?(\d{1,4})", q[mp.end():])
+        if m2:
+            end = int(m2.group(1))
+            if start < end <= start + 10:
+                pages = list(range(start, end + 1))
+        return [(vol, p) for p in pages]
+    ms = _SLASH_RE.search(q)
+    if ms and vol is None:
+        v, p = int(ms.group(1)), int(ms.group(2))
+        if 1 <= v <= 60 and 1 <= p <= 5000:
+            return [(v, p)]
+    return []
 
 
 def _page_segments(text: str) -> dict:
-    """نص كل صفحة كاملًا مفصولًا بعلامات [صفحة N] التي زرعها التحويل."""
+    """نص كل صفحة كاملًا بمفتاح (الجزء، الصفحة) من علامات التحويل؛
+    ما قبل أي رأس جزء يُنسب للجزء الأول."""
     segs = {}
-    parts = re.split(r"\[صفحة (\d+)\]\s*\n?", text or "")
-    for i in range(1, len(parts) - 1, 2):
-        try:
-            n = int(parts[i])
-        except ValueError:
+    vol = 1
+    tokens = re.split(r"\[(?:الجزء (\d+)|صفحة (\d+))\]\s*\n?", text or "")
+    # tokens: [قبل, جزء, صفحة, نص, جزء, صفحة, نص, ...] بمجموعات ثلاثية
+    cur_page = None
+    for i in range(1, len(tokens) - 2, 3):
+        g_vol, g_page, body = tokens[i], tokens[i + 1], tokens[i + 2]
+        if g_vol:
+            vol = int(g_vol)
+            cur_page = None
             continue
-        segs[n] = (parts[i + 1] or "").strip()
+        if g_page:
+            cur_page = int(g_page)
+            segs[(vol, cur_page)] = (body or "").strip()
     return segs
 
 
@@ -250,22 +347,28 @@ def relevant_context(doc_id: str, owner: str, query: str, budget: int = 12000) -
         text = Path(meta["text_path"]).read_text(encoding="utf-8")
     except Exception:
         return {"chunks": [], "reason": "تعذرت قراءة نص الوثيقة"}
-    # طلب صفحة بعينها: نصّها الكامل مقدَّم على أي موازنة لفظية
-    wanted = _requested_pages(query or "")
-    if wanted:
+    # طلب موضع بعينه (جزء/صفحة): نصّه الكامل مقدَّم على أي موازنة لفظية
+    refs = _requested_refs(query or "")
+    if refs:
         segs = _page_segments(text)
+        vols_present = sorted({v for v, _ in segs})
+        multi = len(vols_present) > 1
         page_chunks, used = [], 0
-        for n in wanted:
-            body = segs.get(n)
-            if body is None:
-                continue
-            chunk = f"[صفحة {n}]\n{body}"
-            if used + len(chunk) > budget and page_chunks:
-                break
-            page_chunks.append(chunk)
-            used += len(chunk)
+        for vol, page in refs:
+            targets = [(vol, page)] if vol else [(v, page) for v in vols_present if (v, page) in segs]
+            for v, p in targets:
+                body = segs.get((v, p))
+                if body is None:
+                    continue
+                label = f"[جزء {v}، صفحة {p}]" if multi else f"[صفحة {p}]"
+                chunk = f"{label}\n{body}"
+                if used + len(chunk) > budget and page_chunks:
+                    break
+                page_chunks.append(chunk)
+                used += len(chunk)
         if page_chunks:
-            return {"chunks": page_chunks, "name": meta.get("name", ""), "pages": wanted}
+            return {"chunks": page_chunks, "name": meta.get("name", ""),
+                    "pages": [p for _, p in refs], "volumes": [v for v, _ in refs]}
     chunks = _chunks(text)
     terms = [t for t in dict.fromkeys(re.findall(r"[\w]{3,}", _fold(query or ""))) ]
     if not chunks:
