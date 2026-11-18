@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.702"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.703"},
         },
     })
     if opened.get("error"):
@@ -18312,8 +18312,9 @@ _CRIT_STOP = {
 
 
 def _critique_queries(query: str, doc_text: str = "") -> tuple:
-    """عبارات مقتبسة صريحة ثم ألفاظ مميزة مشتقة من طلب الباحث (بعد نزع
-    ألفاظ التوجيه) ثم من متن الوثيقة نفسها إن خابت الأولى."""
+    """عبارات البحث في النطاق مرتبة قوة: مقتبسة صريحة «»، ثم أطول سلسلة
+    ألفاظ متصلة في طلب الباحث بعد نزع ألفاظ التوجيه (كأن يقول: حديث انما
+    الاعمال بالنيات فتُبحث عبارتها)، ثم ألفاظ مميزة من الطلب ومن الوثيقة."""
     quoted = []
     for m in re.finditer(r"«([^»]{3,140})»|\"([^\"]{3,140})\"", query or ""):
         q = (m.group(1) or m.group(2) or "").strip()
@@ -18330,7 +18331,19 @@ def _critique_queries(query: str, doc_text: str = "") -> tuple:
             if len(out) >= n:
                 break
         return out
-    return quoted[:2], _distinctive(query or "", 8), _distinctive(doc_text, 8)
+    runs, cur = [], []
+    for w in re.findall(r"[\u0600-\u06FF]{3,}", query or ""):
+        if w in _CRIT_STOP:
+            if len(cur) >= 3:
+                runs.append(" ".join(cur[:8]))
+            cur = []
+        else:
+            cur.append(w)
+    if len(cur) >= 3:
+        runs.append(" ".join(cur[:8]))
+    runs.sort(key=len, reverse=True)
+    phrases = list(dict.fromkeys(quoted[:2] + runs[:1]))
+    return phrases, _distinctive(query or "", 10), _distinctive(doc_text, 10)
 
 
 def _critique_context_block(req: "ChatRequest", request: Request) -> str:
@@ -18365,28 +18378,40 @@ def _critique_context_block(req: "ChatRequest", request: Request) -> str:
     _dctx = _dc.relevant_context(str(doc_id), owner, query, budget=7000, embed_key=_ekey)
     doc_chunks = _dctx.get("chunks") or []
     doc_name = crit.get("document_name") or _dctx.get("name") or "الوثيقة"
-    # ٢) نصوص نطاق الشاملة المحدد وحده
+    # ٢) نصوص نطاق الشاملة المحدد وحده، باسترجاع مرحلي لا يجفّ:
+    # عبارة حرفية، ثم اجتماع ألفاظ قليلة محكمة (AND)، ثم أيٍّ منها (OR)
+    # مرتبًا بصلة لوسين — فنمط اجتماع الكل بثمانية ألفاظ كان يقتل النتائج
     import shamela_search
-    quoted, qwords, dwords = _critique_queries(query, doc_chunks[0] if doc_chunks else "")
+    phrases, qwords, dwords = _critique_queries(query, doc_chunks[0] if doc_chunks else "")
     hits, seen = [], set()
-    def _run(q: str, m: str, limit: int = 10):
+    def _run(q: str, m: str, limit: int = 10, cap: int = 99):
         try:
             r = shamela_search.search(q, mode=m, categories=categories,
                                       book_ids=book_ids, limit=limit)
         except Exception:
             return
+        if r.get("status") != "ok":
+            return
+        added = 0
         for h in (r.get("results") or []):
             k = (h.get("book_id"), h.get("part"), h.get("page_num"))
             if k not in seen:
                 seen.add(k)
                 hits.append(h)
+                added += 1
+                if added >= cap:
+                    break
     if not (mode == "books" and not book_ids):
-        for phrase in quoted:
+        for phrase in phrases:
             _run(phrase, "phrase")
-        if len(hits) < 4 and qwords:
-            _run(" ".join(qwords), "words")
-        if len(hits) < 4 and dwords:
-            _run(" ".join(dwords), "words")
+        if len(hits) < 6 and len(qwords) >= 2:
+            _run(" ".join(qwords[:4]), "words")
+        if len(hits) < 6 and qwords:
+            _run(" ".join(qwords), "any", limit=30, cap=8)
+        if len(hits) < 6 and len(dwords) >= 2:
+            _run(" ".join(dwords[:4]), "words")
+        if len(hits) < 8 and dwords:
+            _run(" ".join(dwords), "any", limit=30, cap=6)
     book_lines, used = [], 0
     for h in hits[:10]:
         death = h.get("author_death_hijri")
