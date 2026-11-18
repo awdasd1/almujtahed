@@ -3967,6 +3967,8 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
     typingMessage = `🖼️ جارٍ توليد الصورة بنموذج «<strong>${escapeHtml(modelDisplayName)}</strong>»…`;
   } else if (mediaKind === 'video') {
     typingMessage = `🎬 جارٍ توليد الفيديو بنموذج «<strong>${escapeHtml(modelDisplayName)}</strong>». قد يستغرق هذا دقائق…`;
+  } else if (session && session.critique) {
+    typingMessage = '⚖️ نقد ومقارنة الوثيقة بالنطاق المحدد من المكتبة...';
   } else if (freeMode) {
     typingMessage = `💬 بحث حر: جارٍ إرسال رسالتك إلى «<strong>${escapeHtml(modelDisplayName)}</strong>» ليجيب من ذاكرته مباشرة...` + (chatWebSearchOn ? ' وأداة بحث الويب 🌐 بيده إن عجزت ذاكرته.' : '');
   } else if (customMode) {
