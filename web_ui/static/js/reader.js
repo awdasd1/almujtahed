@@ -460,7 +460,7 @@ function applyPdfZoom() {
 }
 
 function pdfViewerZoom(delta) {
-  pdfView.zoom = Math.max(0.5, Math.min(3, pdfView.zoom + delta));
+  pdfView.zoom = Math.max(0.1, Math.min(2, pdfView.zoom + delta));
   applyPdfZoom();
 }
 
@@ -542,7 +542,7 @@ async function locatePdfWitness(manual) {
 
 // نقل الشاهد وحده نصيًا (لا الصفحة كلها) إلى محادثة جديدة
 function sendWitnessToChat() {
-  const passage = (pdfView.witnessText || readerState.highlightText || '').trim();
+  const passage = (pdfView.witnessText || extractWitnessTarget(readerState.highlightText) || '').trim();
   if (!passage) {
     showToast('لا شاهد محددًا — افتح الكتاب من نتيجة بحث أولاً');
     return;
@@ -575,15 +575,6 @@ function bindPdfPageInteractions() {
   const img = document.getElementById('pdfViewerImg');
   if (!wrap || !img || wrap.dataset.bound) return;
   wrap.dataset.bound = '1';
-  let wheelLock = 0;
-  img.addEventListener('wheel', (ev) => {
-    if (pdfView.lens || pdfView.cropMode) return;
-    ev.preventDefault();
-    const now = Date.now();
-    if (now - wheelLock < 350) return;
-    wheelLock = now;
-    pdfViewerNav(ev.deltaY > 0 ? 1 : -1);
-  }, { passive: false });
   let dragStart = null;
   img.addEventListener('mousedown', (ev) => {
     if (!pdfView.cropMode) return;
@@ -841,7 +832,7 @@ function sendReaderSelectionToChat() {
   let passage = readerState.selectedText;
   if (!passage && readerState.highlightText) {
     // النقل النصي ينقل الشاهد المحدد وحده لا مطلع الصفحة
-    passage = readerState.highlightText.trim();
+    passage = extractWitnessTarget(readerState.highlightText);
   }
   if (!passage) {
     passage = readerState.rawBody.slice(0, 500).trim();
@@ -910,19 +901,42 @@ function escapeRegex(str) {
 
 // تظليل الشاهد: مطابقة العبارة المتصلة أولًا (مع تجاوز الحركات داخل
 // الكلمات) والتمرير إليها، ولا نلجأ لكلمات متفرقة إلا عند غياب الشاهد.
+// نص الشاهد المقصود بحرفه: المنقول بين علامتي تنصيص، أو متن الحديث بعد
+// قال رسول الله، أو العبارة كما هي. الشاهد المعنوي لا يُستخرج منه شيء
+// فيُترك بلا تظليل مطلقًا في النص والمصوّرة.
+function extractWitnessTarget(phrase) {
+  const raw = String(phrase || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  const quoted = raw.match(/«([^»]{8,})»/) || raw.match(/“([^”]{8,})”/) || raw.match(/"([^"]{8,})"/);
+  if (quoted) return quoted[1].trim();
+  const marker = raw.match(/(قال رسول الله|قال النبي|أن رسول الله|ان رسول الله|عن رسول الله|عن النبي)/);
+  if (marker) {
+    let rest = raw.slice(marker.index + marker[0].length);
+    rest = rest.replace(/^[\s:ﷺ]*(صلى الله عليه (وآله )?وسلم)?[\s:ﷺ]*/, '');
+    rest = rest.replace(/\s*\(?(رواه|أخرجه|متفق عليه).*$/, '');
+    if (rest.trim().length >= 8) return rest.trim();
+  }
+  return raw.replace(/\s*\([^)]*\)\s*$/, '').trim() || raw;
+}
+
 function highlightReaderPhrase(escaped, phrase) {
   const raw = String(phrase || '').replace(/\s+/g, ' ').trim();
   if (!raw) return escaped;
-  const wanted = readerState.showTashkeel ? raw : removeTashkeel(raw);
-  const words = wanted.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) {
-    const charPat = ch => {
-      if ('يىئ'.includes(ch)) return '[يىئ]';
-      if ('اأإآٱ'.includes(ch)) return '[اأإآٱ]';
-      if ('وؤ'.includes(ch)) return '[وؤ]';
-      if ('ةه'.includes(ch)) return '[ةه]';
-      return escapeRegex(ch);
-    };
+  const targets = [];
+  const target = extractWitnessTarget(raw);
+  if (target) targets.push(target);
+  if (target !== raw) targets.push(raw);
+  const charPat = ch => {
+    if ('يىئ'.includes(ch)) return '[يىئ]';
+    if ('اأإآٱ'.includes(ch)) return '[اأإآٱ]';
+    if ('وؤ'.includes(ch)) return '[وؤ]';
+    if ('ةه'.includes(ch)) return '[ةه]';
+    return escapeRegex(ch);
+  };
+  for (const cand of targets) {
+    const wanted = readerState.showTashkeel ? cand : removeTashkeel(cand);
+    const words = wanted.split(/\s+/).filter(Boolean);
+    if (words.length < 2) continue;
     const flexible = words.map(w => [...w].map(ch => charPat(ch) + '[\\u064B-\\u065F\\u0670\\u0640]*').join('')).join('\\s+');
     try {
       const exact = new RegExp(`(${flexible})`, 'g');
@@ -930,13 +944,8 @@ function highlightReaderPhrase(escaped, phrase) {
         exact.lastIndex = 0;
         return escaped.replace(exact, '<mark class="reader-highlight">$1</mark>');
       }
-    } catch (e) { /* نعود للكلمات */ }
+    } catch (e) { /* شاهد معنوي: لا تظليل */ }
   }
-  words.filter(w => w.length > 3).slice(0, 5).forEach(w => {
-    const cleanW = readerState.showTashkeel ? w : removeTashkeel(w);
-    const reg = new RegExp(`(${escapeRegex(cleanW)})`, 'gi');
-    escaped = escaped.replace(reg, '<mark class="reader-highlight">$1</mark>');
-  });
   return escaped;
 }
 

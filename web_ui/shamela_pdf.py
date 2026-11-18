@@ -343,6 +343,25 @@ def _ocr_helper():
 _LOCATE_CACHE = {}
 
 
+def _witness_target(phrase: str) -> str:
+    """نص الشاهد بحرفه: بين علامتي تنصيص، أو متن الحديث بعد قال رسول الله.
+    ما كان معنويًا بقي كما هو فيفشل التحقق الحرفي ولا يُحدَّد له موضع."""
+    raw = re.sub(r"\s+", " ", str(phrase or "")).strip()
+    if not raw:
+        return ""
+    m = re.search(r"«([^»]{8,})»", raw) or re.search(r"“([^”]{8,})”", raw) or re.search(r'"([^"]{8,})"', raw)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"(قال رسول الله|قال النبي|أن رسول الله|ان رسول الله|عن رسول الله|عن النبي)", raw)
+    if m:
+        rest = raw[m.end():]
+        rest = re.sub(r"^[\s:ﷺ]*(صلى الله عليه (وآله )?وسلم)?[\s:ﷺ]*", "", rest)
+        rest = re.sub(r"\s*\(?(رواه|أخرجه|متفق عليه).*$", "", rest)
+        if len(rest.strip()) >= 8:
+            return rest.strip()
+    return (re.sub(r"\s*\([^)]*\)\s*$", "", raw).strip() or raw)
+
+
 def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
                    pdf_page=None, phrase: str = "") -> dict:
     """موضع الشاهد على صفحة المصوّرة بتعرف بصري (Vision عند آبل) إن توفر."""
@@ -351,7 +370,8 @@ def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
     if not helper:
         out["reason"] = "أداة التعرف البصري غير متوفرة على هذا الجهاز"
         return out
-    words = [w for w in re.split(r"\s+", str(phrase or "")) if len(w) >= 3]
+    target = _witness_target(phrase)
+    words = [w for w in re.split(r"\s+", target) if len(w) >= 3]
     if not words:
         out["reason"] = "لا شاهد محددًا للبحث عنه"
         return out
@@ -388,8 +408,7 @@ def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
         except OSError:
             pass
     lines = data.get("lines") or []
-    hits = [i for i in (data.get("hits") or []) if isinstance(i, int) and 0 <= i < len(lines)]
-    if not hits or not lines:
+    if not lines:
         out["reason"] = "لم يُعثر على الشاهد في هذه الصفحة"
         _LOCATE_CACHE[cache_key] = out
         return out
@@ -399,8 +418,9 @@ def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
         return (text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
                 .replace("ى", "ي").replace("ئ", "ي").replace("ؤ", "و").replace("ة", "ه"))
 
-    # مطابقة مطلع الشاهد نفسه في أسطر الصفحة أضبط من كلمات متفرقة تتكرر
-    phrase_norm = re.sub(r"\s+", " ", _norm(phrase)).strip()
+    # مطابقة الشاهد بحرفه: مطلعه، وإلا مقطع منه. المعنوي لا يطابق شيئًا
+    # فلا يُرسم له صندوق لا هنا ولا في متن القارئ
+    phrase_norm = re.sub(r"\s+", " ", _norm(target)).strip()
     joined_parts = []
     char_line = []
     for i, line in enumerate(lines):
@@ -411,10 +431,20 @@ def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
     start = None
     probe = phrase_norm[:40]
     pos = joined.find(probe) if probe else -1
+    if pos < 0:
+        twords = phrase_norm.split(" ")
+        for off in range(0, max(0, len(twords) - 4)):
+            chunk = " ".join(twords[off:off + 5])
+            if len(chunk) >= 18:
+                pos = joined.find(chunk)
+                if pos >= 0:
+                    break
     if pos >= 0:
         start = char_line[min(pos, len(char_line) - 1)]
     else:
-        start = min(hits)
+        out["reason"] = "الشاهد غير منطوق بحرفه في هذه الصفحة فلا موضع له"
+        _LOCATE_CACHE[cache_key] = out
+        return out
     avg_len = max(20, sum(len(p) for p in joined_parts) // max(1, len(joined_parts)))
     span = max(1, min(6, -(-len(phrase_norm) // avg_len)))
     chosen = lines[start:start + span]
@@ -430,6 +460,7 @@ def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
             "w": min(1.0, x1 - x0 + 2 * pad), "h": min(1.0, y1 - y0 + 2 * pad),
         },
         "text": "\n".join(str(l.get("text") or "") for l in chosen),
+        "target": target,
         "pdf_page": page,
     })
     _LOCATE_CACHE[cache_key] = out
