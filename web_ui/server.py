@@ -8883,7 +8883,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.677"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.678"},
         },
     })
     if opened.get("error"):
@@ -9964,13 +9964,14 @@ def _format_endpoint_results(cands, req) -> List[Dict[str, Any]]:
     for i, c in enumerate(cands[:max(1, min(req.top_k, 500))]):
         _m = re.search(r"\d+", c.get("death") or "")
         _body = fetch_page_body(c.get("rel_path") or "", c.get("part_raw"), c.get("page_num_raw")) or c.get("snippet") or ""
-        # الشاهد الحقيقي القابل للتحديد بدقة: عبارة المراسي، أو مقطع حول موضع
-        # المطابقة اللفظية. النتيجة الدلالية لا شاهد حرفيًا لها فتبقى فارغة
-        # فلا يُرسم لها صندوق لا في المتن ولا في المصوّرة
+        # الشاهد الحقيقي القابل للتحديد بدقة: عبارة منطوقة مثبتة بحروفها في
+        # نص الصفحة، أو مقطع ممركز حول موضع مطابقتها. سؤال بصياغة حرة ليس
+        # شاهدًا فتبقى فارغة، فلا صندوق له لا في المتن ولا في المصوّرة
         _witness = ""
-        if c.get("anchor_phrase"):
-            _witness = str(c.get("anchor_phrase") or "")
-        elif c.get("lexical_hit") or c.get("channel") == "lexical":
+        _ap = str(c.get("anchor_phrase") or "").strip()
+        if _ap and len(_fold_search_text(_ap)) >= 4 and _fold_search_text(_ap) in _fold_search_text(_body):
+            _witness = _ap
+        elif (c.get("lexical_hit") or c.get("channel") == "lexical") and c.get("snippet_centered"):
             _witness = str(c.get("snippet") or "")
         out.append({
             "initial_rank": i + 1, "initial_score": c["score"], "rank": i + 1, "reranked": False,
@@ -11023,6 +11024,26 @@ def _snippet_around(plain: str, variants: List[str], limit: int = 700) -> str:
     return plain[start:end].strip()
 
 
+def _centered_snippet(plain: str, phrase: str, limit: int = 700):
+    """(مقطع حول موضع العبارة أو أحد ألفاظها في النص، وهل هو ممركز فعلًا).
+
+    إن لم يوجد أي منطوق من العبارة في النص فالمقطع مطلع النص ولا يصلح
+    شاهدًا قابلًا للتحديد، فيعود العلم False."""
+    plain = re.sub(r"\s+", " ", plain or "").strip()
+    if not plain:
+        return "", False
+    variants = []
+    folded_phrase = _fold_search_text(phrase or "").strip()
+    if len(folded_phrase) >= 4:
+        variants.append(folded_phrase)
+    for term in _lexical_terms(phrase or ""):
+        variants.extend(_term_variants(term))
+    folded = _fold_search_text(plain)
+    if any(v and v in folded for v in variants):
+        return _snippet_around(plain, variants, limit), True
+    return plain[:limit], False
+
+
 def lexical_page_matches(query: str, titles: Optional[List[str]] = None, limit_books: int = 36, per_book: int = 2, confine_to_titles: bool = False, max_seconds: float = 3.0) -> List[dict]:
     """يفتش صفحات الكتب لفظياً. في التخريج المفتوح يمر على الصحيحين والسنن، ويبقى داخل العناوين المحددة إذا حُصر النطاق."""
     terms = _lexical_terms(query)
@@ -11110,6 +11131,7 @@ def lexical_page_matches(query: str, titles: Optional[List[str]] = None, limit_b
                         "book_id": row["book_id"],
                         "rel_path": row["rel_path"] or "",
                         "snippet": _snippet_around(plain, variants),
+                        "snippet_centered": True,
                         "lexical_hit": True,
                     })
                     found += 1
@@ -11400,6 +11422,7 @@ def _map_lexical_hits(hits, cursor, top_k: int) -> List[Dict[str, Any]]:
             "annalistic_year": None,
             "fiqh_header": None,
             "snippet": snippet,
+            "snippet_centered": bool(h.get("snippet_centered")),
             "score": round(max(0.80, 0.99 - 0.02 * i), 3),
             "lexical_hit": True,
             "anchor_phrase": h.get("phrase"),
@@ -11457,10 +11480,11 @@ def _lexical_only_candidates(query: str, dynamic_anchors, selected_books, top_k:
                 body = ((pg.get("page") or {}).get("body") or "") if pg.get("status") == "ok" else ""
             except Exception:
                 body = ""
+            _snip, _cen = _centered_snippet(body, ph)
             hits.append({"book_id": str(h.get("book_id")), "title": h.get("title") or "",
                          "part": h.get("part"), "page_num": h.get("page_num"), "phrase": ph,
                          "term": None, "text": body,
-                         "snippet": re.sub(r"\s+", " ", body)[:750].strip()})
+                         "snippet": _snip, "snippet_centered": _cen})
             if len(hits) >= cap:
                 break
         if len(hits) >= cap:
@@ -11687,10 +11711,14 @@ def _shamela_bridge_candidates(query, dynamic_anchors, selected_books, top_k, de
                     body = ((pg.get("page") or {}).get("body") or "") if pg.get("status") == "ok" else ""
             except Exception:
                 body = ""
+            if body:
+                _snip, _cen = _centered_snippet(body, ph)
+            else:
+                _snip, _cen = (h.get("snippet") or ""), bool(h.get("snippet"))
             hits.append({"book_id": str(h.get("book_id")), "title": h.get("title") or "",
                          "part": h.get("part"), "page_num": h.get("page_num"), "phrase": ph,
                          "term": None, "text": body,
-                         "snippet": re.sub(r"\s+", " ", body)[:750].strip() or (h.get("snippet") or "")})
+                         "snippet": _snip, "snippet_centered": _cen})
             if len(hits) >= cap:
                 break
         if len(hits) >= cap:
@@ -11759,10 +11787,11 @@ def _fts_candidates(query: str, dynamic_anchors, selected_books, top_k: int, dea
                 body = ((pg.get("page") or {}).get("body") or "") if pg.get("status") == "ok" else ""
             except Exception:
                 body = ""
+            _snip, _cen = _centered_snippet(body, ph)
             hits.append({"book_id": str(h.get("book_id")), "title": h.get("title") or "",
                          "part": h.get("part"), "page_num": h.get("page_num"), "phrase": ph,
                          "term": None, "text": body,
-                         "snippet": re.sub(r"\s+", " ", body)[:750].strip()})
+                         "snippet": _snip, "snippet_centered": _cen})
             if len(hits) >= cap:
                 break
         if len(hits) >= cap:
@@ -12077,6 +12106,7 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
                     if f"{item.get('title')}_{item.get('part_raw')}_{item.get('page_num_raw')}" == page_key:
                         item["lexical_hit"] = True
                         item["snippet"] = lex.get("snippet") or item.get("snippet")
+                        item["snippet_centered"] = True
                         item["score"] = max(float(item.get("score") or 0), 0.95)
                 continue
             seen_keys.add(page_key)
@@ -12099,6 +12129,7 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
                 "annalistic_year": None,
                 "fiqh_header": None,
                 "snippet": lex.get("snippet") or "",
+                "snippet_centered": True,
                 "score": 0.99,
                 "lexical_hit": True,
                 "channel": "lexical",
