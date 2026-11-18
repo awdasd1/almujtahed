@@ -604,6 +604,150 @@ function discussDocument(docId, docName) {
   if (input) input.focus();
 }
 
+// ── نقد ومقارنة: وثيقة مرفوعة × نطاق شاملة محدد (+ ويب)، بضبط صارم خادمي ──
+function docSlashCritique() {
+  const input = document.getElementById('chatInputText');
+  if (input) input.value = input.value.replace(/\\$/, '');
+  const menu = document.getElementById('docSlashMenu');
+  if (menu) menu.style.display = 'none';
+  openCritiqueModal();
+}
+
+function closeCritiqueModal() {
+  const modal = document.getElementById('docCritiqueModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function openCritiqueModal() {
+  const modal = document.getElementById('docCritiqueModal');
+  if (modal) modal.style.display = 'flex';
+  const sel = document.getElementById('critDocSelect');
+  if (sel) {
+    sel.innerHTML = '<option value="">جارٍ التحميل…</option>';
+    try {
+      const res = await fetch('/api/documents');
+      const data = await res.json();
+      const docs = (data.documents || []).filter(d => d.status === 'done');
+      sel.innerHTML = docs.length
+        ? docs.map(d => `<option value="${d.id}">${escapeHtml(d.name || 'وثيقة')}${d.rag_status === 'done' ? ' 🧠' : ''} (${Number(d.pages || 0).toLocaleString('ar-EG')} صفحة)</option>`).join('')
+        : '<option value="">لا وثائق محوّلة بعد — ارفع وثيقة وحوّلها أولًا</option>';
+    } catch (e) {
+      sel.innerHTML = '<option value="">تعذر جلب الوثائق</option>';
+    }
+  }
+  buildCritCats();
+  renderCritBooksChips();
+  critScopeChanged();
+}
+
+function buildCritCats() {
+  const box = document.getElementById('critCatsBox');
+  if (!box || box.dataset.built) return;
+  box.dataset.built = '1';
+  const src = document.getElementById('filterCategory');
+  const opts = src ? Array.from(src.options).filter(o => o.value) : [];
+  box.innerHTML = opts.map(o => {
+    const name = o.textContent.replace(/^\s*\d+\s*[.．]\s*/, '').trim();
+    return `<label style="display: inline-block; font-size: 12.5px; margin: 3px 8px 3px 0;"><input type="checkbox" class="critCatCheck" value="${escapeHtml(name)}"> ${escapeHtml(name)}</label>`;
+  }).join('') || '<span style="font-size: 12px; color: var(--text-muted);">لا أقسام متاحة</span>';
+}
+
+function critScopeChanged() {
+  const mode = document.querySelector('input[name="critScopeMode"]:checked')?.value || 'all';
+  const cats = document.getElementById('critCatsBox');
+  const books = document.getElementById('critBooksBox');
+  if (cats) cats.style.display = mode === 'categories' ? 'block' : 'none';
+  if (books) books.style.display = mode === 'books' ? 'block' : 'none';
+}
+
+function renderCritBooksChips() {
+  const box = document.getElementById('critBooksChips');
+  if (!box) return;
+  const titles = window._critiqueBookTitles || [];
+  box.innerHTML = titles.length
+    ? titles.map(t => `<span class="design-book-sel-chip">${escapeHtml(t)}<button type="button" onclick="removeCritBook('${escapeHtml(t).replace(/'/g, "\\'")}')" title="حذف من النطاق">×</button></span>`).join('')
+    : '<span style="font-size: 12px; color: var(--text-muted);">لا كتب محددة بعد</span>';
+}
+
+function removeCritBook(title) {
+  window._critiqueBookTitles = (window._critiqueBookTitles || []).filter(t => t !== title);
+  renderCritBooksChips();
+}
+window.onCritiqueBooks = function () { renderCritBooksChips(); };
+
+async function startCritiqueSession() {
+  const sel = document.getElementById('critDocSelect');
+  const docId = sel?.value || '';
+  if (!docId) { showToast('اختر وثيقة محوّلة أولًا (ارفعها من «رفع وثيقة كاملة» إن لم توجد)'); return; }
+  const docName = (sel.options[sel.selectedIndex]?.textContent || 'وثيقة').replace(/🧠/g, '').replace(/\s*\([^)]*\)\s*$/, '').trim() || 'وثيقة';
+  const mode = document.querySelector('input[name="critScopeMode"]:checked')?.value || 'all';
+  const scope = { mode };
+  if (mode === 'categories') {
+    scope.categories = Array.from(document.querySelectorAll('.critCatCheck:checked')).map(c => c.value);
+    if (!scope.categories.length) { showToast('حدّد قسمًا واحدًا على الأقل أو اختر «جميع كتب الشاملة»'); return; }
+  }
+  if (mode === 'books') {
+    const titles = window._critiqueBookTitles || [];
+    if (!titles.length) { showToast('حدّد كتابًا واحدًا على الأقل من الشاملة'); return; }
+    if (typeof catalogBooksCache !== 'undefined' && !catalogBooksCache.length) {
+      try { catalogBooksCache = await (await fetch('/api/books')).json(); } catch (e) { /* تُحل الأسماء خادميًا عندها */ }
+    }
+    scope.books = titles.map(t => {
+      const f = (typeof catalogBooksCache !== 'undefined' ? catalogBooksCache : []).find(b => b.title === t);
+      return { id: f && f.id != null ? f.id : '', title: t };
+    });
+  }
+  closeCritiqueModal();
+  if (typeof switchMainTab === 'function') switchMainTab('chat');
+  if (typeof createNewChatSession === 'function') createNewChatSession(true, `نقد ومقارنة: ${docName}`.slice(0, 40));
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  if (session) {
+    delete session.docId;
+    delete session.docName;
+    session.critique = {
+      document_id: docId, document_name: docName, scope,
+      web: !!document.getElementById('critWebCheck')?.checked,
+    };
+    if (typeof saveChatSessions === 'function') saveChatSessions();
+  }
+  updateDocChip();
+  updateCritChip();
+  showToast('بدأت جلسة النقد والمقارنة ⚖️ اكتب طلبك بالضبط: ما الذي يُنقد أو يُقارَن في الوثيقة؟');
+  const input = document.getElementById('chatInputText');
+  if (input) input.focus();
+}
+
+function detachCritique() {
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  if (session) {
+    delete session.critique;
+    if (typeof saveChatSessions === 'function') saveChatSessions();
+  }
+  updateCritChip();
+}
+
+function updateCritChip() {
+  const chip = document.getElementById('critChatChip');
+  if (!chip) return;
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  const crit = session?.critique;
+  if (crit) {
+    chip.style.display = 'flex';
+    const name = document.getElementById('critChatChipName');
+    if (name) name.textContent = crit.document_name || 'وثيقة';
+    const scopeEl = document.getElementById('critChatChipScope');
+    if (scopeEl) {
+      const s = crit.scope || {};
+      scopeEl.textContent = '• النطاق: ' + (
+        s.mode === 'books' ? `${(s.books || []).length} كتب محددة`
+        : s.mode === 'categories' ? `أقسام: ${(s.categories || []).join('، ')}`
+        : 'جميع كتب الشاملة') + (crit.web ? ' + ويب' : '');
+    }
+  } else {
+    chip.style.display = 'none';
+  }
+}
+
 function detachDocument() {
   const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
   if (session) {
@@ -647,6 +791,7 @@ if (typeof renderSessionMessages === 'function') {
   renderSessionMessages = function (...args) {
     const out = _origRenderSessionMessages.apply(this, args);
     updateDocChip();
+    updateCritChip();
     return out;
   };
 }

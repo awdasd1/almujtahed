@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.700">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.701">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.700" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.701" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.700</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.701</span>
             </div>
 
             <div class="header-actions">
@@ -524,11 +524,17 @@
                         <!-- قائمة الباكسلاش: رفع وثيقة كاملة -->
                         <div id="docSlashMenu" style="display: none; position: absolute; bottom: 100%; right: 12px; margin-bottom: 6px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; box-shadow: 0 10px 30px rgba(40,25,10,0.25); padding: 6px; z-index: 60; min-width: 240px;">
                             <button type="button" class="btn-flat-secondary reader-tool-btn" style="width: 100%; text-align: right;" onmousedown="docSlashPick()">📄 رفع وثيقة كاملة</button>
+                            <button type="button" class="btn-flat-secondary reader-tool-btn" style="width: 100%; text-align: right; margin-top: 4px;" onmousedown="docSlashCritique()">⚖️ نقد ومقارنة</button>
                         </div>
                         <!-- شارة الوثيقة المرتبطة بالمحادثة -->
                         <div id="docChatChip" style="display: none; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px 10px; border: 1px solid var(--accent-clay); border-radius: 999px; background: rgba(217, 119, 87, 0.10); font-size: 12.5px; width: fit-content;">
                             <span>📄 تناقش الآن وثيقة: <strong id="docChatChipName"></strong></span>
                             <button type="button" class="btn-icon" style="padding: 0 4px;" onclick="detachDocument()" title="فك ارتباط الوثيقة">✕</button>
+                        </div>
+                        <!-- شارة جلسة النقد والمقارنة -->
+                        <div id="critChatChip" style="display: none; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px 10px; border: 1px solid #7d5ba6; border-radius: 999px; background: rgba(125, 91, 166, 0.10); font-size: 12.5px; width: fit-content;">
+                            <span>⚖️ نقد ومقارنة: <strong id="critChatChipName"></strong> <span id="critChatChipScope" style="color: var(--text-muted);"></span></span>
+                            <button type="button" class="btn-icon" style="padding: 0 4px;" onclick="detachCritique()" title="إنهاء وضع النقد والمقارنة">✕</button>
                         </div>
                         <!-- شريط معاينة المرفقات -->
                         <div id="attachmentsPreview"
@@ -5148,6 +5154,43 @@
         </div>
     </div>
 
+    <!-- إعداد جلسة نقد ومقارنة: وثيقة مرفوعة × نطاق شاملة محدد (+ ويب اختياري) -->
+    <div class="modal-overlay" id="docCritiqueModal" style="display: none; z-index: 100750;" role="dialog" aria-modal="true">
+        <div class="modal-window" style="width: min(640px, 96vw); max-height: 92vh; display: flex; flex-direction: column;">
+            <div class="reader-header">
+                <div class="reader-header-info">
+                    <h3 style="margin: 0;">⚖️ نقد ومقارنة</h3>
+                    <span style="font-size: 12px; color: var(--text-muted);">وثيقتك المرفوعة في كفة، ونطاق الشاملة الذي تحدّده في كفة — والنموذج ممنوع من ذاكرته</span>
+                </div>
+                <button type="button" class="btn-icon" onclick="closeCritiqueModal()" title="إغلاق">✕</button>
+            </div>
+            <div class="modal-content" style="padding: 16px; overflow-y: auto;">
+                <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">الوثيقة موضوع النقد/المقارنة
+                    <select id="critDocSelect" class="filter-select" style="display: block; margin-top: 6px; width: 100%;"></select>
+                </label>
+                <fieldset style="border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px; margin: 12px 0;">
+                    <legend style="font-size: 12.5px; font-weight: 600; padding: 0 6px;">نطاق البحث في الشاملة (ملزم للنموذج)</legend>
+                    <label style="display: block; font-size: 13px; margin: 4px 0;"><input type="radio" name="critScopeMode" value="all" checked onchange="critScopeChanged()"> جميع كتب الشاملة</label>
+                    <label style="display: block; font-size: 13px; margin: 4px 0;"><input type="radio" name="critScopeMode" value="categories" onchange="critScopeChanged()"> أقسام محددة</label>
+                    <div id="critCatsBox" style="display: none; margin: 6px 0 6px; padding: 8px; border: 1px dashed var(--border-subtle); border-radius: 8px; max-height: 170px; overflow-y: auto;"></div>
+                    <label style="display: block; font-size: 13px; margin: 4px 0;"><input type="radio" name="critScopeMode" value="books" onchange="critScopeChanged()"> كتب محددة بعينها</label>
+                    <div id="critBooksBox" style="display: none; margin: 6px 0;">
+                        <button type="button" class="btn-flat-secondary" onclick="openSearchScopeModal('critique')">📚 اختيار الكتب من الشاملة</button>
+                        <div id="critBooksChips" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;"></div>
+                    </div>
+                </fieldset>
+                <label style="display: block; font-size: 13px; margin: 6px 0;">
+                    <input type="checkbox" id="critWebCheck"> إضافة بحث الويب (Tavily) إلى مواد النقد إن احتيج
+                </label>
+                <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.8; margin: 10px 0 0;">بعد البدء اكتب طلبك بالضبط في المحادثة — مثال: «قارن حديث إنما الأعمال بالنيات في الوثيقة بما في الكتب المحددة» أو «انقد مسألة كذا في الوثيقة من كتب النطاق» — فيُجمع له من الوثيقة والنطاق وحدهما، ويُلزم النموذج بالتوثيق الدقيق وترك ذاكرته.</p>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;">
+                    <button type="button" class="btn-flat-secondary" onclick="closeCritiqueModal()">إلغاء</button>
+                    <button type="button" class="btn-flat-primary" onclick="startCritiqueSession()">بدء جلسة النقد والمقارنة</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- تنبيه تعذّر نموذج القراءة: لا رجوع صامت للمحرك المحلي قبل موافقة الباحث -->
     <div class="modal-overlay" id="docFallbackModal" style="display: none; z-index: 100800;" role="dialog" aria-modal="true">
         <div class="modal-window" style="width: min(520px, 94vw);">
@@ -6666,25 +6709,25 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.700"></script>
-    <script src="/static/js/search.js?v=1.10.700"></script>
-    <script src="/static/js/reader.js?v=1.10.700"></script>
-    <script src="/static/js/force3d.js?v=1.10.700"></script>
-    <script src="/static/js/share.js?v=1.10.700"></script>
-    <script src="/static/js/chat.js?v=1.10.700"></script>
-    <script src="/static/js/documents.js?v=1.10.700"></script>
-    <script src="/static/js/designs.js?v=1.10.700"></script>
-    <script src="/static/js/texts.js?v=1.10.700"></script>
-    <script src="/static/js/agents.js?v=1.10.700"></script>
-    <script src="/static/js/providers.js?v=1.10.700"></script>
-    <script src="/static/js/tools.js?v=1.10.700"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.700"></script>
-    <script src="/static/js/projects.js?v=1.10.700"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.700"></script>
-    <script src="/static/js/archive.js?v=1.10.700"></script>
-    <script src="/static/js/compare.js?v=1.10.700"></script>
-    <script src="/static/js/local_models.js?v=1.10.700"></script>
-    <script src="/static/js/changelog.js?v=1.10.700"></script>
+    <script src="/static/js/app.js?v=1.10.701"></script>
+    <script src="/static/js/search.js?v=1.10.701"></script>
+    <script src="/static/js/reader.js?v=1.10.701"></script>
+    <script src="/static/js/force3d.js?v=1.10.701"></script>
+    <script src="/static/js/share.js?v=1.10.701"></script>
+    <script src="/static/js/chat.js?v=1.10.701"></script>
+    <script src="/static/js/documents.js?v=1.10.701"></script>
+    <script src="/static/js/designs.js?v=1.10.701"></script>
+    <script src="/static/js/texts.js?v=1.10.701"></script>
+    <script src="/static/js/agents.js?v=1.10.701"></script>
+    <script src="/static/js/providers.js?v=1.10.701"></script>
+    <script src="/static/js/tools.js?v=1.10.701"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.701"></script>
+    <script src="/static/js/projects.js?v=1.10.701"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.701"></script>
+    <script src="/static/js/archive.js?v=1.10.701"></script>
+    <script src="/static/js/compare.js?v=1.10.701"></script>
+    <script src="/static/js/local_models.js?v=1.10.701"></script>
+    <script src="/static/js/changelog.js?v=1.10.701"></script>
 
     <script>
         window.refreshLucideIcons = function () {

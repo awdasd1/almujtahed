@@ -594,6 +594,9 @@ async function openSearchScopeModal(target = 'search') {
   } else if (target === 'ms_group') {
     selectedBooksScope = [...(window._msGroupCurrentBooks || [])];
     modal.style.setProperty('z-index', '200000', 'important');
+  } else if (target === 'critique') {
+    selectedBooksScope = [...(window._critiqueBookTitles || [])];
+    modal.style.setProperty('z-index', '200000', 'important');
   } else {
     selectedBooksScope = [...(window._searchTabBooks || selectedBooksScope || [])];
     modal.style.zIndex = '250';
@@ -811,6 +814,14 @@ function scopeDeselectAll() {
 
 // تطبيق النطاق على البحث أو على الوكيل
 function applySearchScopeSelection() {
+  if (scopeModalTarget === 'critique') {
+    window._critiqueBookTitles = [...selectedBooksScope];
+    if (typeof window.onCritiqueBooks === 'function') window.onCritiqueBooks([...selectedBooksScope]);
+    closeSearchScopeModal();
+    showToast(selectedBooksScope.length ? `حُددت ${selectedBooksScope.length} كتب لنطاق النقد والمقارنة` : 'نطاق النقد: جميع كتب الشاملة');
+    return;
+  }
+
   if (scopeModalTarget === 'architect_books') {
     if (!selectedBooksScope.length) {
       showToast('حدد كتاباً واحداً على الأقل ثم اعتمد');

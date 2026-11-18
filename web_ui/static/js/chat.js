@@ -3995,6 +3995,7 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
         free_mode: freeMode,
         document_id: session.docId || null,
         document_name: session.docName || null,
+        critique: session.critique || null,
         system_prompt: freeMode ? null : (executionPrompt || null),
         temperature: executionTemp,
         top_k: executionTopK,

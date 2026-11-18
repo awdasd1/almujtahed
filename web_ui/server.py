@@ -1841,6 +1841,7 @@ class ChatRequest(BaseModel):
     free_mode: bool = False # سيناريو البحث الحر: دردشة عامة بلا كتب ولا استرجاع ولا أي توجيه خفي — النموذج يجيب من ذاكرته
     document_id: Optional[str] = None # وثيقة مرفوعة محوّلة مرتبطة بالمحادثة: مقاطعها الأقرب للسؤال تُلحق خادميًا بآخر رسالة مستخدم
     document_name: Optional[str] = None
+    critique: Optional[Dict[str, Any]] = None # وضع «نقد ومقارنة»: {document_id, document_name, scope: {mode: all|categories|books, categories: [أسماء], books: [{id, title}]}, web: bool} — مواد النقد تُجمع خادميًا من الوثيقة ونطاق الشاملة المحدد (والويب إن فُعّل) حصرًا
     web_search: Optional[bool] = None # أداة بحث الويب (Tavily) بقرار الباحث في الحر والمخصص: مفعّلة يستدعيها النموذج عند عجز ذاكرته، معطّلة يعتذر ويطلب تفعيلها؛ None = لا شأن لها (الموسع عبر المشاريع)
     raw_mcp: bool = False # MCP خام مباشر: النموذج يقود أدوات المغني بنفسه، بلا وكلاء ولا توجيه ولا خط استرجاع
     selected_books: Optional[List[str]] = None
@@ -9156,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.700"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.701"},
         },
     })
     if opened.get("error"):
@@ -18301,13 +18302,165 @@ RAW_MCP_CITATION_RULE = (
 )
 
 
+_CRIT_STOP = {
+    "قم", "قارن", "مقارنة", "المقارنة", "نقد", "انقد", "النقد", "قيّم", "قيم",
+    "الوثيقة", "وثيقة", "الكتب", "المحددة", "المحدد", "النطاق", "نطاق",
+    "بين", "وبين", "في", "ما", "ماذا", "كيف", "هل", "رأيك", "رايك", "حديث",
+    "مسألة", "المسألة", "كذا", "ذلك", "هذه", "هذا", "عند", "لدى", "صاحب",
+    "دراسة", "توصل", "قال", "يقول", "اذكر", "بيّن", "بين", "حكم", "الحكم",
+}
+
+
+def _critique_queries(query: str, doc_text: str = "") -> tuple:
+    """عبارات مقتبسة صريحة ثم ألفاظ مميزة مشتقة من طلب الباحث (بعد نزع
+    ألفاظ التوجيه) ثم من متن الوثيقة نفسها إن خابت الأولى."""
+    quoted = []
+    for m in re.finditer(r"«([^»]{3,140})»|\"([^\"]{3,140})\"", query or ""):
+        q = (m.group(1) or m.group(2) or "").strip()
+        if q:
+            quoted.append(q)
+    def _distinctive(text: str, n: int) -> list:
+        words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", text or "")
+                 if w not in _CRIT_STOP]
+        seen, out = set(), []
+        for w in sorted(words, key=len, reverse=True):
+            if w not in seen:
+                seen.add(w)
+                out.append(w)
+            if len(out) >= n:
+                break
+        return out
+    return quoted[:2], _distinctive(query or "", 8), _distinctive(doc_text, 8)
+
+
+def _critique_context_block(req: "ChatRequest", request: Request) -> str:
+    """مواد «نقد ومقارنة» الصارمة: مقاطع الوثيقة المفهرسة + نصوص نطاق
+    الشاملة الذي حدّده الباحث حصرًا (+ الويب إن فعّله)، بتوجيه ملزم يمنع
+    الاستعانة بذاكرة النموذج ويفرض التوثيق الدقيق بالمواضع."""
+    crit = getattr(req, "critique", None) or {}
+    doc_id = crit.get("document_id")
+    if not doc_id:
+        return ""
+    owner = current_owner_id(request)
+    query = next((m.content for m in reversed(req.messages or []) if m.role == "user"), "") or ""
+    scope = crit.get("scope") or {"mode": "all"}
+    mode = scope.get("mode") or "all"
+    book_ids, categories = None, None
+    if mode == "books":
+        book_ids = [int(b["id"]) for b in (scope.get("books") or [])
+                    if isinstance(b, dict) and str(b.get("id") or "").isdigit()]
+        # كتب مسمّاة بلا أرقام محققة: لا توسيع خفي إلى كل المكتبة أبدًا؛
+        # يبقى النطاق كتبًا محددة ولو خابت المطابقة فتخلو النتائج ويُصرّح
+    elif mode == "categories":
+        categories = [str(c).strip() for c in (scope.get("categories") or []) if str(c).strip()]
+        if not categories:
+            mode = "all"
+    # ١) مقاطع الوثيقة الأقرب لطلب الباحث (لفظيًا ودلاليًا إن فُهرست)
+    import doc_convert as _dc
+    _ekey = ""
+    try:
+        _ekey = owner_openrouter_key(request, getattr(req, "api_key", None)) or ""
+    except Exception:
+        _ekey = ""
+    _dctx = _dc.relevant_context(str(doc_id), owner, query, budget=7000, embed_key=_ekey)
+    doc_chunks = _dctx.get("chunks") or []
+    doc_name = crit.get("document_name") or _dctx.get("name") or "الوثيقة"
+    # ٢) نصوص نطاق الشاملة المحدد وحده
+    import shamela_search
+    quoted, qwords, dwords = _critique_queries(query, doc_chunks[0] if doc_chunks else "")
+    hits, seen = [], set()
+    def _run(q: str, m: str, limit: int = 10):
+        try:
+            r = shamela_search.search(q, mode=m, categories=categories,
+                                      book_ids=book_ids, limit=limit)
+        except Exception:
+            return
+        for h in (r.get("results") or []):
+            k = (h.get("book_id"), h.get("part"), h.get("page_num"))
+            if k not in seen:
+                seen.add(k)
+                hits.append(h)
+    if not (mode == "books" and not book_ids):
+        for phrase in quoted:
+            _run(phrase, "phrase")
+        if len(hits) < 4 and qwords:
+            _run(" ".join(qwords), "words")
+        if len(hits) < 4 and dwords:
+            _run(" ".join(dwords), "words")
+    book_lines, used = [], 0
+    for h in hits[:10]:
+        death = h.get("author_death_hijri")
+        dstr = f" (ت {death})" if death and str(death).isdigit() and int(death) != 99999 else ""
+        loc = f"ج{h.get('part')} ص{h.get('page_num')}" if h.get("part") else f"ص{h.get('page_num')}"
+        line = (f"[كتاب: {h.get('title') or ''} — {h.get('author') or ''}{dstr}، {loc}]\n"
+                f"{(h.get('snippet') or '').strip()}")
+        if used + len(line) > 12000 and book_lines:
+            break
+        book_lines.append(line)
+        used += len(line)
+    # ٣) الويب إن فعّله الباحث وحده
+    web_lines, web_note = [], ""
+    if crit.get("web"):
+        _tkey = ""
+        try:
+            _tkey = (load_provider_keys(owner).get("tavily") or "").strip()
+        except Exception:
+            _tkey = ""
+        if _tkey:
+            try:
+                _wr = _tavily_search_sync(query[:300], _tkey, max_results=5)
+                for i, r in enumerate(_wr.get("results") or [], 1):
+                    web_lines.append(
+                        f"[ويب {i}] {r.get('title') or ''} — {r.get('url') or ''}\n"
+                        f"{(r.get('content') or '')[:450].strip()}")
+            except Exception:
+                web_note = "(تعذّر بحث الويب تقنيًا في هذه الجولة)"
+        else:
+            web_note = "(بحث الويب مفعّل لكن مفتاح Tavily غير مضبوط في الخدمات: صرّح بذلك ولا تخترع نتائج ويب)"
+    if mode == "books":
+        scope_desc = "كتب محددة بعينها: " + "، ".join(
+            str(b.get("title") or "") for b in (scope.get("books") or []) if isinstance(b, dict))
+    elif mode == "categories":
+        scope_desc = "أقسام محددة من الشاملة: " + "، ".join(categories or [])
+    else:
+        scope_desc = "جميع كتب الشاملة"
+    parts = [
+        "\n\n═══════════════════════════════════════════════════════════\n"
+        "⚖️ [وضع النقد والمقارنة الصارم — التزم به حرفيًا في هذا الجواب]\n"
+        "مهمّتك: نقد أو مقارنة ما في وثيقة الباحث المرفوعة بما في نطاق البحث الذي حدّده، كما طلب في رسالته.\n"
+        "قواعد ملزمة لا يجوز تجاوزها:\n"
+        "- المادة المسموحة حصرًا: مقاطع الوثيقة ونصوص كتب النطاق" + (" ونتائج الويب" if crit.get("web") else "") + " الواردة في هذه الكتلة. ممنوع منعًا باتًا استعمال ذاكرتك أو أي معلومة من خارجها في النقد أو المقارنة أو الترجيح أو التصحيح والتضعيف.\n"
+        f"- نطاق الشاملة الملزم: {scope_desc}. الخروج عنه ممنوع ولو علمتَ غيره من ذاكرتك.\n"
+        "- كل دعوى منسوبة لمصدر اذكر موضعها بدقة كما في ترويسته: اسم الكتاب ومؤلفه وجزؤه وصفحته، وللوثيقة رقم الصفحة بصيغة [صفحة N]، وللويب عنوانه ورابطه.\n"
+        "- لا تنسب إلى الوثيقة ما ليس في مقاطعها ولا إلى كتاب ما ليس في نصّه المُورَد؛ والاقتباس الحرفي يوضع بين «» بنصّه.\n"
+        "- ما لا تجده في المواد فصرّح: «لم أجد في النطاق المحدد ما يفيد في هذه النقطة» ولا تسدّ الفراغ من ذاكرتك.\n"
+        "- بنية الجواب: ١) موقف الوثيقة بنصّه وموضعه. ٢) ما في كتب النطاق بنصوصها ومواضعها (موافقة أو مخالفة أو تفصيلًا). ٣) المقارنة والنقد: أوجه الاتفاق والاختلاف وقوة كل قول بدليله من هذه المواد وحدها. ٤) خلاصة منضبطة بما ثبت فيها.\n"
+        f"[مقاطع الوثيقة «{doc_name}» الأقرب لطلب الباحث]\n"
+        + ("\n\n".join(doc_chunks) if doc_chunks else "(تعذّر استحضار مقاطع الوثيقة)")
+    ]
+    parts.append("[نصوص كتب النطاق المحدد من الشاملة]\n" + (
+        "\n\n".join(book_lines) if book_lines else
+        "(لا نتائج في النطاق المحدد عن هذا الموضوع: صرّح بذلك ولا تتجاوز النطاق)"))
+    if crit.get("web"):
+        parts.append("[نتائج الويب]\n" + (
+            "\n\n".join(web_lines) if web_lines else (web_note or "(لا نتائج ويب)")))
+    parts.append("═══════════════════════════════════════════════════════════")
+    return "\n".join(parts)
+
+
 def _document_context_block(req: "ChatRequest", request: Request) -> str:
     """كتلة مقاطع الوثيقة المرفوعة المرتبطة بالمحادثة، الأقرب لآخر سؤال.
     تُلحق بآخر رسالة مستخدم نفسها (أعلى مواضع انتباه النموذج) في كل أنماط
     المحادثة، فلا تضيع وسط توجيهات النظام ولا ينكر النموذج وجود الوثيقة."""
+    crit_block = ""
+    try:
+        if getattr(req, "critique", None):
+            crit_block = _critique_context_block(req, request)
+    except Exception:
+        crit_block = ""
     doc_id = getattr(req, "document_id", None)
     if not doc_id:
-        return ""
+        return crit_block
     try:
         import doc_convert as _dc
         _lu = next((m.content for m in reversed(req.messages or []) if m.role == "user"), "")
@@ -18320,9 +18473,9 @@ def _document_context_block(req: "ChatRequest", request: Request) -> str:
                                       embed_key=_ekey)
         _ch = _dctx.get("chunks") or []
         if not _ch:
-            return ""
+            return crit_block
         _dname = getattr(req, "document_name", None) or _dctx.get("name") or "الوثيقة"
-        return (
+        return crit_block + (
             "\n\n═══════════════════════════════════════════════════════════\n"
             f"📄 [وثيقة مرفوعة اسمها «{_dname}» يناقشك الباحث فيها الآن — فيما يلي مقاطع من نصّها، "
             "وهي مادتك المرجعية الأولى لهذا الجواب. الباحث رفعها فعلًا وحُوّلت إلى نص وقرأتها المنظومة، "
@@ -18334,7 +18487,7 @@ def _document_context_block(req: "ChatRequest", request: Request) -> str:
             + "\n═══════════════════════════════════════════════════════════"
         )
     except Exception:
-        return ""
+        return crit_block
 
 
 def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
