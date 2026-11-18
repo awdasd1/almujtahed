@@ -205,8 +205,42 @@ def _chunks(text: str, size: int = 1200) -> list:
     return out
 
 
+_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+_PAGE_RE = re.compile(r"(?:الصفحة|صفحة|صفحه|ص|page)\s*[:\-]?\s*(\d{1,4})", re.IGNORECASE)
+
+
+def _requested_pages(query: str) -> list:
+    """أرقام الصفحات المطلوبة صراحة في السؤال، بالأرقام الغربية أو المشرقية،
+    مع مدى «من صفحة كذا إلى كذا» بحد عشر صفحات."""
+    q = (query or "").translate(_DIGITS)
+    m = _PAGE_RE.search(q)
+    if not m:
+        return []
+    start = int(m.group(1))
+    m2 = re.search(r"(?:إلى|الى|حتى)\s*(?:الصفحة\s*|صفحة\s*|ص\s*)?(\d{1,4})", q[m.end():])
+    if m2:
+        end = int(m2.group(1))
+        if start < end <= start + 10:
+            return list(range(start, end + 1))
+    return [start]
+
+
+def _page_segments(text: str) -> dict:
+    """نص كل صفحة كاملًا مفصولًا بعلامات [صفحة N] التي زرعها التحويل."""
+    segs = {}
+    parts = re.split(r"\[صفحة (\d+)\]\s*\n?", text or "")
+    for i in range(1, len(parts) - 1, 2):
+        try:
+            n = int(parts[i])
+        except ValueError:
+            continue
+        segs[n] = (parts[i + 1] or "").strip()
+    return segs
+
+
 def relevant_context(doc_id: str, owner: str, query: str, budget: int = 12000) -> dict:
-    """أقرب مقاطع الوثيقة إلى السؤال بموازنة لفظية، بحد حرفي للسياق."""
+    """أقرب مقاطع الوثيقة إلى السؤال بموازنة لفظية، بحد حرفي للسياق.
+    وإن سمّى السؤال صفحة بعينها أُرجع نصّها كاملًا لا مقاطع لفظية عامة."""
     meta = get_doc(doc_id, owner)
     if not meta:
         return {"chunks": [], "reason": "وثيقة غير موجودة"}
@@ -216,6 +250,22 @@ def relevant_context(doc_id: str, owner: str, query: str, budget: int = 12000) -
         text = Path(meta["text_path"]).read_text(encoding="utf-8")
     except Exception:
         return {"chunks": [], "reason": "تعذرت قراءة نص الوثيقة"}
+    # طلب صفحة بعينها: نصّها الكامل مقدَّم على أي موازنة لفظية
+    wanted = _requested_pages(query or "")
+    if wanted:
+        segs = _page_segments(text)
+        page_chunks, used = [], 0
+        for n in wanted:
+            body = segs.get(n)
+            if body is None:
+                continue
+            chunk = f"[صفحة {n}]\n{body}"
+            if used + len(chunk) > budget and page_chunks:
+                break
+            page_chunks.append(chunk)
+            used += len(chunk)
+        if page_chunks:
+            return {"chunks": page_chunks, "name": meta.get("name", ""), "pages": wanted}
     chunks = _chunks(text)
     terms = [t for t in dict.fromkeys(re.findall(r"[\w]{3,}", _fold(query or ""))) ]
     if not chunks:
