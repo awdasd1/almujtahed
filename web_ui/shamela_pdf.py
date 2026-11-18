@@ -441,12 +441,16 @@ _DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890
 
 
 def _norm_word(word: str) -> str:
-    """توحيد كلمة للمطابقة: بلا تشكيل ولا ترقيم وبأحرف مطوية وأرقام لاتينية."""
+    """توحيد كلمة للمطابقة: بلا تشكيل ولا ترقيم وبأحرف مطوية وأرقام لاتينية.
+
+    الترقيم يُحذف من أي موضع لا من الطرفين فقط، وأرقام الحواشي الملتصقة
+    بآخر الكلمة («الحجر»(٢) تُحذف، وإلا انكسرت مطابقة كل شاهد مختوم بحاشية."""
     text = re.sub(r"[ً-ٰٓـ]", "", str(word or ""))
     text = (text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا").replace("ٱ", "ا")
             .replace("ى", "ي").replace("ئ", "ي").replace("ؤ", "و").replace("ة", "ه"))
     text = text.translate(_DIGITS)
-    return text.strip(_PUNCT + " \t")
+    text = "".join(ch for ch in text if ch not in _PUNCT)
+    return re.sub(r"^\d+|\d+$", "", text).strip()
 
 
 def _match_witness_words(target: str, lines: list):
