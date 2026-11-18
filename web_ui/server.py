@@ -8670,7 +8670,11 @@ async def _save_doc_files(request: Request, files) -> list:
         ext = Path(original).suffix.lower()
         if ext not in (".pdf", ".txt") and ext not in doc_convert._IMG_EXTS:
             raise HTTPException(status_code=400, detail="ارفع ملفات PDF أو صور (png/jpg/tiff) أو ملفات نصية")
-        path = folder / f"{stamp}_{i}_{re.sub(r'[^\w.\-]', '_', original)}"
+        # اسم الملف الأصلي في قلب الاسم المحفوظ (والمؤشر آخره) حتى يرتّب
+        # الفرز الطبيعي الأجزاءَ بأسمائها (جزء2 قبل جزء10) لا بترتيب وصولها
+        clean = re.sub(r'[^\w.\-]', '_', original)
+        stem, dot, extn = clean.rpartition(".")
+        path = folder / (f"{stamp}_{stem}_{i}.{extn}" if dot else f"{stamp}_{clean}_{i}")
         path.write_bytes(await f.read())
         saved.append(path)
     if not saved:
@@ -8966,7 +8970,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.687"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.688"},
         },
     })
     if opened.get("error"):
