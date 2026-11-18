@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.708"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.709"},
         },
     })
     if opened.get("error"):
@@ -18375,9 +18375,17 @@ def _critique_context_block(req: "ChatRequest", request: Request) -> str:
         _ekey = owner_openrouter_key(request, getattr(req, "api_key", None)) or ""
     except Exception:
         _ekey = ""
-    _dctx = _dc.relevant_context(str(doc_id), owner, query, budget=7000, embed_key=_ekey)
+    doc_name = crit.get("document_name") or "الوثيقة"
+    _title_words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", doc_name or "")
+                    if w not in _CRIT_STOP and w not in {"وثيقة", "دراسة", "بحث", "رسالة", "كتاب", "موضوع"}]
+    # استرجاع مقاطع الوثيقة يقوده طلب الباحث مكمّلًا باسم موضوعها: فطلب
+    # مبهم («انقد هذه الوثيقة») لا يجرّ مقاطع منهجية عامة بل متن الموضوع
+    _rq = query
+    if _title_words and not any(t in (query or "") for t in _title_words):
+        _rq = f"{query} {' '.join(_title_words[:4])}"
+    _dctx = _dc.relevant_context(str(doc_id), owner, _rq, budget=7000, embed_key=_ekey)
     doc_chunks = _dctx.get("chunks") or []
-    doc_name = crit.get("document_name") or _dctx.get("name") or "الوثيقة"
+    doc_name = crit.get("document_name") or _dctx.get("name") or doc_name
     # صفحات الوثيقة كاملة لا مقاطع مجتزأة: مواضع المطابقة من عناوين المقاطع
     # تُستبدل بنص صفحتها كاملًا (وتتمتها عند انقطاع آخرها) فلا ينقطع سياق
     doc_pages = []
@@ -18416,8 +18424,6 @@ def _critique_context_block(req: "ChatRequest", request: Request) -> str:
     # مستقلة وحاكم يعتمد خمس مراس حرفية من لسان التراث بفنونها ودرجات ثقتها،
     # تُبحث عباراتها في النطاق فتلتقط مواضع المسألة بألفاظ أصحابها لا بألفاظنا
     adopted = []
-    _title_words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", doc_name or "")
-                    if w not in _CRIT_STOP and w not in {"وثيقة", "دراسة", "بحث", "رسالة", "كتاب", "موضوع"}]
     _panel_q = (f"الوثيقة موضوع النقد: {doc_name}\nطلب الباحث: {query}"
                 + (("\n\nمن متن الوثيقة: " + "\n".join(c[:260] for c in doc_chunks[:3])) if doc_chunks else ""))
     if _ekey:
