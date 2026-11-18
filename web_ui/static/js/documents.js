@@ -614,18 +614,31 @@ function closeCritiqueModal() {
 async function openCritiqueModal() {
   const modal = document.getElementById('docCritiqueModal');
   if (modal) modal.style.display = 'flex';
-  const sel = document.getElementById('critDocSelect');
-  if (sel) {
-    sel.innerHTML = '<option value="">جارٍ التحميل…</option>';
+  const list = document.getElementById('critDocList');
+  if (list) {
+    list.innerHTML = '<div style="font-size: 12.5px; color: var(--text-muted); padding: 8px;">جارٍ التحميل…</div>';
     try {
       const res = await fetch('/api/documents');
       const data = await res.json();
-      const docs = (data.documents || []).filter(d => d.status === 'done');
-      sel.innerHTML = docs.length
-        ? docs.map(d => `<option value="${d.id}">${escapeHtml(d.name || 'وثيقة')}${d.rag_status === 'done' ? ' 🧠' : ''} (${Number(d.pages || 0).toLocaleString('ar-EG')} صفحة)</option>`).join('')
-        : '<option value="">لا وثائق محوّلة بعد — ارفع وثيقة وحوّلها أولًا</option>';
+      const docs = (data.documents || []).filter(d => !d.archived);
+      if (!docs.length) {
+        list.innerHTML = '<div style="font-size: 12.5px; color: var(--text-muted); padding: 8px;">لا وثائق بعد — ارفع وثيقة وحوّلها أولًا من «📄 رفع وثيقة كاملة».</div>';
+      } else {
+        let firstDone = true;
+        list.innerHTML = docs.map(d => {
+          const ok = d.status === 'done';
+          const checked = ok && firstDone ? ' checked' : '';
+          if (ok) firstDone = false;
+          const when = d.created ? new Date(d.created * 1000).toLocaleDateString('ar-EG', {day: 'numeric', month: 'long'}) : '';
+          const state = ok ? '' : d.status === 'converting' || d.status === 'queued' ? ' — جارٍ تحويلها، أكملها أولًا' : d.status === 'cancelled' ? ' — تحويل موقوف جزئيًا، أعد تحويلها أولًا' : ' — تعذر تحويلها';
+          return `<label style="display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; font-size: 13px; ${ok ? 'cursor: pointer;' : 'opacity: 0.55;'}">
+            <input type="radio" name="critDocPick" value="${d.id}" data-name="${escapeHtml(d.name || 'وثيقة')}" ${checked} ${ok ? '' : 'disabled'}>
+            <span style="flex: 1;">${escapeHtml(d.name || 'وثيقة')}${d.rag_status === 'done' ? ' 🧠' : ''}<span style="display: block; font-size: 11.5px; color: var(--text-muted);">${Number(d.pages || 0).toLocaleString('ar-EG')} صفحة${when ? ' • ' + when : ''}${state}</span></span>
+          </label>`;
+        }).join('');
+      }
     } catch (e) {
-      sel.innerHTML = '<option value="">تعذر جلب الوثائق</option>';
+      list.innerHTML = '<div style="font-size: 12.5px; color: #c0392b; padding: 8px;">تعذر جلب الوثائق</div>';
     }
   }
   buildCritCats();
@@ -669,10 +682,10 @@ function removeCritBook(title) {
 window.onCritiqueBooks = function () { renderCritBooksChips(); };
 
 async function startCritiqueSession() {
-  const sel = document.getElementById('critDocSelect');
-  const docId = sel?.value || '';
+  const pick = document.querySelector('input[name="critDocPick"]:checked');
+  const docId = pick?.value || '';
   if (!docId) { showToast('اختر وثيقة محوّلة أولًا (ارفعها من «رفع وثيقة كاملة» إن لم توجد)'); return; }
-  const docName = (sel.options[sel.selectedIndex]?.textContent || 'وثيقة').replace(/🧠/g, '').replace(/\s*\([^)]*\)\s*$/, '').trim() || 'وثيقة';
+  const docName = pick?.dataset?.name || 'وثيقة';
   const mode = document.querySelector('input[name="critScopeMode"]:checked')?.value || 'all';
   const scope = { mode };
   if (mode === 'categories') {

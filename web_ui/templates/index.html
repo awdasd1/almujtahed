@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.705">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.706">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.705" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.706" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.705</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.706</span>
             </div>
 
             <div class="header-actions">
@@ -5164,9 +5164,8 @@
                 <button type="button" class="btn-icon" onclick="closeCritiqueModal()" title="إغلاق">✕</button>
             </div>
             <div class="modal-content" style="padding: 16px; overflow-y: auto;">
-                <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">الوثيقة موضوع النقد/المقارنة
-                    <select id="critDocSelect" class="filter-select" style="display: block; margin-top: 6px; width: 100%;"></select>
-                </label>
+                <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">الوثيقة موضوع النقد/المقارنة</div>
+                <div id="critDocList" style="border: 1px solid var(--border-subtle); border-radius: 8px; padding: 6px; max-height: 190px; overflow-y: auto; margin-bottom: 4px;"></div>
                 <fieldset style="border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px; margin: 12px 0;">
                     <legend style="font-size: 12.5px; font-weight: 600; padding: 0 6px;">نطاق البحث في الشاملة (ملزم للنموذج)</legend>
                     <label style="display: block; font-size: 13px; margin: 4px 0;"><input type="radio" name="critScopeMode" value="all" checked onchange="critScopeChanged()"> جميع كتب الشاملة</label>
@@ -6708,25 +6707,25 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.705"></script>
-    <script src="/static/js/search.js?v=1.10.705"></script>
-    <script src="/static/js/reader.js?v=1.10.705"></script>
-    <script src="/static/js/force3d.js?v=1.10.705"></script>
-    <script src="/static/js/share.js?v=1.10.705"></script>
-    <script src="/static/js/chat.js?v=1.10.705"></script>
-    <script src="/static/js/documents.js?v=1.10.705"></script>
-    <script src="/static/js/designs.js?v=1.10.705"></script>
-    <script src="/static/js/texts.js?v=1.10.705"></script>
-    <script src="/static/js/agents.js?v=1.10.705"></script>
-    <script src="/static/js/providers.js?v=1.10.705"></script>
-    <script src="/static/js/tools.js?v=1.10.705"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.705"></script>
-    <script src="/static/js/projects.js?v=1.10.705"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.705"></script>
-    <script src="/static/js/archive.js?v=1.10.705"></script>
-    <script src="/static/js/compare.js?v=1.10.705"></script>
-    <script src="/static/js/local_models.js?v=1.10.705"></script>
-    <script src="/static/js/changelog.js?v=1.10.705"></script>
+    <script src="/static/js/app.js?v=1.10.706"></script>
+    <script src="/static/js/search.js?v=1.10.706"></script>
+    <script src="/static/js/reader.js?v=1.10.706"></script>
+    <script src="/static/js/force3d.js?v=1.10.706"></script>
+    <script src="/static/js/share.js?v=1.10.706"></script>
+    <script src="/static/js/chat.js?v=1.10.706"></script>
+    <script src="/static/js/documents.js?v=1.10.706"></script>
+    <script src="/static/js/designs.js?v=1.10.706"></script>
+    <script src="/static/js/texts.js?v=1.10.706"></script>
+    <script src="/static/js/agents.js?v=1.10.706"></script>
+    <script src="/static/js/providers.js?v=1.10.706"></script>
+    <script src="/static/js/tools.js?v=1.10.706"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.706"></script>
+    <script src="/static/js/projects.js?v=1.10.706"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.706"></script>
+    <script src="/static/js/archive.js?v=1.10.706"></script>
+    <script src="/static/js/compare.js?v=1.10.706"></script>
+    <script src="/static/js/local_models.js?v=1.10.706"></script>
+    <script src="/static/js/changelog.js?v=1.10.706"></script>
 
     <script>
         window.refreshLucideIcons = function () {
