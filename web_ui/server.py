@@ -8750,7 +8750,7 @@ async def documents_progress(request: Request, doc_id: str):
     meta = doc_convert.get_doc(doc_id, current_owner_id(request))
     if not meta:
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
-    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi", "scope", "ocr_engine", "ocr_model", "fallback_prompt", "ocr_fallback")}
+    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi", "scope", "ocr_engine", "ocr_model", "fallback_prompt", "ocr_fallback", "rag_status", "rag_done", "rag_total", "rag_chunks", "rag_model", "rag_error")}
     out["volumes"] = len(meta.get("volumes") or [])
     started = meta.get("started")
     if started:
@@ -8815,6 +8815,35 @@ async def documents_fallback(request: Request, doc_id: str, payload: dict = Body
         doc_convert.resolve_fallback, doc_id, current_owner_id(request),
         payload.get("decision") or "")
     return {"id": doc_id, "resolved": ok}
+
+
+@app.post("/api/documents/{doc_id}/rag/build")
+async def documents_rag_build(request: Request, doc_id: str, payload: Optional[dict] = Body(None)):
+    """بناء الفهرس الدلالي (RAG) لوثيقة محوّلة: مقاطع مضمّنة عبر OpenRouter
+    تُبحث دلاليًا مع اللفظي في مناقشة الوثيقة."""
+    import doc_convert, doc_rag
+    owner = current_owner_id(request)
+    meta = doc_convert.get_doc(doc_id, owner)
+    if not meta:
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    if meta.get("status") != "done":
+        raise HTTPException(status_code=409, detail="لا تُفهرس إلا وثيقة اكتمل تحويلها")
+    key = owner_openrouter_key(request, None)
+    if not key:
+        raise HTTPException(status_code=400, detail="فعّل مفتاح OpenRouter في الخدمات أولًا: التضمين الدلالي عبره")
+    ok = await asyncio.to_thread(
+        doc_rag.start_build, doc_id, owner, key, (payload or {}).get("model") or "")
+    return {"id": doc_id, "building": ok}
+
+
+@app.post("/api/documents/{doc_id}/rag/cancel")
+async def documents_rag_cancel(request: Request, doc_id: str):
+    """إيقاف فهرسة دلالية جارية."""
+    import doc_convert, doc_rag
+    ok = await asyncio.to_thread(doc_rag.request_cancel, doc_id, current_owner_id(request))
+    if not ok and not doc_convert.get_doc(doc_id, current_owner_id(request)):
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    return {"id": doc_id, "cancelling": ok}
 
 
 @app.get("/api/documents/{doc_id}/page")
@@ -9127,7 +9156,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.698"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.699"},
         },
     })
     if opened.get("error"):
@@ -18282,7 +18311,13 @@ def _document_context_block(req: "ChatRequest", request: Request) -> str:
     try:
         import doc_convert as _dc
         _lu = next((m.content for m in reversed(req.messages or []) if m.role == "user"), "")
-        _dctx = _dc.relevant_context(str(doc_id), current_owner_id(request), _lu or "")
+        _ekey = ""
+        try:
+            _ekey = owner_openrouter_key(request, getattr(req, "api_key", None)) or ""
+        except Exception:
+            _ekey = ""
+        _dctx = _dc.relevant_context(str(doc_id), current_owner_id(request), _lu or "",
+                                      embed_key=_ekey)
         _ch = _dctx.get("chunks") or []
         if not _ch:
             return ""

@@ -389,6 +389,9 @@ async function loadDocumentsList() {
     const data = await res.json();
     const showArchived = !!document.getElementById('docShowArchived')?.checked;
     const docs = (data.documents || []).filter(d => showArchived || !d.archived);
+    if (docs.some(d => d.rag_status === 'building')) {
+      if (!docRagRefreshTimer) docRagRefreshTimer = setTimeout(() => { docRagRefreshTimer = null; loadDocumentsList(); }, 2500);
+    }
     if (!docs.length) {
       box.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">لا وثائق محفوظة بعد.</div>';
       return;
@@ -401,7 +404,7 @@ async function loadDocumentsList() {
         <span style="font-size:15px;">📄</span>
         <span style="flex:1; min-width:140px;">
           <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}${d.archived ? ' <span style="font-size:10.5px; color:var(--accent-clay);">(مؤرشفة)</span>' : ''}</span>
-          <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${d.ocr_engine === 'openrouter' && d.ocr_model ? ` • قراءة بنموذج <span style="direction:ltr; display:inline-block;">${escapeHtml(d.ocr_model)}</span>` : ''}${d.ocr_fallback ? ' • تعذّر النموذج فحُوّلت بالمحرك المحلي' : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : d.status === 'cancelled' ? `أُوقف التحويل عند ${Number(d.page || 0).toLocaleString('ar-EG')} صفحة — حُفظ ما تمّ` : `جارٍ تحويلها… صفحة ${Number(d.page || 0).toLocaleString('ar-EG')} من ${Number(d.pages || 0).toLocaleString('ar-EG')}`}</span>
+          <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${d.ocr_engine === 'openrouter' && d.ocr_model ? ` • قراءة بنموذج <span style="direction:ltr; display:inline-block;">${escapeHtml(d.ocr_model)}</span>` : ''}${d.ocr_fallback ? ' • تعذّر النموذج فحُوّلت بالمحرك المحلي' : ''}${d.rag_status === 'done' ? ` • 🧠 بحث دلالي (${Number(d.rag_chunks || 0).toLocaleString('ar-EG')} مقطعًا)` : d.rag_status === 'building' ? ` • 🧠 تُفهرس دلاليًا… ${Number(d.rag_done || 0).toLocaleString('ar-EG')} من ${Number(d.rag_total || 0).toLocaleString('ar-EG')}` : d.rag_status === 'stale' ? ' • 🧠 الفهرسة الدلالية قديمة بعد إعادة التحويل' : d.rag_status === 'error' ? ' • 🧠 فشلت الفهرسة الدلالية' : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : d.status === 'cancelled' ? `أُوقف التحويل عند ${Number(d.page || 0).toLocaleString('ar-EG')} صفحة — حُفظ ما تمّ` : `جارٍ تحويلها… صفحة ${Number(d.page || 0).toLocaleString('ar-EG')} من ${Number(d.pages || 0).toLocaleString('ar-EG')}`}</span>
         </span>
         ${d.status === 'converting' || d.status === 'queued' ? `<button class="btn-flat-secondary reader-mini-btn" style="color:#c0392b;" onclick="stopDocConversionById('${d.id}')" title="إيقاف فوري: تُسقط الصفحة الجارية ويُحفظ ما قبلها">⏹ إيقاف التحويل</button>` : ''}
         ${done && !d.archived ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
@@ -409,6 +412,7 @@ async function loadDocumentsList() {
         ${done || d.status === 'cancelled' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'txt')" title="تصدير النص المحوَّل ملفًا نصيًا">تصدير TXT</button>` : ''}
         ${done || d.status === 'cancelled' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'docx')" title="تصدير ملف Word بصفحات الوثيقة وحواشيها">تصدير Word</button>` : ''}
         ${done && !d.archived ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocAppend('${d.id}', '${nm}')" title="إضافة أجزاء جديدة إلى هذه الوثيقة">إضافة جزء</button>` : ''}
+        ${done && d.rag_status === 'building' ? `<button class="btn-flat-secondary reader-mini-btn" style="color:#c0392b;" onclick="stopRagBuild('${d.id}')" title="إيقاف الفهرسة الدلالية">⏹ إيقاف الفهرسة</button>` : done ? `<button class="btn-flat-secondary reader-mini-btn" onclick="buildRag('${d.id}')" title="فهرسة دلالية (RAG): تضمين مقاطع الوثيقة بنموذج baai/bge-m3 عبر OpenRouter ليُبحث فيها بالمعنى مع اللفظ">${d.rag_status === 'done' ? '↻ إعادة الفهرسة الدلالية' : '🧠 فهرسة دلالية'}</button>` : ''}
         ${(done || d.status === 'error' || d.status === 'cancelled') && !d.archived ? `<button class="btn-flat-secondary reader-mini-btn" onclick="reconvertDocument('${d.id}', '${nm}')" title="إعادة التحويل من الملفات الأصلية بالدقة والنطاق المختارين">إعادة تحويل</button>` : ''}
         ${!d.archived
           ? `<button class="btn-flat-secondary reader-mini-btn" onclick="archiveDocument('${d.id}', true)" title="أرشفة الوثيقة: تُخفى من القائمة وتبقى محفوظة">أرشفة</button>`
@@ -437,6 +441,28 @@ async function reconvertDocument(docId, docName) {
     showToast('بدأت إعادة التحويل بالدقة المختارة — تُستكمل الحواشي هذه المرة');
     pollDocProgress(docId, docName);
   } catch (e) { showToast('تعذرت إعادة التحويل'); }
+}
+
+let docRagRefreshTimer = null;
+
+async function buildRag(docId) {
+  try {
+    const res = await fetch(`/api/documents/${docId}/rag/build`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.detail || 'تعذرت الفهرسة الدلالية'); return; }
+    showToast(data.building ? 'بدأت الفهرسة الدلالية… تُبنى في الخلفية وتظهر نتيجتها في القائمة' : 'الفهرسة جارية أصلًا');
+    loadDocumentsList();
+  } catch (e) { showToast('تعذرت الفهرسة الدلالية'); }
+}
+
+async function stopRagBuild(docId) {
+  try {
+    await fetch(`/api/documents/${docId}/rag/cancel`, {method: 'POST'});
+    showToast('أُوقفت الفهرسة الدلالية');
+    setTimeout(loadDocumentsList, 1200);
+  } catch (e) { showToast('تعذر إيقاف الفهرسة'); }
 }
 
 async function archiveDocument(docId, flag) {

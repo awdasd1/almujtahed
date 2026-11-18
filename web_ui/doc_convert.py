@@ -77,6 +77,11 @@ def delete_doc(doc_id: str, owner: str) -> bool:
             return False
         reg.pop(doc_id, None)
         _save_registry(reg)
+    try:
+        import doc_rag
+        doc_rag.remove_index(meta)
+    except Exception:
+        pass
     paths = [meta.get("text_path")]
     for v in (meta.get("volumes") or []):
         paths.append(v.get("file_path"))
@@ -565,6 +570,9 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
     kw = {"status": "cancelled" if cancelled else "done", "chars": len(full),
           "pages": final_pages, "page": final_pages,
           "finished": int(time.time()), "volumes": volumes}
+    if not cancelled and meta.get("rag_status") in ("done", "stale", "building"):
+        # نص جديد بتحويل جديد: الفهرس الدلالي القديم لا يطابقه
+        kw["rag_status"] = "stale"
     if cancelled:
         kw["note"] = f"أُوقف التحويل يدويًا بعد {state['new']} صفحة في هذه الجولة (حُفظ ما تمّ، وأعد التحويل للاستكمال)"
     if ocr_missing:
@@ -959,9 +967,11 @@ def _fit_body_size(page_stats: list, base: float = 16.0) -> float:
     return size
 
 
-def relevant_context(doc_id: str, owner: str, query: str, budget: int = 12000) -> dict:
-    """أقرب مقاطع الوثيقة إلى السؤال بموازنة لفظية، بحد حرفي للسياق.
-    وإن سمّى السؤال صفحة بعينها أُرجع نصّها كاملًا لا مقاطع لفظية عامة."""
+def relevant_context(doc_id: str, owner: str, query: str, budget: int = 12000,
+                     embed_key: str = "") -> dict:
+    """أقرب مقاطع الوثيقة إلى السؤال، بحد حرفي للسياق: طلب صفحة بعينها
+    يقدَّم بنصّها الكامل، وإلا اندماج رتبي بين البحث اللفظي والبحث الدلالي
+    (إن فُهرست الوثيقة دلاليًا في doc_rag وتوفر مفتاح التضمين)."""
     meta = get_doc(doc_id, owner)
     if not meta:
         return {"chunks": [], "reason": "وثيقة غير موجودة"}
@@ -1008,10 +1018,38 @@ def relevant_context(doc_id: str, owner: str, query: str, budget: int = 12000) -
         if hits:
             scored.append((hits, freq, idx))
     scored.sort(key=lambda s: (-s[0], -s[1], s[2]))
+    lexical = [chunks[idx] for _, _, idx in scored[:6]]
+    candidates = list(lexical)
+    if embed_key:
+        # البحث الدلالي يلتقط المعنى بغير ألفاظ السؤال: يُدمج رتبيًا مع اللفظي
+        try:
+            import doc_rag
+            sem = doc_rag.semantic_search(doc_id, owner, query, embed_key, top=6, text=text)
+        except Exception:
+            sem = []
+        if sem:
+            segs = _page_segments(text)
+            multi = len({v for v, _ in segs}) > 1
+            sem_texts = []
+            for c in sem:
+                label = f"[جزء {c['v']}، صفحة {c['p']}]" if multi else f"[صفحة {c['p']}]"
+                sem_texts.append(f"{label}\n{c['text']}")
+            merged, seen = [], set()
+            for pair in zip(sem_texts, lexical):
+                for cand in pair:
+                    k = _fold(cand)[:90]
+                    if k not in seen:
+                        seen.add(k)
+                        merged.append(cand)
+            for cand in sem_texts[len(lexical):] + lexical[len(sem_texts):]:
+                k = _fold(cand)[:90]
+                if k not in seen:
+                    seen.add(k)
+                    merged.append(cand)
+            candidates = merged
     picked = []
     used = 0
-    for _, _, idx in scored[:6]:
-        chunk = chunks[idx]
+    for chunk in candidates[:8]:
         if used + len(chunk) > budget and picked:
             continue
         picked.append(chunk)
