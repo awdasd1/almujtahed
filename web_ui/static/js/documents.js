@@ -98,6 +98,7 @@ async function startDocUpload() {
     const form = new FormData();
     files.forEach(f => form.append('files', f));
     form.append('name', name);
+    form.append('dpi', document.getElementById('docDpiInput')?.value || '300');
     const url = appendId ? `/api/documents/${appendId}/volumes` : '/api/documents/upload';
     const res = await fetch(url, { method: 'POST', body: form });
     const data = await res.json();
@@ -160,7 +161,7 @@ async function loadDocumentsList() {
         <span style="font-size:15px;">📄</span>
         <span style="flex:1; min-width:0;">
           <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}</span>
-          <span style="font-size:11.5px; color: var(--text-muted);">${d.status === 'done' ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
+          <span style="font-size:11.5px; color: var(--text-muted);">${d.status === 'done' ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
         </span>
         ${d.status === 'done' ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
         ${d.status === 'done' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocAppend('${d.id}', '${escapeHtml(d.name || '').replace(/'/g, '')}')" title="إضافة أجزاء جديدة إلى هذه الوثيقة">إضافة جزء</button>` : ''}
@@ -174,9 +175,13 @@ async function loadDocumentsList() {
 
 async function reconvertDocument(docId, docName) {
   try {
-    const res = await fetch(`/api/documents/${docId}/reconvert`, { method: 'POST' });
+    const res = await fetch(`/api/documents/${docId}/reconvert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dpi: parseInt(document.getElementById('docDpiInput')?.value || '300', 10) }),
+    });
     if (!res.ok) throw new Error('تعذر بدء إعادة التحويل');
-    showToast('بدأت إعادة التحويل بالدقة العالية — تُستكمل الحواشي هذه المرة');
+    showToast('بدأت إعادة التحويل بالدقة المختارة — تُستكمل الحواشي هذه المرة');
     pollDocProgress(docId, docName);
   } catch (e) { showToast('تعذرت إعادة التحويل'); }
 }

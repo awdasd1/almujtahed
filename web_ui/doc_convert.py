@@ -122,7 +122,15 @@ def _norm_line(text: str) -> str:
     return re.sub(r"\s+", " ", _fold(text or "")).strip(" .،:؛»«()")
 
 
-def _footnote_band_text(page, page_text: str) -> str:
+def _clamp_dpi(value) -> int:
+    """دقة قراءة الصفحات المصوّرة بنقطة/بوصة: بين 50 و600، والافتراضي 300."""
+    try:
+        return max(50, min(600, int(value)))
+    except (TypeError, ValueError):
+        return 300
+
+
+def _footnote_band_text(page, page_text: str, dpi: int = 300) -> str:
     """حواشي أسفل الصفحة المصوّرة: يُعاد قراءة خُمسها الأسفل مكبّرًا، وما جدّ
     من سطوره (ليست في متن الصفحة المقروء) يُرجع ليُلحق بعد خط فاصل كما في
     المطبوع؛ فخط الحواشي الصغير يضيع في قراءة الصفحة كاملة منخفضة الدقة."""
@@ -130,7 +138,7 @@ def _footnote_band_text(page, page_text: str) -> str:
         import fitz
         rect = page.rect
         band = fitz.Rect(rect.x0, rect.y0 + rect.height * 0.80, rect.x1, rect.y1)
-        pix = page.get_pixmap(dpi=300, clip=band)
+        pix = page.get_pixmap(dpi=dpi, clip=band)
         fd, tmp = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
@@ -165,7 +173,7 @@ def _natural_key(path: Path):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", path.name)]
 
 
-def _convert_one(src: Path, first_page_no: int, progress) -> tuple:
+def _convert_one(src: Path, first_page_no: int, progress, dpi: int = 300) -> tuple:
     """تحويل ملف واحد إلى أجزاء صفحاته، يُرجع (الأجزاء، عدد الصفحات، فشل بصري؟)."""
     ext = src.suffix.lower()
     parts: list[str] = []
@@ -190,8 +198,9 @@ def _convert_one(src: Path, first_page_no: int, progress) -> tuple:
         if len(embedded) >= 20:
             parts.append(f"[صفحة {i + 1}]\n{embedded}")
         else:
-            # 300 نقطة لا 150: خط الحواشي الصغير لا يلتقطه المحرك بالدقة الدنيا
-            pix = page.get_pixmap(dpi=300)
+            # بالدقة المختارة (افتراضي 300): خط الحواشي الصغير لا يلتقطه
+            # المحرك بالدقات الدنيا، والأعلى أوضح وأبطأ
+            pix = page.get_pixmap(dpi=dpi)
             fd, tmp = tempfile.mkstemp(suffix=".png")
             os.close(fd)
             try:
@@ -203,7 +212,7 @@ def _convert_one(src: Path, first_page_no: int, progress) -> tuple:
                 except OSError:
                     pass
             if read:
-                band = _footnote_band_text(page, read)
+                band = _footnote_band_text(page, read, dpi)
                 if band:
                     read = read + "\n——————\n" + band
                 parts.append(f"[صفحة {i + 1}]\n{read}")
@@ -235,6 +244,7 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
     if not meta:
         return
     volumes = meta.get("volumes") or ([{"file_path": meta.get("file_path")}] if meta.get("file_path") else [])
+    dpi = _clamp_dpi(meta.get("dpi"))
     multi = len(volumes) > 1
     totals = [_count_pages(Path(v.get("file_path") or "")) for v in volumes]
     grand_total = sum(totals)
@@ -247,7 +257,7 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
             base = sum(totals[:vi])
             vparts, n, miss = _convert_one(
                 Path(volumes[vi].get("file_path") or ""), base + 1,
-                lambda p: _set_meta(doc_id, page=p))
+                lambda p: _set_meta(doc_id, page=p), dpi)
             volumes[vi]["pages"] = n
             ocr_missing = ocr_missing or miss
             if multi:
@@ -278,7 +288,7 @@ def convert_document(doc_id: str) -> None:
     _convert_volumes(doc_id, 0)
 
 
-def register_document(owner: str, name: str, saved) -> dict:
+def register_document(owner: str, name: str, saved, dpi=None) -> dict:
     """تسجيل وثيقة من ملف أو ملفات أجزاء مرتبة بفرز طبيعي لأسمائها."""
     paths = [saved] if isinstance(saved, (str, Path)) else list(saved)
     paths = sorted((Path(p) for p in paths), key=_natural_key)
@@ -288,6 +298,7 @@ def register_document(owner: str, name: str, saved) -> dict:
         "id": doc_id, "owner": owner, "name": name or paths[0].stem,
         "file_path": str(paths[0]), "text_path": str(text_path),
         "volumes": [{"file_path": str(p), "pages": 0} for p in paths],
+        "dpi": _clamp_dpi(dpi),
         "status": "queued", "page": 0, "pages": 0, "chars": 0,
         "created": int(time.time()), "error": "", "note": "",
     }
@@ -299,16 +310,19 @@ def register_document(owner: str, name: str, saved) -> dict:
     return dict(meta)
 
 
-def reconvert_document(doc_id: str, owner: str) -> bool:
+def reconvert_document(doc_id: str, owner: str, dpi=None) -> bool:
     """إعادة تحويل وثيقة من ملفاتها الأصلية (لالتقاط ما فات بدقة أعلى مثلًا)."""
     if not get_doc(doc_id, owner):
         return False
-    _set_meta(doc_id, status="queued", page=0, chars=0, error="")
+    kw = {"status": "queued", "page": 0, "chars": 0, "error": ""}
+    if dpi is not None:
+        kw["dpi"] = _clamp_dpi(dpi)
+    _set_meta(doc_id, **kw)
     threading.Thread(target=convert_document, args=(doc_id,), daemon=True).start()
     return True
 
 
-def append_volumes(doc_id: str, owner: str, saved) -> dict | None:
+def append_volumes(doc_id: str, owner: str, saved, dpi=None) -> dict | None:
     """إضافة أجزاء جديدة إلى وثيقة قائمة وتحويلها ملحقة بنصها."""
     meta = get_doc(doc_id, owner)
     if not meta:
@@ -318,7 +332,10 @@ def append_volumes(doc_id: str, owner: str, saved) -> dict | None:
     volumes = meta.get("volumes") or ([{"file_path": meta.get("file_path"), "pages": meta.get("pages", 0)}] if meta.get("file_path") else [])
     start = len(volumes)
     volumes.extend({"file_path": str(p), "pages": 0} for p in paths)
-    _set_meta(doc_id, volumes=volumes, status="converting")
+    kw = {"volumes": volumes, "status": "converting"}
+    if dpi is not None:
+        kw["dpi"] = _clamp_dpi(dpi)
+    _set_meta(doc_id, **kw)
     threading.Thread(target=_convert_volumes, args=(doc_id, start), daemon=True).start()
     out = get_doc(doc_id, owner) or meta
     return dict(out)

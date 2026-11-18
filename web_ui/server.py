@@ -8683,26 +8683,26 @@ async def _save_doc_files(request: Request, files) -> list:
 
 
 @app.post("/api/documents/upload")
-async def documents_upload(request: Request, files: List[UploadFile] = File(...), name: str = Form("")):
+async def documents_upload(request: Request, files: List[UploadFile] = File(...), name: str = Form(""), dpi: int = Form(300)):
     """رفع وثيقة بملف واحد أو ملفات أجزاء متعددة، وتحويلها نصًا في الخلفية."""
     import doc_convert
     owner_id = current_owner_id(request)
     saved = await _save_doc_files(request, files)
     meta = doc_convert.register_document(
-        owner_id, (name or "").strip() or saved[0].stem, saved)
+        owner_id, (name or "").strip() or saved[0].stem, saved, dpi)
     return {"id": meta["id"], "name": meta["name"], "status": meta["status"],
-            "volumes": len(saved)}
+            "volumes": len(saved), "dpi": meta.get("dpi")}
 
 
 @app.post("/api/documents/{doc_id}/volumes")
-async def documents_append_volumes(request: Request, doc_id: str, files: List[UploadFile] = File(...)):
+async def documents_append_volumes(request: Request, doc_id: str, files: List[UploadFile] = File(...), dpi: int = Form(300)):
     """إضافة أجزاء جديدة إلى وثيقة محفوظة وتحويلها ملحقة بنصها."""
     import doc_convert
     owner_id = current_owner_id(request)
     if not doc_convert.get_doc(doc_id, owner_id):
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
     saved = await _save_doc_files(request, files)
-    meta = doc_convert.append_volumes(doc_id, owner_id, saved)
+    meta = doc_convert.append_volumes(doc_id, owner_id, saved, dpi)
     return {"id": doc_id, "name": (meta or {}).get("name", ""), "status": "converting",
             "volumes": len((meta or {}).get("volumes") or [])}
 
@@ -8719,7 +8719,7 @@ async def documents_progress(request: Request, doc_id: str):
     meta = doc_convert.get_doc(doc_id, current_owner_id(request))
     if not meta:
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
-    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note")}
+    out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi")}
     out["volumes"] = len(meta.get("volumes") or [])
     return out
 
@@ -8734,10 +8734,11 @@ async def documents_context(request: Request, doc_id: str, payload: dict = Body(
 
 
 @app.post("/api/documents/{doc_id}/reconvert")
-async def documents_reconvert(request: Request, doc_id: str):
-    """إعادة تحويل وثيقة من أصولها بالدقة الحالية (تلتقط الحواشي فائتة)."""
+async def documents_reconvert(request: Request, doc_id: str, payload: Optional[dict] = Body(None)):
+    """إعادة تحويل وثيقة من أصولها بالدقة المختارة (تلتقط الحواشي فائتة)."""
     import doc_convert
-    if not doc_convert.reconvert_document(doc_id, current_owner_id(request)):
+    dpi = (payload or {}).get("dpi")
+    if not doc_convert.reconvert_document(doc_id, current_owner_id(request), dpi):
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
     return {"id": doc_id, "status": "queued"}
 
@@ -8979,7 +8980,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.689"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.690"},
         },
     })
     if opened.get("error"):
