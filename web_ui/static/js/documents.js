@@ -153,6 +153,14 @@ async function startDocUpload() {
   }
 }
 
+function fmtDocDur(sec) {
+  sec = Math.max(0, parseInt(sec || 0, 10));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const n = x => Number(x).toLocaleString('ar-EG');
+  const p2 = x => String(Number(x)).padStart(2, '0').replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
+  return h > 0 ? `${n(h)}:${p2(m)}:${p2(s)}` : `${n(m)}:${p2(s)}`;
+}
+
 function pollDocProgress(docId, docName) {
   const bar = document.getElementById('docProgressBar');
   const label = document.getElementById('docProgressLabel');
@@ -166,11 +174,11 @@ function pollDocProgress(docId, docName) {
       if (p.status === 'converting' || p.status === 'queued') {
         const pct = p.pages ? Math.max(3, Math.round((p.page / p.pages) * 100)) : 4;
         if (bar) bar.style.width = `${pct}%`;
-        if (label) label.textContent = p.pages ? `تُحوَّل الوثيقة نصًا… صفحة ${p.page} من ${p.pages}` : 'تُجهَّز الوثيقة…';
+        if (label) label.textContent = (p.pages ? `تُحوَّل الوثيقة نصًا… صفحة ${p.page} من ${p.pages}` : 'تُجهَّز الوثيقة…') + (p.elapsed ? ` • الوقت المنقضي ${fmtDocDur(p.elapsed)}` : '');
       } else if (p.status === 'done') {
         clearInterval(docUploadTimer); docUploadTimer = null;
         if (bar) bar.style.width = '100%';
-        if (label) label.textContent = `اكتمل التحويل: ${p.pages} صفحة${p.volumes > 1 ? ` في ${p.volumes} أجزاء` : ''}، ${Number(p.chars || 0).toLocaleString('ar-EG')} حرفًا.${p.note ? ' ' + p.note : ''}`;
+        if (label) label.textContent = `اكتمل التحويل${p.elapsed ? ` في ${fmtDocDur(p.elapsed)}` : ''}: ${p.pages} صفحة${p.volumes > 1 ? ` في ${p.volumes} أجزاء` : ''}، ${Number(p.chars || 0).toLocaleString('ar-EG')} حرفًا.${p.note ? ' ' + p.note : ''}`;
         if (done) {
           done.style.display = 'flex';
           const discuss = document.getElementById('btnDocDiscuss');
@@ -193,23 +201,34 @@ async function loadDocumentsList() {
   try {
     const res = await fetch('/api/documents');
     const data = await res.json();
-    const docs = data.documents || [];
+    const showArchived = !!document.getElementById('docShowArchived')?.checked;
+    const docs = (data.documents || []).filter(d => showArchived || !d.archived);
     if (!docs.length) {
       box.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">لا وثائق محفوظة بعد.</div>';
       return;
     }
-    box.innerHTML = docs.map(d => `
-      <div style="display:flex; align-items:center; gap:8px; padding:7px 9px; border:1px solid var(--border-subtle); border-radius:8px; margin-bottom:6px;">
+    box.innerHTML = docs.map(d => {
+      const nm = escapeHtml(d.name || '').replace(/'/g, '');
+      const done = d.status === 'done';
+      return `
+      <div style="display:flex; align-items:center; gap:8px; padding:7px 9px; border:1px solid var(--border-subtle); border-radius:8px; margin-bottom:6px; flex-wrap:wrap; ${d.archived ? 'opacity:0.65;' : ''}">
         <span style="font-size:15px;">📄</span>
-        <span style="flex:1; min-width:0;">
-          <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}</span>
-          <span style="font-size:11.5px; color: var(--text-muted);">${d.status === 'done' ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${docScopeLabel(d.scope)}` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
+        <span style="flex:1; min-width:140px;">
+          <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}${d.archived ? ' <span style="font-size:10.5px; color:var(--accent-clay);">(مؤرشفة)</span>' : ''}</span>
+          <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
         </span>
-        ${d.status === 'done' ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
-        ${d.status === 'done' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocAppend('${d.id}', '${escapeHtml(d.name || '').replace(/'/g, '')}')" title="إضافة أجزاء جديدة إلى هذه الوثيقة">إضافة جزء</button>` : ''}
-        ${d.status === 'done' || d.status === 'error' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="reconvertDocument('${d.id}', '${escapeHtml(d.name || '').replace(/'/g, '')}')" title="إعادة التحويل من الملفات الأصلية بالدقة الحالية لالتقاط الحواشي">إعادة تحويل</button>` : ''}
+        ${done && !d.archived ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
+        ${done ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocBrowse('${d.id}', '${nm}')">تصفح</button>` : ''}
+        ${done ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'txt')" title="تصدير النص المحوَّل ملفًا نصيًا">تصدير TXT</button>` : ''}
+        ${done ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'docx')" title="تصدير ملف Word بصفحات الوثيقة وحواشيها">تصدير Word</button>` : ''}
+        ${done && !d.archived ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocAppend('${d.id}', '${nm}')" title="إضافة أجزاء جديدة إلى هذه الوثيقة">إضافة جزء</button>` : ''}
+        ${(done || d.status === 'error') && !d.archived ? `<button class="btn-flat-secondary reader-mini-btn" onclick="reconvertDocument('${d.id}', '${nm}')" title="إعادة التحويل من الملفات الأصلية بالدقة والنطاق المختارين">إعادة تحويل</button>` : ''}
+        ${!d.archived
+          ? `<button class="btn-flat-secondary reader-mini-btn" onclick="archiveDocument('${d.id}', true)" title="أرشفة الوثيقة: تُخفى من القائمة وتبقى محفوظة">أرشفة</button>`
+          : `<button class="btn-flat-secondary reader-mini-btn" onclick="archiveDocument('${d.id}', false)" title="استرجاع الوثيقة من الأرشيف">استرجاع</button>`}
         <button class="btn-flat-secondary reader-mini-btn" onclick="deleteDocument('${d.id}')" title="حذف الوثيقة">حذف</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   } catch (e) {
     box.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">تعذر جلب الوثائق.</div>';
   }
@@ -229,6 +248,115 @@ async function reconvertDocument(docId, docName) {
     showToast('بدأت إعادة التحويل بالدقة المختارة — تُستكمل الحواشي هذه المرة');
     pollDocProgress(docId, docName);
   } catch (e) { showToast('تعذرت إعادة التحويل'); }
+}
+
+async function archiveDocument(docId, flag) {
+  try {
+    const res = await fetch(`/api/documents/${docId}/archive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archived: flag }),
+    });
+    if (!res.ok) throw new Error('تعذر');
+    showToast(flag ? 'أُرشفت الوثيقة — تجدها بتفعيل «إظهار المؤرشفة»' : 'استُرجعت الوثيقة من الأرشيف');
+    loadDocumentsList();
+  } catch (e) { showToast(flag ? 'تعذرت الأرشفة' : 'تعذر الاسترجاع'); }
+}
+
+function exportDocument(docId, kind) {
+  const a = document.createElement('a');
+  a.href = `/api/documents/${docId}/export.${kind}`;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showToast(kind === 'docx' ? 'يُجهَّز ملف Word ويُنزَّل…' : 'يُنزَّل النص…');
+}
+
+// ---------- تصفح الوثيقة: الأصل صورة والنص المحوَّل صفحة بصفحة ----------
+window._browse = null;
+
+async function openDocBrowse(docId, docName) {
+  window._browse = { id: docId, name: docName || '', volume: 1, page: 1, volumes: [] };
+  const modal = document.getElementById('docBrowseModal');
+  if (modal) modal.style.display = 'flex';
+  const title = document.getElementById('docBrowseTitle');
+  if (title) title.textContent = `تصفح: ${docName || 'وثيقة'}`;
+  await loadBrowsePage();
+}
+
+function closeDocBrowse() {
+  const modal = document.getElementById('docBrowseModal');
+  if (modal) modal.style.display = 'none';
+  window._browse = null;
+}
+
+async function loadBrowsePage() {
+  const b = window._browse;
+  if (!b) return;
+  const textEl = document.getElementById('docBrowseText');
+  const img = document.getElementById('docBrowseImg');
+  const noImg = document.getElementById('docBrowseNoImg');
+  const info = document.getElementById('docBrowseInfo');
+  try {
+    const res = await fetch(`/api/documents/${b.id}/page?volume=${b.volume}&page=${b.page}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'تعذر');
+    b.volumes = data.volumes || [];
+    // قائمة الأجزاء
+    const volWrap = document.getElementById('docBrowseVolWrap');
+    const volSel = document.getElementById('docBrowseVolume');
+    if (volSel && b.volumes.length > 1) {
+      volSel.innerHTML = b.volumes.map(v => `<option value="${v.volume}" ${v.volume === b.volume ? 'selected' : ''}>الجزء ${Number(v.volume).toLocaleString('ar-EG')}</option>`).join('');
+      if (volWrap) volWrap.style.display = 'flex';
+    } else if (volWrap) {
+      volWrap.style.display = 'none';
+    }
+    const volInfo = b.volumes.find(v => v.volume === b.volume) || { pages: 0, has_original: false };
+    const pageInput = document.getElementById('docBrowsePage');
+    if (pageInput) { pageInput.value = b.page; pageInput.max = volInfo.pages || 1; }
+    if (info) info.textContent = volInfo.pages
+      ? `صفحة ${Number(b.page).toLocaleString('ar-EG')} من ${Number(volInfo.pages).toLocaleString('ar-EG')}${b.volumes.length > 1 ? ` — الجزء ${Number(b.volume).toLocaleString('ar-EG')}` : ''}${data.converted ? '' : ' — هذه الصفحة خارج نطاق التحويل المحفوظ'}`
+      : '';
+    if (textEl) textEl.textContent = data.text || (data.converted ? '' : 'لم تُحوَّل هذه الصفحة ضمن نطاق التحويل المختار للوثيقة.');
+    if (volInfo.has_original) {
+      if (img) {
+        img.style.display = 'block';
+        img.src = `/api/documents/${b.id}/page-image?volume=${b.volume}&page=${b.page}&t=${Date.now()}`;
+      }
+      if (noImg) noImg.style.display = 'none';
+    } else {
+      if (img) img.style.display = 'none';
+      if (noImg) { noImg.style.display = 'block'; noImg.textContent = 'الأصل ملف نصي: لا صورة له.'; }
+    }
+  } catch (e) {
+    if (textEl) textEl.textContent = 'تعذر جلب الصفحة.';
+  }
+}
+
+function browseStep(delta) {
+  const b = window._browse;
+  if (!b) return;
+  const volInfo = (b.volumes || []).find(v => v.volume === b.volume) || { pages: 1 };
+  b.page = Math.min(Math.max(1, b.page + delta), volInfo.pages || 1);
+  loadBrowsePage();
+}
+
+function browsePageJump() {
+  const b = window._browse;
+  if (!b) return;
+  const v = parseInt(document.getElementById('docBrowsePage')?.value || '1', 10);
+  const volInfo = (b.volumes || []).find(x => x.volume === b.volume) || { pages: 1 };
+  if (Number.isFinite(v)) b.page = Math.min(Math.max(1, v), volInfo.pages || 1);
+  loadBrowsePage();
+}
+
+function browseVolumeChanged() {
+  const b = window._browse;
+  if (!b) return;
+  b.volume = parseInt(document.getElementById('docBrowseVolume')?.value || '1', 10) || 1;
+  b.page = 1;
+  loadBrowsePage();
 }
 
 async function deleteDocument(docId) {

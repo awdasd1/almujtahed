@@ -8736,6 +8736,12 @@ async def documents_progress(request: Request, doc_id: str):
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
     out = {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note", "dpi", "scope")}
     out["volumes"] = len(meta.get("volumes") or [])
+    started = meta.get("started")
+    if started:
+        end = meta.get("finished") if meta.get("status") in ("done", "error") else None
+        out["elapsed"] = max(0, int((end or time.time()) - started))
+    else:
+        out["elapsed"] = 0
     return out
 
 
@@ -8757,6 +8763,82 @@ async def documents_reconvert(request: Request, doc_id: str, payload: Optional[d
     if not doc_convert.reconvert_document(doc_id, current_owner_id(request), dpi, scope):
         raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
     return {"id": doc_id, "status": "queued"}
+
+
+@app.post("/api/documents/{doc_id}/archive")
+async def documents_archive(request: Request, doc_id: str, payload: dict = Body(...)):
+    """أرشفة وثيقة أو استرجاعها من الأرشيف."""
+    import doc_convert
+    if not doc_convert.set_archived(doc_id, current_owner_id(request), bool(payload.get("archived"))):
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    return {"id": doc_id, "archived": bool(payload.get("archived"))}
+
+
+@app.get("/api/documents/{doc_id}/page")
+async def documents_page(request: Request, doc_id: str, volume: int = 1, page: int = 1):
+    """النص المحوَّل لصفحة بعينها وهيكل الوثيقة، للتصفح المقارن."""
+    import doc_convert
+    info = await asyncio.to_thread(
+        doc_convert.page_text, doc_id, current_owner_id(request), volume, page)
+    if not info.get("volumes"):
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    return info
+
+
+@app.get("/api/documents/{doc_id}/page-image")
+async def documents_page_image(request: Request, doc_id: str, volume: int = 1, page: int = 1):
+    """صورة صفحة الأصل من ملف جزئها للمقارنة مع نصها المحوَّل."""
+    import doc_convert
+    def _render():
+        src = doc_convert.volume_file(doc_id, current_owner_id(request), volume)
+        if not src or src.suffix.lower() == ".txt":
+            return None
+        import fitz
+        doc = fitz.open(str(src))
+        try:
+            if page < 1 or page > doc.page_count:
+                return None
+            return doc[page - 1].get_pixmap(dpi=140).tobytes("png")
+        finally:
+            doc.close()
+    raw = await asyncio.to_thread(_render)
+    if not raw:
+        raise HTTPException(status_code=404, detail="لا صورة أصل لهذه الصفحة")
+    return Response(content=raw, media_type="image/png")
+
+
+@app.get("/api/documents/{doc_id}/export.txt")
+async def documents_export_txt(request: Request, doc_id: str):
+    """تصدير نص الوثيقة المحوَّل ملفًا نصيًا."""
+    import doc_convert
+    meta = doc_convert.get_doc(doc_id, current_owner_id(request))
+    if not meta:
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    try:
+        raw = Path(meta["text_path"]).read_bytes()
+    except Exception:
+        raise HTTPException(status_code=404, detail="لا نص محوَّلًا بعد")
+    from urllib.parse import quote
+    fname = quote(f"{meta.get('name') or 'document'}.txt")
+    return Response(content=raw, media_type="text/plain; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fname}"})
+
+
+@app.get("/api/documents/{doc_id}/export.docx")
+async def documents_export_docx(request: Request, doc_id: str):
+    """تصدير الوثيقة ملف Word بعناوين الصفحات والأجزاء وحواشيها."""
+    import doc_convert
+    meta = doc_convert.get_doc(doc_id, current_owner_id(request))
+    if not meta:
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    raw = await asyncio.to_thread(doc_convert.build_docx, doc_id, current_owner_id(request))
+    if not raw:
+        raise HTTPException(status_code=404, detail="لا نص محوَّلًا بعد")
+    from urllib.parse import quote
+    fname = quote(f"{meta.get('name') or 'document'}.docx")
+    return Response(content=raw,
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fname}"})
 
 
 @app.delete("/api/documents/{doc_id}")
@@ -8996,7 +9078,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.691"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.692"},
         },
     })
     if opened.get("error"):

@@ -296,7 +296,8 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
         state["done"] += 1
         state["new"] += 1
         _set_meta(doc_id, page=state["done"])
-    _set_meta(doc_id, status="converting", pages=sum(sel), page=done_before, error="")
+    _set_meta(doc_id, status="converting", pages=sum(sel), page=done_before,
+              error="", started=int(time.time()))
     parts: list[str] = []
     ocr_missing = False
     try:
@@ -314,10 +315,10 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
                 parts.extend(vparts)
             _set_meta(doc_id, volumes=volumes)
     except Exception as exc:
-        _set_meta(doc_id, status="error", error=str(exc)[:300])
+        _set_meta(doc_id, status="error", error=str(exc)[:300], finished=int(time.time()))
         return
     if scope and start_volume == 0 and state["done"] == 0:
-        _set_meta(doc_id, status="error",
+        _set_meta(doc_id, status="error", finished=int(time.time()),
                   error="النطاق المحدد خارج صفحات الوثيقة: لم تُحوَّل أي صفحة")
         return
     text_path = Path(meta.get("text_path") or "")
@@ -473,6 +474,141 @@ def _page_segments(text: str) -> dict:
             cur_page = int(g_page)
             segs[(vol, cur_page)] = (body or "").strip()
     return segs
+
+
+def set_archived(doc_id: str, owner: str, archived: bool) -> bool:
+    """أرشفة وثيقة أو استرجاعها من الأرشيف (تبقى ملفاتها ونصها)."""
+    if not get_doc(doc_id, owner):
+        return False
+    _set_meta(doc_id, archived=bool(archived))
+    return True
+
+
+def browse_info(doc_id: str, owner: str) -> dict | None:
+    """هيكل الوثيقة للتصفح صفحة بصفحة: أجزاؤها وصفحات كل جزء وأصولها."""
+    meta = get_doc(doc_id, owner)
+    if not meta:
+        return None
+    vols = meta.get("volumes") or ([{"file_path": meta.get("file_path"), "pages": meta.get("pages", 0)}] if meta.get("file_path") else [])
+    out = []
+    for i, v in enumerate(vols, 1):
+        fp = v.get("file_path") or ""
+        out.append({"volume": i, "pages": int(v.get("pages") or 0),
+                    "has_original": bool(fp) and Path(fp).suffix.lower() != ".txt"})
+    return {"id": doc_id, "name": meta.get("name", ""), "status": meta.get("status"),
+            "scope": meta.get("scope"), "volumes": out}
+
+
+def volume_file(doc_id: str, owner: str, volume: int) -> Path | None:
+    """ملف أصل جزء بعينه لعرض صورته في التصفح."""
+    meta = get_doc(doc_id, owner)
+    if not meta:
+        return None
+    vols = meta.get("volumes") or ([{"file_path": meta.get("file_path")}] if meta.get("file_path") else [])
+    if 1 <= volume <= len(vols):
+        fp = vols[volume - 1].get("file_path")
+        if fp and Path(fp).exists():
+            return Path(fp)
+    return None
+
+
+def page_text(doc_id: str, owner: str, volume: int, page: int) -> dict:
+    """النص المحوَّل لصفحة بعينها من جزء بعينه للمقارنة مع أصلها."""
+    info = browse_info(doc_id, owner)
+    if not info:
+        return {"text": "", "converted": False, "volumes": []}
+    meta = get_doc(doc_id, owner)
+    body = None
+    try:
+        text = Path(meta["text_path"]).read_text(encoding="utf-8")
+        body = _page_segments(text).get((volume, page))
+    except Exception:
+        body = None
+    info.update({"volume": volume, "page": page,
+                 "text": body or "", "converted": body is not None})
+    return info
+
+
+def build_docx(doc_id: str, owner: str) -> bytes | None:
+    """تصدير الوثيقة ملف Word: عناوين أجزاء وصفحات بفواصل صفحات، والمتن
+    فقرات، والحواشي بعد خطها الفاصل بخط أصغر — عبر python-docx."""
+    meta = get_doc(doc_id, owner)
+    if not meta:
+        return None
+    try:
+        text = Path(meta["text_path"]).read_text(encoding="utf-8")
+    except Exception:
+        return None
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    import io
+
+    doc = Document()
+    normal = doc.styles["Normal"]
+    normal.font.name = "Traditional Arabic"
+    normal.font.size = Pt(13)
+    try:
+        normal.element.rPr.rFonts.set(qn("w:cs"), "Traditional Arabic")
+    except Exception:
+        pass
+
+    def rtl(p):
+        pPr = p._p.get_or_add_pPr()
+        bidi = OxmlElement("w:bidi")
+        bidi.set(qn("w:val"), "1")
+        pPr.append(bidi)
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        return p
+
+    def para(txt, size=13, bold=False, gray=False, heading=None):
+        p = doc.add_heading(level=heading) if heading else doc.add_paragraph()
+        run = p.add_run(txt)
+        run.font.name = "Traditional Arabic"
+        run.font.size = Pt(size)
+        run.bold = bold
+        if gray:
+            run.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
+        try:
+            run._element.get_or_add_rPr().rFonts.set(qn("w:cs"), "Traditional Arabic")
+        except Exception:
+            pass
+        return rtl(p)
+
+    para(meta.get("name") or "وثيقة", size=20, bold=True, heading=0)
+    multi = "[الجزء " in text
+    first_page = True
+    footnote = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        mv = re.fullmatch(r"\[الجزء (\d+)\]", line)
+        if mv:
+            para(f"الجزء {mv.group(1)}", size=16, bold=True, heading=1)
+            footnote = False
+            continue
+        mp = re.fullmatch(r"\[صفحة (\d+)\]", line)
+        if mp:
+            if not first_page:
+                doc.add_page_break()
+            first_page = False
+            para(f"صفحة {mp.group(1)}", size=14, bold=True, heading=2)
+            footnote = False
+            continue
+        if line == "——————":
+            footnote = True
+            para("——————", size=9, gray=True)
+            continue
+        if not line:
+            continue
+        if footnote:
+            para(line, size=9.5, gray=True)
+        else:
+            para(line, size=13)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
 
 
 def relevant_context(doc_id: str, owner: str, query: str, budget: int = 12000) -> dict:
