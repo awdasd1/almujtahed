@@ -9084,7 +9084,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.693"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.694"},
         },
     })
     if opened.get("error"):
@@ -29291,6 +29291,24 @@ def build_docx_bytes(payload: dict) -> bytes:
         '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'
         "</w:styles>"
     )
+    # جدول الخطوط: كل خط مستعمل احتياطيُّه Amiri (من Google) عند غيابه
+    _fonts = []
+    for _st in (styles or {}).values():
+        if isinstance(_st, dict) and _st.get("font") and _st["font"] not in _fonts:
+            _fonts.append(str(_st["font"]))
+    for _f in (body_style.get("font"), fn_style.get("font"), "Amiri"):
+        if _f and _f not in _fonts:
+            _fonts.append(str(_f))
+    font_table_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        + "".join(
+            f'<w:font w:name="{_docx_esc(f)}">'
+            + ('<w:altName w:val="Amiri"/>' if f != "Amiri" else "")
+            + '<w:family w:val="roman"/><w:pitch w:val="variable"/></w:font>'
+            for f in _fonts)
+        + "</w:fonts>"
+    )
     rpr_field = body_rpr.replace("<w:rtl/>", "")
     footer_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -29319,6 +29337,7 @@ def build_docx_bytes(payload: dict) -> bytes:
         '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>'
         '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
         '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
+        '<Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>'
         '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
         "</Types>"
     )
@@ -29335,6 +29354,7 @@ def build_docx_bytes(payload: dict) -> bytes:
         '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
         '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
         '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>'
+        '<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>'
         "</Relationships>"
     )
     buf = _io.BytesIO()
@@ -29345,6 +29365,7 @@ def build_docx_bytes(payload: dict) -> bytes:
         z.writestr("word/footnotes.xml", footnotes_xml)
         z.writestr("word/footer1.xml", footer_xml)
         z.writestr("word/styles.xml", styles_xml)
+        z.writestr("word/fontTable.xml", font_table_xml)
         z.writestr("word/settings.xml", settings_xml)
         z.writestr("word/_rels/document.xml.rels", doc_rels)
     return buf.getvalue()

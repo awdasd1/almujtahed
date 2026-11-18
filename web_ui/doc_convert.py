@@ -600,6 +600,7 @@ def document_export_payload(doc_id: str, owner: str) -> dict | None:
         return None
     blocks: list[dict] = [{"kind": "title", "runs": [{"t": meta.get("name") or "وثيقة", "b": True}]}]
     footnotes: list[dict] = []
+    page_stats: list[tuple] = []
     multi = "[الجزء " in text
     cur_vol = 1
     page_lines: list[str] = []
@@ -630,6 +631,8 @@ def document_export_payload(doc_id: str, owner: str) -> dict | None:
                 paras[-1] += " " + s
             else:
                 paras.append(s)
+        page_stats.append((sum(len(p) for p in paras),
+                           sum(len(e) for e in entries), len(paras)))
         k = fn_start
         for pi, par in enumerate(paras):
             runs, k = _runs_with_refs(par, k, fn_start + len(entries))
@@ -666,17 +669,43 @@ def document_export_payload(doc_id: str, owner: str) -> dict | None:
         if page_no is not None:
             page_lines.append(line)
     flush_page()
+    size = _fit_body_size(page_stats)
     return {
         "styles": {
-            "body": {"font": "Amiri", "size": 14, "weight": 400},
-            "h": {"font": "Amiri", "size": 15, "weight": 700},
-            "title": {"font": "Amiri", "size": 22, "weight": 700},
-            "fn": {"font": "Amiri", "size": 10, "weight": 400},
+            "body": {"font": "Traditional Arabic", "size": size, "weight": 400},
+            "h": {"font": "Traditional Arabic", "size": min(18, size + 1), "weight": 700},
+            "title": {"font": "Traditional Arabic", "size": 22, "weight": 700},
+            "fn": {"font": "Traditional Arabic", "size": max(8, round(size * 0.66)), "weight": 400},
         },
         "blocks": blocks,
         "footnotes": footnotes,
         "footnote_restart": "eachPage",
     }
+
+
+def _fit_body_size(page_stats: list, base: float = 16.0) -> float:
+    """أكبر مقاس (حتى 16) تبقى به كل صفحة وثيقة داخل صفحة Word واحدة،
+    فيُصغَّر الخط تلقائيًا عند تجاوز حدود الصفحة ولا ينزاح الترتيب.
+    نموذج ارتفاع: عرض قابل للطباعة 493 نقطة وارتفاع 717 (A4 بهوامش
+    محرك الطباعة)، وعرض الحرف العربي الوسطي 0.42 من المقاس."""
+    if not page_stats:
+        return base
+    import math
+    def fits(size: float) -> bool:
+        fn_size = max(8.0, size * 0.66)
+        for body_chars, fn_chars, n_paras in page_stats:
+            body_lines = math.ceil(body_chars * 0.42 * size / 493) if body_chars else 0
+            height = body_lines * (1.45 * size) + 3 * n_paras + 34
+            if fn_chars:
+                fn_lines = math.ceil(fn_chars * 0.42 * fn_size / 493)
+                height += fn_lines * (1.45 * fn_size + 2) + 12
+            if height > 717 * 0.99:
+                return False
+        return True
+    size = base
+    while size > 10 and not fits(size):
+        size -= 0.5
+    return size
 
 
 def relevant_context(doc_id: str, owner: str, query: str, budget: int = 12000) -> dict:
