@@ -3942,6 +3942,11 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
 
   if (activeAgent && activeAgent.thinking && !executionThinking) executionThinking = activeAgent.thinking;
   if (!customOn && activeAgent && activeAgent.systemPrompt) executionPrompt = activeAgent.systemPrompt;
+  // جلسة نقد ومقارنة: نموذجها وتفكيرها المختاران في نافذة إعدادها يتقدمان
+  if (session && session.critique) {
+    if (session.critique.model) executionModel = session.critique.model;
+    if (session.critique.thinking) executionThinking = session.critique.thinking;
+  }
 
   // إظهار فقاعة مؤشر الكتابة للنموذج
   const container = document.getElementById('chatMessagesContainer');

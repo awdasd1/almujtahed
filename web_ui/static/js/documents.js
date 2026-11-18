@@ -642,8 +642,19 @@ async function openCritiqueModal() {
     }
   }
   buildCritCats();
+  buildCritModels();
   renderCritBooksChips();
   critScopeChanged();
+}
+
+function buildCritModels() {
+  const sel = document.getElementById('critModelSelect');
+  if (!sel) return;
+  const src = document.getElementById('chatModelSelect');
+  const cur = src?.value || '';
+  sel.innerHTML = '<option value="">نموذج المحادثة الحالي</option>' + (src
+    ? Array.from(src.options).filter(o => o.value).map(o => `<option value="${escapeHtml(o.value)}"${o.value === cur ? '' : ''}>${escapeHtml(o.textContent)}</option>`).join('')
+    : '');
 }
 
 function buildCritCats() {
@@ -713,6 +724,9 @@ async function startCritiqueSession() {
     session.critique = {
       document_id: docId, document_name: docName, scope,
       web: !!document.getElementById('critWebCheck')?.checked,
+      model: document.getElementById('critModelSelect')?.value || '',
+      thinking: document.getElementById('critThinkingSelect')?.value || '',
+      witnesses: parseInt(document.getElementById('critWitnessSelect')?.value || '20', 10),
     };
     if (typeof saveChatSessions === 'function') saveChatSessions();
   }
