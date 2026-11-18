@@ -92,6 +92,24 @@ def delete_doc(doc_id: str, owner: str) -> bool:
 
 
 _OCR_RUNTIME: dict = {}
+_CANCEL_EVENTS: dict = {}
+
+
+class _ConversionCancelled(Exception):
+    """أوقف الباحث التحويل يدويًا: يُحفظ ما تمّ ويُختم الحال."""
+
+
+def request_cancel(doc_id: str, owner: str) -> bool:
+    """طلب إيقاف تحويل جارٍ: يقف عند نهاية الصفحة الجارية."""
+    meta = get_doc(doc_id, owner)
+    if not meta or meta.get("status") not in ("queued", "converting"):
+        return False
+    ev = _CANCEL_EVENTS.get(doc_id)
+    if ev is None:
+        ev = threading.Event()
+        _CANCEL_EVENTS[doc_id] = ev
+    ev.set()
+    return True
 _OCR_PROMPT = (
     "استخرج نص هذه الصفحة العربية كاملًا كما هو مكتوب، سطرًا سطرًا من أولها "
     "إلى آخرها شاملاً الحواشي أسفلها وعلاماتها، دون أي شرح أو تعليق أو "
@@ -229,7 +247,7 @@ def _natural_key(path: Path):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", path.name)]
 
 
-def _convert_one(src: Path, progress, dpi: int = 300, only=None, ocr: dict | None = None) -> tuple:
+def _convert_one(src: Path, progress, dpi: int = 300, only=None, ocr: dict | None = None, cancel_ev=None) -> tuple:
     """تحويل ملف واحد إلى أجزاء صفحاته، يُرجع (الأجزاء، عدد الصفحات، فشل بصري؟).
     only مجموعة أرقام صفحات (1-based) تُحوَّل وحدها إن أُعطيت، بأرقامها الحقيقية."""
     ext = src.suffix.lower()
@@ -247,6 +265,8 @@ def _convert_one(src: Path, progress, dpi: int = 300, only=None, ocr: dict | Non
     total = doc.page_count
     ocr_missing = False
     for i in range(total):
+        if cancel_ev is not None and cancel_ev.is_set():
+            break
         if only is not None and (i + 1) not in only:
             continue
         page = doc[i]
@@ -349,6 +369,10 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
     sel = [totals[vi] if onlys[vi] is None else len(onlys[vi]) for vi in range(len(volumes))]
     done_before = sum(sel[:start_volume])
     prev_pages = int(meta.get("pages") or 0)
+    cancel_ev = _CANCEL_EVENTS.get(doc_id)
+    if cancel_ev is None:
+        cancel_ev = threading.Event()
+        _CANCEL_EVENTS[doc_id] = cancel_ev
     state = {"done": done_before, "new": 0}
     def _tick():
         state["done"] += 1
@@ -358,26 +382,35 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
               error="", started=int(time.time()))
     parts: list[str] = []
     ocr_missing = False
+    cancelled = False
     try:
         for vi in range(start_volume, len(volumes)):
+            if cancel_ev.is_set():
+                raise _ConversionCancelled()
             volumes[vi]["pages"] = totals[vi]
             if onlys[vi] is not None and not onlys[vi]:
                 _set_meta(doc_id, volumes=volumes)
                 continue
             vparts, n, miss = _convert_one(
-                Path(volumes[vi].get("file_path") or ""), _tick, dpi, onlys[vi], ocr)
+                Path(volumes[vi].get("file_path") or ""), _tick, dpi, onlys[vi], ocr, cancel_ev)
             ocr_missing = ocr_missing or miss
             if vparts:
                 if multi:
                     parts.append(f"[الجزء {vi + 1}]")
                 parts.extend(vparts)
             _set_meta(doc_id, volumes=volumes)
+    except _ConversionCancelled:
+        cancelled = True
     except Exception as exc:
         _set_meta(doc_id, status="error", error=str(exc)[:300], finished=int(time.time()))
+        _CANCEL_EVENTS.pop(doc_id, None)
         return
-    if scope and start_volume == 0 and state["done"] == 0:
+    if cancel_ev.is_set():
+        cancelled = True
+    if scope and not cancelled and start_volume == 0 and state["done"] == 0:
         _set_meta(doc_id, status="error", finished=int(time.time()),
                   error="النطاق المحدد خارج صفحات الوثيقة: لم تُحوَّل أي صفحة")
+        _CANCEL_EVENTS.pop(doc_id, None)
         return
     text_path = Path(meta.get("text_path") or "")
     text_path.parent.mkdir(parents=True, exist_ok=True)
@@ -385,15 +418,22 @@ def _convert_volumes(doc_id: str, start_volume: int) -> None:
     if start_volume > 0 and text_path.exists():
         old = text_path.read_text(encoding="utf-8")
         full = (old.rstrip() + "\n\n" + new_text).strip() if new_text else old
+    elif cancelled and not new_text and text_path.exists():
+        # إيقاف قبل أول صفحة في إعادة تحويل: يبقى النص السابق كما هو
+        full = text_path.read_text(encoding="utf-8")
     else:
         full = new_text
     text_path.write_text(full, encoding="utf-8")
     final_pages = state["done"] if start_volume == 0 else prev_pages + state["new"]
-    kw = {"status": "done", "chars": len(full), "pages": final_pages,
-          "page": final_pages, "finished": int(time.time()), "volumes": volumes}
+    kw = {"status": "cancelled" if cancelled else "done", "chars": len(full),
+          "pages": final_pages, "page": final_pages,
+          "finished": int(time.time()), "volumes": volumes}
+    if cancelled:
+        kw["note"] = f"أُوقف التحويل يدويًا بعد {state['new']} صفحة في هذه الجولة (حُفظ ما تمّ، وأعد التحويل للاستكمال)"
     if ocr_missing:
         kw["note"] = "بعض الصفحات المصوّرة لم تُقرأ (تحقق من محرك القراءة المختار: المحلي خاص بنظام Mac، وعلى ويندوز اختر نموذج OpenRouter)"
     _set_meta(doc_id, **kw)
+    _CANCEL_EVENTS.pop(doc_id, None)
 
 
 def convert_document(doc_id: str) -> None:

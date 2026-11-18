@@ -282,11 +282,31 @@ function fmtDocDur(sec) {
   return h > 0 ? `${n(h)}:${p2(m)}:${p2(s)}` : `${n(m)}:${p2(s)}`;
 }
 
+let docPollingId = null;
+
+async function stopDocConversion() {
+  if (docPollingId) await stopDocConversionById(docPollingId);
+}
+
+async function stopDocConversionById(docId) {
+  try {
+    const res = await fetch(`/api/documents/${docId}/cancel`, { method: 'POST' });
+    if (!res.ok) throw new Error('تعذر');
+    showToast('سيقف التحويل عند نهاية الصفحة الجارية ويُحفظ ما تمّ');
+    const stopBtn = document.getElementById('btnDocStop');
+    if (stopBtn) stopBtn.disabled = true;
+    setTimeout(loadDocumentsList, 1500);
+  } catch (e) { showToast('تعذر إيقاف التحويل'); }
+}
+
 function pollDocProgress(docId, docName) {
+  docPollingId = docId;
   const bar = document.getElementById('docProgressBar');
   const label = document.getElementById('docProgressLabel');
   const done = document.getElementById('docDoneArea');
   const btn = document.getElementById('btnDocStart');
+  const stopBtn = document.getElementById('btnDocStop');
+  if (stopBtn) { stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; }
   if (docUploadTimer) clearInterval(docUploadTimer);
   docUploadTimer = setInterval(async () => {
     try {
@@ -296,8 +316,17 @@ function pollDocProgress(docId, docName) {
         const pct = p.pages ? Math.max(3, Math.round((p.page / p.pages) * 100)) : 4;
         if (bar) bar.style.width = `${pct}%`;
         if (label) label.textContent = (p.pages ? `تُحوَّل الوثيقة نصًا… صفحة ${p.page} من ${p.pages}` : 'تُجهَّز الوثيقة…') + (p.elapsed ? ` • الوقت المنقضي ${fmtDocDur(p.elapsed)}` : '');
+      } else if (p.status === 'cancelled') {
+        clearInterval(docUploadTimer); docUploadTimer = null;
+        docPollingId = null;
+        if (stopBtn) stopBtn.style.display = 'none';
+        if (label) label.textContent = `أُوقف التحويل: حُفظت ${p.page} صفحة (${Number(p.chars || 0).toLocaleString('ar-EG')} حرفًا)${p.elapsed ? ` في ${fmtDocDur(p.elapsed)}` : ''}. أعد التحويل من القائمة لاستكمال الباقي.`;
+        if (btn) btn.disabled = false;
+        loadDocumentsList();
       } else if (p.status === 'done') {
         clearInterval(docUploadTimer); docUploadTimer = null;
+        docPollingId = null;
+        if (stopBtn) stopBtn.style.display = 'none';
         if (bar) bar.style.width = '100%';
         if (label) label.textContent = `اكتمل التحويل${p.elapsed ? ` في ${fmtDocDur(p.elapsed)}` : ''}: ${p.pages} صفحة${p.volumes > 1 ? ` في ${p.volumes} أجزاء` : ''}، ${Number(p.chars || 0).toLocaleString('ar-EG')} حرفًا.${p.note ? ' ' + p.note : ''}`;
         if (done) {
@@ -309,6 +338,8 @@ function pollDocProgress(docId, docName) {
         loadDocumentsList();
       } else if (p.status === 'error') {
         clearInterval(docUploadTimer); docUploadTimer = null;
+        docPollingId = null;
+        if (stopBtn) stopBtn.style.display = 'none';
         if (label) label.textContent = `تعذر التحويل: ${p.error || 'خطأ غير معروف'}`;
         if (btn) btn.disabled = false;
       }
@@ -336,14 +367,15 @@ async function loadDocumentsList() {
         <span style="font-size:15px;">📄</span>
         <span style="flex:1; min-width:140px;">
           <span style="display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.name || '')}${d.archived ? ' <span style="font-size:10.5px; color:var(--accent-clay);">(مؤرشفة)</span>' : ''}</span>
-          <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${d.ocr_engine === 'openrouter' && d.ocr_model ? ` • قراءة بنموذج <span style="direction:ltr; display:inline-block;">${escapeHtml(d.ocr_model)}</span>` : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : 'جارٍ تحويلها…'}</span>
+          <span style="font-size:11.5px; color: var(--text-muted);">${done ? `${d.volume_count > 1 ? `${d.volume_count} أجزاء • ` : ''}${d.pages} صفحة • ${Number(d.chars || 0).toLocaleString('ar-EG')} حرفًا${d.dpi ? ` • القراءة عند ${Number(d.dpi).toLocaleString('ar-EG')} نقطة` : ''}${d.ocr_engine === 'openrouter' && d.ocr_model ? ` • قراءة بنموذج <span style="direction:ltr; display:inline-block;">${escapeHtml(d.ocr_model)}</span>` : ''}${docScopeLabel(d.scope)}${d.started && d.finished ? ` • حُوّلت في ${fmtDocDur(d.finished - d.started)}` : ''}` : d.status === 'error' ? 'تعذر تحويلها' : d.status === 'cancelled' ? `أُوقف التحويل عند ${Number(d.page || 0).toLocaleString('ar-EG')} صفحة — حُفظ ما تمّ` : `جارٍ تحويلها… صفحة ${Number(d.page || 0).toLocaleString('ar-EG')} من ${Number(d.pages || 0).toLocaleString('ar-EG')}`}</span>
         </span>
+        ${d.status === 'converting' || d.status === 'queued' ? `<button class="btn-flat-secondary reader-mini-btn" style="color:#c0392b;" onclick="stopDocConversionById('${d.id}')" title="إيقاف التحويل عند نهاية الصفحة الجارية وحفظ ما تمّ">⏹ إيقاف التحويل</button>` : ''}
         ${done && !d.archived ? `<button class="btn-flat-primary reader-mini-btn" onclick="discussDocument('${d.id}')">مناقشة الوثيقة</button>` : ''}
-        ${done ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocBrowse('${d.id}', '${nm}')">تصفح</button>` : ''}
-        ${done ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'txt')" title="تصدير النص المحوَّل ملفًا نصيًا">تصدير TXT</button>` : ''}
-        ${done ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'docx')" title="تصدير ملف Word بصفحات الوثيقة وحواشيها">تصدير Word</button>` : ''}
+        ${done || d.status === 'cancelled' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocBrowse('${d.id}', '${nm}')">تصفح</button>` : ''}
+        ${done || d.status === 'cancelled' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'txt')" title="تصدير النص المحوَّل ملفًا نصيًا">تصدير TXT</button>` : ''}
+        ${done || d.status === 'cancelled' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'docx')" title="تصدير ملف Word بصفحات الوثيقة وحواشيها">تصدير Word</button>` : ''}
         ${done && !d.archived ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocAppend('${d.id}', '${nm}')" title="إضافة أجزاء جديدة إلى هذه الوثيقة">إضافة جزء</button>` : ''}
-        ${(done || d.status === 'error') && !d.archived ? `<button class="btn-flat-secondary reader-mini-btn" onclick="reconvertDocument('${d.id}', '${nm}')" title="إعادة التحويل من الملفات الأصلية بالدقة والنطاق المختارين">إعادة تحويل</button>` : ''}
+        ${(done || d.status === 'error' || d.status === 'cancelled') && !d.archived ? `<button class="btn-flat-secondary reader-mini-btn" onclick="reconvertDocument('${d.id}', '${nm}')" title="إعادة التحويل من الملفات الأصلية بالدقة والنطاق المختارين">إعادة تحويل</button>` : ''}
         ${!d.archived
           ? `<button class="btn-flat-secondary reader-mini-btn" onclick="archiveDocument('${d.id}', true)" title="أرشفة الوثيقة: تُخفى من القائمة وتبقى محفوظة">أرشفة</button>`
           : `<button class="btn-flat-secondary reader-mini-btn" onclick="archiveDocument('${d.id}', false)" title="استرجاع الوثيقة من الأرشيف">استرجاع</button>`}

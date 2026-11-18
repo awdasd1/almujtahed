@@ -8793,6 +8793,18 @@ async def documents_archive(request: Request, doc_id: str, payload: dict = Body(
     return {"id": doc_id, "archived": bool(payload.get("archived"))}
 
 
+@app.post("/api/documents/{doc_id}/cancel")
+async def documents_cancel(request: Request, doc_id: str):
+    """إيقاف تحويل جارٍ: يقف عند نهاية الصفحة الجارية ويحفظ ما تمّ."""
+    import doc_convert
+    ok = await asyncio.to_thread(doc_convert.request_cancel, doc_id, current_owner_id(request))
+    if not ok:
+        meta = doc_convert.get_doc(doc_id, current_owner_id(request))
+        if not meta:
+            raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    return {"id": doc_id, "cancelling": ok}
+
+
 @app.get("/api/documents/{doc_id}/page")
 async def documents_page(request: Request, doc_id: str, volume: int = 1, page: int = 1):
     """النص المحوَّل لصفحة بعينها وهيكل الوثيقة، للتصفح المقارن."""
@@ -9103,7 +9115,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.695"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.696"},
         },
     })
     if opened.get("error"):
