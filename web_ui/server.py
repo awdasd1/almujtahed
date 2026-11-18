@@ -8644,6 +8644,16 @@ async def book_pdf_locate(book_id: Optional[int] = None, rel_path: Optional[str]
         shamela_pdf.locate_witness, book_id, rel_path or "", part, page_num, pdf_page, phrase or "")
 
 
+@app.post("/api/book/pdf-crop-text")
+async def book_pdf_crop_text(payload: dict = Body(...)):
+    """نص أي قصاصة من صفحة المصوّرة بالتعرف البصري، لنقلها إلى المحادثة."""
+    import shamela_pdf
+    rect = payload.get("rect") or {}
+    return await asyncio.to_thread(
+        shamela_pdf.ocr_region_text, payload.get("book_id"), payload.get("rel_path") or "",
+        payload.get("part"), payload.get("page_num"), payload.get("pdf_page"), rect)
+
+
 @app.get("/api/book/surrounding-pages")
 async def get_book_surrounding_pages(
     book_title: Optional[str] = None,
@@ -8873,7 +8883,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.675"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.676"},
         },
     })
     if opened.get("error"):

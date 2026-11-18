@@ -413,58 +413,158 @@ def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
         _LOCATE_CACHE[cache_key] = out
         return out
 
-    def _norm(text: str) -> str:
-        text = re.sub(r"[ً-ٰٓـ]", "", str(text or ""))
-        return (text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
-                .replace("ى", "ي").replace("ئ", "ي").replace("ؤ", "و").replace("ة", "ه"))
-
-    # مطابقة الشاهد بحرفه: مطلعه، وإلا مقطع منه. المعنوي لا يطابق شيئًا
-    # فلا يُرسم له صندوق لا هنا ولا في متن القارئ
-    phrase_norm = re.sub(r"\s+", " ", _norm(target)).strip()
-    joined_parts = []
-    char_line = []
-    for i, line in enumerate(lines):
-        seg = re.sub(r"\s+", " ", _norm(line.get("text") or "")).strip()
-        joined_parts.append(seg)
-        char_line.extend([i] * (len(seg) + 1))
-    joined = " ".join(joined_parts)
-    start = None
-    probe = phrase_norm[:40]
-    pos = joined.find(probe) if probe else -1
-    if pos < 0:
-        twords = phrase_norm.split(" ")
-        for off in range(0, max(0, len(twords) - 4)):
-            chunk = " ".join(twords[off:off + 5])
-            if len(chunk) >= 18:
-                pos = joined.find(chunk)
-                if pos >= 0:
-                    break
-    if pos >= 0:
-        start = char_line[min(pos, len(char_line) - 1)]
-    else:
+    # مطابقة على مستوى الكلمات بصناديق كل كلمة: أطول تتابع حرفي من الشاهد
+    # داخل كلمات الصفحة، فيقع الصندوق على الشاهد نفسه أينما كان من الصفحة.
+    # الشاهد المعنوي لا تتابع حرفيًا له فلا يُرسم له صندوق
+    match = _match_witness_words(target, lines)
+    if not match:
         out["reason"] = "الشاهد غير منطوق بحرفه في هذه الصفحة فلا موضع له"
         _LOCATE_CACHE[cache_key] = out
         return out
-    avg_len = max(20, sum(len(p) for p in joined_parts) // max(1, len(joined_parts)))
-    span = max(1, min(6, -(-len(phrase_norm) // avg_len)))
-    chosen = lines[start:start + span]
-    x0 = min(l["x"] for l in chosen)
-    y0 = min(l["y"] for l in chosen)
-    x1 = max(l["x"] + l["w"] for l in chosen)
-    y1 = max(l["y"] + l["h"] for l in chosen)
-    pad = 0.006
+    pad = 0.004
     out.update({
         "found": True,
         "rect": {
-            "x": max(0.0, x0 - pad), "y": max(0.0, y0 - pad),
-            "w": min(1.0, x1 - x0 + 2 * pad), "h": min(1.0, y1 - y0 + 2 * pad),
+            "x": max(0.0, match["x"] - pad), "y": max(0.0, match["y"] - pad),
+            "w": min(1.0, match["w"] + 2 * pad), "h": min(1.0, match["h"] + 2 * pad),
         },
-        "text": "\n".join(str(l.get("text") or "") for l in chosen),
+        "text": match["text"],
         "target": target,
         "pdf_page": page,
     })
     _LOCATE_CACHE[cache_key] = out
     return dict(out)
+
+
+_PUNCT = "،؛:.«»\"'“”‘’()[]{}<>؟?!|/\\-–—*_=+~^#@%&$؛.,;:!?\"'«»()[]"
+_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+
+
+def _norm_word(word: str) -> str:
+    """توحيد كلمة للمطابقة: بلا تشكيل ولا ترقيم وبأحرف مطوية وأرقام لاتينية."""
+    text = re.sub(r"[ً-ٰٓـ]", "", str(word or ""))
+    text = (text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا").replace("ٱ", "ا")
+            .replace("ى", "ي").replace("ئ", "ي").replace("ؤ", "و").replace("ة", "ه"))
+    text = text.translate(_DIGITS)
+    return text.strip(_PUNCT + " \t")
+
+
+def _match_witness_words(target: str, lines: list):
+    """أطول تتابع كلمات منطوق بحرفه من الشاهد داخل الصفحة، بصندوق كلماته.
+
+    يعيد None إن لم يوجد تتابع معتبر (شاهد معنوي) فلا تحديد له."""
+    from difflib import SequenceMatcher
+
+    twords = [w for w in (_norm_word(w) for w in re.split(r"\s+", target or "")) if w]
+    if not twords:
+        return None
+    # تيار كلمات الصفحة: (كلمة موحّدة، صندوقها، رقم سطرها، نصها الأصلي)
+    stream = []
+    for li, line in enumerate(lines):
+        words = line.get("words") or []
+        if words:
+            for wd in words:
+                nw = _norm_word(wd.get("t") or "")
+                if nw:
+                    stream.append((nw, wd, li, str(wd.get("t") or "")))
+        else:  # أداة قديمة بلا كلمات: السطر كله وحدة
+            for tok in re.split(r"\s+", str(line.get("text") or "")):
+                nw = _norm_word(tok)
+                if nw:
+                    stream.append((nw, line, li, tok))
+    if not stream:
+        return None
+    pwords = [s[0] for s in stream]
+    matcher = SequenceMatcher(None, twords, pwords, autojunk=False)
+    blocks = [b for b in matcher.get_matching_blocks() if b.size > 0]
+    if not blocks:
+        return None
+    main = max(blocks, key=lambda b: b.size)
+    # شاهد قصير جدًا: لا يقبل إلا منطوقًا كله
+    if len(twords) <= 3:
+        if main.size < len(twords):
+            return None
+    elif main.size < 4:
+        return None
+    # مدّ الموضع بكتل مجاورة تفصلها أخطاء تعرف يسيرة ليكتمل الشاهد
+    chosen = []
+    for b in blocks:
+        if (abs(b.a - main.a) <= main.size + 6 and abs(b.b - main.b) <= main.size + 10
+                and not (b.size == 1 and len(twords[b.a]) < 4)):
+            chosen.append(b)
+    p_start = min(b.b for b in chosen)
+    p_end = max(b.b + b.size for b in chosen)
+    picked = stream[p_start:p_end]
+    if not picked:
+        return None
+    x0 = min(float(wd["x"]) for _, wd, _, _ in picked)
+    y0 = min(float(wd["y"]) for _, wd, _, _ in picked)
+    x1 = max(float(wd["x"]) + float(wd["w"]) for _, wd, _, _ in picked)
+    y1 = max(float(wd["y"]) + float(wd["h"]) for _, wd, _, _ in picked)
+    line_ids = sorted({li for _, _, li, _ in picked})
+    return {
+        "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
+        "text": "\n".join(str(lines[i].get("text") or "") for i in line_ids if 0 <= i < len(lines)),
+    }
+
+
+def ocr_region_text(book_id=None, rel_path: str = "", part=None, page_num=None,
+                    pdf_page=None, rect: dict = None) -> dict:
+    """نص أي جزء مقصوص من صفحة المصوّرة بالتعرف البصري، لنقله إلى المحادثة."""
+    out = {"text": ""}
+    helper = _ocr_helper()
+    if not helper:
+        out["reason"] = "أداة التعرف البصري غير متوفرة على هذا الجهاز"
+        return out
+    rect = rect or {}
+    try:
+        rx, ry = float(rect.get("x") or 0), float(rect.get("y") or 0)
+        rw, rh = float(rect.get("w") or 0), float(rect.get("h") or 0)
+    except (TypeError, ValueError):
+        out["reason"] = "قصاصة غير صالحة"
+        return out
+    if rw < 0.01 or rh < 0.005:
+        out["reason"] = "حدّد قصاصة أولاً"
+        return out
+    info = resolve_pdf(book_id, rel_path, part, page_num)
+    if not info.get("available"):
+        out["reason"] = info.get("reason") or "لا نسخة مصوّرة"
+        return out
+    page = int(pdf_page or info["pdf_page"])
+    try:
+        import fitz
+        doc = fitz.open(info["pdf_path"])
+        pg = doc[max(0, min(doc.page_count - 1, page - 1))]
+        clip = fitz.Rect(rx * pg.rect.width, ry * pg.rect.height,
+                         (rx + rw) * pg.rect.width, (ry + rh) * pg.rect.height)
+        pix = pg.get_pixmap(dpi=200, clip=clip)
+        doc.close()
+    except Exception as exc:
+        out["reason"] = f"تعذر تصيير القصاصة: {exc}"
+        return out
+    fd, name = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        Path(name).write_bytes(pix.tobytes("png"))
+        proc = subprocess.run(
+            [helper, name, "نص"], capture_output=True, text=True, timeout=240)
+        data = json.loads(proc.stdout or "{}")
+    except Exception as exc:
+        out["reason"] = f"تعذر التعرف البصري: {exc}"
+        return out
+    finally:
+        try:
+            os.remove(name)
+        except OSError:
+            pass
+    lines = data.get("lines") or []
+    text = "\n".join(str(l.get("text") or "").strip() for l in lines if str(l.get("text") or "").strip())
+    if not text:
+        out["reason"] = "لم يُقرأ نص في هذه القصاصة"
+        return out
+    out["text"] = text
+    out["pdf_page"] = page
+    return out
 
 
 def render_pdf_page(book_id=None, rel_path: str = "", part=None, page_num=None, pdf_page=None) -> bytes:

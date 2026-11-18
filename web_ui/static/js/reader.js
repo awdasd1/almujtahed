@@ -475,7 +475,7 @@ function togglePdfCrop() {
   pdfView.cropMode = !pdfView.cropMode;
   const btn = document.getElementById('btnPdfCrop');
   if (btn) btn.classList.toggle('active', pdfView.cropMode);
-  if (pdfView.cropMode) showToast('اسحب فوق الصورة لتحديد قصاصة الشاهد');
+  if (pdfView.cropMode) showToast('اسحب فوق الصورة لتحديد أي قصاصة من الصفحة');
 }
 
 function clearPdfCrop() {
@@ -484,6 +484,50 @@ function clearPdfCrop() {
   if (box) box.style.display = 'none';
   const get = document.getElementById('btnPdfCropGet');
   if (get) get.style.display = 'none';
+  const send = document.getElementById('btnPdfCropSend');
+  if (send) send.style.display = 'none';
+}
+
+// نقل نص أي قصاصة من الصفحة (لا الشاهد وحده) إلى محادثة جديدة بعد قراءته بصريًا
+async function sendPdfCropToChat() {
+  const rect = pdfView.cropRect;
+  if (!rect) { showToast('حدّد قصاصة من الصفحة أولاً'); return; }
+  const btn = document.getElementById('btnPdfCropSend');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ يقرأ النص…'; }
+  try {
+    const payload = Object.fromEntries(pdfQuery(readerState.pdfPage).entries());
+    payload.rect = rect;
+    const res = await fetch('/api/book/pdf-crop-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    const text = (data.text || '').trim();
+    if (!text) { showToast(data.reason || 'لم يُقرأ نص في هذه القصاصة', 6000); return; }
+    const partText = readerState.part ? `الجزء: ${readerState.part}` : '';
+    const pageText = readerState.pageNum ? `الصفحة: ${readerState.pageNum}` : '';
+    const locParts = [partText, pageText].filter(Boolean).join('، ');
+    const locCitation = locParts ? ` [${locParts}]` : '';
+    const promptMessage = `هذا نص مقصوص من النسخة المصوّرة، أرجو قراءته وتحريره وشرحه:\n\n«${text}»\n\n📚 **المصدر:** «${readerState.bookTitle}» للمصنف ${readerState.author}${readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : ''}${locCitation}`;
+    closePdfViewer();
+    closeBookReader();
+    const bookName = (readerState.bookTitle || 'نص من الكتاب').trim();
+    const sessionTitle = `مطالعة: ${bookName.slice(0, 32)}`;
+    if (typeof startNewChatWithPrompt === 'function') {
+      startNewChatWithPrompt(promptMessage, sessionTitle);
+    } else {
+      switchMainTab('chat');
+      if (typeof createNewChatSession === 'function') createNewChatSession(true, sessionTitle);
+      const chatInput = document.getElementById('chatInputText');
+      if (chatInput) { chatInput.value = promptMessage; chatInput.focus(); }
+    }
+    showToast('نُقل نص القصاصة إلى المحادثة 💬');
+  } catch (e) {
+    showToast('تعذر قراءة نص القصاصة');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'نقل هذا النص إلى المحادثة'; }
+  }
 }
 
 function downloadPdfCrop() {
@@ -616,6 +660,7 @@ function bindPdfPageInteractions() {
   img.addEventListener('mouseup', () => {
     if (pdfView.cropMode && pdfView.cropRect && pdfView.cropRect.w > 0.01) {
       document.getElementById('btnPdfCropGet').style.display = '';
+      document.getElementById('btnPdfCropSend').style.display = '';
     }
     dragStart = null;
   });
