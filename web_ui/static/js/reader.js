@@ -969,6 +969,8 @@ function extractWitnessTarget(phrase) {
 function highlightReaderPhrase(escaped, phrase) {
   const raw = String(phrase || '').replace(/\s+/g, ' ').trim();
   if (!raw) return escaped;
+  // صياغة سؤال ليست شاهدًا فلا تظليل لها وإن وافقت ألفاظ العناوين
+  if (!/«[^»]{8,}»/.test(raw) && (/^(ما|ماذا|هل|متى|أين|كيف|لماذا|من|ما حكم|ما معنى)\b/.test(raw) || /[؟?]$/.test(raw))) return escaped;
   const targets = [];
   const target = extractWitnessTarget(raw);
   if (target) targets.push(target);

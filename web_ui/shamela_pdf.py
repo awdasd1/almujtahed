@@ -370,6 +370,14 @@ def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
     if not helper:
         out["reason"] = "أداة التعرف البصري غير متوفرة على هذا الجهاز"
         return out
+    # صياغة سؤال ليست شاهدًا وإن وافقت ألفاظها عنوان الباب أو متن الصفحة،
+    # ما لم تحمل نقلًا منطوقًا بين علامتي تنصيص فهو الشاهد حينئذ
+    _raw = re.sub(r"\s+", " ", str(phrase or "")).strip()
+    if not re.search(r"«[^»]{8,}»", _raw) and (
+            re.match(r"^(ما|ماذا|هل|متى|أين|اين|كيف|لماذا|من|ما حكم|ما معنى|ما المراد)\b", _raw)
+            or _raw.rstrip().endswith(("؟", "?"))):
+        out["reason"] = "صياغة سؤال لا شاهد منطوقًا فلا تحديد له"
+        return out
     target = _witness_target(phrase)
     words = [w for w in re.split(r"\s+", target) if len(w) >= 3]
     if not words:
@@ -479,37 +487,130 @@ def _match_witness_words(target: str, lines: list):
     if not stream:
         return None
     pwords = [s[0] for s in stream]
+
+    def _box_of(p_start: int, p_end: int):
+        picked = stream[p_start:p_end]
+        if not picked:
+            return None
+        x0 = min(float(wd["x"]) for _, wd, _, _ in picked)
+        y0 = min(float(wd["y"]) for _, wd, _, _ in picked)
+        x1 = max(float(wd["x"]) + float(wd["w"]) for _, wd, _, _ in picked)
+        y1 = max(float(wd["y"]) + float(wd["h"]) for _, wd, _, _ in picked)
+        line_ids = sorted({li for _, _, li, _ in picked})
+        return {
+            "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
+            "text": "\n".join(str(lines[i].get("text") or "") for i in line_ids if 0 <= i < len(lines)),
+        }
+
     matcher = SequenceMatcher(None, twords, pwords, autojunk=False)
     blocks = [b for b in matcher.get_matching_blocks() if b.size > 0]
-    if not blocks:
+    if blocks:
+        main = max(blocks, key=lambda b: b.size)
+        # شاهد قصير جدًا: لا يقبل إلا منطوقًا كله
+        exact_ok = (main.size >= len(twords)) if len(twords) <= 3 else (main.size >= 4)
+        if exact_ok:
+            # مدّ الموضع بكتل مجاورة تفصلها أخطاء تعرف يسيرة ليكتمل الشاهد
+            chosen = []
+            for b in blocks:
+                if (abs(b.a - main.a) <= main.size + 6 and abs(b.b - main.b) <= main.size + 10
+                        and not (b.size == 1 and len(twords[b.a]) < 4)):
+                    chosen.append(b)
+            return _box_of(min(b.b for b in chosen), max(b.b + b.size for b in chosen))
+    # طبقة متسامحة: طبعات كثيفة قديمة يشوّش تعرفها (كلمات مدمجة أو مبتورة
+    # أو بحرف ناقص) فلا تتابع حرفيًا كاملًا؛ محاذاة تقريبية بترتيب الشاهد
+    # نفسه وكثافة مطابقة عالية، فلا يمرّ بها شاهد معنوي مبثوث الألفاظ
+    fuzzy = _fuzzy_word_match(twords, pwords)
+    if fuzzy is None:
         return None
-    main = max(blocks, key=lambda b: b.size)
-    # شاهد قصير جدًا: لا يقبل إلا منطوقًا كله
-    if len(twords) <= 3:
-        if main.size < len(twords):
-            return None
-    elif main.size < 4:
+    box = _box_of(fuzzy[0], fuzzy[1] + 1)
+    # حارس ضد مصادفات العناوين: مطابقة متسامحة في شريط رأس الصفحة تُرفض،
+    # فالسؤال المعنوي قد يوافق ألفاظ عنوان الباب فيُتوهم شاهدًا في الأعلى
+    if box and box["y"] < 0.10:
         return None
-    # مدّ الموضع بكتل مجاورة تفصلها أخطاء تعرف يسيرة ليكتمل الشاهد
-    chosen = []
-    for b in blocks:
-        if (abs(b.a - main.a) <= main.size + 6 and abs(b.b - main.b) <= main.size + 10
-                and not (b.size == 1 and len(twords[b.a]) < 4)):
-            chosen.append(b)
-    p_start = min(b.b for b in chosen)
-    p_end = max(b.b + b.size for b in chosen)
-    picked = stream[p_start:p_end]
-    if not picked:
+    return box
+
+
+def _lev_le1(a: str, b: str) -> bool:
+    """مسافة تحرير ≤ 1 بين كلمتين (حرف ناقص أو زائد أو مبدّل)."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        return sum(1 for x, y in zip(a, b) if x != y) <= 1
+    if la > lb:
+        a, b, la, lb = b, a, lb, la
+    i = j = diff = 0
+    while i < la and j < lb:
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+        else:
+            diff += 1
+            j += 1
+            if diff > 1:
+                return False
+    return True
+
+
+def _word_sim(a: str, b: str) -> bool:
+    """تشابه كلمة شاهد وكلمة مقروءة رغم تشويش التعرف البصري."""
+    if a == b:
+        return True
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    if len(short) >= 2 and (long_.startswith(short) or long_.endswith(short)):
+        return True  # كلمة مدمجة بأختها أو مبتورة أحد الطرفين («دبن» فيها «بن»)
+    return len(a) >= 4 and len(b) >= 4 and _lev_le1(a, b)
+
+
+def _fuzzy_word_match(twords: list, pwords: list):
+    """محاذاة الشاهد بترتيبه داخل كلمات الصفحة (برمجة ديناميكية محلية).
+
+    يعيد (أول كلمة، آخر كلمة) في تيار الصفحة أو None. لا يُقبل إلا ما
+    طابق أكثر كلمات الشاهد بترتيبها وبكلمات تامة عدة، فالشاهد المعنوي
+    المبعثر الألفاظ لا يجتمع له ذلك وإن تشابهت مفرداته."""
+    n, m = len(twords), len(pwords)
+    if n == 0 or m == 0:
         return None
-    x0 = min(float(wd["x"]) for _, wd, _, _ in picked)
-    y0 = min(float(wd["y"]) for _, wd, _, _ in picked)
-    x1 = max(float(wd["x"]) + float(wd["w"]) for _, wd, _, _ in picked)
-    y1 = max(float(wd["y"]) + float(wd["h"]) for _, wd, _, _ in picked)
-    line_ids = sorted({li for _, _, li, _ in picked})
-    return {
-        "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
-        "text": "\n".join(str(lines[i].get("text") or "") for i in line_ids if 0 <= i < len(lines)),
-    }
+    # H[i][j]: أفضل درجة لمحاذاة تنتهي عند كلمة الشاهد i وكلمة الصفحة j
+    H = [[0.0] * (m + 1) for _ in range(n + 1)]
+    best_val, best_i, best_j = 0.0, 0, 0
+    for i in range(1, n + 1):
+        tw = twords[i - 1]
+        row, prow = H[i], H[i - 1]
+        for j in range(1, m + 1):
+            pw = pwords[j - 1]
+            diag = prow[j - 1] + (3.0 if pw == tw else (2.0 if _word_sim(tw, pw) else -3.0))
+            val = max(0.0, diag, prow[j] - 1.0, row[j - 1] - 1.0)
+            row[j] = val
+            if val > best_val:
+                best_val, best_i, best_j = val, i, j
+    if best_i == 0:
+        return None
+    # تتبع خلفي لعدّ المطابقات وحدّي الموضع في التيار
+    i, j = best_i, best_j
+    matched = exact = 0
+    first = last = None
+    while i > 0 and j > 0 and H[i][j] > 0:
+        tw, pw = twords[i - 1], pwords[j - 1]
+        step = 3.0 if pw == tw else (2.0 if _word_sim(tw, pw) else -3.0)
+        if abs(H[i][j] - (H[i - 1][j - 1] + step)) < 1e-9 and step > 0:
+            matched += 1
+            exact += 1 if pw == tw else 0
+            if last is None:
+                last = j - 1
+            first = j - 1
+            i -= 1
+            j -= 1
+        elif abs(H[i][j] - (H[i - 1][j] - 1.0)) < 1e-9:
+            i -= 1
+        else:
+            j -= 1
+    need = max(4, -(-50 * n // 100))
+    if matched < need or exact < 3 or first is None:
+        return None
+    return first, last
 
 
 def ocr_region_text(book_id=None, rel_path: str = "", part=None, page_num=None,
