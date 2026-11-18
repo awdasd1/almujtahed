@@ -8654,6 +8654,57 @@ async def book_pdf_crop_text(payload: dict = Body(...)):
         payload.get("part"), payload.get("page_num"), payload.get("pdf_page"), rect)
 
 
+# ===================== رفع وثيقة كاملة وتحويلها نصًا =====================
+@app.post("/api/documents/upload")
+async def documents_upload(request: Request, file: UploadFile = File(...), name: str = ""):
+    """رفع وثيقة (PDF أو صورة) وتحويلها نصًا في الخلفية مع تقدم صفحة صفحة."""
+    import doc_convert
+    owner_id = current_owner_id(request)
+    original = file.filename or "document"
+    ext = Path(original).suffix.lower()
+    if ext not in (".pdf", ".txt") and ext not in doc_convert._IMG_EXTS:
+        raise HTTPException(status_code=400, detail="ارفع ملف PDF أو صورة (png/jpg/tiff) أو ملفًا نصيًا")
+    folder = UPLOADS_BUCKET_DIR / owner_id / "documents"
+    folder.mkdir(parents=True, exist_ok=True)
+    safe = f"{int(time.time() * 1000)}_{re.sub(r'[^\\w.\\-]', '_', original)}"
+    saved = folder / safe
+    saved.write_bytes(await file.read())
+    meta = doc_convert.register_document(owner_id, (name or "").strip() or Path(original).stem, saved)
+    return {"id": meta["id"], "name": meta["name"], "status": meta["status"]}
+
+
+@app.get("/api/documents")
+async def documents_list(request: Request):
+    import doc_convert
+    return {"documents": doc_convert.list_docs(current_owner_id(request))}
+
+
+@app.get("/api/documents/{doc_id}/progress")
+async def documents_progress(request: Request, doc_id: str):
+    import doc_convert
+    meta = doc_convert.get_doc(doc_id, current_owner_id(request))
+    if not meta:
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    return {k: meta.get(k) for k in ("id", "name", "status", "page", "pages", "chars", "error", "note")}
+
+
+@app.post("/api/documents/{doc_id}/context")
+async def documents_context(request: Request, doc_id: str, payload: dict = Body(...)):
+    """أقرب مقاطع الوثيقة إلى سؤال الباحث لتدخل سياق النموذج."""
+    import doc_convert
+    return await asyncio.to_thread(
+        doc_convert.relevant_context, doc_id, current_owner_id(request),
+        payload.get("query") or "")
+
+
+@app.delete("/api/documents/{doc_id}")
+async def documents_delete(request: Request, doc_id: str):
+    import doc_convert
+    if not doc_convert.delete_doc(doc_id, current_owner_id(request)):
+        raise HTTPException(status_code=404, detail="وثيقة غير موجودة")
+    return {"deleted": True}
+
+
 @app.get("/api/book/surrounding-pages")
 async def get_book_surrounding_pages(
     book_title: Optional[str] = None,
@@ -8883,7 +8934,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.681"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.682"},
         },
     })
     if opened.get("error"):

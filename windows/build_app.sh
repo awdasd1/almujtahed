@@ -31,6 +31,8 @@ cp -p "$ROOT/.gitignore" "$ROOT/README.md" "$ROOT/changes.md" "$ROOT/dev.md" \
 cp -p "$ROOT/web_ui/server.py" "$STAGE/source/web_ui/server.py"
 cp -p "$ROOT/web_ui/journey_motion.py" "$STAGE/source/web_ui/journey_motion.py"
 cp -p "$ROOT/web_ui/shamela_pdf.py" "$STAGE/source/web_ui/shamela_pdf.py"
+cp -p "$ROOT/web_ui/doc_convert.py" "$STAGE/source/web_ui/doc_convert.py"
+cp -p "$ROOT/web_ui/static/js/documents.js" "$STAGE/source/web_ui/static/js/documents.js"
 mkdir -p "$STAGE/source/web_ui/static/motion/bukhari" "$STAGE/source/web_ui/static/motion/scholars"
 cp -p "$ROOT/web_ui/static/motion/bukhari/"*.png "$STAGE/source/web_ui/static/motion/bukhari/"
 cp -p "$ROOT/web_ui/static/motion/scholars/"*.png "$STAGE/source/web_ui/static/motion/scholars/"
