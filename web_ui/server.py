@@ -8610,6 +8610,30 @@ async def get_book_page(
     }
 
 
+@app.get("/api/book/pdf-info")
+async def book_pdf_info(book_id: Optional[int] = None, rel_path: Optional[str] = None,
+                        part: Optional[str] = None, page_num: Optional[int] = None):
+    """هل لصفحة النص هذه مقابل في النسخة المصوّرة عند الشاملة، وأين؟"""
+    import shamela_pdf
+    info = await asyncio.to_thread(shamela_pdf.resolve_pdf, book_id, rel_path or "", part, page_num)
+    info.pop("pdf_path", None)
+    return info
+
+
+@app.get("/api/book/pdf-image")
+async def book_pdf_image(book_id: Optional[int] = None, rel_path: Optional[str] = None,
+                         part: Optional[str] = None, page_num: Optional[int] = None,
+                         pdf_page: Optional[int] = None):
+    """صورة صفحة الشاهد من النسخة المصوّرة."""
+    import shamela_pdf
+    try:
+        raw = await asyncio.to_thread(
+            shamela_pdf.render_pdf_page, book_id, rel_path or "", part, page_num, pdf_page)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return Response(content=raw, media_type="image/png")
+
+
 @app.get("/api/book/surrounding-pages")
 async def get_book_surrounding_pages(
     book_title: Optional[str] = None,
@@ -8839,7 +8863,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.671"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.672"},
         },
     })
     if opened.get("error"):

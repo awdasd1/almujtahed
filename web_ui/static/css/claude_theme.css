@@ -4132,6 +4132,44 @@ input:checked+.slider-toggle:before {
   color: #fff;
 }
 
+.reader-pdf-panel {
+  padding: 12px 24px 16px;
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  animation: fadeIn 0.2s ease;
+  text-align: center;
+}
+
+.reader-pdf-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.reader-pdf-meta {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-clay);
+}
+
+.reader-pdf-nav {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.reader-pdf-img {
+  max-width: 100%;
+  max-height: 72vh;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: 0 4px 18px rgba(60, 40, 20, 0.18);
+}
+
 .reader-betaka-panel {
   padding: 16px 24px;
   background: var(--bg-canvas);

@@ -30,7 +30,10 @@ let readerState = {
   nextPage: null,
   highlightText: '',
   bookId: '',
-  missing: false
+  missing: false,
+  pdfInfo: null,
+  pdfPage: null,
+  pdfOpen: false
 };
 
 let readerBooksCatalog = null;
@@ -312,6 +315,84 @@ function renderReaderView() {
   } else {
     renderReaderBodyText();
   }
+
+  // النسخة المصوّرة تتبع الصفحة المعروضة
+  refreshReaderPdfButton();
+}
+
+// النسخة المصوّرة: زرها يظهر فقط إن كان لصفحة النص مقابل ممسوح عند الشاملة
+let readerPdfToken = 0;
+
+async function refreshReaderPdfButton() {
+  const btn = document.getElementById('btnReaderPdf');
+  if (!btn) return;
+  const myToken = ++readerPdfToken;
+  readerState.pdfInfo = null;
+  readerState.pdfPage = null;
+  closeReaderPdfPanel();
+  btn.style.display = 'none';
+  try {
+    const q = new URLSearchParams();
+    if (readerState.bookId) q.set('book_id', readerState.bookId);
+    if (readerState.relPath) q.set('rel_path', readerState.relPath);
+    if (readerState.part) q.set('part', readerState.part);
+    if (readerState.pageNum) q.set('page_num', readerState.pageNum);
+    const res = await fetch(`/api/book/pdf-info?${q.toString()}`);
+    if (!res.ok || myToken !== readerPdfToken || !readerState.isOpen) return;
+    const info = await res.json();
+    if (myToken !== readerPdfToken || !info.available) return;
+    readerState.pdfInfo = info;
+    readerState.pdfPage = info.pdf_page;
+    btn.style.display = '';
+  } catch (e) { /* لا مصوّرة لهذه الصفحة */ }
+}
+
+function closeReaderPdfPanel() {
+  const panel = document.getElementById('readerPdfPanel');
+  if (panel) panel.style.display = 'none';
+  readerState.pdfOpen = false;
+  const btn = document.getElementById('btnReaderPdf');
+  if (btn) btn.classList.remove('active');
+}
+
+function toggleReaderPdf() {
+  const panel = document.getElementById('readerPdfPanel');
+  if (!panel || !readerState.pdfInfo) return;
+  if (readerState.pdfOpen) { closeReaderPdfPanel(); return; }
+  readerState.pdfOpen = true;
+  panel.style.display = 'block';
+  const btn = document.getElementById('btnReaderPdf');
+  if (btn) btn.classList.add('active');
+  renderReaderPdfPage();
+}
+
+function renderReaderPdfPage() {
+  const info = readerState.pdfInfo;
+  const img = document.getElementById('readerPdfImg');
+  const meta = document.getElementById('readerPdfMeta');
+  if (!info || !img) return;
+  const q = new URLSearchParams();
+  if (readerState.bookId) q.set('book_id', readerState.bookId);
+  if (readerState.relPath) q.set('rel_path', readerState.relPath);
+  if (readerState.part) q.set('part', readerState.part);
+  if (readerState.pageNum) q.set('page_num', readerState.pageNum);
+  q.set('pdf_page', readerState.pdfPage);
+  img.src = `/api/book/pdf-image?${q.toString()}`;
+  if (meta) {
+    const witness = readerState.highlightText ? 'صفحة الشاهد في النسخة المصوّرة' : 'النسخة المصوّرة';
+    meta.textContent = `${witness} — ص ${readerState.pdfPage} من ${info.pdf_pages || '؟'} (${info.file_name || ''})`;
+  }
+  const prev = document.getElementById('btnReaderPdfPrev');
+  const next = document.getElementById('btnReaderPdfNext');
+  if (prev) prev.disabled = readerState.pdfPage <= 1;
+  if (next) next.disabled = info.pdf_pages ? readerState.pdfPage >= info.pdf_pages : false;
+}
+
+function readerPdfNav(dir) {
+  if (!readerState.pdfInfo) return;
+  const total = readerState.pdfInfo.pdf_pages || 1;
+  readerState.pdfPage = Math.max(1, Math.min(total, (readerState.pdfPage || 1) + dir));
+  renderReaderPdfPage();
 }
 
 // عرض متن الصفحة مع التشكيل أو بدونه وإبراز النص المبحوث عنه
