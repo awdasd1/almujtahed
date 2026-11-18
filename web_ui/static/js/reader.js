@@ -363,6 +363,23 @@ function toggleReaderPdf() {
   panel.style.display = 'block';
   const btn = document.getElementById('btnReaderPdf');
   if (btn) btn.classList.add('active');
+  const img = document.getElementById('readerPdfImg');
+  if (img && !img.dataset.navBound) {
+    img.dataset.navBound = '1';
+    let wheelLock = 0;
+    img.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const now = Date.now();
+      if (now - wheelLock < 350) return;
+      wheelLock = now;
+      readerPdfNav(ev.deltaY > 0 ? 1 : -1);
+    }, { passive: false });
+    img.addEventListener('click', (ev) => {
+      const rect = img.getBoundingClientRect();
+      const x = (ev.clientX - rect.left) / rect.width;
+      readerPdfNav(x < 0.5 ? 1 : -1);
+    });
+  }
   renderReaderPdfPage();
 }
 
@@ -386,6 +403,13 @@ function renderReaderPdfPage() {
   const next = document.getElementById('btnReaderPdfNext');
   if (prev) prev.disabled = readerState.pdfPage <= 1;
   if (next) next.disabled = info.pdf_pages ? readerState.pdfPage >= info.pdf_pages : false;
+  // تحميل مسبق للصفحة التالية حتى يكون التقليب سلسًا
+  if (info.pdf_pages && readerState.pdfPage < info.pdf_pages) {
+    const pre = new Image();
+    const pq = new URLSearchParams(q);
+    pq.set('pdf_page', readerState.pdfPage + 1);
+    pre.src = `/api/book/pdf-image?${pq.toString()}`;
+  }
 }
 
 function readerPdfNav(dir) {

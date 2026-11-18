@@ -9,6 +9,7 @@ pdf/<المؤلف>/<الكتاب>/. القاعدة المثبتة بالفحص �
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -81,17 +82,22 @@ def _master_row(their_id: int):
     return dict(row) if row else None
 
 
-def _their_parts(their_id: int) -> list:
-    """أجزاء الكتاب عندهم بترتيب ظهورها في صفحاتهم."""
+def _their_book_db(their_id: int):
     db_dir = shamela_link.data_database_dir()
     if not db_dir:
-        return []
+        return None
     cand = db_dir / "book" / f"{their_id % 1000:03d}" / f"{their_id}.db"
-    if not cand.exists():
-        found = list((db_dir / "book").rglob(f"{their_id}.db"))
-        if not found:
-            return []
-        cand = found[0]
+    if cand.exists():
+        return cand
+    found = list((db_dir / "book").rglob(f"{their_id}.db"))
+    return found[0] if found else None
+
+
+def _their_parts(their_id: int) -> list:
+    """أجزاء الكتاب عندهم بترتيب ظهورها في صفحاتهم."""
+    cand = _their_book_db(their_id)
+    if not cand:
+        return []
     try:
         con = sqlite3.connect(f"file:{cand}?mode=ro", uri=True)
         rows = con.execute("SELECT part FROM page GROUP BY part ORDER BY MIN(id)").fetchall()
@@ -99,6 +105,50 @@ def _their_parts(their_id: int) -> list:
         return [str(r[0] or "") for r in rows]
     except Exception:
         return []
+
+
+def _part_ranges(their_id: int) -> list:
+    """[(الجزء، عدد صفحاته، أول صفحة مطبوعة، آخرها)] بترتيب الكتاب."""
+    cand = _their_book_db(their_id)
+    if not cand:
+        return []
+    try:
+        con = sqlite3.connect(f"file:{cand}?mode=ro", uri=True)
+        rows = con.execute(
+            "SELECT part, COUNT(*), MIN(page), MAX(page) FROM page GROUP BY part ORDER BY MIN(id)"
+        ).fetchall()
+        con.close()
+        return [(str(r[0] or ""), int(r[1]), int(r[2] or 0), int(r[3] or 0)) for r in rows]
+    except Exception:
+        return []
+
+
+def _seq_within(their_id: int, ranges: list, part: str, page_num: int, covered: list):
+    """موضع الصفحة تسلسليًا داخل ملف يضم أجزاء عدة (حين لا يكفي الرقم المطبوع)."""
+    cand = _their_book_db(their_id)
+    if not cand:
+        return None
+    try:
+        con = sqlite3.connect(f"file:{cand}?mode=ro", uri=True)
+        offset = 0
+        for name, count, _mn, _mx in ranges:
+            if name not in covered:
+                continue
+            if name == part:
+                rank = con.execute(
+                    "SELECT COUNT(*) FROM page WHERE part=? AND page<=?", (part, page_num)
+                ).fetchone()[0]
+                con.close()
+                return offset + max(1, int(rank))
+            offset += count
+        con.close()
+    except Exception:
+        return None
+    return None
+
+
+def _is_intro(part: str) -> bool:
+    return any(w in (part or "") for w in ("مقدمة", "مقدمه", "تقديم"))
 
 
 def _parse_entries(pdf_links: str) -> list:
@@ -117,25 +167,55 @@ def _parse_entries(pdf_links: str) -> list:
 
 
 def _assign_files(entries: list, parts: list) -> dict:
-    """{الجزء: اسم ملف المصوّرة} من وسوم الملفات ثم بترتيب القائمة."""
+    """{الجزء: اسم ملف المصوّرة} بأعراف الشاملة نفسها:
+    وسم صريح، ثم لاحقة p للمقدمة وi للفهارس، ثم الرقم أول الاسم هو رقم
+    الجزء المرقّم (و00 غلاف لا جزء)، ثم الباقي بترتيب القائمة."""
+    intro_parts = [p for p in parts if _is_intro(p)]
+    numbered = [p for p in parts if p not in intro_parts]
     assigned = {}
-    pool = []
+    deferred = []
+    front = None
     for entry in entries:
-        tag = entry["tag"]
-        if tag and not tag.startswith("#") and tag in parts:
-            assigned.setdefault(tag, entry["name"])
-        elif tag in _INTRO_TAGS and "المقدمة" in parts:
-            assigned.setdefault("المقدمة", entry["name"])
-        elif tag and not tag.startswith("#"):
-            # وسم جزء غير معروف عندنا (تقديم بلا جزء مقدمة): يبقى احتياطًا أخيرًا
-            pool.append(entry)
-        else:
-            pool.append(entry)
-    rest = [p for p in parts if p not in assigned]
-    for entry, part in zip(pool, rest):
-        assigned[part] = entry["name"]
-    if len(entries) == 1 and parts:
-        only = entries[0]["name"]
+        name, tag = entry["name"], entry["tag"]
+        stem = name[:-4] if name.lower().endswith(".pdf") else name
+        if tag and not tag.startswith("#"):
+            if tag in parts:
+                assigned.setdefault(tag, name)
+                continue
+            if _is_intro(tag) or tag.startswith("مقدمة"):
+                if intro_parts:
+                    assigned.setdefault(intro_parts[0], name)
+                continue
+            if tag == "0":
+                for part in numbered:
+                    assigned.setdefault(part, name)
+                continue
+            if tag.isdigit() and 1 <= int(tag) <= len(numbered):
+                assigned.setdefault(numbered[int(tag) - 1], name)
+                continue
+        if re.search(r"\d(ps|p)$", stem) and intro_parts:
+            assigned.setdefault(intro_parts[0], name)
+            continue
+        if re.search(r"^\d+i$", stem):
+            continue  # ملف فهارس لا متن
+        m = re.match(r"^(\d+)", name)
+        if m:
+            num = int(m.group(1))
+            if num == 0:
+                front = front or name
+                continue
+            if num <= len(numbered):
+                assigned.setdefault(numbered[num - 1], name)
+                continue
+        deferred.append(name)
+    rest = [p for p in numbered if p not in assigned]
+    for name, part in zip(deferred, rest):
+        assigned[part] = name
+    if intro_parts and intro_parts[0] not in assigned and front:
+        assigned[intro_parts[0]] = front
+    distinct = set(assigned.values()) | set(deferred)
+    if len(distinct) == 1 and parts:
+        only = next(iter(distinct))
         for part in parts:
             assigned.setdefault(part, only)
     return assigned
@@ -178,13 +258,18 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
         out["reason"] = "مجلد مصوّرات الشاملة غير موجود على هذا الجهاز"
         return out
     index = _file_index(root)
-    parts = _their_parts(their_id)
+    ranges = _part_ranges(their_id)
+    parts = [r[0] for r in ranges]
     want_part = str(part or "").strip()
     if want_part == "None":
         want_part = ""
     if parts and want_part not in parts:
-        # أجزاؤنا قد تختلف تسميتها عن أجزائهم؛ أقرب جزئيًا أو الأول
-        want_part = parts[0]
+        # جزءنا برقمه قد يقابل جزءهم بموضعه بين الأجزاء المرقّمة
+        numbered = [p for p in parts if not _is_intro(p)]
+        if want_part.isdigit() and 1 <= int(want_part) <= len(numbered):
+            want_part = numbered[int(want_part) - 1]
+        elif numbered:
+            want_part = numbered[0]
     assigned = _assign_files(entries, parts or [want_part])
     file_name = assigned.get(want_part)
     if not file_name and entries:
@@ -206,9 +291,26 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
     if page <= 0:
         page = 1
     clamped = False
+    covered = [p for p, f in assigned.items() if f == file_name]
+    if total and len(covered) > 1:
+        # ملف واحد لأجزاء عدة: إن كانت مطبوعاتها متصلة فالرقم المطبوع يكفي،
+        # وإن استأنف كل جزء ترقيمه فالموضع التسلسلي داخل الملف هو الصواب
+        covered_ranges = [r for r in ranges if r[0] in covered]
+        restarts = any(
+            covered_ranges[i][2] <= covered_ranges[i - 1][3]
+            for i in range(1, len(covered_ranges))
+        )
+        if restarts:
+            seq = _seq_within(their_id, ranges, want_part, page, covered)
+            if seq:
+                page = seq
     if total and page > total:
-        page = total
-        clamped = True
+        seq = _seq_within(their_id, ranges, want_part, page, covered)
+        if seq and 1 <= seq <= total:
+            page = seq
+        else:
+            page = total
+            clamped = True
     out.update({
         "available": True,
         "file_name": file_name,
