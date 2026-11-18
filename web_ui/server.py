@@ -1839,6 +1839,8 @@ class ChatRequest(BaseModel):
     semantic_enhanced: Optional[bool] = None # خيار معزّز: تشغيل قناة البحث الدلالي في مخزن المتجهات إن توفرت؛ تعطيله بحث لفظي فقط
     library_only: Optional[bool] = False # بحث مباشر في الشاملة من نص محدد، بلا وكلاء
     free_mode: bool = False # سيناريو البحث الحر: دردشة عامة بلا كتب ولا استرجاع ولا أي توجيه خفي — النموذج يجيب من ذاكرته
+    document_id: Optional[str] = None # وثيقة مرفوعة محوّلة مرتبطة بالمحادثة: مقاطعها الأقرب للسؤال تُلحق خادميًا بآخر رسالة مستخدم
+    document_name: Optional[str] = None
     web_search: Optional[bool] = None # أداة بحث الويب (Tavily) بقرار الباحث في الحر والمخصص: مفعّلة يستدعيها النموذج عند عجز ذاكرته، معطّلة يعتذر ويطلب تفعيلها؛ None = لا شأن لها (الموسع عبر المشاريع)
     raw_mcp: bool = False # MCP خام مباشر: النموذج يقود أدوات المغني بنفسه، بلا وكلاء ولا توجيه ولا خط استرجاع
     selected_books: Optional[List[str]] = None
@@ -8934,7 +8936,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.684"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.685"},
         },
     })
     if opened.get("error"):
@@ -18079,6 +18081,34 @@ RAW_MCP_CITATION_RULE = (
 )
 
 
+def _document_context_block(req: "ChatRequest", request: Request) -> str:
+    """كتلة مقاطع الوثيقة المرفوعة المرتبطة بالمحادثة، الأقرب لآخر سؤال.
+    تُلحق بآخر رسالة مستخدم نفسها (أعلى مواضع انتباه النموذج) في كل أنماط
+    المحادثة، فلا تضيع وسط توجيهات النظام ولا ينكر النموذج وجود الوثيقة."""
+    doc_id = getattr(req, "document_id", None)
+    if not doc_id:
+        return ""
+    try:
+        import doc_convert as _dc
+        _lu = next((m.content for m in reversed(req.messages or []) if m.role == "user"), "")
+        _dctx = _dc.relevant_context(str(doc_id), current_owner_id(request), _lu or "")
+        _ch = _dctx.get("chunks") or []
+        if not _ch:
+            return ""
+        _dname = getattr(req, "document_name", None) or _dctx.get("name") or "الوثيقة"
+        return (
+            "\n\n═══════════════════════════════════════════════════════════\n"
+            f"📄 [وثيقة مرفوعة اسمها «{_dname}» يناقشك الباحث فيها الآن — فيما يلي مقاطع من نصّها، "
+            "وهي مادتك المرجعية الأولى لهذا الجواب. الباحث رفعها فعلًا وحُوّلت إلى نص وقرأتها المنظومة، "
+            "فلا تقل إنه لم يرفق نصًا أو لم يذكر وثيقة، وأجب من هذه المقاطع واذكر أرقام الصفحات بصيغة "
+            "[صفحة N]، وإن لم تجد الجواب فيها فصرّح بذلك واعرض ما فيها مما يتصل بالسؤال]\n"
+            + "\n\n".join(_ch)
+            + "\n═══════════════════════════════════════════════════════════"
+        )
+    except Exception:
+        return ""
+
+
 def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
     """سيناريو البحث الحر: دردشة عامة حرة غير مرتبطة بأي كتاب — الرسائل كما هي
     إلى النموذج بلا رسالة نظام وبلا استرجاع وبلا وكلاء وبلا أي توجيه خفي،
@@ -18114,6 +18144,10 @@ def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
             att_texts.append(f"[محتوى الملف المرفق: {a.get('filename', 'ملف')}]\n{t[:20000]}")
     if att_texts and dialog and dialog[-1]["role"] == "user":
         dialog[-1] = {**dialog[-1], "content": dialog[-1]["content"] + "\n\n" + "\n\n".join(att_texts)}
+    # وثيقة مرفوعة مرتبطة بالمحادثة: مقاطعها في آخر رسالة مستخدم نفسها
+    _doc_block = _document_context_block(req, request)
+    if _doc_block and dialog and dialog[-1]["role"] == "user" and isinstance(dialog[-1].get("content"), str):
+        dialog[-1] = {**dialog[-1], "content": dialog[-1]["content"] + _doc_block}
     if image_parts and dialog and dialog[-1]["role"] == "user":
         last_text = dialog[-1]["content"]
         dialog[-1] = {"role": "user", "content":
@@ -20153,6 +20187,22 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         messages_payload.append({"role": m.role, "content": content_parts})
                         continue
                 messages_payload.append({"role": m.role, "content": m.content})
+
+            # وثيقة مرفوعة مرتبطة بالمحادثة: مقاطعها الأقرب للسؤال تُلحق بآخر
+            # رسالة مستخدم في نسخة الإرسال فقط (لا تُحفظ في الجلسة)، فتصل
+            # النموذجَ مهما ازدحمت توجيهات النظام بتوجيهات الوكلاء والمدير.
+            _doc_block = _document_context_block(req, request)
+            if _doc_block:
+                for _mi in range(len(messages_payload) - 1, 0, -1):
+                    if messages_payload[_mi].get("role") == "user":
+                        _c = messages_payload[_mi].get("content")
+                        if isinstance(_c, str):
+                            messages_payload[_mi] = {"role": "user", "content": _c + _doc_block}
+                        elif isinstance(_c, list) and _c and isinstance(_c[0], dict):
+                            _nc = [dict(_p) for _p in _c]
+                            _nc[0]["text"] = (_nc[0].get("text") or "") + _doc_block
+                            messages_payload[_mi] = {"role": "user", "content": _nc}
+                        break
 
             # 🏛 ضبط المخاطر في المناقشة: بنود علّمها الباحث من سجل مخاطر
             # بحثه، فتصل المدير بتوجيه محاسبة قوي يُبنى هنا ولا يُعرض

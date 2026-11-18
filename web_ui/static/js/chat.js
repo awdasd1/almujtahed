@@ -3935,15 +3935,6 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
   if (activeAgent && activeAgent.thinking && !executionThinking) executionThinking = activeAgent.thinking;
   if (!customOn && activeAgent && activeAgent.systemPrompt) executionPrompt = activeAgent.systemPrompt;
 
-  // سياق وثيقة مرفوعة مرتبطة بهذه المحادثة: أقرب مقاطعها إلى آخر سؤال
-  if (session.docId && typeof buildDocContextForSession === 'function') {
-    try {
-      const _lastUser = [...(session.messages || [])].reverse().find(m => m.role === 'user');
-      const _docCtx = await buildDocContextForSession(session, _lastUser ? _lastUser.content : '');
-      if (_docCtx) executionPrompt = (executionPrompt ? executionPrompt + '\n\n' : '') + _docCtx;
-    } catch (e) { /* وثيقة غير جاهزة: أكمل بلا سياقها */ }
-  }
-
   // إظهار فقاعة مؤشر الكتابة للنموذج
   const container = document.getElementById('chatMessagesContainer');
   const typingBubble = document.createElement('div');
@@ -4002,6 +3993,8 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
         semantic_enhanced: isSemanticEnhancedEnabled,
         messages: promptMessages,
         free_mode: freeMode,
+        document_id: session.docId || null,
+        document_name: session.docName || null,
         system_prompt: freeMode ? null : (executionPrompt || null),
         temperature: executionTemp,
         top_k: executionTopK,
