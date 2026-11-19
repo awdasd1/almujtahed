@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.719">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.720">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.719" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.720" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.719</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.720</span>
             </div>
 
             <div class="header-actions">
@@ -1831,10 +1831,46 @@
                     </div>
                 </div>
                 <div class="ms-enh-trial-row">
-                    <button type="button" class="ms-btn ms-btn-primary" id="msEnhTrialBtn" onclick="msTrialReadEnhanced()">🧪 تجربة قراءة اللوحة</button>
-                    <span class="ms-wb-meta">يقرأ اللوحة المرمّمة بنموذج Gemini Pro Latest وحده لتجربتها قبل اعتمادها</span>
+                    <button type="button" class="ms-btn ms-btn-primary" id="msEnhTrialBtn" onclick="msOpenTrialRead()">🧪 تجربة قراءة اللوحة</button>
+                    <span class="ms-wb-meta">تفتح نافذة مقارنة: اللوحة يمينًا ونتيجة قراءتها يسارًا، مع اختيار القارئ ومصدر اللوحة (الأصلية أو المرمّمة) لتنظر أيّهما أجود قراءةً قبل الاعتماد</span>
                 </div>
-                <div class="ms-enh-trial" id="msEnhTrial" hidden></div>
+            </div>
+        </div>
+
+        <div class="ms-modal-overlay" id="msTrialModal" hidden>
+            <div class="ms-modal ms-trial-modal">
+                <div class="ms-modal-head">
+                    <strong id="msTrialTitle">🧪 تجربة قراءة اللوحة</strong>
+                    <button type="button" class="ms-btn" onclick="msCloseTrialRead()">✕ إغلاق</button>
+                </div>
+                <div class="ms-modal-pos" id="msTrialInfo"></div>
+                <div class="ms-trial-grid">
+                    <div class="ms-trial-img-panel">
+                        <div class="ms-trial-source-row">
+                            <span class="ms-enh-title">اللوحة</span>
+                            <button type="button" class="ms-btn" id="msTrialSrcOrig" onclick="msTrialSetSource('original')">الأصلية</button>
+                            <button type="button" class="ms-btn" id="msTrialSrcRest" onclick="msTrialSetSource('restored')">المرمّمة</button>
+                            <span class="ms-enh-state" id="msTrialAdopted"></span>
+                        </div>
+                        <img id="msTrialImg" alt="اللوحة محل تجربة القراءة">
+                        <div class="ms-rec-meta" id="msTrialImgMeta"></div>
+                    </div>
+                    <div class="ms-trial-result-panel">
+                        <div class="ms-trial-controls">
+                            <label class="ms-trial-reader-label">القارئ
+                                <select id="msTrialReader" onchange="msTrialReaderChanged()"></select>
+                            </label>
+                            <button type="button" class="ms-btn ms-btn-primary" id="msTrialRunBtn" onclick="msRunTrialRead()">📖 قراءة</button>
+                        </div>
+                        <div class="ms-rec-meta" id="msTrialMeta"></div>
+                        <div class="ms-trial-text" id="msTrialText"></div>
+                        <div class="ms-trial-compare" id="msTrialCompare"></div>
+                        <div class="ms-modal-btns">
+                            <button type="button" class="ms-btn" id="msTrialAdoptOrig" onclick="msTrialAdopt('original')">اعتماد الأصلية للنسخ</button>
+                            <button type="button" class="ms-btn" id="msTrialAdoptRest" onclick="msTrialAdopt('restored')">اعتماد المرمّمة للنسخ</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -6750,25 +6786,25 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.719"></script>
-    <script src="/static/js/search.js?v=1.10.719"></script>
-    <script src="/static/js/reader.js?v=1.10.719"></script>
-    <script src="/static/js/force3d.js?v=1.10.719"></script>
-    <script src="/static/js/share.js?v=1.10.719"></script>
-    <script src="/static/js/chat.js?v=1.10.719"></script>
-    <script src="/static/js/documents.js?v=1.10.719"></script>
-    <script src="/static/js/designs.js?v=1.10.719"></script>
-    <script src="/static/js/texts.js?v=1.10.719"></script>
-    <script src="/static/js/agents.js?v=1.10.719"></script>
-    <script src="/static/js/providers.js?v=1.10.719"></script>
-    <script src="/static/js/tools.js?v=1.10.719"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.719"></script>
-    <script src="/static/js/projects.js?v=1.10.719"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.719"></script>
-    <script src="/static/js/archive.js?v=1.10.719"></script>
-    <script src="/static/js/compare.js?v=1.10.719"></script>
-    <script src="/static/js/local_models.js?v=1.10.719"></script>
-    <script src="/static/js/changelog.js?v=1.10.719"></script>
+    <script src="/static/js/app.js?v=1.10.720"></script>
+    <script src="/static/js/search.js?v=1.10.720"></script>
+    <script src="/static/js/reader.js?v=1.10.720"></script>
+    <script src="/static/js/force3d.js?v=1.10.720"></script>
+    <script src="/static/js/share.js?v=1.10.720"></script>
+    <script src="/static/js/chat.js?v=1.10.720"></script>
+    <script src="/static/js/documents.js?v=1.10.720"></script>
+    <script src="/static/js/designs.js?v=1.10.720"></script>
+    <script src="/static/js/texts.js?v=1.10.720"></script>
+    <script src="/static/js/agents.js?v=1.10.720"></script>
+    <script src="/static/js/providers.js?v=1.10.720"></script>
+    <script src="/static/js/tools.js?v=1.10.720"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.720"></script>
+    <script src="/static/js/projects.js?v=1.10.720"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.720"></script>
+    <script src="/static/js/archive.js?v=1.10.720"></script>
+    <script src="/static/js/compare.js?v=1.10.720"></script>
+    <script src="/static/js/local_models.js?v=1.10.720"></script>
+    <script src="/static/js/changelog.js?v=1.10.720"></script>
 
     <script>
         window.refreshLucideIcons = function () {

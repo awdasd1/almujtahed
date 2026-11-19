@@ -431,8 +431,6 @@ async function msOpenEnhance(pid, cid, fid, queue) {
   document.getElementById('msEnhInfo').innerHTML =
     `<strong>لوحة (${msEsc(f.label)}) — نسخة (${msEsc(c.siglum)}) من «${msEsc(p.title)}»</strong><br>` +
     'رُمّمت اللوحة آليًا (فصل الخط عن الخلفية + تباين وحدّة وتكبير). عدّل بقيم الترميم، وجرّب القراءة، ثم اعتمد الأصلية أو المرمّمة فتكون هي لوحة النسخ والمقابلة.';
-  document.getElementById('msEnhTrial').hidden = true;
-  document.getElementById('msEnhTrial').innerHTML = '';
   msEnhSetSliders(f.enhance_params);
   if (!f.enhanced_file_path) {
     document.getElementById('msEnhRestImg').removeAttribute('src');
@@ -478,26 +476,149 @@ async function msApplyEnhance() {
   btn.disabled = false; btn.textContent = '🔄 إعادة الترميم بهذه القيم';
 }
 
-async function msTrialReadEnhanced() {
+// ---------- تجربة قراءة اللوحة: نافذة مقارنة (اللوحة يمينًا، القراءة يسارًا) ----------
+let MS_TRIAL = null; // {projectId, copyId, folioId, source, reader, results:{}}
+const MS_TRIAL_READERS = [['reader1', 'القارئ الأول'], ['reader2', 'القارئ الثاني'], ['reader3', 'القارئ الثالث']];
+
+function msTrialCtx() {
+  if (!MS_TRIAL) return null;
+  const p = msProject(MS_TRIAL.projectId);
+  const c = msCopy(p, MS_TRIAL.copyId);
+  const f = msFolio(c, MS_TRIAL.folioId);
+  return f ? { project: p, copy: c, folio: f } : null;
+}
+
+function msTrialModel(readerKey) {
+  const choice = msModelChoice();
+  return { reader1: choice.primary, reader2: choice.checker, reader3: choice.tertiary }[readerKey] || choice.primary;
+}
+
+function msOpenTrialRead() {
   const ctx = msEnhCtx();
-  if (!ctx || !ctx.folio.enhanced_file_path) { msToast('لا لوحة مرمّمة بعد'); return; }
-  const btn = document.getElementById('msEnhTrialBtn');
-  const box = document.getElementById('msEnhTrial');
-  btn.disabled = true; btn.textContent = '⏳ القارئ يقرأ اللوحة المرمّمة...';
-  box.hidden = false; box.innerHTML = '<div class="ms-rec-loading">⏳ جارٍ تجربة القراءة...</div>';
+  if (!ctx) { msToast('افتح نافذة معايرة اللوحة أولًا'); return; }
+  const f = ctx.folio;
+  MS_TRIAL = {
+    projectId: MS_ENH.projectId, copyId: MS_ENH.copyId, folioId: MS_ENH.folioId,
+    source: f.enhanced_file_path ? 'restored' : 'original', reader: 'reader1', results: {},
+  };
+  const sel = document.getElementById('msTrialReader');
+  sel.innerHTML = MS_TRIAL_READERS.map(([key, label]) =>
+    `<option value="${key}">${label} — ${msEsc(msTrialModel(key))}</option>`).join('');
+  sel.value = MS_TRIAL.reader;
+  document.getElementById('msTrialTitle').textContent = `🧪 تجربة قراءة اللوحة (${f.label}) — نسخة (${ctx.copy.siglum})`;
+  document.getElementById('msTrialInfo').innerHTML =
+    'اقرأ <strong>الأصلية</strong> و<strong>المرمّمة</strong> بالقارئ نفسه (بدّل المصدر من أعلى عمود اللوحة)، ثم قارن النتيجتين واعتمد أجودهما قراءةً لتكون لوحة النسخ والمقابلة. نتائج التجربة لا تُحفظ في اللوحة ولا تغيّر اعتمادها حتى تضغط زر الاعتماد.';
+  msShowModal('msTrialModal');
+  msTrialRender();
+}
+
+function msTrialSetSource(source) {
+  const ctx = msTrialCtx();
+  if (!ctx || !MS_TRIAL) return;
+  if (source === 'restored' && !ctx.folio.enhanced_file_path) { msToast('لا لوحة مرمّمة بعد — رمّمها من نافذة المعايرة أولًا'); return; }
+  MS_TRIAL.source = source;
+  msTrialRender();
+}
+
+function msTrialReaderChanged() {
+  if (!MS_TRIAL) return;
+  MS_TRIAL.reader = document.getElementById('msTrialReader').value || 'reader1';
+  msTrialRender();
+}
+
+function msTrialKey() { return `${MS_TRIAL.source}:${MS_TRIAL.reader}`; }
+
+function msTrialRender() {
+  const ctx = msTrialCtx();
+  if (!ctx || !MS_TRIAL) return;
+  const f = ctx.folio;
+  const isRestored = MS_TRIAL.source === 'restored';
+  const imgUrl = isRestored ? f.enhanced_file_url : (f.orig_file_url || f.file_url);
+  document.getElementById('msTrialImg').src = imgUrl ? imgUrl + `?v=${Date.now()}` : '';
+  document.getElementById('msTrialSrcOrig').classList.toggle('ms-trial-src-active', !isRestored);
+  document.getElementById('msTrialSrcRest').classList.toggle('ms-trial-src-active', isRestored);
+  document.getElementById('msTrialSrcRest').disabled = !f.enhanced_file_path;
+  const adopted = f.adopted_image || 'original';
+  document.getElementById('msTrialAdopted').textContent = `المعتمدة للنسخ الآن: ${adopted === 'restored' ? 'المرمّمة ✔' : 'الأصلية ✔'}`;
+  document.getElementById('msTrialImgMeta').textContent = isRestored
+    ? 'اللوحة المرمّمة (فصل الخط عن الخلفية + تباين وحدّة)'
+    : 'اللوحة الأصلية كما رُفعت';
+  const readerLabel = (MS_TRIAL_READERS.find(([k]) => k === MS_TRIAL.reader) || [])[1] || 'القارئ';
+  const model = msTrialModel(MS_TRIAL.reader);
+  const result = MS_TRIAL.results[msTrialKey()];
+  const meta = document.getElementById('msTrialMeta');
+  const textBox = document.getElementById('msTrialText');
+  if (result) {
+    meta.textContent = `قراءة ${isRestored ? 'المرمّمة' : 'الأصلية'} بـ${readerLabel} (${result.model || model})`
+      + `${result.seconds != null ? ` · ${result.seconds}ث` : ''}${result.cost != null ? ` · $${Number(result.cost).toFixed(4)}` : ''} · ${String(result.text || '').length} حرف`;
+    textBox.textContent = result.text || '(بلا نص)';
+  } else {
+    meta.textContent = `لم تُقرأ ${isRestored ? 'المرمّمة' : 'الأصلية'} بـ${readerLabel} (${model}) بعد`;
+    textBox.innerHTML = '<span class="ms-trial-empty">اضغط «📖 قراءة» لقراءة اللوحة المعروضة بهذا القارئ، ثم بدّل مصدر اللوحة واقرأ الأخرى بالقارئ نفسه وقارن النتيجتين.</span>';
+  }
+  document.getElementById('msTrialAdoptOrig').disabled = adopted === 'original';
+  document.getElementById('msTrialAdoptRest').disabled = adopted === 'restored' || !f.enhanced_file_path;
+  const parts = [];
+  for (const [src, srcLabel] of [['original', 'الأصلية'], ['restored', 'المرمّمة']]) {
+    const r = MS_TRIAL.results[`${src}:${MS_TRIAL.reader}`];
+    if (r) parts.push(`${srcLabel}: ${String(r.text || '').length} حرف${r.seconds != null ? ` · ${r.seconds}ث` : ''}`);
+  }
+  document.getElementById('msTrialCompare').textContent = parts.length === 2
+    ? `مقارنة سريعة بـ${readerLabel} — ${parts.join('  |  ')} · بدّل مصدر اللوحة لعرض كل نتيجة بجانب صورتها`
+    : (parts.length === 1 ? `قُرئت ${parts[0].split(':')[0]} فقط — اقرأ المصدر الآخر بالقارئ نفسه لتكتمل المقارنة` : '');
+}
+
+async function msRunTrialRead() {
+  const ctx = msTrialCtx();
+  if (!ctx || !MS_TRIAL) return;
+  const f = ctx.folio;
+  const filePath = MS_TRIAL.source === 'restored' ? f.enhanced_file_path : (f.orig_file_path || f.file_path);
+  if (!filePath) { msToast('لا ملف لهذه اللوحة'); return; }
+  const btn = document.getElementById('msTrialRunBtn');
+  const textBox = document.getElementById('msTrialText');
+  const model = msTrialModel(MS_TRIAL.reader);
+  btn.disabled = true; btn.textContent = '⏳ جارٍ القراءة...';
+  textBox.innerHTML = '<span class="ms-trial-empty">⏳ القارئ يقرأ اللوحة المعروضة...</span>';
   try {
     const res = await fetch('/api/manuscripts/transcribe-one', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file_path: ctx.folio.enhanced_file_path, model: msGroupModel('reader1', '~google/gemini-pro-latest'), api_key: msApiKey() }),
+      body: JSON.stringify({ file_path: filePath, model, api_key: msApiKey() }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذرت تجربة القراءة');
-    box.innerHTML = `<div class="ms-margin-title">نتيجة تجربة قراءة اللوحة المرمّمة${data.seconds != null ? ` · ${data.seconds}ث` : ''}${data.cost != null ? ` · $${Number(data.cost).toFixed(4)}` : ''}</div><div class="ms-enh-trial-text">${msEsc(data.text || '(بلا نص)')}</div>`;
+    MS_TRIAL.results[msTrialKey()] = { text: data.text || '', seconds: data.seconds, cost: data.cost, model: data.model || model };
   } catch (e) {
-    box.innerHTML = `<div class="ms-rec-loading">❌ ${msEsc(e.message)}</div>`;
+    msToast(`❌ ${e.message}`, 5000);
+    textBox.innerHTML = `<span class="ms-trial-empty">❌ ${msEsc(e.message)}</span>`;
   }
-  btn.disabled = false; btn.textContent = '🧪 تجربة قراءة اللوحة';
+  btn.disabled = false; btn.textContent = '📖 قراءة';
+  msTrialRender();
 }
+
+function msTrialAdopt(which) {
+  const ctx = msTrialCtx();
+  if (!ctx || !MS_TRIAL) return;
+  const f = ctx.folio;
+  if (which === 'restored') {
+    if (!f.enhanced_file_path) { msToast('لا لوحة مرمّمة لاعتمادها'); return; }
+    f.file_url = f.enhanced_file_url; f.file_path = f.enhanced_file_path;
+    f.adopted_image = 'restored';
+  } else {
+    f.file_url = f.orig_file_url || f.file_url; f.file_path = f.orig_file_path || f.file_path;
+    f.adopted_image = 'original';
+  }
+  msSave(); renderMsCopies();
+  if (MS_ENH && MS_ENH.folioId === f.id) msRenderEnhance();
+  msTrialRender();
+  msToast(`✔ اعتُمدت اللوحة ${which === 'restored' ? 'المرمّمة' : 'الأصلية'} للوحة (${f.label}) — هي التي ستُنسخ وتُقابَل`);
+}
+
+function msCloseTrialRead() {
+  const modal = document.getElementById('msTrialModal');
+  if (modal) modal.hidden = true;
+  MS_TRIAL = null;
+}
+window.msOpenTrialRead = msOpenTrialRead;
 
 function msAdoptEnhanced(which) {
   const ctx = msEnhCtx();
