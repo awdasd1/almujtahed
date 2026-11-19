@@ -86,6 +86,18 @@ function msEsc(s) {
 function msToast(msg, ms) {
   if (typeof showToast === 'function') showToast(msg, ms || 3500);
 }
+
+// نوافذ المخطوطات تُنقل إلى جسم الصفحة عند فتحها: بقاؤها داخل main يجعل
+// الترويسة اللاصقة تغطي أعلاها مهما علت طبقتها.
+function msShowModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return null;
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
+  modal.hidden = false;
+  modal.scrollTop = 0;
+  return modal;
+}
+window.msShowModal = msShowModal;
 function msUid() { return 'ms' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function msProject(id) { return msProjects.find(p => p.id === id) || null; }
 function msCopy(project, copyId) { return project ? (project.copies || []).find(c => c.id === copyId) || null : null; }
@@ -415,8 +427,7 @@ async function msOpenEnhance(pid, cid, fid, queue) {
   if (!f) return;
   if (!f.orig_file_path) { f.orig_file_path = f.file_path; f.orig_file_url = f.file_url; }
   MS_ENH = { projectId: pid, copyId: cid, folioId: fid, queue: queue || [] };
-  const modal = document.getElementById('msEnhModal');
-  modal.hidden = false;
+  msShowModal('msEnhModal');
   document.getElementById('msEnhInfo').innerHTML =
     `<strong>لوحة (${msEsc(f.label)}) — نسخة (${msEsc(c.siglum)}) من «${msEsc(p.title)}»</strong><br>` +
     'رُمّمت اللوحة آليًا (فصل الخط عن الخلفية + تباين وحدّة وتكبير). عدّل بقيم الترميم، وجرّب القراءة، ثم اعتمد الأصلية أو المرمّمة فتكون هي لوحة النسخ والمقابلة.';
@@ -816,8 +827,7 @@ async function msOpenRecommend(id) {
   const e = (p.collation.entries || []).find(x => x.id === id);
   if (!e) return;
   MS_REC = { entryId: id, data: null };
-  const modal = document.getElementById('msRecModal');
-  modal.hidden = false;
+  msShowModal('msRecModal');
   document.getElementById('msRecActions').hidden = true;
   document.getElementById('msRecComment').value = '';
   document.getElementById('msRecPos').innerHTML =
@@ -2218,9 +2228,8 @@ function msGroupRemoveBook(key, idx) {
 let MS_BOOKS_KEY = null;
 function msAgentBooksOpen(key) {
   MS_BOOKS_KEY = key;
+  msShowModal('msAgentBooksModal');
   msAgentBooksRender();
-  const modal = document.getElementById('msAgentBooksModal');
-  if (modal) modal.hidden = false;
 }
 function msAgentBooksClose() {
   const modal = document.getElementById('msAgentBooksModal');
@@ -3763,8 +3772,7 @@ async function msAutoStart() {
   if (!base || !(base.folios || []).length) { msToast('ارفع لوحات النسخة الأم أولًا واوصف بقية النسخ ولوحاتها، ثم اضغط «اعتمد التحقيق الآلي»'); return; }
   // تحقيق سابق مكتمل: لا إعادة تشغيل فوقه قبل قرار المحقق بحذفه أو أرشفته
   if (msAutoInit(p).status === 'done') {
-    const modal = document.getElementById('msAutoRestartModal');
-    if (modal) { modal.hidden = false; return; }
+    if (msShowModal('msAutoRestartModal')) return;
   }
   msAutoArmWatchdog();
   MS_AUTO_RUNNING = true; MS_AUTO_STOP = false;
