@@ -3161,10 +3161,199 @@ function msAutoLog(p, msg) {
   const a = msAutoInit(p);
   a.log.push({ at: new Date().toLocaleTimeString('ar-EG'), msg });
   if (a.log.length > 200) a.log = a.log.slice(-200);
+  a.currentActivity = msg;
 }
 
 function msAutoStep(p, key, status, info) {
-  msAutoInit(p).steps[key] = { status, info: info || '', at: new Date().toISOString() };
+  const a = msAutoInit(p);
+  const prev = a.steps[key] || {};
+  const now = new Date().toISOString();
+  const rec = { ...prev, status, info: info != null ? info : (prev.info || ''), at: now };
+  if (status === 'run') {
+    if (prev.status !== 'run' || !prev.startedAt) { rec.startedAt = now; delete rec.endedAt; delete rec.durationSec; }
+  } else if (['done', 'held', 'err'].includes(status) && rec.startedAt && !rec.endedAt) {
+    rec.endedAt = now;
+    rec.durationSec = Math.max(0, Math.round((Date.parse(now) - Date.parse(rec.startedAt)) / 100) / 10);
+  }
+  a.steps[key] = rec;
+}
+
+// تقدم داخلي لمرحلة جارية (لوحة س من ص ونحوها) يعرضه الداشبورد لحظيًا
+function msAutoProgress(p, key, done, total, label) {
+  const a = msAutoInit(p);
+  const prev = a.steps[key] || {};
+  a.steps[key] = { ...prev, progress: { done, total, label: label || '', at: new Date().toISOString() } };
+  if (label) a.currentActivity = label;
+}
+
+// ---------- داشبورد التحقيق الآلي: عدّادات وخريطة مراحل ورسوم حية (ECharts) ----------
+const MS_DASH_SHORT = { transcribe: 'نسخ اللوحات', identify: 'تعرّف اللوحة', collate: 'المقابلة بين النسخ', decide: 'حسم الخلاف', agents: 'الباحثون والتخريج', author: 'موازاة المؤلف', monitor: 'رقابة المراقب', compare: 'المقارنة المرجعية', intro: 'المقدمة والترجمة', indexes: 'الفهارس', approve: 'الاعتماد النهائي', output: 'إصدار PDF وWord' };
+let MS_DASH = { pid: null, gauge: null, bars: null, tick: null };
+
+function msFmtDur(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const p2 = n => String(n).padStart(2, '0');
+  return h ? `${p2(h)}:${p2(m)}:${p2(s)}` : `${p2(m)}:${p2(s)}`;
+}
+
+function msDashData(p, a) {
+  const steps = a.steps || {};
+  let doneCount = 0, runningKey = '';
+  MS_AUTO_STEPS.forEach(([key]) => {
+    const st = steps[key] || {};
+    if (st.status === 'done' || st.status === 'held') doneCount++;
+    if (st.status === 'run') runningKey = key;
+  });
+  const rst = runningKey ? (steps[runningKey] || {}) : {};
+  const rprog = rst.progress && rst.progress.total ? (rst.progress.done / rst.progress.total) : 0;
+  const pct = Math.min(100, Math.round(((doneCount + rprog) / MS_AUTO_STEPS.length) * 100));
+  const totalFolios = (p.copies || []).reduce((n, c) => n + (c.folios || []).length, 0);
+  const approvedFolios = (p.copies || []).reduce((n, c) => n + (c.folios || []).filter(f => f.status === 'approved').length, 0);
+  const pendingEntries = ((p.collation || {}).entries || []).filter(e => e.status === 'pending').length;
+  return { doneCount, runningKey, pct, totalFolios, approvedFolios, pendingEntries };
+}
+
+function msRenderDashboard(p, a) {
+  const wrap = document.getElementById('msDash');
+  if (!wrap) return;
+  if (MS_DASH.pid !== p.id || !document.getElementById('msDashGauge')) {
+    if (MS_DASH.gauge) { try { MS_DASH.gauge.dispose(); } catch (e) {} MS_DASH.gauge = null; }
+    if (MS_DASH.bars) { try { MS_DASH.bars.dispose(); } catch (e) {} MS_DASH.bars = null; }
+    MS_DASH.pid = p.id;
+    wrap.innerHTML = `
+    <div class="ms-dash">
+      <div class="ms-dash-top">
+        <div class="ms-dash-gaugebox"><div id="msDashGauge" class="ms-dash-gauge"></div><div class="ms-dash-gaugelabel">إنجاز التحقيق الآلي</div></div>
+        <div class="ms-dash-nowbox">
+          <div class="ms-dash-nowtitle"><span class="ms-dash-pulse" id="msDashPulse"></span> الآن — سير العمل الحي</div>
+          <div class="ms-dash-now" id="msDashNow"></div>
+          <div class="ms-dash-stats">
+            <div class="ms-dash-stat"><span class="ms-dash-stat-num" id="msDashStatCost">$0</span><span>كلفة الجولات</span></div>
+            <div class="ms-dash-stat"><span class="ms-dash-stat-num" id="msDashStatFolios">0/0</span><span>لوحات معتمدة</span></div>
+            <div class="ms-dash-stat"><span class="ms-dash-stat-num" id="msDashStatDecide">0</span><span>خلافات محسومة · باقية <b id="msDashStatHeld">0</b></span></div>
+            <div class="ms-dash-stat"><span class="ms-dash-stat-num" id="msDashStatStages">0/${MS_AUTO_STEPS.length}</span><span>مراحل منجزة</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ms-dash-stages" id="msDashStages"></div>
+      <div id="msDashBars" class="ms-dash-bars"></div>
+      <div class="ms-dash-bottom">
+        <span id="msDashStageTxt"></span>
+        <div class="ms-dash-prog"><i id="msDashProgFill"></i></div>
+        <span id="msDashPct"></span>
+        <span class="ms-dash-clock">⏱ <b id="msDashElapsed">00:00</b></span>
+      </div>
+    </div>`;
+  }
+  const d = msDashData(p, a);
+  const running = a.status === 'running';
+  const pulse = document.getElementById('msDashPulse');
+  if (pulse) pulse.classList.toggle('is-off', !running);
+  const lastLog = (a.log || []).slice(-1)[0];
+  const nowEl = document.getElementById('msDashNow');
+  if (nowEl) nowEl.textContent = running
+    ? (a.currentActivity || (lastLog ? lastLog.msg : 'جارٍ التحقيق...'))
+    : (a.status === 'done' ? '✔ اكتمل التحقيق الآلي وصدرت النسخة النهائية' : (lastLog ? lastLog.msg : 'بانتظار بدء التحقيق الآلي'));
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('msDashStatCost', `$${Number(a.cost || 0).toFixed(4)}`);
+  set('msDashStatFolios', `${d.approvedFolios}/${d.totalFolios}`);
+  set('msDashStatDecide', `${(a.report || {}).decided ?? 0}`);
+  set('msDashStatHeld', `${d.pendingEntries}`);
+  set('msDashStatStages', `${d.doneCount}/${MS_AUTO_STEPS.length}`);
+  const icons = { done: '✔', run: '⏳', held: '⏸', err: '✖', todo: '○' };
+  const stagesEl = document.getElementById('msDashStages');
+  if (stagesEl) {
+    stagesEl.innerHTML = MS_AUTO_STEPS.map(([key]) => {
+      const st = (a.steps || {})[key] || { status: 'todo' };
+      const prog = st.progress || {};
+      let frac = 0;
+      if (st.status === 'done' || st.status === 'held' || st.status === 'err') frac = 100;
+      else if (st.status === 'run') frac = prog.total ? Math.round(100 * prog.done / prog.total) : 40;
+      const meta = [];
+      if (prog.total) meta.push(`${prog.done}/${prog.total}`);
+      if (st.durationSec != null) meta.push(msFmtDur(st.durationSec));
+      else if (st.status === 'run' && st.startedAt) meta.push('جارية...');
+      if (st.status === 'err') meta.push('تعثرت');
+      if (st.status === 'held') meta.push('بانتظار الاستئناف');
+      return `<div class="ms-dash-stage is-${st.status}"><div class="ms-dash-stage-head"><span>${icons[st.status] || '○'}</span><span>${MS_DASH_SHORT[key] || key}</span></div><div class="ms-dash-stage-bar"><i style="width:${frac}%"></i></div><div class="ms-dash-stage-meta">${msEsc(meta.join(' · '))}</div></div>`;
+    }).join('');
+  }
+  const currentIdx = d.runningKey ? MS_AUTO_STEPS.findIndex(([k]) => k === d.runningKey) : d.doneCount;
+  set('msDashStageTxt', d.runningKey
+    ? `المرحلة ${currentIdx + 1} من ${MS_AUTO_STEPS.length}: ${MS_DASH_SHORT[d.runningKey]}`
+    : (a.status === 'done' ? `اكتملت المراحل ${MS_AUTO_STEPS.length} كلها` : `منجز ${d.doneCount} من ${MS_AUTO_STEPS.length} مراحل`));
+  set('msDashPct', `${d.pct}٪`);
+  const fill = document.getElementById('msDashProgFill');
+  if (fill) fill.style.width = `${d.pct}%`;
+  wrap.dataset.startedAt = a.startedAt || '';
+  wrap.dataset.finishedAt = a.finishedAt || '';
+  wrap.dataset.running = running ? '1' : '';
+  msDashInitCharts(wrap);
+  msDashUpdateCharts(p, a, d);
+  if (!MS_DASH.tick) MS_DASH.tick = setInterval(msDashTick, 1000);
+  msDashTick();
+}
+
+function msDashInitCharts(wrap) {
+  if (!window.echarts || !wrap.clientWidth) return;
+  const gEl = document.getElementById('msDashGauge');
+  const bEl = document.getElementById('msDashBars');
+  if (gEl && !MS_DASH.gauge) MS_DASH.gauge = echarts.init(gEl);
+  if (bEl && !MS_DASH.bars) MS_DASH.bars = echarts.init(bEl);
+  if (MS_DASH.gauge) MS_DASH.gauge.resize();
+  if (MS_DASH.bars) MS_DASH.bars.resize();
+}
+
+function msDashUpdateCharts(p, a, d) {
+  if (MS_DASH.gauge) {
+    MS_DASH.gauge.setOption({
+      series: [{
+        type: 'gauge', startAngle: 210, endAngle: -30, min: 0, max: 100,
+        radius: '100%', center: ['50%', '58%'],
+        progress: { show: true, width: 15, roundCap: true, itemStyle: { color: d.pct >= 100 ? '#2e7d5b' : '#b4552d' } },
+        axisLine: { roundCap: true, lineStyle: { width: 15, color: [[1, 'rgba(140,120,90,.25)']] } },
+        axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+        pointer: { show: false }, anchor: { show: false },
+        detail: { valueAnimation: true, formatter: '{value}%', fontSize: 25, fontWeight: 800, color: '#8a6414', offsetCenter: [0, '5%'] },
+        title: { show: false },
+        data: [{ value: d.pct }],
+      }],
+    });
+  }
+  if (MS_DASH.bars) {
+    const costs = MS_AUTO_STEPS.map(([k]) => Number(((a.report || {}).costs || {})[k] || 0));
+    const durs = MS_AUTO_STEPS.map(([k]) => Number(((a.steps || {})[k] || {}).durationSec || 0));
+    if (costs.some(v => v > 0) || durs.some(v => v > 0)) {
+      document.getElementById('msDashBars').style.display = '';
+      MS_DASH.bars.setOption({
+        grid: { left: 44, right: 44, top: 30, bottom: 52 },
+        legend: { top: 0, textStyle: { fontSize: 11 } },
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: MS_AUTO_STEPS.map(([k]) => MS_DASH_SHORT[k]), axisLabel: { rotate: 38, fontSize: 10, interval: 0 } },
+        yAxis: [
+          { type: 'value', name: '$', nameTextStyle: { fontSize: 10 }, axisLabel: { fontSize: 10 } },
+          { type: 'value', name: 'ث', nameTextStyle: { fontSize: 10 }, axisLabel: { fontSize: 10 } },
+        ],
+        series: [
+          { name: 'كلفة المرحلة', type: 'bar', data: costs, itemStyle: { color: '#b4552d', borderRadius: [4, 4, 0, 0] } },
+          { name: 'مدة المرحلة (ث)', type: 'line', yAxisIndex: 1, data: durs, smooth: true, itemStyle: { color: '#2e7d5b' }, lineStyle: { width: 2 } },
+        ],
+      });
+    } else {
+      document.getElementById('msDashBars').style.display = 'none';
+    }
+  }
+}
+
+function msDashTick() {
+  const wrap = document.getElementById('msDash');
+  const el = document.getElementById('msDashElapsed');
+  if (!wrap || !el) return;
+  const started = wrap.dataset.startedAt ? Date.parse(wrap.dataset.startedAt) : 0;
+  if (!started) { el.textContent = '00:00'; return; }
+  const end = wrap.dataset.running === '1' ? Date.now() : (wrap.dataset.finishedAt ? Date.parse(wrap.dataset.finishedAt) : Date.now());
+  el.textContent = msFmtDur((end - started) / 1000);
 }
 
 function msAutoCheck(p) {
@@ -3220,6 +3409,7 @@ function renderMsAuto() {
     <div class="ms-auto-steps">${stepsHtml}</div>
     ${reportHtml}${archivesHtml}
     <div class="ms-auto-log">${(a.log || []).slice(-60).map(l => `<div><span class="ms-auto-log-at">${msEsc(l.at)}</span> ${msEsc(l.msg)}</div>`).join('')}</div>`;
+  msRenderDashboard(p, a);
   const startBtn = document.getElementById('msAutoStartBtn');
   const stopBtn = document.getElementById('msAutoStopBtn');
   if (startBtn) {
@@ -3322,11 +3512,13 @@ async function msAutoRun(p) {
     const choice = msModelChoice();
     choice.auditor = APPROVER;
     let done = 0;
+    const totalFolios = (p.copies || []).reduce((n, c) => n + (c.folios || []).length, 0);
+    let processed = 0;
     for (const c of p.copies || []) {
       for (const f of c.folios || []) {
         msAutoCheck(p);
-        if (f.status === 'approved' && (f.text || '').trim()) continue;
-        if (!f.file_path) { msAutoLog(p, `تخطي لوحة (${f.label}) في (${c.siglum}) — لم تُرفع صورتها.`); continue; }
+        if (f.status === 'approved' && (f.text || '').trim()) { processed++; msAutoProgress(p, 'transcribe', processed, totalFolios, `لوحات منسوخة ومعتمدة: ${processed} من ${totalFolios}`); continue; }
+        if (!f.file_path) { processed++; msAutoProgress(p, 'transcribe', processed, totalFolios); msAutoLog(p, `تخطي لوحة (${f.label}) في (${c.siglum}) — لم تُرفع صورتها.`); continue; }
         msAutoLog(p, `نسخ لوحة (${f.label}) من (${c.siglum}): قارئ أول وثانٍ ومدقق على الصورة...`);
         const data = await msAutoFetch('/api/manuscripts/transcribe', {
           file_path: f.file_path, api_key: msApiKey(),
@@ -3354,7 +3546,8 @@ async function msAutoRun(p) {
         f.status = 'approved';
         f.approver = choice.auditor; // اعتماد أرغون للنسخ المدقق على الصورة
         a.checkpoint = { step: 'transcribe', item: `(${c.siglum}) ${f.label}`, at: new Date().toISOString() };
-        done++; addCost(f.cost);
+        done++; addCost(f.cost); processed++;
+        msAutoProgress(p, 'transcribe', processed, totalFolios, `اعتماد لوحة (${f.label}) في (${c.siglum}): ${processed} من ${totalFolios} لوحة`);
         msAutoLog(p, `✔ اعتُمدت لوحة (${f.label}) في (${c.siglum}) — اتفاق القارئين ${data.agreement ?? '—'}٪`);
         msSave(); renderMsAuto(); renderMsCopies();
       }
@@ -3422,7 +3615,7 @@ async function msAutoRun(p) {
   // ٣) حسم مواضع الخلاف: Wonder يقضي، وما احتاج صورة اعتمده أرغون منها بنفسه
   await step('decide', false, async () => {
     const entries = ((p.collation || {}).entries || []).filter(e => e.status === 'pending');
-    let decided = 0, adopted = 0, imageDecided = 0, failed = 0;
+    let decided = 0, adopted = 0, imageDecided = 0, failed = 0, processedEntries = 0;
     for (const e of entries) {
       msAutoCheck(p);
       a.checkpoint = { step: 'decide', item: `(${e.folio}) ${e.type} مع (${e.siglum})`, at: new Date().toISOString() };
@@ -3467,6 +3660,8 @@ async function msAutoRun(p) {
         failed++;
         msAutoLog(p, `⚠️ تعذر حسم موضع (${e.folio}) ${e.type} آليًا: ${err.message} — سيُعاد في الاستئناف.`);
       }
+      processedEntries++;
+      msAutoProgress(p, 'decide', processedEntries, entries.length, `حسم مواضع الخلاف: ${processedEntries} من ${entries.length}`);
       await msSaveNow(); renderMsAuto(); renderMsCollation();
     }
     R.decided = (R.decided || 0) + decided; R.decidedAdopted = (R.decidedAdopted || 0) + adopted;
