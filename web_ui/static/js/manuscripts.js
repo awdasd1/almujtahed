@@ -2332,6 +2332,8 @@ let msArchitectBusy = false;
 function msArchitectOpen() {
   const modal = document.getElementById('msArchitectModal');
   if (!modal) { msToast('نافذة مهندس التحقيق غير متاحة'); return; }
+  // إخراج النافذة من main حتى لا تغطيها الترويسة اللاصقة (سياق تكديس مستقل)
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
   if (!msArchitectHistory.length) {
     const activeName = MS_GROUP?.name || 'تحقيق المخطوطات';
     msArchitectHistory = [{
@@ -2341,6 +2343,7 @@ function msArchitectOpen() {
   }
   msArchitectRender();
   modal.hidden = false;
+  requestAnimationFrame(() => { try { modal.scrollTop = 0; } catch (e) { /* */ } });
 }
 
 function msArchitectClose() {
@@ -2348,13 +2351,49 @@ function msArchitectClose() {
   if (modal) modal.hidden = true;
 }
 
+function msArchitectNormalizeQuestions(parsed) {
+  const raw = Array.isArray(parsed) ? parsed
+    : (Array.isArray(parsed?.questions) ? parsed.questions
+      : (Array.isArray(parsed?.choices) ? parsed.choices : []));
+  return raw.filter(q => q && (q.prompt || q.question || q.q) && Array.isArray(q.options || q.choices) && (q.options || q.choices).length)
+    .map(q => ({
+      id: q.id || '',
+      prompt: q.prompt || q.question || q.q,
+      multiple: !!q.multiple,
+      options: q.options || q.choices,
+    }));
+}
+
 function msArchitectExtractChoices(content) {
-  const m = String(content || '').match(/```choices\s*([\s\S]*?)```/i);
-  if (!m) return [];
-  try {
-    const parsed = JSON.parse(m[1].trim());
-    return Array.isArray(parsed?.questions) ? parsed.questions : [];
-  } catch (e) { return []; }
+  const text = String(content || '');
+  const tryParse = (blob) => {
+    try {
+      return msArchitectNormalizeQuestions(JSON.parse(blob.trim()));
+    } catch (e) {
+      // إزالة فواصل زائدة شائعة قبل إغلاق المصفوفة/الكائن
+      try {
+        const fixed = blob.trim().replace(/,\s*([}\]])/g, '$1');
+        return msArchitectNormalizeQuestions(JSON.parse(fixed));
+      } catch (e2) { return []; }
+    }
+  };
+  const fences = [
+    /```choices(?:[^\n`]*)?\s*([\s\S]*?)```/i,
+    /```json(?:[^\n`]*)?\s*([\s\S]*?"questions"\s*:\s*\[[\s\S]*?)```/i,
+  ];
+  for (const re of fences) {
+    const m = text.match(re);
+    if (!m) continue;
+    const qs = tryParse(m[1]);
+    if (qs.length) return qs;
+  }
+  // كتلة JSON عارية فيها questions دون سياج choices
+  const bare = text.match(/\{\s*"questions"\s*:\s*\[[\s\S]*?\]\s*\}/);
+  if (bare) {
+    const qs = tryParse(bare[0]);
+    if (qs.length) return qs;
+  }
+  return [];
 }
 
 function msArchitectChoicesHtml(questions, index) {
@@ -2362,14 +2401,16 @@ function msArchitectChoicesHtml(questions, index) {
   return `<div class="architect-choices" id="msArchitectChoices${index}">
     ${questions.map((q, qi) => `
       <div class="architect-choice-q" data-prompt="${msEsc(q.prompt || '')}">
-        <div style="font-weight:600;margin-bottom:4px">${msEsc(q.prompt || '')}</div>
+        <strong>${msEsc(q.prompt || '')}</strong>
         ${(q.options || []).map(opt => `
           <label class="architect-choice-option">
             <input type="${q.multiple ? 'checkbox' : 'radio'}" name="msArchQ${index}_${qi}" value="${msEsc(String(opt))}">
-            ${msEsc(String(opt))}
+            <span>${msEsc(String(opt))}</span>
           </label>`).join('')}
       </div>`).join('')}
-    <label class="architect-choice-extra">إضافة<textarea rows="2" placeholder="تفصيل إضافي (اختياري)"></textarea></label>
+    <label class="architect-choice-extra">إضافة
+      <textarea rows="2" placeholder="تفصيل إضافي (اختياري)"></textarea>
+    </label>
     <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectSubmitChoices(${index})">إرسال الإجابات</button>
   </div>`;
 }
@@ -2397,11 +2438,22 @@ function msArchitectRender() {
   box.innerHTML = msArchitectHistory.map((m, i) => {
     const isUser = m.role === 'user';
     const raw = String(m.content || '');
-    const shown = raw.replace(/```choices[\s\S]*?```/gi, '').replace(/```json[\s\S]*?```/gi, '').trim();
-    const choices = (!isUser && i === lastAsst) ? msArchitectChoicesHtml(msArchitectExtractChoices(raw), i) : '';
+    const extracted = (!isUser && i === lastAsst) ? msArchitectExtractChoices(raw) : [];
+    let shown = raw
+      .replace(/```choices(?:[^\n`]*)?[\s\S]*?```/gi, '')
+      .replace(/```json(?:[^\n`]*)?[\s\S]*?```/gi, '')
+      .trim();
+    // إن وُجدت خيارات مستخرجة من JSON عارٍ، اخفِ كتلة questions من النص المعروض
+    if (extracted.length) {
+      shown = shown.replace(/\{\s*"questions"\s*:\s*\[[\s\S]*?\]\s*\}/g, '').trim();
+    }
+    const bodyHtml = isUser
+      ? msEsc(shown).replace(/\n/g, '<br>')
+      : ((typeof formatMarkdown === 'function') ? formatMarkdown(shown)
+        : (typeof marked !== 'undefined' ? marked.parse(shown) : msEsc(shown).replace(/\n/g, '<br>')));
+    const choices = msArchitectChoicesHtml(extracted, i);
     return `<div class="studio-msg ${isUser ? 'user' : 'architect'}">
-      <div class="studio-bubble">${isUser ? msEsc(shown).replace(/\n/g, '<br>') : (typeof marked !== 'undefined' ? marked.parse(shown) : msEsc(shown).replace(/\n/g, '<br>'))}</div>
-      ${choices}
+      <div class="studio-bubble">${bodyHtml}${choices}</div>
     </div>`;
   }).join('');
   box.scrollTop = box.scrollHeight;
@@ -2414,6 +2466,12 @@ function msArchitectRender() {
       : 'حاور المهندس حتى يكتمل مخطط المجموعة';
   }
 }
+window.msArchitectSubmitChoices = msArchitectSubmitChoices;
+window.msArchitectOpen = msArchitectOpen;
+window.msArchitectClose = msArchitectClose;
+window.msArchitectSend = msArchitectSend;
+window.msArchitectApply = msArchitectApply;
+window.msArchitectReset = msArchitectReset;
 
 async function msArchitectSend() {
   if (msArchitectBusy) return;

@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.711"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.712"},
         },
     })
     if opened.get("error"):
@@ -28552,7 +28552,7 @@ def _architect_manuscripts_system_prompt(tools_catalog_desc: str, books_catalog_
         "• advisor_sonnet / advisor_argon / advisor_wonder — مجلس المستشارين\n"
         "• authorid, bio, ayat, hadith, tarajim, lugha, tafsir, aqeedah, authorworks — المتخصصون\n"
         "وكذا مدير أدوات (tools_manager) ووكيل خطة (planner) إن لزم الضبط العام للمجموعات.\n\n"
-        "【ما يجب أن تسأل المحقق عنه قبل اعتماد المجموعة — دفعةً بـ ```choices】\n"
+        "【ما يجب أن تسأل المحقق عنه قبل اعتماد المجموعة — دفعةً بـ ```choices حصرًا】\n"
         "1) مشروع التحقيق وعنوانه وفنّه: فقه أم عقيدة أم تفسير أم حديث أم لغة أم مختلط؟ وما محور التركيز؟\n"
         "2) حدود تراجم الأعلام: كل علم ورد، أم المشهورون المعمورون فقط، أم من يتوقف عليه المعنى؟\n"
         "3) حدود اللغة: غريب فقط، أم ضبط مشكل وتصحيف، أم شرح موسّع؟\n"
@@ -28560,7 +28560,12 @@ def _architect_manuscripts_system_prompt(tools_catalog_desc: str, books_catalog_
         "5) الحاشية: مختصرة على أسلوب المحققين أم موسّعة أكاديمية؟\n"
         "6) هل يفعّل وكيل التفسير/العقيدة بقوة أم يُخفّضان إن لم يكن المخطوط في فنهما؟\n"
         "7) نماذج القارئين الأول والثاني إن أراد أقوى من الافتراضي (الثالث ثابت Flash Lite).\n"
-        "من 2 إلى 4 أسئلة في الدفعة، بصيغة ```choices مع خيارات، والواجهة تضيف حقل كتابة.\n\n"
+        "من 2 إلى 4 أسئلة في الدفعة. لا تكتب الأسئلة كنص عادي فقط: أخرجها دائمًا في كتلة ```choices "
+        "بالشكل الحرفي التالي (الواجهة ترسم الأزرار منها؛ بلا الكتلة لن تظهر خيارات):\n"
+        "```choices\n"
+        '{"questions":[{"id":"discipline","prompt":"ما فن المخطوط؟","multiple":false,"options":["فقه","عقيدة","تفسير","حديث","لغة","مختلط"]},{"id":"tarajim","prompt":"حدود تراجم الأعلام؟","multiple":false,"options":["كل الأعلام","المعمورون فقط","المؤثرون في المعنى فقط"]},{"id":"hadith","prompt":"حد تخريج الأحاديث؟","multiple":false,"options":["عزو فقط","عزو ودرجة","موسّع"]},{"id":"footnote","prompt":"أسلوب الحاشية؟","multiple":false,"options":["مختصرة","موسّعة"]}]}\n'
+        "```\n"
+        "يُمنع الاكتفاء بجملة «اختر من الخيارات» دون كتلة ```choices. الواجهة تضيف حقل كتابة إضافيًا.\n\n"
         "【قواعد بناء المجموعة】\n"
         "1) انسخ الهيكل الثابت أعلاه؛ لا تحذف reader3 ولا تغيّر نموذجه عن google/gemini-3.1-flash-lite.\n"
         "2) خصّص system_prompt لكل وكيل بحسب إجابات المحقق (حدود التخريج/التراجم/اللغة/الحاشية).\n"
