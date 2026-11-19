@@ -16,6 +16,9 @@ let rdSaveTimer = null;
 
 const RD_COLORS = ['#b03a2e', '#1f6fb2', '#2e7d5b', '#b8860b', '#7a5aa1', '#222222'];
 const RD_NOTE_COLORS = ['#ffe58a', '#ffd1dc', '#c8f0c8', '#bfe3ff', '#e6ccff'];
+let rdCustomColors = { pen: [], note: [] };
+try { rdCustomColors = Object.assign(rdCustomColors, JSON.parse(localStorage.getItem('rdCustomColors') || '{}')); } catch (e) { /* لوحة افتراضية */ }
+let rdColorTarget = 'pen'; // منتقي الألوان يضيف للوحة الأقلام أو الملصقات
 
 function rdEsc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -79,7 +82,7 @@ function renderRdProjects() {
       <div class="ms-project-card-title">📖 ${rdEsc(p.title)}</div>
       ${p.desc ? `<div class="ms-project-card-desc">${rdEsc(p.desc)}</div>` : ''}
       <div class="ms-project-card-stats">بدأ: ${rdEsc(p.created_display || '')}</div>
-      <div class="ms-project-card-stats">${p.book ? `الكتاب: ${rdEsc(p.book.title)} · ${p.book.pages} صفحة · وقفت عند صفحة ${p.page || 1}` : 'لا كتاب مسحوبًا بعد'}</div>
+      <div class="ms-project-card-stats">${p.book ? `الكتاب: ${rdEsc(p.book.title)} · ${p.book.pages} صفحة${(p.book.parts && p.book.parts.length > 1) ? ` · ${p.book.parts.length} أجزاء` : ''} · وقفت عند صفحة ${p.page || 1}` : 'لا كتاب مسحوبًا بعد'}</div>
       <div class="ms-card-actions">
         <button type="button" class="ms-btn ms-btn-primary" onclick="rdOpenProject('${p.id}')">فتح القراءة</button>
         <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteProject('${p.id}')">حذف</button>
@@ -116,11 +119,14 @@ function rdOpenProject(id) {
   const p = rdProject(id);
   if (!p) return;
   rdCurrent = p;
+  if (p.book) rdEnsureParts(p.book);
   document.getElementById('rdReaderTitle').textContent = `📖 ${p.title}`;
   rdShowModal('rdReaderModal');
   rdBuildColorBars();
   rdSetTool('pen');
   rdUpdateBookUI();
+  rdApplyView();
+  rdInitResize();
   rdLoadPage(p.page || 1);
 }
 window.rdOpenProject = rdOpenProject;
@@ -146,11 +152,87 @@ function rdSaveSoon() {
   rdSaveTimer = setTimeout(() => rdSaveNow(false), 900);
 }
 
+// كتاب متعدد الأجزاء: parts متسلسلة وصفحات المشروع مرقّمة عبر الأجزاء كلها
+function rdPartOf(nb) {
+  return { source: nb.source, title: nb.title, file_name: nb.file_name || null, book_id: nb.book_id || null, pages: nb.pages || 1 };
+}
+function rdEnsureParts(b) {
+  if (!b) return null;
+  if (!Array.isArray(b.parts) || !b.parts.length) b.parts = [rdPartOf(b)];
+  b.pages = b.parts.reduce((s, x) => s + (x.pages || 0), 0) || b.pages || 1;
+  return b;
+}
+function rdPartPageUrl(part, localPage) {
+  if (part.source === 'shamela') return `/api/book/pdf-image?book_id=${part.book_id}&pdf_page=${localPage}&v=${Date.now()}`;
+  return `/api/reading-projects/page-image?file=${encodeURIComponent(part.file_name)}&page=${localPage}`;
+}
 function rdBookPageUrl(n) {
-  const b = rdCurrent && rdCurrent.book;
+  const b = rdCurrent && rdEnsureParts(rdCurrent.book);
   if (!b) return '';
-  if (b.source === 'shamela') return `/api/book/pdf-image?book_id=${b.book_id}&pdf_page=${n}&v=${Date.now()}`;
-  return `/api/reading-projects/page-image?file=${encodeURIComponent(b.file_name)}&page=${n}`;
+  let rest = n;
+  for (const part of b.parts) {
+    if (rest <= part.pages) return rdPartPageUrl(part, rest);
+    rest -= part.pages;
+  }
+  const last = b.parts[b.parts.length - 1];
+  return rdPartPageUrl(last, last.pages);
+}
+// اعتماد كتاب مسحوب: كتابًا أول أو جزءًا تاليًا يلحق بالتسلسل
+function rdApplyBook(nb, asAppend) {
+  if (!rdCurrent) return;
+  if (asAppend && rdCurrent.book) {
+    const b = rdEnsureParts(rdCurrent.book);
+    const startPage = b.pages + 1;
+    b.parts.push(rdPartOf(nb));
+    rdEnsureParts(b);
+    rdUpdateBookUI(); rdLoadPage(startPage); rdSaveNow(false);
+    rdToast(`✔ أُضيف الجزء التالي «${nb.title}» (${nb.pages} صفحة) — يبدأ من صفحة ${startPage}، والكتاب الآن ${b.parts.length} أجزاء`);
+    return;
+  }
+  nb.parts = [rdPartOf(nb)];
+  rdCurrent.book = nb;
+  rdCurrent.annotations = {};
+  rdUpdateBookUI(); rdLoadPage(1); rdSaveNow(false);
+}
+
+// تنبيه وجود كتاب حالي عند ضغط أي زر سحب/رفع
+let rdPendingSource = null;
+let rdAppendMode = false;
+function rdGuardSource(kind, ev) {
+  if (rdCurrent && rdCurrent.book) {
+    if (ev) ev.preventDefault();
+    rdPendingSource = kind;
+    const b = rdEnsureParts(rdCurrent.book);
+    document.getElementById('rdBookExistsText').textContent =
+      `في هذا المشروع كتاب قائم الآن: «${b.title}» — ${b.pages} صفحة${b.parts.length > 1 ? ` في ${b.parts.length} أجزاء` : ''}، وأنت واقف عند صفحة ${rdCurrent.page || 1}.`;
+    rdShowModal('rdBookExistsModal');
+    return false;
+  }
+  rdOpenSource(kind);
+  return true;
+}
+function rdOpenSource(kind) {
+  if (kind === 'shamela') rdOpenShamelaPicker();
+  else if (kind === 'web') rdOpenWebFetch();
+  else if (kind === 'upload') document.getElementById('rdUploadInput')?.click();
+}
+function rdBookExistsChoice(choice) {
+  rdCloseModal('rdBookExistsModal');
+  const kind = rdPendingSource;
+  rdPendingSource = null;
+  if (choice === 'append') {
+    rdAppendMode = true;
+    rdToast('اختر الجزء التالي — سيُلحق بصفحات الكتاب الحالي متسلسلًا');
+    if (kind) rdOpenSource(kind);
+  } else if (choice === 'new') {
+    rdAppendMode = false;
+    rdCloseReader();
+    rdToast('📖 لحسن التنظيم: أنشئ مشروع قراءة جديدًا لهذا الكتاب من الأعلى', 5000);
+    const t = document.getElementById('rdNewTitle');
+    if (t) { t.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => t.focus(), 350); }
+  } else {
+    rdAppendMode = false;
+  }
 }
 
 function rdUpdateBookUI() {
@@ -161,8 +243,9 @@ function rdUpdateBookUI() {
   document.getElementById('rdPageImg').style.display = has ? 'block' : 'none';
   document.getElementById('rdA4').classList.toggle('has-book', has);
   document.getElementById('rdPageTotal').textContent = has ? p.book.pages : '—';
+  if (has) rdEnsureParts(p.book);
   document.getElementById('rdBookInfo').textContent = has
-    ? `الكتاب: ${p.book.title} (${p.book.source === 'shamela' ? 'من الشاملة المصوّرة' : p.book.source === 'web' ? 'من الشبكة' : 'PDF مرفوع'}) — ${p.book.pages} صفحة`
+    ? `الكتاب: ${p.book.title} (${p.book.source === 'shamela' ? 'من الشاملة المصوّرة' : p.book.source === 'web' ? 'من الشبكة' : 'PDF مرفوع'}) — ${p.book.pages} صفحة${p.book.parts.length > 1 ? ` في ${p.book.parts.length} أجزاء متسلسلة` : ''}`
     : '';
 }
 
@@ -196,14 +279,36 @@ function rdZoom(d) {
 
 // ---------- الأدوات والرسم ----------
 function rdBuildColorBars() {
-  const mk = (elId, colors, cur, fn) => {
+  const mk = (elId, colors, cur, fn, target) => {
     const el = document.getElementById(elId);
     if (!el) return;
-    el.innerHTML = colors.map(c => `<button type="button" class="rd-color${c === cur ? ' active' : ''}" style="background:${c}" onclick="${fn}('${c}')"></button>`).join('');
+    el.innerHTML = colors.map(c => `<button type="button" class="rd-color${c === cur ? ' active' : ''}" style="background:${c}" onclick="${fn}('${c}')"></button>`).join('')
+      + `<button type="button" class="rd-color-add" title="لون فارغ — اضغطه لإضافة لون جديد من منتقي الألوان" onclick="rdAddColor('${target}')">+</button>`;
   };
-  mk('rdColors', RD_COLORS, rdColor, 'rdSetColor');
-  mk('rdNoteColors', RD_NOTE_COLORS, rdNoteColor, 'rdSetNoteColor');
+  mk('rdColors', RD_COLORS.concat(rdCustomColors.pen || []), rdColor, 'rdSetColor', 'pen');
+  mk('rdNoteColors', RD_NOTE_COLORS.concat(rdCustomColors.note || []), rdNoteColor, 'rdSetNoteColor', 'note');
 }
+// اللون الفارغ: يفتح منتقي ألوان النظام فيُضاف اللون المختار إلى اللوحة ويُحفظ
+function rdAddColor(target) {
+  rdColorTarget = target;
+  const picker = document.getElementById('rdColorPicker');
+  if (!picker) return;
+  picker.value = target === 'note' ? rdNoteColor : rdColor;
+  picker.click();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const picker = document.getElementById('rdColorPicker');
+  if (!picker) return;
+  picker.addEventListener('input', () => {
+    const c = picker.value;
+    const key = rdColorTarget === 'note' ? 'note' : 'pen';
+    rdCustomColors[key] = rdCustomColors[key] || [];
+    if (!rdCustomColors[key].includes(c)) rdCustomColors[key].push(c);
+    try { localStorage.setItem('rdCustomColors', JSON.stringify(rdCustomColors)); } catch (e) { /* */ }
+    if (key === 'note') rdNoteColor = c; else rdColor = c;
+    rdBuildColorBars();
+  });
+});
 function rdSetColor(c) { rdColor = c; rdBuildColorBars(); }
 function rdSetNoteColor(c) { rdNoteColor = c; rdBuildColorBars(); }
 function rdSetPenSize(s) {
@@ -313,10 +418,93 @@ function rdUndo() {
 }
 
 function rdClearPage() {
-  if (!confirm('مسح كل رسوم هذه الصفحة وتظليلها وقصاصاتها؟ (تبقى الملصقات)')) return;
+  if (!rdCurrent) return;
+  if (!confirm(`⚠️ تنبيه: سيتم إزالة جميع التعليقات من هذه الصفحة فقط (صفحة ${rdCurrent.page || 1}: رسوم الأقلام والتظليل والقصاصات وملصقات الملحوظات)، وتبقى تعليقات بقية الصفحات كما هي دون مساس. متابعة المسح؟`)) return;
   const ann = rdPageAnn();
-  ann.strokes = []; ann.highlights = []; ann.crops = []; ann.seq = [];
+  ann.strokes = []; ann.highlights = []; ann.crops = []; ann.notes = []; ann.seq = [];
+  document.querySelectorAll('.rd-note-editor').forEach(x => x.remove());
   rdRenderAnnotations(); rdSaveSoon();
+  rdToast(`🧹 مُسحت كل تعليقات صفحة ${rdCurrent.page || 1} وحدها`);
+}
+
+// ---------- عرض الصفحة: حدّة وتباين وخلفية ورقية ----------
+const RD_BGS = {
+  white: { page: '#ffffff', sepia: 0, bright: 1, sat: 1, scroll: '#8a8378' },
+  yellow: { page: '#f7e7b4', sepia: 0.38, bright: 1.03, sat: 1.02, scroll: '#8a7f63' },
+  beige: { page: '#eee0c3', sepia: 0.25, bright: 1.01, sat: 1, scroll: '#877d68' },
+  gray: { page: '#e3e3e0', sepia: 0, bright: 0.98, sat: 0.72, scroll: '#6f6f6c' },
+};
+function rdView() {
+  if (!rdCurrent) return { sharp: 0, contrast: 100, bg: 'white' };
+  rdCurrent.view = Object.assign({ sharp: 0, contrast: 100, bg: 'white' }, rdCurrent.view || {});
+  return rdCurrent.view;
+}
+function rdApplyView() {
+  const v = rdView();
+  const img = document.getElementById('rdPageImg');
+  const a4 = document.getElementById('rdA4');
+  const bg = RD_BGS[v.bg] || RD_BGS.white;
+  if (a4) a4.style.background = bg.page;
+  const scroll = document.getElementById('rdPageScroll');
+  if (scroll) scroll.style.background = bg.scroll;
+  const kernel = document.getElementById('rdSharpKernel');
+  const k = Math.max(0, Math.min(2, (Number(v.sharp) || 0) / 50));
+  if (kernel) kernel.setAttribute('kernelMatrix', `0 ${-k} 0 ${-k} ${1 + 4 * k} ${-k} 0 ${-k} 0`);
+  if (img) {
+    const parts = [];
+    if (k > 0) parts.push('url(#rdSharpenFilter)');
+    parts.push(`contrast(${v.contrast}%)`, `brightness(${bg.bright})`, `sepia(${bg.sepia})`, `saturate(${bg.sat})`);
+    img.style.filter = parts.join(' ');
+  }
+  const sh = document.getElementById('rdSharp'); if (sh) sh.value = v.sharp;
+  const ct = document.getElementById('rdContrast'); if (ct) ct.value = v.contrast;
+  document.querySelectorAll('.rd-bg-btn').forEach(b => b.classList.toggle('active', b.dataset.rdbg === v.bg));
+}
+function rdSetView(key, val) {
+  const v = rdView();
+  v[key] = Number(val);
+  rdApplyView(); rdSaveSoon();
+}
+function rdSetBg(bg) {
+  const v = rdView();
+  v.bg = bg;
+  rdApplyView(); rdSaveSoon();
+}
+function rdResetView() {
+  if (!rdCurrent) return;
+  rdCurrent.view = { sharp: 0, contrast: 100, bg: 'white' };
+  rdApplyView(); rdSaveSoon();
+}
+
+// تطويل النافذة من الأسفل فقط: مقبض سحب يغيّر ارتفاع نافذة القارئ رأسيًا
+let rdResizeInit = false;
+function rdInitResize() {
+  if (rdResizeInit) return;
+  const handle = document.getElementById('rdResizeHandle');
+  const modal = document.querySelector('.rd-reader-modal');
+  const scroll = document.getElementById('rdPageScroll');
+  if (!handle || !modal || !scroll) return;
+  rdResizeInit = true;
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startH = modal.offsetHeight;
+    modal.style.maxHeight = 'none';
+    const move = (ev) => {
+      const h = Math.max(430, Math.min(window.innerHeight - 16, startH + (ev.clientY - startY)));
+      modal.style.height = `${h}px`;
+      scroll.style.maxHeight = `${Math.max(240, h - 250)}px`;
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
 }
 
 function rdDiscussSelected() {
@@ -371,6 +559,7 @@ function rdDiscussSelected() {
         loupe.style.top = `${q.py - 90}px`;
         const Z = 2.4;
         limg.src = img.src;
+        limg.style.filter = img.style.filter;
         limg.style.width = `${q.rw * Z}px`;
         limg.style.right = `${-(q.x * q.rw * Z - 90)}px`;
         limg.style.top = `${-(q.y * q.rh * Z - 90)}px`;
@@ -476,10 +665,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/reading-projects/upload-book', { method: 'POST', body: form });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'تعذر رفع الكتاب');
-      rdCurrent.book = { source: 'pdf', title: data.title, file_name: data.file_name, pages: data.pages };
-      rdCurrent.annotations = {};
-      rdUpdateBookUI(); rdLoadPage(1); rdSaveNow(false);
-      rdToast(`✔ سُحب كتاب «${data.title}» (${data.pages} صفحة) — فعّلت الأدوات`);
+      const wasAppend = rdAppendMode; rdAppendMode = false;
+      rdApplyBook({ source: 'pdf', title: data.title, file_name: data.file_name, pages: data.pages }, wasAppend);
+      if (!wasAppend) rdToast(`✔ سُحب كتاب «${data.title}» (${data.pages} صفحة) — فعّلت الأدوات`);
     } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
   });
 });
@@ -509,12 +697,12 @@ async function rdPullShamela(bookId, title) {
   try {
     const res = await fetch(`/api/book/pdf-info?book_id=${bookId}`);
     const info = await res.json();
-    if (!info.available) { rdToast(`⚠️ ${info.reason || 'لا نسخة مصوّرة منزّلة لهذا الكتاب على جهازك'}`, 6000); return; }
-    rdCurrent.book = { source: 'shamela', book_id: bookId, title, pages: info.pdf_pages || 1 };
-    rdCurrent.annotations = {};
+    if (!info.available) { rdAppendMode = false; rdToast(`⚠️ ${info.reason || 'لا نسخة مصوّرة منزّلة لهذا الكتاب على جهازك'}`, 6000); return; }
+    const nb = { source: 'shamela', book_id: bookId, title, pages: info.pdf_pages || 1 };
+    const wasAppend = rdAppendMode; rdAppendMode = false;
     rdCloseModal('rdShamelaModal');
-    rdUpdateBookUI(); rdLoadPage(1); rdSaveNow(false);
-    rdToast(`✔ سُحب «${title}» من الشاملة المصوّرة (${rdCurrent.book.pages} صفحة) — فعّلت الأدوات`);
+    rdApplyBook(nb, wasAppend);
+    if (!wasAppend) rdToast(`✔ سُحب «${title}» من الشاملة المصوّرة (${nb.pages} صفحة) — فعّلت الأدوات`);
   } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
 }
 window.rdPullShamela = rdPullShamela;
@@ -528,8 +716,11 @@ function rdOpenWebFetch() {
 
 let rdWebPoll = null;
 async function rdFetchWeb() {
-  const url = document.getElementById('rdWebUrl').value.trim();
+  const urlInput = document.getElementById('rdWebUrl');
+  let url = urlInput.value.trim();
   if (!url) { rdToast('الصق رابط الكتاب أولًا'); return; }
+  // تُضاف https:// تلقائيًا إن غابت حتى لا يُرفض العنوان لخلوّه من البروتوكول
+  if (!/^https?:\/\//i.test(url)) { url = 'https://' + url; urlInput.value = url; }
   const btn = document.getElementById('rdWebFetchBtn');
   const barWrap = document.getElementById('rdWebBarWrap');
   const bar = document.getElementById('rdWebBarFill');
@@ -560,9 +751,8 @@ async function rdFetchWeb() {
           bar.style.width = '100%';
           st.textContent = `✔ اكتمل سحب «${j.title}» (${j.pages} صفحة) — يُعرض الآن في نافذة القراءة.`;
           if (rdCurrent) {
-            rdCurrent.book = { source: 'web', title: j.title, file_name: j.file_name, pages: j.pages };
-            rdCurrent.annotations = {};
-            rdUpdateBookUI(); rdLoadPage(1); rdSaveNow(false);
+            const wasAppend = rdAppendMode; rdAppendMode = false;
+            rdApplyBook({ source: 'web', title: j.title, file_name: j.file_name, pages: j.pages }, wasAppend);
           }
           btn.disabled = false;
           setTimeout(() => rdCloseModal('rdWebModal'), 900);

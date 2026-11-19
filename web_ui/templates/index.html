@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.731">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.732">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.731" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.732" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.731</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.732</span>
             </div>
 
             <div class="header-actions">
@@ -1941,6 +1941,19 @@
                             <button type="button" class="ms-btn" onclick="rdCloseReader()">✕ إغلاق</button>
                         </span>
                     </div>
+                    <div class="rd-viewbar" id="rdViewBar">
+                        <label>حدّة الصورة <input type="range" id="rdSharp" min="0" max="100" value="0" oninput="rdSetView('sharp', this.value)"></label>
+                        <label>التباين <input type="range" id="rdContrast" min="60" max="160" value="100" oninput="rdSetView('contrast', this.value)"></label>
+                        <span class="rd-viewbar-sep">خلفية الكتاب:</span>
+                        <button type="button" class="rd-bg-btn active" data-rdbg="white" style="background:#ffffff" title="أبيض" onclick="rdSetBg('white')">أبيض</button>
+                        <button type="button" class="rd-bg-btn" data-rdbg="yellow" style="background:#f7e7b4" title="أصفر ورقي" onclick="rdSetBg('yellow')">أصفر ورق</button>
+                        <button type="button" class="rd-bg-btn" data-rdbg="beige" style="background:#eee0c3" title="بيج دافئ" onclick="rdSetBg('beige')">بيج</button>
+                        <button type="button" class="rd-bg-btn" data-rdbg="gray" style="background:#e3e3e0" title="رمادي مريح للعين" onclick="rdSetBg('gray')">رمادي</button>
+                        <button type="button" class="ms-btn" onclick="rdResetView()">↺ ضبط العرض</button>
+                    </div>
+                    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+                        <filter id="rdSharpenFilter"><feConvolveMatrix id="rdSharpKernel" order="3" kernelMatrix="0 0 0 0 1 0 0 0 0" preserveAlpha="true"/></filter>
+                    </defs></svg>
                     <div class="rd-body">
                         <div class="rd-toolbar" id="rdToolbar">
                             <button type="button" class="rd-tool" data-rd-tool="pen" title="قلم" onclick="rdSetTool('pen')">✏️</button>
@@ -1958,8 +1971,10 @@
                             <button type="button" class="rd-tool" data-rd-tool="note" title="ملصق ملحوظات — اضغط موضعه على الصفحة" onclick="rdSetTool('note')">📌</button>
                             <div class="rd-colors" id="rdNoteColors"></div>
                             <button type="button" class="rd-tool" title="تراجع عن آخر رسم" onclick="rdUndo()">↩️</button>
-                            <button type="button" class="rd-tool" title="مسح رسوم هذه الصفحة" onclick="rdClearPage()">🗑️</button>
+                            <button type="button" class="rd-tool" title="مسح كامل لتعليقات هذه الصفحة فقط" onclick="rdClearPage()">🧹</button>
                         </div>
+                        <div class="rd-page-wrap">
+                        <button type="button" class="rd-nav-zone rd-nav-prev" onclick="rdFlipPage(-1)" title="الصفحة السابقة"><span>السابقة ❯</span></button>
                         <div class="rd-page-scroll" id="rdPageScroll">
                             <div class="rd-a4" id="rdA4">
                                 <div class="rd-empty" id="rdEmpty">لا كتاب بعد في هذا المشروع.<br>اسحب كتابًا من الأسفل (رفع PDF، أو من الشاملة المصوّرة، أو من الشبكة) فيظهر هنا من أول صفحة وتتفعّل الأدوات.</div>
@@ -1970,15 +1985,32 @@
                             </div>
                             <div class="rd-crops" id="rdCropsBar" hidden></div>
                         </div>
+                        <button type="button" class="rd-nav-zone rd-nav-next" onclick="rdFlipPage(1)" title="الصفحة التالية"><span>❮ التالية</span></button>
+                        </div>
                     </div>
                     <div class="rd-bottombar">
-                        <label class="ms-btn ms-btn-primary ms-upload-label">⬆ رفع كتاب (PDF)
+                        <label class="ms-btn ms-btn-primary ms-upload-label" onclick="return rdGuardSource('upload', event)">⬆ رفع كتاب (PDF)
                             <input type="file" id="rdUploadInput" accept=".pdf,application/pdf" hidden>
                         </label>
-                        <button type="button" class="ms-btn" onclick="rdOpenShamelaPicker()">📚 سحب كتاب من الشاملة</button>
-                        <button type="button" class="ms-btn" onclick="rdOpenWebFetch()">🌐 سحب كتاب من الشبكة</button>
+                        <button type="button" class="ms-btn" onclick="rdGuardSource('shamela')">📚 سحب كتاب من الشاملة</button>
+                        <button type="button" class="ms-btn" onclick="rdGuardSource('web')">🌐 سحب كتاب من الشبكة</button>
                         <span class="ms-hint" id="rdBookInfo"></span>
                         <span class="ms-hint" id="rdSaveState"></span>
+                    </div>
+                    <input type="color" id="rdColorPicker" hidden>
+                    <div class="rd-resize-handle" id="rdResizeHandle" title="اسحب لتطويل النافذة من الأسفل فقط">↕ اسحب لتطويل النافذة</div>
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdBookExistsModal" hidden>
+                <div class="ms-modal">
+                    <div class="ms-modal-head"><strong>📚 تنبيه: يوجد كتاب حالي في هذا المشروع</strong></div>
+                    <p class="ms-rec-meta" id="rdBookExistsText"></p>
+                    <p class="ms-hint">إن كان كتابك متعدد الأجزاء يمكنك إضافة الجزء التالي الآن فيلحق بصفحات الكتاب الحالي متسلسلًا. أما إن كان كتابًا مستقلًا فمن الأفضل لحسن التنظيم إنشاء مشروع قراءة جديد له.</p>
+                    <div class="ms-modal-btns">
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdBookExistsChoice('append')">➕ إضافة الجزء التالي</button>
+                        <button type="button" class="ms-btn" onclick="rdBookExistsChoice('new')">📖 إنشاء مشروع قراءة كتاب جديد</button>
+                        <button type="button" class="ms-btn" onclick="rdBookExistsChoice('cancel')">إلغاء</button>
                     </div>
                 </div>
             </div>
@@ -6922,26 +6954,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.731"></script>
-    <script src="/static/js/search.js?v=1.10.731"></script>
-    <script src="/static/js/reader.js?v=1.10.731"></script>
-    <script src="/static/js/force3d.js?v=1.10.731"></script>
-    <script src="/static/js/share.js?v=1.10.731"></script>
-    <script src="/static/js/chat.js?v=1.10.731"></script>
-    <script src="/static/js/documents.js?v=1.10.731"></script>
-    <script src="/static/js/designs.js?v=1.10.731"></script>
-    <script src="/static/js/texts.js?v=1.10.731"></script>
-    <script src="/static/js/agents.js?v=1.10.731"></script>
-    <script src="/static/js/providers.js?v=1.10.731"></script>
-    <script src="/static/js/tools.js?v=1.10.731"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.731"></script>
-    <script src="/static/js/projects.js?v=1.10.731"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.731"></script>
-    <script src="/static/js/reading.js?v=1.10.731"></script>
-    <script src="/static/js/archive.js?v=1.10.731"></script>
-    <script src="/static/js/compare.js?v=1.10.731"></script>
-    <script src="/static/js/local_models.js?v=1.10.731"></script>
-    <script src="/static/js/changelog.js?v=1.10.731"></script>
+    <script src="/static/js/app.js?v=1.10.732"></script>
+    <script src="/static/js/search.js?v=1.10.732"></script>
+    <script src="/static/js/reader.js?v=1.10.732"></script>
+    <script src="/static/js/force3d.js?v=1.10.732"></script>
+    <script src="/static/js/share.js?v=1.10.732"></script>
+    <script src="/static/js/chat.js?v=1.10.732"></script>
+    <script src="/static/js/documents.js?v=1.10.732"></script>
+    <script src="/static/js/designs.js?v=1.10.732"></script>
+    <script src="/static/js/texts.js?v=1.10.732"></script>
+    <script src="/static/js/agents.js?v=1.10.732"></script>
+    <script src="/static/js/providers.js?v=1.10.732"></script>
+    <script src="/static/js/tools.js?v=1.10.732"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.732"></script>
+    <script src="/static/js/projects.js?v=1.10.732"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.732"></script>
+    <script src="/static/js/reading.js?v=1.10.732"></script>
+    <script src="/static/js/archive.js?v=1.10.732"></script>
+    <script src="/static/js/compare.js?v=1.10.732"></script>
+    <script src="/static/js/local_models.js?v=1.10.732"></script>
+    <script src="/static/js/changelog.js?v=1.10.732"></script>
 
     <script>
         window.refreshLucideIcons = function () {
