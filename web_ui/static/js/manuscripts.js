@@ -2550,15 +2550,16 @@ async function msApplyArchitectBlueprint(bp) {
   (bp.subagents_group.agents || []).forEach((ag, i) => {
     const key = ag.ms_key || ag.key;
     if (key && agents.some(a => a.ms_key === key)) return;
-    if (ag.role === 'tools_manager' || ag.kind === 'tools_manager' || ag.kind === 'planner' || ag.role === 'planner') {
-      agents.push({
-        id: `${gid}_extra_${i}`, ms_key: ag.role || ag.kind || `extra_${i}`,
-        name: ag.name || 'وكيل إضافي', desc: ag.desc || '', model: ag.model || 'google/gemini-3.8-flash',
-        enabled: true, active: true, role: ag.role || ag.kind || '', books: ag.books || [],
-        booksScope: ag.books || [], system_prompt: ag.system_prompt || ag.systemPrompt || '',
-        systemPrompt: ag.system_prompt || ag.systemPrompt || '', stage: 2,
-      });
-    }
+    // كل وكيل إضافي يقترحه المهندس بعبقريته يُحفظ في المجموعة ولا يُسقط:
+    // متخصص زائد أو مدير أدوات أو وكيل خطة، بمفتاحه وكتبه وتوجيهه كما صاغه
+    const extraKey = key || ag.role || ag.kind || `extra_${i}`;
+    agents.push({
+      id: `${gid}_extra_${i}`, ms_key: extraKey,
+      name: ag.name || 'وكيل إضافي', desc: ag.desc || '', model: ag.model || 'google/gemini-3.8-flash',
+      enabled: true, active: true, role: ag.role || ag.kind || '', books: Array.isArray(ag.books) ? ag.books : [],
+      booksScope: Array.isArray(ag.books) ? [...ag.books] : [], system_prompt: ag.system_prompt || ag.systemPrompt || '',
+      systemPrompt: ag.system_prompt || ag.systemPrompt || '', stage: ag.stage || 2,
+    });
   });
   const g = {
     id: gid,
