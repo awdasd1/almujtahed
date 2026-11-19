@@ -172,6 +172,8 @@ function queueProjectAutosave() {
 }
 
 async function saveProjectDraftNow() {
+  // حوار تحقيق المخطوط لا يُحفظ مشروعًا بحثيًا مسودة
+  if (typeof architectProjectKind !== 'undefined' && architectProjectKind === 'manuscripts') return;
   const draft = currentProjectDraft();
   if (!draft) return;
   if (!(draft.architect_history || []).length && !draft.blueprint) return;
@@ -1773,6 +1775,73 @@ async function resolveAndVerifyProjectBooks() {
 let architectHistory = [];
 let currentStudioBlueprint = null;
 let currentPlanningProjectId = null;
+// مهندس واحد بنوعين: '' لم يُختر بعد | research مشروع علمي | manuscripts تحقيق مخطوط
+let architectProjectKind = '';
+
+function architectKindFromText(text) {
+  const t = String(text || '');
+  if (/تحقيق مخطوط|مخطوط/.test(t)) return 'manuscripts';
+  if (/مشروع علمي|بحث علمي|مشروع بحثي/.test(t)) return 'research';
+  return '';
+}
+
+function architectWelcomeText(newUniqueId) {
+  if (architectProjectKind === 'manuscripts') {
+    return `مرحبًا بك في **استوديو مهندس المشاريع** 🧭 — وقد اخترت **تحقيق مخطوط**.\n\nسأحاورك مهندسًا واحدًا بتوجيه تحقيق المخطوطات: فنّ المخطوط ومحوره، حدود تراجم الأعلام، حدود اللغة، تخريج الأحاديث ودرجتها، وأسلوب الحاشية (مختصرة/موسّعة)، ثم أنشئ لك **مجموعة تحقيق** (\`ms_kind: manuscripts\`) بقارئ ثالث ثابت Gemini 3.1 Flash Lite تظهر في تبويب تحقيق المخطوطات.\n\nما مشروع التحقيق الذي تريد ضبط مجموعته؟ (المعرّف: \`${newUniqueId}\`)`;
+  }
+  if (architectProjectKind === 'research') {
+    return `مرحبًا بك في **استوديو مهندس المشاريع** 🧭 — وقد اخترت **مشروعًا علميًا**.\n\nسنحدد سويًا النطاق والمصادر وكروت الوكلاء وأدوات التحقق والمقارنة المرجعية. تفضل بطرح موضوعك أو مسألتك لنبدأ. (المعرّف: \`${newUniqueId}\`)`;
+  }
+  return `مرحبًا بك أستاذنا الباحث الكريم في **استوديو تخطيط وهندسة المشاريع التراثية الكبرى** 🧭.\n\nأنا **مهندسك** لمنظومة «المغني» (المعرّف الفريد: \`${newUniqueId}\`). قبل أي تخطيط، حدّد نوع مشروعك وسأتحول إلى التوجيه الخاص به:\n\n` +
+    '```choices\n{"questions":[{"id":"project_kind","prompt":"ما نوع مشروعك؟","multiple":false,"options":["مشروع علمي","تحقيق مخطوط"]}]}\n```';
+}
+
+function setArchitectProjectKind(kind, opts = {}) {
+  architectProjectKind = kind || '';
+  try { localStorage.setItem('almujtahed_architect_kind', architectProjectKind); } catch (e) { /* */ }
+  const isMs = architectProjectKind === 'manuscripts';
+  const isRes = architectProjectKind === 'research';
+  const rb = document.getElementById('architectKindResearchBtn');
+  const mb = document.getElementById('architectKindManuscriptsBtn');
+  if (rb) { rb.classList.toggle('is-on', isRes); rb.style.opacity = isMs ? '.55' : '1'; }
+  if (mb) { mb.classList.toggle('is-on', isMs); mb.style.opacity = isRes ? '.55' : '1'; }
+  const hint = document.getElementById('architectKindHint');
+  if (hint) hint.textContent = isMs
+    ? 'الوضع: تحقيق مخطوط — توجيه المخطوطات، والاعتماد ينشئ مجموعة تحقيق في تبويب المخطوطات'
+    : (isRes ? 'الوضع: مشروع علمي — التوجيه الحالي لمهندس المشاريع، والاعتماد يؤسس مشروعًا بحثيًا'
+      : 'أول سؤال: اختر نوع المشروع فيبدأ التوجيه الخاص به');
+  const applyBtn = document.getElementById('btnApplyStudioBlueprint');
+  if (applyBtn && !opts.keepApplyLabel) {
+    const label = applyBtn.querySelector('span') || applyBtn;
+    if (isMs) label.textContent = 'اعتماد مجموعة التحقيق ✔';
+    else if (isRes) label.textContent = 'اعتماد وتأسيس المشروع الجديد 🚀';
+  }
+  const chips = document.getElementById('studioQuickChips');
+  if (chips) chips.style.display = isMs ? 'none' : '';
+  const input = document.getElementById('architectUserInput');
+  if (input) input.placeholder = isMs
+    ? 'صف مخطوط التحقيق وفنّه وحدود التراجم والتخريج والحاشية…'
+    : 'اكتب فكرة مشروعك، أو أجب عن أسئلة المهندس…';
+  const cardsTitle = document.querySelector('.studio-blueprint-panel .b-header-title span');
+  if (cardsTitle) cardsTitle.textContent = isMs ? 'كروت مجموعة التحقيق (تحديث فوري):' : 'كروت المشروع المخصصة (تحديث فوري):';
+}
+window.setArchitectProjectKind = setArchitectProjectKind;
+
+function chooseArchitectProjectKind(kind) {
+  const changed = architectProjectKind && architectProjectKind !== kind;
+  setArchitectProjectKind(kind);
+  // تبديل النوع يبدأ حوارًا نظيفًا بالتوجيه الجديد حتى لا تختلط التوجيهات
+  architectHistory = [{ role: 'assistant', content: architectWelcomeText(currentPlanningProjectId || 'جديد') }];
+  currentStudioBlueprint = null;
+  renderArchitectChat();
+  const applyBtn = document.getElementById('btnApplyStudioBlueprint');
+  if (applyBtn) applyBtn.disabled = true;
+  if (typeof showToast === 'function') {
+    showToast(kind === 'manuscripts' ? 'تحوّل المهندس إلى توجيه تحقيق المخطوطات' : 'تحوّل المهندس إلى توجيه المشاريع العلمية');
+  }
+  if (changed) { /* الحوار أُعيد بتوجيه النوع الجديد */ }
+}
+window.chooseArchitectProjectKind = chooseArchitectProjectKind;
 
 async function openProjectPlanningModal(projectId = null) {
   const modal = document.getElementById('projectPlanningModal');
@@ -1800,6 +1869,7 @@ async function openProjectPlanningModal(projectId = null) {
   if (targetPid) {
     const p = projectsList.find(x => x.id === targetPid);
     if (p) {
+      setArchitectProjectKind('research');
       currentPlanningProjectId = targetPid;
       activeProjectId = targetPid;
 
@@ -1867,9 +1937,15 @@ async function openProjectPlanningModal(projectId = null) {
     activeProjectId = null; // فك أي ارتباط بالمشاريع السابقة تماماً
     architectHistory = [];
     currentStudioBlueprint = null;
+    // مدخل موحّد: من تبويب المخطوطات يُختار تحقيق مخطوط مسبقًا، وغيره يسأل أولًا
+    const preset = window.__architectPresetKind || '';
+    window.__architectPresetKind = '';
+    setArchitectProjectKind(preset === 'manuscripts' ? 'manuscripts' : '');
 
-    if (titleEl) titleEl.textContent = 'استوديو تخطيط وهندسة مشروع جديد';
-    if (subtitleEl) subtitleEl.innerHTML = `معرّف فريد جديد: <code style="color:var(--accent-clay); font-weight:700;">${newUniqueId}</code>`;
+    if (titleEl) titleEl.textContent = architectProjectKind === 'manuscripts'
+      ? 'استوديو مهندس المشاريع — تحقيق مخطوط'
+      : 'استوديو تخطيط وهندسة مشروع جديد';
+    if (subtitleEl) subtitleEl.innerHTML = `معرّف فريد جديد: <code style="color:var(--accent-clay); font-weight:700;">${newUniqueId}</code> — مهندس واحد: مشروع علمي أو تحقيق مخطوط`;
 
     const cardsStream = document.getElementById('studioCardsStream');
     if (cardsStream) {
@@ -1898,9 +1974,9 @@ async function openProjectPlanningModal(projectId = null) {
       statusBadge.className = 'p-status-pill';
     }
 
-    const welcomeText = `مرحباً بك أستاذنا الباحث الكريم في **استوديو تخطيط وهندسة المشاريع التراثية الكبرى** 🧭.\n\nأنا **كبير المهندسين المعماريين** لمنظومة «المغني»، ومهمتي أن أحاورك وأناقشك خطوة بخطوة في فكرة مسألتك أو مشروعك البحثي الجديد (المعرّف الفريد: \`${newUniqueId}\`).\n\nسنحدد سوياً:\n1. 📜 النطاق الزمني والمصادري الدقيق في الشاملة.\n2. 👥 تشكيل كروت الوكلاء المساعدين التخصصيين وتوجيهاتهم الخاصة.\n3. 📐 أداة التحقق والمقارنة الأكاديمية أو الحسابية المطلوبة.\n4. ⚖️ مصفوفة المقارنة المرجعية (Benchmark).\n\n**تفضل بطرح موضوعك أو مسألتك وما تصبو إلى تحقيقه لنبدأ نقاشنا فوراً!**`;
-    architectHistory = [{ role: 'assistant', content: welcomeText }];
+    architectHistory = [{ role: 'assistant', content: architectWelcomeText(newUniqueId) }];
     renderArchitectChat();
+    setArchitectProjectKind(architectProjectKind);
   }
 
   await populateArchitectModelsList(targetModel);
@@ -2000,7 +2076,15 @@ function submitArchitectChoices(index) {
     if (typeof showToast === 'function') showToast('اختر جواباً أو اكتب إضافة');
     return;
   }
-  input.value = lines.join('\n');
+  const joined = lines.join('\n');
+  // أول سؤال (نوع المشروع) يبدّل توجيه المهندس نفسه قبل إرسال الرسالة
+  const kind = architectKindFromText(joined);
+  if (kind && /نوع مشروعك|project_kind/.test(joined + ' ' + (root.textContent || ''))) {
+    setArchitectProjectKind(kind);
+  } else if (kind && !architectProjectKind) {
+    setArchitectProjectKind(kind);
+  }
+  input.value = joined;
   sendArchitectMessage();
 }
 window.submitArchitectChoices = submitArchitectChoices;
@@ -2033,6 +2117,12 @@ async function sendArchitectMessage() {
   const inputEl = document.getElementById('architectUserInput');
   const userText = (inputEl?.value || '').trim();
   if (!userText) return;
+
+  // استدلال نوع المشروع من أول إجابة/رسالة فيبدّل التوجيه الخادمي
+  if (!architectProjectKind) {
+    const inferred = architectKindFromText(userText);
+    if (inferred) setArchitectProjectKind(inferred);
+  }
 
   inputEl.value = '';
 
@@ -2086,7 +2176,8 @@ async function sendArchitectMessage() {
         thinking_level: thinkingLevel,
         context_tokens: parseInt(document.getElementById('architectContextSelect')?.value || '1048576', 10),
         tavily_key: (typeof readTavilyKey === 'function' ? readTavilyKey() : '') || (savedKeys.tavily || ''),
-        api_key: apiKey
+        api_key: apiKey,
+        domain: architectProjectKind === 'manuscripts' ? 'manuscripts' : ''
       })
     });
 
@@ -2113,7 +2204,7 @@ async function sendArchitectMessage() {
       renderArchitectChat();
 
       const targetId = currentPlanningProjectId;
-      if (targetId) {
+      if (targetId && architectProjectKind !== 'manuscripts') {
         const curProj = projectsList.find(x => x.id === targetId);
         if (curProj) {
           curProj.architect_dialog = [...architectHistory];
@@ -2702,7 +2793,8 @@ async function applyStudioBlueprint() {
             thinking_level: document.getElementById('architectThinkingSelect')?.value || 'medium',
             context_tokens: parseInt(document.getElementById('architectContextSelect')?.value || '1048576', 10),
             tavily_key: (typeof readTavilyKey === 'function' ? readTavilyKey() : '') || (savedKeys.tavily || ''),
-            api_key: apiKey
+            api_key: apiKey,
+            domain: architectProjectKind === 'manuscripts' ? 'manuscripts' : ''
           })
         });
         if (res.ok) {
@@ -2716,14 +2808,32 @@ async function applyStudioBlueprint() {
         console.warn('Final blueprint fetch error:', callErr);
       }
 
-      // إذا لم يتوفر بعد، نولد مخططاً فورياً تخصصياً فائق الدقة
-      if (!currentStudioBlueprint) {
+      // إذا لم يتوفر بعد، نولد مخططاً فورياً تخصصياً فائق الدقة (للمشروع العلمي فقط)
+      if (!currentStudioBlueprint && architectProjectKind !== 'manuscripts') {
         currentStudioBlueprint = generateFallbackBlueprintFromContext(userContext);
         renderStudioCardsPreview(currentStudioBlueprint);
       }
     }
 
     const bp = currentStudioBlueprint;
+
+    // تحقيق مخطوط: الاعتماد ينشئ مجموعة تحقيق لا مشروعًا بحثيًا
+    if (architectProjectKind === 'manuscripts' || bp?.ms_kind === 'manuscripts' || bp?.investigation_profile) {
+      if (!bp?.subagents_group?.agents?.length) {
+        if (typeof showToast === 'function') showToast('لا مخطط مجموعة تحقيق جاهز بعد — أكمل حوار المهندس');
+        return;
+      }
+      if (typeof window.msApplyArchitectBlueprint !== 'function') {
+        if (typeof showToast === 'function') showToast('وحدة تحقيق المخطوطات غير محمّلة — افتح تبويب المخطوطات ثم أعد المحاولة');
+        return;
+      }
+      const ok = await window.msApplyArchitectBlueprint(bp);
+      if (ok) {
+        closeProjectPlanningModal();
+        if (typeof switchMainTab === 'function') switchMainTab('manuscripts');
+      }
+      return;
+    }
 
     // فحص ما إذا كان التعديل لمشروع قائم أو لتأسيس مشروع جديد
     const existingProject = (currentPlanningProjectId && projectsList.find(p => p.id === currentPlanningProjectId))

@@ -1875,7 +1875,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ---------- مجموعات تحقيق المخطوطات المعتمدة ----------
-// المجموعة الافتراضية ثابتة؛ والمحقق ينشئ مجموعات مخصّصة عبر مهندس التحقيق
+// المجموعة الافتراضية ثابتة؛ والمحقق ينشئ مجموعات مخصّصة عبر مهندس المشاريع
 // كما في البحث الموسع، وتظهر كلها في قائمة «مجموعات الوكلاء المعتمدة».
 const MS_DEFAULT_GROUP_ID = 'ms_tahqeeq_group_v1';
 let MS_GROUP_ID = (typeof localStorage !== 'undefined' && localStorage.getItem('almujtahed_ms_active_group')) || MS_DEFAULT_GROUP_ID;
@@ -2324,204 +2324,24 @@ function msSyncGroupFromEditor(scrollY) {
   requestAnimationFrame(() => window.scrollTo(0, scrollY || 0));
 }
 
-// ---------- مهندس مجموعات تحقيق المخطوطات ----------
-let msArchitectHistory = [];
-let msArchitectBlueprint = null;
-let msArchitectBusy = false;
-
+// ---------- مهندس موحّد: هذا التبويب يفتح مهندس المشاريع بنوع «تحقيق مخطوط» ----------
+// لا مهندس ثانٍ هنا؛ المهندس نفسه يسأل أولًا عن نوع المشروع، فإذا اختير
+// تحقيق مخطوط تحوّل توجيهه الخادمي (domain=manuscripts) واعتماده هنا.
 function msArchitectOpen() {
-  const modal = document.getElementById('msArchitectModal');
-  if (!modal) { msToast('نافذة مهندس التحقيق غير متاحة'); return; }
-  // إخراج النافذة من main حتى لا تغطيها الترويسة اللاصقة (سياق تكديس مستقل)
-  if (modal.parentElement !== document.body) document.body.appendChild(modal);
-  if (!msArchitectHistory.length) {
-    const activeName = MS_GROUP?.name || 'تحقيق المخطوطات';
-    msArchitectHistory = [{
-      role: 'assistant',
-      content: `مرحبًا بك في **استوديو هندسة مجموعات تحقيق المخطوطات**.\n\nالمجموعة النشطة الآن: «**${activeName}**» — هيكلها ثابت (مدير، مساعد، ثلاثة قرّاء منهم Flash Lite، معتمِد، مراقب، مجلس مستشارين، ومتخصصون).\n\nسأسألك عن مشروع تحقيقك: الفن (فقه/عقيدة/تفسير…)، حدود التراجم، اللغة، تخريج الأحاديث، وأسلوب الحاشية؛ ثم أنشئ لك مجموعة تحقيق خاصة تظهر في قائمة المجموعات المعتمدة.\n\nما مشروع التحقيق الذي تريد ضبط مجموعته؟`,
-    }];
-  }
-  msArchitectRender();
-  modal.hidden = false;
-  requestAnimationFrame(() => { try { modal.scrollTop = 0; } catch (e) { /* */ } });
-}
-
-function msArchitectClose() {
-  const modal = document.getElementById('msArchitectModal');
-  if (modal) modal.hidden = true;
-}
-
-function msArchitectNormalizeQuestions(parsed) {
-  const raw = Array.isArray(parsed) ? parsed
-    : (Array.isArray(parsed?.questions) ? parsed.questions
-      : (Array.isArray(parsed?.choices) ? parsed.choices : []));
-  return raw.filter(q => q && (q.prompt || q.question || q.q) && Array.isArray(q.options || q.choices) && (q.options || q.choices).length)
-    .map(q => ({
-      id: q.id || '',
-      prompt: q.prompt || q.question || q.q,
-      multiple: !!q.multiple,
-      options: q.options || q.choices,
-    }));
-}
-
-function msArchitectExtractChoices(content) {
-  const text = String(content || '');
-  const tryParse = (blob) => {
-    try {
-      return msArchitectNormalizeQuestions(JSON.parse(blob.trim()));
-    } catch (e) {
-      // إزالة فواصل زائدة شائعة قبل إغلاق المصفوفة/الكائن
-      try {
-        const fixed = blob.trim().replace(/,\s*([}\]])/g, '$1');
-        return msArchitectNormalizeQuestions(JSON.parse(fixed));
-      } catch (e2) { return []; }
-    }
-  };
-  const fences = [
-    /```choices(?:[^\n`]*)?\s*([\s\S]*?)```/i,
-    /```json(?:[^\n`]*)?\s*([\s\S]*?"questions"\s*:\s*\[[\s\S]*?)```/i,
-  ];
-  for (const re of fences) {
-    const m = text.match(re);
-    if (!m) continue;
-    const qs = tryParse(m[1]);
-    if (qs.length) return qs;
-  }
-  // كتلة JSON عارية فيها questions دون سياج choices
-  const bare = text.match(/\{\s*"questions"\s*:\s*\[[\s\S]*?\]\s*\}/);
-  if (bare) {
-    const qs = tryParse(bare[0]);
-    if (qs.length) return qs;
-  }
-  return [];
-}
-
-function msArchitectChoicesHtml(questions, index) {
-  if (!questions.length) return '';
-  return `<div class="architect-choices" id="msArchitectChoices${index}">
-    ${questions.map((q, qi) => `
-      <div class="architect-choice-q" data-prompt="${msEsc(q.prompt || '')}">
-        <strong>${msEsc(q.prompt || '')}</strong>
-        ${(q.options || []).map(opt => `
-          <label class="architect-choice-option">
-            <input type="${q.multiple ? 'checkbox' : 'radio'}" name="msArchQ${index}_${qi}" value="${msEsc(String(opt))}">
-            <span>${msEsc(String(opt))}</span>
-          </label>`).join('')}
-      </div>`).join('')}
-    <label class="architect-choice-extra">إضافة
-      <textarea rows="2" placeholder="تفصيل إضافي (اختياري)"></textarea>
-    </label>
-    <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectSubmitChoices(${index})">إرسال الإجابات</button>
-  </div>`;
-}
-
-function msArchitectSubmitChoices(index) {
-  const root = document.getElementById(`msArchitectChoices${index}`);
-  const input = document.getElementById('msArchitectInput');
-  if (!root || !input) return;
-  const lines = [...root.querySelectorAll('.architect-choice-q')].map(block => {
-    const prompt = block.dataset.prompt || '';
-    const selected = [...block.querySelectorAll('input:checked')].map(i => i.value);
-    return selected.length ? `${prompt}: ${selected.join('، ')}` : '';
-  }).filter(Boolean);
-  const extra = root.querySelector('.architect-choice-extra textarea')?.value?.trim();
-  if (extra) lines.push(extra);
-  if (!lines.length) { msToast('اختر خيارًا واحدًا على الأقل'); return; }
-  input.value = lines.join('\n');
-  msArchitectSend();
-}
-
-function msArchitectRender() {
-  const box = document.getElementById('msArchitectChat');
-  if (!box) return;
-  const lastAsst = msArchitectHistory.reduce((f, m, i) => m.role === 'assistant' ? i : f, -1);
-  box.innerHTML = msArchitectHistory.map((m, i) => {
-    const isUser = m.role === 'user';
-    const raw = String(m.content || '');
-    const extracted = (!isUser && i === lastAsst) ? msArchitectExtractChoices(raw) : [];
-    let shown = raw
-      .replace(/```choices(?:[^\n`]*)?[\s\S]*?```/gi, '')
-      .replace(/```json(?:[^\n`]*)?[\s\S]*?```/gi, '')
-      .trim();
-    // إن وُجدت خيارات مستخرجة من JSON عارٍ، اخفِ كتلة questions من النص المعروض
-    if (extracted.length) {
-      shown = shown.replace(/\{\s*"questions"\s*:\s*\[[\s\S]*?\]\s*\}/g, '').trim();
-    }
-    const bodyHtml = isUser
-      ? msEsc(shown).replace(/\n/g, '<br>')
-      : ((typeof formatMarkdown === 'function') ? formatMarkdown(shown)
-        : (typeof marked !== 'undefined' ? marked.parse(shown) : msEsc(shown).replace(/\n/g, '<br>')));
-    const choices = msArchitectChoicesHtml(extracted, i);
-    return `<div class="studio-msg ${isUser ? 'user' : 'architect'}">
-      <div class="studio-bubble">${bodyHtml}${choices}</div>
-    </div>`;
-  }).join('');
-  box.scrollTop = box.scrollHeight;
-  const applyBtn = document.getElementById('msArchitectApplyBtn');
-  if (applyBtn) applyBtn.disabled = !msArchitectBlueprint?.subagents_group?.agents?.length;
-  const status = document.getElementById('msArchitectStatus');
-  if (status) {
-    status.textContent = msArchitectBlueprint?.subagents_group?.name
-      ? `مخطط جاهز: «${msArchitectBlueprint.subagents_group.name}» — اضغط اعتماد المجموعة`
-      : 'حاور المهندس حتى يكتمل مخطط المجموعة';
+  window.__architectPresetKind = 'manuscripts';
+  if (typeof openProjectPlanningModal === 'function') {
+    openProjectPlanningModal('new');
+  } else {
+    msToast('مهندس المشاريع غير محمّل — أعد تحميل الصفحة');
   }
 }
-window.msArchitectSubmitChoices = msArchitectSubmitChoices;
 window.msArchitectOpen = msArchitectOpen;
-window.msArchitectClose = msArchitectClose;
-window.msArchitectSend = msArchitectSend;
-window.msArchitectApply = msArchitectApply;
-window.msArchitectReset = msArchitectReset;
 
-async function msArchitectSend() {
-  if (msArchitectBusy) return;
-  const input = document.getElementById('msArchitectInput');
-  const text = (input?.value || '').trim();
-  if (!text) return;
-  input.value = '';
-  msArchitectHistory.push({ role: 'user', content: text });
-  msArchitectRender();
-  msArchitectBusy = true;
-  const wait = document.createElement('div');
-  wait.className = 'studio-msg architect';
-  wait.id = 'msArchitectWait';
-  wait.innerHTML = '<div class="studio-bubble">مهندس التحقيق يضبط حدود مجموعتك…</div>';
-  document.getElementById('msArchitectChat')?.appendChild(wait);
-  try {
-    let apiKey = '';
-    try {
-      const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
-      apiKey = keys.openrouter || '';
-    } catch (e) { /* مفتاح الخادم */ }
-    const res = await fetch('/api/projects/architect-dialog', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: msArchitectHistory,
-        planning_model: document.getElementById('msArchitectModel')?.value || 'google/gemini-2.5-flash',
-        thinking_level: document.getElementById('msArchitectThinking')?.value || 'medium',
-        domain: 'manuscripts',
-        api_key: apiKey,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    document.getElementById('msArchitectWait')?.remove();
-    if (!res.ok || data.status === 'error') throw new Error(data.message || data.detail || 'تعذر استدعاء المهندس');
-    if (data.reply) msArchitectHistory.push({ role: 'assistant', content: data.reply });
-    if (data.blueprint) msArchitectBlueprint = data.blueprint;
-    msArchitectRender();
-  } catch (e) {
-    document.getElementById('msArchitectWait')?.remove();
-    msToast('خطأ مهندس التحقيق: ' + e.message, 6000);
-  } finally {
-    msArchitectBusy = false;
-  }
-}
-
-async function msArchitectApply() {
-  const bp = msArchitectBlueprint;
+// اعتماد مخطط المهندس الموحّد مجموعةَ تحقيق (يستدعيه applyStudioBlueprint)
+async function msApplyArchitectBlueprint(bp) {
   if (!bp?.subagents_group?.agents?.length) {
     msToast('لا مخطط جاهز بعد — أكمل الحوار مع المهندس');
-    return;
+    return false;
   }
   const gid = 'ms_invest_' + Date.now().toString(36);
   const profile = bp.investigation_profile || {};
@@ -2534,7 +2354,6 @@ async function msArchitectApply() {
     byKey.leader = { ...(byKey.leader || {}), ...bp.director, ms_key: 'leader',
       system_prompt: bp.director.system_prompt || byKey.leader?.system_prompt };
   }
-  // ابنِ من الهيكل الثابت مع تخصيص المهندس؛ القارئ الثالث دائمًا Flash Lite
   const agents = MS_GROUP_DEFAULT_AGENTS.map(d => {
     const custom = byKey[d.key] || {};
     const prompt = custom.system_prompt || custom.systemPrompt || MS_AGENT_PROMPTS[d.key] || d.desc;
@@ -2551,7 +2370,6 @@ async function msArchitectApply() {
       thinking: custom.thinking || 'medium',
     };
   });
-  // أضف أي وكيل إضافي من المخطط (أدوات/خطة) بلا تكرار ms_key
   (bp.subagents_group.agents || []).forEach((ag, i) => {
     const key = ag.ms_key || ag.key;
     if (key && agents.some(a => a.ms_key === key)) return;
@@ -2582,19 +2400,14 @@ async function msArchitectApply() {
       if (typeof saveAgentGroups === 'function') saveAgentGroups(window.agentGroups);
     }
     msSetActiveGroup(gid);
-    msArchitectClose();
     msToast(`✔ اعتُمدت مجموعة التحقيق «${g.name}» وصارت النشطة — بثلاثة قرّاء وFlash Lite`);
+    return true;
   } catch (e) {
     msToast('تعذر اعتماد المجموعة: ' + e.message);
+    return false;
   }
 }
-
-function msArchitectReset() {
-  if (!confirm('مسح حوار المهندس والمخطط الحالي؟')) return;
-  msArchitectHistory = [];
-  msArchitectBlueprint = null;
-  msArchitectOpen();
-}
+window.msApplyArchitectBlueprint = msApplyArchitectBlueprint;
 
 function renderMsGroup() {
   const box = document.getElementById('msGroupBody');
@@ -2606,12 +2419,12 @@ function renderMsGroup() {
             ${MS_GROUPS.map(g => `<option value="${msEsc(g.id)}"${g.id === MS_GROUP_ID ? ' selected' : ''}>${msEsc(g.name || g.id)}${g.id === MS_DEFAULT_GROUP_ID ? ' (افتراضية)' : ''}</option>`).join('')}
           </select>
         </label>
-        <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectOpen()">🧭 مهندس مجموعة تحقيق جديدة</button>
+        <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectOpen()">🧭 مهندس المشاريع — مجموعة تحقيق جديدة</button>
       </div>`
     : '';
   if (!MS_GROUP) {
     box.innerHTML = `${selectHtml}
-      <div class="ms-hint">لم تُنشأ المجموعة الافتراضية بعد. أنشئها لتكون مرجع التحقيق بمرحلتيه، أو حاور مهندس التحقيق لإنشاء مجموعة مخصّصة بحدود مشروعك (فن التحقيق، التراجم، التخريج، الحاشية…).</div>
+      <div class="ms-hint">لم تُنشأ المجموعة الافتراضية بعد. أنشئها لتكون مرجع التحقيق بمرحلتيه، أو حاور مهندس المشاريع (بتوجيه تحقيق المخطوطات) لإنشاء مجموعة مخصّصة بحدود مشروعك (فن التحقيق، التراجم، التخريج، الحاشية…).</div>
       <div class="ms-form-row">
         <button type="button" class="ms-btn ms-btn-primary" onclick="msSeedGroup(false)">⭐ إنشاء واعتماد مجموعة تحقيق المخطوطات الافتراضية</button>
         <button type="button" class="ms-btn" onclick="msArchitectOpen()">🧭 مهندس مجموعة تحقيق</button>
@@ -2621,7 +2434,7 @@ function renderMsGroup() {
   const isDefault = MS_GROUP.id === MS_DEFAULT_GROUP_ID;
   box.innerHTML = `
     ${selectHtml}
-    <div class="ms-hint" style="margin-bottom:8px">المجموعة النشطة — <strong>«${msEsc(MS_GROUP.name)}»</strong>${isDefault ? ' (الافتراضية)' : ''} — مرجع مرحلتي التحقيق لهذا التبويب. أنشئ مجموعات مخصّصة عبر مهندس التحقيق كما في البحث الموسع؛ القارئ الثالث (Gemini 3.1 Flash Lite) يُضاف دائمًا. الضبط التفصيلي من <strong>بطاقة الوكيل</strong>.</div>
+    <div class="ms-hint" style="margin-bottom:8px">المجموعة النشطة — <strong>«${msEsc(MS_GROUP.name)}»</strong>${isDefault ? ' (الافتراضية)' : ''} — مرجع مرحلتي التحقيق لهذا التبويب. أنشئ مجموعات مخصّصة عبر مهندس المشاريع نفسه باختيار «تحقيق مخطوط»؛ القارئ الثالث (Gemini 3.1 Flash Lite) يُضاف دائمًا. الضبط التفصيلي من <strong>بطاقة الوكيل</strong>.</div>
     ${MS_GROUP.agents.map(a => `
       <div class="ms-group-agent">
         <div class="ms-group-agent-head">
@@ -2634,7 +2447,7 @@ function renderMsGroup() {
       </div>`).join('')}
     <div class="ms-form-row">
       ${isDefault ? '<button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة الضبط الافتراضي للمجموعة</button>' : ''}
-      <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectOpen()">🧭 مهندس مجموعة تحقيق جديدة</button>
+      <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectOpen()">🧭 مهندس المشاريع — مجموعة تحقيق جديدة</button>
     </div>`;
 }
 
