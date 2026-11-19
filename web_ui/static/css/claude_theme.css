@@ -11363,6 +11363,12 @@ body::-webkit-scrollbar,
 .rd-analysis-compose { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
 .rd-analysis-compose textarea { flex: 1; font-family: inherit; line-height: 1.7; border-radius: 10px; border: 1px solid var(--border-subtle); padding: 8px 10px; resize: vertical; }
 .rd-disc-hit { cursor: pointer; }
+.rd-entity-modal { width: min(760px, 96vw); }
+.rd-entity-modal .form-group label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 5px; }
+.rd-entity-modal .custom-model-options-list { max-height: 260px; overflow-y: auto; }
+.rd-entity-modal .crit-model-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; margin: 0; font-weight: 400; }
+.rd-entity-modal .crit-model-row:has(input:checked) { background: rgba(217,119,87,.12); font-weight: 700; }
+.rd-entity-modal .crit-model-row input { accent-color: var(--accent-clay, #b4552d); margin: 0; }
 @media (max-width: 760px) { .rd-body { flex-direction: column; } .rd-toolbar { flex-direction: row; flex-wrap: wrap; } }
 .ms-report-modal { width: min(880px, 96vw); }
 .ms-report-text { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.95; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px 14px; max-height: 62vh; overflow-y: auto; background: var(--bg-main, transparent); direction: rtl; text-align: right; margin: 0; }

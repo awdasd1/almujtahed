@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.733">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.734">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.733" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.734" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.733</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.734</span>
             </div>
 
             <div class="header-actions">
@@ -2049,23 +2049,46 @@
             </div>
 
             <div class="ms-modal-overlay" id="rdAssistantModal" hidden>
-                <div class="ms-modal">
+                <div class="ms-modal rd-entity-modal">
                     <div class="ms-modal-head"><strong>🧠 إنشاء مساعد قراءة</strong>
                         <button type="button" class="ms-btn" onclick="rdCloseModal('rdAssistantModal')">✕ إغلاق</button></div>
-                    <div class="ms-form-row"><input type="text" id="rdAsstName" placeholder="اسم المساعد *" style="flex:1"></div>
-                    <div class="ms-form-row">
-                        <label style="min-width:70px">النموذج</label>
-                        <select id="rdAsstModel" style="flex:1"></select>
+                    <div class="form-group">
+                        <label for="rdAsstName">اسم المساعد:</label>
+                        <input type="text" id="rdAsstName" class="form-input" placeholder="مثال: مساعد تصنيف النصوص">
                     </div>
-                    <label class="ms-hint">التوجيه</label>
-                    <textarea id="rdAsstPrompt" rows="10" style="width:100%;font-family:inherit;line-height:1.8;margin:6px 0 10px"></textarea>
-                    <div class="ms-form-row">
-                        <input type="text" id="rdAsstBookQ" placeholder="ابحث عن كتب للمساعد..." style="flex:1">
-                        <button type="button" class="ms-btn" onclick="rdSearchAsstBooks()">بحث</button>
+                    <div class="form-group" style="margin-top:12px">
+                        <label>النموذج المخصص للتحليل:</label>
+                        <div class="custom-model-dropdown-wrapper" id="rdAsstModelWrapper" style="width:100%">
+                            <button type="button" class="custom-model-dropdown-trigger" style="width:100%;max-width:100%" onclick="rdToggleAsstModelDropdown(event)">
+                                <span class="custom-model-trigger-text" id="rdAsstModelTriggerText">جارٍ جلب النماذج...</span>
+                                <svg class="custom-model-trigger-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+                            </button>
+                            <div class="custom-model-dropdown-menu" style="width:100%;min-width:310px">
+                                <div class="model-dropdown-search-box">
+                                    <input type="text" id="rdAsstModelSearch" class="model-dropdown-search-input" placeholder="تصفية سريعة: اكتب جزءًا من اسم النموذج..." oninput="rdFilterAsstModels(this.value)" autocomplete="off">
+                                    <button type="button" class="model-dropdown-search-clear" onclick="rdClearAsstModelSearch()" title="مسح">×</button>
+                                </div>
+                                <div class="custom-model-options-list" id="rdAsstModelOptions"></div>
+                            </div>
+                            <input type="hidden" id="rdAsstModel" value="">
+                        </div>
                     </div>
-                    <div id="rdAsstBookResults" class="rd-book-pick"></div>
-                    <div class="ms-hint">الكتب المحددة: <span id="rdAsstBooksChosen">لا شيء بعد</span></div>
-                    <div class="ms-modal-btns">
+                    <div class="form-group" style="margin-top:14px">
+                        <label>تحديد الكتب المراد البحث فيها من المخزن التراثي:</label>
+                        <div class="scope-trigger-wrapper" style="display:flex;align-items:center;gap:8px">
+                            <button type="button" class="btn-scope-selector" onclick="rdOpenAssistantScope()" title="انقر لتحديد كتب أو قسم من الشاملة لهذا المساعد" style="flex:1;justify-content:space-between;height:34px">
+                                <span id="rdAsstScopeLabel">جميع كتب الشاملة — المكتبة كاملة</span>
+                                <span id="rdAsstScopeBadge" class="badge-scope-count" style="display:none">0</span>
+                            </button>
+                            <button type="button" id="rdAsstScopeClear" class="btn-scope-clear" onclick="rdClearAssistantScope(event)" title="إلغاء التحديد والعودة للمكتبة كاملة" style="display:none">✕</button>
+                        </div>
+                        <small style="color:var(--text-muted);font-size:11.5px;margin-top:4px;display:block">انقر لفتح فهرس الشاملة الكامل: حدّد كتبًا بعينها أو صفِّ بقسم معين وحدّد المعروض كله. وترك التحديد فارغًا يعني المكتبة كاملة.</small>
+                    </div>
+                    <div class="form-group" style="margin-top:12px">
+                        <label for="rdAsstPrompt">التوجيه (موجه النظام):</label>
+                        <textarea id="rdAsstPrompt" class="form-textarea" rows="9" style="width:100%;font-family:inherit;line-height:1.8"></textarea>
+                    </div>
+                    <div class="ms-modal-btns" style="margin-top:14px">
                         <button type="button" class="ms-btn ms-btn-primary" onclick="rdAdoptAssistant()">اعتمد</button>
                         <button type="button" class="ms-btn" onclick="rdCloseModal('rdAssistantModal')">إلغاء</button>
                     </div>
@@ -2074,16 +2097,20 @@
             </div>
 
             <div class="ms-modal-overlay" id="rdVisionReaderModal" hidden>
-                <div class="ms-modal">
+                <div class="ms-modal rd-entity-modal">
                     <div class="ms-modal-head"><strong>👁 إنشاء قارئ بصري</strong>
                         <button type="button" class="ms-btn" onclick="rdCloseModal('rdVisionReaderModal')">✕ إغلاق</button></div>
-                    <div class="ms-form-row"><input type="text" id="rdVisName" placeholder="اسم القارئ *" style="flex:1"></div>
-                    <div class="ms-form-row">
-                        <label style="min-width:70px">النموذج</label>
-                        <select id="rdVisModel" style="flex:1"></select>
+                    <div class="form-group">
+                        <label for="rdVisName">اسم القارئ:</label>
+                        <input type="text" id="rdVisName" class="form-input" placeholder="مثال: قارئ الصفحات المصوّرة">
                     </div>
-                    <div class="ms-hint">تظهر فقط النماذج القادرة على قراءة الصور.</div>
-                    <div class="ms-modal-btns">
+                    <fieldset style="border:1px solid var(--border-subtle);border-radius:8px;padding:10px 12px;margin:14px 0">
+                        <legend style="font-size:12.5px;font-weight:600;padding:0 6px">النموذج القارئ للصور</legend>
+                        <input type="text" id="rdVisModelSearch" class="form-input" placeholder="تصفية النماذج البصرية..." oninput="rdFilterVisionModels(this.value)" autocomplete="off" style="margin-bottom:8px">
+                        <div id="rdVisModelList" style="max-height:220px;overflow-y:auto"></div>
+                    </fieldset>
+                    <div class="ms-hint">تظهر فقط النماذج القادرة على قراءة الصور، كما في قائمة نماذج النقد والمقارنة.</div>
+                    <div class="ms-modal-btns" style="margin-top:12px">
                         <button type="button" class="ms-btn ms-btn-primary" onclick="rdAdoptVisionReader()">اعتمد</button>
                         <button type="button" class="ms-btn" onclick="rdCloseModal('rdVisionReaderModal')">إلغاء</button>
                     </div>
@@ -7056,26 +7083,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.733"></script>
-    <script src="/static/js/search.js?v=1.10.733"></script>
-    <script src="/static/js/reader.js?v=1.10.733"></script>
-    <script src="/static/js/force3d.js?v=1.10.733"></script>
-    <script src="/static/js/share.js?v=1.10.733"></script>
-    <script src="/static/js/chat.js?v=1.10.733"></script>
-    <script src="/static/js/documents.js?v=1.10.733"></script>
-    <script src="/static/js/designs.js?v=1.10.733"></script>
-    <script src="/static/js/texts.js?v=1.10.733"></script>
-    <script src="/static/js/agents.js?v=1.10.733"></script>
-    <script src="/static/js/providers.js?v=1.10.733"></script>
-    <script src="/static/js/tools.js?v=1.10.733"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.733"></script>
-    <script src="/static/js/projects.js?v=1.10.733"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.733"></script>
-    <script src="/static/js/reading.js?v=1.10.733"></script>
-    <script src="/static/js/archive.js?v=1.10.733"></script>
-    <script src="/static/js/compare.js?v=1.10.733"></script>
-    <script src="/static/js/local_models.js?v=1.10.733"></script>
-    <script src="/static/js/changelog.js?v=1.10.733"></script>
+    <script src="/static/js/app.js?v=1.10.734"></script>
+    <script src="/static/js/search.js?v=1.10.734"></script>
+    <script src="/static/js/reader.js?v=1.10.734"></script>
+    <script src="/static/js/force3d.js?v=1.10.734"></script>
+    <script src="/static/js/share.js?v=1.10.734"></script>
+    <script src="/static/js/chat.js?v=1.10.734"></script>
+    <script src="/static/js/documents.js?v=1.10.734"></script>
+    <script src="/static/js/designs.js?v=1.10.734"></script>
+    <script src="/static/js/texts.js?v=1.10.734"></script>
+    <script src="/static/js/agents.js?v=1.10.734"></script>
+    <script src="/static/js/providers.js?v=1.10.734"></script>
+    <script src="/static/js/tools.js?v=1.10.734"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.734"></script>
+    <script src="/static/js/projects.js?v=1.10.734"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.734"></script>
+    <script src="/static/js/reading.js?v=1.10.734"></script>
+    <script src="/static/js/archive.js?v=1.10.734"></script>
+    <script src="/static/js/compare.js?v=1.10.734"></script>
+    <script src="/static/js/local_models.js?v=1.10.734"></script>
+    <script src="/static/js/changelog.js?v=1.10.734"></script>
 
     <script>
         window.refreshLucideIcons = function () {

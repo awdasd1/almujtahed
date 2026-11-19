@@ -868,28 +868,113 @@ function rdCite() {
   return `«${b.title}» — ${partLabel} — صفحة ${local} (صفحة المشروع ${p.page})`;
 }
 
-async function rdFillModels(selectId, visionOnly) {
-  const sel = document.getElementById(selectId);
-  if (!sel) return;
-  sel.innerHTML = '<option value="">جارٍ تحميل النماذج...</option>';
-  try {
-    const url = visionOnly ? '/api/manuscripts/models' : '/api/openrouter/models';
-    const res = await fetch(url);
-    const data = await res.json();
-    let models = data.models || data.data || [];
-    if (visionOnly) models = models.filter(m => m.vision);
-    else if (models.length && models[0].input_modalities) {
-      /* قائمة openrouter كاملة */
-    }
-    if (!models.length) { sel.innerHTML = '<option value="">لا نماذج متاحة</option>'; return; }
-    sel.innerHTML = models.map(m => {
-      const id = m.id || m.model_id || m.name;
-      const name = m.name || id;
-      return `<option value="${rdEsc(id)}">${rdEsc(name)}</option>`;
-    }).join('');
-  } catch (e) {
-    sel.innerHTML = `<option value="">تعذر التحميل: ${rdEsc(e.message)}</option>`;
+// نماذج المساعد: قائمة منسدلة ببحث وفلترة سريعة (كنافذة بطاقات الوكلاء)
+let rdModelCatalog = null;
+let rdVisionCatalog = null;
+async function rdLoadModelCatalog() {
+  if (rdModelCatalog) return rdModelCatalog;
+  const res = await fetch('/api/openrouter/models');
+  const data = await res.json();
+  const models = data.models || data.data || [];
+  rdModelCatalog = models.map(m => ({ id: m.id || m.model_id || m.name, name: m.name || m.id })).filter(m => m.id);
+  return rdModelCatalog;
+}
+async function rdLoadVisionCatalog() {
+  if (rdVisionCatalog) return rdVisionCatalog;
+  const res = await fetch('/api/manuscripts/models');
+  const data = await res.json();
+  rdVisionCatalog = (data.models || []).filter(m => m.vision)
+    .map(m => ({ id: m.id || m.model_id || m.name, name: m.name || m.id })).filter(m => m.id);
+  return rdVisionCatalog;
+}
+function rdRenderAsstModelOptions() {
+  const list = document.getElementById('rdAsstModelOptions');
+  const trigger = document.getElementById('rdAsstModelTriggerText');
+  const hidden = document.getElementById('rdAsstModel');
+  if (!list) return;
+  const models = rdModelCatalog || [];
+  if (!models.length) {
+    list.innerHTML = '<div style="padding:10px;color:var(--text-muted)">لا نماذج متاحة — تحقق من مفتاح OpenRouter في الخدمات</div>';
+    if (trigger) trigger.textContent = 'لا نماذج متاحة';
+    return;
   }
+  if (hidden && !hidden.value) hidden.value = models[0].id;
+  const selId = hidden ? hidden.value : '';
+  list.innerHTML = models.map(m => `
+    <div class="custom-model-item ${m.id === selId ? 'active' : ''}" data-rd-model-id="${rdEsc(m.id)}" data-rd-model-name="${rdEsc(m.name)}" onclick="rdSelectAsstModel('${rdEsc(m.id)}')">
+      <span class="custom-model-item-name" title="${rdEsc(m.id)}">${rdEsc(m.name)}</span>
+    </div>`).join('');
+  const sel = models.find(m => m.id === selId) || models[0];
+  if (trigger && sel) { trigger.textContent = sel.name; trigger.title = sel.id; }
+}
+function rdToggleAsstModelDropdown(event) {
+  if (event) event.stopPropagation();
+  const w = document.getElementById('rdAsstModelWrapper');
+  if (!w) return;
+  const open = w.classList.toggle('open');
+  if (open) setTimeout(() => document.getElementById('rdAsstModelSearch')?.focus(), 50);
+}
+function rdSelectAsstModel(id) {
+  const hidden = document.getElementById('rdAsstModel');
+  if (hidden) hidden.value = id;
+  document.getElementById('rdAsstModelWrapper')?.classList.remove('open');
+  rdRenderAsstModelOptions();
+}
+function rdFilterAsstModels(q) {
+  const needle = String(q || '').trim().toLowerCase();
+  document.querySelectorAll('#rdAsstModelOptions .custom-model-item').forEach(el => {
+    const hay = `${el.dataset.rdModelId || ''} ${el.dataset.rdModelName || ''}`.toLowerCase();
+    el.style.display = !needle || hay.includes(needle) ? 'flex' : 'none';
+  });
+}
+function rdClearAsstModelSearch() {
+  const inp = document.getElementById('rdAsstModelSearch');
+  if (inp) { inp.value = ''; rdFilterAsstModels(''); inp.focus(); }
+}
+// نماذج القارئ: قائمة راديو قابلة للتصفية (كنماذج نافذة النقد والمقارنة)
+function rdRenderVisionModelOptions() {
+  const box = document.getElementById('rdVisModelList');
+  if (!box) return;
+  const models = rdVisionCatalog || [];
+  if (!models.length) {
+    box.innerHTML = '<div style="font-size:12.5px;color:var(--text-muted);padding:6px">لا نماذج بصرية متاحة — تحقق من الخدمات</div>';
+    return;
+  }
+  const prev = box.querySelector('input[name="rdVisModelPick"]:checked')?.value || models[0].id;
+  box.innerHTML = models.map(m => `
+    <label class="crit-model-row"><input type="radio" name="rdVisModelPick" value="${rdEsc(m.id)}" ${m.id === prev ? 'checked' : ''}><span>${rdEsc(m.name)}</span></label>`).join('');
+}
+function rdFilterVisionModels(q) {
+  const needle = String(q || '').trim().toLowerCase();
+  document.querySelectorAll('#rdVisModelList .crit-model-row').forEach(el => {
+    el.style.display = !needle || el.textContent.toLowerCase().includes(needle) ? 'flex' : 'none';
+  });
+}
+function rdUpdateAsstScopeLabel() {
+  const label = document.getElementById('rdAsstScopeLabel');
+  const badge = document.getElementById('rdAsstScopeBadge');
+  const clear = document.getElementById('rdAsstScopeClear');
+  if (!label) return;
+  const n = rdAsstDraftBooks.length;
+  label.textContent = n === 0 ? 'جميع كتب الشاملة — المكتبة كاملة'
+    : n === 1 ? rdAsstDraftBooks[0].title : `محدد: ${n} كتب`;
+  if (badge) { badge.textContent = n; badge.style.display = n ? 'inline-block' : 'none'; }
+  if (clear) clear.style.display = n ? 'inline-block' : 'none';
+}
+function rdOpenAssistantScope() {
+  window._rdAssistantBookTitles = rdAsstDraftBooks.map(b => b.title);
+  if (typeof openSearchScopeModal === 'function') openSearchScopeModal('rd_assistant');
+  else rdToast('نافذة نطاق البحث غير متاحة');
+}
+window.onRdAssistantBooks = function (titles) {
+  rdAsstDraftBooks = (titles || []).map(t => ({ title: t }));
+  rdUpdateAsstScopeLabel();
+};
+function rdClearAssistantScope(event) {
+  if (event) event.stopPropagation();
+  rdAsstDraftBooks = [];
+  window._rdAssistantBookTitles = [];
+  rdUpdateAsstScopeLabel();
 }
 
 function rdRenderAssistantsList() {
@@ -913,49 +998,32 @@ function rdRenderReadersList() {
     </div>`).join('');
 }
 
-function rdOpenCreateAssistant() {
+async function rdOpenCreateAssistant() {
   rdAsstDraftBooks = [];
   document.getElementById('rdAsstName').value = '';
   document.getElementById('rdAsstPrompt').value = RD_DEFAULT_ASST_PROMPT;
-  document.getElementById('rdAsstBookQ').value = '';
-  document.getElementById('rdAsstBookResults').innerHTML = '';
-  document.getElementById('rdAsstBooksChosen').textContent = 'لا شيء بعد';
+  const hidden = document.getElementById('rdAsstModel');
+  if (hidden) hidden.value = '';
+  const search = document.getElementById('rdAsstModelSearch');
+  if (search) search.value = '';
+  rdUpdateAsstScopeLabel();
   rdShowModal('rdAssistantModal');
-  rdFillModels('rdAsstModel', false);
   rdRenderAssistantsList();
+  const list = document.getElementById('rdAsstModelOptions');
+  if (list) list.innerHTML = '<div style="padding:10px;color:var(--text-muted)">جارٍ جلب النماذج...</div>';
+  try { await rdLoadModelCatalog(); rdRenderAsstModelOptions(); }
+  catch (e) { if (list) list.innerHTML = `<div style="padding:10px">❌ ${rdEsc(e.message)}</div>`; }
 }
-function rdOpenCreateReader() {
+async function rdOpenCreateReader() {
   document.getElementById('rdVisName').value = '';
+  const search = document.getElementById('rdVisModelSearch');
+  if (search) search.value = '';
   rdShowModal('rdVisionReaderModal');
-  rdFillModels('rdVisModel', true);
   rdRenderReadersList();
-}
-
-async function rdSearchAsstBooks() {
-  const q = document.getElementById('rdAsstBookQ').value.trim();
-  const box = document.getElementById('rdAsstBookResults');
-  if (!q) { rdToast('اكتب اسم الكتاب أولًا'); return; }
-  box.innerHTML = '<div class="ms-rec-loading">⏳ جارٍ البحث...</div>';
-  try {
-    const res = await fetch(`/api/books/search?q=${encodeURIComponent(q)}&limit=40`);
-    const data = await res.json();
-    const books = data.books || [];
-    box.innerHTML = books.length ? books.map(b => {
-      const checked = rdAsstDraftBooks.some(x => String(x.book_id) === String(b.book_id)) ? 'checked' : '';
-      return `<label><input type="checkbox" ${checked} onchange="rdToggleAsstBook(${b.book_id}, '${rdEsc(b.title).replace(/'/g, '')}', this.checked)">
-        <span><strong>${rdEsc(b.title)}</strong> <span class="ms-wb-meta">${rdEsc(b.author || '')}</span></span></label>`;
-    }).join('') : '<div class="ms-hint">لا نتائج.</div>';
-  } catch (e) { box.innerHTML = `<div class="ms-hint">❌ ${rdEsc(e.message)}</div>`; }
-}
-function rdToggleAsstBook(bookId, title, on) {
-  if (on) {
-    if (!rdAsstDraftBooks.some(x => String(x.book_id) === String(bookId)))
-      rdAsstDraftBooks.push({ book_id: bookId, title });
-  } else {
-    rdAsstDraftBooks = rdAsstDraftBooks.filter(x => String(x.book_id) !== String(bookId));
-  }
-  document.getElementById('rdAsstBooksChosen').textContent =
-    rdAsstDraftBooks.length ? rdAsstDraftBooks.map(b => b.title).join(' · ') : 'لا شيء بعد';
+  const box = document.getElementById('rdVisModelList');
+  if (box) box.innerHTML = '<div style="font-size:12.5px;color:var(--text-muted);padding:6px">جارٍ جلب النماذج البصرية...</div>';
+  try { await rdLoadVisionCatalog(); rdRenderVisionModelOptions(); }
+  catch (e) { if (box) box.innerHTML = `<div style="font-size:12.5px;padding:6px">❌ ${rdEsc(e.message)}</div>`; }
 }
 
 function rdAdoptAssistant() {
@@ -974,7 +1042,7 @@ function rdAdoptAssistant() {
   rdToast(`✔ اعتُمد المساعد «${name}»`);
   document.getElementById('rdAsstName').value = '';
   rdAsstDraftBooks = [];
-  document.getElementById('rdAsstBooksChosen').textContent = 'لا شيء بعد';
+  rdUpdateAsstScopeLabel();
 }
 function rdDeleteAssistant(id) {
   if (!confirm('حذف هذا المساعد؟')) return;
@@ -983,7 +1051,7 @@ function rdDeleteAssistant(id) {
 }
 function rdAdoptVisionReader() {
   const name = document.getElementById('rdVisName').value.trim();
-  const model = document.getElementById('rdVisModel').value;
+  const model = document.querySelector('input[name="rdVisModelPick"]:checked')?.value || '';
   if (!name) { rdToast('اكتب اسم القارئ'); return; }
   if (!model) { rdToast('اختر نموذجًا بصريًا'); return; }
   rdReaders.unshift({ id: rdUid(), name, model, created_at: new Date().toISOString() });
@@ -1311,3 +1379,8 @@ async function rdNativeShareImage(blob, caption) {
   a.click();
   rdToast('حُمّلت الصورة (المشاركة الأصلية غير متاحة لهذا النوع)');
 }
+
+document.addEventListener('click', (e) => {
+  const w = document.getElementById('rdAsstModelWrapper');
+  if (w && w.classList.contains('open') && !w.contains(e.target)) w.classList.remove('open');
+});

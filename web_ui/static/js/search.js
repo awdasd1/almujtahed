@@ -597,6 +597,9 @@ async function openSearchScopeModal(target = 'search') {
   } else if (target === 'critique') {
     selectedBooksScope = [...(window._critiqueBookTitles || [])];
     modal.style.setProperty('z-index', '200000', 'important');
+  } else if (target === 'rd_assistant') {
+    selectedBooksScope = [...(window._rdAssistantBookTitles || [])];
+    modal.style.setProperty('z-index', '200000', 'important');
   } else {
     selectedBooksScope = [...(window._searchTabBooks || selectedBooksScope || [])];
     modal.style.zIndex = '250';
@@ -814,6 +817,14 @@ function scopeDeselectAll() {
 
 // تطبيق النطاق على البحث أو على الوكيل
 function applySearchScopeSelection() {
+  if (scopeModalTarget === 'rd_assistant') {
+    window._rdAssistantBookTitles = [...selectedBooksScope];
+    if (typeof window.onRdAssistantBooks === 'function') window.onRdAssistantBooks([...selectedBooksScope]);
+    closeSearchScopeModal();
+    showToast(selectedBooksScope.length ? `حُددت ${selectedBooksScope.length} كتب لمساعد القراءة` : 'مساعد القراءة: المكتبة كاملة');
+    return;
+  }
+
   if (scopeModalTarget === 'critique') {
     window._critiqueBookTitles = [...selectedBooksScope];
     if (typeof window.onCritiqueBooks === 'function') window.onCritiqueBooks([...selectedBooksScope]);
