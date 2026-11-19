@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.730"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.731"},
         },
     })
     if opened.get("error"):
@@ -15400,6 +15400,148 @@ async def import_manuscript_project(request: Request, file: UploadFile = File(..
     projects.insert(0, project)
     _save_owned_list(owner_id, "manuscripts", projects)
     return {"ok": True, "project": project, "images_restored": restored}
+
+
+# ---------- تبويب «قراءة وتحليل»: مشاريع قراءة وكتبها ----------
+RD_WEB_JOBS: Dict[str, Any] = {}
+
+
+def _rd_reading_dir(owner_id: str) -> Path:
+    d = UPLOADS_BUCKET_DIR / owner_id / "reading"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _rd_pdf_pages(path: Path) -> int:
+    import fitz
+    doc = fitz.open(str(path))
+    try:
+        return doc.page_count
+    finally:
+        doc.close()
+
+
+@app.get("/api/reading-projects")
+async def list_reading_projects(request: Request):
+    owner_id = current_owner_id(request)
+    return {"projects": _load_owned_list(owner_id, "reading") or []}
+
+
+@app.post("/api/reading-projects")
+async def save_reading_projects(request: Request, payload: Any = Body(...)):
+    owner_id = current_owner_id(request)
+    projects = (payload or {}).get("projects")
+    if not isinstance(projects, list):
+        raise HTTPException(status_code=400, detail="صيغة مشاريع القراءة غير صالحة")
+    _save_owned_list(owner_id, "reading", projects)
+    return {"ok": True, "count": len(projects)}
+
+
+@app.post("/api/reading-projects/upload-book")
+async def upload_reading_book(request: Request, file: UploadFile = File(...)):
+    """رفع كتاب PDF إلى مجلد مشاريع القراءة الخاص بالعضو."""
+    owner_id = current_owner_id(request)
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="الكتاب المرفوع يجب أن يكون PDF")
+    raw = await file.read()
+    if len(raw) > 400 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="حجم الكتاب أكبر من الحد (400MB)")
+    import re as _re
+    safe = _re.sub(r"[\\/:*?\"<>|]", "", Path(file.filename).stem).strip() or "كتاب"
+    name = f"{int(time.time() * 1000)}_{safe}.pdf"
+    dest = _rd_reading_dir(owner_id) / name
+    dest.write_bytes(raw)
+    try:
+        pages = _rd_pdf_pages(dest)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="الملف ليس PDF صالحًا")
+    return {"ok": True, "file_name": name, "title": safe, "pages": pages}
+
+
+@app.get("/api/reading-projects/page-image")
+async def reading_page_image(request: Request, file: str = "", page: int = 1):
+    """صورة صفحة من كتاب PDF في مجلد مشاريع القراءة."""
+    owner_id = current_owner_id(request)
+    name = Path(file or "").name
+    src = _rd_reading_dir(owner_id) / name
+    if not name or not src.exists():
+        raise HTTPException(status_code=404, detail="الكتاب غير موجود")
+
+    def _render():
+        import fitz
+        doc = fitz.open(str(src))
+        try:
+            if page < 1 or page > doc.page_count:
+                return None
+            return doc[page - 1].get_pixmap(dpi=150).tobytes("png")
+        finally:
+            doc.close()
+
+    raw = await asyncio.to_thread(_render)
+    if not raw:
+        raise HTTPException(status_code=404, detail="لا صفحة بهذا الرقم")
+    return Response(content=raw, media_type="image/png")
+
+
+@app.post("/api/reading-projects/fetch-web")
+async def fetch_reading_web(request: Request, payload: Any = Body(...)):
+    """بدء سحب كتاب PDF من رابط شبكي إلى مجلد مشاريع القراءة (بتقدم قابل للمتابعة)."""
+    owner_id = current_owner_id(request)
+    url = str((payload or {}).get("url") or "").strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="رابط غير صالح")
+    job_id = f"rdweb{int(time.time() * 1000):x}"
+    RD_WEB_JOBS[job_id] = {"status": "running", "pct": 0, "downloaded": 0, "total": 0,
+                           "file_name": "", "pages": 0, "title": "", "error": ""}
+
+    def _download():
+        job = RD_WEB_JOBS[job_id]
+        try:
+            import re as _re
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Almoghni"})
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                total = int(resp.headers.get("Content-Length") or 0)
+                job["total"] = total
+                chunks = []
+                got = 0
+                while True:
+                    chunk = resp.read(256 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    got += len(chunk)
+                    job["downloaded"] = got
+                    job["pct"] = round(100 * got / total, 1) if total else -1
+                    if got > 400 * 1024 * 1024:
+                        raise ValueError("حجم الكتاب أكبر من الحد (400MB)")
+            raw = b"".join(chunks)
+            base = Path(urllib.parse.urlparse(url).path).stem or "كتاب-شبكي"
+            safe = _re.sub(r"[\\/:*?\"<>|%]", "", urllib.parse.unquote(base)).strip() or "كتاب-شبكي"
+            name = f"{int(time.time() * 1000)}_{safe}.pdf"
+            dest = _rd_reading_dir(owner_id) / name
+            dest.write_bytes(raw)
+            try:
+                pages = _rd_pdf_pages(dest)
+            except Exception:
+                dest.unlink(missing_ok=True)
+                raise ValueError("المحتوى المسحوب ليس PDF صالحًا")
+            job.update({"status": "done", "pct": 100, "file_name": name,
+                        "pages": pages, "title": safe})
+        except Exception as exc:
+            job.update({"status": "error", "error": str(exc)[:240]})
+
+    import threading
+    threading.Thread(target=_download, daemon=True).start()
+    return {"ok": True, "job": job_id, "status": "running"}
+
+
+@app.get("/api/reading-projects/fetch-web-progress")
+async def fetch_reading_web_progress(request: Request, job: str = ""):
+    job_data = RD_WEB_JOBS.get(job or "")
+    if not job_data:
+        raise HTTPException(status_code=404, detail="مهمة السحب غير موجودة")
+    return job_data
 
 
 @app.get("/api/manuscripts/models")

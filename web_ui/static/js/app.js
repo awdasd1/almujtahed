@@ -161,6 +161,14 @@ function switchMainTab(tabName) {
     if (typeof initManuscriptsTab === 'function') {
       initManuscriptsTab();
     }
+  } else if (tabName === 'reading') {
+    const pane = document.getElementById('paneReading');
+    if (pane) pane.classList.add('active');
+    const btn = document.getElementById('tabNavReading');
+    if (btn) btn.classList.add('active');
+    if (typeof initReadingTab === 'function') {
+      initReadingTab();
+    }
   } else if (tabName === 'designs') {
     const pane = document.getElementById('paneDesigns');
     if (pane) pane.classList.add('active');

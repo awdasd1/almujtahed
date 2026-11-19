@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.730">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.731">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.730" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.731" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.730</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.731</span>
             </div>
 
             <div class="header-actions">
@@ -91,6 +91,11 @@
             <button class="nav-tab-btn" id="tabNavManuscripts" onclick="switchMainTab('manuscripts')">
                 <i data-lucide="scroll-text" class="icon" aria-hidden="true"></i>
                 <span>تحقيق المخطوطات</span>
+            </button>
+
+            <button class="nav-tab-btn" id="tabNavReading" onclick="switchMainTab('reading')">
+                <i data-lucide="book-open" class="icon" aria-hidden="true"></i>
+                <span>قراءة وتحليل</span>
             </button>
 
             <button class="nav-tab-btn" id="tabNavDesigns" onclick="switchMainTab('designs')">
@@ -1907,6 +1912,103 @@
                 <pre class="ms-report-text" id="msAutoReportText"></pre>
             </div>
         </div>
+
+        <section class="tab-pane" id="paneReading">
+            <div class="ms-wrap">
+                <p class="ms-sub">مشاريع قراءتك الخاصة: قيّد وابحث ودقّق وحلّل على صفحات كتبك بأقلامك وتظليلك وملصقاتك، واحفظ موضع وقوفك لتعود إليه.</p>
+                <div class="ms-create-card">
+                    <div class="ms-create-title">مشروع قراءة جديد</div>
+                    <div class="ms-form-row">
+                        <input type="text" id="rdNewTitle" placeholder="اسم المشروع *">
+                        <input type="text" id="rdNewDesc" placeholder="وصف المشروع (الكتاب، الغرض، أسئلة القراءة...)">
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdCreateProject()">اعتمد</button>
+                    </div>
+                    <div class="ms-hint" id="rdNewDateHint"></div>
+                </div>
+                <div id="rdProjectsList" class="ms-projects-grid"></div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdReaderModal" hidden>
+                <div class="ms-modal rd-reader-modal">
+                    <div class="rd-topbar">
+                        <strong id="rdReaderTitle">📖 مشروع قراءة</strong>
+                        <span class="rd-top-actions">
+                            <button type="button" class="ms-btn" id="rdDiscussBtn" title="مناقشة المحدد — اختر بأداة القص أو التظليل ثم ناقش" onclick="rdDiscussSelected()">💬 مناقشة المحدد</button>
+                            <button type="button" class="ms-btn" onclick="rdFlipPage(-1)" title="قلب الصفحة إلى السابقة">⟨ قلب</button>
+                            <span class="rd-page-ind"><input type="number" id="rdPageInput" min="1" value="1" onchange="rdGoPage(this.value)"> / <span id="rdPageTotal">—</span></span>
+                            <button type="button" class="ms-btn" onclick="rdFlipPage(1)" title="قلب الصفحة إلى التالية">قلب ⟩</button>
+                            <button type="button" class="ms-btn ms-btn-primary" onclick="rdSaveNow(true)">💾 حفظ</button>
+                            <button type="button" class="ms-btn" onclick="rdCloseReader()">✕ إغلاق</button>
+                        </span>
+                    </div>
+                    <div class="rd-body">
+                        <div class="rd-toolbar" id="rdToolbar">
+                            <button type="button" class="rd-tool" data-rd-tool="pen" title="قلم" onclick="rdSetTool('pen')">✏️</button>
+                            <div class="rd-sizes" id="rdPenSizes">
+                                <button type="button" data-rd-size="1.5" onclick="rdSetPenSize(1.5)">S</button>
+                                <button type="button" data-rd-size="3" class="active" onclick="rdSetPenSize(3)">M</button>
+                                <button type="button" data-rd-size="5.5" onclick="rdSetPenSize(5.5)">L</button>
+                            </div>
+                            <div class="rd-colors" id="rdColors"></div>
+                            <button type="button" class="rd-tool" data-rd-tool="highlight" title="تظليل بمقدار السطر" onclick="rdSetTool('highlight')">🖍️</button>
+                            <button type="button" class="rd-tool" data-rd-tool="crop" title="قص — حدد موضعًا لحفظه قصاصة ولمناقشته" onclick="rdSetTool('crop')">✂️</button>
+                            <button type="button" class="rd-tool" title="تكبير" onclick="rdZoom(0.15)">➕</button>
+                            <button type="button" class="rd-tool" title="تصغير" onclick="rdZoom(-0.15)">➖</button>
+                            <button type="button" class="rd-tool" data-rd-tool="loupe" title="منظار — عدسة مكبرة تتبع المؤشر" onclick="rdSetTool('loupe')">🔍</button>
+                            <button type="button" class="rd-tool" data-rd-tool="note" title="ملصق ملحوظات — اضغط موضعه على الصفحة" onclick="rdSetTool('note')">📌</button>
+                            <div class="rd-colors" id="rdNoteColors"></div>
+                            <button type="button" class="rd-tool" title="تراجع عن آخر رسم" onclick="rdUndo()">↩️</button>
+                            <button type="button" class="rd-tool" title="مسح رسوم هذه الصفحة" onclick="rdClearPage()">🗑️</button>
+                        </div>
+                        <div class="rd-page-scroll" id="rdPageScroll">
+                            <div class="rd-a4" id="rdA4">
+                                <div class="rd-empty" id="rdEmpty">لا كتاب بعد في هذا المشروع.<br>اسحب كتابًا من الأسفل (رفع PDF، أو من الشاملة المصوّرة، أو من الشبكة) فيظهر هنا من أول صفحة وتتفعّل الأدوات.</div>
+                                <img id="rdPageImg" alt="صفحة الكتاب" draggable="false">
+                                <canvas id="rdCanvas"></canvas>
+                                <div id="rdNotesLayer"></div>
+                                <div id="rdLoupe" hidden><img id="rdLoupeImg" alt="" draggable="false"></div>
+                            </div>
+                            <div class="rd-crops" id="rdCropsBar" hidden></div>
+                        </div>
+                    </div>
+                    <div class="rd-bottombar">
+                        <label class="ms-btn ms-btn-primary ms-upload-label">⬆ رفع كتاب (PDF)
+                            <input type="file" id="rdUploadInput" accept=".pdf,application/pdf" hidden>
+                        </label>
+                        <button type="button" class="ms-btn" onclick="rdOpenShamelaPicker()">📚 سحب كتاب من الشاملة</button>
+                        <button type="button" class="ms-btn" onclick="rdOpenWebFetch()">🌐 سحب كتاب من الشبكة</button>
+                        <span class="ms-hint" id="rdBookInfo"></span>
+                        <span class="ms-hint" id="rdSaveState"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdShamelaModal" hidden>
+                <div class="ms-modal">
+                    <div class="ms-modal-head"><strong>📚 سحب كتاب مصوّر من الشاملة</strong>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdShamelaModal')">✕ إغلاق</button></div>
+                    <div class="ms-form-row">
+                        <input type="text" id="rdShamelaQuery" placeholder="اسم الكتاب أو مؤلفه أو رقمه #..." style="flex:1">
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdSearchShamela()">بحث</button>
+                    </div>
+                    <div class="ms-hint">تظهر الكتب كلها، ولا يُسحب إلا كتاب له نسخة مصوّرة منزّلة على جهازك — يُتحقق عند الضغط.</div>
+                    <div id="rdShamelaResults"></div>
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdWebModal" hidden>
+                <div class="ms-modal">
+                    <div class="ms-modal-head"><strong>🌐 سحب كتاب من الشبكة</strong>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdWebModal')">✕ إغلاق</button></div>
+                    <div class="ms-form-row">
+                        <input type="text" id="rdWebUrl" placeholder="عنوان الكتاب (رابط PDF مباشر) https://..." style="flex:1" dir="ltr">
+                        <button type="button" class="ms-btn ms-btn-primary" id="rdWebFetchBtn" onclick="rdFetchWeb()">⬇ سحب</button>
+                    </div>
+                    <div class="ms-export-bar rd-web-bar" hidden id="rdWebBarWrap"><i id="rdWebBarFill"></i></div>
+                    <div class="ms-rec-meta" id="rdWebStatus"></div>
+                </div>
+            </div>
+        </section>
 
         <section class="tab-pane" id="paneProviders">
             <div class="providers-container">
@@ -6820,25 +6922,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.730"></script>
-    <script src="/static/js/search.js?v=1.10.730"></script>
-    <script src="/static/js/reader.js?v=1.10.730"></script>
-    <script src="/static/js/force3d.js?v=1.10.730"></script>
-    <script src="/static/js/share.js?v=1.10.730"></script>
-    <script src="/static/js/chat.js?v=1.10.730"></script>
-    <script src="/static/js/documents.js?v=1.10.730"></script>
-    <script src="/static/js/designs.js?v=1.10.730"></script>
-    <script src="/static/js/texts.js?v=1.10.730"></script>
-    <script src="/static/js/agents.js?v=1.10.730"></script>
-    <script src="/static/js/providers.js?v=1.10.730"></script>
-    <script src="/static/js/tools.js?v=1.10.730"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.730"></script>
-    <script src="/static/js/projects.js?v=1.10.730"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.730"></script>
-    <script src="/static/js/archive.js?v=1.10.730"></script>
-    <script src="/static/js/compare.js?v=1.10.730"></script>
-    <script src="/static/js/local_models.js?v=1.10.730"></script>
-    <script src="/static/js/changelog.js?v=1.10.730"></script>
+    <script src="/static/js/app.js?v=1.10.731"></script>
+    <script src="/static/js/search.js?v=1.10.731"></script>
+    <script src="/static/js/reader.js?v=1.10.731"></script>
+    <script src="/static/js/force3d.js?v=1.10.731"></script>
+    <script src="/static/js/share.js?v=1.10.731"></script>
+    <script src="/static/js/chat.js?v=1.10.731"></script>
+    <script src="/static/js/documents.js?v=1.10.731"></script>
+    <script src="/static/js/designs.js?v=1.10.731"></script>
+    <script src="/static/js/texts.js?v=1.10.731"></script>
+    <script src="/static/js/agents.js?v=1.10.731"></script>
+    <script src="/static/js/providers.js?v=1.10.731"></script>
+    <script src="/static/js/tools.js?v=1.10.731"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.731"></script>
+    <script src="/static/js/projects.js?v=1.10.731"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.731"></script>
+    <script src="/static/js/reading.js?v=1.10.731"></script>
+    <script src="/static/js/archive.js?v=1.10.731"></script>
+    <script src="/static/js/compare.js?v=1.10.731"></script>
+    <script src="/static/js/local_models.js?v=1.10.731"></script>
+    <script src="/static/js/changelog.js?v=1.10.731"></script>
 
     <script>
         window.refreshLucideIcons = function () {
