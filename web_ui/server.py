@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.726"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.727"},
         },
     })
     if opened.get("error"):
@@ -23458,13 +23458,50 @@ async def delete_project(project_id: str, request: Request):
 
     return {"status": "ok"}
 
+def _enrich_group_book_titles(groups):
+    """كتب الوكلاء تُحفظ وتُعرض بأسمائها لا بأرقامها: كل مدخل كتاب برقم مجرد
+    (#3974 أو 3974) يُستكمل من فهرس الشاملة إلى «#3974 اسم الكتاب الكامل»."""
+    import re as _re
+    cache: Dict[str, str] = {}
+
+    def enrich_entry(entry):
+        if not isinstance(entry, str):
+            return entry
+        m = _re.match(r"^#?(\d+)\s*$", entry.strip())
+        if not m:
+            return entry
+        bid = m.group(1)
+        if bid not in cache:
+            try:
+                info = get_book_bibliography(int(bid))
+                cache[bid] = str((info or {}).get("title") or "")
+            except Exception:
+                cache[bid] = ""
+        title = cache[bid]
+        return f"#{bid} {title}" if title else entry
+
+    def walk(node):
+        if isinstance(node, dict):
+            for key in ("books", "booksScope"):
+                if isinstance(node.get(key), list):
+                    node[key] = [enrich_entry(b) for b in node[key]]
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(groups)
+    return groups
+
+
 @app.get("/api/agent-groups")
 async def get_agent_groups_endpoint(response: Response, request: Request):
     """مجموعات وكلاء العضو الحالي"""
     owner_id = current_owner_id(request)
     stored = _load_owned_list(owner_id, "agents") is not None
     response.headers["X-Agent-Groups-Stored"] = "1" if stored else "0"
-    return load_stored_agent_groups(owner_id)
+    return _enrich_group_book_titles(load_stored_agent_groups(owner_id))
 
 @app.post("/api/agent-groups")
 async def save_agent_groups_endpoint(request: Request, payload: Any = Body(...)):
@@ -23484,7 +23521,8 @@ async def save_agent_groups_endpoint(request: Request, payload: Any = Body(...))
         groups = existing
     else:
         groups = []
-    
+
+    _enrich_group_book_titles(groups)
     save_stored_agent_groups(groups, owner_id)
     return {"status": "ok", "count": len(groups)}
 
@@ -28591,7 +28629,7 @@ def _architect_manuscripts_system_prompt(tools_catalog_desc: str, books_catalog_
         "【قواعد بناء المجموعة】\n"
         "1) انسخ الهيكل الثابت أعلاه؛ لا تحذف reader3 ولا تغيّر نموذجه عن google/gemini-3.1-flash-lite.\n"
         "2) خصّص system_prompt لكل وكيل بحسب إجابات المحقق (حدود التخريج/التراجم/اللغة/الحاشية).\n"
-        "3) رشّح كتب الشاملة بأرقام #BookID عبر search_books_catalog وget_category_core_books بحسب الفن.\n"
+        "3) رشّح كتب الشاملة عبر search_books_catalog وget_category_core_books بحسب الفن، واذكر كل كتاب بصيغته الكاملة «#رقمه اسم الكتاب الكامل كما هو في الفهرس» (مثال: «#3974 سير أعلام النبلاء») — يُمنع منعًا باتًا ذكر رقم مجرد بلا اسم في أي بطاقة وكيل أو قائمة كتب، فالرقم وحده لا يعرف به المحقق كتابه.\n"
         "4) عيّن النماذج من جدول أقوى النماذج أدناه فقط، بمعرفها الحرفي.\n"
         "4.أ) ضبط جودة القراءة إلزامي في توجيه كل قارئ ومدقق (reader1/reader2/reader3/approver): وسم تعذّر القراءة سببيًا حصرًا "
         "([غير مقروء: طمس/رطوبة/شطب/قصّ في التصوير/خفاء الحبر/تلف الورق]) على قدر الكلمة المتعذرة وحدها دون تعميم على الأسطر، "
@@ -28622,7 +28660,7 @@ def _architect_manuscripts_system_prompt(tools_catalog_desc: str, books_catalog_
         '      {"ms_key":"reader1","name":"...","model":"...","stage":1,"system_prompt":"...","books":[]},\n'
         '      {"ms_key":"reader2","name":"...","model":"...","stage":1,"system_prompt":"...","books":[]},\n'
         '      {"ms_key":"reader3","name":"القارئ الثالث — ناسخ اللوحات المكمّل","model":"google/gemini-3.1-flash-lite","stage":1,"system_prompt":"قراءة ثالثة مستقلة حرفيًا...","books":[]},\n'
-        '      {"ms_key":"hadith","name":"...","model":"google/gemini-3.8-flash","stage":2,"books":["#..."],"system_prompt":"..."}\n'
+        '      {"ms_key":"hadith","name":"...","model":"google/gemini-3.8-flash","stage":2,"books":["#1234 عنوان الكتاب الكامل كما في فهرس الشاملة"],"system_prompt":"..."}\n'
         "    ]\n"
         "  }\n"
         "}\n"
@@ -28731,7 +28769,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "شرطان لا يمسّهما هذا التحرر: بقاء الأسئلة داخل كتلة ```choices قابلة للنقر (والواجهة تضيف حقل كتابة حرة)، وبقاء الأمانة العلمية: ذاكرتك للاهتداء واقتراح المظانّ والخيارات وبناء التصور، والمستودع وحده مصدر النصوص والإحالات، فلا نصّ ولا جزء ولا صفحة من الذاكرة.\n\n"
         "【منهج الهندسة الإلزامي، بهذا الترتيب في كل مشروع جديد】\n"
         "1. فكّك المسألة أولاً من ذاكرتك: صوّرها، وحرّر محل النزاع، وسمِّ الفنون الداخلة، واذكر ما تعرفه عن المظانّ. وسم هذه الخطوة [من الذاكرة] ولا تنسب منها نصاً ولا جزءاً ولا صفحة.\n"
-        "2. بعد التفكيك استعن بفهرس الشاملة قبل اعتماد الخطة: استدعِ search_books_catalog وget_category_core_books، واستعرض الكتب، ثم رشّح أدقها للمشروع بأرقامها #BookID. لا تُتمم المخطط قبل هذا المسح.\n"
+        "2. بعد التفكيك استعن بفهرس الشاملة قبل اعتماد الخطة: استدعِ search_books_catalog وget_category_core_books، واستعرض الكتب، ثم رشّح أدقها للمشروع بصيغة «#رقمها اسمها الكامل كما في الفهرس» — يُمنع ذكر رقم مجرد بلا اسم في أي بطاقة أو خطة أو قائمة، فباسم الكتاب يعرفه الباحث لا برقمه. لا تُتمم المخطط قبل هذا المسح.\n"
         "3. استدعِ search_similar_research للويب: أصول البحوث المقاربة، ودقتها، ومصادرها، ومراجعها، والمراجعات المشابهة. إن غاب مفتاح الويب فصرّح بذلك ولا تختلق دراسات.\n"
         "4. عيّن لكل مدير ولكل وكيل نموذجاً من جدول «أقوى نماذج OpenRouter» أدناه، بمعرفه الحرفي. اختر الأعلى تقييماً والأنسب للمهمة، واكتب في البطاقة مستوى التفكير: low أو medium أو high أو max، بشرط أن يكون ضمن «التفكير المقبول» لذلك النموذج. التحرير العميق high أو max، والمسح السريع low أو medium.\n"
         "5. الهيكل: مدير جامع واحد هو الأصل، لأن التنفيذ يُدمج تحت قيادة واحدة. لا تُعدّد المدراء إلا إذا انقسم المشروع إلى فنون لا يجمعها تحرير واحد، مثل الفقه مع علل الحديث مع الرصد التاريخي. عندئذ أضف `directors` وكل مدير فن ووكلاؤه، واذكر سبب الانقسام، وأبقِ `director` للمدير الجامع.\n"
