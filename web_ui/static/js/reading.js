@@ -16,6 +16,7 @@ let rdNoteColor = '#ffe58a';
 let rdDraw = null; // رسم جارٍ {type, pts|x0...}
 let rdSaveTimer = null;
 let rdActiveSel = null; // {page, kind:'h'|'c', index, rect:{x,y,w,h}}
+let rdSelFromHover = false; // شريط الأيقونات ظاهر بسبب تمرير على تحليل سابق
 let rdAsstDraftBooks = [];
 let rdAnalysis = null; // {id, discussion} المناقشة المفتوحة
 let rdAnalysisAbort = null;
@@ -612,6 +613,23 @@ function rdHitDiscussion(qx, qy) {
     });
     cv.addEventListener('pointermove', (e) => {
       const q = pos(e);
+      // شريط أيقونات (تحليل/قراءة/مشاركة/نشر) عند التمرير على تحليل سابق رمادي فقط
+      if (!rdDraw && rdTool !== 'loupe' && rdCurrent && rdCurrent.book) {
+        const discH = rdHitDiscussion(q.x, q.y);
+        if (discH) {
+          const annH = rdPageAnn();
+          const arrH = discH.kind === 'c' ? annH.crops : annH.highlights;
+          const rH = arrH && arrH[discH.index];
+          if (rH) {
+            rdActiveSel = { page: rdCurrent.page || 1, kind: discH.kind, index: discH.index, rect: { x: rH.x, y: rH.y, w: rH.w, h: rH.h }, discussion_id: discH.id };
+            rdSelFromHover = true;
+            rdShowSelBar(rdActiveSel.rect);
+          }
+        } else if (rdSelFromHover) {
+          rdSelFromHover = false;
+          rdHideSelBar();
+        }
+      }
       if (rdTool === 'loupe' && rdCurrent && rdCurrent.book) {
         const loupe = document.getElementById('rdLoupe');
         const limg = document.getElementById('rdLoupeImg');
@@ -1116,6 +1134,7 @@ async function rdOcrSelection() {
 // ---- أيقونات التحديد ----
 function rdSelAnalyze() {
   if (!rdNeedActiveSel()) return;
+  rdHideSelBar(); rdSelFromHover = false;
   if (!rdAssistants.length) { rdToast('أنشئ مساعدًا أولًا بزر «إنشاء مساعد»'); return; }
   if (!rdDefaultReader()) return;
   const box = document.getElementById('rdPickAsstList');
@@ -1167,11 +1186,13 @@ async function rdStartAnalysis(asstId) {
     disc.extracted_text = ocr.text;
     st.textContent = `استُخرج النص بـ«${ocr.reader.name}» — يُرسل الآن إلى المساعد «${asst.name}»...`;
     const cite = rdCite();
-    const userMsg = `نص محدد من ${cite}:\n\n${ocr.text}\n\nحلّل هذا النص وصنّفه وفق توجيهك.`;
+    const userMsg = `نص محدد من ${cite}:\n\n${ocr.text}\n\nحلّل هذا النص وصنّفه وفق توجيهك، والتزم التزامًا تامًا بالإحالة النموذجية من الشواهد المسترجعة من نطاق البحث (لا تجب من ذاكرتك، ولكل دعوى شاهدها المحال بدقة).`;
     disc.messages.push({ role: 'user', content: userMsg, at: new Date().toISOString() });
     rdRenderAnalysisMsgs();
     await rdAnalysisAsk(disc, asst, true);
-    st.textContent = `مناقشة رقم ${discId} · المساعد «${asst.name}»`;
+    const lastA = [...(disc.messages || [])].reverse().find(m => m.role === 'assistant');
+    const wCount = lastA && Array.isArray(lastA.witnesses) ? lastA.witnesses.length : 0;
+    st.textContent = `مناقشة رقم ${discId} · المساعد «${asst.name}» · اكتمل عبر مراسي البحث والاسترجاع (${wCount} شاهدًا موثقًا) — اضغط 📖 عند أي إحالة لتصفح الكتاب`;
   } catch (e) {
     st.textContent = `❌ ${e.message}`;
     rdToast(`❌ ${e.message}`, 5000);
@@ -1183,6 +1204,7 @@ function rdOpenDiscussion(id, fresh) {
   if (!rdCurrent) return;
   const disc = (rdCurrent.discussions || {})[id];
   if (!disc) { rdToast('المناقشة غير موجودة'); return; }
+  rdHideSelBar();
   rdAnalysis = { id, discussion: disc };
   document.getElementById('rdAnalysisTitle').textContent = `🧠 تحليل النص — ${disc.assistant_name || 'مساعد'}`;
   document.getElementById('rdAnalysisMeta').textContent = `رقم المناقشة: ${id}`;
@@ -1204,6 +1226,10 @@ function rdRenderAnalysisMsgs() {
       <div class="rd-amsg-role">${m.role === 'user' ? 'أنت' : 'المساعد'}</div>
       <div>${m.role === 'assistant' ? rdMd(m.content) : rdEsc(m.content).replace(/\n/g, '<br>')}</div>
     </div>`).join('');
+  // أيقونات الإحالة النموذجية 📖 تفتح تصفح الكتاب الأصلي عند موضع الشاهد
+  if (typeof window.enhanceProjectCitationsWithBookReader === 'function') {
+    try { window.enhanceProjectCitationsWithBookReader(box); } catch (e) { /* */ }
+  }
   box.scrollTop = box.scrollHeight;
 }
 
@@ -1213,34 +1239,37 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
   sendBtn.disabled = true; stopBtn.hidden = false;
   rdAnalysisAbort = new AbortController();
   try {
+    // إلزام بمسار تبويب المحادثات الكامل: نماذج مراسي بحث دلالية + استرجاع هجين
+    // من نطاق كتب المساعد (أو المكتبة كاملة) — لا بحث حر من الذاكرة أبدًا،
+    // لتصدر الإحالة النموذجية المختمة القابلة لتصفح الكتاب الأصلي.
     const books = (asst.books || []).map(b => b.title).filter(Boolean);
-    const agent = {
-      name: asst.name,
-      model: asst.model,
-      system_prompt: asst.prompt || RD_DEFAULT_ASST_PROMPT,
-      books,
-      booksScope: books,
-      enabled: true,
-      pool_size: 800,
-      top_k: 60,
+    const prompt = asst.prompt || RD_DEFAULT_ASST_PROMPT;
+    const agentObj = {
+      id: asst.id || 'rd-asst', name: asst.name, desc: '',
+      system_prompt: prompt, systemPrompt: prompt,
+      model: asst.model, thinking: 'medium',
+      books, booksScope: books,
+      pool_size: 800, top_k: 60, temp: 0.2,
     };
     const body = {
+      chat_id: null,
       model: asst.model,
       provider: 'openrouter',
       api_key: rdApiKey(),
-      system_prompt: asst.prompt || RD_DEFAULT_ASST_PROMPT,
+      thinking_level: 'medium',
+      use_hybrid: true,
+      semantic_enhanced: true,
+      system_prompt: prompt,
       messages: (disc.messages || []).map(m => ({ role: m.role, content: m.content })),
-      free_mode: books.length === 0,
-      agent_group: books.length ? { agents: [agent], active_agent: agent } : null,
+      selected_books: books.length ? books : null,
+      witness_limit: 50,
+      agent_group: {
+        id: asst.id || 'rd-asst', name: asst.name, desc: '',
+        active_agent: { ...agentObj },
+        agents: [agentObj],
+        disabled_agents: [],
+      },
     };
-    // في الوضع الحر لا يُمرَّر system_prompt؛ نضمّنه في أول رسالة مستخدم إن لزم
-    if (body.free_mode && isFirst && disc.messages.length) {
-      const first = disc.messages[0];
-      body.messages = [
-        { role: 'user', content: `[توجيه المساعد]\n${asst.prompt || RD_DEFAULT_ASST_PROMPT}\n\n[النص المطلوب تحليله]\n${first.content}` },
-        ...disc.messages.slice(1).map(m => ({ role: m.role, content: m.content })),
-      ];
-    }
     const res = await fetch('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       signal: rdAnalysisAbort.signal,
@@ -1249,7 +1278,11 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || data.reply || 'تعذر التحليل');
     const reply = data.reply || data.content || data.message || '';
-    disc.messages.push({ role: 'assistant', content: reply, at: new Date().toISOString() });
+    disc.messages.push({
+      role: 'assistant', content: reply,
+      witnesses: Array.isArray(data.witnesses) ? data.witnesses : [],
+      at: new Date().toISOString(),
+    });
     disc.updated_at = new Date().toISOString();
     rdRenderAnalysisMsgs();
     rdSaveSoon();
@@ -1295,6 +1328,7 @@ function rdCloseAnalysis() {
 
 async function rdSelRead() {
   if (!rdNeedActiveSel()) return;
+  rdHideSelBar(); rdSelFromHover = false;
   if (!rdDefaultReader()) return;
   rdShowModal('rdReadTextModal');
   document.getElementById('rdReadTextStatus').textContent = 'جارٍ استخراج النص بالقارئ...';
@@ -1315,17 +1349,27 @@ function rdCopyReadText() {
 
 function rdSelShare() {
   if (!rdNeedActiveSel()) return;
+  rdHideSelBar(); rdSelFromHover = false;
   rdMediaAction = 'share';
   document.getElementById('rdMediaChoiceTitle').textContent = 'مشاركة المحدد — نص أم صورة؟';
   rdShowModal('rdMediaChoiceModal');
 }
 function rdSelPublish() {
   if (!rdNeedActiveSel()) return;
+  rdHideSelBar(); rdSelFromHover = false;
   rdMediaAction = 'publish';
   document.getElementById('rdMediaChoiceTitle').textContent = 'نشر المحدد — نص أم صورة؟';
   rdShowModal('rdMediaChoiceModal');
 }
 
+// رفع نافذة النشر/المشاركة فوق نافذة القراءة وكل النوافذ
+function rdRaisePublishOverlay() {
+  const ov = document.getElementById('designPublishOverlay');
+  if (!ov) return;
+  if (ov.parentElement !== document.body) document.body.appendChild(ov);
+  ov.style.setProperty('z-index', '300500', 'important');
+  ov.style.display = 'flex';
+}
 async function rdMediaChoice(kind) {
   rdCloseModal('rdMediaChoiceModal');
   const action = rdMediaAction;
@@ -1333,12 +1377,11 @@ async function rdMediaChoice(kind) {
   if (!action) return;
   try {
     if (kind === 'text') {
-      document.getElementById('rdReadTextStatus') && (document.getElementById('rdReadTextStatus').textContent = '');
       rdToast('جارٍ استخراج النص للمشاركة...');
       const ocr = await rdOcrSelection();
       const payload = `${ocr.text}\n\n—\n${rdCite()}`;
       if (action === 'share') await rdNativeShareText(payload);
-      else if (typeof window.openDesignTextPublish === 'function') window.openDesignTextPublish(payload, null);
+      else if (typeof window.openDesignTextPublish === 'function') { rdRaisePublishOverlay(); window.openDesignTextPublish(payload, null); }
       else rdToast('نافذة النشر غير متاحة');
     } else {
       const blob = await rdCropSelBlob();
@@ -1347,6 +1390,7 @@ async function rdMediaChoice(kind) {
       const caption = rdCite();
       if (action === 'share') await rdNativeShareImage(blob, caption);
       else if (typeof window.openDesignImagePublish === 'function') {
+        rdRaisePublishOverlay();
         window.openDesignImagePublish(up.file_url, caption, null);
       } else rdToast('نافذة النشر غير متاحة');
     }
