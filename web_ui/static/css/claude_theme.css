@@ -11290,6 +11290,8 @@ body::-webkit-scrollbar,
 .ms-dash-prog { flex: 1; min-width: 120px; height: 10px; border-radius: 99px; background: rgba(140,120,90,.22); overflow: hidden; }
 .ms-dash-prog i { display: block; height: 100%; background: linear-gradient(90deg, #d9a441, #2e7d5b); border-radius: 99px; transition: width .5s ease; }
 .ms-dash-clock { font-variant-numeric: tabular-nums; }
+.ms-report-modal { width: min(880px, 96vw); }
+.ms-report-text { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.95; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px 14px; max-height: 62vh; overflow-y: auto; background: var(--bg-main, transparent); direction: rtl; text-align: right; margin: 0; }
 .ms-auto-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; margin: 10px 0; }
 .ms-auto-step { font-size: 13.5px; padding: 6px 9px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-main, transparent); }
 .ms-auto-step-info { display: block; font-size: 11.5px; opacity: .75; margin-top: 2px; }

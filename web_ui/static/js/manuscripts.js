@@ -3404,20 +3404,6 @@ function renderMsAuto() {
   const a = msAutoInit(p);
   const base = msBaseCopy(p);
   const baseFolios = base ? (base.folios || []).length : 0;
-  const icons = { done: '✔', run: '⏳', held: '⏸', err: '✖', todo: '○' };
-  const colors = { done: '#2e7d5b', run: '#8a6414', held: '#8a6414', err: '#b03a2e', todo: '#999' };
-  const stepsHtml = MS_AUTO_STEPS.map(([key, label]) => {
-    const st = a.steps[key] || { status: 'todo' };
-    return `<div class="ms-auto-step"><span style="color:${colors[st.status] || '#999'};font-weight:800">${icons[st.status] || '○'}</span> ${msEsc(label)}${st.info ? `<span class="ms-auto-step-info">${msEsc(st.info)}</span>` : ''}</div>`;
-  }).join('');
-  const statusText = { idle: 'ارفع النسخ ولوحاتها واوصفها، ثم اضغط «اعتمد التحقيق الآلي» فيجري التحقيق من بدايته إلى النسخة النهائية بلا أي تدخل بشري',
-    running: '⏳ التحقيق الآلي الذاتي جارٍ الآن — كل خطوة تُحفظ فور إنجازها...',
-    done: '✔ اكتمل التحقيق الآلي وصدرت النسخة النهائية', stopped: '⏸ أُوقف التحقيق الآلي بطلبك — محفوظ عند نقطة التوقف',
-    paused_network: '⏸ انقطع الاتصال — كل شيء محفوظ عند نقطة التوقف وسيستأنف تلقائيًا فور عودته، لا يحتاجك إلا في إعادة الاتصال',
-    interrupted: '⏸ توقف مفاجئ — محفوظ عند نقطة التوقف وسيستأنف ذاتيًا بعد قليل',
-    error: '✖ توقف التحقيق الآلي بعد محاولتين — راجع آخر سطر في السجل' }[a.status] || a.status;
-  const rolesLine = '<div class="ms-hint" style="margin:4px 0">الأدوار: مدير التحقيق يقود ويحسم ويعتمد · مساعد مدير التحقيق ينفّذ الجولات والمسح · المعتمِد يدقق الصور ويعتمد النسخ والجودة · المراقب يراقب الجودة — ونموذج كل دور مضبوط في بطاقة وكيله بمجموعة «تحقيق المخطوطات».</div>';
-  const ckpt = a.checkpoint ? `<div class="ms-hint">نقطة الحفظ الأخيرة: ${msEsc(a.checkpoint.step)} — ${msEsc(a.checkpoint.item || '')} · ${msEsc(new Date(a.checkpoint.at).toLocaleString('ar-EG'))}${a.resumes ? ` · استئنافات ذاتية: ${a.resumes}` : ''}</div>` : '';
   const r = a.report || {};
   const reportHtml = (a.status === 'done') ? `
     <div class="ms-auto-report">
@@ -3438,12 +3424,9 @@ function renderMsAuto() {
         <button type="button" class="ms-btn ms-btn-danger" onclick="msAutoArchiveDelete('${msEsc(ar.id)}')">حذف</button></span>
       </div>`).join('')}
     </div>` : '';
-  document.getElementById('msAutoBody').innerHTML = `
-    <div class="ms-auto-status">${msEsc(statusText)}${a.cost ? ` · كلفة الجولات: $${Number(a.cost).toFixed(4)}` : ''}</div>
-    ${rolesLine}${ckpt}
-    <div class="ms-auto-steps">${stepsHtml}</div>
-    ${reportHtml}${archivesHtml}
-    <div class="ms-auto-log">${(a.log || []).slice(-60).map(l => `<div><span class="ms-auto-log-at">${msEsc(l.at)}</span> ${msEsc(l.msg)}</div>`).join('')}</div>`;
+  const reportBtnHtml = ((a.log || []).length && a.status !== 'running' && a.status !== 'idle')
+    ? `<div class="ms-form-row" style="margin-top:10px"><button type="button" class="ms-btn ms-btn-primary" onclick="msOpenAutoReport()">📋 تقرير متابعة التحقيق الآلي</button><span class="ms-hint">سجل المتابعة الكامل (اللوق) مع ملخص المراحل — للنسخ أو التصدير TXT</span></div>` : '';
+  document.getElementById('msAutoBody').innerHTML = `${reportHtml}${archivesHtml}${reportBtnHtml}`;
   msRenderDashboard(p, a);
   const startBtn = document.getElementById('msAutoStartBtn');
   const stopBtn = document.getElementById('msAutoStopBtn');
@@ -3455,8 +3438,91 @@ function renderMsAuto() {
       : ['stopped', 'error', 'paused_network', 'interrupted'].includes(a.status) ? '▶ استئناف التحقيق الآلي الآن' : '✅ اعتمد التحقيق الآلي';
   }
   if (stopBtn) stopBtn.disabled = !MS_AUTO_RUNNING;
-  const logBox = document.querySelector('#msAutoBody .ms-auto-log');
-  if (logBox) logBox.scrollTop = logBox.scrollHeight;
+}
+
+// ---------- تقرير متابعة التحقيق الآلي: اللوق الكامل في نافذة (نسخ/تصدير TXT) ----------
+function msBuildAutoReportText(p) {
+  const a = msAutoInit(p);
+  const statusAr = { idle: 'لم يبدأ', running: 'جارٍ', done: 'مكتمل', stopped: 'موقوف بطلب المحقق', paused_network: 'موقوف لانقطاع الاتصال', interrupted: 'متوقف مفاجئ', error: 'متوقف بخطأ' };
+  const stepAr = { done: 'منجزة', run: 'جارية', held: 'بانتظار الاستئناف', err: 'متعثرة', todo: 'لم تبدأ' };
+  const lines = [];
+  lines.push('تقرير متابعة التحقيق الآلي — منظومة المغني');
+  lines.push(`المشروع: ${p.title || '—'}${p.author ? ` — ${p.author}` : ''}`);
+  lines.push(`الحالة: ${statusAr[a.status] || a.status}`);
+  if (a.startedAt) lines.push(`بدأ: ${new Date(a.startedAt).toLocaleString('ar-EG')}`);
+  if (a.finishedAt) lines.push(`انتهى: ${new Date(a.finishedAt).toLocaleString('ar-EG')}`);
+  if (a.startedAt) {
+    const end = a.finishedAt ? Date.parse(a.finishedAt) : Date.now();
+    lines.push(`المدة المنقضية: ${msFmtDur((end - Date.parse(a.startedAt)) / 1000)}`);
+  }
+  lines.push(`كلفة الجولات: $${Number(a.cost || 0).toFixed(4)}`);
+  lines.push('');
+  lines.push('— مراحل سير العمل —');
+  MS_AUTO_STEPS.forEach(([key, label], i) => {
+    const st = (a.steps || {})[key] || { status: 'todo' };
+    const cost = Number(((a.report || {}).costs || {})[key] || 0);
+    lines.push(`${i + 1}. ${label} [${stepAr[st.status] || st.status}]`
+      + `${st.durationSec != null ? ` · المدة ${msFmtDur(st.durationSec)}` : ''}`
+      + `${cost ? ` · الكلفة $${cost.toFixed(4)}` : ''}`
+      + `${st.progress && st.progress.total ? ` · التقدم ${st.progress.done}/${st.progress.total}` : ''}`
+      + `${st.info ? ` · ${st.info}` : ''}`);
+  });
+  const r = a.report || {};
+  lines.push('');
+  lines.push('— ملخص النتائج —');
+  lines.push(`لوحات منسوخة ومعتمدة: ${r.foliosTranscribed ?? 0} · خلافات محسومة: ${r.decided ?? 0} · بقيت بلا حسم: ${r.held ?? 0} · مواضع تعذّرت قراءتها: ${r.unreadable ?? 0}`);
+  lines.push(`اقتراحات أُثبتت: ${r.agentsAccepted ?? 0} · موازيات مؤلف: ${r.authorAccepted ?? 0} · رُدت لعدم الثبوت: ${r.autoDismissed ?? 0} · مداخل الفهارس: ${r.indexEntries ?? 0}`);
+  lines.push('');
+  lines.push('— سجل المتابعة الكامل (اللوق) —');
+  (a.log || []).forEach(l => lines.push(`[${l.at}] ${l.msg}`));
+  return lines.join('\n');
+}
+
+function msOpenAutoReport() {
+  const p = msCurrentProject();
+  if (!p) { msToast('افتح مشروع تحقيق أولًا'); return; }
+  const text = msBuildAutoReportText(p);
+  const pre = document.getElementById('msAutoReportText');
+  if (pre) pre.textContent = text;
+  const title = document.getElementById('msAutoReportTitle');
+  if (title) title.textContent = `📋 تقرير متابعة التحقيق الآلي — «${p.title || 'مشروع التحقيق'}»`;
+  msShowModal('msAutoReportModal');
+}
+window.msOpenAutoReport = msOpenAutoReport;
+
+async function msCopyAutoReport() {
+  const pre = document.getElementById('msAutoReportText');
+  const text = pre ? pre.textContent : '';
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    msToast('✔ نُسخ تقرير المتابعة كاملًا');
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); msToast('✔ نُسخ تقرير المتابعة كاملًا'); }
+    catch (e2) { msToast('تعذر النسخ الآلي — حدّد النص يدويًا وانسخه'); }
+    ta.remove();
+  }
+}
+
+function msExportAutoReport() {
+  const p = msCurrentProject();
+  if (!p) return;
+  const text = msBuildAutoReportText(p);
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const aEl = document.createElement('a');
+  aEl.href = url;
+  aEl.download = `تقرير-متابعة-التحقيق-الآلي-${String(p.title || 'مشروع').replace(/[\\/:*?"<>|]/g, '').slice(0, 60)}.txt`;
+  document.body.appendChild(aEl); aEl.click(); aEl.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  msToast('✔ صُدّر تقرير المتابعة TXT');
+}
+
+function msCloseAutoReport() {
+  const modal = document.getElementById('msAutoReportModal');
+  if (modal) modal.hidden = true;
 }
 
 function msAutoStop() {
