@@ -5,6 +5,8 @@
 // موضع وقوف القارئ وتعليقاته على الصفحات.
 // =============================================================================
 let rdProjects = [];
+let rdAssistants = [];
+let rdReaders = [];
 let rdLoaded = false;
 let rdCurrent = null; // مشروع القراءة المفتوح
 let rdTool = 'pen';
@@ -13,9 +15,23 @@ let rdColor = '#b03a2e';
 let rdNoteColor = '#ffe58a';
 let rdDraw = null; // رسم جارٍ {type, pts|x0...}
 let rdSaveTimer = null;
+let rdActiveSel = null; // {page, kind:'h'|'c', index, rect:{x,y,w,h}}
+let rdAsstDraftBooks = [];
+let rdAnalysis = null; // {id, discussion} المناقشة المفتوحة
+let rdAnalysisAbort = null;
+let rdMediaAction = null; // 'share' | 'publish'
 
 const RD_COLORS = ['#b03a2e', '#1f6fb2', '#2e7d5b', '#b8860b', '#7a5aa1', '#222222'];
 const RD_NOTE_COLORS = ['#ffe58a', '#ffd1dc', '#c8f0c8', '#bfe3ff', '#e6ccff'];
+const RD_DISC_COLOR = 'rgba(120,120,120,0.28)';
+const RD_DEFAULT_ASST_PROMPT =
+`أنت مختص بمساعدة قارئ الكتاب
+سيقوم القارئ بتزويدك بنص من الكتاب المقروء وعليك تحليل النص وتصنيفه
+فقه - عقيدة - تفسير - حديث - لغة .. الخ
+عليك الاستعانة بنماذج مراسي البحث للتصنيف الدلالي الدقيق
+يجب أن تكون الإجابة ما بين متوسطة إلى مختصرة اختصارا غير مخل
+يجب عليك الالتزام التام بطريقة الإحالة
+التزم بالمطلوب بدقة تامة`;
 let rdCustomColors = { pen: [], note: [] };
 try { rdCustomColors = Object.assign(rdCustomColors, JSON.parse(localStorage.getItem('rdCustomColors') || '{}')); } catch (e) { /* لوحة افتراضية */ }
 let rdColorTarget = 'pen'; // منتقي الألوان يضيف للوحة الأقلام أو الملصقات
@@ -53,7 +69,9 @@ async function initReadingTab() {
     const res = await fetch('/api/reading-projects');
     const data = await res.json();
     rdProjects = Array.isArray(data.projects) ? data.projects : [];
-  } catch (e) { rdProjects = []; }
+    rdAssistants = Array.isArray(data.assistants) ? data.assistants : [];
+    rdReaders = Array.isArray(data.readers) ? data.readers : [];
+  } catch (e) { rdProjects = []; rdAssistants = []; rdReaders = []; }
   rdLoaded = true;
   renderRdProjects();
 }
@@ -65,7 +83,7 @@ async function rdSave() {
   try {
     await fetch('/api/reading-projects', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projects: rdProjects }),
+      body: JSON.stringify({ projects: rdProjects, assistants: rdAssistants, readers: rdReaders }),
     });
   } catch (e) { /* يحفظ عند عودة الاتصال */ }
 }
@@ -260,6 +278,8 @@ function rdLoadPage(n) {
   img.onerror = () => { rdToast('تعذر عرض هذه الصفحة'); };
   img.src = rdBookPageUrl(n);
   document.getElementById('rdPageScroll').scrollTop = 0;
+  rdHideSelBar();
+  rdActiveSel = null;
   rdSaveSoon();
 }
 
@@ -349,9 +369,14 @@ function rdRenderAnnotations() {
   const W = cv.width, H = cv.height;
   (ann.highlights || []).forEach(h => {
     ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = h.c;
-    ctx.fillRect(h.x * W, h.y * H, h.w * W, h.h * H);
+    if (h.discussion_id) {
+      ctx.fillStyle = RD_DISC_COLOR;
+      ctx.fillRect(h.x * W, h.y * H, h.w * W, h.h * H);
+    } else {
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = h.c;
+      ctx.fillRect(h.x * W, h.y * H, h.w * W, h.h * H);
+    }
     ctx.restore();
   });
   (ann.strokes || []).forEach(s => {
@@ -368,7 +393,13 @@ function rdRenderAnnotations() {
   });
   (ann.crops || []).forEach(cr => {
     ctx.save();
-    ctx.strokeStyle = '#b4552d';
+    if (cr.discussion_id) {
+      ctx.fillStyle = RD_DISC_COLOR;
+      ctx.fillRect(cr.x * W, cr.y * H, cr.w * W, cr.h * H);
+      ctx.strokeStyle = '#777';
+    } else {
+      ctx.strokeStyle = '#b4552d';
+    }
     ctx.lineWidth = Math.max(1.5, W / 400);
     ctx.setLineDash([10, 7]);
     ctx.strokeRect(cr.x * W, cr.y * H, cr.w * W, cr.h * H);
@@ -507,16 +538,39 @@ function rdInitResize() {
   });
 }
 
-function rdDiscussSelected() {
-  const p = rdCurrent;
-  if (!p) return;
+function rdHideSelBar() {
+  const bar = document.getElementById('rdSelBar');
+  if (bar) bar.hidden = true;
+}
+function rdShowSelBar(rect) {
+  const bar = document.getElementById('rdSelBar');
+  const a4 = document.getElementById('rdA4');
+  if (!bar || !a4 || !rect) return;
+  const left = (rect.x + rect.w / 2) * a4.offsetWidth;
+  const top = rect.y * a4.offsetHeight;
+  bar.style.left = `${left}px`;
+  bar.style.top = `${Math.max(18, top)}px`;
+  bar.hidden = false;
+}
+function rdSetActiveSel(kind, index, rect) {
+  if (!rdCurrent || !rect) return;
+  rdActiveSel = { page: rdCurrent.page || 1, kind, index, rect: { ...rect } };
+  rdShowSelBar(rect);
+}
+function rdHitDiscussion(qx, qy) {
+  if (!rdCurrent) return null;
   const ann = rdPageAnn();
-  const sel = (ann.crops || []).length ? `قصاصة ${(ann.crops).length} في صفحة ${p.page}`
-    : (ann.highlights || []).length ? `تظليل في صفحة ${p.page}` : '';
-  if (!sel) { rdToast('حدّد أولًا موضعًا بأداة القص ✂️ أو التظليل 🖍️ في هذه الصفحة'); return; }
-  p.last_selection = { page: p.page, kind: (ann.crops || []).length ? 'crop' : 'highlight', at: new Date().toISOString() };
-  rdSaveSoon();
-  rdToast('حُفظ المحدد — آلية «مناقشة المحدد» تُبنى على هذا التحديد كما تشرحها في خطوتك التالية');
+  const hit = (arr, kind) => {
+    for (let i = (arr || []).length - 1; i >= 0; i--) {
+      const r = arr[i];
+      if (!r.discussion_id) continue;
+      if (qx >= r.x && qx <= r.x + r.w && qy >= r.y && qy <= r.y + r.h) {
+        return { id: r.discussion_id, kind, index: i };
+      }
+    }
+    return null;
+  };
+  return hit(ann.crops, 'c') || hit(ann.highlights, 'h');
 }
 
 // أحداث الرسم على اللوحة
@@ -535,10 +589,18 @@ function rdDiscussSelected() {
     cv.addEventListener('pointerdown', (e) => {
       if (!rdCurrent || !rdCurrent.book) return;
       const q = pos(e);
+      const disc = rdHitDiscussion(q.x, q.y);
+      // ضغط على موضع مناقشة محفوظة يفتحها مباشرة (أولوية على بدء رسم جديد)
+      if (disc) {
+        rdOpenDiscussion(disc.id);
+        return;
+      }
       if (rdTool === 'pen') {
+        rdHideSelBar();
         rdDraw = { type: 's', pts: [[q.x, q.y]] };
         cv.setPointerCapture(e.pointerId);
       } else if (rdTool === 'highlight' || rdTool === 'crop') {
+        rdHideSelBar();
         rdDraw = { type: rdTool === 'highlight' ? 'h' : 'c', x0: q.x, y0: q.y, x1: q.x, y1: q.y };
         cv.setPointerCapture(e.pointerId);
       } else if (rdTool === 'note') {
@@ -605,13 +667,20 @@ function rdDiscussSelected() {
         if (w > 0.01) {
           const r = cv.getBoundingClientRect();
           const lineH = 36 / r.height;
-          ann.highlights.push({ x, y: rdDraw.y0 - lineH / 2, w, h: lineH, c: rdColor });
+          const rect = { x, y: rdDraw.y0 - lineH / 2, w, h: lineH };
+          ann.highlights.push({ ...rect, c: rdColor });
           ann.seq.push('h');
+          rdSetActiveSel('h', ann.highlights.length - 1, rect);
         }
       } else if (rdDraw.type === 'c') {
         const x = Math.min(rdDraw.x0, rdDraw.x1), y = Math.min(rdDraw.y0, rdDraw.y1);
         const w = Math.abs(rdDraw.x1 - rdDraw.x0), h = Math.abs(rdDraw.y1 - rdDraw.y0);
-        if (w > 0.01 && h > 0.01) { ann.crops.push({ x, y, w, h }); ann.seq.push('c'); }
+        if (w > 0.01 && h > 0.01) {
+          const rect = { x, y, w, h };
+          ann.crops.push({ ...rect });
+          ann.seq.push('c');
+          rdSetActiveSel('c', ann.crops.length - 1, rect);
+        }
       }
       rdDraw = null;
       rdRenderAnnotations(); rdSaveSoon();
@@ -767,4 +836,478 @@ async function rdFetchWeb() {
     st.textContent = `❌ ${e.message}`;
     btn.disabled = false;
   }
+}
+
+// =============================================================================
+// مساعدون وقرّاء وتحليل المحدد ومشاركة/نشر
+// =============================================================================
+function rdApiKey() {
+  try {
+    if (typeof getOpenRouterKey === 'function') return getOpenRouterKey() || '';
+    return localStorage.getItem('openrouter_api_key') || '';
+  } catch (e) { return ''; }
+}
+function rdMd(text) {
+  const t = String(text || '');
+  if (typeof marked !== 'undefined' && (marked.parse || typeof marked === 'function')) {
+    try { return (marked.parse || marked)(t); } catch (e) { /* */ }
+  }
+  return rdEsc(t).replace(/\n/g, '<br>');
+}
+function rdCite() {
+  const p = rdCurrent;
+  if (!p || !p.book) return '';
+  const b = rdEnsureParts(p.book);
+  let rest = p.page || 1, partIdx = 0, local = rest;
+  for (let i = 0; i < b.parts.length; i++) {
+    if (rest <= b.parts[i].pages) { partIdx = i; local = rest; break; }
+    rest -= b.parts[i].pages;
+    partIdx = i; local = b.parts[i].pages;
+  }
+  const partLabel = b.parts.length > 1 ? `الجزء ${partIdx + 1}` : 'الجزء 1';
+  return `«${b.title}» — ${partLabel} — صفحة ${local} (صفحة المشروع ${p.page})`;
+}
+
+async function rdFillModels(selectId, visionOnly) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">جارٍ تحميل النماذج...</option>';
+  try {
+    const url = visionOnly ? '/api/manuscripts/models' : '/api/openrouter/models';
+    const res = await fetch(url);
+    const data = await res.json();
+    let models = data.models || data.data || [];
+    if (visionOnly) models = models.filter(m => m.vision);
+    else if (models.length && models[0].input_modalities) {
+      /* قائمة openrouter كاملة */
+    }
+    if (!models.length) { sel.innerHTML = '<option value="">لا نماذج متاحة</option>'; return; }
+    sel.innerHTML = models.map(m => {
+      const id = m.id || m.model_id || m.name;
+      const name = m.name || id;
+      return `<option value="${rdEsc(id)}">${rdEsc(name)}</option>`;
+    }).join('');
+  } catch (e) {
+    sel.innerHTML = `<option value="">تعذر التحميل: ${rdEsc(e.message)}</option>`;
+  }
+}
+
+function rdRenderAssistantsList() {
+  const box = document.getElementById('rdAssistantsList');
+  if (!box) return;
+  if (!rdAssistants.length) { box.innerHTML = '<div class="ms-hint">لا مساعدين بعد.</div>'; return; }
+  box.innerHTML = rdAssistants.map(a => `
+    <div class="rd-entity-card">
+      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length} كتاب</div></div>
+      <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteAssistant('${a.id}')">حذف</button>
+    </div>`).join('');
+}
+function rdRenderReadersList() {
+  const box = document.getElementById('rdReadersList');
+  if (!box) return;
+  if (!rdReaders.length) { box.innerHTML = '<div class="ms-hint">لا قرّاء بعد.</div>'; return; }
+  box.innerHTML = rdReaders.map(r => `
+    <div class="rd-entity-card">
+      <div><strong>👁 ${rdEsc(r.name)}</strong><div class="ms-hint">${rdEsc(r.model)}</div></div>
+      <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteReader('${r.id}')">حذف</button>
+    </div>`).join('');
+}
+
+function rdOpenCreateAssistant() {
+  rdAsstDraftBooks = [];
+  document.getElementById('rdAsstName').value = '';
+  document.getElementById('rdAsstPrompt').value = RD_DEFAULT_ASST_PROMPT;
+  document.getElementById('rdAsstBookQ').value = '';
+  document.getElementById('rdAsstBookResults').innerHTML = '';
+  document.getElementById('rdAsstBooksChosen').textContent = 'لا شيء بعد';
+  rdShowModal('rdAssistantModal');
+  rdFillModels('rdAsstModel', false);
+  rdRenderAssistantsList();
+}
+function rdOpenCreateReader() {
+  document.getElementById('rdVisName').value = '';
+  rdShowModal('rdVisionReaderModal');
+  rdFillModels('rdVisModel', true);
+  rdRenderReadersList();
+}
+
+async function rdSearchAsstBooks() {
+  const q = document.getElementById('rdAsstBookQ').value.trim();
+  const box = document.getElementById('rdAsstBookResults');
+  if (!q) { rdToast('اكتب اسم الكتاب أولًا'); return; }
+  box.innerHTML = '<div class="ms-rec-loading">⏳ جارٍ البحث...</div>';
+  try {
+    const res = await fetch(`/api/books/search?q=${encodeURIComponent(q)}&limit=40`);
+    const data = await res.json();
+    const books = data.books || [];
+    box.innerHTML = books.length ? books.map(b => {
+      const checked = rdAsstDraftBooks.some(x => String(x.book_id) === String(b.book_id)) ? 'checked' : '';
+      return `<label><input type="checkbox" ${checked} onchange="rdToggleAsstBook(${b.book_id}, '${rdEsc(b.title).replace(/'/g, '')}', this.checked)">
+        <span><strong>${rdEsc(b.title)}</strong> <span class="ms-wb-meta">${rdEsc(b.author || '')}</span></span></label>`;
+    }).join('') : '<div class="ms-hint">لا نتائج.</div>';
+  } catch (e) { box.innerHTML = `<div class="ms-hint">❌ ${rdEsc(e.message)}</div>`; }
+}
+function rdToggleAsstBook(bookId, title, on) {
+  if (on) {
+    if (!rdAsstDraftBooks.some(x => String(x.book_id) === String(bookId)))
+      rdAsstDraftBooks.push({ book_id: bookId, title });
+  } else {
+    rdAsstDraftBooks = rdAsstDraftBooks.filter(x => String(x.book_id) !== String(bookId));
+  }
+  document.getElementById('rdAsstBooksChosen').textContent =
+    rdAsstDraftBooks.length ? rdAsstDraftBooks.map(b => b.title).join(' · ') : 'لا شيء بعد';
+}
+
+function rdAdoptAssistant() {
+  const name = document.getElementById('rdAsstName').value.trim();
+  const model = document.getElementById('rdAsstModel').value;
+  const prompt = document.getElementById('rdAsstPrompt').value.trim() || RD_DEFAULT_ASST_PROMPT;
+  if (!name) { rdToast('اكتب اسم المساعد'); return; }
+  if (!model) { rdToast('اختر نموذجًا'); return; }
+  rdAssistants.unshift({
+    id: rdUid(), name, model, prompt,
+    books: rdAsstDraftBooks.map(b => ({ ...b })),
+    created_at: new Date().toISOString(),
+  });
+  rdSave();
+  rdRenderAssistantsList();
+  rdToast(`✔ اعتُمد المساعد «${name}»`);
+  document.getElementById('rdAsstName').value = '';
+  rdAsstDraftBooks = [];
+  document.getElementById('rdAsstBooksChosen').textContent = 'لا شيء بعد';
+}
+function rdDeleteAssistant(id) {
+  if (!confirm('حذف هذا المساعد؟')) return;
+  rdAssistants = rdAssistants.filter(a => a.id !== id);
+  rdSave(); rdRenderAssistantsList();
+}
+function rdAdoptVisionReader() {
+  const name = document.getElementById('rdVisName').value.trim();
+  const model = document.getElementById('rdVisModel').value;
+  if (!name) { rdToast('اكتب اسم القارئ'); return; }
+  if (!model) { rdToast('اختر نموذجًا بصريًا'); return; }
+  rdReaders.unshift({ id: rdUid(), name, model, created_at: new Date().toISOString() });
+  rdSave(); rdRenderReadersList();
+  rdToast(`✔ اعتُمد القارئ «${name}»`);
+  document.getElementById('rdVisName').value = '';
+}
+function rdDeleteReader(id) {
+  if (!confirm('حذف هذا القارئ؟')) return;
+  rdReaders = rdReaders.filter(r => r.id !== id);
+  rdSave(); rdRenderReadersList();
+}
+
+function rdNeedActiveSel() {
+  if (!rdActiveSel || !rdCurrent) { rdToast('حدّد أولًا موضعًا بأداة التظليل أو القص'); return false; }
+  return true;
+}
+function rdDefaultReader() {
+  if (!rdReaders.length) { rdToast('أنشئ قارئًا بصريًا أولًا بزر «إنشاء قارئ»'); return null; }
+  return rdReaders[0];
+}
+
+async function rdCropSelBlob() {
+  if (!rdActiveSel) return null;
+  const img = document.getElementById('rdPageImg');
+  if (!img || !img.naturalWidth) return null;
+  const r = rdActiveSel.rect;
+  const sx = Math.max(0, Math.floor(r.x * img.naturalWidth));
+  const sy = Math.max(0, Math.floor(r.y * img.naturalHeight));
+  const sw = Math.max(1, Math.floor(r.w * img.naturalWidth));
+  const sh = Math.max(1, Math.floor(r.h * img.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = sw; c.height = sh;
+  c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  return await new Promise(resolve => c.toBlob(b => resolve(b), 'image/png'));
+}
+
+async function rdUploadBlob(blob, name) {
+  const fd = new FormData();
+  fd.append('file', blob, name || 'rd-sel.png');
+  const up = await fetch('/api/chat/upload', { method: 'POST', body: fd });
+  const data = await up.json().catch(() => ({}));
+  if (!up.ok || !data.file_path) throw new Error(data.detail || 'تعذر رفع المحدد');
+  return data;
+}
+
+async function rdOcrSelection() {
+  const reader = rdDefaultReader();
+  if (!reader) return null;
+  const blob = await rdCropSelBlob();
+  if (!blob) throw new Error('تعذر قص موضع التحديد من الصفحة');
+  const up = await rdUploadBlob(blob, 'rd-sel.png');
+  const res = await fetch('/api/manuscripts/transcribe-one', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_path: up.file_path, model: reader.model, api_key: rdApiKey() }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || 'تعذرت قراءة المحدد');
+  return { text: (data.text || '').trim(), file_url: up.file_url || '', reader };
+}
+
+// ---- أيقونات التحديد ----
+function rdSelAnalyze() {
+  if (!rdNeedActiveSel()) return;
+  if (!rdAssistants.length) { rdToast('أنشئ مساعدًا أولًا بزر «إنشاء مساعد»'); return; }
+  if (!rdDefaultReader()) return;
+  const box = document.getElementById('rdPickAsstList');
+  box.innerHTML = rdAssistants.map(a => `
+    <div class="rd-entity-card">
+      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length} كتاب</div></div>
+      <button type="button" class="ms-btn ms-btn-primary" onclick="rdStartAnalysis('${a.id}')">تحليل بهذا المساعد</button>
+    </div>`).join('');
+  document.getElementById('rdPickAsstHint').textContent = 'بعد الاختيار يُستخرج النص بالقارئ ثم يُرسل تلقائيًا للمساعد دون تدخل منك.';
+  rdShowModal('rdPickAsstModal');
+}
+
+async function rdStartAnalysis(asstId) {
+  const asst = rdAssistants.find(a => a.id === asstId);
+  if (!asst || !rdCurrent || !rdActiveSel) return;
+  rdCloseModal('rdPickAsstModal');
+  const discId = rdUid();
+  const disc = {
+    id: discId,
+    page: rdActiveSel.page,
+    kind: rdActiveSel.kind,
+    index: rdActiveSel.index,
+    rect: { ...rdActiveSel.rect },
+    assistant_id: asst.id,
+    assistant_name: asst.name,
+    model: asst.model,
+    extracted_text: '',
+    messages: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  rdCurrent.discussions = rdCurrent.discussions || {};
+  rdCurrent.discussions[discId] = disc;
+  // ربط التحديد بالمناقشة وتظليله رماديًا
+  const ann = rdPageAnn();
+  const arr = rdActiveSel.kind === 'c' ? ann.crops : ann.highlights;
+  if (arr && arr[rdActiveSel.index]) {
+    arr[rdActiveSel.index].discussion_id = discId;
+    if (rdActiveSel.kind === 'h') arr[rdActiveSel.index].c = '#888888';
+  }
+  rdHideSelBar();
+  rdRenderAnnotations();
+  rdOpenDiscussion(discId, true);
+  const st = document.getElementById('rdAnalysisStatus');
+  st.textContent = 'جار تحليل النص... (استخراج بالنص بالقارئ ثم إرساله للمساعد)';
+  try {
+    const ocr = await rdOcrSelection();
+    if (!ocr || !ocr.text) throw new Error('لم يُستخرج نص من المحدد');
+    disc.extracted_text = ocr.text;
+    st.textContent = `استُخرج النص بـ«${ocr.reader.name}» — يُرسل الآن إلى المساعد «${asst.name}»...`;
+    const cite = rdCite();
+    const userMsg = `نص محدد من ${cite}:\n\n${ocr.text}\n\nحلّل هذا النص وصنّفه وفق توجيهك.`;
+    disc.messages.push({ role: 'user', content: userMsg, at: new Date().toISOString() });
+    rdRenderAnalysisMsgs();
+    await rdAnalysisAsk(disc, asst, true);
+    st.textContent = `مناقشة رقم ${discId} · المساعد «${asst.name}»`;
+  } catch (e) {
+    st.textContent = `❌ ${e.message}`;
+    rdToast(`❌ ${e.message}`, 5000);
+  }
+  rdSaveSoon();
+}
+
+function rdOpenDiscussion(id, fresh) {
+  if (!rdCurrent) return;
+  const disc = (rdCurrent.discussions || {})[id];
+  if (!disc) { rdToast('المناقشة غير موجودة'); return; }
+  rdAnalysis = { id, discussion: disc };
+  document.getElementById('rdAnalysisTitle').textContent = `🧠 تحليل النص — ${disc.assistant_name || 'مساعد'}`;
+  document.getElementById('rdAnalysisMeta').textContent = `رقم المناقشة: ${id}`;
+  document.getElementById('rdAnalysisStatus').textContent = fresh
+    ? 'جار تحليل النص...'
+    : `مناقشة محفوظة · صفحة ${disc.page}`;
+  document.getElementById('rdAnalysisInput').value = '';
+  rdShowModal('rdAnalysisModal');
+  rdRenderAnalysisMsgs();
+}
+
+function rdRenderAnalysisMsgs() {
+  const box = document.getElementById('rdAnalysisMsgs');
+  if (!box || !rdAnalysis) return;
+  const msgs = rdAnalysis.discussion.messages || [];
+  if (!msgs.length) { box.innerHTML = '<div class="ms-hint">لا رسائل بعد.</div>'; return; }
+  box.innerHTML = msgs.map(m => `
+    <div class="rd-amsg ${m.role === 'user' ? 'user' : 'assistant'}">
+      <div class="rd-amsg-role">${m.role === 'user' ? 'أنت' : 'المساعد'}</div>
+      <div>${m.role === 'assistant' ? rdMd(m.content) : rdEsc(m.content).replace(/\n/g, '<br>')}</div>
+    </div>`).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+async function rdAnalysisAsk(disc, asst, isFirst) {
+  const sendBtn = document.getElementById('rdAnalysisSend');
+  const stopBtn = document.getElementById('rdAnalysisStop');
+  sendBtn.disabled = true; stopBtn.hidden = false;
+  rdAnalysisAbort = new AbortController();
+  try {
+    const books = (asst.books || []).map(b => b.title).filter(Boolean);
+    const agent = {
+      name: asst.name,
+      model: asst.model,
+      system_prompt: asst.prompt || RD_DEFAULT_ASST_PROMPT,
+      books,
+      booksScope: books,
+      enabled: true,
+      pool_size: 800,
+      top_k: 60,
+    };
+    const body = {
+      model: asst.model,
+      provider: 'openrouter',
+      api_key: rdApiKey(),
+      system_prompt: asst.prompt || RD_DEFAULT_ASST_PROMPT,
+      messages: (disc.messages || []).map(m => ({ role: m.role, content: m.content })),
+      free_mode: books.length === 0,
+      agent_group: books.length ? { agents: [agent], active_agent: agent } : null,
+    };
+    // في الوضع الحر لا يُمرَّر system_prompt؛ نضمّنه في أول رسالة مستخدم إن لزم
+    if (body.free_mode && isFirst && disc.messages.length) {
+      const first = disc.messages[0];
+      body.messages = [
+        { role: 'user', content: `[توجيه المساعد]\n${asst.prompt || RD_DEFAULT_ASST_PROMPT}\n\n[النص المطلوب تحليله]\n${first.content}` },
+        ...disc.messages.slice(1).map(m => ({ role: m.role, content: m.content })),
+      ];
+    }
+    const res = await fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      signal: rdAnalysisAbort.signal,
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || data.reply || 'تعذر التحليل');
+    const reply = data.reply || data.content || data.message || '';
+    disc.messages.push({ role: 'assistant', content: reply, at: new Date().toISOString() });
+    disc.updated_at = new Date().toISOString();
+    rdRenderAnalysisMsgs();
+    rdSaveSoon();
+  } catch (e) {
+    if (e.name === 'AbortError') rdToast('أُوقف التحليل');
+    else throw e;
+  } finally {
+    sendBtn.disabled = false; stopBtn.hidden = true; rdAnalysisAbort = null;
+  }
+}
+
+async function rdAnalysisSend() {
+  if (!rdAnalysis) return;
+  const input = document.getElementById('rdAnalysisInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const disc = rdAnalysis.discussion;
+  const asst = rdAssistants.find(a => a.id === disc.assistant_id) || {
+    name: disc.assistant_name, model: disc.model, prompt: RD_DEFAULT_ASST_PROMPT, books: [],
+  };
+  disc.messages.push({ role: 'user', content: text, at: new Date().toISOString() });
+  input.value = '';
+  rdRenderAnalysisMsgs();
+  document.getElementById('rdAnalysisStatus').textContent = 'جارٍ الرد...';
+  try {
+    await rdAnalysisAsk(disc, asst, false);
+    document.getElementById('rdAnalysisStatus').textContent = `مناقشة رقم ${disc.id}`;
+  } catch (e) {
+    document.getElementById('rdAnalysisStatus').textContent = `❌ ${e.message}`;
+    rdToast(`❌ ${e.message}`, 5000);
+  }
+}
+function rdAnalysisStop() {
+  if (rdAnalysisAbort) rdAnalysisAbort.abort();
+}
+function rdCloseAnalysis() {
+  rdAnalysisStop();
+  rdCloseModal('rdAnalysisModal');
+  rdAnalysis = null;
+  rdRenderAnnotations();
+  rdSaveSoon();
+}
+
+async function rdSelRead() {
+  if (!rdNeedActiveSel()) return;
+  if (!rdDefaultReader()) return;
+  rdShowModal('rdReadTextModal');
+  document.getElementById('rdReadTextStatus').textContent = 'جارٍ استخراج النص بالقارئ...';
+  document.getElementById('rdReadTextBody').textContent = '';
+  try {
+    const ocr = await rdOcrSelection();
+    document.getElementById('rdReadTextStatus').textContent = `✔ قُرئ بـ«${ocr.reader.name}» — ${rdCite()}`;
+    document.getElementById('rdReadTextBody').textContent = ocr.text || '(لا نص)';
+  } catch (e) {
+    document.getElementById('rdReadTextStatus').textContent = `❌ ${e.message}`;
+  }
+}
+function rdCopyReadText() {
+  const t = document.getElementById('rdReadTextBody').textContent || '';
+  if (!t) return;
+  navigator.clipboard.writeText(t).then(() => rdToast('نُسخ النص')).catch(() => rdToast('تعذر النسخ'));
+}
+
+function rdSelShare() {
+  if (!rdNeedActiveSel()) return;
+  rdMediaAction = 'share';
+  document.getElementById('rdMediaChoiceTitle').textContent = 'مشاركة المحدد — نص أم صورة؟';
+  rdShowModal('rdMediaChoiceModal');
+}
+function rdSelPublish() {
+  if (!rdNeedActiveSel()) return;
+  rdMediaAction = 'publish';
+  document.getElementById('rdMediaChoiceTitle').textContent = 'نشر المحدد — نص أم صورة؟';
+  rdShowModal('rdMediaChoiceModal');
+}
+
+async function rdMediaChoice(kind) {
+  rdCloseModal('rdMediaChoiceModal');
+  const action = rdMediaAction;
+  rdMediaAction = null;
+  if (!action) return;
+  try {
+    if (kind === 'text') {
+      document.getElementById('rdReadTextStatus') && (document.getElementById('rdReadTextStatus').textContent = '');
+      rdToast('جارٍ استخراج النص للمشاركة...');
+      const ocr = await rdOcrSelection();
+      const payload = `${ocr.text}\n\n—\n${rdCite()}`;
+      if (action === 'share') await rdNativeShareText(payload);
+      else if (typeof window.openDesignTextPublish === 'function') window.openDesignTextPublish(payload, null);
+      else rdToast('نافذة النشر غير متاحة');
+    } else {
+      const blob = await rdCropSelBlob();
+      if (!blob) throw new Error('تعذر قص الصورة');
+      const up = await rdUploadBlob(blob, 'rd-share.png');
+      const caption = rdCite();
+      if (action === 'share') await rdNativeShareImage(blob, caption);
+      else if (typeof window.openDesignImagePublish === 'function') {
+        window.openDesignImagePublish(up.file_url, caption, null);
+      } else rdToast('نافذة النشر غير متاحة');
+    }
+  } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
+}
+
+async function rdNativeShareText(text) {
+  if (typeof navigator.share === 'function') {
+    try {
+      await navigator.share({ title: rdCurrent?.title || 'قراءة', text });
+      return;
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    rdToast('نُسخ النص إلى الحافظة (المشاركة الأصلية غير متاحة)');
+  } catch (e) { rdToast('تعذرت المشاركة'); }
+}
+async function rdNativeShareImage(blob, caption) {
+  const file = new File([blob], 'قراءة.png', { type: 'image/png' });
+  const payload = { files: [file], title: caption || 'قراءة', text: caption || '' };
+  if (typeof navigator.share === 'function' && (!navigator.canShare || navigator.canShare(payload))) {
+    try { await navigator.share(payload); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  // بديل: تنزيل الصورة
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'قراءة.png';
+  a.click();
+  rdToast('حُمّلت الصورة (المشاركة الأصلية غير متاحة لهذا النوع)');
 }

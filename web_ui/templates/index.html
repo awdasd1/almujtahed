@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.732">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.733">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.732" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.733" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.732</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.733</span>
             </div>
 
             <div class="header-actions">
@@ -1933,7 +1933,8 @@
                     <div class="rd-topbar">
                         <strong id="rdReaderTitle">📖 مشروع قراءة</strong>
                         <span class="rd-top-actions">
-                            <button type="button" class="ms-btn" id="rdDiscussBtn" title="مناقشة المحدد — اختر بأداة القص أو التظليل ثم ناقش" onclick="rdDiscussSelected()">💬 مناقشة المحدد</button>
+                            <button type="button" class="ms-btn" id="rdCreateAssistantBtn" title="إنشاء مساعد لتحليل النصوص المحددة" onclick="rdOpenCreateAssistant()">🧠 إنشاء مساعد</button>
+                            <button type="button" class="ms-btn" id="rdCreateReaderBtn" title="إنشاء قارئ بصري يستخرج النص من الصورة" onclick="rdOpenCreateReader()">👁 إنشاء قارئ</button>
                             <button type="button" class="ms-btn" onclick="rdFlipPage(-1)" title="قلب الصفحة إلى السابقة">⟨ قلب</button>
                             <span class="rd-page-ind"><input type="number" id="rdPageInput" min="1" value="1" onchange="rdGoPage(this.value)"> / <span id="rdPageTotal">—</span></span>
                             <button type="button" class="ms-btn" onclick="rdFlipPage(1)" title="قلب الصفحة إلى التالية">قلب ⟩</button>
@@ -1982,6 +1983,12 @@
                                 <canvas id="rdCanvas"></canvas>
                                 <div id="rdNotesLayer"></div>
                                 <div id="rdLoupe" hidden><img id="rdLoupeImg" alt="" draggable="false"></div>
+                                <div class="rd-sel-bar" id="rdSelBar" hidden>
+                                    <button type="button" class="rd-sel-ico" title="تحليل النص" onclick="rdSelAnalyze()">🧠</button>
+                                    <button type="button" class="rd-sel-ico" title="قراءة النص" onclick="rdSelRead()">👁</button>
+                                    <button type="button" class="rd-sel-ico" title="مشاركة" onclick="rdSelShare()">↗</button>
+                                    <button type="button" class="rd-sel-ico" title="نشر" onclick="rdSelPublish()">📤</button>
+                                </div>
                             </div>
                             <div class="rd-crops" id="rdCropsBar" hidden></div>
                         </div>
@@ -2038,6 +2045,101 @@
                     </div>
                     <div class="ms-export-bar rd-web-bar" hidden id="rdWebBarWrap"><i id="rdWebBarFill"></i></div>
                     <div class="ms-rec-meta" id="rdWebStatus"></div>
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdAssistantModal" hidden>
+                <div class="ms-modal">
+                    <div class="ms-modal-head"><strong>🧠 إنشاء مساعد قراءة</strong>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdAssistantModal')">✕ إغلاق</button></div>
+                    <div class="ms-form-row"><input type="text" id="rdAsstName" placeholder="اسم المساعد *" style="flex:1"></div>
+                    <div class="ms-form-row">
+                        <label style="min-width:70px">النموذج</label>
+                        <select id="rdAsstModel" style="flex:1"></select>
+                    </div>
+                    <label class="ms-hint">التوجيه</label>
+                    <textarea id="rdAsstPrompt" rows="10" style="width:100%;font-family:inherit;line-height:1.8;margin:6px 0 10px"></textarea>
+                    <div class="ms-form-row">
+                        <input type="text" id="rdAsstBookQ" placeholder="ابحث عن كتب للمساعد..." style="flex:1">
+                        <button type="button" class="ms-btn" onclick="rdSearchAsstBooks()">بحث</button>
+                    </div>
+                    <div id="rdAsstBookResults" class="rd-book-pick"></div>
+                    <div class="ms-hint">الكتب المحددة: <span id="rdAsstBooksChosen">لا شيء بعد</span></div>
+                    <div class="ms-modal-btns">
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdAdoptAssistant()">اعتمد</button>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdAssistantModal')">إلغاء</button>
+                    </div>
+                    <div id="rdAssistantsList" class="rd-entity-list"></div>
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdVisionReaderModal" hidden>
+                <div class="ms-modal">
+                    <div class="ms-modal-head"><strong>👁 إنشاء قارئ بصري</strong>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdVisionReaderModal')">✕ إغلاق</button></div>
+                    <div class="ms-form-row"><input type="text" id="rdVisName" placeholder="اسم القارئ *" style="flex:1"></div>
+                    <div class="ms-form-row">
+                        <label style="min-width:70px">النموذج</label>
+                        <select id="rdVisModel" style="flex:1"></select>
+                    </div>
+                    <div class="ms-hint">تظهر فقط النماذج القادرة على قراءة الصور.</div>
+                    <div class="ms-modal-btns">
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdAdoptVisionReader()">اعتمد</button>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdVisionReaderModal')">إلغاء</button>
+                    </div>
+                    <div id="rdReadersList" class="rd-entity-list"></div>
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdPickAsstModal" hidden>
+                <div class="ms-modal">
+                    <div class="ms-modal-head"><strong>🧠 تحليل النص — اختر المساعد</strong>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdPickAsstModal')">✕ إغلاق</button></div>
+                    <div id="rdPickAsstList" class="rd-entity-list"></div>
+                    <div class="ms-hint" id="rdPickAsstHint"></div>
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdAnalysisModal" hidden>
+                <div class="ms-modal rd-reader-modal rd-analysis-modal">
+                    <div class="rd-topbar">
+                        <strong id="rdAnalysisTitle">🧠 تحليل النص</strong>
+                        <span class="rd-top-actions">
+                            <span class="ms-hint" id="rdAnalysisMeta"></span>
+                            <button type="button" class="ms-btn ms-btn-primary" onclick="rdCloseAnalysis()">اقفال التحليل</button>
+                        </span>
+                    </div>
+                    <div class="rd-analysis-status" id="rdAnalysisStatus">جار تحليل النص...</div>
+                    <div class="rd-analysis-msgs" id="rdAnalysisMsgs"></div>
+                    <div class="rd-analysis-compose">
+                        <textarea id="rdAnalysisInput" rows="2" placeholder="تابع المناقشة مع المساعد..."></textarea>
+                        <button type="button" class="ms-btn ms-btn-primary" id="rdAnalysisSend" onclick="rdAnalysisSend()">إرسال</button>
+                        <button type="button" class="ms-btn" id="rdAnalysisStop" onclick="rdAnalysisStop()" hidden>إيقاف</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdReadTextModal" hidden>
+                <div class="ms-modal">
+                    <div class="ms-modal-head"><strong>👁 قراءة النص</strong>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdReadTextModal')">✕ إغلاق</button></div>
+                    <div class="ms-rec-meta" id="rdReadTextStatus">جارٍ استخراج النص بالقارئ...</div>
+                    <pre class="ms-report-text" id="rdReadTextBody" style="min-height:120px;white-space:pre-wrap"></pre>
+                    <div class="ms-modal-btns">
+                        <button type="button" class="ms-btn" onclick="rdCopyReadText()">📋 نسخ</button>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdReadTextModal')">إغلاق</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdMediaChoiceModal" hidden>
+                <div class="ms-modal">
+                    <div class="ms-modal-head"><strong id="rdMediaChoiceTitle">اختر نوع المرفق</strong>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdMediaChoiceModal')">✕ إغلاق</button></div>
+                    <div class="ms-modal-btns">
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdMediaChoice('text')">📝 نص</button>
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdMediaChoice('image')">🖼 صورة</button>
+                    </div>
                 </div>
             </div>
         </section>
@@ -6954,26 +7056,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.732"></script>
-    <script src="/static/js/search.js?v=1.10.732"></script>
-    <script src="/static/js/reader.js?v=1.10.732"></script>
-    <script src="/static/js/force3d.js?v=1.10.732"></script>
-    <script src="/static/js/share.js?v=1.10.732"></script>
-    <script src="/static/js/chat.js?v=1.10.732"></script>
-    <script src="/static/js/documents.js?v=1.10.732"></script>
-    <script src="/static/js/designs.js?v=1.10.732"></script>
-    <script src="/static/js/texts.js?v=1.10.732"></script>
-    <script src="/static/js/agents.js?v=1.10.732"></script>
-    <script src="/static/js/providers.js?v=1.10.732"></script>
-    <script src="/static/js/tools.js?v=1.10.732"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.732"></script>
-    <script src="/static/js/projects.js?v=1.10.732"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.732"></script>
-    <script src="/static/js/reading.js?v=1.10.732"></script>
-    <script src="/static/js/archive.js?v=1.10.732"></script>
-    <script src="/static/js/compare.js?v=1.10.732"></script>
-    <script src="/static/js/local_models.js?v=1.10.732"></script>
-    <script src="/static/js/changelog.js?v=1.10.732"></script>
+    <script src="/static/js/app.js?v=1.10.733"></script>
+    <script src="/static/js/search.js?v=1.10.733"></script>
+    <script src="/static/js/reader.js?v=1.10.733"></script>
+    <script src="/static/js/force3d.js?v=1.10.733"></script>
+    <script src="/static/js/share.js?v=1.10.733"></script>
+    <script src="/static/js/chat.js?v=1.10.733"></script>
+    <script src="/static/js/documents.js?v=1.10.733"></script>
+    <script src="/static/js/designs.js?v=1.10.733"></script>
+    <script src="/static/js/texts.js?v=1.10.733"></script>
+    <script src="/static/js/agents.js?v=1.10.733"></script>
+    <script src="/static/js/providers.js?v=1.10.733"></script>
+    <script src="/static/js/tools.js?v=1.10.733"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.733"></script>
+    <script src="/static/js/projects.js?v=1.10.733"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.733"></script>
+    <script src="/static/js/reading.js?v=1.10.733"></script>
+    <script src="/static/js/archive.js?v=1.10.733"></script>
+    <script src="/static/js/compare.js?v=1.10.733"></script>
+    <script src="/static/js/local_models.js?v=1.10.733"></script>
+    <script src="/static/js/changelog.js?v=1.10.733"></script>
 
     <script>
         window.refreshLucideIcons = function () {

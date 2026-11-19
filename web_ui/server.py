@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.732"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.733"},
         },
     })
     if opened.get("error"):
@@ -15421,10 +15421,23 @@ def _rd_pdf_pages(path: Path) -> int:
         doc.close()
 
 
+def _rd_load_bundle(owner_id: str) -> Dict[str, Any]:
+    """حزمة مشاريع القراءة: تدعم القائمة القديمة والقاموس الجديد {projects, assistants, readers}."""
+    raw = _load_owned_json(owner_id, "reading")
+    if isinstance(raw, dict):
+        return {
+            "projects": raw.get("projects") if isinstance(raw.get("projects"), list) else [],
+            "assistants": raw.get("assistants") if isinstance(raw.get("assistants"), list) else [],
+            "readers": raw.get("readers") if isinstance(raw.get("readers"), list) else [],
+        }
+    if isinstance(raw, list):
+        return {"projects": raw, "assistants": [], "readers": []}
+    return {"projects": [], "assistants": [], "readers": []}
+
+
 @app.get("/api/reading-projects")
 async def list_reading_projects(request: Request):
-    owner_id = current_owner_id(request)
-    return {"projects": _load_owned_list(owner_id, "reading") or []}
+    return _rd_load_bundle(current_owner_id(request))
 
 
 @app.post("/api/reading-projects")
@@ -15433,8 +15446,21 @@ async def save_reading_projects(request: Request, payload: Any = Body(...)):
     projects = (payload or {}).get("projects")
     if not isinstance(projects, list):
         raise HTTPException(status_code=400, detail="صيغة مشاريع القراءة غير صالحة")
-    _save_owned_list(owner_id, "reading", projects)
-    return {"ok": True, "count": len(projects)}
+    assistants = (payload or {}).get("assistants")
+    readers = (payload or {}).get("readers")
+    if assistants is not None and not isinstance(assistants, list):
+        raise HTTPException(status_code=400, detail="صيغة مساعدي القراءة غير صالحة")
+    if readers is not None and not isinstance(readers, list):
+        raise HTTPException(status_code=400, detail="صيغة قرّاء القراءة غير صالحة")
+    prev = _rd_load_bundle(owner_id)
+    bundle = {
+        "projects": projects,
+        "assistants": assistants if isinstance(assistants, list) else prev["assistants"],
+        "readers": readers if isinstance(readers, list) else prev["readers"],
+    }
+    _save_owned_json(owner_id, "reading", bundle)
+    return {"ok": True, "count": len(projects),
+            "assistants": len(bundle["assistants"]), "readers": len(bundle["readers"])}
 
 
 @app.post("/api/reading-projects/upload-book")
