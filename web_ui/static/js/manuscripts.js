@@ -1010,8 +1010,9 @@ function msRenderWbState() {
   const meta = [];
   if (f.model_primary) meta.push(`القارئ الأول${f.primary_seconds != null ? ` (${f.primary_seconds}ث)` : ''}`);
   if (f.model_checker) meta.push(`القارئ الثاني${f.checker_seconds != null ? ` (${f.checker_seconds}ث)` : ''}`);
+  if (f.model_tertiary || f.tertiary_text) meta.push(`القارئ الثالث${f.tertiary_seconds != null ? ` (${f.tertiary_seconds}ث)` : ''}`);
   if (f.model_auditor) meta.push(`المدقق${f.auditor_seconds != null ? ` (${f.auditor_seconds}ث)` : ''}`);
-  if (f.agreement != null) meta.push(`اتفاق القارئين حرفيًا: ${f.agreement}٪`);
+  if (f.agreement != null) meta.push(`اتفاق الأول والثاني حرفيًا: ${f.agreement}٪`);
   if (f.cost != null) meta.push(`كلفة النسخ والتدقيق: $${Number(f.cost).toFixed(4)}`);
   document.getElementById('msWbMeta').textContent = meta.join(' · ');
   const notesEl = document.getElementById('msWbAuditNotes');
@@ -1113,7 +1114,9 @@ function msShowText(view) {
   if (f._view === 'audited' || !f._view) f.text = ta.value;
   f._view = view;
   ta.value = view === 'audited' ? (f.text || f.audited_text || '')
-    : (view === 'primary' ? (f.primary_text || '') : (f.checker_text || ''));
+    : view === 'primary' ? (f.primary_text || '')
+    : view === 'tertiary' ? (f.tertiary_text || '')
+    : (f.checker_text || '');
   document.querySelectorAll('.ms-view-btn').forEach(b => {
     b.classList.toggle('ms-view-active', b.dataset.msView === view);
   });
@@ -1126,7 +1129,7 @@ async function msTranscribeFolio() {
   const btn = document.getElementById('msWbTranscribeBtn');
   btn.disabled = true;
   const old = btn.textContent;
-  btn.textContent = '⏳ جارٍ نسخ اللوحة بالنموذجين...';
+  btn.textContent = '⏳ جارٍ نسخ اللوحة بالقرّاء الثلاثة والمدقق...';
   try {
     let apiKey = '';
     try {
