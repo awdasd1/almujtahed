@@ -1248,6 +1248,40 @@ function msShowText(view) {
   });
 }
 
+// مواضع تعذّر القراءة في نص اللوحة المعتمد -> هامش تحقيق موثق بأسبابها
+function msUnreadableApparatus(f) {
+  const text = String(f.text || '');
+  const re = /\[غير مقروء(?:\s*[:：]\s*([^\]]+))?\]/g;
+  const spots = [];
+  let m;
+  while ((m = re.exec(text)) && spots.length < 20) {
+    const before = text.slice(Math.max(0, m.index - 42), m.index).replace(/\s+/g, ' ').trim();
+    const cause = (m[1] || '').trim() || 'لم يتبيّن سببه من الصورة';
+    spots.push({ before, cause });
+  }
+  f.unreadable_spots = spots;
+  if (!spots.length) return 0;
+  const marker = `[مواضع تعذّرت قراءتها — لوحة (${f.label})]`;
+  if (!String(f.ed_note || '').includes(marker)) {
+    const lines = spots.map((s, i) => `${i + 1}. ${s.before ? `بعد «…${s.before}» ` : ''}كلام لم تتم قراءته بسبب ${s.cause}؛ أُبقيت علامته في المتن ويُراجَع على صورة الأصل عند الاعتماد.`);
+    f.ed_note = ((f.ed_note || '').trim() ? f.ed_note.trim() + '\n' : '') + marker + '\n' + lines.join('\n');
+  }
+  return spots.length;
+}
+
+// ضبط مشروع التحقيق من المجموعة النشطة (فن/تراجم/لغة/تخريج/حاشية) كما يضبطه المهندس
+function msProfileGuidanceText() {
+  const pr = (MS_GROUP && MS_GROUP.investigation_profile) || {};
+  const bits = [];
+  if (pr.discipline) bits.push(`فن المخطوط: ${pr.discipline}`);
+  if (pr.focus) bits.push(`محور التركيز: ${pr.focus}`);
+  if (pr.tarajim_scope) bits.push(`حدود تراجم الأعلام: ${pr.tarajim_scope}`);
+  if (pr.lugha_scope) bits.push(`حدود اللغة: ${pr.lugha_scope}`);
+  if (pr.hadith_scope) bits.push(`حد تخريج الأحاديث: ${pr.hadith_scope}`);
+  if (pr.footnote_style) bits.push(`أسلوب الحاشية: ${pr.footnote_style}`);
+  return bits.join('؛ ');
+}
+
 async function msTranscribeFolio() {
   const ctx = msWbFolio();
   if (!ctx || !ctx.folio) return;
@@ -1300,12 +1334,13 @@ async function msTranscribeFolio() {
     f._view = 'audited';
     f.text = f.audited_text || f.primary_text;
     f.status = 'draft';
+    msUnreadableApparatus(f);
     document.getElementById('msWbText').value = f.text;
     msSave(); msRenderWbState(); renderMsCopies();
     if (primary.truncated || checker.truncated) {
       msToast('⚠️ خط هذه اللوحة صعب: قُصّت مخرجات أحد النموذجين (حلقة تكرار). راجع النص على الصورة سطرًا سطرًا قبل الاعتماد.', 8000);
     } else {
-      msToast(`تم النسخ. اتفاق النموذجين ${f.agreement}٪ — حسم مواضع الاختلاف ثم اعتمد اللوحة.`, 5000);
+      msToast(`تم النسخ. اتفاق القرّاء الثلاثة ${f.agreement}٪ — حسم مواضع الاختلاف ثم اعتمد اللوحة.`, 5000);
     }
   } catch (e) {
     msToast('❌ ' + e.message, 7000);
@@ -3387,7 +3422,7 @@ function renderMsAuto() {
   const reportHtml = (a.status === 'done') ? `
     <div class="ms-auto-report">
       <div class="ms-disputes-title">تقرير التحقيق الآلي</div>
-      <div>لوحات منسوخة ومعتمدة من المعتمِد: ${r.foliosTranscribed ?? 0} · مواضع خلاف حُسمت: ${r.decided ?? 0} (منها ${r.decidedAdopted ?? 0} اعتُمدت فيها قراءة النسخ الأخرى، و${r.imageDecided ?? 0} حسمها المعتمِد من الصورة) · بقيت بلا حسم: ${r.held ?? 0}</div>
+      <div>لوحات منسوخة ومعتمدة من المعتمِد: ${r.foliosTranscribed ?? 0} · مواضع خلاف حُسمت: ${r.decided ?? 0} (منها ${r.decidedAdopted ?? 0} اعتُمدت فيها قراءة النسخ الأخرى، و${r.imageDecided ?? 0} حسمها المعتمِد من الصورة) · بقيت بلا حسم: ${r.held ?? 0} · مواضع تعذّرت قراءتها موثقة بأسبابها في الهامش: ${r.unreadable ?? 0}</div>
       <div>اقتراحات وكلاء أُثبتت في الهامش: ${r.agentsAccepted ?? 0} · موازيات مؤلف أُثبتت: ${r.authorAccepted ?? 0} · رُدت لعدم ثبوت توثيقها: ${r.autoDismissed ?? 0}</div>
       ${r.approval ? `<div>اعتماد المدير النهائي: ${msEsc(String(r.approval).slice(0, 220))}…</div>` : ''}
       <div>${(r.compare && r.compare.length) ? `المقارنات المرجعية: ${r.compare.map(c => `«${msEsc(c.book || '')}» تطابق ${c.similarity}٪ و${c.rows} فرقًا`).join('؛ ')}` : 'المقارنة المرجعية: لم يُحدد كتابها في بطاقة المقارنة'} · الفهارس: ${r.indexEntries ?? 0} مدخلًا</div>
@@ -3519,7 +3554,7 @@ async function msAutoRun(p) {
         msAutoCheck(p);
         if (f.status === 'approved' && (f.text || '').trim()) { processed++; msAutoProgress(p, 'transcribe', processed, totalFolios, `لوحات منسوخة ومعتمدة: ${processed} من ${totalFolios}`); continue; }
         if (!f.file_path) { processed++; msAutoProgress(p, 'transcribe', processed, totalFolios); msAutoLog(p, `تخطي لوحة (${f.label}) في (${c.siglum}) — لم تُرفع صورتها.`); continue; }
-        msAutoLog(p, `نسخ لوحة (${f.label}) من (${c.siglum}): قارئ أول وثانٍ ومدقق على الصورة...`);
+        msAutoLog(p, `نسخ لوحة (${f.label}) من (${c.siglum}): قرّاء ثلاثة (أول وثانٍ وثالث) ومدقق على الصورة...`);
         const data = await msAutoFetch('/api/manuscripts/transcribe', {
           file_path: f.file_path, api_key: msApiKey(),
           primary_model: choice.primary, checker_model: choice.checker,
@@ -3531,7 +3566,7 @@ async function msAutoRun(p) {
           .filter(([, r]) => r && (r.fallback || r.error || r.fallback_error))
           .map(([label, r]) => `${label}: ${r.fallback ? `سقط (${r.first_error || 'رد فارغ'}) فأُسندت قراءته احتياطيًا وقُرئت اللوحة` : (r.error || r.fallback_error || '')}`);
         if (f.reader_notes.length) msAutoLog(p, `⚠️ لوحة (${f.label}) في (${c.siglum}): ${f.reader_notes.join('؛ ')}`);
-        if (!primary.text && !checker.text) throw new Error(`لوحة (${f.label}) في (${c.siglum}): لم يرجع القارئان نصًا حتى بعد الإسناد الاحتياطي — تُحفظ وتُستأنف`);
+        if (!primary.text && !checker.text) throw new Error(`لوحة (${f.label}) في (${c.siglum}): لم يرجع القارئان الأول والثاني نصًا حتى بعد الإسناد الاحتياطي — تُحفظ وتُستأنف`);
         f.primary_text = primary.text || ''; f.checker_text = checker.text || '';
         f.tertiary_text = tertiary.text || '';
         f.audited_text = auditor.text || ''; f.audit_notes = auditor.notes || '';
@@ -3548,7 +3583,9 @@ async function msAutoRun(p) {
         a.checkpoint = { step: 'transcribe', item: `(${c.siglum}) ${f.label}`, at: new Date().toISOString() };
         done++; addCost(f.cost); processed++;
         msAutoProgress(p, 'transcribe', processed, totalFolios, `اعتماد لوحة (${f.label}) في (${c.siglum}): ${processed} من ${totalFolios} لوحة`);
-        msAutoLog(p, `✔ اعتُمدت لوحة (${f.label}) في (${c.siglum}) — اتفاق القارئين ${data.agreement ?? '—'}٪`);
+        const unreadN = msUnreadableApparatus(f);
+        if (unreadN) { R.unreadable = (R.unreadable || 0) + unreadN; msAutoLog(p, `⚠️ لوحة (${f.label}) في (${c.siglum}): ${unreadN} موضعًا متعذر القراءة وُثّق بأسبابه في هامش التحقيق.`); }
+        msAutoLog(p, `✔ اعتُمدت لوحة (${f.label}) في (${c.siglum}) — اتفاق القرّاء الثلاثة ${data.agreement ?? '—'}٪`);
         msSave(); renderMsAuto(); renderMsCopies();
       }
     }
@@ -3570,6 +3607,9 @@ async function msAutoRun(p) {
       file_paths: [f0.file_path],
       text: String(f0.audited_text || f0.text || '').slice(0, 6000), api_key: msApiKey() });
     p.identification = { ...data, at: new Date().toISOString() };
+    if (p.title && !/مجهول|غير معروف/.test(p.title) && c.book && !String(p.title).includes(String(c.book).slice(0, 10)) && !String(c.book).includes(String(p.title).slice(0, 10))) {
+      msAutoLog(p, `⚠️ تنبيه ضبط: تعرّف اللوحة رجّح «${c.book}» وعنوان المشروع المعلن «${p.title}» — لم يُبدَّل العنوان، ويُراجَع الترجيح قبل كتابته في المقدمة.`);
+    }
     if (p.intro) msIdentifyWriteIntro();
     const c = data.consensus || {};
     if (c.book && (!p.title || /مجهول|غير معروف/.test(p.title))) p.title = c.book;
@@ -3703,6 +3743,9 @@ async function msAutoRun(p) {
           title: p.title, author: p.author,
           author_card: p.author_profile ? msAuthorCardText(p) : '',
           text: (base.folios || []).map(f => f.text || '').join('\n').slice(0, 70000),
+          guidance: msProfileGuidanceText() || undefined,
+          planner_model: msGroupAgent('planner') ? msGroupModel('planner', '') : undefined,
+          manager_model: LEADER,
           api_key: msApiKey() });
         s2.plan = { overview: plan.overview || '', items: plan.items || [], dropped: plan.dropped || [],
           manager_note: plan.manager_note || '', planner_model: plan.planner_model, manager_model: plan.manager_model,
@@ -3733,7 +3776,7 @@ async function msAutoRun(p) {
           text: f.text, title: p.title, author: p.author,
           model: msGroupModel(key, MS_FLASH_MODEL), api_key: msApiKey(),
           extra_books: msGroupBookTitles(key).length ? msGroupBookTitles(key) : undefined,
-          agent_focus: focus, agent_key: key });
+          agent_focus: (focus || '') + (msProfileGuidanceText() ? `\n[ضبط مشروع التحقيق المعتمد: ${msProfileGuidanceText()}]` : ''), agent_key: key });
         addCost(data.cost);
         (data.suggestions || []).filter(pred).forEach(s =>
           p.agent_suggestions.push({ ...s, id: msUid(), folio: f.label, status: 'pending', agent: key }));
@@ -3879,7 +3922,7 @@ async function msAutoRun(p) {
     // القارئين ومواضع الاختلاف، وصعوبات اللوحات كما رصدها المراقب،
     // وكيف عولجت بقرارات المعتمِد والمدير، وحصاد الخطة بندًا بندًا
     const folioLines = (p.copies || []).map(c => (c.folios || []).map(f =>
-      `(${c.siglum}) ${f.label}: اتفاق القارئين ${f.agreement != null ? f.agreement + '٪' : '—'}، مواضع اختلاف محفوظة ${(f.disputes || []).length}`).join('؛ ')).filter(Boolean);
+      `(${c.siglum}) ${f.label}: اتفاق القرّاء الثلاثة ${f.agreement != null ? f.agreement + '٪' : '—'}، مواضع اختلاف محفوظة ${(f.disputes || []).length}`).join('؛ ')).filter(Boolean);
     const monitorNotes = (p.monitor_log || []).flatMap(m => (Array.isArray(m.findings) ? m.findings : [])
       .filter(fd => fd && (fd.severity === 'high' || fd.severity === 'med'))
       .map(fd => `[${fd.severity}] ${fd.area}: ${fd.note}`));

@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.722"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.723"},
         },
     })
     if opened.get("error"):
@@ -15129,7 +15129,10 @@ MS_TRANSCRIBE_PROMPT = (
     "أنت ناسخ مخطوطات محترف. انسخ نص اللوحة المخطوطة في الصورة المرفقة حرفيًا كما هو مكتوب، سطرًا بسطر، "
     "مع الحفاظ على الإملاء والهمزات وعلامات الترقيم كما هي دون أي تصحيح أو تحديث أو شرح. "
     "إن وردت عبارات في الهامش فاكتبها في آخر النسخ مسبوقة بـ(حاشية:). "
-    "وما تعذر عليك قراءته فضع مكانه [غير مقروء]. لا تكتب إلا النص المنسوخ وحده بلا مقدمة ولا تعليق."
+    "وما تعذر عليك قراءته بعد بذل الجهد في تأمل رسمه وسياقه فضع مكانه وسمًا سببيًا واحدًا من: "
+    "[غير مقروء: طمس] أو [غير مقروء: رطوبة] أو [غير مقروء: شطب] أو [غير مقروء: قصّ في التصوير] أو [غير مقروء: خفاء الحبر] أو [غير مقروء: تلف الورق]، "
+    "على قدر الكلمة أو الشطر المتعذر وحده؛ فلا تعمّم الوسم على سطر كامل، ولا تضع الوسم مكان كلمة تستطيع ترجيح قراءتها من رسمها وسياقها بل اكتب الأرجح. "
+    "لا تكتب إلا النص المنسوخ وحده بلا مقدمة ولا تعليق."
 )
 
 
@@ -15207,7 +15210,8 @@ MS_AUDIT_PROMPT = (
     "اعتبر قراءة القارئ الثالث شاهدًا مستقلًا كاملًا كقراءتي الأول والثاني: اتفاق اثنين على موضع قرينة ترجيح لا حكم نهائي، "
     "وحيث اختلف القراء فاتبع ما تراه في الصورة نفسها لا كثرة الأصوات وحدها، "
     "وحيث أخطأ الجميع فصحح من الصورة، وحافظ على النسخ الحرفي (الإملاء والهمزات كما هي) بلا تحديث ولا شرح داخل النص، "
-    "وما تعذرت قراءته فضع مكانه [غير مقروء]. "
+    "ومواضع [غير مقروء] في القراءات راجعها بعينك على الصورة: اقرأ منها ما أمكنك، وما بقي متعذرًا فأبقه بوسم سببي واحد من: "
+    "[غير مقروء: طمس] أو [غير مقروء: رطوبة] أو [غير مقروء: شطب] أو [غير مقروء: قصّ في التصوير] أو [غير مقروء: خفاء الحبر] أو [غير مقروء: تلف الورق] بحسب ما تراه في الصورة حقًا، ولا توسّع موضع الوسم عن قدر المتعذر. "
     "ابدأ بالنص المدقق مباشرة دون أي مقدمة أو عبارة تمهيدية، ثم سطرًا مستقلًا يبدأ بـ(تنبيهات:) تسرد فيه باختصار أهم المواضع التي حكمت فيها بين القراء الثلاثة أو شككت بها."
 )
 
@@ -15460,8 +15464,16 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
     checker = results.get("checker") or {}
     tertiary = results.get("tertiary") or {}
     disputes, agreement = ([], 0.0)
+    agreements = {}
     if primary.get("text") and checker.get("text"):
-        disputes, agreement = _ms_disputes(primary["text"], checker["text"])
+        disputes, agreements["r1_r2"] = _ms_disputes(primary["text"], checker["text"])
+    if tertiary.get("text") and primary.get("text"):
+        _, agreements["r1_r3"] = _ms_disputes(primary["text"], tertiary["text"])
+    if tertiary.get("text") and checker.get("text"):
+        _, agreements["r2_r3"] = _ms_disputes(checker["text"], tertiary["text"])
+    if agreements:
+        # الاتفاق المعروض اتفاق القرّاء جميعًا (متوسط أزواجهم) لا الأول والثاني وحدهما
+        agreement = round(sum(agreements.values()) / len(agreements), 1)
     # المدقق: يستلم الصورة والقراءات فيحكّم بينها بعينه على اللوحة
     auditor_model = str((payload or {}).get("auditor_model") or "google/gemini-4-argon")
     auditor: Dict[str, Any] = {}
@@ -15474,7 +15486,7 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
         except Exception as exc:
             auditor = {"model": auditor_model, "text": "", "error": str(exc)[:240]}
     out = {"primary": primary, "checker": checker, "auditor": auditor,
-           "disputes": disputes, "agreement": agreement}
+           "disputes": disputes, "agreement": agreement, "agreements": agreements}
     if tertiary_model or tertiary:
         out["tertiary"] = tertiary
     return out
@@ -16031,6 +16043,9 @@ def _ms_plan_sync(payload: dict, key: str) -> Dict[str, Any]:
     manager_model = str((payload or {}).get("manager_model") or "google/gemini-4-hydrogen")
     _prompt = MS_PLANNER_PROMPT.format(
         title=title, author=author or "غير معروف", card=card or "—", text=text[:70000])
+    _guidance = str((payload or {}).get("guidance") or "").strip()
+    if _guidance:
+        _prompt += ("\n\n[ضبط مشروع التحقيق المعتمد من المحقق في مجموعة التحقيق النشطة — التزم به في اختيار بنود الخطة وحدودها]\n" + _guidance[:1200])
     plan = {}
     for _attempt in range(2):
         raw = call_openrouter_raw(planner_model, [{"role": "user", "content": _prompt}],
@@ -28572,6 +28587,13 @@ def _architect_manuscripts_system_prompt(tools_catalog_desc: str, books_catalog_
         "2) خصّص system_prompt لكل وكيل بحسب إجابات المحقق (حدود التخريج/التراجم/اللغة/الحاشية).\n"
         "3) رشّح كتب الشاملة بأرقام #BookID عبر search_books_catalog وget_category_core_books بحسب الفن.\n"
         "4) عيّن النماذج من جدول أقوى النماذج أدناه فقط، بمعرفها الحرفي.\n"
+        "4.أ) ضبط جودة القراءة إلزامي في توجيه كل قارئ ومدقق (reader1/reader2/reader3/approver): وسم تعذّر القراءة سببيًا حصرًا "
+        "([غير مقروء: طمس/رطوبة/شطب/قصّ في التصوير/خفاء الحبر/تلف الورق]) على قدر الكلمة المتعذرة وحدها دون تعميم على الأسطر، "
+        "ومنع إسقاط كلمة يمكن ترجيحها من الرسم والسياق، وأن كل موضع تعذّر يتحول في هامش التحقيق إلى عبارة «كلام لم تتم قراءته بسبب …» — "
+        "فأي توجيه قراءة لا ينص على هذا الضبط ناقص مردود.\n"
+        "4.ب) ضبط الأعلام إلزامي في توجيه authorid وbio: اسم العلم كاملًا بسلسلته الموثقة (الاسم واسم الأب والجد والكنية واللقب والشهرة ونسبة البلد) "
+        "من كتب التراجم المظان، لا بالشهرة وحدها («النووي» وحده لا يكفي)، وما لم تثبت سلسلته صُرّح بحدّ ثبوته.\n"
+        "4.ج) إن صرّح المحقق بكتاب المخطوط ومؤلفه بعينهما التزمت المجموعة ضبطهما في توجيهاتها، ولم يُترك تعرّف اللوحات الآلي يبدّل الكتاب أو النسبة إلا بدليل من الشاملة يُذكر في التوجيه.\n"
         "5) في نهاية كل رد أرفق Blueprint JSON بين ```json و ``` بهذا الشكل:\n"
         "{\n"
         '  "title": "اسم مجموعة التحقيق",\n'
