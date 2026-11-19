@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.727"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.728"},
         },
     })
     if opened.get("error"):
@@ -15281,6 +15281,125 @@ async def save_manuscripts(request: Request, payload: Any = Body(...)):
         raise HTTPException(status_code=400, detail="صيغة المشاريع غير صالحة")
     _save_owned_list(owner_id, "manuscripts", projects)
     return {"ok": True, "count": len(projects)}
+
+
+@app.post("/api/manuscripts/export-project")
+async def export_manuscript_project(request: Request, payload: Any = Body(...)):
+    """تصدير مشروع تحقيق كاملًا في ZIP: بياناته كلها + صور لوحاته (أصلية ومرمّمة)."""
+    owner_id = current_owner_id(request)
+    pid = str((payload or {}).get("project_id") or "")
+    projects = _load_owned_list(owner_id, "manuscripts") or []
+    project = next((p for p in projects if p.get("id") == pid), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="المشروع غير موجود")
+    import io, copy, re as _re, zipfile
+    from urllib.parse import quote as _quote
+    proj = copy.deepcopy(project)
+    buf = io.BytesIO()
+    used_names = set()
+    img_count = 0
+
+    def _safe(s):
+        return _re.sub(r"[\\/:*?\"<>|\s]+", "-", str(s or "")).strip("-") or "x"
+
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for c in proj.get("copies") or []:
+            for f in c.get("folios") or []:
+                base = f"{_safe(c.get('siglum'))}_{_safe(f.get('label'))}"
+                for key_path, key_url, kind in (("file_path", "file_url", "main"),
+                                                ("orig_file_path", "orig_file_url", "orig"),
+                                                ("enhanced_file_path", "enhanced_file_url", "restored")):
+                    src = f.get(key_path) or ""
+                    if not src:
+                        continue
+                    pth = Path(src)
+                    if not pth.exists():
+                        cand = UPLOADS_BUCKET_DIR / owner_id / pth.name
+                        if cand.exists():
+                            pth = cand
+                    if not pth.exists():
+                        continue
+                    arc = f"images/{base}_{kind}{pth.suffix or '.jpg'}"
+                    n = 2
+                    while arc in used_names:
+                        arc = f"images/{base}_{kind}_{n}{pth.suffix or '.jpg'}"
+                        n += 1
+                    used_names.add(arc)
+                    try:
+                        zf.write(pth, arc)
+                        img_count += 1
+                        f[key_path] = arc
+                        if key_url and f.get(key_url):
+                            f[key_url] = arc
+                    except Exception:
+                        continue
+        manifest = {
+            "app": "Almoghni — تحقيق المخطوطات",
+            "kind": "manuscript_project_export",
+            "exported_at": datetime.now().isoformat(timespec="seconds"),
+            "project_title": proj.get("title") or "",
+            "project_id": proj.get("id") or "",
+            "images": img_count,
+        }
+        zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
+        zf.writestr("project.json", json.dumps(proj, ensure_ascii=False, indent=1))
+    buf.seek(0)
+    fname = f"مشروع-{_safe(proj.get('title') or 'تحقيق')}-{datetime.now().strftime('%Y-%m-%d')}.zip"
+    return StreamingResponse(buf, media_type="application/zip",
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{_quote(fname)}",
+                                      "X-Project-Images": str(img_count)})
+
+
+@app.post("/api/manuscripts/import-project")
+async def import_manuscript_project(request: Request, file: UploadFile = File(...)):
+    """استيراد مشروع تحقيق من ZIP تصدير المغني: بياناته وصور لوحاته بأسماء جديدة."""
+    owner_id = current_owner_id(request)
+    raw = await file.read()
+    import io, zipfile
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except Exception:
+        raise HTTPException(status_code=400, detail="الملف ليس أرشيف ZIP صالحًا")
+    names = set(zf.namelist())
+    pj_name = next((n for n in names if n == "project.json" or n.endswith("/project.json")), None)
+    if not pj_name:
+        raise HTTPException(status_code=400, detail="لا يوجد project.json في الأرشيف — ليس تصدير مشروع مغنٍّ")
+    try:
+        project = json.loads(zf.read(pj_name).decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="بيانات المشروع في الأرشيف تالفة")
+    if not isinstance(project, dict) or not project.get("copies"):
+        raise HTTPException(status_code=400, detail="بنية المشروع في الأرشيف غير صالحة")
+    bucket = (UPLOADS_BUCKET_DIR / owner_id)
+    bucket.mkdir(parents=True, exist_ok=True)
+    stamp = int(time.time() * 1000)
+    project["id"] = f"msimp{stamp:x}"
+    project.pop("archives", None)
+    if isinstance(project.get("auto"), dict) and project["auto"].get("status") == "running":
+        project["auto"]["status"] = "interrupted"
+    restored = 0
+    for c in project.get("copies") or []:
+        for f in c.get("folios") or []:
+            for key_path, key_url in (("file_path", "file_url"),
+                                      ("orig_file_path", "orig_file_url"),
+                                      ("enhanced_file_path", "enhanced_file_url")):
+                rel = f.get(key_path) or ""
+                if not isinstance(rel, str) or not rel.startswith("images/") or rel not in names:
+                    continue
+                suffix = Path(rel).suffix or ".jpg"
+                new_name = f"{stamp}_{restored}_{Path(rel).name}"
+                if not new_name.endswith(suffix):
+                    new_name += suffix
+                dest = bucket / new_name
+                dest.write_bytes(zf.read(rel))
+                f[key_path] = str(dest)
+                if key_url:
+                    f[key_url] = f"/uploads/{owner_id}/{new_name}"
+                restored += 1
+    projects = _load_owned_list(owner_id, "manuscripts") or []
+    projects.insert(0, project)
+    _save_owned_list(owner_id, "manuscripts", projects)
+    return {"ok": True, "project": project, "images_restored": restored}
 
 
 @app.get("/api/manuscripts/models")

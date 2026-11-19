@@ -159,6 +159,9 @@ function renderMsProjects() {
       ${(p.mode === 'auto' && p.auto && p.auto.status === 'done') ? '<div class="ms-project-card-stats" style="color:#2e7d5b;font-weight:700">✔ اكتمل التحقيق الآلي وصدرت النسخة النهائية</div>' : ''}
       <div class="ms-card-actions">
         <button type="button" class="ms-btn ms-btn-primary" onclick="msOpenProject('${p.id}')">فتح المشروع</button>
+        <button type="button" class="ms-btn" title="تكرار المشروع بكل نسخه ولوحاته ونصوصه" onclick="msDuplicateProject('${p.id}')">⧉ تكرار</button>
+        <button type="button" class="ms-btn" title="تصدير المشروع كاملًا (صوره وبياناته) في ملف مضغوط" onclick="msExportProject('${p.id}', false)">⬇ تصدير</button>
+        <button type="button" class="ms-btn" title="مشاركة ملف المشروع المضغوط بمشاركة نظام التشغيل" onclick="msExportProject('${p.id}', true)">📤 مشاركة</button>
         <button type="button" class="ms-btn ms-btn-danger" onclick="msDeleteProject('${p.id}')">حذف</button>
       </div>
     </div>`;
@@ -191,6 +194,88 @@ function msCreateProject() {
   document.getElementById('msNewDesc').value = '';
   msSave(); renderMsProjects(); msOpenProject(p.id);
 }
+
+// تكرار المشروع بكل نسخه ولوحاته ونصوصه (معرّفات جديدة، وحالة آلي جديدة)
+function msDuplicateProject(id) {
+  const src = msProject(id);
+  if (!src) return;
+  const p = JSON.parse(JSON.stringify(src));
+  p.id = msUid();
+  p.title = `${p.title} (نسخة)`;
+  p.createdAt = new Date().toISOString();
+  delete p.archives;
+  if (p.mode === 'auto' || p.auto) p.auto = { status: 'idle', steps: {}, log: [], report: null, cost: 0 };
+  (p.copies || []).forEach(c => {
+    c.id = msUid();
+    (c.folios || []).forEach(f => { f.id = msUid(); });
+  });
+  msProjects.unshift(p);
+  msSave(); renderMsProjects();
+  msToast(`✔ كُرّر المشروع «${src.title}» — النسخة الجديدة في أعلى القائمة`);
+}
+
+// تصدير المشروع ZIP (بياناته وصور لوحاته) أو مشاركته بمشاركة نظام التشغيل
+async function msExportProject(id, share) {
+  const p = msProject(id);
+  if (!p) return;
+  msToast('جارٍ تجهيز ملف المشروع المضغوط (البيانات وصور اللوحات)...');
+  try {
+    const res = await fetch('/api/manuscripts/export-project', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: id }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.detail || 'تعذر تصدير المشروع');
+    }
+    const blob = await res.blob();
+    const stamp = new Date().toISOString().slice(0, 10);
+    const fname = `مشروع-${String(p.title || 'تحقيق').replace(/[\\/:*?"<>|]/g, '').slice(0, 60)}-${stamp}.zip`;
+    if (share) {
+      const file = new File([blob], fname, { type: 'application/zip' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `مشروع تحقيق: ${p.title}` });
+        msToast('✔ فُتحت مشاركة النظام لملف المشروع');
+        return;
+      }
+      msToast('مشاركة النظام غير متاحة في هذه البيئة — حُمّل الملف لتشاركه يدويًا');
+    }
+    const url = URL.createObjectURL(blob);
+    const aEl = document.createElement('a');
+    aEl.href = url; aEl.download = fname;
+    document.body.appendChild(aEl); aEl.click(); aEl.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    msToast(`✔ صُدّر مشروع «${p.title}» كاملًا (بياناته وصور لوحاته)`);
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    msToast(`❌ ${e.message}`, 5000);
+  }
+}
+window.msExportProject = msExportProject;
+
+// استيراد مشروع من ملف مضغوط صدّره المغني
+async function msImportProject(input) {
+  const file = (input.files || [])[0];
+  input.value = '';
+  if (!file) return;
+  msToast('جارٍ استيراد المشروع (بياناته وصور لوحاته)...');
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/manuscripts/import-project', { method: 'POST', body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر استيراد المشروع');
+    const list = await fetch('/api/manuscripts');
+    const dj = await list.json().catch(() => ({}));
+    if (Array.isArray(dj.projects)) msProjects = dj.projects;
+    renderMsProjects();
+    msToast(`✔ استُورد مشروع «${data.project.title}» (${data.images_restored} صورة لوحة)`);
+    if (data.project && data.project.id) msOpenProject(data.project.id);
+  } catch (e) {
+    msToast(`❌ ${e.message}`, 6000);
+  }
+}
+window.msImportProject = msImportProject;
 
 function msDeleteProject(id) {
   const p = msProject(id);
@@ -2514,6 +2599,38 @@ function msArchitectOpen() {
 }
 window.msArchitectOpen = msArchitectOpen;
 
+// مناقشة مهندس المشروع في المجموعة النشطة لتعديلها: تزرع بطاقتها كاملة أول رسالة
+function msGroupSummaryText(g) {
+  const pr = g.investigation_profile || {};
+  const prof = [
+    pr.discipline ? `الفن: ${pr.discipline}` : '', pr.focus ? `المحور: ${pr.focus}` : '',
+    pr.tarajim_scope ? `التراجم: ${pr.tarajim_scope}` : '', pr.lugha_scope ? `اللغة: ${pr.lugha_scope}` : '',
+    pr.hadith_scope ? `التخريج: ${pr.hadith_scope}` : '', pr.footnote_style ? `الحاشية: ${pr.footnote_style}` : '',
+  ].filter(Boolean).join('؛ ');
+  const agents = (g.agents || []).map(a => {
+    const books = (a.books || []).slice(0, 8).join('، ');
+    return `- ${a.ms_key} | ${a.name} | النموذج: ${a.model || '—'}${books ? ` | كتب: ${books}` : ''}${a.system_prompt ? ` | توجيهه باختصار: ${String(a.system_prompt).replace(/\s+/g, ' ').slice(0, 160)}…` : ''}`;
+  }).join('\n');
+  return `هذه مجموعة تحقيق مخطوطات قائمة أريد مناقشتك في تعديلها وتحسينها، لا إنشاء مجموعة من الصفر. راجعها بعبقريتك: ما مواضع ضعفها أو نقصها لمشروعها؟ واقترح تعديلاتك (نماذج، كتب بأسمائها وأرقامها، توجيهات، حدود، وكلاء مضافون) بسؤال choices عند الحاجة، واختم بمخطط مجموعة معدّلة كاملة تُعتمد نسخة محسّنة منها.\n\nاسم المجموعة: «${g.name}»\n${g.desc ? `وصفها: ${g.desc}\n` : ''}${prof ? `ضبط مشروعها: ${prof}\n` : ''}وكلاؤها (${(g.agents || []).length}):\n${agents}`;
+}
+
+async function msDiscussGroupWithArchitect() {
+  const g = MS_GROUP;
+  if (!g) { msToast('لا مجموعة نشطة لمناقشتها — أنشئ أو اختر مجموعة أولًا'); return; }
+  if (typeof openProjectPlanningModal !== 'function') { msToast('مهندس المشاريع غير محمّل — أعد تحميل الصفحة'); return; }
+  window.__architectPresetKind = 'manuscripts';
+  await openProjectPlanningModal('new');
+  const text = msGroupSummaryText(g);
+  setTimeout(() => {
+    const inp = document.getElementById('architectUserInput');
+    if (!inp) { msToast('افتح حوار المهندس والصق وصف المجموعة'); return; }
+    inp.value = text;
+    if (typeof sendArchitectMessage === 'function') sendArchitectMessage();
+    msToast(`💬 بدأت مناقشة المجموعة «${g.name}» مع مهندس المشروع`);
+  }, 400);
+}
+window.msDiscussGroupWithArchitect = msDiscussGroupWithArchitect;
+
 // اعتماد مخطط المهندس الموحّد مجموعةَ تحقيق (يستدعيه applyStudioBlueprint)
 async function msApplyArchitectBlueprint(bp) {
   if (!bp?.subagents_group?.agents?.length) {
@@ -2625,6 +2742,7 @@ function renderMsGroup() {
       </div>`).join('')}
     <div class="ms-form-row">
       ${isDefault ? '<button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة الضبط الافتراضي للمجموعة</button>' : ''}
+      <button type="button" class="ms-btn" title="ناقش مهندس المشروع في المجموعة النشطة المختارة أعلاه لتعديلها وتحسينها" onclick="msDiscussGroupWithArchitect()">💬 مناقشة مهندس المشروع في هذه المجموعة</button>
       <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectOpen()">🧭 مهندس المشاريع — مجموعة تحقيق جديدة</button>
     </div>`;
 }
