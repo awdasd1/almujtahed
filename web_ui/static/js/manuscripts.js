@@ -2333,7 +2333,11 @@ function msSyncGroupFromEditor(scrollY) {
     renderMsGroup();
     msApplyGroupModelDefaults();
   }
-  requestAnimationFrame(() => window.scrollTo(0, scrollY || 0));
+  requestAnimationFrame(() => {
+    const pane = document.getElementById('paneManuscripts');
+    if (pane) pane.scrollTop = scrollY || 0;
+    else window.scrollTo(0, scrollY || 0);
+  });
 }
 
 // ---------- مهندس موحّد: هذا التبويب يفتح مهندس المشاريع بنوع «تحقيق مخطوط» ----------

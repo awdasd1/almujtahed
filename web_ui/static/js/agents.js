@@ -80,7 +80,8 @@ function markAgentCardReturn(tab) {
   const detailEl = document.getElementById('groupAgentsDetailSection');
   agentCardReturn = {
     tab: tab || '',
-    y: window.scrollY,
+    // تبويب التحقيق يتمرر داخليًا تحت الهيدر، فموضعه من حاويته لا من النافذة
+    y: tab === 'manuscripts' ? (document.getElementById('paneManuscripts')?.scrollTop || 0) : window.scrollY,
     groupId: currentActiveGroupId,
     groupsDisplay: groupsEl ? groupsEl.style.display : '',
     detailDisplay: detailEl ? detailEl.style.display : '',
