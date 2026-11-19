@@ -66,7 +66,7 @@ function msSaveModelChoice() {
     if (a) a.model = model;
   });
   msSaveGroup();
-  msToast('حُفظ اختيار نماذج النسخ والتدقيق في بطاقات القرّاء الثلاثة والمعتمِد بالمجموعة');
+  msToast('حُفظ اختيار نماذج النسخ والتدقيق في بطاقات القراء الثلاثة والمدقق بالمجموعة');
 }
 
 function msPresetModels(name) {
@@ -1289,7 +1289,7 @@ async function msTranscribeFolio() {
   const btn = document.getElementById('msWbTranscribeBtn');
   btn.disabled = true;
   const old = btn.textContent;
-  btn.textContent = '⏳ جارٍ نسخ اللوحة بالقرّاء الثلاثة والمدقق...';
+  btn.textContent = '⏳ جارٍ نسخ اللوحة بثلاثة قراء ومدقق...';
   try {
     let apiKey = '';
     try {
@@ -1340,7 +1340,7 @@ async function msTranscribeFolio() {
     if (primary.truncated || checker.truncated) {
       msToast('⚠️ خط هذه اللوحة صعب: قُصّت مخرجات أحد النموذجين (حلقة تكرار). راجع النص على الصورة سطرًا سطرًا قبل الاعتماد.', 8000);
     } else {
-      msToast(`تم النسخ. اتفاق القرّاء الثلاثة ${f.agreement}٪ — حسم مواضع الاختلاف ثم اعتمد اللوحة.`, 5000);
+      msToast(`تم النسخ. اتفاق ثلاثة قراء ${f.agreement}٪ — حسم مواضع الاختلاف ثم اعتمد اللوحة.`, 5000);
     }
   } catch (e) {
     msToast('❌ ' + e.message, 7000);
@@ -2331,7 +2331,7 @@ function msGroupBookTitles(key) {
 function msBuildGroup() {
   return {
     id: MS_DEFAULT_GROUP_ID, name: 'تحقيق المخطوطات',
-    desc: 'فريق تحقيق المخطوطات على مرحلتين: المرحلة الأولى قراءة النص ومقابلة النسخ وتدقيقها (ثلاثة قرّاء مستقلون منهم Flash Lite)، والمرحلة الثانية تحقيق النص بمدير تحقيق ومجلس مستشارين ووكيل ذهبي مؤقت لكل مخطوط ومتخصصين مختصرين (تخريج، لغة وأشعار، سير وتراجم، تفسير، عقيدة) بنماذج وكتب مضبوطة من الشاملة.',
+    desc: 'فريق تحقيق المخطوطات على مرحلتين: المرحلة الأولى قراءة النص ومقابلة النسخ وتدقيقها (ثلاثة قراء مستقلين ومدقق، ثالثهم Flash Lite)، والمرحلة الثانية تحقيق النص بمدير تحقيق ومجلس مستشارين ووكيل ذهبي مؤقت لكل مخطوط ومتخصصين مختصرين (تخريج، لغة وأشعار، سير وتراجم، تفسير، عقيدة) بنماذج وكتب مضبوطة من الشاملة.',
     ms_kind: 'manuscripts',
     agents: MS_GROUP_DEFAULT_AGENTS.map(d => ({
       id: 'msag_' + d.key, ms_key: d.key, name: d.name, desc: d.desc, model: d.model,
@@ -2361,7 +2361,7 @@ async function msSeedGroup(force) {
       if (wi >= 0) window.agentGroups[wi] = g; else window.agentGroups.unshift(g);
     }
     msSetActiveGroup(g.id);
-    msToast('اعتمدت «تحقيق المخطوطات» مجموعةً افتراضية بثلاثة قرّاء وبنية المرحلتين');
+    msToast('اعتمدت «تحقيق المخطوطات» مجموعةً افتراضية بثلاثة قراء ومدقق وبنية المرحلتين');
   } catch (e) { msToast('تعذر حفظ المجموعة المعتمدة'); }
 }
 
@@ -2577,7 +2577,7 @@ async function msApplyArchitectBlueprint(bp) {
       if (typeof saveAgentGroups === 'function') saveAgentGroups(window.agentGroups);
     }
     msSetActiveGroup(gid);
-    msToast(`✔ اعتُمدت مجموعة التحقيق «${g.name}» وصارت النشطة — بثلاثة قرّاء وFlash Lite`);
+    msToast(`✔ اعتُمدت مجموعة التحقيق «${g.name}» وصارت النشطة — ثلاثة قراء ومدقق (ثالثهم Flash Lite)`);
     return true;
   } catch (e) {
     msToast('تعذر اعتماد المجموعة: ' + e.message);
@@ -3554,7 +3554,7 @@ async function msAutoRun(p) {
         msAutoCheck(p);
         if (f.status === 'approved' && (f.text || '').trim()) { processed++; msAutoProgress(p, 'transcribe', processed, totalFolios, `لوحات منسوخة ومعتمدة: ${processed} من ${totalFolios}`); continue; }
         if (!f.file_path) { processed++; msAutoProgress(p, 'transcribe', processed, totalFolios); msAutoLog(p, `تخطي لوحة (${f.label}) في (${c.siglum}) — لم تُرفع صورتها.`); continue; }
-        msAutoLog(p, `نسخ لوحة (${f.label}) من (${c.siglum}): قرّاء ثلاثة (أول وثانٍ وثالث) ومدقق على الصورة...`);
+        msAutoLog(p, `نسخ لوحة (${f.label}) من (${c.siglum}): ثلاثة قراء ومدقق على الصورة...`);
         const data = await msAutoFetch('/api/manuscripts/transcribe', {
           file_path: f.file_path, api_key: msApiKey(),
           primary_model: choice.primary, checker_model: choice.checker,
@@ -3585,7 +3585,7 @@ async function msAutoRun(p) {
         msAutoProgress(p, 'transcribe', processed, totalFolios, `اعتماد لوحة (${f.label}) في (${c.siglum}): ${processed} من ${totalFolios} لوحة`);
         const unreadN = msUnreadableApparatus(f);
         if (unreadN) { R.unreadable = (R.unreadable || 0) + unreadN; msAutoLog(p, `⚠️ لوحة (${f.label}) في (${c.siglum}): ${unreadN} موضعًا متعذر القراءة وُثّق بأسبابه في هامش التحقيق.`); }
-        msAutoLog(p, `✔ اعتُمدت لوحة (${f.label}) في (${c.siglum}) — اتفاق القرّاء الثلاثة ${data.agreement ?? '—'}٪`);
+        msAutoLog(p, `✔ اعتُمدت لوحة (${f.label}) في (${c.siglum}) — اتفاق ثلاثة قراء ${data.agreement ?? '—'}٪`);
         msSave(); renderMsAuto(); renderMsCopies();
       }
     }
@@ -3922,7 +3922,7 @@ async function msAutoRun(p) {
     // القارئين ومواضع الاختلاف، وصعوبات اللوحات كما رصدها المراقب،
     // وكيف عولجت بقرارات المعتمِد والمدير، وحصاد الخطة بندًا بندًا
     const folioLines = (p.copies || []).map(c => (c.folios || []).map(f =>
-      `(${c.siglum}) ${f.label}: اتفاق القرّاء الثلاثة ${f.agreement != null ? f.agreement + '٪' : '—'}، مواضع اختلاف محفوظة ${(f.disputes || []).length}`).join('؛ ')).filter(Boolean);
+      `(${c.siglum}) ${f.label}: اتفاق ثلاثة قراء ${f.agreement != null ? f.agreement + '٪' : '—'}، مواضع اختلاف محفوظة ${(f.disputes || []).length}`).join('؛ ')).filter(Boolean);
     const monitorNotes = (p.monitor_log || []).flatMap(m => (Array.isArray(m.findings) ? m.findings : [])
       .filter(fd => fd && (fd.severity === 'high' || fd.severity === 'med'))
       .map(fd => `[${fd.severity}] ${fd.area}: ${fd.note}`));
