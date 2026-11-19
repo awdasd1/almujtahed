@@ -5932,7 +5932,7 @@ input:checked+.slider-toggle:before {
 
 .model-hover-card {
   position: fixed;
-  z-index: 100040;
+  z-index: 101600;
   width: 320px;
   max-height: min(420px, calc(100vh - 16px));
   overflow: auto;
@@ -9474,7 +9474,8 @@ table tr:hover td,
 
   .theme-select-menu {
     position: fixed;
-    z-index: 100020 !important;
+    /* طبقة البوابة: أعلى من ms/قارئ/نقد (حتى ~100800) حتى لا تتجمد القوائم داخل النوافذ */
+    z-index: 101500 !important;
     display: flex;
     flex-direction: column;
     gap: 2px;

@@ -283,7 +283,8 @@ function initThemeSelects() {
 
   const menu = document.createElement('div');
   menu.className = 'theme-select-menu';
-  menu.style.zIndex = '100020';
+  // فوق كل نوافذ التطبيق (مخطوطات/قارئ/نقد تصل إلى ~100800)؛ وإلا تُفتح القائمة خلف النافذة وتبدو متجمدة
+  menu.style.zIndex = '101500';
   menu.hidden = true;
   menu.setAttribute('role', 'listbox');
   document.body.appendChild(menu);
