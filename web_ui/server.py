@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.710"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.711"},
         },
     })
     if opened.get("error"):
@@ -15203,20 +15203,23 @@ def _ms_transcribe_one(model: str, b64_url: str, key: str) -> Dict[str, Any]:
 
 
 MS_AUDIT_PROMPT = (
-    "أنت مدقق مخطوطات خبير. أمامك صورة لوحة مخطوطة ونسختان مستقلتان لها من قارئين. "
-    "مهمتك: إنتاج النسخ المدقق النهائي بمقابلة النسختين على الصورة نفسها: حيث اختلف القارئان فاتبع ما تراه في الصورة، "
-    "وحيث أخطأ كلاهما فصحح من الصورة، وحافظ على النسخ الحرفي (الإملاء والهمزات كما هي) بلا تحديث ولا شرح داخل النص، "
+    "أنت مدقق مخطوطات خبير. أمامك صورة لوحة مخطوطة وقراءات مستقلة لها من قراء. "
+    "مهمتك: إنتاج النسخ المدقق النهائي بمقابلة القراءات على الصورة نفسها: حيث اختلف القراء فاتبع ما تراه في الصورة، "
+    "وحيث أخطأ الجميع فصحح من الصورة، وحافظ على النسخ الحرفي (الإملاء والهمزات كما هي) بلا تحديث ولا شرح داخل النص، "
     "وما تعذرت قراءته فضع مكانه [غير مقروء]. "
-    "ابدأ بالنص المدقق مباشرة دون أي مقدمة أو عبارة تمهيدية، ثم سطرًا مستقلًا يبدأ بـ(تنبيهات:) تسرد فيه باختصار أهم المواضع التي حكمت فيها بين القارئين أو شككت بها."
+    "ابدأ بالنص المدقق مباشرة دون أي مقدمة أو عبارة تمهيدية، ثم سطرًا مستقلًا يبدأ بـ(تنبيهات:) تسرد فيه باختصار أهم المواضع التي حكمت فيها بين القراء أو شككت بها."
 )
 
 
-def _ms_audit_one(model: str, b64_url: str, text_a: str, text_b: str, key: str) -> Dict[str, Any]:
+def _ms_audit_one(model: str, b64_url: str, text_a: str, text_b: str, key: str,
+                  text_c: str = "") -> Dict[str, Any]:
     user_text = (
         MS_AUDIT_PROMPT
         + "\n\n— نسخة القارئ الأول —\n" + (text_a or "[فشل نسخ القارئ الأول]")[:12000]
         + "\n\n— نسخة القارئ الثاني —\n" + (text_b or "[فشل نسخ القارئ الثاني]")[:12000]
     )
+    if (text_c or "").strip():
+        user_text += "\n\n— نسخة القارئ الثالث —\n" + text_c[:12000]
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": [
@@ -15396,7 +15399,7 @@ async def enhance_manuscript_folio(request: Request, payload: Any = Body(...)):
 
 @app.post("/api/manuscripts/transcribe")
 async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)):
-    """نسخ لوحة بنموذجين متوازيين + مواضع اختلافهما ونسبة اتفاقهما."""
+    """نسخ لوحة بقارئين أو ثلاثة متوازيين + مواضع اختلاف ونسبة اتفاق + مدقق على الصورة."""
     owner_id = current_owner_id(request)
     raw_path = str((payload or {}).get("file_path") or "").strip()
     if not raw_path:
@@ -15414,26 +15417,31 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
         raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
     primary_model = str((payload or {}).get("primary_model") or MS_PRIMARY_MODEL)
     checker_model = str((payload or {}).get("checker_model") or MS_CHECKER_MODEL)
+    tertiary_model = str((payload or {}).get("tertiary_model") or "").strip()
     import concurrent.futures as _cf
     results: Dict[str, Any] = {}
-    with _cf.ThreadPoolExecutor(max_workers=2) as pool:
-        futs = {pool.submit(_ms_transcribe_one, m, b64_url, key): slot
-                for slot, m in (("primary", primary_model), ("checker", checker_model))}
+    slots = [("primary", primary_model), ("checker", checker_model)]
+    if tertiary_model:
+        slots.append(("tertiary", tertiary_model))
+    with _cf.ThreadPoolExecutor(max_workers=len(slots)) as pool:
+        futs = {pool.submit(_ms_transcribe_one, m, b64_url, key): slot for slot, m in slots}
         for fut in _cf.as_completed(futs):
             slot = futs[fut]
+            want = next(m for s, m in slots if s == slot)
             try:
                 results[slot] = fut.result()
             except Exception as exc:
-                results[slot] = {"model": primary_model if slot == "primary" else checker_model,
-                                 "text": "", "error": str(exc)[:240]}
+                results[slot] = {"model": want, "text": "", "error": str(exc)[:240]}
     # إسناد احتياطي متسلسل: قارئ سقط (خطأ أو رد فارغ) يُعاد بغيره من المعتمدين
     # (Carbon ثم Pro) مرة واحدة لكل بديل، ويُوثَّق السقوط والاحتياط لا يُخفى
     MS_READER_FALLBACKS = ["google/gemini-4-carbon", "~google/gemini-pro-latest"]
-    for slot in ("primary", "checker"):
+    slot_want = {"primary": primary_model, "checker": checker_model}
+    if tertiary_model:
+        slot_want["tertiary"] = tertiary_model
+    for slot, want in slot_want.items():
         r = results.get(slot) or {}
         if (r.get("text") or "").strip():
             continue
-        want = primary_model if slot == "primary" else checker_model
         for fb_model in MS_READER_FALLBACKS:
             if fb_model == want:
                 continue
@@ -15449,20 +15457,26 @@ async def transcribe_manuscript_folio(request: Request, payload: Any = Body(...)
                 results[slot] = r
     primary = results.get("primary") or {}
     checker = results.get("checker") or {}
+    tertiary = results.get("tertiary") or {}
     disputes, agreement = ([], 0.0)
     if primary.get("text") and checker.get("text"):
         disputes, agreement = _ms_disputes(primary["text"], checker["text"])
-    # المدقق: يستلم الصورة والنسختين معًا فيحكّم بينهما بعينه على اللوحة
+    # المدقق: يستلم الصورة والقراءات فيحكّم بينها بعينه على اللوحة
     auditor_model = str((payload or {}).get("auditor_model") or "google/gemini-4-argon")
     auditor: Dict[str, Any] = {}
-    if auditor_model and (primary.get("text") or checker.get("text")):
+    if auditor_model and (primary.get("text") or checker.get("text") or tertiary.get("text")):
         try:
-            auditor = _ms_audit_one(auditor_model, b64_url,
-                                    primary.get("text") or "", checker.get("text") or "", key)
+            auditor = _ms_audit_one(
+                auditor_model, b64_url,
+                primary.get("text") or "", checker.get("text") or "", key,
+                text_c=tertiary.get("text") or "")
         except Exception as exc:
             auditor = {"model": auditor_model, "text": "", "error": str(exc)[:240]}
-    return {"primary": primary, "checker": checker, "auditor": auditor,
-            "disputes": disputes, "agreement": agreement}
+    out = {"primary": primary, "checker": checker, "auditor": auditor,
+           "disputes": disputes, "agreement": agreement}
+    if tertiary_model or tertiary:
+        out["tertiary"] = tertiary
+    return out
 
 
 # ---------- المرحلة ٢: محرك المقابلة بين النسخ ----------
@@ -28511,6 +28525,84 @@ class ArchitectDialogRequest(BaseModel):
     context_tokens: Optional[int] = 1048576
     tavily_key: Optional[str] = ""
     api_key: Optional[str] = ""
+    domain: Optional[str] = ""  # manuscripts = مهندس مجموعات تحقيق المخطوطات
+
+
+def _architect_manuscripts_system_prompt(tools_catalog_desc: str, books_catalog_section: str,
+                                        model_roster: str, context_tokens: int) -> str:
+    """توجيه مهندس مجموعات تحقيق المخطوطات: يحاور المحقق ثم يخرج مخطط مجموعة ms_kind."""
+    return (
+        "══════════════════════════════════════════════════════════════\n"
+        "  توجيه النظام: مهندس مجموعات تحقيق المخطوطات في منظومة «المغني»\n"
+        "══════════════════════════════════════════════════════════════\n\n"
+        "【الهوية】\n"
+        "أنت مهندس مجموعات تحقيق المخطوطات. لا تكتب نص التحقيق بنفسك، بل تحاور المحقق "
+        "لتضبط له مجموعة وكلاء تحقيق خاصة بمشروعه (فقه/عقيدة/تفسير/لغة…) وفق هيكل المجموعة "
+        "الثابتة المعتمدة، ثم تُخرج مخطط Blueprint JSON يعتمد في تبويب تحقيق المخطوطات.\n\n"
+        "【المجموعة الافتراضية الحالية — هيكل ثابت لا تُحذف أدواره】\n"
+        "المجموعة المرجعية `ms_tahqeeq_group_v1` باسم «تحقيق المخطوطات» ذات `ms_kind: manuscripts`، "
+        "ومرحلتان: (١) قراءة اللوحات ومقابلتها، (٢) التحقيق العلمي. الأدوار الإلزامية بمعرّفات `ms_key`:\n"
+        "• leader — مدير التحقيق (Google Gemini Hydrogen)\n"
+        "• assistant — مساعد المدير (Gemini Carbon)\n"
+        "• reader1 — القارئ الأول (~google/gemini-pro-latest)\n"
+        "• reader2 — القارئ الثاني (google/gemini-4-carbon)\n"
+        "• reader3 — القارئ الثالث دائمًا: google/gemini-3.1-flash-lite (إلزامي في كل مجموعة جديدة)\n"
+        "• approver — المعتمِد على الصورة (Gemini Hydrogen)\n"
+        "• monitor — المراقب (meta/muse-wonder)\n"
+        "• advisor_sonnet / advisor_argon / advisor_wonder — مجلس المستشارين\n"
+        "• authorid, bio, ayat, hadith, tarajim, lugha, tafsir, aqeedah, authorworks — المتخصصون\n"
+        "وكذا مدير أدوات (tools_manager) ووكيل خطة (planner) إن لزم الضبط العام للمجموعات.\n\n"
+        "【ما يجب أن تسأل المحقق عنه قبل اعتماد المجموعة — دفعةً بـ ```choices】\n"
+        "1) مشروع التحقيق وعنوانه وفنّه: فقه أم عقيدة أم تفسير أم حديث أم لغة أم مختلط؟ وما محور التركيز؟\n"
+        "2) حدود تراجم الأعلام: كل علم ورد، أم المشهورون المعمورون فقط، أم من يتوقف عليه المعنى؟\n"
+        "3) حدود اللغة: غريب فقط، أم ضبط مشكل وتصحيف، أم شرح موسّع؟\n"
+        "4) تخريج الأحاديث: عزو فقط، أم عزو + درجة من كتب التخريج، أم توسّع طرق؟\n"
+        "5) الحاشية: مختصرة على أسلوب المحققين أم موسّعة أكاديمية؟\n"
+        "6) هل يفعّل وكيل التفسير/العقيدة بقوة أم يُخفّضان إن لم يكن المخطوط في فنهما؟\n"
+        "7) نماذج القارئين الأول والثاني إن أراد أقوى من الافتراضي (الثالث ثابت Flash Lite).\n"
+        "من 2 إلى 4 أسئلة في الدفعة، بصيغة ```choices مع خيارات، والواجهة تضيف حقل كتابة.\n\n"
+        "【قواعد بناء المجموعة】\n"
+        "1) انسخ الهيكل الثابت أعلاه؛ لا تحذف reader3 ولا تغيّر نموذجه عن google/gemini-3.1-flash-lite.\n"
+        "2) خصّص system_prompt لكل وكيل بحسب إجابات المحقق (حدود التخريج/التراجم/اللغة/الحاشية).\n"
+        "3) رشّح كتب الشاملة بأرقام #BookID عبر search_books_catalog وget_category_core_books بحسب الفن.\n"
+        "4) عيّن النماذج من جدول أقوى النماذج أدناه فقط، بمعرفها الحرفي.\n"
+        "5) في نهاية كل رد أرفق Blueprint JSON بين ```json و ``` بهذا الشكل:\n"
+        "{\n"
+        '  "title": "اسم مجموعة التحقيق",\n'
+        '  "desc": "وصف ضبط التحقيق وحدوده",\n'
+        '  "ms_kind": "manuscripts",\n'
+        '  "investigation_profile": {\n'
+        '    "discipline": "فقه|عقيدة|تفسير|حديث|لغة|مختلط",\n'
+        '    "focus": "محور التحقيق",\n'
+        '    "tarajim_scope": "كل الأعلام|المعمورون|المؤثرون فقط",\n'
+        '    "lugha_scope": "غريب|مشكل وتصحيف|موسّع",\n'
+        '    "hadith_scope": "عزو فقط|عزو ودرجة|موسّع",\n'
+        '    "footnote_style": "مختصرة|موسّعة"\n'
+        "  },\n"
+        '  "director": {"name":"مدير التحقيق","model":"google/gemini-4-hydrogen","thinking":"high","ms_key":"leader","system_prompt":"..."},\n'
+        '  "subagents_group": {\n'
+        '    "name": "اسم المجموعة",\n'
+        '    "desc": "وصفها",\n'
+        '    "ms_kind": "manuscripts",\n'
+        '    "agents": [\n'
+        '      {"ms_key":"reader1","name":"...","model":"...","stage":1,"system_prompt":"...","books":[]},\n'
+        '      {"ms_key":"reader2","name":"...","model":"...","stage":1,"system_prompt":"...","books":[]},\n'
+        '      {"ms_key":"reader3","name":"القارئ الثالث — ناسخ اللوحات المكمّل","model":"google/gemini-3.1-flash-lite","stage":1,"system_prompt":"قراءة ثالثة مستقلة حرفيًا...","books":[]},\n'
+        '      {"ms_key":"hadith","name":"...","model":"google/gemini-3.8-flash","stage":2,"books":["#..."],"system_prompt":"..."}\n'
+        "    ]\n"
+        "  }\n"
+        "}\n"
+        "كل وكيل يجب أن يحمل ms_key من القائمة الثابتة. القارئ الثالث إلزامي بالنموذج أعلاه.\n\n"
+        "【أقوى نماذج OpenRouter】\n"
+        + model_roster + "\n\n"
+        "【الأدوات】 لديك search_books_catalog وget_library_categories وget_category_core_books "
+        "وget_book_bibliography وsearch_similar_research.\n"
+        "🛠️ الأدوات المساعدة المسجّلة:\n" + tools_catalog_desc + "\n"
+        + books_catalog_section + "\n"
+        f"سياق الاستيعاب المعتمد: {context_tokens} رمز.\n"
+        "ابدأ بحفاوة قصيرة ثم اطرح أول دفعة أسئلة choices عن مشروع التحقيق وحدوده.\n"
+    )
+
 
 @app.post("/api/projects/architect-dialog")
 async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Request):
@@ -28518,6 +28610,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
     حوار واستشارات مهندس التخطيط المعماري (Architect Model)
     حوار تفاعلي مباشر يناقش الباحث في فكرة مشروعه، يسأله أسئلة استكشافية،
     يستكشف الكتب من قاعدة البيانات الببليوغرافية للمخزن، ويرشح وكلاء وأدوات حسابية مخصصة.
+    domain=manuscripts يحوّل المهندس إلى ضبط مجموعات تحقيق المخطوطات.
     """
     key = owner_openrouter_key(request, req.api_key)
     tavily_key = (req.tavily_key or "").strip() or (load_provider_keys(current_owner_id(request)).get("tavily") or "").strip()
@@ -28527,6 +28620,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
             "message": "لم يتم العثور على مفتاح OpenRouter API. يرجى إدخال المفتاح في إعدادات المنظومة أو ملف .env لمحادثة مهندس التخطيط المعماري."
         }
     call_model = (req.planning_model or "").strip() or "google/gemini-2.5-flash"
+    ms_domain = str(req.domain or "").strip().lower() in ("manuscripts", "ms", "tahqeeq", "تحقيق")
     
     # تطبيع الاختصارات القديمة فقط دون المساس بنماذج Anthropic المختارة
     legacy_aliases = {
@@ -28571,7 +28665,18 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         for t in stored_tools if t.get('enabled', True)
     ]) or "لا توجد أدوات إضافية مسجلة حالياً."
 
-    architect_system_prompt = (
+    if ms_domain:
+        architect_system_prompt = _architect_manuscripts_system_prompt(
+            tools_catalog_desc=tools_catalog_desc,
+            books_catalog_section=books_catalog_section,
+            model_roster=_architect_model_roster(),
+            context_tokens=resolve_context_tokens(req.context_tokens),
+        )
+        # تخطّي توجيه البحث الموسع؛ مسار المخطوطات مكتفٍ بذاته
+        architect_system_prompt_ms_ready = True
+    else:
+        architect_system_prompt_ms_ready = False
+        architect_system_prompt = (
         "══════════════════════════════════════════════════════════════\n"
         "        توجيه النظام: مهندس تخطيط المشاريع البحثية التراثية\n"
         "══════════════════════════════════════════════════════════════\n\n"
@@ -28830,16 +28935,17 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         + books_catalog_section
     )
 
-    architect_system_prompt += _architect_fiqh_discipline_section()
-    architect_system_prompt += _architect_agent_tuning_section()
-    architect_system_prompt += _architect_adaptive_profile_section()
-    architect_system_prompt += (
-        "ولازم في كل مخطط: وكيل واحد «مدير الأدوات — جامع الشواهد الموثقة» بحقل \"role\": \"tools_manager\" كما في مثال المخطط؛ لا مخطط بلا مدير أدوات، وهو وحده الممسك بأدوات المغني الداخلية المركّبة والتوثيقية، ولا وكيل غيره بأي أداة.\n"
-        "ولازم أيضًا في كل مخطط: وكيل واحد «وكيل خطة البحث ومراجعته وفهرسته» بحقل \"role\": \"planner\" و\"kind\": \"planner\"، نموذجه ~anthropic/claude-sonnet-latest؛ يضع خطة البحث الأكاديمية من سجل الأدلة ويراجع المسودة عليها ويفهرسها، ولا يجمع شواهد.\n"
-        f"\nسياق الاستيعاب المعتمد لهذا المشروع: {resolve_context_tokens(req.context_tokens)} رمز. "
-        "اجعل context_tokens في بطاقة المدير وكل وكيل بهذه القيمة إلا إذا طلب الباحث تغييرها، ولا تضع هذا الرقم في max_tokens لأن ذلك حد الإخراج لا حد الشواهد.\n"
-        "إذا أرسل الباحث رسالة تبدأ بـ «أضف هذه الكتب لدى الوكيل المناسب»، فأضف كل كتاب كما ورد برقمه المعياري وعنوانه إلى حقل books لدى الوكيل الأنسب لفن الكتاب، ولا تستبدل الرقم ولا تُسقط الكتاب.\n"
-    )
+    if not architect_system_prompt_ms_ready:
+        architect_system_prompt += _architect_fiqh_discipline_section()
+        architect_system_prompt += _architect_agent_tuning_section()
+        architect_system_prompt += _architect_adaptive_profile_section()
+        architect_system_prompt += (
+            "ولازم في كل مخطط: وكيل واحد «مدير الأدوات — جامع الشواهد الموثقة» بحقل \"role\": \"tools_manager\" كما في مثال المخطط؛ لا مخطط بلا مدير أدوات، وهو وحده الممسك بأدوات المغني الداخلية المركّبة والتوثيقية، ولا وكيل غيره بأي أداة.\n"
+            "ولازم أيضًا في كل مخطط: وكيل واحد «وكيل خطة البحث ومراجعته وفهرسته» بحقل \"role\": \"planner\" و\"kind\": \"planner\"، نموذجه ~anthropic/claude-sonnet-latest؛ يضع خطة البحث الأكاديمية من سجل الأدلة ويراجع المسودة عليها ويفهرسها، ولا يجمع شواهد.\n"
+            f"\nسياق الاستيعاب المعتمد لهذا المشروع: {resolve_context_tokens(req.context_tokens)} رمز. "
+            "اجعل context_tokens في بطاقة المدير وكل وكيل بهذه القيمة إلا إذا طلب الباحث تغييرها، ولا تضع هذا الرقم في max_tokens لأن ذلك حد الإخراج لا حد الشواهد.\n"
+            "إذا أرسل الباحث رسالة تبدأ بـ «أضف هذه الكتب لدى الوكيل المناسب»، فأضف كل كتاب كما ورد برقمه المعياري وعنوانه إلى حقل books لدى الوكيل الأنسب لفن الكتاب، ولا تستبدل الرقم ولا تُسقط الكتاب.\n"
+        )
     conv_messages = [{"role": "system", "content": architect_system_prompt}]
     for m in req.messages:
         role = m.get("role", "user")

@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.710">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.711">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.710" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.711" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.710</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.711</span>
             </div>
 
             <div class="header-actions">
@@ -1460,8 +1460,8 @@
             <div class="ms-wrap">
                 <p class="ms-sub">من صورة اللوحة إلى نصّ محقّق: نسخٌ بنموذجين وحسم اختلافاتهما بعين المحقق، ثم مقابلة وتحقيق وفهرسة في المراحل التالية. النموذج يقترح — والمحقق يعتمد.</p>
                 <div id="msProjectsView">
-                    <details class="ms-create-card ms-fold" id="msGroupCard">
-                        <summary class="ms-create-title">⭐ «تحقيق المخطوطات» — مجموعة الوكلاء المعتمدة لمرحلتي التحقيق (في قسم الوكلاء أيضًا)</summary>
+                    <details class="ms-create-card ms-fold" id="msGroupCard" open>
+                        <summary class="ms-create-title">⭐ مجموعات الوكلاء المعتمدة لتحقيق المخطوطات — الافتراضية + مجموعاتك المخصّصة</summary>
                         <div id="msGroupBody"></div>
                     </details>
                     <div class="ms-create-card">
@@ -1748,6 +1748,40 @@
                     <button type="button" class="ms-btn" onclick="msAgentBooksPick()">📚 إضافة كتب من الشاملة</button>
                     <button type="button" class="ms-btn ms-btn-danger" onclick="msAgentBooksClear()">🗑 حذف الكل</button>
                     <button type="button" class="ms-btn ms-btn-primary" onclick="msAgentBooksClose()">إغلاق</button>
+                </div>
+            </div>
+        </div>
+        <div class="ms-modal-overlay" id="msArchitectModal" hidden>
+            <div class="ms-modal" style="width:min(920px,96vw);max-height:92vh;display:flex;flex-direction:column">
+                <div class="ms-modal-head">
+                    <strong>🧭 مهندس مجموعات تحقيق المخطوطات</strong>
+                    <button type="button" class="ms-btn" onclick="msArchitectClose()">✕</button>
+                </div>
+                <div class="ms-hint">يحاورك في فن التحقيق وحدود التراجم واللغة والتخريج وأسلوب الحاشية، ثم ينشئ مجموعة وكلاء بـ <code>ms_kind: manuscripts</code> مع قارئ ثالث ثابت (Gemini 3.1 Flash Lite)، وتظهر في قائمة المجموعات المعتمدة أعلاه.</div>
+                <div class="ms-form-row" style="margin:8px 0;flex-wrap:wrap;gap:8px">
+                    <label class="ms-model-label">نموذج المهندس
+                        <select id="msArchitectModel">
+                            <option value="google/gemini-2.5-flash" selected>Gemini 2.5 Flash</option>
+                            <option value="google/gemini-3.8-flash">Gemini 3.8 Flash</option>
+                            <option value="~anthropic/claude-sonnet-latest">Claude Sonnet Latest</option>
+                            <option value="google/gemini-4-carbon">Gemini Carbon</option>
+                        </select>
+                    </label>
+                    <label class="ms-model-label">التفكير
+                        <select id="msArchitectThinking">
+                            <option value="low">منخفض</option>
+                            <option value="medium" selected>متوسط</option>
+                            <option value="high">عالٍ</option>
+                        </select>
+                    </label>
+                    <span id="msArchitectStatus" class="ms-wb-meta" style="align-self:center"></span>
+                </div>
+                <div id="msArchitectChat" class="studio-chat-history" style="flex:1;min-height:280px;max-height:48vh;overflow:auto;border:1px solid var(--border-subtle);border-radius:10px;padding:10px;background:var(--bg-elevated,#fff)"></div>
+                <div class="ms-form-row" style="margin-top:10px;align-items:flex-end">
+                    <textarea id="msArchitectInput" rows="2" style="flex:1;min-width:200px" placeholder="صف مشروع التحقيق أو أجب عن أسئلة المهندس…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();msArchitectSend();}"></textarea>
+                    <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectSend()">إرسال</button>
+                    <button type="button" class="ms-btn" id="msArchitectApplyBtn" onclick="msArchitectApply()" disabled>✔ اعتماد المجموعة</button>
+                    <button type="button" class="ms-btn" onclick="msArchitectReset()">مسح الحوار</button>
                 </div>
             </div>
         </div>
@@ -6742,25 +6776,25 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.710"></script>
-    <script src="/static/js/search.js?v=1.10.710"></script>
-    <script src="/static/js/reader.js?v=1.10.710"></script>
-    <script src="/static/js/force3d.js?v=1.10.710"></script>
-    <script src="/static/js/share.js?v=1.10.710"></script>
-    <script src="/static/js/chat.js?v=1.10.710"></script>
-    <script src="/static/js/documents.js?v=1.10.710"></script>
-    <script src="/static/js/designs.js?v=1.10.710"></script>
-    <script src="/static/js/texts.js?v=1.10.710"></script>
-    <script src="/static/js/agents.js?v=1.10.710"></script>
-    <script src="/static/js/providers.js?v=1.10.710"></script>
-    <script src="/static/js/tools.js?v=1.10.710"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.710"></script>
-    <script src="/static/js/projects.js?v=1.10.710"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.710"></script>
-    <script src="/static/js/archive.js?v=1.10.710"></script>
-    <script src="/static/js/compare.js?v=1.10.710"></script>
-    <script src="/static/js/local_models.js?v=1.10.710"></script>
-    <script src="/static/js/changelog.js?v=1.10.710"></script>
+    <script src="/static/js/app.js?v=1.10.711"></script>
+    <script src="/static/js/search.js?v=1.10.711"></script>
+    <script src="/static/js/reader.js?v=1.10.711"></script>
+    <script src="/static/js/force3d.js?v=1.10.711"></script>
+    <script src="/static/js/share.js?v=1.10.711"></script>
+    <script src="/static/js/chat.js?v=1.10.711"></script>
+    <script src="/static/js/documents.js?v=1.10.711"></script>
+    <script src="/static/js/designs.js?v=1.10.711"></script>
+    <script src="/static/js/texts.js?v=1.10.711"></script>
+    <script src="/static/js/agents.js?v=1.10.711"></script>
+    <script src="/static/js/providers.js?v=1.10.711"></script>
+    <script src="/static/js/tools.js?v=1.10.711"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.711"></script>
+    <script src="/static/js/projects.js?v=1.10.711"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.711"></script>
+    <script src="/static/js/archive.js?v=1.10.711"></script>
+    <script src="/static/js/compare.js?v=1.10.711"></script>
+    <script src="/static/js/local_models.js?v=1.10.711"></script>
+    <script src="/static/js/changelog.js?v=1.10.711"></script>
 
     <script>
         window.refreshLucideIcons = function () {

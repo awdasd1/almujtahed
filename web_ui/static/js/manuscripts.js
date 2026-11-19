@@ -11,6 +11,7 @@ let msModels = { primary: '', checker: '' };
 const MS_MODEL_CHOICES = [
   ['~google/gemini-pro-latest', 'Gemini Pro Latest — القارئ الأول المعتمد (دقة)'],
   ['google/gemini-4-carbon', 'Gemini Carbon — القارئ الثاني المعتمد (ثبت في اللوحات)'],
+  ['google/gemini-3.1-flash-lite', 'Gemini 3.1 Flash Lite — القارئ الثالث المعتمد (سريع اقتصادي)'],
   ['~google/gemini-flash-latest', 'Gemini Flash Latest — يرجع فارغًا غالبًا في اللوحات، لا يُعتمد قارئًا'],
   ['google/gemini-4-argon', 'Gemini 4 Argon — المدقق المعتمد'],
   ['google/gemini-3.1-pro-preview', 'Gemini 3.1 Pro — قوي قراءة للخطوط الصعبة (غالٍ بطيء)'],
@@ -23,8 +24,8 @@ const MS_MODEL_CHOICES = [
   ['anthropic/claude-sonnet-5', 'Claude Sonnet 5 — غالٍ'],
 ];
 const MS_MODEL_PRESETS = {
-  standard: { primary: '~google/gemini-pro-latest', checker: 'google/gemini-4-carbon', auditor: 'google/gemini-4-argon' },
-  hard: { primary: 'google/gemini-3.1-pro-preview', checker: 'anthropic/claude-sonnet-5.5', auditor: 'google/gemini-3.1-pro-preview' },
+  standard: { primary: '~google/gemini-pro-latest', checker: 'google/gemini-4-carbon', tertiary: 'google/gemini-3.1-flash-lite', auditor: 'google/gemini-4-argon' },
+  hard: { primary: 'google/gemini-3.1-pro-preview', checker: 'anthropic/claude-sonnet-5.5', tertiary: 'google/gemini-3.1-flash-lite', auditor: 'google/gemini-3.1-pro-preview' },
 };
 
 // نماذج القراءة من بطاقات القارئ الأول والثاني والمعتمِد في مجموعة
@@ -35,13 +36,15 @@ function msModelChoice() {
   return {
     primary: msGroupModel('reader1', std.primary),
     checker: msGroupModel('reader2', std.checker),
+    tertiary: msGroupModel('reader3', 'google/gemini-3.1-flash-lite'),
     auditor: msGroupModel('approver', std.auditor),
   };
 }
 
 function msFillModelSelects() {
   const choice = msModelChoice();
-  [['msPrimaryModel', choice.primary], ['msCheckerModel', choice.checker], ['msAuditorModel', choice.auditor]].forEach(([id, val]) => {
+  [['msPrimaryModel', choice.primary], ['msCheckerModel', choice.checker],
+   ['msTertiaryModel', choice.tertiary], ['msAuditorModel', choice.auditor]].forEach(([id, val]) => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const choices = MS_MODEL_CHOICES.some(([v]) => v === val)
@@ -54,15 +57,16 @@ function msFillModelSelects() {
 function msSaveModelChoice() {
   const primary = document.getElementById('msPrimaryModel')?.value;
   const checker = document.getElementById('msCheckerModel')?.value;
+  const tertiary = document.getElementById('msTertiaryModel')?.value || MS_READER3_MODEL;
   const auditor = document.getElementById('msAuditorModel')?.value;
   if (!(primary && checker && auditor)) return;
   if (!MS_GROUP) { msToast('مجموعة تحقيق المخطوطات غير محمّلة بعد — أعد فتح التبويب'); return; }
-  [['reader1', primary], ['reader2', checker], ['approver', auditor]].forEach(([key, model]) => {
+  [['reader1', primary], ['reader2', checker], ['reader3', tertiary], ['approver', auditor]].forEach(([key, model]) => {
     const a = msGroupAgent(key);
     if (a) a.model = model;
   });
   msSaveGroup();
-  msToast('حُفظ اختيار نماذج النسخ والتدقيق في بطاقات القارئ الأول والثاني والمعتمِد بالمجموعة');
+  msToast('حُفظ اختيار نماذج النسخ والتدقيق في بطاقات القرّاء الثلاثة والمعتمِد بالمجموعة');
 }
 
 function msPresetModels(name) {
@@ -1125,6 +1129,7 @@ async function msTranscribeFolio() {
       body: JSON.stringify({
         file_path: f.file_path, api_key: apiKey,
         primary_model: choice.primary, checker_model: choice.checker,
+        tertiary_model: choice.tertiary || MS_READER3_MODEL,
         auditor_model: choice.auditor,
       }),
     });
@@ -1132,20 +1137,25 @@ async function msTranscribeFolio() {
     if (!res.ok) throw new Error(data.detail || 'تعذر النسخ');
     const primary = data.primary || {};
     const checker = data.checker || {};
+    const tertiary = data.tertiary || {};
     const auditor = data.auditor || {};
     if (primary.error && checker.error) throw new Error(primary.error);
     if (!primary.text && !checker.text) throw new Error((primary.error || checker.error || 'لم يرجع القارئان نصًا'));
     f.primary_text = primary.text || '';
     f.checker_text = checker.text || '';
+    f.tertiary_text = tertiary.text || '';
     f.audited_text = auditor.text || '';
     f.audit_notes = auditor.notes || '';
     f.model_primary = primary.model || msModels.primary;
     f.model_checker = checker.model || msModels.checker;
+    f.model_tertiary = tertiary.model || choice.tertiary || MS_READER3_MODEL;
     f.model_auditor = auditor.model || choice.auditor;
     f.primary_seconds = primary.seconds;
     f.checker_seconds = checker.seconds;
+    f.tertiary_seconds = tertiary.seconds;
     f.auditor_seconds = auditor.seconds;
-    f.cost = (Number(primary.cost) || 0) + (Number(checker.cost) || 0) + (Number(auditor.cost) || 0);
+    f.cost = (Number(primary.cost) || 0) + (Number(checker.cost) || 0)
+      + (Number(tertiary.cost) || 0) + (Number(auditor.cost) || 0);
     f.disputes = data.disputes || [];
     f.agreement = data.agreement;
     f._view = 'audited';
@@ -1802,14 +1812,16 @@ async function msRetranscribeCrop() {
       const res = await fetch('/api/manuscripts/transcribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ file_path: upData.file_path, api_key: msApiKey(),
-          primary_model: choice.primary, checker_model: choice.checker, auditor_model: choice.auditor }),
+          primary_model: choice.primary, checker_model: choice.checker,
+          tertiary_model: choice.tertiary || MS_READER3_MODEL,
+          auditor_model: choice.auditor }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'تعذر نسخ الجزء');
       const aud = data.auditor || {};
       const pri = data.primary || {};
       txt = aud.text || pri.text || '';
-      meta = `قرأها الثلاثي: قارئ أول وثانٍ ومدقق · قصاصة مكبرة ×${MS_IMG.cropScale || 1}`;
+      meta = `قرأها أربعة: ثلاثة قرّاء ومدقق · قصاصة مكبرة ×${MS_IMG.cropScale || 1}`;
     }
     if (!txt) throw new Error('لم يرجع النموذج قراءة للجزء');
     document.getElementById('msCropResult').value = txt;
@@ -1862,15 +1874,18 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('resize', msSyncOverlay);
 });
 
-// ---------- مجموعة تحقيق المخطوطات المعتمدة ----------
-// مرجع واحد مضبوط للتحقيق الآلي والبشري: نماذج وكتب كل وكيل محفوظة في
-// نظام مجموعات الوكلاء نفسه، وتقرؤها خطوات التحقيق عند كل تشغيل.
-const MS_GROUP_ID = 'ms_tahqeeq_group_v1';
+// ---------- مجموعات تحقيق المخطوطات المعتمدة ----------
+// المجموعة الافتراضية ثابتة؛ والمحقق ينشئ مجموعات مخصّصة عبر مهندس التحقيق
+// كما في البحث الموسع، وتظهر كلها في قائمة «مجموعات الوكلاء المعتمدة».
+const MS_DEFAULT_GROUP_ID = 'ms_tahqeeq_group_v1';
+let MS_GROUP_ID = (typeof localStorage !== 'undefined' && localStorage.getItem('almujtahed_ms_active_group')) || MS_DEFAULT_GROUP_ID;
+let MS_GROUPS = [];
 const MS_GROUP_MODELS = [
   ['google/gemini-4-hydrogen', 'Gemini Hydrogen — مدير التحقيق'],
   ['meta/muse-wonder', 'Muse Wonder — المراقب'],
   ['google/gemini-4-carbon', 'Gemini Carbon — مساعد مدير التحقيق'],
   ['google/gemini-3.8-flash', 'Gemini 3.8 Flash — الوكلاء الباحثون والمخرّجون'],
+  ['google/gemini-3.1-flash-lite', 'Gemini 3.1 Flash Lite — القارئ الثالث'],
   ['~openai/gpt-luna-latest', 'GPT Luna'],
   ['google/gemini-4-argon', 'Google Argon'],
   ['~google/gemini-pro-latest', 'Gemini Pro Latest'],
@@ -1894,12 +1909,15 @@ const MS_ROSTER = {
   tafsir: 'google/gemini-3.8-flash',
   aqeedah: 'google/gemini-3.8-flash',
   authorworks: 'google/gemini-3.8-flash',
+  reader3: 'google/gemini-3.1-flash-lite',
 };
+const MS_READER3_MODEL = 'google/gemini-3.1-flash-lite';
 const MS_GROUP_DEFAULT_AGENTS = [
   { key: 'leader', name: 'مدير التحقيق — المحقق القائد والمدقق', desc: 'مدير التحقيق (Gemini Hydrogen): يستلم النسخة الجاهزة، يستشير مجلس المستشارين، يعتمد خطة البحث ويحذف حشوها، يشغّل الباحثين، ويعتمد النص المحقق نهائيًا. ويحسم مواضع خلاف المرحلة الأولى ويقود النقاش والتصحيحات', model: 'google/gemini-4-hydrogen', books: [], stage: 2 },
   { key: 'assistant', name: 'مساعد مدير التحقيق', desc: 'المساعد التنفيذي لمدير التحقيق (Gemini Carbon): يشغّل جولات الباحثين والمسح والموازاة والرقابة المساعدة بأمر المدير وتحت مراجعته واعتماده', model: 'google/gemini-4-carbon', books: [], stage: 2 },
   { key: 'reader1', name: 'القارئ الأول — ناسخ اللوحات الأول', desc: 'يقرأ صور لوحات المخطوط قراءة أولى كاملة مستقلة: ينقل المتن كما هو بلا تصحيح ولا إكمال من عنده، وينبّه على مواضع الشك والسقط والإلحاق. نموذجه هنا هو المعتمد لقراءة اللوحات الأولى في المرحلة الأولى آليًا وبشريًا، فبدّله إن أردت قارئًا أقوى', model: '~google/gemini-pro-latest', books: [], stage: 1 },
   { key: 'reader2', name: 'القارئ الثاني — ناسخ اللوحات المقابِل', desc: 'يقرأ صور لوحات المخطوط قراءة ثانية مستقلة تمامًا عن الأولى لتُقابَل القراءتان ويظهر اختلافهما موضعًا موضعًا فيحسمه المدقق والمحقق. نموذجه هنا هو المعتمد للقراءة الثانية في المرحلة الأولى آليًا وبشريًا', model: 'google/gemini-4-carbon', books: [], stage: 1 },
+  { key: 'reader3', name: 'القارئ الثالث — ناسخ اللوحات المكمّل', desc: 'قراءة ثالثة مستقلة سريعة اقتصادية (Gemini 3.1 Flash Lite): تُضاف دائمًا إلى القارئين لتكثير الشواهد على اللوحة وتضييق مواضع الشك قبل حسم المعتمِد والمدير', model: 'google/gemini-3.1-flash-lite', books: [], stage: 1 },
   { key: 'approver', name: 'المعتمِد — قارئ الصور وحَكم الجودة', desc: 'يدقق صور اللوحات ويعتمد النسخ ويحسم من الصورة بنموذج المدير (Gemini Hydrogen)', model: 'google/gemini-4-hydrogen', books: [], stage: 1 },
   { key: 'monitor', name: 'المراقب — مدقق الجودة الشامل', desc: 'المراقب (Muse Wonder): رقابة الجودة الشاملة على النص المحقق وهوامشه وملاحظات الاعتماد، يدوّن ملاحظاته ولا يحسم ولا يعدّل بنفسه', model: 'meta/muse-wonder', books: [], stage: 2 },
   { key: 'advisor_sonnet', name: 'عضو مجلس المستشارين — Sonnet', desc: 'مجلس مستشاري المرحلة الثانية: تصله النسخة الجاهزة كاملة استقلالًا فيحللها وينشئ مراسي التحقيق ويقترح أمهات الكتب — تحليل ومظان ومراسٍ فقط، لا تحقيق ولا أحكام', model: '~anthropic/claude-sonnet-latest', books: [], stage: 2, advisor: true },
@@ -1939,6 +1957,7 @@ const MS_AGENT_PROMPTS = {
   reader2: `أنت القارئ الثاني، ناسخ لوحات المخطوط قراءةً ثانية مستقلة استقلالًا تامًا عن القراءة الأولى، ولا يصلك منها شيء؛ فغاية عملك أن تُقابَل قراءتك بالأولى فيظهر اختلاف القراءتين موضعًا موضعًا.
 منهج النقل: (١) انقل المتن حرفيًا كما تراه في الصورة برسمه وإعجامه، بلا تصحيح ولا إكمال من ذاكرة ولا من مطبوع؛ فأنت شاهد ثانٍ لا محقق. (٢) ما التبس فوسمه بعلامة شك مع قراءة محتملة بين معقوفين وسبب الالتباس؛ والوسم الصادق خير من قراءة واثقة بلا بينة. (٣) فرّق طبقات اللوحة (متن، حاشية، إلحاق، تصحيح ناسخ) وانقل كل طبقة موسومة. (٤) انتبه خاصة لما يقع فيه الناسخون: تقديم وتأخير، وسقط بعين (تشابه طرفي جملتين)، وتصحيف حروف متقاربة — انقل الواقع كما هو ونبّه على احتمال التصحيف بوسم لا بتعديل.
 مخرجاتك: النص المنقول كاملًا بوسومه، وقائمة مواضع الشك. محظور عليك: أي تعليق علمي (تخريج أو شرح أو ترجمة) وأي اطلاع مقصود على قراءة غيرك.`,
+  reader3: `أنت القارئ الثالث، ناسخ لوحات المخطوط قراءةً ثالثة مستقلة تمامًا عن القراءتين الأوليين؛ وظيفتك تكثير الشواهد على اللوحة لا التحقيق. انقل المتن حرفيًا كما تراه بلا تصحيح ولا إكمال من ذاكرة ولا من مطبوع، ووسم ما التبس بعلامة شك مع قراءة محتملة بين معقوفين وسبب الالتباس، وفرّق طبقات اللوحة (متن/حاشية/إلحاق). مخرجاتك: النص المنقول بوسومه وقائمة مواضع الشك. محظور عليك: أي تعليق علمي وأي اطلاع على قراءة غيرك.`,
   approver: `أنت المعتمِد، قارئ صور اللوحات وحَكَم الجودة في المرحلة الأولى: إليك تنتهي القراءتان ومواضع اختلافهما، فتعود إلى صورة اللوحة نفسها وتحسم منها، لا من ترجيح ذوقي ولا من كتب مطبوعة.
 منهج الحسم: (١) كل موضع خلاف يُقضى فيه بما في الصورة حرفيًا: انقل الحروف المختلف فيها كما تراها، وبيّن قرينة الحسم (وضوح الرسم، إعجام ظاهر، سياق سطر، علامة ناسخ). (٢) ما لم تحسمه الصورة لطمس أو قصور تصوير فأعلنه «غير محسوم من الصورة» وأبقه للمحقق، ولا ترجّح تخمينًا. (٣) تعتمد النسخة الجاهزة أو تردّها بعلل مكتوبة موضعًا موضعًا إن تجاوزت العيوب حدّ القبول (سقط أسطر، خلط طبقات، قراءات مخترعة). (٤) تلاحظ سلامة نقل الطبقات: حاشية دخلت المتن أو إلحاق أُهمل عيبٌ يُدوَّن ولو صحّت الحروف.
 مخرجاتك: قائمة مواضع الخلاف بقضاء كل موضع وشاهده من الصورة، ثم حكم الجودة (اعتماد/ردّ معلل). محظور عليك: التعليق العلمي على المتن (تخريج وشرح وتراجم) وإكمال نقص اللوحة من أي مصدر خارجها.`,
@@ -1994,80 +2013,120 @@ const MS_GROUP_BOOK_UPGRADES = {
 let MS_GROUP = null;
 let MS_GROUP_PICK_KEY = null;
 
+function msIsManuscriptsGroup(g) {
+  if (!g) return false;
+  if (g.ms_kind === 'manuscripts') return true;
+  if (g.id === MS_DEFAULT_GROUP_ID) return true;
+  return /^ms_tahqeeq|^ms_invest/i.test(String(g.id || ''));
+}
+
+function msMigrateGroup(g) {
+  if (!g) return false;
+  let changed = false;
+  if (!g.ms_kind) { g.ms_kind = 'manuscripts'; changed = true; }
+  if (g.name === 'مجموعة تحقيق المخطوطات') { g.name = 'تحقيق المخطوطات'; changed = true; }
+  (g.agents || []).forEach(a => {
+    if (a.ms_key === 'advisor_astra' || /astra/i.test(String(a.model || '')) || /Astra/.test(String(a.name || ''))) {
+      a.ms_key = 'advisor_argon'; a.id = (g.id === MS_DEFAULT_GROUP_ID ? 'msag_advisor_argon' : (a.id || 'msag_advisor_argon'));
+      a.name = 'عضو مجلس المستشارين — Gemini Argon'; a.model = 'google/gemini-4-argon';
+      changed = true;
+    }
+    if (['ayat', 'hadith', 'tarajim', 'lugha', 'tafsir', 'aqeedah', 'authorworks'].includes(a.ms_key)
+        && a.model === '~openai/gpt-luna-latest') { a.model = 'google/gemini-4-carbon'; changed = true; }
+  });
+  if (!g.roster_v1) {
+    (g.agents || []).forEach(a => {
+      const rosterModel = MS_ROSTER[a.ms_key];
+      if (rosterModel) a.model = rosterModel;
+    });
+    g.roster_v1 = true;
+    changed = true;
+  }
+  g.agents = g.agents || [];
+  MS_GROUP_DEFAULT_AGENTS.forEach(d => {
+    if (!g.agents.some(a => a.ms_key === d.key)) {
+      const prefix = g.id === MS_DEFAULT_GROUP_ID ? 'msag_' : (`${g.id}_`);
+      g.agents.push({
+        id: prefix + d.key, ms_key: d.key, name: d.name, desc: d.desc, model: d.model,
+        enabled: true, active: true, role: d.key === 'leader' ? 'director' : 'agent',
+        is_director: d.key === 'leader', books: [...d.books], booksScope: [...d.books],
+        scope_summary: d.desc, system_prompt: MS_AGENT_PROMPTS[d.key] || d.desc,
+        systemPrompt: MS_AGENT_PROMPTS[d.key] || d.desc, stage: d.stage || 2, advisor: !!d.advisor,
+      });
+      changed = true;
+    }
+  });
+  // القارئ الثالث إلزامي بنموذج Flash Lite في كل مجموعة تحقيق
+  const r3 = g.agents.find(a => a.ms_key === 'reader3');
+  if (r3 && r3.model !== MS_READER3_MODEL && !g.reader3_locked_by_user) {
+    r3.model = MS_READER3_MODEL;
+    changed = true;
+  }
+  Object.entries(MS_GROUP_BOOK_UPGRADES).forEach(([key, titles]) => {
+    const a = (g.agents || []).find(x => x.ms_key === key);
+    if (!a) return;
+    a.books = a.books || [];
+    titles.forEach(t => { if (!a.books.includes(t)) { a.books.push(t); changed = true; } });
+    a.booksScope = [...a.books];
+  });
+  if (!g.ms_prompts_v2) {
+    (g.agents || []).forEach(a => {
+      const full = MS_AGENT_PROMPTS[a.ms_key];
+      if (!full) return;
+      const cur = a.systemPrompt || a.system_prompt || '';
+      if (cur.length < 400 || cur === (a.desc || '')) {
+        a.system_prompt = full; a.systemPrompt = full; changed = true;
+      }
+    });
+    g.ms_prompts_v2 = true;
+    changed = true;
+  }
+  const orderOf = k => { const i = MS_GROUP_DEFAULT_AGENTS.findIndex(d => d.key === k); return i < 0 ? 999 : i; };
+  const sortedAgents = [...g.agents].sort((x, y) => orderOf(x.ms_key) - orderOf(y.ms_key));
+  if (sortedAgents.some((a, i) => a !== g.agents[i])) { g.agents = sortedAgents; changed = true; }
+  return changed;
+}
+
 async function msLoadGroup() {
+  let all = [];
   try {
     const res = await fetch('/api/agent-groups');
-    const gs = await res.json().catch(() => []);
-    MS_GROUP = (Array.isArray(gs) ? gs : []).find(g => g.id === MS_GROUP_ID) || null;
-  } catch (e) { MS_GROUP = null; }
-  if (MS_GROUP) {
-    // هجرة غير مدمّرة: استكمال وكلاء المرحلة الثانية الجدد وكتب التخريج المختصر
-    // في المجموعة القائمة، بلا مساس بنماذج المحقق وكتبه المضبوطة بيده
-    let changed = false;
-    if (MS_GROUP.name === 'مجموعة تحقيق المخطوطات') { MS_GROUP.name = 'تحقيق المخطوطات'; changed = true; }
-    // استبعاد Astra Pro من المجلس لغلائه واستبدال Gemini Argon به، ومساعد المدير Gemini Carbon
-    (MS_GROUP.agents || []).forEach(a => {
-      if (a.ms_key === 'advisor_astra' || /astra/i.test(String(a.model || '')) || /Astra/.test(String(a.name || ''))) {
-        a.ms_key = 'advisor_argon'; a.id = 'msag_advisor_argon';
-        a.name = 'عضو مجلس المستشارين — Gemini Argon'; a.model = 'google/gemini-4-argon';
-        changed = true;
-      }
-      if (['ayat', 'hadith', 'tarajim', 'lugha', 'tafsir', 'aqeedah', 'authorworks'].includes(a.ms_key)
-          && a.model === '~openai/gpt-luna-latest') { a.model = 'google/gemini-4-carbon'; changed = true; }
-    });
-    // توزيع النماذج المعتمد يُبذر مرة واحدة فقط (roster_v1)؛ بعدها ضبط
-    // المحقق بيده — من تبويب الوكلاء أو من هنا — هو المعتمد ولا يُمسّ
-    if (!MS_GROUP.roster_v1) {
-      (MS_GROUP.agents || []).forEach(a => {
-        const rosterModel = MS_ROSTER[a.ms_key];
-        if (rosterModel) a.model = rosterModel;
-      });
-      MS_GROUP.roster_v1 = true;
-      changed = true;
+    all = await res.json().catch(() => []);
+    if (!Array.isArray(all)) all = [];
+  } catch (e) { all = []; }
+  MS_GROUPS = all.filter(msIsManuscriptsGroup);
+  let changedAny = false;
+  for (const g of MS_GROUPS) {
+    if (msMigrateGroup(g)) {
+      try {
+        await fetch('/api/agent-groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(g) });
+        changedAny = true;
+      } catch (e) { /* يعاد لاحقًا */ }
     }
-    MS_GROUP.agents = MS_GROUP.agents || [];
-    MS_GROUP_DEFAULT_AGENTS.forEach(d => {
-      if (!MS_GROUP.agents.some(a => a.ms_key === d.key)) {
-        MS_GROUP.agents.push({
-          id: 'msag_' + d.key, ms_key: d.key, name: d.name, desc: d.desc, model: d.model,
-          enabled: true, active: true, role: d.key === 'leader' ? 'director' : 'agent',
-          is_director: d.key === 'leader', books: [...d.books], booksScope: [...d.books],
-          scope_summary: d.desc, system_prompt: MS_AGENT_PROMPTS[d.key] || d.desc,
-          systemPrompt: MS_AGENT_PROMPTS[d.key] || d.desc, stage: d.stage || 2, advisor: !!d.advisor,
-        });
-        changed = true;
-      }
-    });
-    Object.entries(MS_GROUP_BOOK_UPGRADES).forEach(([key, titles]) => {
-      const a = msGroupAgent(key);
-      if (!a) return;
-      a.books = a.books || [];
-      titles.forEach(t => { if (!a.books.includes(t)) { a.books.push(t); changed = true; } });
-      a.booksScope = [...a.books];
-    });
-    // التوجيه الأكاديمي الكامل يُبذر مرة واحدة (ms_prompts_v2): من كان توجيهه
-    // هو الوصف المختصر نفسه أو أقصر من توجيه محرر يستلمه؛ ومن كتب توجيهًا أطول بيده لا يُمسّ
-    if (!MS_GROUP.ms_prompts_v2) {
-      (MS_GROUP.agents || []).forEach(a => {
-        const full = MS_AGENT_PROMPTS[a.ms_key];
-        if (!full) return;
-        const cur = a.systemPrompt || a.system_prompt || '';
-        if (cur.length < 400 || cur === (a.desc || '')) {
-          a.system_prompt = full; a.systemPrompt = full; changed = true;
-        }
-      });
-      MS_GROUP.ms_prompts_v2 = true;
-      changed = true;
-    }
-    // ترتيب العرض المعتمد: القارئ الأول والثاني قبل المعتمِد، وسائر الوكلاء بترتيب تعريفهم
-    const orderOf = k => { const i = MS_GROUP_DEFAULT_AGENTS.findIndex(d => d.key === k); return i < 0 ? 999 : i; };
-    const sortedAgents = [...MS_GROUP.agents].sort((x, y) => orderOf(x.ms_key) - orderOf(y.ms_key));
-    if (sortedAgents.some((a, i) => a !== MS_GROUP.agents[i])) { MS_GROUP.agents = sortedAgents; changed = true; }
-    if (changed) { msSaveGroup(); msToast('حُدّثت «مجموعة تحقيق المخطوطات» ببنية المرحلتين: مجلس مستشارين ووكيلا تفسير وعقيدة وكتب التخريج المختصر — ضبطك القائم محفوظ'); }
+  }
+  if (!MS_GROUPS.some(g => g.id === MS_DEFAULT_GROUP_ID)) {
+    MS_GROUP = null;
+  }
+  const stored = localStorage.getItem('almujtahed_ms_active_group') || MS_DEFAULT_GROUP_ID;
+  MS_GROUP_ID = MS_GROUPS.some(g => g.id === stored) ? stored : (MS_GROUPS[0]?.id || MS_DEFAULT_GROUP_ID);
+  localStorage.setItem('almujtahed_ms_active_group', MS_GROUP_ID);
+  MS_GROUP = MS_GROUPS.find(g => g.id === MS_GROUP_ID) || null;
+  if (changedAny && MS_GROUP) {
+    msToast('حُدّثت مجموعات تحقيق المخطوطات (قارئ ثالث Flash Lite وبنية المرحلتين) — ضبطك القائم محفوظ');
   }
   renderMsGroup();
   msApplyGroupModelDefaults();
   return MS_GROUP;
+}
+
+function msSetActiveGroup(id) {
+  if (!id || !MS_GROUPS.some(g => g.id === id)) return;
+  MS_GROUP_ID = id;
+  localStorage.setItem('almujtahed_ms_active_group', id);
+  MS_GROUP = MS_GROUPS.find(g => g.id === id) || null;
+  renderMsGroup();
+  msApplyGroupModelDefaults();
+  msToast(`المجموعة النشطة للتحقيق: «${MS_GROUP?.name || id}»`);
 }
 
 // نماذج التشغيل البشري الافتراضية تُضبط من المجموعة المعتمدة (والمحقق يبدلها بيده إن شاء)
@@ -2083,6 +2142,7 @@ function msApplyGroupModelDefaults() {
   set('msMonitorModel', 'monitor');
   set('msPrimaryModel', 'reader1');
   set('msCheckerModel', 'reader2');
+  set('msTertiaryModel', 'reader3');
   set('msAuditorModel', 'approver');
 }
 
@@ -2096,8 +2156,8 @@ function msGroupBookTitles(key) {
 
 function msBuildGroup() {
   return {
-    id: MS_GROUP_ID, name: 'تحقيق المخطوطات',
-    desc: 'فريق تحقيق المخطوطات على مرحلتين: المرحلة الأولى قراءة النص ومقابلة النسخ وتدقيقها، والمرحلة الثانية تحقيق النص بمدير تحقيق ومجلس مستشارين ووكيل ذهبي مؤقت لكل مخطوط ومتخصصين مختصرين (تخريج، لغة وأشعار، سير وتراجم، تفسير، عقيدة) بنماذج وكتب مضبوطة من الشاملة.',
+    id: MS_DEFAULT_GROUP_ID, name: 'تحقيق المخطوطات',
+    desc: 'فريق تحقيق المخطوطات على مرحلتين: المرحلة الأولى قراءة النص ومقابلة النسخ وتدقيقها (ثلاثة قرّاء مستقلون منهم Flash Lite)، والمرحلة الثانية تحقيق النص بمدير تحقيق ومجلس مستشارين ووكيل ذهبي مؤقت لكل مخطوط ومتخصصين مختصرين (تخريج، لغة وأشعار، سير وتراجم، تفسير، عقيدة) بنماذج وكتب مضبوطة من الشاملة.',
     ms_kind: 'manuscripts',
     agents: MS_GROUP_DEFAULT_AGENTS.map(d => ({
       id: 'msag_' + d.key, ms_key: d.key, name: d.name, desc: d.desc, model: d.model,
@@ -2110,14 +2170,24 @@ function msBuildGroup() {
 }
 
 async function msSeedGroup(force) {
-  if (MS_GROUP && !force) { renderMsGroup(); return; }
-  if (force && !confirm('إعادة ضبط مجموعة تحقيق المخطوطات إلى الضبط الافتراضي؟ ستفقد تعديلات النماذج والكتب التي ضبطتها.')) return;
+  const existingDefault = MS_GROUPS.find(g => g.id === MS_DEFAULT_GROUP_ID);
+  if (existingDefault && !force) {
+    msSetActiveGroup(MS_DEFAULT_GROUP_ID);
+    return;
+  }
+  if (force && !confirm('إعادة ضبط مجموعة تحقيق المخطوطات الافتراضية؟ ستفقد تعديلات النماذج والكتب التي ضبطتها على هذه المجموعة.')) return;
   const g = msBuildGroup();
   try {
     const res = await fetch('/api/agent-groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(g) });
     if (!res.ok) throw new Error('حفظ');
-    MS_GROUP = g; renderMsGroup();
-    msToast('اعتمدت «مجموعة تحقيق المخطوطات» مرجعًا للتحقيق الآلي والبشري بنماذجها وكتبها');
+    const idx = MS_GROUPS.findIndex(x => x.id === g.id);
+    if (idx >= 0) MS_GROUPS[idx] = g; else MS_GROUPS.unshift(g);
+    if (window.agentGroups) {
+      const wi = window.agentGroups.findIndex(x => x.id === g.id);
+      if (wi >= 0) window.agentGroups[wi] = g; else window.agentGroups.unshift(g);
+    }
+    msSetActiveGroup(g.id);
+    msToast('اعتمدت «تحقيق المخطوطات» مجموعةً افتراضية بثلاثة قرّاء وبنية المرحلتين');
   } catch (e) { msToast('تعذر حفظ المجموعة المعتمدة'); }
 }
 
@@ -2246,33 +2316,268 @@ function msSyncGroupFromEditor(scrollY) {
   const live = (window.agentGroups || []).find(g => g.id === MS_GROUP_ID);
   if (live) {
     MS_GROUP = live;
+    const gi = MS_GROUPS.findIndex(g => g.id === MS_GROUP_ID);
+    if (gi >= 0) MS_GROUPS[gi] = live;
     renderMsGroup();
     msApplyGroupModelDefaults();
   }
   requestAnimationFrame(() => window.scrollTo(0, scrollY || 0));
 }
 
+// ---------- مهندس مجموعات تحقيق المخطوطات ----------
+let msArchitectHistory = [];
+let msArchitectBlueprint = null;
+let msArchitectBusy = false;
+
+function msArchitectOpen() {
+  const modal = document.getElementById('msArchitectModal');
+  if (!modal) { msToast('نافذة مهندس التحقيق غير متاحة'); return; }
+  if (!msArchitectHistory.length) {
+    const activeName = MS_GROUP?.name || 'تحقيق المخطوطات';
+    msArchitectHistory = [{
+      role: 'assistant',
+      content: `مرحبًا بك في **استوديو هندسة مجموعات تحقيق المخطوطات**.\n\nالمجموعة النشطة الآن: «**${activeName}**» — هيكلها ثابت (مدير، مساعد، ثلاثة قرّاء منهم Flash Lite، معتمِد، مراقب، مجلس مستشارين، ومتخصصون).\n\nسأسألك عن مشروع تحقيقك: الفن (فقه/عقيدة/تفسير…)، حدود التراجم، اللغة، تخريج الأحاديث، وأسلوب الحاشية؛ ثم أنشئ لك مجموعة تحقيق خاصة تظهر في قائمة المجموعات المعتمدة.\n\nما مشروع التحقيق الذي تريد ضبط مجموعته؟`,
+    }];
+  }
+  msArchitectRender();
+  modal.hidden = false;
+}
+
+function msArchitectClose() {
+  const modal = document.getElementById('msArchitectModal');
+  if (modal) modal.hidden = true;
+}
+
+function msArchitectExtractChoices(content) {
+  const m = String(content || '').match(/```choices\s*([\s\S]*?)```/i);
+  if (!m) return [];
+  try {
+    const parsed = JSON.parse(m[1].trim());
+    return Array.isArray(parsed?.questions) ? parsed.questions : [];
+  } catch (e) { return []; }
+}
+
+function msArchitectChoicesHtml(questions, index) {
+  if (!questions.length) return '';
+  return `<div class="architect-choices" id="msArchitectChoices${index}">
+    ${questions.map((q, qi) => `
+      <div class="architect-choice-q" data-prompt="${msEsc(q.prompt || '')}">
+        <div style="font-weight:600;margin-bottom:4px">${msEsc(q.prompt || '')}</div>
+        ${(q.options || []).map(opt => `
+          <label class="architect-choice-option">
+            <input type="${q.multiple ? 'checkbox' : 'radio'}" name="msArchQ${index}_${qi}" value="${msEsc(String(opt))}">
+            ${msEsc(String(opt))}
+          </label>`).join('')}
+      </div>`).join('')}
+    <label class="architect-choice-extra">إضافة<textarea rows="2" placeholder="تفصيل إضافي (اختياري)"></textarea></label>
+    <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectSubmitChoices(${index})">إرسال الإجابات</button>
+  </div>`;
+}
+
+function msArchitectSubmitChoices(index) {
+  const root = document.getElementById(`msArchitectChoices${index}`);
+  const input = document.getElementById('msArchitectInput');
+  if (!root || !input) return;
+  const lines = [...root.querySelectorAll('.architect-choice-q')].map(block => {
+    const prompt = block.dataset.prompt || '';
+    const selected = [...block.querySelectorAll('input:checked')].map(i => i.value);
+    return selected.length ? `${prompt}: ${selected.join('، ')}` : '';
+  }).filter(Boolean);
+  const extra = root.querySelector('.architect-choice-extra textarea')?.value?.trim();
+  if (extra) lines.push(extra);
+  if (!lines.length) { msToast('اختر خيارًا واحدًا على الأقل'); return; }
+  input.value = lines.join('\n');
+  msArchitectSend();
+}
+
+function msArchitectRender() {
+  const box = document.getElementById('msArchitectChat');
+  if (!box) return;
+  const lastAsst = msArchitectHistory.reduce((f, m, i) => m.role === 'assistant' ? i : f, -1);
+  box.innerHTML = msArchitectHistory.map((m, i) => {
+    const isUser = m.role === 'user';
+    const raw = String(m.content || '');
+    const shown = raw.replace(/```choices[\s\S]*?```/gi, '').replace(/```json[\s\S]*?```/gi, '').trim();
+    const choices = (!isUser && i === lastAsst) ? msArchitectChoicesHtml(msArchitectExtractChoices(raw), i) : '';
+    return `<div class="studio-msg ${isUser ? 'user' : 'architect'}">
+      <div class="studio-bubble">${isUser ? msEsc(shown).replace(/\n/g, '<br>') : (typeof marked !== 'undefined' ? marked.parse(shown) : msEsc(shown).replace(/\n/g, '<br>'))}</div>
+      ${choices}
+    </div>`;
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+  const applyBtn = document.getElementById('msArchitectApplyBtn');
+  if (applyBtn) applyBtn.disabled = !msArchitectBlueprint?.subagents_group?.agents?.length;
+  const status = document.getElementById('msArchitectStatus');
+  if (status) {
+    status.textContent = msArchitectBlueprint?.subagents_group?.name
+      ? `مخطط جاهز: «${msArchitectBlueprint.subagents_group.name}» — اضغط اعتماد المجموعة`
+      : 'حاور المهندس حتى يكتمل مخطط المجموعة';
+  }
+}
+
+async function msArchitectSend() {
+  if (msArchitectBusy) return;
+  const input = document.getElementById('msArchitectInput');
+  const text = (input?.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  msArchitectHistory.push({ role: 'user', content: text });
+  msArchitectRender();
+  msArchitectBusy = true;
+  const wait = document.createElement('div');
+  wait.className = 'studio-msg architect';
+  wait.id = 'msArchitectWait';
+  wait.innerHTML = '<div class="studio-bubble">مهندس التحقيق يضبط حدود مجموعتك…</div>';
+  document.getElementById('msArchitectChat')?.appendChild(wait);
+  try {
+    let apiKey = '';
+    try {
+      const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+      apiKey = keys.openrouter || '';
+    } catch (e) { /* مفتاح الخادم */ }
+    const res = await fetch('/api/projects/architect-dialog', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: msArchitectHistory,
+        planning_model: document.getElementById('msArchitectModel')?.value || 'google/gemini-2.5-flash',
+        thinking_level: document.getElementById('msArchitectThinking')?.value || 'medium',
+        domain: 'manuscripts',
+        api_key: apiKey,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    document.getElementById('msArchitectWait')?.remove();
+    if (!res.ok || data.status === 'error') throw new Error(data.message || data.detail || 'تعذر استدعاء المهندس');
+    if (data.reply) msArchitectHistory.push({ role: 'assistant', content: data.reply });
+    if (data.blueprint) msArchitectBlueprint = data.blueprint;
+    msArchitectRender();
+  } catch (e) {
+    document.getElementById('msArchitectWait')?.remove();
+    msToast('خطأ مهندس التحقيق: ' + e.message, 6000);
+  } finally {
+    msArchitectBusy = false;
+  }
+}
+
+async function msArchitectApply() {
+  const bp = msArchitectBlueprint;
+  if (!bp?.subagents_group?.agents?.length) {
+    msToast('لا مخطط جاهز بعد — أكمل الحوار مع المهندس');
+    return;
+  }
+  const gid = 'ms_invest_' + Date.now().toString(36);
+  const profile = bp.investigation_profile || {};
+  const byKey = {};
+  (bp.subagents_group.agents || []).forEach(ag => {
+    const key = ag.ms_key || ag.key;
+    if (key) byKey[key] = ag;
+  });
+  if (bp.director) {
+    byKey.leader = { ...(byKey.leader || {}), ...bp.director, ms_key: 'leader',
+      system_prompt: bp.director.system_prompt || byKey.leader?.system_prompt };
+  }
+  // ابنِ من الهيكل الثابت مع تخصيص المهندس؛ القارئ الثالث دائمًا Flash Lite
+  const agents = MS_GROUP_DEFAULT_AGENTS.map(d => {
+    const custom = byKey[d.key] || {};
+    const prompt = custom.system_prompt || custom.systemPrompt || MS_AGENT_PROMPTS[d.key] || d.desc;
+    let model = custom.model || d.model;
+    if (d.key === 'reader3') model = MS_READER3_MODEL;
+    const books = Array.isArray(custom.books) ? custom.books.map(b => String(b).replace(/^#\d+\s*/, '').trim() || b) : [...d.books];
+    return {
+      id: `${gid}_${d.key}`, ms_key: d.key, name: custom.name || d.name,
+      desc: custom.desc || d.desc, model, enabled: true, active: true,
+      role: d.key === 'leader' ? 'director' : (custom.role || 'agent'),
+      is_director: d.key === 'leader', books, booksScope: [...books],
+      scope_summary: custom.desc || d.desc, system_prompt: prompt, systemPrompt: prompt,
+      stage: custom.stage || d.stage || 2, advisor: !!d.advisor,
+      thinking: custom.thinking || 'medium',
+    };
+  });
+  // أضف أي وكيل إضافي من المخطط (أدوات/خطة) بلا تكرار ms_key
+  (bp.subagents_group.agents || []).forEach((ag, i) => {
+    const key = ag.ms_key || ag.key;
+    if (key && agents.some(a => a.ms_key === key)) return;
+    if (ag.role === 'tools_manager' || ag.kind === 'tools_manager' || ag.kind === 'planner' || ag.role === 'planner') {
+      agents.push({
+        id: `${gid}_extra_${i}`, ms_key: ag.role || ag.kind || `extra_${i}`,
+        name: ag.name || 'وكيل إضافي', desc: ag.desc || '', model: ag.model || 'google/gemini-3.8-flash',
+        enabled: true, active: true, role: ag.role || ag.kind || '', books: ag.books || [],
+        booksScope: ag.books || [], system_prompt: ag.system_prompt || ag.systemPrompt || '',
+        systemPrompt: ag.system_prompt || ag.systemPrompt || '', stage: 2,
+      });
+    }
+  });
+  const g = {
+    id: gid,
+    name: bp.subagents_group.name || bp.title || 'مجموعة تحقيق مخصّصة',
+    desc: bp.subagents_group.desc || bp.desc || '',
+    ms_kind: 'manuscripts',
+    investigation_profile: profile,
+    agents,
+  };
+  try {
+    const res = await fetch('/api/agent-groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(g) });
+    if (!res.ok) throw new Error('حفظ المجموعة');
+    MS_GROUPS.unshift(g);
+    if (window.agentGroups) {
+      window.agentGroups.unshift(g);
+      if (typeof saveAgentGroups === 'function') saveAgentGroups(window.agentGroups);
+    }
+    msSetActiveGroup(gid);
+    msArchitectClose();
+    msToast(`✔ اعتُمدت مجموعة التحقيق «${g.name}» وصارت النشطة — بثلاثة قرّاء وFlash Lite`);
+  } catch (e) {
+    msToast('تعذر اعتماد المجموعة: ' + e.message);
+  }
+}
+
+function msArchitectReset() {
+  if (!confirm('مسح حوار المهندس والمخطط الحالي؟')) return;
+  msArchitectHistory = [];
+  msArchitectBlueprint = null;
+  msArchitectOpen();
+}
+
 function renderMsGroup() {
   const box = document.getElementById('msGroupBody');
   if (!box) return;
+  const selectHtml = MS_GROUPS.length
+    ? `<div class="ms-form-row" style="align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <label class="ms-model-label" style="flex:1;min-width:220px">مجموعة التحقيق النشطة
+          <select id="msActiveGroupSelect" onchange="msSetActiveGroup(this.value)">
+            ${MS_GROUPS.map(g => `<option value="${msEsc(g.id)}"${g.id === MS_GROUP_ID ? ' selected' : ''}>${msEsc(g.name || g.id)}${g.id === MS_DEFAULT_GROUP_ID ? ' (افتراضية)' : ''}</option>`).join('')}
+          </select>
+        </label>
+        <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectOpen()">🧭 مهندس مجموعة تحقيق جديدة</button>
+      </div>`
+    : '';
   if (!MS_GROUP) {
-    box.innerHTML = `<div class="ms-hint">لم تُنشأ المجموعة المعتمدة بعد. أنشئها لتكون مرجع التحقيق بمرحلتيه: مدير تحقيق ومجلس مستشارين (٣) ومعتمِد صور وجودة ومتخصصون مختصرون (آيات، تخريج، سير وتراجم، لغة وأشعار، تفسير، عقيدة، ترجمة مؤلف، مقارنة بمؤلفات المؤلف)، لكلٍّ نموذجه وكتبه المعتمدة من الشاملة.</div>
-      <div class="ms-form-row"><button type="button" class="ms-btn ms-btn-primary" onclick="msSeedGroup(false)">⭐ إنشاء واعتماد مجموعة تحقيق المخطوطات</button></div>`;
+    box.innerHTML = `${selectHtml}
+      <div class="ms-hint">لم تُنشأ المجموعة الافتراضية بعد. أنشئها لتكون مرجع التحقيق بمرحلتيه، أو حاور مهندس التحقيق لإنشاء مجموعة مخصّصة بحدود مشروعك (فن التحقيق، التراجم، التخريج، الحاشية…).</div>
+      <div class="ms-form-row">
+        <button type="button" class="ms-btn ms-btn-primary" onclick="msSeedGroup(false)">⭐ إنشاء واعتماد مجموعة تحقيق المخطوطات الافتراضية</button>
+        <button type="button" class="ms-btn" onclick="msArchitectOpen()">🧭 مهندس مجموعة تحقيق</button>
+      </div>`;
     return;
   }
+  const isDefault = MS_GROUP.id === MS_DEFAULT_GROUP_ID;
   box.innerHTML = `
-    <div class="ms-hint" style="margin-bottom:8px">هذه المجموعة — <strong>«تحقيق المخطوطات»</strong> في قسم الوكلاء — هي <strong>المرجع المعتمد لمرحلتي التحقيق</strong>، وهي نفسها في الموضعين. هنا الاسم وزر البطاقة فقط؛ والتحكم الكامل بكل وكيل (نموذجه وكتبه ونتائجه وضبطه) من <strong>بطاقة الوكيل</strong> في تبويب الوكلاء حتى لا يتكرر الضبط في موضعين.</div>
+    ${selectHtml}
+    <div class="ms-hint" style="margin-bottom:8px">المجموعة النشطة — <strong>«${msEsc(MS_GROUP.name)}»</strong>${isDefault ? ' (الافتراضية)' : ''} — مرجع مرحلتي التحقيق لهذا التبويب. أنشئ مجموعات مخصّصة عبر مهندس التحقيق كما في البحث الموسع؛ القارئ الثالث (Gemini 3.1 Flash Lite) يُضاف دائمًا. الضبط التفصيلي من <strong>بطاقة الوكيل</strong>.</div>
     ${MS_GROUP.agents.map(a => `
       <div class="ms-group-agent">
         <div class="ms-group-agent-head">
-          <strong>${msEsc(msCleanAgentName(a.name))}</strong>
+          <strong>${msEsc(msCleanAgentName(a.name))}${a.ms_key === 'reader3' ? ' <span class="ms-wb-meta">(قارئ ثالث ثابت)</span>' : ''}</strong>
           <span>
             <button type="button" class="ms-btn" onclick="msAgentBooksOpen('${msEsc(a.ms_key)}')">📚 الكتب الافتراضية</button>
             <button type="button" class="ms-btn ms-btn-primary" onclick="msOpenAgentCard('${msEsc(a.id || ('msag_' + a.ms_key))}')">📇 فتح بطاقة الوكيل</button>
           </span>
         </div>
       </div>`).join('')}
-    <div class="ms-form-row"><button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة الضبط الافتراضي للمجموعة</button></div>`;
+    <div class="ms-form-row">
+      ${isDefault ? '<button type="button" class="ms-btn" onclick="msSeedGroup(true)">↺ إعادة الضبط الافتراضي للمجموعة</button>' : ''}
+      <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectOpen()">🧭 مهندس مجموعة تحقيق جديدة</button>
+    </div>`;
 }
 
 // ---------- المرحلة الثانية: تحقيق النص (مدير تحقيق + مجلس + ذهبي + متخصصون) ----------
@@ -3012,20 +3317,26 @@ async function msAutoRun(p) {
         msAutoLog(p, `نسخ لوحة (${f.label}) من (${c.siglum}): قارئ أول وثانٍ ومدقق على الصورة...`);
         const data = await msAutoFetch('/api/manuscripts/transcribe', {
           file_path: f.file_path, api_key: msApiKey(),
-          primary_model: choice.primary, checker_model: choice.checker, auditor_model: choice.auditor });
-        const primary = data.primary || {}, checker = data.checker || {}, auditor = data.auditor || {};
+          primary_model: choice.primary, checker_model: choice.checker,
+          tertiary_model: choice.tertiary || MS_READER3_MODEL,
+          auditor_model: choice.auditor });
+        const primary = data.primary || {}, checker = data.checker || {}, tertiary = data.tertiary || {}, auditor = data.auditor || {};
         // توثيق سقوط أي قارئ وإسناده الاحتياطي في اللوحة والسجل — لا نجاح صامت بنصف فريق
-        f.reader_notes = [primary, checker].filter(r => r.fallback || r.error || r.fallback_error).map((r, ri) =>
-          `${ri === 0 ? 'القارئ الأول' : 'القارئ الثاني'}: ${r.fallback ? `سقط (${r.first_error || 'رد فارغ'}) فأُسندت قراءته احتياطيًا وقُرئت اللوحة` : (r.error || r.fallback_error || '')}`);
+        f.reader_notes = [['القارئ الأول', primary], ['القارئ الثاني', checker], ['القارئ الثالث', tertiary]]
+          .filter(([, r]) => r && (r.fallback || r.error || r.fallback_error))
+          .map(([label, r]) => `${label}: ${r.fallback ? `سقط (${r.first_error || 'رد فارغ'}) فأُسندت قراءته احتياطيًا وقُرئت اللوحة` : (r.error || r.fallback_error || '')}`);
         if (f.reader_notes.length) msAutoLog(p, `⚠️ لوحة (${f.label}) في (${c.siglum}): ${f.reader_notes.join('؛ ')}`);
         if (!primary.text && !checker.text) throw new Error(`لوحة (${f.label}) في (${c.siglum}): لم يرجع القارئان نصًا حتى بعد الإسناد الاحتياطي — تُحفظ وتُستأنف`);
         f.primary_text = primary.text || ''; f.checker_text = checker.text || '';
+        f.tertiary_text = tertiary.text || '';
         f.audited_text = auditor.text || ''; f.audit_notes = auditor.notes || '';
         f.model_primary = primary.model || choice.primary; f.model_checker = checker.model || choice.checker;
+        f.model_tertiary = tertiary.model || choice.tertiary || MS_READER3_MODEL;
         f.model_auditor = auditor.model || choice.auditor;
         f.disputes = data.disputes || []; f.agreement = data.agreement;
         f._view = 'audited';
-        f.cost = (Number(primary.cost) || 0) + (Number(checker.cost) || 0) + (Number(auditor.cost) || 0);
+        f.cost = (Number(primary.cost) || 0) + (Number(checker.cost) || 0)
+          + (Number(tertiary.cost) || 0) + (Number(auditor.cost) || 0);
         f.text = f.audited_text || f.primary_text;
         f.status = 'approved';
         f.approver = choice.auditor; // اعتماد أرغون للنسخ المدقق على الصورة
