@@ -1221,14 +1221,21 @@ function rdRenderAnalysisMsgs() {
   if (!box || !rdAnalysis) return;
   const msgs = rdAnalysis.discussion.messages || [];
   if (!msgs.length) { box.innerHTML = '<div class="ms-hint">لا رسائل بعد.</div>'; return; }
-  box.innerHTML = msgs.map(m => `
+  box.innerHTML = msgs.map((m, i) => `
     <div class="rd-amsg ${m.role === 'user' ? 'user' : 'assistant'}">
       <div class="rd-amsg-role">${m.role === 'user' ? 'أنت' : 'المساعد'}</div>
       <div>${m.role === 'assistant' ? rdMd(m.content) : rdEsc(m.content).replace(/\n/g, '<br>')}</div>
+      ${(m.role === 'assistant' && Array.isArray(m.tree_set) && m.tree_set.length && typeof smartTreesHtml === 'function') ? smartTreesHtml(m, i) : ''}
     </div>`).join('');
   // أيقونات الإحالة النموذجية 📖 تفتح تصفح الكتاب الأصلي عند موضع الشاهد
   if (typeof window.enhanceProjectCitationsWithBookReader === 'function') {
     try { window.enhanceProjectCitationsWithBookReader(box); } catch (e) { /* */ }
+  }
+  if (typeof mountSmartTreeCards === 'function') {
+    try { mountSmartTreeCards(box, { messages: msgs }); } catch (e) { /* */ }
+  }
+  if (typeof autoRenderChatInteractiveWidgets === 'function') {
+    try { autoRenderChatInteractiveWidgets(box); } catch (e) { /* */ }
   }
   box.scrollTop = box.scrollHeight;
 }
@@ -1428,3 +1435,240 @@ document.addEventListener('click', (e) => {
   const w = document.getElementById('rdAsstModelWrapper');
   if (w && w.classList.contains('open') && !w.contains(e.target)) w.classList.remove('open');
 });
+
+// =============================================================================
+// الأدوات المساعدة في نافذة التحليل: تشجير وجدولة على الإجابة (كما في المحادثات)
+// =============================================================================
+let rdToolKind = null; // 'tree' | 'tables'
+let rdToolProposals = [];
+let rdToolMaterial = '';
+let rdToolToken = 0;
+
+function rdToolSourceText() {
+  if (!rdAnalysis) return '';
+  const msgs = (rdAnalysis.discussion.messages || []).filter(m => m && m.role === 'assistant' && String(m.content || '').length > 40
+    && !Array.isArray(m.tree_set));
+  if (!msgs.length) return '';
+  const src = msgs[msgs.length - 1];
+  let text = String(src.content || '');
+  if (typeof stripGraphFences === 'function') text = stripGraphFences(text);
+  if (typeof stripChartFences === 'function') text = stripChartFences(text);
+  return text.slice(0, 24000);
+}
+function rdToolBusy(title, hint) {
+  const body = document.getElementById('rdToolBody');
+  const foot = document.getElementById('rdToolFoot');
+  document.getElementById('rdToolTitle').textContent = title;
+  if (body) body.innerHTML = `<div class="smart-tree-wait"><span class="smart-tree-spinner"></span><div><b>جارٍ فحص إجابة التحليل…</b><small>${rdEsc(hint)}</small></div></div>`;
+  if (foot) foot.innerHTML = '<button type="button" class="btn-msg-export" onclick="rdCloseToolModal()">إلغاء</button>';
+}
+function rdCloseToolModal() { rdToolToken += 1; rdCloseModal('rdToolModal'); }
+
+async function rdStartTreeScan(deep) {
+  const text = rdToolSourceText();
+  if (!text) { rdToast('لا توجد إجابة تحليل سابقة لتشجيرها'); return; }
+  rdToolKind = 'tree';
+  rdToolMaterial = text;
+  const token = ++rdToolToken;
+  rdToolBusy('🌳 تشجير ووسائط من إجابة التحليل', 'النموذج يمسح الإجابة ويستخرج تقسيماتها وخلافاتها القابلة للتشجير، فضلًا انتظر قليلًا.');
+  rdShowModal('rdToolModal');
+  try {
+    const res = await fetch('/api/chat/tree-analyze', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, api_key: rdApiKey(), deep: !!deep }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (token !== rdToolToken) return;
+    if (!res.ok) throw new Error(data.detail || 'تعذر تحليل المحتوى');
+    rdRenderToolProposals('tree', Array.isArray(data.proposals) ? data.proposals : [], !!deep);
+  } catch (e) {
+    if (token !== rdToolToken) return;
+    rdRenderToolError(e.message);
+  }
+}
+
+async function rdStartTableScan() {
+  const text = rdToolSourceText();
+  if (!text) { rdToast('لا توجد إجابة تحليل سابقة لجدولتها'); return; }
+  rdToolKind = 'tables';
+  rdToolMaterial = text;
+  const token = ++rdToolToken;
+  rdToolBusy('📋 جدولة — مسح ذكي للبنية القابلة للجدولة', 'النموذج يستخرج مقارنات الإجابة وقوائمها ذات الخصائص المتكررة ويقترح جداولها، فضلًا انتظر قليلًا.');
+  rdShowModal('rdToolModal');
+  try {
+    const res = await fetch('/api/chat/data-analyze', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, api_key: rdApiKey(), mode: 'tables' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (token !== rdToolToken) return;
+    if (!res.ok) throw new Error(data.detail || 'تعذر مسح المحتوى');
+    rdRenderToolProposals('tables', Array.isArray(data.proposals) ? data.proposals : [], false);
+  } catch (e) {
+    if (token !== rdToolToken) return;
+    rdRenderToolError(e.message);
+  }
+}
+
+function rdRenderToolError(msg) {
+  const body = document.getElementById('rdToolBody');
+  const foot = document.getElementById('rdToolFoot');
+  if (body) body.innerHTML = `<div class="pres-opt-hint">تعذر الفحص: ${rdEsc(msg || 'خطأ غير معروف')}</div>`;
+  if (foot) foot.innerHTML = `<button type="button" class="btn-msg-export" onclick="rdCloseToolModal()">إغلاق</button>`
+    + (rdToolKind === 'tree'
+      ? '<button type="button" class="btn-msg-export pres-start-btn" onclick="rdStartTreeScan(false)">🔁 إعادة المحاولة</button>'
+      : '<button type="button" class="btn-msg-export pres-start-btn" onclick="rdStartTableScan()">🔁 إعادة المحاولة</button>');
+}
+
+function rdRenderToolProposals(kind, proposals, deep) {
+  rdToolProposals = proposals;
+  const body = document.getElementById('rdToolBody');
+  const foot = document.getElementById('rdToolFoot');
+  if (!body || !foot) return;
+  if (!proposals.length) {
+    body.innerHTML = `<div class="pres-opt-hint">${kind === 'tree'
+      ? (deep ? 'حتى بعد الفحص الأعمق لم تظهر في إجابة التحليل بنية قابلة للتشجير بثقة. جرّب تشجير إجابة أغنى بالتقسيمات والأقوال.' : 'لم تظهر في الفحص الأول مقترحات كافية. جرّب «الفحص الأعمق» لاستخراج التقسيمات الضمنية من بنية الإجابة.')
+      : 'لم يجد المسح في إجابة التحليل بنية قابلة للجدولة بثقة (لا مقارنات ببنود متقابلة ولا قوائم ذات خصائص متكررة).'}</div>`;
+    foot.innerHTML = '<button type="button" class="btn-msg-export" onclick="rdCloseToolModal()">إغلاق</button>'
+      + (kind === 'tree' && !deep ? '<button type="button" class="btn-msg-export pres-start-btn" onclick="rdStartTreeScan(true)">🔍 فحص أعمق</button>' : '');
+    return;
+  }
+  body.innerHTML = `<div class="pres-opt-label">${kind === 'tree' ? 'وجد النموذج في الإجابة ما يمكن تشجيره — حدّد مسألة أو أكثر' : 'وجد النموذج في الإجابة بنى قابلة للجدولة — حدّد جدولًا أو أكثر'}</div>
+    <div class="smart-tree-select-row">
+      <button type="button" class="btn-msg-export" id="rdToolSelectAllBtn" onclick="rdToolToggleAll()">☑ تحديد الكل</button>
+      <span class="smart-tree-sel-count" id="rdToolSelCount"></span>
+    </div>` + proposals.map((p, i) => `
+    <label class="pres-radio-card"><input type="checkbox" name="rdToolProposal" value="${i}"${i === 0 ? ' checked' : ''} onchange="rdToolUpdateSel()"> <span><b>${rdEsc(p.kind_label || '')}: ${rdEsc(p.title || '')}</b><small>${rdEsc(p.columns ? `الأعمدة: ${p.columns} — ` : '')}${rdEsc(p.desc || '')}</small></span></label>`).join('');
+  foot.innerHTML = '<button type="button" class="btn-msg-export" onclick="rdCloseToolModal()">إلغاء</button>'
+    + (kind === 'tree'
+      ? '<button type="button" class="btn-msg-export pres-start-btn" onclick="rdConfirmTool()">🌳 تشجير نصي</button>'
+      : '<button type="button" class="btn-msg-export pres-start-btn" onclick="rdConfirmTool()">📋 إنشاء الجداول المحددة</button>');
+  rdToolUpdateSel();
+}
+function rdToolToggleAll() {
+  const boxes = [...document.querySelectorAll('input[name="rdToolProposal"]')];
+  const all = boxes.length && boxes.every(b => b.checked);
+  boxes.forEach(b => { b.checked = !all; });
+  rdToolUpdateSel();
+}
+function rdToolUpdateSel() {
+  const boxes = [...document.querySelectorAll('input[name="rdToolProposal"]')];
+  const checked = boxes.filter(b => b.checked).length;
+  const btn = document.getElementById('rdToolSelectAllBtn');
+  if (btn) btn.textContent = (boxes.length && checked === boxes.length) ? '☐ إلغاء تحديد الكل' : '☑ تحديد الكل';
+  const count = document.getElementById('rdToolSelCount');
+  if (count) count.textContent = boxes.length ? `المحدّد: ${checked} من ${boxes.length}` : '';
+}
+function rdToolSelected() {
+  return [...document.querySelectorAll('input[name="rdToolProposal"]:checked')]
+    .map(el => rdToolProposals[parseInt(el.value, 10)]).filter(Boolean);
+}
+
+async function rdConfirmTool() {
+  const selected = rdToolSelected();
+  if (!selected.length) { rdToast(rdToolKind === 'tree' ? 'حدّد مسألة واحدة على الأقل للتشجير' : 'حدّد جدولًا واحدًا على الأقل'); return; }
+  if (!rdAnalysis) return;
+  const kind = rdToolKind;
+  const disc = rdAnalysis.discussion;
+  const model = disc.model || 'anthropic/claude-3.7-sonnet';
+  rdCloseToolModal();
+  const st = document.getElementById('rdAnalysisStatus');
+  const keys = (typeof readProviderKeys === 'function') ? readProviderKeys() : {};
+  const failures = [];
+  try {
+    if (kind === 'tree') {
+      const trees = [];
+      let done = 0;
+      for (let s = 0; s < selected.length; s += 3) {
+        const batch = selected.slice(s, s + 3);
+        const settled = await Promise.allSettled(batch.map(p => rdFetchOneTree(p, model, keys)));
+        settled.forEach((r, i) => {
+          done += 1;
+          if (r.status === 'fulfilled') trees.push(r.value);
+          else failures.push(`${batch[i].title}: ${r.reason?.message || 'تعذر'}`);
+        });
+        if (st) st.textContent = `جارٍ تشجير المسائل: ${done} من ${selected.length}...`;
+      }
+      if (!trees.length) throw new Error(failures[0] || 'تعذر التشجير');
+      disc.messages.push({
+        role: 'assistant',
+        content: `🌳 مشجّرات مولّدة من إجابة التحليل (${trees.length}):\n` + trees.map(t => `• ${t.kind_label}: ${t.title}`).join('\n'),
+        tree_set: trees,
+        at: new Date().toISOString(),
+      });
+      if (st) st.textContent = `اكتمل تشجير ${trees.length} مسألة في المناقشة ${disc.id}`;
+    } else {
+      const parts = [];
+      let done = 0;
+      for (let s = 0; s < selected.length; s += 3) {
+        const batch = selected.slice(s, s + 3);
+        const settled = await Promise.allSettled(batch.map(p => rdFetchOneTable(p, model, keys)));
+        settled.forEach((r, i) => {
+          done += 1;
+          if (r.status === 'fulfilled') parts.push(r.value);
+          else failures.push(`${batch[i].title}: ${r.reason?.message || 'تعذر'}`);
+        });
+        if (st) st.textContent = `جارٍ إنشاء الجداول: ${done} من ${selected.length}...`;
+      }
+      if (!parts.length) throw new Error(failures[0] || 'تعذر إنشاء الجداول');
+      disc.messages.push({
+        role: 'assistant',
+        content: parts.join('\n\n'),
+        table_request: true,
+        at: new Date().toISOString(),
+      });
+      if (st) st.textContent = `اكتمل إنشاء ${parts.length} جدول في المناقشة ${disc.id}`;
+    }
+    disc.updated_at = new Date().toISOString();
+    rdRenderAnalysisMsgs();
+    rdSaveSoon();
+    if (failures.length) rdToast(`اكتمل بعضها وتعذر ${failures.length}: ${failures[0]}`, 6000);
+  } catch (e) {
+    if (st) st.textContent = `❌ ${e.message}`;
+    rdToast(`❌ ${e.message}`, 5000);
+  }
+}
+
+async function rdFetchOneTree(p, model, keys) {
+  const instruction = (typeof smartTreeInstruction === 'function')
+    ? smartTreeInstruction(p)
+    : `شجّر من الإجابة شجرة واحدة موضوعها «${p.title}» بصيغة force3d JSON فقط، بلا شرح قبلها ولا بعدها.`;
+  const res = await fetch('/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model, provider: 'openrouter',
+      api_key: keys.openrouter || rdApiKey(),
+      use_hybrid: false, graph_only: true,
+      messages: [{ role: 'user', content: `النتيجة المراد تشجيرها:\n${rdToolMaterial}` }],
+      system_prompt: instruction,
+      temperature: 0.2, providers: keys, agent_group: null,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || 'تعذر التشجير');
+  const treeData = (typeof extractForce3dData === 'function') ? extractForce3dData(data.reply) : null;
+  if (!treeData) throw new Error('لم يُعد النموذج شجرة صالحة');
+  return { title: p.title, kind: p.kind, kind_label: p.kind_label || 'تشجير', data: treeData };
+}
+
+async function rdFetchOneTable(p, model, keys) {
+  const instruction = (typeof tableProposalInstruction === 'function')
+    ? tableProposalInstruction(p)
+    : `جدول الإجابة فقط بعنوان «${p.title}» وأعمدة: ${p.columns || 'مناسبة'}، جدول ماركداون واحد بلا شرح.`;
+  const res = await fetch('/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model, provider: 'openrouter',
+      api_key: keys.openrouter || rdApiKey(),
+      use_hybrid: false, table_only: true,
+      messages: [{ role: 'user', content: `النتيجة المراد جدولتها:\n${rdToolMaterial}` }],
+      system_prompt: instruction,
+      temperature: 0.2, providers: keys, agent_group: null,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || 'تعذر إنشاء الجدول');
+  const reply = String(data.reply || '');
+  if (!reply.includes('|')) throw new Error('لم يُعد النموذج جدولًا صالحًا');
+  return `### ${p.title}\n\n${reply.trim()}`;
+}

@@ -11360,6 +11360,13 @@ body::-webkit-scrollbar,
 .rd-amsg.user { background: rgba(180,85,45,.12); margin-right: 18%; }
 .rd-amsg.assistant { background: rgba(0,0,0,.05); margin-left: 18%; }
 .rd-amsg .rd-amsg-role { font-size: 11px; font-weight: 800; opacity: .65; margin-bottom: 4px; }
+.rd-analysis-layout { display: flex; gap: 12px; align-items: stretch; }
+.rd-analysis-side { width: 168px; flex-shrink: 0; display: flex; flex-direction: column; gap: 7px; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 8px; }
+.rd-analysis-side .chat-table-request-btn { width: 100%; text-align: right; }
+.rd-side-head { font-size: 12px; font-weight: 800; padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
+.rd-side-note { font-size: 11px; line-height: 1.7; opacity: .7; }
+.rd-analysis-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+@media (max-width: 760px) { .rd-analysis-layout { flex-direction: column; } .rd-analysis-side { width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; } }
 .rd-analysis-compose { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
 .rd-analysis-compose textarea { flex: 1; font-family: inherit; line-height: 1.7; border-radius: 10px; border: 1px solid var(--border-subtle); padding: 8px 10px; resize: vertical; }
 .rd-disc-hit { cursor: pointer; }
