@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.714"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.715"},
         },
     })
     if opened.get("error"):
@@ -29173,22 +29173,39 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
             except Exception as _mv_err:
                 print(f"⚠️ [Architect Model Check] {_mv_err}", flush=True)
 
-        # فحص ملف تصنيف الطلب: مخطط بلا research_profile مكتمل يعني أن
-        # المهندس صمم بلا تكييف مع نوع الطلب — يُعلن للباحث قبل الاعتماد.
-        profile_validation = {"present": False, "missing": []}
+        # فحص ملف تصنيف الطلب بحسب نوع المشروع: للمشروع العلمي research_profile،
+        # ولتحقيق المخطوط investigation_profile — فلا يُطالب مخطوط بتصنيف بحثي.
+        profile_validation = {"present": False, "missing": [], "kind": "manuscripts" if ms_domain else "research"}
         if isinstance(parsed_blueprint, dict):
             try:
-                _prof = parsed_blueprint.get("research_profile") or {}
-                _req_keys = ("discipline", "purpose", "depth", "length", "audience", "method", "debate", "output_structure")
-                profile_validation["missing"] = [k for k in _req_keys if not str(_prof.get(k) or "").strip()]
-                profile_validation["present"] = not profile_validation["missing"]
-                if profile_validation["missing"]:
-                    reply_text += ("\n\n⚠️ فحص تكييف الطلب الآلي: هذا المخطط ناقص التصنيف؛ غائب من research_profile: "
-                                   + "، ".join(profile_validation["missing"])
-                                   + ". اطلب من المهندس استكمال تصنيف الطلب (فنّه وغرضه وطوله وجمهوره ومنهجه) قبل اعتماد البطاقات، لئلا يُبنى فريق لا يناسب المطلوب.")
-                    print(f"⚠️ [Architect Profile Check] حقول غائبة: {profile_validation['missing']}", flush=True)
+                if ms_domain:
+                    _prof = parsed_blueprint.get("investigation_profile") or {}
+                    _labels = {
+                        "discipline": "فن المخطوط", "focus": "محور التحقيق",
+                        "tarajim_scope": "حدود تراجم الأعلام", "lugha_scope": "حدود اللغة",
+                        "hadith_scope": "حد تخريج الأحاديث", "footnote_style": "أسلوب الحاشية",
+                    }
+                    profile_validation["missing"] = [k for k in _labels if not str(_prof.get(k) or "").strip()]
+                    profile_validation["present"] = not profile_validation["missing"]
+                    if profile_validation["missing"]:
+                        reply_text += ("\n\n⚠️ تنبيه: مخطط مجموعة التحقيق لم تُستكمل حدوده بعد: "
+                                       + "، ".join(_labels[k] for k in profile_validation["missing"])
+                                       + ". أكمل الحوار مع المهندس لتحديدها قبل اعتماد المجموعة.")
+                        print(f"⚠️ [MS Profile Check] حقول غائبة: {profile_validation['missing']}", flush=True)
+                    else:
+                        print(f"✅ [MS Profile Check] حدود التحقيق مكتملة: {_prof.get('discipline')} / {_prof.get('footnote_style')}", flush=True)
                 else:
-                    print(f"✅ [Architect Profile Check] ملف الطلب مكتمل: {_prof.get('discipline')} / {_prof.get('purpose')} / {_prof.get('length')}", flush=True)
+                    _prof = parsed_blueprint.get("research_profile") or {}
+                    _req_keys = ("discipline", "purpose", "depth", "length", "audience", "method", "debate", "output_structure")
+                    profile_validation["missing"] = [k for k in _req_keys if not str(_prof.get(k) or "").strip()]
+                    profile_validation["present"] = not profile_validation["missing"]
+                    if profile_validation["missing"]:
+                        reply_text += ("\n\n⚠️ فحص تكييف الطلب الآلي: هذا المخطط ناقص التصنيف؛ غائب من research_profile: "
+                                       + "، ".join(profile_validation["missing"])
+                                       + ". اطلب من المهندس استكمال تصنيف الطلب (فنّه وغرضه وطوله وجمهوره ومنهجه) قبل اعتماد البطاقات، لئلا يُبنى فريق لا يناسب المطلوب.")
+                        print(f"⚠️ [Architect Profile Check] حقول غائبة: {profile_validation['missing']}", flush=True)
+                    else:
+                        print(f"✅ [Architect Profile Check] ملف الطلب مكتمل: {_prof.get('discipline')} / {_prof.get('purpose')} / {_prof.get('length')}", flush=True)
             except Exception as _pf_err:
                 print(f"⚠️ [Architect Profile Check] {_pf_err}", flush=True)
 
