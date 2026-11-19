@@ -11,6 +11,7 @@ python-multipart>=0.0.9
 aiohttp>=3.9.5
 rank-bm25>=0.2.2
 numpy>=1.26.0
+Pillow>=10.0.0
 tqdm>=4.66.0
 python-dotenv>=1.0.1
 requests>=2.31.0

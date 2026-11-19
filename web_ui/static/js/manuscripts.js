@@ -437,7 +437,11 @@ async function msOpenEnhance(pid, cid, fid, queue) {
   if (!f.enhanced_file_path) {
     document.getElementById('msEnhRestImg').removeAttribute('src');
     try { await msEnhanceFolioFile(f); msSave(); }
-    catch (e) { msToast(`⚠ تعذر الترميم الآلي: ${e.message}`, 5000); }
+    catch (e) {
+      msToast(`⚠ تعذر الترميم الآلي: ${e.message}`, 5000);
+      const st = document.getElementById('msEnhStateRest');
+      if (st) st.textContent = `— تعذر إنشاء المرمّمة (${e.message})`;
+    }
   }
   msRenderEnhance();
 }
