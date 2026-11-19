@@ -11310,6 +11310,8 @@ body::-webkit-scrollbar,
 .ms-folio.is-approved { border-color: #2e7d5b; }
 .ms-folio img { width: 100%; height: 120px; object-fit: cover; display: block; }
 .ms-folio-label { text-align: center; font-size: 12px; padding: 4px; }
+.ms-folio-enh-btn { width: 100%; border: none; border-top: 1px solid var(--border-subtle); border-radius: 0; font-size: 11.5px; padding: 5px 2px; cursor: pointer; }
+.ms-folio-enh-btn:hover { background: rgba(180,85,45,.12); font-weight: 700; }
 #msWorkbench { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px; margin-top: 8px; scroll-margin-top: 190px; }
 #msCollatedText { scroll-margin-top: 190px; }
 .ms-wb-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

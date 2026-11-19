@@ -278,7 +278,8 @@ function renderMsCopies() {
         ${(c.folios || []).map(f => `
           <div class="ms-folio ${f.status === 'approved' ? 'is-approved' : (f.status === 'draft' ? 'is-draft' : '')}" onclick="msOpenFolio('${p.id}','${c.id}','${f.id}')">
             <img src="${msEsc(f.file_url)}" alt="${msEsc(f.label)}" loading="lazy">
-            <div class="ms-folio-label">${msEsc(f.label)} ${f.status === 'approved' ? '✔' : (f.status === 'draft' ? '✎' : '')}</div>
+            <div class="ms-folio-label">${msEsc(f.label)} ${f.status === 'approved' ? '✔' : (f.status === 'draft' ? '✎' : '')}${f.adopted_image === 'restored' ? ' · مرمّمة 🛠' : ''}</div>
+            <button type="button" class="ms-btn ms-folio-enh-btn" title="فتح نافذة معايرة اللوحة وترميمها: مقارنة الأصلية بالمرمّمة وتجربة قراءتها واعتماد إحداهما" onclick="event.stopPropagation(); msOpenEnhance('${p.id}','${c.id}','${f.id}')">🛠 معايرة وترميم</button>
           </div>`).join('') || '<div class="ms-empty">لا لوحات بعد في هذه النسخة.</div>'}
       </div>
     </div>`;
