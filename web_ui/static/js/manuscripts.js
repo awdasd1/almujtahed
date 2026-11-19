@@ -214,11 +214,37 @@ function msDuplicateProject(id) {
   msToast(`✔ كُرّر المشروع «${src.title}» — النسخة الجديدة في أعلى القائمة`);
 }
 
-// تصدير المشروع ZIP (بياناته وصور لوحاته) أو مشاركته بمشاركة نظام التشغيل
+// تصدير المشروع ZIP (بياناته وصور لوحاته) أو مشاركته — بلوحة تجهيز وتقدم باقية
+let MS_EXPORT_PENDING = null; // {blob, fname, title}
+
+function msExportSetState(status, detail, done) {
+  const st = document.getElementById('msExportStatus');
+  const dt = document.getElementById('msExportDetail');
+  const bar = document.querySelector('.ms-export-bar');
+  const closeBtn = document.getElementById('msExportCloseBtn');
+  if (st) st.textContent = status;
+  if (dt) dt.textContent = detail || '';
+  if (bar) bar.classList.toggle('is-done', !!done);
+  if (closeBtn) closeBtn.disabled = !done;
+}
+
+function msDownloadBlob(blob, fname) {
+  const url = URL.createObjectURL(blob);
+  const aEl = document.createElement('a');
+  aEl.href = url; aEl.download = fname;
+  document.body.appendChild(aEl); aEl.click(); aEl.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
 async function msExportProject(id, share) {
   const p = msProject(id);
   if (!p) return;
-  msToast('جارٍ تجهيز ملف المشروع المضغوط (البيانات وصور اللوحات)...');
+  MS_EXPORT_PENDING = null;
+  document.getElementById('msExportTitle').textContent = share ? `📤 مشاركة مشروع «${p.title}»` : `⬇ تصدير مشروع «${p.title}»`;
+  document.getElementById('msExportActions').hidden = true;
+  msShowModal('msExportModal');
+  msExportSetState(share ? 'يجري تجهيز ملف المشروع للمشاركة — فضلًا انتظر...' : 'يجري تجهيز ملف المشروع للتصدير — فضلًا انتظر...',
+    `مشروع «${p.title}»: تُجمع بياناته وصور لوحاته وتُضغط خادميًا الآن. لا تغلق التطبيق حتى يكتمل التجهيز.`, false);
   try {
     const res = await fetch('/api/manuscripts/export-project', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -226,32 +252,58 @@ async function msExportProject(id, share) {
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      throw new Error(d.detail || 'تعذر تصدير المشروع');
+      throw new Error(d.detail || 'تعذر تجهيز ملف المشروع');
     }
+    msExportSetState('اكتمل الضغط — جارٍ استلام الملف إلى جهازك، فضلًا انتظر...', '', false);
     const blob = await res.blob();
     const stamp = new Date().toISOString().slice(0, 10);
     const fname = `مشروع-${String(p.title || 'تحقيق').replace(/[\\/:*?"<>|]/g, '').slice(0, 60)}-${stamp}.zip`;
+    const sizeMb = (blob.size / 1048576).toFixed(2);
     if (share) {
-      const file = new File([blob], fname, { type: 'application/zip' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: `مشروع تحقيق: ${p.title}` });
-        msToast('✔ فُتحت مشاركة النظام لملف المشروع');
-        return;
-      }
-      msToast('مشاركة النظام غير متاحة في هذه البيئة — حُمّل الملف لتشاركه يدويًا');
+      MS_EXPORT_PENDING = { blob, fname, title: p.title };
+      document.getElementById('msExportActions').hidden = false;
+      msExportSetState('✔ ملف المشروع جاهز للمشاركة', `«${fname}» — حجمه ${sizeMb} MB. اضغط «فتح مشاركة نظام التشغيل» بالأسفل فتظهر لك مشاركة ماك/ويندوز القياسية.`, true);
+    } else {
+      msDownloadBlob(blob, fname);
+      msExportSetState('✔ اكتمل تصدير المشروع', `نُزّل «${fname}» — حجمه ${sizeMb} MB — وفيه بيانات المشروع كاملة وصور لوحاته.`, true);
     }
-    const url = URL.createObjectURL(blob);
-    const aEl = document.createElement('a');
-    aEl.href = url; aEl.download = fname;
-    document.body.appendChild(aEl); aEl.click(); aEl.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    msToast(`✔ صُدّر مشروع «${p.title}» كاملًا (بياناته وصور لوحاته)`);
   } catch (e) {
-    if (e && e.name === 'AbortError') return;
-    msToast(`❌ ${e.message}`, 5000);
+    msExportSetState(`❌ تعذر ${share ? 'تجهيز ملف المشاركة' : 'تصدير المشروع'}`, e.message || '', true);
   }
 }
 window.msExportProject = msExportProject;
+
+// المشاركة من ضغطة زر مباشرة (شرط متصفحات الأنظمة) مع بديل التحميل عند الرفض
+async function msDoShare() {
+  const pend = MS_EXPORT_PENDING;
+  if (!pend) return;
+  const file = new File([pend.blob], pend.fname, { type: 'application/zip' });
+  if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
+    msDownloadBlob(pend.blob, pend.fname);
+    msExportSetState('مشاركة النظام غير متاحة في بيئة العرض هذه — حُمّل الملف بدلًا منها',
+      `نُزّل «${pend.fname}» إلى جهازك؛ شاركه من موضعه بمشاركة نظام التشغيل يدويًا.`, true);
+    return;
+  }
+  try {
+    await navigator.share({ files: [file], title: `مشروع تحقيق: ${pend.title}` });
+    msExportSetState('✔ تمت مشاركة ملف المشروع', `شاركت «${pend.fname}» بمشاركة نظام التشغيل.`, true);
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      msExportSetState('أُلغيت المشاركة من نافذة النظام', 'الملف ما زال جاهزًا هنا: أعد فتح المشاركة أو أغلق وحمّله من زر تصدير في كرت المشروع.', true);
+    } else {
+      msDownloadBlob(pend.blob, pend.fname);
+      msExportSetState('منعت بيئة العرض مشاركة النظام — حُمّل الملف بدلًا منها',
+        `نُزّل «${pend.fname}» إلى جهازك؛ شاركه من موضعه بمشاركة نظام التشغيل يدويًا.`, true);
+    }
+  }
+}
+window.msDoShare = msDoShare;
+
+function msCloseExportModal() {
+  const modal = document.getElementById('msExportModal');
+  if (modal) modal.hidden = true;
+  MS_EXPORT_PENDING = null;
+}
 
 // استيراد مشروع من ملف مضغوط صدّره المغني
 async function msImportProject(input) {
@@ -2714,6 +2766,7 @@ function renderMsGroup() {
             ${MS_GROUPS.map(g => `<option value="${msEsc(g.id)}"${g.id === MS_GROUP_ID ? ' selected' : ''}>${msEsc(g.name || g.id)}${g.id === MS_DEFAULT_GROUP_ID ? ' (افتراضية)' : ''}</option>`).join('')}
           </select>
         </label>
+        <button type="button" class="ms-btn" title="ناقش مهندس المشروع في المجموعة المختارة هنا لتعديلها وتحسينها" onclick="msDiscussGroupWithArchitect()">💬 مناقشة مهندس المشروع</button>
         <button type="button" class="ms-btn ms-btn-primary" onclick="msArchitectOpen()">🧭 مهندس المشاريع — مجموعة تحقيق جديدة</button>
       </div>`
     : '';
