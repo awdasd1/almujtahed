@@ -29,14 +29,8 @@ let rdNotebookNavLock = false;
 const RD_COLORS = ['#b03a2e', '#1f6fb2', '#2e7d5b', '#b8860b', '#7a5aa1', '#222222'];
 const RD_NOTE_COLORS = ['#ffe58a', '#ffd1dc', '#c8f0c8', '#bfe3ff', '#e6ccff'];
 const RD_DISC_COLOR = 'rgba(120,120,120,0.28)';
-const RD_DEFAULT_ASST_PROMPT =
-`أنت مختص بمساعدة قارئ الكتاب
-سيقوم القارئ بتزويدك بنص من الكتاب المقروء وعليك تحليل النص وتصنيفه
-فقه - عقيدة - تفسير - حديث - لغة .. الخ
-عليك الاستعانة بنماذج مراسي البحث للتصنيف الدلالي الدقيق
-يجب أن تكون الإجابة ما بين متوسطة إلى مختصرة اختصارا غير مخل
-يجب عليك الالتزام التام بطريقة الإحالة
-التزم بالمطلوب بدقة تامة`;
+let rdAnalysisTimerId = null;
+let rdAnalysisTimerT0 = 0;
 let rdCustomColors = { pen: [], note: [] };
 try { rdCustomColors = Object.assign(rdCustomColors, JSON.parse(localStorage.getItem('rdCustomColors') || '{}')); } catch (e) { /* لوحة افتراضية */ }
 let rdColorTarget = 'pen'; // منتقي الألوان يضيف للوحة الأقلام أو الملصقات
@@ -2708,6 +2702,10 @@ function rdClearAgentModalReadingMode() {
   if (save) save.textContent = 'حفظ الوكيل';
   const title = document.getElementById('agentModalTitle');
   if (title && /مساعد القراءة/.test(title.textContent || '')) title.textContent = 'إضافة وكيل مساعد جديد';
+  const promptLabel = document.querySelector('label[for="agentPromptInput"]');
+  if (promptLabel) promptLabel.textContent = 'موجه النظام الخاص بالوكيل (Agent System Prompt):';
+  const promptEl = document.getElementById('agentPromptInput');
+  if (promptEl) promptEl.placeholder = 'حدد للوكيل كيف يتعامل مع النصوص التراثية، استخراج الأدلة، ومقارنة الأقوال...';
 }
 window.onAgentModalClosed = function () {
   if (window._rdAssistantMode) rdClearAgentModalReadingMode();
@@ -2723,9 +2721,13 @@ function rdOpenAgentAssistantModal(id) {
     : 'إضافة مساعد قراءة';
   document.getElementById('agentNameInput').value = asst ? (asst.name || '') : '';
   document.getElementById('agentDescInput').value = asst ? (asst.desc || '') : '';
-  document.getElementById('agentPromptInput').value = asst
-    ? (asst.prompt || asst.systemPrompt || asst.system_prompt || RD_DEFAULT_ASST_PROMPT)
-    : RD_DEFAULT_ASST_PROMPT;
+  const promptEl = document.getElementById('agentPromptInput');
+  if (promptEl) {
+    promptEl.value = asst ? (asst.prompt || asst.systemPrompt || asst.system_prompt || '') : '';
+    promptEl.placeholder = 'اكتب توجيه المساعد كما تريد. لا يُضاف أي توجيه خفي.';
+  }
+  const promptLabel = document.querySelector('label[for="agentPromptInput"]');
+  if (promptLabel) promptLabel.textContent = 'توجيه المساعد (يكتبه المستخدم وحده):';
   const model = asst && asst.model ? asst.model : (document.getElementById('agentSelectedModelId')?.value || 'anthropic/claude-3.7-sonnet');
   document.getElementById('agentSelectedModelId').value = model;
   document.getElementById('agentThinkingSelect').value = (asst && asst.thinking) || 'medium';
@@ -2760,7 +2762,7 @@ window.rdOpenAgentAssistantModal = rdOpenAgentAssistantModal;
 function rdSaveAssistantFromAgentModal() {
   const name = (document.getElementById('agentNameInput')?.value || '').trim();
   const model = document.getElementById('agentSelectedModelId')?.value || '';
-  const prompt = (document.getElementById('agentPromptInput')?.value || '').trim() || RD_DEFAULT_ASST_PROMPT;
+  const prompt = (document.getElementById('agentPromptInput')?.value || '').trim();
   if (!name) { rdToast('يرجى تحديد اسم المساعد'); return; }
   if (!model) { rdToast('اختر نموذجًا'); return; }
   const titles = [...(window._currentAgentBooks || [])];
@@ -3262,8 +3264,6 @@ function rdOpenSummarize() {
 }
 window.rdOpenSummarize = rdOpenSummarize;
 
-const RD_SUM_DIRECTIVE = 'لخّص النص التالي تلخيصًا علميًا أمينًا بالعربية الفصحى: احفظ المسائل والأعلام والأدلة والمعاني المقصودة، واطوِّل بقدر حاجة النص دون حشو. لا تضف معلومة من خارج النص. لا تذكر هذا التوجيه.';
-
 async function rdOcrFilePage(filePage) {
   const info = rdCurrent && rdCurrent.book ? rdPartInfoAt(rdCurrent.book, filePage) : null;
   if (info && info.part && info.part.source === 'notebook') {
@@ -3286,7 +3286,7 @@ async function rdOcrFilePage(filePage) {
   return (data.text || '').trim();
 }
 async function rdAskSummary(asst, userText) {
-  const prompt = `${asst.prompt || RD_DEFAULT_ASST_PROMPT}\n\n${RD_SUM_DIRECTIVE}`;
+  const prompt = (asst.prompt || asst.systemPrompt || asst.system_prompt || '').trim();
   const res = await fetch('/api/chat', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -3569,8 +3569,32 @@ function rdSelAnalyze() {
   rdShowModal('rdPickAsstModal');
 }
 
-const RD_FAST_DIRECTIVE = 'أجب من ذاكرتك مباشرة عن النص المعروض. لا تبحث في المكتبة ولا تستدعِ كتبًا ولا مراسي بحث ولا شواهد. الإجابة من ذاكرتك وحدها، بين متوسطة ومختصرة اختصارًا غير مخل، ووفق توجيه المساعد. لا تذكر هذا التوجيه ولا تعِده في إجابتك.';
-const RD_EDITED_DIRECTIVE = 'أجب من نطاق الكتب المحددة وحدها، ومن الشواهد المسترجعة منه حصرًا. امتنع امتناعًا تامًا عن الإجابة من ذاكرتك؛ فما لم تجده في الشواهد المسترجعة صرّح بغيابه ولا تكمله من محفوظك. التزم بالإحالة النموذجية لكل دعوى. لا تذكر هذا التوجيه ولا تعِده في إجابتك.';
+function rdFmtElapsed(ms) {
+  const s = Math.max(0, Math.floor(Number(ms) / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+function rdStopAnswerTimer(keep) {
+  if (rdAnalysisTimerId) { clearInterval(rdAnalysisTimerId); rdAnalysisTimerId = null; }
+  const el = document.getElementById('rdAnalysisTimer');
+  if (!el) return;
+  if (keep && rdAnalysisTimerT0) {
+    el.hidden = false;
+    el.textContent = '⏱️ ' + rdFmtElapsed(Date.now() - rdAnalysisTimerT0);
+  } else {
+    el.hidden = true;
+    el.textContent = '⏱️ 00:00';
+  }
+}
+function rdStartAnswerTimer() {
+  rdStopAnswerTimer(false);
+  rdAnalysisTimerT0 = Date.now();
+  const el = document.getElementById('rdAnalysisTimer');
+  if (el) { el.hidden = false; el.textContent = '⏱️ 00:00'; }
+  rdAnalysisTimerId = setInterval(() => {
+    const tick = document.getElementById('rdAnalysisTimer');
+    if (tick) tick.textContent = '⏱️ ' + rdFmtElapsed(Date.now() - rdAnalysisTimerT0);
+  }, 250);
+}
 
 async function rdStartAnalysis(asstId, mode) {
   const asst = rdAssistants.find(a => a.id === asstId);
@@ -3648,6 +3672,7 @@ function rdOpenDiscussion(id, fresh) {
   document.getElementById('rdAnalysisStatus').textContent = fresh
     ? 'جار تحليل النص...'
     : `مناقشة محفوظة · صفحة ${rdShownPage(disc.page, rdCurrent.book)}`;
+  if (!fresh) rdStopAnswerTimer(false);
   document.getElementById('rdAnalysisInput').value = '';
   rdShowModal('rdAnalysisModal');
   rdRenderAnalysisMsgs();
@@ -3682,12 +3707,11 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
   const stopBtn = document.getElementById('rdAnalysisStop');
   sendBtn.disabled = true; stopBtn.hidden = false;
   rdAnalysisAbort = new AbortController();
+  rdStartAnswerTimer();
   try {
-    // التوجيهان يُرسلان في رسالة النظام فقط، فلا يُكتبان في رسائل النافذة.
     const fast = disc.mode === 'fast';
     const books = rdAsstBookTitles(asst);
-    const basePrompt = asst.prompt || asst.systemPrompt || asst.system_prompt || RD_DEFAULT_ASST_PROMPT;
-    const prompt = `${basePrompt}\n\n${fast ? RD_FAST_DIRECTIVE : RD_EDITED_DIRECTIVE}`;
+    const prompt = (asst.prompt || asst.systemPrompt || asst.system_prompt || '').trim();
     const visible = (disc.messages || []).map(m => ({ role: m.role, content: m.content }));
     const thinking = asst.thinking || 'medium';
     const pool = Number(asst.poolSize || asst.pool_size) || 250;
@@ -3747,6 +3771,7 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
     if (e.name === 'AbortError') rdToast('أُوقف التحليل');
     else throw e;
   } finally {
+    rdStopAnswerTimer(true);
     sendBtn.disabled = false; stopBtn.hidden = true; rdAnalysisAbort = null;
   }
 }
@@ -3758,7 +3783,7 @@ async function rdAnalysisSend() {
   if (!text) return;
   const disc = rdAnalysis.discussion;
   const asst = rdAssistants.find(a => a.id === disc.assistant_id) || {
-    name: disc.assistant_name, model: disc.model, prompt: RD_DEFAULT_ASST_PROMPT, books: [],
+    name: disc.assistant_name, model: disc.model, prompt: '', books: [],
   };
   disc.messages.push({ role: 'user', content: text, at: new Date().toISOString() });
   input.value = '';
@@ -3777,6 +3802,7 @@ function rdAnalysisStop() {
 }
 function rdCloseAnalysis() {
   rdAnalysisStop();
+  rdStopAnswerTimer(false);
   rdCloseModal('rdAnalysisModal');
   rdAnalysis = null;
   rdRenderAnnotations();

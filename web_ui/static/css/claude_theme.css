@@ -11525,7 +11525,9 @@ body::-webkit-scrollbar,
 .rd-clear-modal p { font-size: 15px; line-height: 1.95; margin: 6px 0 4px; color: var(--text-main); }
 .rd-clear-modal .ms-btn { font-family: var(--font-naskh); background: var(--bg-surface); color: var(--text-main); border-color: var(--border-subtle); }
 .rd-clear-modal .ms-btn-primary { background: var(--accent-clay, #b4552d); color: #fff; border-color: transparent; }
-.rd-analysis-modal .rd-analysis-status { font-size: 13px; color: var(--text-muted); margin: 4px 0 8px; min-height: 1.4em; }
+.rd-analysis-status-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 4px 0 8px; }
+.rd-analysis-modal .rd-analysis-status { font-size: 13px; color: var(--text-muted); min-height: 1.4em; flex: 1; }
+.rd-analysis-timer { font-weight: 700; font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: embed; color: var(--accent-clay); white-space: nowrap; }
 .rd-analysis-msgs { flex: 1; min-height: 280px; max-height: calc(100vh - 280px); overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg, 12px); padding: 14px; background: var(--bg-canvas); }
 .rd-analysis-msgs .message-bubble { margin-bottom: 14px; }
 .rd-analysis-layout { display: flex; gap: 12px; align-items: stretch; }

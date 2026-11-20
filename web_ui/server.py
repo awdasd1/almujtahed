@@ -9165,7 +9165,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.802"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.803"},
         },
     })
     if opened.get("error"):
@@ -19946,10 +19946,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             break
 
     thinking_indicator = ""
-    if req.thinking_level == "high":
-        thinking_indicator = "### [تحرير المسألة الفقهية بالاستدلال التراثي العميق والتوثيق المرجعي]\n\n"
-    elif req.thinking_level == "medium":
-        thinking_indicator = "### [خلاصة المسألة وتوثيقها من أمهات كتب التراث]\n\n"
+    if not req.reading_assistant:
+        if req.thinking_level == "high":
+            thinking_indicator = "### [تحرير المسألة الفقهية بالاستدلال التراثي العميق والتوثيق المرجعي]\n\n"
+        elif req.thinking_level == "medium":
+            thinking_indicator = "### [خلاصة المسألة وتوثيقها من أمهات كتب التراث]\n\n"
 
     # 1. استخراج إعدادات بطاقة الوكيل المحدد بدقة
     active_agent = None
@@ -21394,6 +21395,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     "2. تحرير المسائل، وبيان أوجه القوة ومواضع الاستدراك أو ما يحتاج إلى مزيد تدقيق وتوثيق ومطابقة.\n"
                     "3. مناقشة الأدلة والاعتراضات والموازنة بين المذاهب والأقوال بأمانة علمية وتجرد تام."
                 )
+            elif req.reading_assistant:
+                system_instruction = (req.system_prompt or "").strip()
+                if citations_text:
+                    _mat = "المقاطع المسترجعة من النطاق المحدد:\n\n" + citations_text
+                    system_instruction = (system_instruction + "\n\n" + _mat) if system_instruction else _mat
             elif req.custom_generation:
                 system_instruction = (req.system_prompt or "").strip()
             elif req.system_prompt:
@@ -21406,7 +21412,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     "الجواب البحثي يلتزم الإخراج القياسي العام للمسائل الشرعية واللغوية والتاريخية: هيكل البحث، ثم الحواشي المطابقة لأرقام المتن، وتتولى المنظومة إظهار قائمة المصادر والمراجع من قاعدة الكتب، بوسوم HTML.\n"
                     "إذا طُلب مشجر، أخرج كتلة ```force3d واحدة واختر نوعاً واحداً لا تخلطه بغيره: إسناد (صحابي|تابعي|مدار|طريق|كتاب، والسهم من الشيخ إلى التلميذ)، أو خلاف فقهي (مسألة ثم قول ومذهب ودليل ومناقشة وجواب وترجيح)، أو خلاف عقدي (مسألة ثم مذهب ومقالة وشبهة وجواب)، أو استدلال (حكم ثم دليل ثم وجه الدلالة ثم مناقشة ثم جواب)، أو مناقشة (محل النزاع ثم دعوى كل طرف ثم دليله). source هو الأعلى و target هو الفرع."
                 )
-            if req.custom_generation and not req.graph_only and not req.table_only and not is_study_discussion:
+            if req.reading_assistant:
+                pass
+            elif req.custom_generation and not req.graph_only and not req.table_only and not is_study_discussion:
                 pass
             elif not req.graph_only and not req.table_only:
                 if _director_prompt:
@@ -21541,7 +21549,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     "agent_group": group_name if req.agent_group else None
                 }
 
-            messages_payload = [{"role": "system", "content": system_instruction}]
+            messages_payload = []
+            if (system_instruction or "").strip() or not req.reading_assistant:
+                messages_payload.append({"role": "system", "content": system_instruction})
             for idx_m, m in enumerate(req.messages):
                 # إذا كانت هذه آخر رسالة مستخدم وهناك مرفقات صور (multimodal vision)
                 if idx_m == len(req.messages) - 1 and m.role == "user" and req.attachments:
