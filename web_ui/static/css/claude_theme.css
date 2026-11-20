@@ -11342,6 +11342,8 @@ body::-webkit-scrollbar,
 .rd-viewbar-sep { font-weight: 700; opacity: .75; }
 .rd-bg-btn { border: 1.5px solid rgba(0,0,0,.25); border-radius: 7px; font-size: 11px; padding: 3px 9px; cursor: pointer; color: #333; font-family: inherit; }
 .rd-bg-btn.active { border-color: #b4552d; box-shadow: 0 0 0 1.5px #b4552d; font-weight: 800; }
+.rd-view-reset { width: 28px; height: 26px; flex: 0 0 auto; border: 1.5px solid rgba(0,0,0,.25); border-radius: 7px; background: var(--bg-surface); color: var(--text-main); font-size: 16px; line-height: 1; padding: 0; cursor: pointer; }
+.rd-view-reset:hover { border-color: #b4552d; color: #b4552d; }
 .rd-color-add { width: 16px; height: 16px; border-radius: 50%; border: 1.5px dashed rgba(120,110,90,.8); background: transparent; color: inherit; cursor: pointer; padding: 0; font-size: 11px; line-height: 1; display: flex; align-items: center; justify-content: center; }
 .rd-color-add:hover { border-color: #b4552d; color: #b4552d; }
 .rd-resize-handle { text-align: center; font-size: 11px; opacity: .65; cursor: ns-resize; padding: 5px 0 1px; user-select: none; touch-action: none; border-top: 1px dashed var(--border-subtle); margin-top: 6px; }
