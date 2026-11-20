@@ -293,6 +293,9 @@ function rdRenderProjectDetail() {
           <button type="button" class="action-icon-btn btn-share-group" onclick="rdShareProjectPack('${p.id}', ${i})" title="مشاركة هذا الجزء مضغوطًا">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
           </button>
+          <button type="button" class="action-icon-btn btn-delete-group" onclick="rdDeletePart('${p.id}', ${i})" title="حذف هذا الكتاب من المشروع">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+          </button>
         </div>
       </td>
     </tr>`;
@@ -306,6 +309,89 @@ function rdOpenPartInReader(id, idx) {
   rdOpenProject(id);
 }
 window.rdOpenPartInReader = rdOpenPartInReader;
+
+function rdRemapPagesAfterPartDelete(p, start, len) {
+  const end = start + Math.max(0, len) - 1;
+  const shift = n => {
+    const v = Number(n);
+    if (!v) return v;
+    if (v >= start && v <= end) return null;
+    if (v > end) return v - len;
+    return v;
+  };
+  const ann = p.annotations || {};
+  const nextAnn = {};
+  Object.keys(ann).forEach(k => {
+    const nv = shift(k);
+    if (nv == null) return;
+    nextAnn[String(nv)] = ann[k];
+  });
+  p.annotations = nextAnn;
+  const discs = p.discussions || {};
+  Object.keys(discs).forEach(id => {
+    const d = discs[id];
+    if (!d) return;
+    const nv = shift(d.page);
+    if (nv == null) delete discs[id];
+    else d.page = nv;
+  });
+}
+async function rdDeletePart(id, idx) {
+  const p = rdProject(id);
+  if (!p) return;
+  const parts = rdPartsOf(p);
+  const i = Number(idx);
+  const part = parts[i];
+  if (!part) return;
+  const meta = rdPartMetaOf(p, part, i);
+  const label = [meta.book || part.title || 'الكتاب', meta.partNo && `الجزء ${meta.partNo}`].filter(Boolean).join(' — ');
+  let ok = false;
+  if (typeof showConfirmDialog === 'function') {
+    ok = await showConfirmDialog({
+      title: 'تأكيد حذف الكتاب',
+      message: `حذف «${label}» من المشروع مع تعليقاته على صفحاته؟`,
+      confirmText: 'نعم، احذف',
+      cancelText: 'إلغاء',
+      danger: true,
+      icon: 'trash-2',
+    });
+  } else {
+    ok = confirm(`حذف «${label}» من المشروع؟`);
+  }
+  if (!ok) return;
+  const start = rdPartStartPage(p.book, i);
+  const len = Number(part.pages) || 0;
+  rdRemapPagesAfterPartDelete(p, start, len);
+  parts.splice(i, 1);
+  if (!parts.length) {
+    p.book = null;
+    p.page = 1;
+    p.annotations = {};
+  } else {
+    rdEnsureParts(p.book);
+    const first = rdPartMetaOf(p, parts[0], 0);
+    if (first.book) {
+      p.book.title = first.book;
+      p.bookName = first.book;
+    }
+    if (p.page >= start && p.page < start + len) p.page = Math.max(1, start - 1) || 1;
+    else if (p.page >= start + len) p.page -= len;
+    p.page = Math.max(1, Math.min(p.book.pages || 1, p.page || 1));
+  }
+  if (rdBookAnalysisId === id) {
+    if (rdBookAnalysisPartIdx === i) { rdBookAnalysisId = null; rdBookAnalysisPartIdx = null; rdCloseModal('rdBookAnalysisModal'); }
+    else if (Number.isInteger(rdBookAnalysisPartIdx) && rdBookAnalysisPartIdx > i) rdBookAnalysisPartIdx -= 1;
+  }
+  if (rdCurrent && rdCurrent.id === id) {
+    if (!p.book && rdReaderIsOpen()) rdCloseReader();
+    else if (rdReaderIsOpen()) { rdUpdateBookUI(); rdLoadPage(p.page || 1); }
+  }
+  rdSave();
+  rdRenderProjectDetail();
+  renderRdProjects();
+  rdToast(`حُذف «${label}» من المشروع`);
+}
+window.rdDeletePart = rdDeletePart;
 
 let rdPendingPartMeta = null;
 function rdMountDetailUploadInput() {
