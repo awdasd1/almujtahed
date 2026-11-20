@@ -956,8 +956,7 @@ function rdReaderHeading(p) {
   const parts = rdPartsOf(p);
   const idx = Math.max(0, (rdLocus(p.page || 1, p.book).part || 1) - 1);
   const meta = rdPartMetaOf(p, parts[idx], idx);
-  const name = meta.book || p.book.title || p.title;
-  return `📖 ${name}${meta.partNo ? ` — الجزء ${meta.partNo}` : ''}`;
+  return `📖 ${meta.book || p.book.title || p.title}`;
 }
 function rdUpdateBookUI() {
   const p = rdCurrent;
