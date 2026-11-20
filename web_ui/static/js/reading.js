@@ -2086,7 +2086,7 @@ function rdNeedActiveSel() {
   return true;
 }
 function rdDefaultReader() {
-  if (!rdReaders.length) { rdToast('أنشئ قارئًا بصريًا أولًا بزر «إنشاء قارئ»'); return null; }
+  if (!rdReaders.length) { rdToast('أنشئ قارئًا بصريًا أولًا بزر «قارئ»'); return null; }
   return rdReaders[0];
 }
 
@@ -2133,7 +2133,7 @@ async function rdOcrSelection() {
 function rdSelAnalyze() {
   if (!rdNeedActiveSel()) return;
   rdHideSelBar(); rdSelFromHover = false;
-  if (!rdAssistants.length) { rdToast('أنشئ مساعدًا أولًا بزر «إنشاء مساعد»'); return; }
+  if (!rdAssistants.length) { rdToast('أنشئ مساعدًا أولًا بزر «مساعد»'); return; }
   if (!rdDefaultReader()) return;
   const box = document.getElementById('rdPickAsstList');
   box.innerHTML = rdAssistants.map(a => `
