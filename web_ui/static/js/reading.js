@@ -455,7 +455,7 @@ function rdClearPage() {
   if (!confirm(`⚠️ تنبيه: سيتم إزالة جميع التعليقات من هذه الصفحة فقط (صفحة ${rdCurrent.page || 1}: رسوم الأقلام والتظليل والقصاصات وملصقات الملحوظات)، وتبقى تعليقات بقية الصفحات كما هي دون مساس. متابعة المسح؟`)) return;
   const ann = rdPageAnn();
   ann.strokes = []; ann.highlights = []; ann.crops = []; ann.notes = []; ann.seq = [];
-  document.querySelectorAll('.rd-note-editor').forEach(x => x.remove());
+  document.querySelectorAll('.rd-note-editor').forEach(x => { if (x._rdNoteRo) x._rdNoteRo.disconnect(); x.remove(); });
   rdRenderAnnotations(); rdSaveSoon();
   rdToast(`🧹 مُسحت كل تعليقات صفحة ${rdCurrent.page || 1} وحدها`);
 }
@@ -727,7 +727,7 @@ function rdEditNote(i, ev) {
   const ann = rdPageAnn();
   const n = (ann.notes || [])[i];
   if (!n) return;
-  document.querySelectorAll('.rd-note-editor').forEach(x => x.remove());
+  document.querySelectorAll('.rd-note-editor').forEach(x => { if (x._rdNoteRo) x._rdNoteRo.disconnect(); x.remove(); });
   const layer = document.getElementById('rdNotesLayer');
   const ed = document.createElement('div');
   ed.className = 'rd-note-editor';
@@ -743,10 +743,38 @@ function rdEditNote(i, ev) {
     </div>`;
   layer.appendChild(ed);
   const ta = ed.querySelector('textarea');
+  const anchorRight = ed.offsetLeft + ed.offsetWidth;
+  const anchorTop = ed.offsetTop;
+  const ro = new ResizeObserver(() => {
+    const layerW = layer.clientWidth || 1;
+    const layerH = layer.clientHeight || 1;
+    let w = ed.offsetWidth;
+    let h = ed.offsetHeight;
+    const maxW = Math.max(160, layerW - 8);
+    const maxH = Math.max(90, layerH - 8);
+    if (w > maxW) {
+      ta.style.width = `${Math.max(140, maxW - (w - ta.offsetWidth))}px`;
+      w = ed.offsetWidth;
+    }
+    if (h > maxH) {
+      ta.style.height = `${Math.max(62, maxH - (h - ta.offsetHeight))}px`;
+      h = ed.offsetHeight;
+    }
+    let left = anchorRight - w;
+    if (left < 4) left = 4;
+    if (left + w > layerW - 4) left = Math.max(4, layerW - w - 4);
+    let top = anchorTop;
+    if (top + h > layerH - 4) top = Math.max(4, layerH - h - 4);
+    ed.style.left = `${(left / layerW) * 100}%`;
+    ed.style.top = `${(top / layerH) * 100}%`;
+  });
+  ro.observe(ta);
+  ed._rdNoteRo = ro;
+  const closeEd = () => { ro.disconnect(); ed.remove(); };
   ta.focus();
-  ed.querySelector('[data-act="save"]').onclick = () => { n.text = ta.value; ed.remove(); rdRenderNotes(); rdSaveSoon(); };
-  ed.querySelector('[data-act="del"]').onclick = () => { ann.notes.splice(i, 1); ed.remove(); rdRenderNotes(); rdSaveSoon(); };
-  ed.querySelector('[data-act="x"]').onclick = () => ed.remove();
+  ed.querySelector('[data-act="save"]').onclick = () => { n.text = ta.value; closeEd(); rdRenderNotes(); rdSaveSoon(); };
+  ed.querySelector('[data-act="del"]').onclick = () => { ann.notes.splice(i, 1); closeEd(); rdRenderNotes(); rdSaveSoon(); };
+  ed.querySelector('[data-act="x"]').onclick = () => closeEd();
 }
 window.rdEditNote = rdEditNote;
 

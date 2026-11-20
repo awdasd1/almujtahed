@@ -11320,9 +11320,9 @@ body::-webkit-scrollbar,
 .rd-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 14px; line-height: 2.1; color: #777; padding: 20px; }
 #rdNotesLayer { position: absolute; inset: 0; pointer-events: none; }
 .rd-note { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50% 50% 50% 4px; border: 1.5px solid rgba(0,0,0,.35); cursor: pointer; pointer-events: auto; font-size: 13px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
-.rd-note-editor { position: absolute; z-index: 6; width: 210px; border-radius: 8px; padding: 7px; box-shadow: 0 8px 26px rgba(0,0,0,.35); border: 1px solid rgba(0,0,0,.3); pointer-events: auto; }
-.rd-note-editor textarea { width: 100%; min-height: 62px; font-family: inherit; font-size: 12.5px; line-height: 1.7; border: none; background: rgba(255,255,255,.75); border-radius: 5px; padding: 5px; }
-.rd-note-editor .rd-note-btns { display: flex; gap: 5px; margin-top: 5px; }
+.rd-note-editor { position: absolute; z-index: 6; width: max-content; max-width: calc(100% - 8px); box-sizing: border-box; border-radius: 8px; padding: 7px; box-shadow: 0 8px 26px rgba(0,0,0,.35); border: 1px solid rgba(0,0,0,.3); pointer-events: auto; }
+.rd-note-editor textarea { display: block; width: 196px; min-width: 140px; min-height: 62px; max-width: none; box-sizing: border-box; resize: both; font-family: inherit; font-size: 12.5px; line-height: 1.7; border: none; background: rgba(255,255,255,.75); border-radius: 5px; padding: 5px; }
+.rd-note-editor .rd-note-btns { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
 .rd-note-editor .rd-note-btns button { font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(0,0,0,.3); background: rgba(255,255,255,.85); cursor: pointer; }
 #rdLoupe { position: absolute; width: 180px; height: 180px; border-radius: 50%; border: 3px solid #b4552d; overflow: hidden; pointer-events: none; z-index: 5; box-shadow: 0 8px 30px rgba(0,0,0,.4); background: #fff; }
 #rdLoupe img { position: absolute; max-width: none; }
