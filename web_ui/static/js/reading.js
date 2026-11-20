@@ -1316,6 +1316,7 @@ function rdLoadPage(n) {
   document.getElementById('rdPageScroll').scrollTop = 0;
   rdHideSelBar();
   rdActiveSel = null;
+  rdSyncPageSumBadge();
   rdSaveSoon();
 }
 
@@ -1489,6 +1490,7 @@ function rdRenderAnnotations() {
   if (handleRect) rdDrawCropHandles(ctx, handleRect, W, H);
   rdRenderNotes();
   rdRenderCropsBar();
+  rdSyncPageSumBadge();
 }
 
 function rdRenderNotes() {
@@ -2641,14 +2643,8 @@ async function rdRunSummarize() {
     p.summaries.unshift(row);
     rdSaveSoon();
     rdCloseModal('rdSummarizeModal');
-    const title = document.getElementById('rdSummaryResultTitle');
-    const meta = document.getElementById('rdSummaryResultMeta');
-    const body = document.getElementById('rdSummaryResultBody');
-    const same = shownFrom === shownTo;
-    if (title) title.textContent = same ? `الملخص — صفحة ${shownFrom}` : `الملخص — من ${shownFrom} إلى ${shownTo}`;
-    if (meta) meta.textContent = [row.part && `الجزء ${row.part}`, `الملخص: ${asst.name}`, row.created_display].filter(Boolean).join(' · ');
-    if (body) body.textContent = summary || '(لا ملخص)';
-    rdShowModal('rdSummaryResultModal');
+    rdSyncPageSumBadge();
+    rdShowSummaryResult(row);
   } catch (e) {
     if (st) st.textContent = `❌ ${e.message}`;
     rdToast(`❌ ${e.message}`, 5000);
@@ -2657,6 +2653,65 @@ async function rdRunSummarize() {
   }
 }
 window.rdRunSummarize = rdRunSummarize;
+function rdSummaryFileRange(s, book) {
+  let a = Number(s && (s.fileFrom || s.filePage));
+  let b = Number(s && s.fileTo);
+  if (!Number.isFinite(a) && s && s.from != null) a = rdFileFromShown(s.from, book);
+  if (!Number.isFinite(b) && s && s.to != null) b = rdFileFromShown(s.to, book);
+  if (!Number.isFinite(a)) a = 1;
+  if (!Number.isFinite(b)) b = a;
+  return { lo: Math.min(a, b), hi: Math.max(a, b) };
+}
+function rdSummariesForFilePage(filePage, p) {
+  const proj = p || rdCurrent;
+  if (!proj) return [];
+  const n = Number(filePage) || 1;
+  return (proj.summaries || []).filter(s => {
+    const r = rdSummaryFileRange(s, proj.book);
+    return n >= r.lo && n <= r.hi;
+  });
+}
+function rdSyncPageSumBadge() {
+  const badge = document.getElementById('rdPageSumBadge');
+  const countEl = document.getElementById('rdPageSumCount');
+  if (!badge) return;
+  const p = rdCurrent;
+  const list = (p && p.book) ? rdSummariesForFilePage(p.page || 1, p) : [];
+  badge.hidden = !list.length;
+  if (countEl) {
+    countEl.hidden = list.length < 2;
+    countEl.textContent = list.length > 1 ? String(list.length) : '';
+  }
+  if (list.length) {
+    const s = list[0];
+    const same = s.from === s.to || s.to == null;
+    badge.title = same
+      ? `هذه الصفحة ملخّصة — اضغط لعرض الملخص`
+      : `هذه الصفحة ضمن تلخيص الصفحات ${s.from}–${s.to} — اضغط لعرض الملخص`;
+  }
+}
+function rdShowSummaryResult(row) {
+  if (!row) return;
+  const from = row.from;
+  const to = row.to != null ? row.to : from;
+  const same = from === to;
+  const title = document.getElementById('rdSummaryResultTitle');
+  const meta = document.getElementById('rdSummaryResultMeta');
+  const body = document.getElementById('rdSummaryResultBody');
+  if (title) title.textContent = same ? `الملخص — صفحة ${from}` : `الملخص — من ${from} إلى ${to}`;
+  if (meta) meta.textContent = [row.part && `الجزء ${row.part}`, row.assistant_name && `الملخص: ${row.assistant_name}`, row.created_display].filter(Boolean).join(' · ');
+  if (body) body.textContent = row.text || '(لا ملخص)';
+  rdShowModal('rdSummaryResultModal');
+}
+function rdOpenPageSummary(ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const p = rdCurrent;
+  if (!p) return;
+  const list = rdSummariesForFilePage(p.page || 1, p);
+  if (!list.length) return;
+  rdShowSummaryResult(list[0]);
+}
+window.rdOpenPageSummary = rdOpenPageSummary;
 function rdCopySummary() {
   const t = document.getElementById('rdSummaryResultBody')?.textContent || '';
   if (!t) return;
