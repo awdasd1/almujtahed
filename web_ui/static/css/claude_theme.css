@@ -11314,7 +11314,7 @@ body::-webkit-scrollbar,
 .rd-toolbar.is-disabled { opacity: .45; pointer-events: none; }
 .rd-tool { width: 40px; height: 40px; font-size: 18px; border: 1px solid var(--border-subtle); border-radius: 10px; background: transparent; color: inherit; cursor: pointer; }
 .rd-tool:hover { background: rgba(180,85,45,.12); }
-.rd-tool.active { border-color: #b4552d; box-shadow: 0 0 0 1.5px #b4552d inset; background: rgba(180,85,45,.12); }
+.rd-tool.active { border-color: #b4552d; border-width: 1px; box-shadow: none; background: rgba(180,85,45,.12); }
 .rd-sizes { display: flex; gap: 3px; }
 .rd-sizes button { border: 1px solid var(--border-subtle); background: transparent; color: inherit; border-radius: 6px; font-size: 10px; padding: 2px 5px; cursor: pointer; }
 .rd-sizes button.active { border-color: #b4552d; font-weight: 800; }
