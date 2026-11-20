@@ -7014,19 +7014,188 @@ function compareBiblioTitles(a, b) {
     || String(a || '').localeCompare(String(b || ''), 'ar');
 }
 
+const APA_AUTHOR_EPITHETS = {
+  الأصولي: 1, النحوي: 1, اللغوي: 1, الفقيه: 1, المحدث: 1, المفسر: 1,
+  الحنفي: 1, المالكي: 1, الشافعي: 1, الحنبلي: 1, الظاهري: 1, الحافظ: 1,
+  الإمام: 1, الشيخ: 1, العلامة: 1, المتكلم: 1, الصوفي: 1, الأديب: 1,
+  المؤرخ: 1, الفرضي: 1, الأخباري: 1
+};
+
+function apaWesternDigits(value) {
+  return String(value || '').replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+}
+
+function apaCiteName(author) {
+  let a = String(author || '').trim().replace(/[«»"]/g, '');
+  a = a.split(/[،,]/)[0].trim();
+  const words = a.split(/\s+/).filter(Boolean);
+  while (words.length && APA_AUTHOR_EPITHETS[words[words.length - 1]]) words.pop();
+  if (words[0] === 'ابن' && words.length >= 2) return `${words[0]} ${words[1]}`;
+  if (words.length >= 4 && words.includes('بن')) {
+    const tail = words.slice(words.lastIndexOf('بن') + 1);
+    if (tail.length === 2 && (tail[0] === 'عبد' || tail[0] === 'أبو' || tail[0] === 'أبي')) return tail.join(' ');
+    if (tail.length) return tail[tail.length - 1];
+  }
+  return words[words.length - 1] || a;
+}
+
+function apaYearLabel(row) {
+  const raw = String((row && row.print_year) || '').trim();
+  if (!raw) return 'د.ت.';
+  const m = raw.match(/([0-9٠-٩]{3,4})/);
+  if (!m) return 'د.ت.';
+  const n = apaWesternDigits(m[1]);
+  const num = parseInt(n, 10);
+  const hijri = /ه/.test(raw) || (num > 0 && num < 1500);
+  return hijri ? `${toArabicIndicDigits(n)}هـ` : toArabicIndicDigits(n);
+}
+
+function apaLocatorFromText(text) {
+  const t = String(text || '');
+  let m = t.match(/\(\s*([0-9٠-٩]{1,4})\s*[-–—/／]\s*([0-9٠-٩]{1,4})\s*\)/);
+  if (m) return { vol: apaWesternDigits(m[1]), page: apaWesternDigits(m[2]) };
+  m = t.match(/ص(?:\s*\(|\s+)([0-9٠-٩]{1,4})/);
+  if (m) return { page: apaWesternDigits(m[1]) };
+  return {};
+}
+
+function formatApa7InText(row, loc) {
+  const name = apaCiteName(row && row.author) || (row && row.author) || 'مؤلف غير مسمى';
+  const year = apaYearLabel(row);
+  const parts = [name, year];
+  if (loc && loc.vol && loc.page) {
+    parts.push(`ج. ${toArabicIndicDigits(loc.vol)}، ص. ${toArabicIndicDigits(loc.page)}`);
+  } else if (loc && loc.page) {
+    parts.push(`ص. ${toArabicIndicDigits(loc.page)}`);
+  }
+  return `(${parts.join('، ')})`;
+}
+
+function formatApa7Reference(row) {
+  const author = escapeHtml(String((row && row.author) || '').trim() || 'مؤلف غير مسمى');
+  const year = escapeHtml(apaYearLabel(row));
+  const title = escapeHtml(String((row && row.title) || '').trim() || 'بدون عنوان');
+  let out = `${author}. (${year}). <em class="apa-book-title">${title}</em>`;
+  const extras = [];
+  if (String((row && row.editor) || '').trim()) extras.push(`تحقيق ${escapeHtml(String(row.editor).trim())}`);
+  if (String((row && row.edition) || '').trim()) extras.push(escapeHtml(String(row.edition).trim()));
+  if (extras.length) out += ` (${extras.join('، ')})`;
+  out += '.';
+  const city = String((row && row.city) || '').trim();
+  const pub = String((row && row.publisher) || '').trim();
+  if (city && pub) out += ` ${escapeHtml(city)}: ${escapeHtml(pub)}.`;
+  else if (pub) out += ` ${escapeHtml(pub)}.`;
+  else if (city) out += ` ${escapeHtml(city)}.`;
+  const death = String((row && row.death_year) || '').replace(/[هـهH]/g, '').trim();
+  if (death) out += ` (العمل الأصلي ت ${escapeHtml(toArabicIndicDigits(death))}هـ)`;
+  return out.replace(/\s{2,}/g, ' ');
+}
+
+function uniquePaperBibliography(rows) {
+  const out = [];
+  const seen = new Set();
+  (rows || []).forEach((row) => {
+    const key = String((row && (row.book_id || row.rel_path || row.title)) || '');
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(row);
+  });
+  return out;
+}
+
+function apaMatchBiblio(fnText, rows) {
+  const hay = biblioTitleSortKey(fnText);
+  if (!hay) return null;
+  let best = null;
+  let score = 0;
+  (rows || []).forEach((row) => {
+    const title = biblioTitleSortKey(row && row.title);
+    const author = biblioTitleSortKey(row && row.author);
+    const cite = biblioTitleSortKey(apaCiteName(row && row.author));
+    let s = 0;
+    if (title && title.length >= 4 && hay.includes(title)) s += 8;
+    else {
+      const words = title.split(/\s+/).filter((w) => w.length >= 4);
+      s += words.filter((w) => hay.includes(w)).length * 2;
+    }
+    if (cite && cite.length >= 3 && hay.includes(cite)) s += 4;
+    if (author && author.length >= 4 && hay.includes(author)) s += 2;
+    if (s > score) {
+      score = s;
+      best = row;
+    }
+  });
+  return score >= 4 ? best : null;
+}
+
+function convertAcademicHtmlToApaCitations(html, biblioRows) {
+  try {
+    const doc = new DOMParser().parseFromString(`<div id="aparoot">${html}</div>`, 'text/html');
+    const root = doc.getElementById('aparoot');
+    if (!root) return html;
+    const western = (v) => apaWesternDigits(v).replace(/\D/g, '');
+    const defs = new Map();
+    const defEls = [];
+    root.querySelectorAll('.footnote-list .footnote-item').forEach((el) => {
+      const m = (el.getAttribute('id') || '').match(/paper-fn(\d+)/);
+      if (!m) return;
+      const clone = el.cloneNode(true);
+      const back = clone.querySelector('a.chat-fn-back');
+      if (back) back.remove();
+      defs.set(m[1], clone.innerHTML.replace(/^\s*\((?:\d+|[٠-٩]+)\)\s*/, '').trim());
+      defEls.push(el);
+    });
+    const refs = root.querySelectorAll('a.chat-fn-ref');
+    const lastRef = refs.length ? refs[refs.length - 1] : null;
+    root.querySelectorAll('p.footnote-line').forEach((el) => {
+      const m = (el.textContent || '').trim().match(/^\((\d+|[٠-٩]+)\)/);
+      if (!m) return;
+      const n = western(m[1]);
+      if (!n || defs.has(n)) return;
+      if (lastRef && !(el.compareDocumentPosition(lastRef) & Node.DOCUMENT_POSITION_PRECEDING)) return;
+      const clone = el.cloneNode(true);
+      defs.set(n, clone.innerHTML.replace(/^\s*\((?:\d+|[٠-٩]+)\)\s*/, '').trim());
+      defEls.push(el);
+    });
+    refs.forEach((a) => {
+      const m = (a.getAttribute('href') || '').match(/paper-fn(\d+)/);
+      const fnHtml = m ? defs.get(m[1]) : '';
+      const fnText = String(fnHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      const row = apaMatchBiblio(fnText, biblioRows);
+      const span = doc.createElement('span');
+      span.className = 'apa-cite';
+      if (row) span.textContent = formatApa7InText(row, apaLocatorFromText(fnText));
+      else if (fnText) span.textContent = `(${fnText.slice(0, 180)})`;
+      else span.textContent = a.textContent || '';
+      a.replaceWith(span);
+    });
+    defEls.forEach((el) => {
+      const list = el.closest('.footnote-list');
+      el.remove();
+      if (list && !list.querySelector('.footnote-item')) list.remove();
+    });
+    root.querySelectorAll('.footnote-list').forEach((el) => el.remove());
+    return root.innerHTML;
+  } catch (e) {
+    return html;
+  }
+}
+
 function buildAcademicPaperHtml(runData, options) {
   const settings = options || {};
   if (!runData) return '';
+  const isApa = settings.citationStyle === 'apa';
   const title = runData.projectTitle || 'بحث تحقيقي محكم';
   const rounds = (runData.rounds && runData.rounds.length > 0)
     ? runData.rounds
     : [{ round: 1, name: 'المرحلة التحريرية الكاملة', output: runData.rawOutput }];
-  let roundsBodyHtml = pagedPaperTransform(rounds.map(r => `
+  let roundsBodyHtml = rounds.map(r => `
     <section class="academic-round-section">
       ${r.name === '' ? '' : `<h2 class="academic-round-title">${escapeHtml(r.name || `الجولة رقم ${toArabicIndicDigits(r.round)}`)}</h2>`}
       <div class="academic-text-content">${formatAcademicBody(r.output || '')}</div>
     </section>
-  `).join(''));
+  `).join('');
+  if (!isApa) roundsBodyHtml = pagedPaperTransform(roundsBodyHtml);
   /* فهرس الجواب المزروع في المتن (١.١٠.٦٢٢) بلا صفحات: يُحذف من الورقة
      ويحل محله فهرس الورقة الصفحي تحت — لا فهرسان في مطبوعة واحدة */
   roundsBodyHtml = roundsBodyHtml.replace(
@@ -7079,31 +7248,38 @@ function buildAcademicPaperHtml(runData, options) {
   // صفحة ختامية مستقلة بأسماء المصادر والمراجع من شواهد الجواب نفسه
   // (حين لا يحمل المتن ثبتًا خاصًا به) — تبدأ صفحة جديدة بقاعدة الكسر.
   let biblioHtml = '';
-  const biblioRows = Array.isArray(runData.bibliography) ? runData.bibliography : [];
+  const biblioRows = uniquePaperBibliography(Array.isArray(runData.bibliography) ? runData.bibliography : []);
+  if (isApa) roundsBodyHtml = convertAcademicHtmlToApaCitations(roundsBodyHtml, biblioRows);
   if (biblioRows.length && !roundsBodyHtml.includes('biblio-title')) {
-    const seenBiblio = new Set();
-    const biblioItems = [];
-    for (const row of biblioRows) {
-      const key = String(row.book_id || row.rel_path || row.title || '');
-      if (!key || seenBiblio.has(key)) continue;
-      seenBiblio.add(key);
-      /* بيانات كاملة كما في قاعدة الكتب: الكتاب، المؤلف، المحقق،
-         الطبعة، الناشر، مكان النشر، سنة الطبع */
-      const bits = [];
-      if (row.title) bits.push(escapeHtml(row.title));
-      const authorBit = [row.author || '', row.death_year ? `(ت: ${toArabicIndicDigits(row.death_year)} هـ)` : ''].filter(Boolean).join(' ');
-      if (authorBit) bits.push(escapeHtml(authorBit));
-      if ((row.editor || '').trim()) bits.push(`تحقيق: ${escapeHtml(row.editor)}`);
-      if ((row.edition || '').trim()) bits.push(`الطبعة: ${escapeHtml(row.edition)}`);
-      if ((row.publisher || '').trim()) bits.push(`الناشر: ${escapeHtml(row.publisher)}`);
-      if ((row.city || '').trim()) bits.push(`مكان النشر: ${escapeHtml(row.city)}`);
-      if (row.print_year) bits.push(`سنة الطبع: ${escapeHtml(toArabicIndicDigits(row.print_year))}`);
-      if (bits.length) biblioItems.push({ sortTitle: row.title || row.author || '', html: `<li>${bits.join('، ')}</li>` });
-    }
-    if (biblioItems.length) {
-      // ترتيب القائمة على الحروف الأبجدية بعناوين الكتب
-      biblioItems.sort((a, b) => compareBiblioTitles(a.sortTitle, b.sortTitle));
-      biblioHtml = `<section class="academic-round-section"><h2 class="biblio-title">المصادر والمراجع</h2><ol class="biblio-list">${biblioItems.map((item) => item.html).join('')}</ol></section>`;
+    if (isApa) {
+      const biblioItems = biblioRows.map((row) => ({
+        sortAuthor: apaCiteName(row.author) || row.author || '',
+        sortTitle: row.title || '',
+        html: `<li class="apa-ref">${formatApa7Reference(row)}</li>`
+      }));
+      biblioItems.sort((a, b) => compareBiblioTitles(a.sortAuthor, b.sortAuthor)
+        || compareBiblioTitles(a.sortTitle, b.sortTitle));
+      biblioHtml = `<section class="academic-round-section"><h2 class="biblio-title">المراجع</h2><ul class="apa-ref-list">${biblioItems.map((item) => item.html).join('')}</ul></section>`;
+    } else {
+      const biblioItems = [];
+      for (const row of biblioRows) {
+        /* بيانات كاملة كما في قاعدة الكتب: الكتاب، المؤلف، المحقق،
+           الطبعة، الناشر، مكان النشر، سنة الطبع */
+        const bits = [];
+        if (row.title) bits.push(escapeHtml(row.title));
+        const authorBit = [row.author || '', row.death_year ? `(ت: ${toArabicIndicDigits(row.death_year)} هـ)` : ''].filter(Boolean).join(' ');
+        if (authorBit) bits.push(escapeHtml(authorBit));
+        if ((row.editor || '').trim()) bits.push(`تحقيق: ${escapeHtml(row.editor)}`);
+        if ((row.edition || '').trim()) bits.push(`الطبعة: ${escapeHtml(row.edition)}`);
+        if ((row.publisher || '').trim()) bits.push(`الناشر: ${escapeHtml(row.publisher)}`);
+        if ((row.city || '').trim()) bits.push(`مكان النشر: ${escapeHtml(row.city)}`);
+        if (row.print_year) bits.push(`سنة الطبع: ${escapeHtml(toArabicIndicDigits(row.print_year))}`);
+        if (bits.length) biblioItems.push({ sortTitle: row.title || row.author || '', html: `<li>${bits.join('، ')}</li>` });
+      }
+      if (biblioItems.length) {
+        biblioItems.sort((a, b) => compareBiblioTitles(a.sortTitle, b.sortTitle));
+        biblioHtml = `<section class="academic-round-section"><h2 class="biblio-title">المصادر والمراجع</h2><ol class="biblio-list">${biblioItems.map((item) => item.html).join('')}</ol></section>`;
+      }
     }
   }
   /* فهرس البحث بأرقام الصفحات: تُزرع معرّفات في عناوين الورقة ويُبنى
@@ -7172,9 +7348,12 @@ function buildAcademicPaperHtml(runData, options) {
       <button class="btn-act" type="button" onclick="printRawPaper()" title="طباعة الورقة نفسها لكن بأرقام حواشٍ غير مرتبطة: نص خام بلا روابط بين المتن والحاشية">
         <span>🖨️ طباعة خام</span>
       </button>`}
-      <button class="btn-act" id="btnWordExport" type="button" onclick="exportPaperWord()" title="تصدير البحث ملف وورد DOCX بنفس التنسيق وبحواشٍ سفلية حقيقية">
-        <span>📝 تصدير وورد</span>
+      <button class="btn-act" id="btnWordExport" type="button" onclick="exportPaperWord()" title="${isApa ? 'تصدير البحث ملف وورد DOCX بتنسيق APA' : 'تصدير البحث ملف وورد DOCX بنفس التنسيق وبحواشٍ سفلية حقيقية'}">
+        <span>📝 ${isApa ? 'تصدير وورد APA' : 'تصدير وورد'}</span>
       </button>
+      ${isApa ? '' : `<button class="btn-act" id="btnApaExport" type="button" onclick="exportPaperApa()" title="إخراج نسخة مستقلة بتنسيق APA 7: إحالات (مؤلف، سنة) وقائمة مراجع من بيانات الكتب، دون المساس بالتصدير الشرعي">
+        <span>تنسيق APA</span>
+      </button>`}
       <button class="btn-act" id="btnShareReport" type="button" onclick="shareReportPdf()" title="مشاركة" aria-label="مشاركة" disabled>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
       </button>
@@ -7202,6 +7381,17 @@ function buildAcademicPaperHtml(runData, options) {
   </header>`;
   const toolbarScript = settings.toolbar === false ? '' : `
   <script>
+    function exportPaperApa() {
+      try {
+        if (window.parent && window.parent !== window && typeof window.parent.openApaPaperWindow === 'function' && window.parent.__lastPaperRunData) {
+          window.parent.openApaPaperWindow(window.parent.__lastPaperRunData, window.parent.__lastPaperPrintable);
+          return;
+        }
+      } catch (e) {}
+      if (typeof openApaPaperWindow === 'function' && window.__lastPaperRunData) {
+        openApaPaperWindow(window.__lastPaperRunData, window.__lastPaperPrintable);
+      }
+    }
     function toggleReportTheme() {
       const cur = document.documentElement.getAttribute('data-theme') || 'light';
       document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
@@ -7687,6 +7877,7 @@ function buildAcademicPaperHtml(runData, options) {
           else if (el.classList.contains('paper-sub-meta')) kind = 'meta';
           else if (el.classList.contains('paper-bismillah')) kind = 'bismillah';
           else if (el.classList.contains('biblio-title')) kind = 'biblioTitle';
+          else if (el.closest('.apa-ref-list') || el.classList.contains('apa-ref')) kind = 'apaRef';
           else if (el.closest('.biblio-list')) kind = 'biblioItem';
           else if (el.classList.contains('paper-part-title')) kind = 'partTitle';
           else if (/^H[1-6]$/.test(el.tagName) || el.classList.contains('academic-round-title') || el.classList.contains('academic-subheading')) kind = 'h';
@@ -7975,6 +8166,14 @@ function buildAcademicPaperHtml(runData, options) {
     .biblio-list { font-size: 13.5pt; line-height: 2; margin: 10px 0 0; padding-inline-start: 0; list-style: none; counter-reset: biblio; }
     .biblio-list li { margin: 0 0 4px; text-align: right; counter-increment: biblio; }
     .biblio-list li::before { content: counter(biblio, arabic-indic) " "; font-weight: 700; }
+    .apa-cite { font-weight: 700; }
+    .apa-ref-list { list-style: none; margin: 10px 0 0; padding: 0; font-size: 13.5pt; }
+    .apa-ref {
+      margin: 0 0 0.7em; padding-right: 2em; text-indent: -2em;
+      line-height: 1.9; text-align: right;
+    }
+    .apa-book-title { font-style: italic; }
+    .apa-paper .pg-fn { float: none; }
     @media print {
       .pg-fn-call, .pg-fn-marker { color: #1d4ed8 !important; }
     }
@@ -7988,13 +8187,14 @@ function buildAcademicPaperHtml(runData, options) {
   ${printExtras.head}
   <style id="print-user-css">${printExtras.css}</style>
 </head>
-<body>
+<body class="${isApa ? 'apa-paper' : ''}">
   ${toolbar}
   <div class="paper-sheet" dir="rtl">
   ${settings.printable === 'draft' ? `<div style="border:1.5px dashed #b45309;color:#92400e;background:#fffbeb;border-radius:8px;padding:6px 12px;margin:0 0 14px;text-align:center;font-weight:700;font-size:13.5px">🔖 طباعة مبدئية — مسودة هذه الجولة للمراجعة والتدقيق، وليست النسخة المعتمدة</div>` : ''}
   <header class="print-cover-header">
     <div class="paper-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
     <h1 class="paper-main-title">${escapeHtml(title)}</h1>
+    ${isApa ? '<p class="paper-sub-meta">تنسيق APA (الإصدار السابع)</p>' : ''}
   </header>
   <main>${roundsBodyHtml}${biblioHtml}${tocHtml}</main>
   </div>
@@ -8106,7 +8306,36 @@ function buildAcademicPaperHtml(runData, options) {
    (نافذة قراءة في تطبيق الماك/نافذة متصفح في غيره) وفي أعلاها شريط
    فيه زر «طباعة / حفظ كـ PDF»، فيطبع المستخدم متى شاء بعد اكتمال
    تقسيم الصفحات أمامه */
+function openApaPaperWindow(runData, printable) {
+  if (!runData) {
+    showToast('لا توجد نتائج لفتحها بتنسيق APA');
+    return;
+  }
+  window.__lastPaperRunData = runData;
+  window.__lastPaperPrintable = printable;
+  window.__lastPaperIsApa = true;
+  const fullPrintHtml = buildAcademicPaperHtml(runData, { toolbar: true, printable, citationStyle: 'apa' });
+  if (typeof openChatReadingOverlay === 'function') {
+    openChatReadingOverlay(fullPrintHtml, printable);
+    showToast(printable === 'draft' ? 'تم فتح نسخة APA المبدئية' : 'تم فتح البحث بتنسيق APA. الطباعة ووورد من هذه الورقة لا يغيّران النسخة الشرعية');
+    return;
+  }
+  const printWin = window.open('', '_blank');
+  if (!printWin || printWin === window) {
+    showToast('تعذر فتح صفحة APA. اسمح بالنوافذ المنبثقة ثم أعد المحاولة');
+    return;
+  }
+  printWin.document.open();
+  printWin.document.write(fullPrintHtml);
+  printWin.document.close();
+  showToast('تم فتح البحث بتنسيق APA');
+  setTimeout(() => { try { printWin.focus(); } catch (e) {} }, 400);
+}
+
 function openAcademicPaperWindow(runData, printable) {
+  window.__lastPaperRunData = runData;
+  window.__lastPaperPrintable = printable;
+  window.__lastPaperIsApa = false;
   const fullPrintHtml = buildAcademicPaperHtml(runData, { toolbar: true, printable });
   /* داخل التطبيق: تراكب قراءة بملء الشاشة — نافذة النظام الأصلية
      («قراءة») كانت تومض ولا يصلها شريط الأدوات بثبات */
@@ -8137,6 +8366,7 @@ function printAcademicPaper() {
 
 window.printAcademicPaper = printAcademicPaper;
 window.openAcademicPaperWindow = openAcademicPaperWindow;
+window.openApaPaperWindow = openApaPaperWindow;
 window.buildAcademicPaperHtml = buildAcademicPaperHtml;
 
 function exportCurrentProjectResultsModal() {

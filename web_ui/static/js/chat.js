@@ -2364,6 +2364,9 @@ function renderSessionMessages(sessionId, options) {
         </button>` : `<button type="button" class="btn-msg-export" onclick="exportChatMessagePdf(${idx})" title="طباعة مسودة هذه الجولة (تُوسم داخل الورقة بأنها مبدئية غير معتمدة) بحواشٍ لكل صفحة أو حفظها PDF">
           🖨️ طباعة مبدئية
         </button>`}
+        <button type="button" class="btn-msg-export" onclick="exportChatMessageApa(${idx})" title="إخراج نسخة مستقلة بتنسيق APA 7: إحالات (مؤلف، سنة) وقائمة مراجع من بيانات الكتب، دون المساس بوورد وPDF الشرعي">
+          تنسيق APA
+        </button>
         ${stageByIdx.get(idx) === 'final' ? `<button type="button" class="btn-msg-export" onclick="generateAudioSummary(${idx}, this)" title="اختصار هذه الإجابة المعتمدة بنموذج Gemini 3.8 Flash اختصارًا دقيقًا غير مخلّ، ثم تحويلها إلى ملف صوتي بصوت Algieba يُرفق بجانب زمن الإجابة لتسمعه وتنزّله وتشاركه">
           🔊 ملخص صوتي
         </button>` : ''}
@@ -2810,6 +2813,7 @@ function buildWordPayload(doc) {
       else if (el.classList.contains('paper-sub-meta')) kind = 'meta';
       else if (el.classList.contains('paper-bismillah')) kind = 'bismillah';
       else if (el.classList.contains('biblio-title')) kind = 'biblioTitle';
+      else if (el.closest('.apa-ref-list') || el.classList.contains('apa-ref')) kind = 'apaRef';
       else if (el.closest('.biblio-list')) kind = 'biblioItem';
       else if (/^H[1-6]$/.test(el.tagName) || el.classList.contains('academic-round-title') || el.classList.contains('academic-subheading')) kind = 'h';
       const runs = [];
@@ -2889,6 +2893,7 @@ function openChatReadingOverlay(htmlContent, printable) {
           <button type="button" class="chat-reading-print">🖨️ طباعة / حفظ PDF</button>
           <button type="button" class="chat-reading-print chat-reading-print-raw" title="نفس الطباعة لكن بأرقام حواشٍ غير مرتبطة: نص خام بلا روابط بين المتن والحاشية">🖨️ طباعة خام</button>
           <button type="button" class="chat-reading-print chat-reading-word" title="تصدير البحث ملف وورد DOCX بنفس التنسيق وبحواشٍ سفلية حقيقية">📝 تصدير وورد</button>
+          <button type="button" class="chat-reading-print chat-reading-apa" title="إخراج نسخة مستقلة بتنسيق APA 7 من بيانات الكتب دون المساس بالتصدير الشرعي">تنسيق APA</button>
           <button type="button" class="chat-reading-close" aria-label="إغلاق">إغلاق</button>
         </div>
         <iframe id="chatReadingFrame" title="قراءة"></iframe>
@@ -2917,15 +2922,28 @@ function openChatReadingOverlay(htmlContent, printable) {
         showToast('تعذر تصدير ملف وورد');
       }
     });
+    overlay.querySelector('.chat-reading-apa').addEventListener('click', () => {
+      if (window.__lastPaperIsApa) {
+        showToast('هذه الورقة بتنسيق APA');
+        return;
+      }
+      if (typeof openApaPaperWindow === 'function' && window.__lastPaperRunData) {
+        openApaPaperWindow(window.__lastPaperRunData, window.__lastPaperPrintable);
+        return;
+      }
+      showToast('افتح البحث أولًا ثم اختر تنسيق APA');
+    });
     document.body.appendChild(overlay);
   }
   /* الطباعة من التراكب: للإجابة المعتمدة بلا وسم، ولغيرها «طباعة
      مبدئية» متاحة موسومة داخل الورقة؛ القراءة وحدها بلا طباعة */
   const canPrint = printable !== false;
-  overlay.querySelectorAll('.chat-reading-print:not(.chat-reading-word)').forEach((b) => {
+  overlay.querySelectorAll('.chat-reading-print:not(.chat-reading-word):not(.chat-reading-apa)').forEach((b) => {
     b.style.display = canPrint ? '' : 'none';
   });
-  const mainPrintBtn = overlay.querySelector('.chat-reading-print:not(.chat-reading-print-raw):not(.chat-reading-word)');
+  const apaBtn = overlay.querySelector('.chat-reading-apa');
+  if (apaBtn) apaBtn.style.display = window.__lastPaperIsApa ? 'none' : '';
+  const mainPrintBtn = overlay.querySelector('.chat-reading-print:not(.chat-reading-print-raw):not(.chat-reading-word):not(.chat-reading-apa)');
   if (mainPrintBtn) {
     mainPrintBtn.textContent = printable === 'draft' ? '🖨️ طباعة مبدئية / حفظ PDF' : '🖨️ طباعة / حفظ PDF';
   }
@@ -2989,6 +3007,18 @@ async function exportChatMessagePdf(idx) {
     return;
   }
   showToast('تعذر تجهيز صفحة البحث للطباعة');
+}
+
+function exportChatMessageApa(idx) {
+  const paper = chatAnswerPaper(idx);
+  if (!paper) return;
+  if (typeof window.openApaPaperWindow === 'function') {
+    const session = chatSessions.find(s => s.id === activeSessionId);
+    const approved = session ? isFinalApprovedAnswer(session, idx) : true;
+    window.openApaPaperWindow(paper.runData, approved ? true : 'draft');
+    return;
+  }
+  showToast('تعذر تجهيز صفحة APA');
 }
 
 function copyChatMessageText(idx) {
@@ -6108,6 +6138,7 @@ window.exportChatSessionFile = exportChatSessionFile;
 window.importChatSessionFile = importChatSessionFile;
 window.exportChatMessageHtml = exportChatMessageHtml;
 window.exportChatMessagePdf = exportChatMessagePdf;
+window.exportChatMessageApa = exportChatMessageApa;
 window.prepareChatAnswerShareFile = prepareChatAnswerShareFile;
 window.copyChatMessageText = copyChatMessageText;
 

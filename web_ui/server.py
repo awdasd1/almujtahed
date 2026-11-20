@@ -9165,7 +9165,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.813"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.814"},
         },
     })
     if opened.get("error"):
@@ -30487,6 +30487,7 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
     kind = str(block.get("kind") or "p")
     body = _docx_style(styles, "body", {"font": "Amiri", "size": 12, "weight": 400})
     key = {"title": "title", "meta": "meta", "h": "h", "biblioTitle": "h", "biblioItem": "biblio",
+           "apaRef": "biblio",
            "tocTitle": "h", "partTitle": "h", "chapter": "h",
            "chapterLabel": "h", "chapterName": "h"}.get(kind, "body")
     base = _docx_style(styles, key, body)
@@ -30529,6 +30530,8 @@ def _docx_paragraph(block: dict, styles: dict, fn_count: int, page_break: bool =
         ppr.append('<w:spacing w:before="0" w:line="240" w:lineRule="auto" w:after="60"/>')
     if kind == "p":
         ppr.append('<w:ind w:firstLine="300"/>')
+    if kind == "apaRef":
+        ppr.append('<w:ind w:start="720" w:hanging="720"/>')
     ppr.append(f'<w:jc w:val="{align}"/>')
     runs = _docx_runs(block.get("runs"), base, styles, fn_count)
     if not runs:
