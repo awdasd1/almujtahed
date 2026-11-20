@@ -2639,9 +2639,13 @@ function rdApiKey() {
 function rdMd(text) {
   const t = String(text || '');
   if (typeof marked !== 'undefined' && (marked.parse || typeof marked === 'function')) {
-    try { return (marked.parse || marked)(t); } catch (e) { /* */ }
+    try {
+      const html = (marked.parse || marked)(t);
+      if (/class=["']cit-src["']/.test(t) && html && !/class=["']cit-src["']/.test(html)) return t;
+      return html;
+    } catch (e) { /* */ }
   }
-  return rdEsc(t).replace(/\n/g, '<br>');
+  return /class=["']cit-src["']/.test(t) ? t : rdEsc(t).replace(/\n/g, '<br>');
 }
 function rdCite() {
   const p = rdCurrent;

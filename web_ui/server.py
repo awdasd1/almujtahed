@@ -9165,7 +9165,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.803"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.804"},
         },
     })
     if opened.get("error"):
@@ -21400,6 +21400,12 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 if citations_text:
                     _mat = "المقاطع المسترجعة من النطاق المحدد:\n\n" + citations_text
                     system_instruction = (system_instruction + "\n\n" + _mat) if system_instruction else _mat
+                    system_instruction += (
+                        "\n\nفي المتن رقم الإحالة المرتفع وحده: <sup><small>(١)</small></sup>. "
+                        "كل نقل في حاشية بسطر مستقل بعد المتن، تنسخ فيها سطر «الإحالة المعتمدة» كما هو "
+                        "مع #ID و(جزء-صفحة) حتى يُفتح تصفح المصدر. لا تُنشئ قائمة مصادر بعد الحواشي.\n"
+                    )
+                    system_instruction += "\n" + CITATION_FORMAT_RULE
             elif req.custom_generation:
                 system_instruction = (req.system_prompt or "").strip()
             elif req.system_prompt:
