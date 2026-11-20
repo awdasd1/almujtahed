@@ -631,6 +631,24 @@ function rdCollectComments(p) {
       filePage: loc.filePage, part: loc.part, shown: loc.shown,
     });
   });
+  (p.summaries || []).forEach(s => {
+    const loc = rdLocus(s.fileFrom || s.filePage || 1, book);
+    const from = s.from != null ? s.from : loc.shown;
+    const to = s.to != null ? s.to : from;
+    const same = from === to;
+    rows.push({
+      kind: 'تلخيص',
+      text: same ? `صفحة ${from}` : `صفحات ${from}–${to}`,
+      analysis: s.text || '',
+      refs: '',
+      commentKind: 'تلخيص',
+      when: rdCommentWhen(s),
+      at: s.created_at || '',
+      filePage: loc.filePage,
+      part: loc.part,
+      shown: same ? from : `${from}–${to}`,
+    });
+  });
   rows.sort((a, b) => String(a.at).localeCompare(String(b.at)));
   return rows;
 }
