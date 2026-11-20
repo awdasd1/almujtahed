@@ -17,7 +17,6 @@ let rdDraw = null; // رسم جارٍ {type, pts|x0...}
 let rdSaveTimer = null;
 let rdActiveSel = null; // {page, kind:'h'|'c', index, rect:{x,y,w,h}}
 let rdSelFromHover = false; // شريط الأيقونات ظاهر بسبب تمرير على تحليل سابق
-let rdAsstDraftBooks = [];
 let rdEditingAsstId = null;
 let rdAnalysis = null; // {id, discussion} المناقشة المفتوحة
 let rdAnalysisAbort = null;
@@ -2681,50 +2680,127 @@ async function rdLoadVisionCatalog() {
     .map(m => ({ id: m.id || m.model_id || m.name, name: m.name || m.id })).filter(m => m.id);
   return rdVisionCatalog;
 }
-function rdRenderAsstModelOptions() {
-  const list = document.getElementById('rdAsstModelOptions');
-  const trigger = document.getElementById('rdAsstModelTriggerText');
-  const hidden = document.getElementById('rdAsstModel');
-  if (!list) return;
-  const models = rdModelCatalog || [];
-  if (!models.length) {
-    list.innerHTML = '<div style="padding:10px;color:var(--text-muted)">لا نماذج متاحة — تحقق من مفتاح OpenRouter في الخدمات</div>';
-    if (trigger) trigger.textContent = 'لا نماذج متاحة';
-    return;
+function rdAsstBookTitles(asst) {
+  return (asst && asst.books || []).map(b => typeof b === 'string' ? b : (b && b.title)).filter(Boolean);
+}
+function rdApplyAgentScopeLabel(titles) {
+  const label = document.getElementById('agentScopeSelectorLabel');
+  const badge = document.getElementById('agentScopeSelectedBadge');
+  const clearBtn = document.getElementById('btnClearAgentScope');
+  const n = (titles || []).length;
+  if (label) label.textContent = n === 0 ? 'جميع كتب الشاملة (8,589 كتاباً)' : n === 1 ? titles[0] : `محدد: ${n} كتب`;
+  if (badge) { badge.textContent = String(n); badge.style.display = n ? 'inline-block' : 'none'; }
+  if (clearBtn) clearBtn.style.display = n ? 'inline-block' : 'none';
+}
+function rdRaiseAgentModal() {
+  const ov = document.getElementById('agentModalOverlay');
+  if (!ov) return;
+  if (ov.parentElement !== document.body) document.body.appendChild(ov);
+  ov.style.setProperty('z-index', '200000', 'important');
+}
+function rdClearAgentModalReadingMode() {
+  window._rdAssistantMode = false;
+  const ov = document.getElementById('agentModalOverlay');
+  if (ov) ov.style.removeProperty('z-index');
+  const roles = document.getElementById('agentTeamRolesBlock');
+  if (roles) roles.hidden = false;
+  const save = document.getElementById('agentModalSaveBtn');
+  if (save) save.textContent = 'حفظ الوكيل';
+  const title = document.getElementById('agentModalTitle');
+  if (title && /مساعد القراءة/.test(title.textContent || '')) title.textContent = 'إضافة وكيل مساعد جديد';
+}
+window.onAgentModalClosed = function () {
+  if (window._rdAssistantMode) rdClearAgentModalReadingMode();
+};
+function rdOpenAgentAssistantModal(id) {
+  const asst = id ? rdAssistants.find(a => a.id === id) : null;
+  rdEditingAsstId = asst ? asst.id : null;
+  window._rdAssistantMode = true;
+  if (typeof openAddAgentModal === 'function') openAddAgentModal();
+  document.getElementById('editAgentId').value = asst ? asst.id : '';
+  document.getElementById('agentModalTitle').textContent = asst
+    ? `تعديل مساعد القراءة «${asst.name}»`
+    : 'إضافة مساعد قراءة';
+  document.getElementById('agentNameInput').value = asst ? (asst.name || '') : '';
+  document.getElementById('agentDescInput').value = asst ? (asst.desc || '') : '';
+  document.getElementById('agentPromptInput').value = asst
+    ? (asst.prompt || asst.systemPrompt || asst.system_prompt || RD_DEFAULT_ASST_PROMPT)
+    : RD_DEFAULT_ASST_PROMPT;
+  const model = asst && asst.model ? asst.model : (document.getElementById('agentSelectedModelId')?.value || 'anthropic/claude-3.7-sonnet');
+  document.getElementById('agentSelectedModelId').value = model;
+  document.getElementById('agentThinkingSelect').value = (asst && asst.thinking) || 'medium';
+  if (asst) {
+    document.getElementById('agentTempInput').value = asst.temp != null ? asst.temp : 0.2;
+    document.getElementById('agentTopKInput').value = asst.topK || asst.top_k || 40;
+    document.getElementById('agentRepInput').value = asst.repPenalty || 1.1;
+    document.getElementById('agentTokensInput').value = asst.context_tokens || 1048576;
+    document.getElementById('agentPoolInput').value = asst.poolSize || asst.pool_size || 250;
+    document.getElementById('agentTopRerankInput').value = asst.topK || asst.top_k || asst.topRerank || 40;
+    const sm = document.getElementById('agentSearchModeSelect');
+    if (sm) sm.value = asst.search_mode || ((asst.use_hybrid === false) ? 'semantic' : 'hybrid');
   }
-  if (hidden && !hidden.value) hidden.value = models[0].id;
-  const selId = hidden ? hidden.value : '';
-  list.innerHTML = models.map(m => `
-    <div class="custom-model-item ${m.id === selId ? 'active' : ''}" data-rd-model-id="${rdEsc(m.id)}" data-rd-model-name="${rdEsc(m.name)}" onclick="rdSelectAsstModel('${rdEsc(m.id)}')">
-      <span class="custom-model-item-name" title="${rdEsc(m.id)}">${rdEsc(m.name)}</span>
-    </div>`).join('');
-  const sel = models.find(m => m.id === selId) || models[0];
-  if (trigger && sel) { trigger.textContent = sel.name; trigger.title = sel.id; }
+  const dir = document.getElementById('agentDirectorInput');
+  const tm = document.getElementById('agentToolsManagerInput');
+  const pl = document.getElementById('agentPlannerInput');
+  if (dir) dir.checked = false;
+  if (tm) tm.checked = false;
+  if (pl) pl.checked = false;
+  const roles = document.getElementById('agentTeamRolesBlock');
+  if (roles) roles.hidden = true;
+  const save = document.getElementById('agentModalSaveBtn');
+  if (save) save.textContent = asst ? 'حفظ المساعد' : 'اعتمد المساعد';
+  const titles = rdAsstBookTitles(asst);
+  window._currentAgentBooks = titles.slice();
+  rdApplyAgentScopeLabel(titles);
+  if (typeof populateAgentModelDropdown === 'function') populateAgentModelDropdown(model);
+  rdRaiseAgentModal();
+  setTimeout(() => document.getElementById('agentNameInput')?.focus(), 60);
 }
-function rdToggleAsstModelDropdown(event) {
-  if (event) event.stopPropagation();
-  const w = document.getElementById('rdAsstModelWrapper');
-  if (!w) return;
-  const open = w.classList.toggle('open');
-  if (open) setTimeout(() => document.getElementById('rdAsstModelSearch')?.focus(), 50);
+window.rdOpenAgentAssistantModal = rdOpenAgentAssistantModal;
+function rdSaveAssistantFromAgentModal() {
+  const name = (document.getElementById('agentNameInput')?.value || '').trim();
+  const model = document.getElementById('agentSelectedModelId')?.value || '';
+  const prompt = (document.getElementById('agentPromptInput')?.value || '').trim() || RD_DEFAULT_ASST_PROMPT;
+  if (!name) { rdToast('يرجى تحديد اسم المساعد'); return; }
+  if (!model) { rdToast('اختر نموذجًا'); return; }
+  const titles = [...(window._currentAgentBooks || [])];
+  const searchMode = document.getElementById('agentSearchModeSelect')?.value || 'hybrid';
+  const topK = parseInt(document.getElementById('agentTopRerankInput')?.value || document.getElementById('agentTopKInput')?.value || 40, 10) || 40;
+  const pool = parseInt(document.getElementById('agentPoolInput')?.value || 250, 10) || 250;
+  const data = {
+    name,
+    desc: (document.getElementById('agentDescInput')?.value || '').trim(),
+    model,
+    prompt,
+    systemPrompt: prompt,
+    system_prompt: prompt,
+    books: titles.map(t => ({ title: t })),
+    thinking: document.getElementById('agentThinkingSelect')?.value || 'medium',
+    temp: parseFloat(document.getElementById('agentTempInput')?.value || 0.2),
+    topK,
+    top_k: topK,
+    poolSize: pool,
+    pool_size: pool,
+    search_mode: searchMode,
+    use_hybrid: searchMode !== 'semantic',
+    repPenalty: parseFloat(document.getElementById('agentRepInput')?.value || 1.1),
+    context_tokens: parseInt(document.getElementById('agentTokensInput')?.value || 1048576, 10) || 1048576,
+    updated_at: new Date().toISOString(),
+  };
+  if (rdEditingAsstId) {
+    const cur = rdAssistants.find(a => a.id === rdEditingAsstId);
+    if (cur) Object.assign(cur, data);
+    rdToast(`✔ حُفظ تعديل المساعد «${name}»`);
+  } else {
+    rdAssistants.unshift({ id: rdUid(), ...data, created_at: new Date().toISOString() });
+    rdToast(`✔ اعتُمد المساعد «${name}»`);
+  }
+  rdEditingAsstId = null;
+  rdSaveSoon();
+  rdRenderAssistantsList();
+  if (typeof closeAgentModal === 'function') closeAgentModal();
 }
-function rdSelectAsstModel(id) {
-  const hidden = document.getElementById('rdAsstModel');
-  if (hidden) hidden.value = id;
-  document.getElementById('rdAsstModelWrapper')?.classList.remove('open');
-  rdRenderAsstModelOptions();
-}
-function rdFilterAsstModels(q) {
-  const needle = String(q || '').trim().toLowerCase();
-  document.querySelectorAll('#rdAsstModelOptions .custom-model-item').forEach(el => {
-    const hay = `${el.dataset.rdModelId || ''} ${el.dataset.rdModelName || ''}`.toLowerCase();
-    el.style.display = !needle || hay.includes(needle) ? 'flex' : 'none';
-  });
-}
-function rdClearAsstModelSearch() {
-  const inp = document.getElementById('rdAsstModelSearch');
-  if (inp) { inp.value = ''; rdFilterAsstModels(''); inp.focus(); }
-}
+window.rdSaveAssistantFromAgentModal = rdSaveAssistantFromAgentModal;
 // نماذج القارئ: قائمة راديو قابلة للتصفية (كنماذج نافذة النقد والمقارنة)
 function rdRenderVisionModelOptions() {
   const box = document.getElementById('rdVisModelList');
@@ -2744,40 +2820,13 @@ function rdFilterVisionModels(q) {
     el.style.display = !needle || el.textContent.toLowerCase().includes(needle) ? 'flex' : 'none';
   });
 }
-function rdUpdateAsstScopeLabel() {
-  const label = document.getElementById('rdAsstScopeLabel');
-  const badge = document.getElementById('rdAsstScopeBadge');
-  const clear = document.getElementById('rdAsstScopeClear');
-  if (!label) return;
-  const n = rdAsstDraftBooks.length;
-  label.textContent = n === 0 ? 'جميع كتب الشاملة — المكتبة كاملة'
-    : n === 1 ? rdAsstDraftBooks[0].title : `محدد: ${n} كتب`;
-  if (badge) { badge.textContent = n; badge.style.display = n ? 'inline-block' : 'none'; }
-  if (clear) clear.style.display = n ? 'inline-block' : 'none';
-}
-function rdOpenAssistantScope() {
-  window._rdAssistantBookTitles = rdAsstDraftBooks.map(b => b.title);
-  if (typeof openSearchScopeModal === 'function') openSearchScopeModal('rd_assistant');
-  else rdToast('نافذة نطاق البحث غير متاحة');
-}
-window.onRdAssistantBooks = function (titles) {
-  rdAsstDraftBooks = (titles || []).map(t => ({ title: t }));
-  rdUpdateAsstScopeLabel();
-};
-function rdClearAssistantScope(event) {
-  if (event) event.stopPropagation();
-  rdAsstDraftBooks = [];
-  window._rdAssistantBookTitles = [];
-  rdUpdateAsstScopeLabel();
-}
-
 function rdRenderAssistantsList() {
   const box = document.getElementById('rdAssistantsList');
   if (!box) return;
   if (!rdAssistants.length) { box.innerHTML = '<div class="ms-hint">لا مساعدين بعد.</div>'; return; }
   box.innerHTML = rdAssistants.map(a => `
     <div class="rd-entity-card">
-      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length} كتاب${a.summarizer ? ' · الملخص المعتمد' : ''}${a.researcher ? ' · الباحث المعتمد' : ''}</div></div>
+      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${rdAsstBookTitles(a).length ? `${rdAsstBookTitles(a).length} كتاب` : 'المكتبة كاملة'}${a.topK || a.top_k ? ` · ${a.topK || a.top_k} شاهدًا` : ''}${a.summarizer ? ' · الملخص المعتمد' : ''}${a.researcher ? ' · الباحث المعتمد' : ''}</div></div>
       <span class="rd-mode-btns">
         <button type="button" class="ms-btn${a.summarizer ? ' ms-btn-primary' : ''}" title="اعتماد هذا المساعد نموذجًا للتلخيص" onclick="rdSetSummarizer('${a.id}')">الملخص</button>
         <button type="button" class="ms-btn${a.researcher ? ' ms-btn-primary' : ''}" title="اعتماد هذا المساعد باحثًا في النسخة النصية" onclick="rdSetResearcher('${a.id}')">الباحث</button>
@@ -2797,27 +2846,11 @@ function rdRenderReadersList() {
     </div>`).join('');
 }
 
-function rdSetAsstAdoptLabel() {
-  const btn = document.getElementById('rdAsstAdoptBtn');
-  if (btn) btn.textContent = rdEditingAsstId ? 'حفظ التعديل' : 'اعتمد';
-}
-async function rdOpenCreateAssistant() {
+function rdOpenCreateAssistant() {
   rdEditingAsstId = null;
-  rdSetAsstAdoptLabel();
-  rdAsstDraftBooks = [];
-  document.getElementById('rdAsstName').value = '';
-  document.getElementById('rdAsstPrompt').value = RD_DEFAULT_ASST_PROMPT;
-  const hidden = document.getElementById('rdAsstModel');
-  if (hidden) hidden.value = '';
-  const search = document.getElementById('rdAsstModelSearch');
-  if (search) search.value = '';
-  rdUpdateAsstScopeLabel();
   rdShowModal('rdAssistantModal');
   rdRenderAssistantsList();
-  const list = document.getElementById('rdAsstModelOptions');
-  if (list) list.innerHTML = '<div style="padding:10px;color:var(--text-muted)">جارٍ جلب النماذج...</div>';
-  try { await rdLoadModelCatalog(); rdRenderAsstModelOptions(); }
-  catch (e) { if (list) list.innerHTML = `<div style="padding:10px">❌ ${rdEsc(e.message)}</div>`; }
+  if (!rdAssistants.length) rdOpenAgentAssistantModal();
 }
 async function rdOpenCreateReader() {
   document.getElementById('rdVisName').value = '';
@@ -2831,54 +2864,16 @@ async function rdOpenCreateReader() {
   catch (e) { if (box) box.innerHTML = `<div style="font-size:12.5px;padding:6px">❌ ${rdEsc(e.message)}</div>`; }
 }
 
-function rdAdoptAssistant() {
-  const name = document.getElementById('rdAsstName').value.trim();
-  const model = document.getElementById('rdAsstModel').value;
-  const prompt = document.getElementById('rdAsstPrompt').value.trim() || RD_DEFAULT_ASST_PROMPT;
-  if (!name) { rdToast('اكتب اسم المساعد'); return; }
-  if (!model) { rdToast('اختر نموذجًا'); return; }
-  const books = rdAsstDraftBooks.map(b => ({ ...b }));
-  if (rdEditingAsstId) {
-    const cur = rdAssistants.find(a => a.id === rdEditingAsstId);
-    if (cur) Object.assign(cur, { name, model, prompt, books, updated_at: new Date().toISOString() });
-    rdEditingAsstId = null;
-    rdSetAsstAdoptLabel();
-    rdToast(`✔ حُفظ تعديل المساعد «${name}»`);
-  } else {
-    rdAssistants.unshift({
-      id: rdUid(), name, model, prompt, books,
-      created_at: new Date().toISOString(),
-    });
-    rdToast(`✔ اعتُمد المساعد «${name}»`);
-  }
-  rdSaveSoon();
+function rdEditAssistant(id) {
+  rdShowModal('rdAssistantModal');
   rdRenderAssistantsList();
-  document.getElementById('rdAsstName').value = '';
-  document.getElementById('rdAsstPrompt').value = RD_DEFAULT_ASST_PROMPT;
-  rdAsstDraftBooks = [];
-  rdUpdateAsstScopeLabel();
+  rdOpenAgentAssistantModal(id);
 }
-async function rdEditAssistant(id) {
-  const a = rdAssistants.find(x => x.id === id);
-  if (!a) return;
-  rdEditingAsstId = id;
-  rdSetAsstAdoptLabel();
-  document.getElementById('rdAsstName').value = a.name || '';
-  document.getElementById('rdAsstPrompt').value = a.prompt || RD_DEFAULT_ASST_PROMPT;
-  rdAsstDraftBooks = (a.books || []).map(b => ({ title: b.title, book_id: b.book_id }));
-  window._rdAssistantBookTitles = rdAsstDraftBooks.map(b => b.title).filter(Boolean);
-  rdUpdateAsstScopeLabel();
-  try { await rdLoadModelCatalog(); } catch (e) { /* تبقى القائمة الحالية */ }
-  const hidden = document.getElementById('rdAsstModel');
-  if (hidden) hidden.value = a.model || '';
-  rdRenderAsstModelOptions();
-  document.getElementById('rdAsstName')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  rdToast(`تعديل «${a.name}» — عدّل الحقول ثم اضغط حفظ التعديل`);
-}
+window.rdEditAssistant = rdEditAssistant;
 function rdDeleteAssistant(id) {
   if (!confirm('حذف هذا المساعد؟')) return;
   rdAssistants = rdAssistants.filter(a => a.id !== id);
-  if (rdEditingAsstId === id) { rdEditingAsstId = null; rdSetAsstAdoptLabel(); }
+  if (rdEditingAsstId === id) rdEditingAsstId = null;
   rdSaveSoon(); rdRenderAssistantsList();
 }
 function rdAdoptVisionReader() {
@@ -3243,6 +3238,7 @@ function rdOpenSummarize() {
   if (!asst) {
     rdToast('حدّد الملخص من نافذة المساعد بزر «الملخص»');
     rdOpenCreateAssistant();
+    if (!rdAssistants.length) rdOpenAgentAssistantModal();
     return;
   }
   if (!rdNotebookActive() && !rdDefaultReader()) return;
@@ -3691,23 +3687,32 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
   try {
     // التوجيهان يُرسلان في رسالة النظام فقط، فلا يُكتبان في رسائل النافذة.
     const fast = disc.mode === 'fast';
-    const books = (asst.books || []).map(b => b.title).filter(Boolean);
-    const basePrompt = asst.prompt || RD_DEFAULT_ASST_PROMPT;
+    const books = rdAsstBookTitles(asst);
+    const basePrompt = asst.prompt || asst.systemPrompt || asst.system_prompt || RD_DEFAULT_ASST_PROMPT;
     const prompt = `${basePrompt}\n\n${fast ? RD_FAST_DIRECTIVE : RD_EDITED_DIRECTIVE}`;
     const visible = (disc.messages || []).map(m => ({ role: m.role, content: m.content }));
+    const thinking = asst.thinking || 'medium';
+    const pool = Number(asst.poolSize || asst.pool_size) || 250;
+    const topK = Number(asst.topK || asst.top_k) || 40;
+    const temp = asst.temp != null ? Number(asst.temp) : 0.2;
+    const hybrid = asst.search_mode ? asst.search_mode !== 'semantic' : asst.use_hybrid !== false;
     const agentObj = {
-      id: asst.id || 'rd-asst', name: asst.name, desc: '',
+      id: asst.id || 'rd-asst', name: asst.name, desc: asst.desc || '',
       system_prompt: prompt, systemPrompt: prompt,
-      model: asst.model, thinking: 'medium',
+      model: asst.model, thinking,
       books, booksScope: books,
-      pool_size: 800, top_k: 60, temp: 0.2,
+      pool_size: pool, poolSize: pool, top_k: topK, topK, temp,
+      search_mode: asst.search_mode || (hybrid ? 'hybrid' : 'semantic'),
+      use_hybrid: hybrid,
+      context_tokens: asst.context_tokens || 1048576,
+      repPenalty: asst.repPenalty,
     };
     const body = fast ? {
       chat_id: null,
       model: asst.model,
       provider: 'openrouter',
       api_key: rdApiKey(),
-      thinking_level: 'medium',
+      thinking_level: thinking,
       free_mode: true,
       use_hybrid: false,
       semantic_enhanced: false,
@@ -3720,15 +3725,15 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
       model: asst.model,
       provider: 'openrouter',
       api_key: rdApiKey(),
-      thinking_level: 'medium',
-      use_hybrid: true,
-      semantic_enhanced: true,
+      thinking_level: thinking,
+      use_hybrid: hybrid,
+      semantic_enhanced: hybrid,
       system_prompt: prompt,
       messages: visible,
       selected_books: books.length ? books : null,
-      witness_limit: 50,
+      witness_limit: topK,
       agent_group: {
-        id: asst.id || 'rd-asst', name: asst.name, desc: '',
+        id: asst.id || 'rd-asst', name: asst.name, desc: asst.desc || '',
         active_agent: { ...agentObj },
         agents: [agentObj],
         disabled_agents: [],
@@ -3909,8 +3914,10 @@ async function rdNativeShareImage(blob, caption) {
 }
 
 document.addEventListener('click', (e) => {
-  const w = document.getElementById('rdAsstModelWrapper');
-  if (w && w.classList.contains('open') && !w.contains(e.target)) w.classList.remove('open');
+  const w = document.getElementById('agentCustomModelWrapper');
+  if (window._rdAssistantMode && w && w.classList.contains('open') && !w.contains(e.target)) {
+    if (typeof closeAgentModelDropdown === 'function') closeAgentModelDropdown();
+  }
 });
 
 // =============================================================================

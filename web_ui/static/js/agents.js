@@ -1140,6 +1140,7 @@ function editAgent(id) {
 
 function closeAgentModal() {
   document.getElementById('agentModalOverlay').classList.remove('open');
+  if (typeof window.onAgentModalClosed === 'function') window.onAgentModalClosed();
   if (!agentCardReturn) return;
   const ret = agentCardReturn;
   agentCardReturn = null;
@@ -1288,6 +1289,10 @@ function adoptMcpBranches() {
 
 // حفظ الوكيل داخل المجموعة المحددة
 function saveAgentFromModal() {
+  if (window._rdAssistantMode && typeof window.rdSaveAssistantFromAgentModal === 'function') {
+    window.rdSaveAssistantFromAgentModal();
+    return;
+  }
   const currentGroup = agentGroups.find(g => g.id === currentActiveGroupId) || agentGroups[0];
   if (!currentGroup) return;
   if (!currentGroup.agents) currentGroup.agents = [];

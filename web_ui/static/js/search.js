@@ -518,7 +518,8 @@ async function openSearchScopeModal(target = 'search') {
 
   if (target === 'agent') {
     selectedBooksScope = [...(window._currentAgentBooks || [])];
-    modal.style.zIndex = '250';
+    if (window._rdAssistantMode) modal.style.setProperty('z-index', '210000', 'important');
+    else modal.style.zIndex = '250';
   } else if (target === 'architect_books') {
     selectedBooksScope = [];
     currentScopeCategory = '';
