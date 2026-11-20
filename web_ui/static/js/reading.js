@@ -637,6 +637,18 @@ function rdCollectComments(p) {
 let rdBookAnalysisId = null;
 let rdBookAnalysisPartIdx = null;
 let rdReturnToAnalysis = false;
+function rdCommentPartLabel(p, r) {
+  const book = p && p.book;
+  if (book && r && r.filePage) {
+    const info = rdPartInfoAt(book, r.filePage);
+    if (info.vol) return rdVolumeLabel(info.vol.name, 0);
+    const meta = rdPartMetaOf(p, info.part, info.idx);
+    const n = String((meta && meta.partNo) || '').trim();
+    if (n && !/^(جميع|كل)\s*الأجزاء$/.test(n)) return n;
+  }
+  const n = r && r.part;
+  return n == null || n === '' ? '' : String(n);
+}
 function rdFilterCommentsForPart(p, partIdx) {
   let rows = rdCollectComments(p);
   if (!Number.isInteger(partIdx)) return { rows, span: { start: 0, count: 0 } };
@@ -683,7 +695,7 @@ function rdOpenBookAnalysis(id, partIdx) {
           <td>${rdEsc(rdDash(meta.book))}</td>
           <td>${rdEsc(rdDash(meta.author))}</td>
           <td>${rdEsc(rdDash(meta.edition))}</td>
-          <td>${rdEsc(rdDash(meta.partNo || r.part))}</td>
+          <td>${rdEsc(rdDash(rdCommentPartLabel(p, r)))}</td>
           <td>${rdEsc(rdDash(r.shown))}</td>
           <td>${rdEsc(r.kind)}</td>
           <td class="rd-ba-text">${rdEsc(rdDash(r.text))}</td>
@@ -724,7 +736,7 @@ function rdBookAnalysisCsv() {
   const heads = ['اسم الكتاب', 'المؤلف', 'الطبعة', 'الجزء', 'الصفحة', 'النوع', 'النص', 'التحليل والتعليق', 'المرجع', 'نوع التعليق', 'التاريخ والوقت'];
   const lines = [heads.map(rdCsvCell).join(',')];
   rows.forEach(r => {
-    lines.push([meta.book, meta.author, meta.edition, meta.partNo || r.part, r.shown, r.kind, r.text, r.analysis, r.refs, r.commentKind, r.when].map(rdCsvCell).join(','));
+    lines.push([meta.book, meta.author, meta.edition, rdCommentPartLabel(p, r), r.shown, r.kind, r.text, r.analysis, r.refs, r.commentKind, r.when].map(rdCsvCell).join(','));
   });
   const book = String(meta.book || p.title || 'كتاب').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'كتاب';
   const fileName = `تحليل-${book}.csv`;
