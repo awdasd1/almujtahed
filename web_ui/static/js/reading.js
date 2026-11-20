@@ -416,7 +416,7 @@ function rdRenderNotes() {
   if (!layer || !rdCurrent) return;
   const ann = rdPageAnn();
   layer.innerHTML = (ann.notes || []).map((n, i) =>
-    `<span class="rd-note" style="right:${n.x * 100}%;top:${n.y * 100}%;background:${n.c}" title="${rdEsc(n.text || 'ملحوظة')}" onclick="rdEditNote(${i}, event)">📌</span>`).join('');
+    `<span class="rd-note" style="left:${n.x * 100}%;top:${n.y * 100}%;background:${n.c}" title="${rdEsc(n.text || 'ملحوظة')}" onclick="rdEditNote(${i}, event)">📌</span>`).join('');
 }
 
 function rdRenderCropsBar() {
@@ -732,7 +732,8 @@ function rdEditNote(i, ev) {
   const ed = document.createElement('div');
   ed.className = 'rd-note-editor';
   ed.style.background = n.c;
-  ed.style.right = `${Math.min(78, n.x * 100)}%`;
+  ed.style.left = `${Math.max(0, Math.min(62, n.x * 100))}%`;
+  ed.style.right = 'auto';
   ed.style.top = `${n.y * 100}%`;
   ed.innerHTML = `<textarea placeholder="اكتب ملحوظتك هنا...">${rdEsc(n.text || '')}</textarea>
     <div class="rd-note-btns">
