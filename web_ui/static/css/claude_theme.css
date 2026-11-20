@@ -11365,7 +11365,10 @@ body::-webkit-scrollbar,
 .rd-entity-card button { flex-shrink: 0; }
 .rd-mode-btns { display: flex; gap: 6px; flex-shrink: 0; }
 .ms-modal.rd-analysis-modal { background: var(--bg-surface); color: var(--text-main); font-family: var(--font-naskh); }
-#rdClearPageModal { z-index: 100400; align-items: center; }
+#rdClearPageModal, #rdPageOffsetModal { z-index: 100400; align-items: center; }
+.rd-offset-label { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; font-family: var(--font-naskh); color: var(--text-main); }
+.rd-offset-label input { width: 110px; padding: 6px 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-canvas, var(--bg-surface)); color: var(--text-main); font-family: var(--font-naskh); font-size: 16px; }
+.rd-offset-preview { color: var(--text-muted); font-size: 13.5px; }
 .ms-modal.rd-clear-modal { width: min(520px, 94vw); background: var(--bg-surface); color: var(--text-main); font-family: var(--font-naskh); border-color: var(--border-subtle); }
 .rd-clear-modal .ms-modal-head { color: var(--text-main); font-family: var(--font-naskh); }
 .rd-clear-modal p { font-size: 15px; line-height: 1.95; margin: 6px 0 4px; color: var(--text-main); }

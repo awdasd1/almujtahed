@@ -102,7 +102,7 @@ function renderRdProjects() {
       <div class="ms-project-card-title">📖 ${rdEsc(p.title)}</div>
       ${p.desc ? `<div class="ms-project-card-desc">${rdEsc(p.desc)}</div>` : ''}
       <div class="ms-project-card-stats">بدأ: ${rdEsc(p.created_display || '')}</div>
-      <div class="ms-project-card-stats">${p.book ? `الكتاب: ${rdEsc(p.book.title)} · ${p.book.pages} صفحة${(p.book.parts && p.book.parts.length > 1) ? ` · ${p.book.parts.length} أجزاء` : ''} · وقفت عند صفحة ${p.page || 1}` : 'لا كتاب مسحوبًا بعد'}</div>
+      <div class="ms-project-card-stats">${p.book ? `الكتاب: ${rdEsc(p.book.title)} · ${p.book.pages} صفحة${(p.book.parts && p.book.parts.length > 1) ? ` · ${p.book.parts.length} أجزاء` : ''} · وقفت عند صفحة ${rdShownPage(p.page, p.book)}` : 'لا كتاب مسحوبًا بعد'}</div>
       <div class="ms-card-actions">
         <button type="button" class="ms-btn ms-btn-primary" onclick="rdOpenProject('${p.id}')">فتح القراءة</button>
         <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteProject('${p.id}')">حذف</button>
@@ -163,7 +163,7 @@ function rdSaveNow(manual) {
   clearTimeout(rdSaveTimer);
   rdSave();
   const st = document.getElementById('rdSaveState');
-  if (st) st.textContent = `حُفظ المشروع وموضع وقوفك (صفحة ${rdCurrent.page || 1}) — ${new Date().toLocaleTimeString('ar-EG')}`;
+  if (st) st.textContent = `حُفظ المشروع وموضع وقوفك (صفحة ${rdShownPage(rdCurrent.page, rdCurrent.book)}) — ${new Date().toLocaleTimeString('ar-EG')}`;
   if (manual) rdToast('💾 حُفظ المشروع وموضع وقوفك في القراءة');
 }
 function rdSaveSoon() {
@@ -223,7 +223,7 @@ function rdGuardSource(kind, ev) {
     rdPendingSource = kind;
     const b = rdEnsureParts(rdCurrent.book);
     document.getElementById('rdBookExistsText').textContent =
-      `في هذا المشروع كتاب قائم الآن: «${b.title}» — ${b.pages} صفحة${b.parts.length > 1 ? ` في ${b.parts.length} أجزاء` : ''}، وأنت واقف عند صفحة ${rdCurrent.page || 1}.`;
+      `في هذا المشروع كتاب قائم الآن: «${b.title}» — ${b.pages} صفحة${b.parts.length > 1 ? ` في ${b.parts.length} أجزاء` : ''}، وأنت واقف عند صفحة ${rdShownPage(rdCurrent.page, b)}.`;
     rdShowModal('rdBookExistsModal');
     return false;
   }
@@ -254,6 +254,57 @@ function rdBookExistsChoice(choice) {
   }
 }
 
+function rdOffsetOf(book) {
+  const n = Math.trunc(Number(book && book.pageOffset) || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+function rdShownPage(filePage, book) {
+  return (Number(filePage) || 1) - rdOffsetOf(book);
+}
+function rdFileFromShown(shown, book) {
+  return (Number(shown) || 1) + rdOffsetOf(book);
+}
+function rdSyncPageField(filePage) {
+  const book = rdCurrent && rdCurrent.book;
+  const input = document.getElementById('rdPageInput');
+  if (!input || !book) return;
+  const off = rdOffsetOf(book);
+  const pages = book.pages || 1;
+  input.min = String(1 - off);
+  input.max = String(pages - off);
+  input.value = (Number(filePage) || 1) - off;
+}
+function rdOpenPageOffset() {
+  if (!rdCurrent || !rdCurrent.book) { rdToast('اسحب كتابًا أولًا'); return; }
+  const input = document.getElementById('rdPageOffsetInput');
+  if (input) input.value = rdOffsetOf(rdCurrent.book);
+  rdRefreshOffsetPreview();
+  rdShowModal('rdPageOffsetModal');
+  setTimeout(() => input && input.focus(), 40);
+}
+function rdRefreshOffsetPreview() {
+  const el = document.getElementById('rdPageOffsetPreview');
+  const input = document.getElementById('rdPageOffsetInput');
+  if (!el || !rdCurrent || !rdCurrent.book) return;
+  const off = Math.trunc(Number(input && input.value) || 0);
+  const file = rdCurrent.page || 1;
+  el.textContent = `موضع الملف الآن صفحة ${file}، ويظهر في الترقيم صفحة ${file - (Number.isFinite(off) ? off : 0)}.`;
+}
+function rdApplyPageOffset() {
+  if (!rdCurrent || !rdCurrent.book) return;
+  const raw = document.getElementById('rdPageOffsetInput').value;
+  const off = Math.trunc(Number(raw));
+  if (!Number.isFinite(off)) { rdToast('أدخل رقمًا فارقًا صحيحًا'); return; }
+  const pages = rdCurrent.book.pages || 1;
+  if (Math.abs(off) >= pages) { rdToast('الرقم الفارق أصغر من عدد صفحات الكتاب'); return; }
+  rdCurrent.book.pageOffset = off;
+  rdUpdateBookUI();
+  rdSyncPageField(rdCurrent.page || 1);
+  rdSaveSoon();
+  rdCloseModal('rdPageOffsetModal');
+  rdToast(off ? `ضُبط الفارق على ${off}: رقم الكتاب = رقم الملف − ${off}` : 'أُلغي الفارق وعاد الترقيم إلى صفحات الملف');
+}
+
 function rdUpdateBookUI() {
   const p = rdCurrent;
   const has = !!(p && p.book);
@@ -261,7 +312,7 @@ function rdUpdateBookUI() {
   document.getElementById('rdEmpty').style.display = has ? 'none' : 'flex';
   document.getElementById('rdPageImg').style.display = has ? 'block' : 'none';
   document.getElementById('rdA4').classList.toggle('has-book', has);
-  document.getElementById('rdPageTotal').textContent = has ? p.book.pages : '—';
+  document.getElementById('rdPageTotal').textContent = has ? (p.book.pages - rdOffsetOf(p.book)) : '—';
   const titleEl = document.getElementById('rdReaderTitle');
   if (titleEl) titleEl.textContent = `📖 ${has ? p.book.title : p.title}`;
   if (has) rdEnsureParts(p.book);
@@ -275,7 +326,7 @@ function rdLoadPage(n) {
   if (!p || !p.book) { rdRenderAnnotations(); return; }
   n = Math.max(1, Math.min(p.book.pages || 1, Number(n) || 1));
   p.page = n;
-  document.getElementById('rdPageInput').value = n;
+  rdSyncPageField(n);
   const img = document.getElementById('rdPageImg');
   img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); };
   img.onerror = () => { rdToast('تعذر عرض هذه الصفحة'); };
@@ -290,7 +341,7 @@ function rdFlipPage(d) {
   if (!rdCurrent || !rdCurrent.book) return;
   rdLoadPage((rdCurrent.page || 1) + d);
 }
-function rdGoPage(v) { rdLoadPage(Number(v)); }
+function rdGoPage(v) { rdLoadPage(rdFileFromShown(v, rdCurrent && rdCurrent.book)); }
 
 function rdZoom(d) {
   const a4 = document.getElementById('rdA4');
@@ -462,7 +513,7 @@ function rdRenderCropsBar() {
   const ann = rdPageAnn();
   const crops = ann.crops || [];
   bar.hidden = !crops.length;
-  bar.innerHTML = crops.map((c, i) => `<button type="button" class="rd-crop-chip" onclick="rdZoomToCrop(${i})">✂ قصاصة ${i + 1} — صفحة ${rdCurrent.page}</button>`).join('');
+  bar.innerHTML = crops.map((c, i) => `<button type="button" class="rd-crop-chip" onclick="rdZoomToCrop(${i})">✂ قصاصة ${i + 1} — صفحة ${rdShownPage(rdCurrent.page, rdCurrent.book)}</button>`).join('');
 }
 
 function rdZoomToCrop(i) {
@@ -490,7 +541,7 @@ function rdUndo() {
 function rdClearPage() {
   if (!rdCurrent) return;
   const el = document.getElementById('rdClearPageText');
-  if (el) el.textContent = `سيتم إزالة جميع التعليقات من هذه الصفحة فقط (صفحة ${rdCurrent.page || 1}: رسوم الأقلام والتظليل والقصاصات وملصقات الملحوظات)، وتبقى تعليقات بقية الصفحات كما هي دون مساس.`;
+  if (el) el.textContent = `سيتم إزالة جميع التعليقات من هذه الصفحة فقط (صفحة ${rdShownPage(rdCurrent.page, rdCurrent.book)}: رسوم الأقلام والتظليل والقصاصات وملصقات الملحوظات)، وتبقى تعليقات بقية الصفحات كما هي دون مساس.`;
   rdShowModal('rdClearPageModal');
 }
 function rdConfirmClearPage() {
@@ -501,7 +552,7 @@ function rdConfirmClearPage() {
   document.querySelectorAll('.rd-note-editor').forEach(x => { if (x._rdNoteRo) x._rdNoteRo.disconnect(); x.remove(); });
   rdCloseModal('rdClearPageModal');
   rdRenderAnnotations(); rdSaveSoon();
-  rdToast(`🧹 مُسحت كل تعليقات صفحة ${page} وحدها`);
+  rdToast(`🧹 مُسحت كل تعليقات صفحة ${rdShownPage(page, rdCurrent.book)} وحدها`);
 }
 
 // ---------- عرض الصفحة: حدّة وتباين وخلفية ورقية ----------
@@ -967,14 +1018,14 @@ function rdCite() {
   const p = rdCurrent;
   if (!p || !p.book) return '';
   const b = rdEnsureParts(p.book);
-  let rest = p.page || 1, partIdx = 0, local = rest;
+  let rest = p.page || 1, partIdx = 0;
   for (let i = 0; i < b.parts.length; i++) {
-    if (rest <= b.parts[i].pages) { partIdx = i; local = rest; break; }
+    if (rest <= b.parts[i].pages) { partIdx = i; break; }
     rest -= b.parts[i].pages;
-    partIdx = i; local = b.parts[i].pages;
+    partIdx = i;
   }
   const partLabel = b.parts.length > 1 ? `الجزء ${partIdx + 1}` : 'الجزء 1';
-  return `«${b.title}» — ${partLabel} — صفحة ${local} (صفحة المشروع ${p.page})`;
+  return `«${b.title}» — ${partLabel} — صفحة ${rdShownPage(p.page, b)}`;
 }
 
 // نماذج المساعد: قائمة منسدلة ببحث وفلترة سريعة (كنافذة بطاقات الوكلاء)
@@ -1347,7 +1398,7 @@ function rdOpenDiscussion(id, fresh) {
   document.getElementById('rdAnalysisMeta').textContent = `رقم المناقشة: ${id} · ${modeLabel}`;
   document.getElementById('rdAnalysisStatus').textContent = fresh
     ? 'جار تحليل النص...'
-    : `مناقشة محفوظة · صفحة ${disc.page}`;
+    : `مناقشة محفوظة · صفحة ${rdShownPage(disc.page, rdCurrent.book)}`;
   document.getElementById('rdAnalysisInput').value = '';
   rdShowModal('rdAnalysisModal');
   rdRenderAnalysisMsgs();

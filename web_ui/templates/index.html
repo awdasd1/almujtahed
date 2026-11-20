@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.757">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.758">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.757" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.758" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.757</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.758 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -1938,6 +1938,7 @@
                             <button type="button" class="ms-btn" onclick="rdFlipPage(-1)" title="الصفحة السابقة">⟨ سابق</button>
                             <span class="rd-page-ind"><input type="number" id="rdPageInput" min="1" value="1" onchange="rdGoPage(this.value)"> / <span id="rdPageTotal">—</span></span>
                             <button type="button" class="ms-btn" onclick="rdFlipPage(1)" title="الصفحة اللاحقة">لاحق ⟩</button>
+                            <button type="button" class="ms-btn" onclick="rdOpenPageOffset()" title="ضبط رقم الصفحة الظاهر ليوافق ترقيم الكتاب">ضبط</button>
                             <button type="button" class="ms-btn ms-btn-primary" onclick="rdSaveNow(true)">💾 حفظ</button>
                             <button type="button" class="ms-btn" onclick="rdCloseReader()">✕ إغلاق</button>
                         </span>
@@ -2008,6 +2009,21 @@
                         <span class="ms-hint" id="rdSaveState"></span>
                     </div>
                     <input type="color" id="rdColorPicker" value="#b4552d" tabindex="-1" aria-hidden="true">
+                </div>
+            </div>
+
+            <div class="ms-modal-overlay" id="rdPageOffsetModal" hidden>
+                <div class="ms-modal rd-clear-modal">
+                    <div class="ms-modal-head"><strong>ضبط ترقيم الصفحات</strong></div>
+                    <p>أدخل الرقم الفارق بين صفحة الملف ورقم الصفحة في الكتاب. الغلاف والصفحات الفارغة تسبق بدء الترقيم، فإن بدأت صفحة ١ من الكتاب بعد ٧ صفحات فأدخل ٧. عند طلب صفحة يظهر رقمها في الكتاب.</p>
+                    <label class="rd-offset-label">الرقم الفارق
+                        <input type="number" id="rdPageOffsetInput" step="1" value="0" oninput="rdRefreshOffsetPreview()">
+                    </label>
+                    <p class="rd-offset-preview" id="rdPageOffsetPreview"></p>
+                    <div class="ms-modal-btns">
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdApplyPageOffset()">اعتماد الضبط</button>
+                        <button type="button" class="ms-btn" onclick="rdCloseModal('rdPageOffsetModal')">إلغاء</button>
+                    </div>
                 </div>
             </div>
 
@@ -7115,26 +7131,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.757"></script>
-    <script src="/static/js/search.js?v=1.10.757"></script>
-    <script src="/static/js/reader.js?v=1.10.757"></script>
-    <script src="/static/js/force3d.js?v=1.10.757"></script>
-    <script src="/static/js/share.js?v=1.10.757"></script>
-    <script src="/static/js/chat.js?v=1.10.757"></script>
-    <script src="/static/js/documents.js?v=1.10.757"></script>
-    <script src="/static/js/designs.js?v=1.10.757"></script>
-    <script src="/static/js/texts.js?v=1.10.757"></script>
-    <script src="/static/js/agents.js?v=1.10.757"></script>
-    <script src="/static/js/providers.js?v=1.10.757"></script>
-    <script src="/static/js/tools.js?v=1.10.757"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.757"></script>
-    <script src="/static/js/projects.js?v=1.10.757"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.757"></script>
-    <script src="/static/js/reading.js?v=1.10.757"></script>
-    <script src="/static/js/archive.js?v=1.10.757"></script>
-    <script src="/static/js/compare.js?v=1.10.757"></script>
-    <script src="/static/js/local_models.js?v=1.10.757"></script>
-    <script src="/static/js/changelog.js?v=1.10.757"></script>
+    <script src="/static/js/app.js?v=1.10.758"></script>
+    <script src="/static/js/search.js?v=1.10.758"></script>
+    <script src="/static/js/reader.js?v=1.10.758"></script>
+    <script src="/static/js/force3d.js?v=1.10.758"></script>
+    <script src="/static/js/share.js?v=1.10.758"></script>
+    <script src="/static/js/chat.js?v=1.10.758"></script>
+    <script src="/static/js/documents.js?v=1.10.758"></script>
+    <script src="/static/js/designs.js?v=1.10.758"></script>
+    <script src="/static/js/texts.js?v=1.10.758"></script>
+    <script src="/static/js/agents.js?v=1.10.758"></script>
+    <script src="/static/js/providers.js?v=1.10.758"></script>
+    <script src="/static/js/tools.js?v=1.10.758"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.758"></script>
+    <script src="/static/js/projects.js?v=1.10.758"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.758"></script>
+    <script src="/static/js/reading.js?v=1.10.758"></script>
+    <script src="/static/js/archive.js?v=1.10.758"></script>
+    <script src="/static/js/compare.js?v=1.10.758"></script>
+    <script src="/static/js/local_models.js?v=1.10.758"></script>
+    <script src="/static/js/changelog.js?v=1.10.758"></script>
 
     <script>
         window.refreshLucideIcons = function () {
