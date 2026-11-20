@@ -48,6 +48,8 @@ window.almoghniIdentity = fetch('/api/auth/status')
 // الإعدادات الافتراضية
 const DEFAULT_SETTINGS = {
   themePreset: 'sand',
+  activeThemeId: 'sand',
+  savedVisualThemes: [],
   fontFamily: "'Amiri', 'Noto Naskh Arabic', 'Lotus Linotype', serif",
   fontHeading: 'google:Amiri',
   fontSubheading: 'google:Amiri',
@@ -238,26 +240,104 @@ function normalizeTheme(preset) {
   return map[preset] || 'sand';
 }
 
+function cloneVisualData(value) {
+  try { return JSON.parse(JSON.stringify(value)); } catch (e) { return value; }
+}
+
+function listSavedVisualThemes() {
+  if (!Array.isArray(currentSettings.savedVisualThemes)) currentSettings.savedVisualThemes = [];
+  return currentSettings.savedVisualThemes;
+}
+
+function findSavedVisualTheme(id) {
+  return listSavedVisualThemes().find((item) => item && item.id === id) || null;
+}
+
+function themeCycleIds() {
+  return THEME_ORDER.concat(listSavedVisualThemes().map((item) => item.id).filter(Boolean));
+}
+
+function snapshotVisualFonts() {
+  return {
+    heading: currentSettings.fontHeading || '',
+    subheading: currentSettings.fontSubheading || '',
+    tabs: currentSettings.fontTabs || '',
+    app: currentSettings.fontApp || '',
+    reading: currentSettings.fontReading || '',
+  };
+}
+
+function applyVisualFonts(fonts) {
+  if (!fonts || typeof fonts !== 'object') return;
+  if (fonts.heading) currentSettings.fontHeading = fonts.heading;
+  if (fonts.subheading) currentSettings.fontSubheading = fonts.subheading;
+  if (fonts.tabs) currentSettings.fontTabs = fonts.tabs;
+  if (fonts.app) currentSettings.fontApp = fonts.app;
+  if (fonts.reading) currentSettings.fontReading = fonts.reading;
+  if (typeof populateFontSelects === 'function') populateFontSelects();
+  if (typeof applyFontRoles === 'function') applyFontRoles();
+}
+
+function fillSavedThemeOptions() {
+  const select = document.getElementById('themePresetSelect');
+  if (!select) return;
+  const previous = select.value;
+  select.querySelectorAll('option[data-saved-theme], optgroup[data-saved-themes]').forEach((el) => el.remove());
+  const saved = listSavedVisualThemes();
+  if (saved.length) {
+    const group = document.createElement('optgroup');
+    group.label = 'قوالب محفوظة';
+    group.dataset.savedThemes = '1';
+    saved.forEach((item) => {
+      if (!item || !item.id) return;
+      const option = document.createElement('option');
+      option.value = item.id;
+      option.textContent = item.name || 'قالب محفوظ';
+      option.dataset.savedTheme = '1';
+      group.appendChild(option);
+    });
+    select.appendChild(group);
+  }
+  const current = currentSettings.activeThemeId || previous || currentSettings.themePreset;
+  if ([...select.options].some((opt) => opt.value === current)) select.value = current;
+  select.dispatchEvent(new CustomEvent('theme-select-sync'));
+}
+
+function currentThemeLabel(id) {
+  const saved = findSavedVisualTheme(id);
+  if (saved) return saved.name || 'قالب محفوظ';
+  const meta = THEME_META[normalizeTheme(id)];
+  return meta ? meta.label : 'الرملي';
+}
+
 function initTheme() {
-  const savedTheme = normalizeTheme(localStorage.getItem(STORAGE_KEYS.THEME) || currentSettings.themePreset || 'sand');
-  applyVisualThemePreset(savedTheme, { silent: true });
+  fillSavedThemeOptions();
+  const storedId = localStorage.getItem(STORAGE_KEYS.THEME) || currentSettings.activeThemeId || currentSettings.themePreset || 'sand';
+  applyVisualThemePreset(storedId, { silent: true, keepLab: true });
 
   const savedSize = localStorage.getItem(STORAGE_KEYS.FONT_SIZE) || 19;
   updateTextSize(savedSize, false);
 }
 
 function toggleTheme() {
-  const current = normalizeTheme(document.documentElement.getAttribute('data-theme'));
-  const next = THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length];
+  const order = themeCycleIds();
+  const current = currentSettings.activeThemeId
+    || localStorage.getItem(STORAGE_KEYS.THEME)
+    || normalizeTheme(document.documentElement.getAttribute('data-theme'));
+  const index = order.indexOf(current);
+  const next = order[(index < 0 ? 0 : index + 1) % order.length];
   applyVisualThemePreset(next);
 }
 
 function updateThemeIcon(theme) {
   const btn = document.getElementById('themeToggleBtn');
   if (!btn) return;
+  const saved = findSavedVisualTheme(theme);
   const meta = THEME_META[normalizeTheme(theme)];
-  btn.innerHTML = `<i data-lucide="${meta.icon}" class="icon" id="themeIconSun" aria-hidden="true"></i>`;
-  btn.title = `الثيم الحالي: ${meta.label} — انقر للتبديل`;
+  const icon = saved ? 'palette' : (meta && meta.icon) || 'sun';
+  const label = currentThemeLabel(theme);
+  btn.innerHTML = `<i data-lucide="${icon}" class="icon" id="themeIconSun" aria-hidden="true"></i>`;
+  btn.title = `الثيم الحالي: ${label} — انقر للتبديل`;
   if (typeof window.refreshLucideIcons === 'function') {
     window.refreshLucideIcons();
   } else if (window.lucide && typeof lucide.createIcons === 'function') {
@@ -265,20 +345,45 @@ function updateThemeIcon(theme) {
   }
 }
 
-function applyVisualThemePreset(preset, options = {}) {
-  const theme = normalizeTheme(preset);
+function applyNamedThemePackage(baseTheme, lab, options = {}) {
+  const theme = normalizeTheme(baseTheme);
   ['--bg-canvas', '--bg-surface', '--accent-clay'].forEach((name) => {
     document.documentElement.style.removeProperty(name);
   });
   document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem(STORAGE_KEYS.THEME, theme);
   currentSettings.themePreset = theme;
-  const select = document.getElementById('themePresetSelect');
-  if (select && select.value !== theme) select.value = theme;
-  updateThemeIcon(theme);
+  if (!options.keepLab) {
+    currentSettings.visualLab = lab ? cloneVisualData(lab) : null;
+  }
   if (typeof applyVisualLab === 'function') applyVisualLab();
+  if (!options.keepLab) {
+    if (currentSettings.visualLab) writeVisualLabForm(currentSettings.visualLab);
+    else if (typeof seedVisualLabForm === 'function') seedVisualLabForm();
+  }
+}
+
+function applyVisualThemePreset(preset, options = {}) {
+  const saved = findSavedVisualTheme(preset);
+  const id = saved ? saved.id : normalizeTheme(preset);
+  if (saved) {
+    applyNamedThemePackage(saved.themePreset, saved.visualLab, options);
+    if (!options.keepLab) {
+      applyVisualFonts(saved.fonts);
+      if (saved.textSize) updateTextSize(saved.textSize, true);
+    }
+  } else {
+    applyNamedThemePackage(id, null, options);
+  }
+  currentSettings.activeThemeId = id;
+  localStorage.setItem(STORAGE_KEYS.THEME, id);
+  fillSavedThemeOptions();
+  const select = document.getElementById('themePresetSelect');
+  if (select && select.value !== id) select.value = id;
+  if (select) select.dispatchEvent(new CustomEvent('theme-select-sync'));
+  updateThemeIcon(id);
+  if (!options.keepLab) persistFontSettings();
   if (!options.silent && typeof showToast === 'function') {
-    showToast(`تم التبديل إلى ثيم ${THEME_META[theme].label}`);
+    showToast(`تم التبديل إلى ثيم ${currentThemeLabel(id)}`);
   }
 }
 
@@ -2295,6 +2400,71 @@ function exportVisualTemplate() {
   showToast('تم تصدير القالب');
 }
 window.exportVisualTemplate = exportVisualTemplate;
+
+function currentVisualThemeSnapshot() {
+  if (typeof commitVisualLab === 'function') commitVisualLab();
+  return {
+    themePreset: normalizeTheme(document.documentElement.getAttribute('data-theme') || currentSettings.themePreset || 'sand'),
+    visualLab: currentSettings.visualLab ? cloneVisualData(currentSettings.visualLab) : null,
+    fonts: snapshotVisualFonts(),
+    textSize: parseInt(localStorage.getItem(STORAGE_KEYS.FONT_SIZE) || currentSettings.textSize || '19', 10),
+  };
+}
+
+async function saveVisualThemeAs() {
+  if (typeof showPromptDialog !== 'function') return;
+  const name = await showPromptDialog({
+    title: 'حفظ التعديلات باسم',
+    message: 'اكتب اسم القالب',
+    placeholder: 'مثال: ليلي الهادئ',
+    confirmText: 'حفظ',
+    cancelText: 'إلغاء',
+    icon: 'save',
+  });
+  if (name == null) return;
+  const trimmed = String(name).trim();
+  if (!trimmed) {
+    showToast('يرجى كتابة اسم القالب');
+    return;
+  }
+  const snapshot = currentVisualThemeSnapshot();
+  const list = listSavedVisualThemes();
+  const existing = list.find((item) => item && item.name === trimmed);
+  if (existing) {
+    const replace = typeof showConfirmDialog === 'function'
+      ? await showConfirmDialog({
+          title: 'استبدال القالب',
+          message: `يوجد قالب محفوظ باسم «${trimmed}». هل تريد استبداله بهذه التعديلات؟`,
+          confirmText: 'استبدال',
+          cancelText: 'إلغاء',
+          danger: false,
+          icon: 'save',
+        })
+      : true;
+    if (!replace) return;
+    existing.themePreset = snapshot.themePreset;
+    existing.visualLab = snapshot.visualLab;
+    existing.fonts = snapshot.fonts;
+    existing.textSize = snapshot.textSize;
+    fillSavedThemeOptions();
+    applyVisualThemePreset(existing.id, { silent: true });
+    showToast(`استُبدل القالب «${trimmed}»`);
+    return;
+  }
+  const rec = {
+    id: `saved:${Date.now().toString(36)}`,
+    name: trimmed,
+    themePreset: snapshot.themePreset,
+    visualLab: snapshot.visualLab,
+    fonts: snapshot.fonts,
+    textSize: snapshot.textSize,
+  };
+  currentSettings.savedVisualThemes = list.concat([rec]);
+  fillSavedThemeOptions();
+  applyVisualThemePreset(rec.id, { silent: true });
+  showToast(`حُفظ القالب «${trimmed}» وأُدرج في القائمة`);
+}
+window.saveVisualThemeAs = saveVisualThemeAs;
 
 // عرض رسالة سريعة Toast
 function showToast(msg, duration = 3500) {
