@@ -222,7 +222,7 @@ function rdCollectComments(p) {
     (ann.notes || []).forEach(n => {
       if (!String(n.text || '').trim()) return;
       rows.push({
-        kind: 'ملحوظة', text: n.text, analysis: '', refs: '', commentKind: 'يكتب القارئ',
+        kind: 'ملحوظة', text: n.text, analysis: '', refs: '', commentKind: 'ملحوظة من تعليق القارئ',
         when: rdCommentWhen(n), at: n.created_at || '', ...base(),
       });
     });
@@ -255,9 +255,11 @@ function rdOpenBookAnalysis(id) {
   const hint = document.getElementById('rdBookAnalysisMeta');
   const wrap = document.getElementById('rdBookAnalysisWrap');
   const dl = document.getElementById('rdBookAnalysisDownload');
+  const sh = document.getElementById('rdBookAnalysisShare');
   if (title) title.textContent = `تحليل الكتاب — ${meta.book || p.title}`;
   if (hint) hint.textContent = [meta.book && `الكتاب: ${meta.book}`, meta.author && `المؤلف: ${meta.author}`, meta.edition && `الطبعة: ${meta.edition}`, `${rows.length} تعليقًا`].filter(Boolean).join(' · ');
   if (dl) dl.disabled = !rows.length;
+  if (sh) sh.disabled = !rows.length;
   if (wrap) {
     if (!rows.length) {
       wrap.innerHTML = '<div class="rd-book-analysis-empty">لا تعليقات مرصودة بعد في هذا المشروع.</div>';
@@ -298,22 +300,29 @@ window.rdGotoCommentPage = rdGotoCommentPage;
 function rdCsvCell(v) {
   return `"${String(v ?? '').replace(/"/g, '""')}"`;
 }
-function rdDownloadBookAnalysis() {
+function rdBookAnalysisCsv() {
   const p = rdProject(rdBookAnalysisId);
-  if (!p) return;
+  if (!p) return null;
   const meta = rdBookMeta(p);
   const rows = rdCollectComments(p);
-  if (!rows.length) { rdToast('لا صفوف لتحميلها'); return; }
+  if (!rows.length) return null;
   const heads = ['اسم الكتاب', 'المؤلف', 'الطبعة', 'الجزء', 'الصفحة', 'النوع', 'النص', 'التحليل والتعليق', 'المرجع', 'نوع التعليق', 'التاريخ والوقت'];
   const lines = [heads.map(rdCsvCell).join(',')];
   rows.forEach(r => {
     lines.push([meta.book, meta.author, meta.edition, r.part, r.shown, r.kind, r.text, r.analysis, r.refs, r.commentKind, r.when].map(rdCsvCell).join(','));
   });
+  const book = String(meta.book || p.title || 'كتاب').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'كتاب';
+  const fileName = `تحليل-${book}.csv`;
   const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const file = new File([blob], fileName, { type: 'text/csv' });
+  return { p, meta, rows, blob, file, fileName, title: `تحليل ${book}` };
+}
+function rdDownloadBookAnalysis() {
+  const pack = rdBookAnalysisCsv();
+  if (!pack) { rdToast('لا صفوف لتحميلها'); return; }
   const a = document.createElement('a');
-  const name = String(meta.book || p.title || 'كتاب').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'كتاب';
-  a.href = URL.createObjectURL(blob);
-  a.download = `تحليل-${name}.csv`;
+  a.href = URL.createObjectURL(pack.blob);
+  a.download = pack.fileName;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -321,6 +330,12 @@ function rdDownloadBookAnalysis() {
   rdToast('⬇ جرى تحميل الجدول');
 }
 window.rdDownloadBookAnalysis = rdDownloadBookAnalysis;
+function rdShareBookAnalysis() {
+  const pack = rdBookAnalysisCsv();
+  if (!pack) { rdToast('لا صفوف لمشاركتها'); return; }
+  rdShowShareModal('', pack.file, pack.title);
+}
+window.rdShareBookAnalysis = rdShareBookAnalysis;
 
 function rdDeleteProject(id) {
   const p = rdProject(id);
@@ -1778,8 +1793,8 @@ function rdRaisePublishOverlay() {
   ov.style.removeProperty('display');
   ov.style.setProperty('z-index', '350000', 'important');
 }
-function rdShowShareModal(text, file) {
-  window._rdSharePayload = { text: text || '', file: file || null, title: (rdCurrent && rdCurrent.title) || 'قراءة' };
+function rdShowShareModal(text, file, title) {
+  window._rdSharePayload = { text: text || '', file: file || null, title: title || (rdCurrent && rdCurrent.title) || 'قراءة' };
   const modal = document.getElementById('shareModal');
   if (!modal || typeof openSharePicker !== 'function') {
     if (file) rdNativeShareImage(file, text); else rdNativeShareText(text);

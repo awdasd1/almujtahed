@@ -778,7 +778,7 @@ sealed class InstallerForm : Form
             appWindow.VisibleChanged += (_, _) => tray.Visible = ready && !Visible && appWindow is { Visible: false };
         }
         appWindow.RequestQuit = () => QuitApplication(skipConfirm: true);
-        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.760");
+        _ = appWindow.Open("http://127.0.0.1:8085/?v=1.10.761");
         tray.Visible = false;
         ShowInTaskbar = false;
         Hide();
