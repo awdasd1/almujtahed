@@ -558,20 +558,29 @@ function rdSetActiveSel(kind, index, rect) {
   rdActiveSel = { page: rdCurrent.page || 1, kind, index, rect: { ...rect } };
   rdShowSelBar(rect);
 }
-function rdHitDiscussion(qx, qy) {
+function rdHitRegion(qx, qy, discussedOnly) {
   if (!rdCurrent) return null;
   const ann = rdPageAnn();
   const hit = (arr, kind) => {
     for (let i = (arr || []).length - 1; i >= 0; i--) {
       const r = arr[i];
-      if (!r.discussion_id) continue;
+      if (discussedOnly && !r.discussion_id) continue;
       if (qx >= r.x && qx <= r.x + r.w && qy >= r.y && qy <= r.y + r.h) {
-        return { id: r.discussion_id, kind, index: i };
+        return { id: r.discussion_id || '', kind, index: i, rect: r };
       }
     }
     return null;
   };
   return hit(ann.crops, 'c') || hit(ann.highlights, 'h');
+}
+function rdHitDiscussion(qx, qy) { return rdHitRegion(qx, qy, true); }
+
+// الشريط لا يبقى ظاهرًا: يختفي بعد مغادرة الموضع وشريطه مع مهلة قصيرة تكفي لبلوغ الأيقونات
+let rdSelHideTimer = null;
+function rdCancelSelHide() { clearTimeout(rdSelHideTimer); }
+function rdArmSelHide() {
+  clearTimeout(rdSelHideTimer);
+  rdSelHideTimer = setTimeout(() => { rdHideSelBar(); rdSelFromHover = false; }, 320);
 }
 
 // أحداث الرسم على اللوحة
@@ -579,6 +588,12 @@ function rdHitDiscussion(qx, qy) {
   const ready = () => {
     const cv = document.getElementById('rdCanvas');
     if (!cv) { setTimeout(ready, 600); return; }
+    const selBar = document.getElementById('rdSelBar');
+    if (selBar && !selBar.dataset.rdBound) {
+      selBar.dataset.rdBound = '1';
+      selBar.addEventListener('pointerenter', rdCancelSelHide);
+      selBar.addEventListener('pointerleave', rdArmSelHide);
+    }
     const pos = (e) => {
       const r = cv.getBoundingClientRect();
       return {
@@ -615,19 +630,14 @@ function rdHitDiscussion(qx, qy) {
       const q = pos(e);
       // شريط أيقونات (تحليل/قراءة/مشاركة/نشر) عند التمرير على تحليل سابق رمادي فقط
       if (!rdDraw && rdTool !== 'loupe' && rdCurrent && rdCurrent.book) {
-        const discH = rdHitDiscussion(q.x, q.y);
-        if (discH) {
-          const annH = rdPageAnn();
-          const arrH = discH.kind === 'c' ? annH.crops : annH.highlights;
-          const rH = arrH && arrH[discH.index];
-          if (rH) {
-            rdActiveSel = { page: rdCurrent.page || 1, kind: discH.kind, index: discH.index, rect: { x: rH.x, y: rH.y, w: rH.w, h: rH.h }, discussion_id: discH.id };
-            rdSelFromHover = true;
-            rdShowSelBar(rdActiveSel.rect);
-          }
-        } else if (rdSelFromHover) {
-          rdSelFromHover = false;
-          rdHideSelBar();
+        const over = rdHitRegion(q.x, q.y, false);
+        if (over) {
+          rdCancelSelHide();
+          rdActiveSel = { page: rdCurrent.page || 1, kind: over.kind, index: over.index, rect: { x: over.rect.x, y: over.rect.y, w: over.rect.w, h: over.rect.h }, discussion_id: over.id };
+          rdSelFromHover = true;
+          rdShowSelBar(rdActiveSel.rect);
+        } else {
+          rdArmSelHide();
         }
       }
       if (rdTool === 'loupe' && rdCurrent && rdCurrent.book) {
@@ -1222,10 +1232,10 @@ function rdRenderAnalysisMsgs() {
   const msgs = rdAnalysis.discussion.messages || [];
   if (!msgs.length) { box.innerHTML = '<div class="ms-hint">لا رسائل بعد.</div>'; return; }
   box.innerHTML = msgs.map((m, i) => `
-    <div class="rd-amsg ${m.role === 'user' ? 'user' : 'assistant'}">
-      <div class="rd-amsg-role">${m.role === 'user' ? 'أنت' : 'المساعد'}</div>
-      <div>${m.role === 'assistant' ? rdMd(m.content) : rdEsc(m.content).replace(/\n/g, '<br>')}</div>
-      ${(m.role === 'assistant' && Array.isArray(m.tree_set) && m.tree_set.length && typeof smartTreesHtml === 'function') ? smartTreesHtml(m, i) : ''}
+    <div class="message-bubble ${m.role === 'user' ? 'user' : 'assistant'}" id="rdMsg${i}">
+      <div class="message-avatar">${m.role === 'user' ? 'أنت' : 'مج'}</div>
+      <div class="message-content">${m.role === 'assistant' ? rdMd(m.content) : rdEsc(m.content).replace(/\n/g, '<br>')}
+      ${(m.role === 'assistant' && Array.isArray(m.tree_set) && m.tree_set.length && typeof smartTreesHtml === 'function') ? smartTreesHtml(m, i) : ''}</div>
     </div>`).join('');
   // أيقونات الإحالة النموذجية 📖 تفتح تصفح الكتاب الأصلي عند موضع الشاهد
   if (typeof window.enhanceProjectCitationsWithBookReader === 'function') {
