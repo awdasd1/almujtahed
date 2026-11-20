@@ -263,7 +263,7 @@ function rdRenderProjectDetail() {
   if (!tbody) return;
   const parts = rdPartsOf(p);
   if (!parts.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="groups-empty-state"><p style="font-size:14px">لا كتب في هذا المشروع بعد. أضف الكتاب أو الجزء الأول من الأزرار أسفل الجدول.</p></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="groups-empty-state"><p style="font-size:14px">لا توجد كتب في هذا المشروع بعد. أضف الكتاب أو الجزء الأول من الأزرار أسفل الجدول.</p></td></tr>`;
     return;
   }
   tbody.innerHTML = parts.map((part, i) => {
