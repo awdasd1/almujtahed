@@ -2079,14 +2079,12 @@ function rdCite() {
   const p = rdCurrent;
   if (!p || !p.book) return '';
   const b = rdEnsureParts(p.book);
-  let rest = p.page || 1, partIdx = 0;
-  for (let i = 0; i < b.parts.length; i++) {
-    if (rest <= b.parts[i].pages) { partIdx = i; break; }
-    rest -= b.parts[i].pages;
-    partIdx = i;
-  }
-  const partLabel = b.parts.length > 1 ? `الجزء ${partIdx + 1}` : 'الجزء 1';
-  return `«${b.title}» — ${partLabel} — صفحة ${rdShownPage(p.page, b)}`;
+  const info = rdPartInfoAt(b, p.page || 1);
+  const meta = rdPartMetaOf(p, info.part, info.idx);
+  const partName = rdCommentPartLabel(p, { filePage: p.page || 1 });
+  const partLabel = partName ? rdShamelaPartLabel(partName) : '';
+  const title = meta.book || b.title;
+  return [`«${title}»`, partLabel, `صفحة ${rdShownPage(p.page, b)}`].filter(Boolean).join(' — ');
 }
 
 // نماذج المساعد: قائمة منسدلة ببحث وفلترة سريعة (كنافذة بطاقات الوكلاء)
