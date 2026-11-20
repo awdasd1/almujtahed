@@ -54,13 +54,22 @@ function rdShowModal(id) {
 function rdCloseModal(id) { const m = document.getElementById(id); if (m) m.hidden = true; }
 
 // تاريخ البداية: اليوم + التاريخان الهجري والميلادي + الوقت
-function rdNowStamp() {
-  const now = new Date();
+function rdNowStamp(from) {
+  let now = from instanceof Date ? from : (from ? new Date(from) : new Date());
+  if (Number.isNaN(now.getTime())) now = new Date();
   const weekday = new Intl.DateTimeFormat('ar-EG', { weekday: 'long' }).format(now);
   const hijri = new Intl.DateTimeFormat('ar-SA-u-ca-islamic', { day: 'numeric', month: 'long', year: 'numeric' }).format(now);
   const greg = new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(now);
   const time = now.toLocaleTimeString('ar-EG');
-  return { iso: now.toISOString(), display: `${weekday} ${hijri} — الموافق ${greg} — ${time}` };
+  return { iso: now.toISOString ? now.toISOString() : new Date().toISOString(), display: `${weekday} ${hijri} — الموافق ${greg} — ${time}` };
+}
+function rdStampOn(obj) {
+  if (!obj) return obj;
+  if (obj.created_at && obj.created_display) return obj;
+  const s = obj.created_at ? rdNowStamp(obj.created_at) : rdNowStamp();
+  obj.created_at = obj.created_at || s.iso;
+  obj.created_display = obj.created_display || s.display;
+  return obj;
 }
 
 async function initReadingTab() {
@@ -97,17 +106,22 @@ function renderRdProjects() {
     wrap.innerHTML = '<div class="ms-empty">لا مشاريع قراءة بعد. أنشئ أول مشروع، ثم اسحب كتابه وابدأ القراءة والتحليل.</div>';
     return;
   }
-  wrap.innerHTML = rdProjects.map(p => `
+  wrap.innerHTML = rdProjects.map(p => {
+    const metaLine = [p.bookName || (p.book && p.book.title) ? `الكتاب: ${rdEsc(p.bookName || p.book.title)}` : '', p.author ? `المؤلف: ${rdEsc(p.author)}` : '', p.edition ? `الطبعة: ${rdEsc(p.edition)}` : ''].filter(Boolean).join(' · ');
+    return `
     <div class="ms-project-card">
       <div class="ms-project-card-title">📖 ${rdEsc(p.title)}</div>
       ${p.desc ? `<div class="ms-project-card-desc">${rdEsc(p.desc)}</div>` : ''}
       <div class="ms-project-card-stats">بدأ: ${rdEsc(p.created_display || '')}</div>
-      <div class="ms-project-card-stats">${p.book ? `الكتاب: ${rdEsc(p.book.title)} · ${p.book.pages} صفحة${(p.book.parts && p.book.parts.length > 1) ? ` · ${p.book.parts.length} أجزاء` : ''} · وقفت عند صفحة ${rdShownPage(p.page, p.book)}` : 'لا كتاب مسحوبًا بعد'}</div>
+      ${metaLine ? `<div class="ms-project-card-stats">${metaLine}</div>` : ''}
+      <div class="ms-project-card-stats">${p.book ? `${p.book.pages} صفحة${(p.book.parts && p.book.parts.length > 1) ? ` · ${p.book.parts.length} أجزاء` : ''} · وقفت عند صفحة ${rdShownPage(p.page, p.book)} · ${rdCollectComments(p).length} تعليقًا` : 'لا كتاب مسحوبًا بعد'}</div>
       <div class="ms-card-actions">
         <button type="button" class="ms-btn ms-btn-primary" onclick="rdOpenProject('${p.id}')">فتح القراءة</button>
+        <button type="button" class="ms-btn" onclick="rdOpenBookAnalysis('${p.id}')">تحليل الكتاب</button>
         <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteProject('${p.id}')">حذف</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function rdCreateProject() {
@@ -116,16 +130,136 @@ function rdCreateProject() {
   const stamp = rdNowStamp();
   const p = {
     id: rdUid(), title,
+    bookName: (document.getElementById('rdNewBookName').value || '').trim(),
+    author: (document.getElementById('rdNewAuthor').value || '').trim(),
+    edition: (document.getElementById('rdNewEdition').value || '').trim(),
     desc: document.getElementById('rdNewDesc').value.trim(),
     created_at: stamp.iso, created_display: stamp.display,
     book: null, page: 1, annotations: {}, updated_at: stamp.iso,
   };
   rdProjects.unshift(p);
   document.getElementById('rdNewTitle').value = '';
+  document.getElementById('rdNewBookName').value = '';
+  document.getElementById('rdNewAuthor').value = '';
+  document.getElementById('rdNewEdition').value = '';
   document.getElementById('rdNewDesc').value = '';
   rdSave(); renderRdProjects();
   rdOpenProject(p.id);
 }
+
+function rdBookMeta(p) {
+  return {
+    book: (p && (p.bookName || (p.book && p.book.title) || p.title)) || '',
+    author: (p && p.author) || '',
+    edition: (p && p.edition) || '',
+  };
+}
+function rdDash(v) { const s = String(v || '').trim(); return s || '—'; }
+function rdCommentWhen(item) {
+  if (!item) return '—';
+  if (item.created_display) return item.created_display;
+  if (item.created_at) return rdNowStamp(item.created_at).display;
+  return '—';
+}
+function rdFormatRefs(disc) {
+  const rows = [];
+  const seen = new Set();
+  const pushW = (w) => {
+    if (!w) return;
+    const title = w.title || w.book_title || w.book || '';
+    const part = w.part ? `الجزء ${w.part}` : '';
+    const page = w.page ? `صفحة ${w.page}` : '';
+    const line = [title ? `«${title}»` : '', part, page].filter(Boolean).join(' — ');
+    if (line && !seen.has(line)) { seen.add(line); rows.push(line); }
+  };
+  (disc && disc.messages || []).forEach(m => (m.witnesses || []).forEach(pushW));
+  if (rows.length) return rows.join('\n');
+  const text = (disc && disc.messages || []).filter(m => m.role === 'assistant').map(m => m.content || '').join('\n');
+  const re = /«([^»]{2,80})»[^\n]{0,60}?(?:الجزء|جـ|ج)\s*([\d٠-٩]+)[^\n]{0,28}?(?:صفحة|ص)\s*([\d٠-٩]+)/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const line = `«${m[1]}» — الجزء ${m[2]} — صفحة ${m[3]}`;
+    if (!seen.has(line)) { seen.add(line); rows.push(line); }
+  }
+  return rows.join('\n');
+}
+function rdCollectComments(p) {
+  if (!p) return [];
+  const rows = [];
+  const anns = p.annotations || {};
+  Object.keys(anns).forEach(page => {
+    const ann = anns[page] || {};
+    (ann.highlights || []).forEach(h => rows.push({
+      kind: 'تحديد', text: h.text || '', analysis: '', refs: '', commentKind: '',
+      when: rdCommentWhen(h), at: h.created_at || '',
+    }));
+    (ann.strokes || []).forEach(s => rows.push({
+      kind: 'رسم بالقلم', text: '', analysis: '', refs: '', commentKind: '',
+      when: rdCommentWhen(s), at: s.created_at || '',
+    }));
+    (ann.crops || []).forEach(c => rows.push({
+      kind: 'تحديد', text: c.text || '', analysis: '', refs: '', commentKind: '',
+      when: rdCommentWhen(c), at: c.created_at || '',
+    }));
+    (ann.notes || []).forEach(n => {
+      if (!String(n.text || '').trim()) return;
+      rows.push({
+        kind: 'ملحوظة', text: n.text, analysis: '', refs: '', commentKind: 'يكتب القارئ',
+        when: rdCommentWhen(n), at: n.created_at || '',
+      });
+    });
+  });
+  Object.values(p.discussions || {}).forEach(d => {
+    const answers = (d.messages || []).filter(m => m && m.role === 'assistant').map(m => m.content || '').filter(Boolean);
+    rows.push({
+      kind: 'تحليل',
+      text: d.extracted_text || '',
+      analysis: answers.join('\n\n'),
+      refs: rdFormatRefs(d),
+      commentKind: d.mode === 'fast' ? 'تحليل سريع من ذاكرة النموذج' : 'محرر',
+      when: rdCommentWhen(d),
+      at: d.created_at || '',
+    });
+  });
+  rows.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  return rows;
+}
+function rdOpenBookAnalysis(id) {
+  const p = rdProject(id);
+  if (!p) return;
+  const meta = rdBookMeta(p);
+  const rows = rdCollectComments(p);
+  const title = document.getElementById('rdBookAnalysisTitle');
+  const hint = document.getElementById('rdBookAnalysisMeta');
+  const wrap = document.getElementById('rdBookAnalysisWrap');
+  if (title) title.textContent = `تحليل الكتاب — ${meta.book || p.title}`;
+  if (hint) hint.textContent = [meta.book && `الكتاب: ${meta.book}`, meta.author && `المؤلف: ${meta.author}`, meta.edition && `الطبعة: ${meta.edition}`, `${rows.length} تعليقًا`].filter(Boolean).join(' · ');
+  if (wrap) {
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="rd-book-analysis-empty">لا تعليقات مرصودة بعد في هذا المشروع.</div>';
+    } else {
+      wrap.innerHTML = `<table class="rd-book-analysis-table">
+        <thead><tr>
+          <th>اسم الكتاب</th><th>المؤلف</th><th>الطبعة</th><th>النوع</th>
+          <th>النص</th><th>التحليل والتعليق</th><th>المرجع</th><th>نوع التعليق</th><th>التاريخ والوقت</th>
+        </tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td>${rdEsc(rdDash(meta.book))}</td>
+          <td>${rdEsc(rdDash(meta.author))}</td>
+          <td>${rdEsc(rdDash(meta.edition))}</td>
+          <td>${rdEsc(r.kind)}</td>
+          <td class="rd-ba-text">${rdEsc(rdDash(r.text))}</td>
+          <td class="rd-ba-analysis">${rdEsc(rdDash(r.analysis))}</td>
+          <td>${rdEsc(rdDash(r.refs))}</td>
+          <td>${rdEsc(rdDash(r.commentKind))}</td>
+          <td>${rdEsc(rdDash(r.when))}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    }
+  }
+  rdShowModal('rdBookAnalysisModal');
+}
+window.rdOpenBookAnalysis = rdOpenBookAnalysis;
 
 function rdDeleteProject(id) {
   const p = rdProject(id);
@@ -210,6 +344,7 @@ function rdApplyBook(nb, asAppend) {
   }
   nb.parts = [rdPartOf(nb)];
   rdCurrent.book = nb;
+  if (!rdCurrent.bookName && nb.title) rdCurrent.bookName = nb.title;
   rdCurrent.annotations = {};
   rdUpdateBookUI(); rdLoadPage(1); rdSaveNow(false);
 }
@@ -779,14 +914,14 @@ function rdArmSelHide() {
       if (!rdDraw) return;
       const ann = rdPageAnn();
       if (rdDraw.type === 's') {
-        if (rdDraw.pts.length > 1) { ann.strokes.push({ c: rdColor, s: rdPenSize, pts: rdDraw.pts }); ann.seq.push('s'); }
+        if (rdDraw.pts.length > 1) { ann.strokes.push(rdStampOn({ c: rdColor, s: rdPenSize, pts: rdDraw.pts })); ann.seq.push('s'); }
       } else if (rdDraw.type === 'h') {
         const x = Math.min(rdDraw.x0, rdDraw.x1), w = Math.abs(rdDraw.x1 - rdDraw.x0);
         if (w > 0.01) {
           const r = cv.getBoundingClientRect();
           const lineH = 36 / r.height;
           const rect = { x, y: rdDraw.y0 - lineH / 2, w, h: lineH };
-          ann.highlights.push({ ...rect, c: rdColor });
+          ann.highlights.push(rdStampOn({ ...rect, c: rdColor }));
           ann.seq.push('h');
           rdSetActiveSel('h', ann.highlights.length - 1, rect);
         }
@@ -795,7 +930,7 @@ function rdArmSelHide() {
         const w = Math.abs(rdDraw.x1 - rdDraw.x0), h = Math.abs(rdDraw.y1 - rdDraw.y0);
         if (w > 0.01 && h > 0.01) {
           const rect = { x, y, w, h };
-          ann.crops.push({ ...rect });
+          ann.crops.push(rdStampOn({ ...rect }));
           ann.seq.push('c');
           rdSetActiveSel('c', ann.crops.length - 1, rect);
         }
@@ -871,6 +1006,7 @@ function rdEditNote(i, ev) {
   ed.querySelector('[data-act="save"]').onclick = () => {
     if (!ta.value.trim()) { removeNote(); return; }
     n.text = ta.value;
+    rdStampOn(n);
     closeEd();
     rdRenderNotes();
     rdSaveSoon();
@@ -1336,6 +1472,7 @@ async function rdStartAnalysis(asstId, mode) {
   mode = mode === 'fast' ? 'fast' : 'edited';
   rdCloseModal('rdPickAsstModal');
   const discId = rdUid();
+  const discStamp = rdNowStamp();
   const disc = {
     id: discId,
     page: rdActiveSel.page,
@@ -1348,8 +1485,9 @@ async function rdStartAnalysis(asstId, mode) {
     mode,
     extracted_text: '',
     messages: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: discStamp.iso,
+    created_display: discStamp.display,
+    updated_at: discStamp.iso,
   };
   rdCurrent.discussions = rdCurrent.discussions || {};
   rdCurrent.discussions[discId] = disc;
