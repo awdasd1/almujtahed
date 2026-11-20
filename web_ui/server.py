@@ -9164,7 +9164,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.778"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.779"},
         },
     })
     if opened.get("error"):
@@ -15524,7 +15524,12 @@ async def export_reading_project(request: Request, payload: Any = Body(...)):
             raise HTTPException(status_code=400, detail="رقم الجزء غير صالح")
         if pi < 0 or pi >= len(parts):
             raise HTTPException(status_code=404, detail="الجزء غير موجود")
-        parts = [parts[pi]]
+        try:
+            ntake = int((payload or {}).get("part_count") or 1)
+        except Exception:
+            ntake = 1
+        ntake = max(1, min(ntake, len(parts) - pi))
+        parts = parts[pi:pi + ntake]
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for i, part in enumerate(parts):
             fn = (part or {}).get("file_name")

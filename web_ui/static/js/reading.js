@@ -104,7 +104,27 @@ function rdPartsOf(p) {
   const b = rdEnsureParts(p.book);
   return (b && b.parts) || [];
 }
-function rdBookCount(p) { return rdPartsOf(p).length; }
+function rdBundleSpan(parts, idx) {
+  const part = parts && parts[idx];
+  if (!part || !part.bundleId) return { start: idx, count: 1 };
+  let start = idx, end = idx;
+  while (start > 0 && parts[start - 1] && parts[start - 1].bundleId === part.bundleId) start--;
+  while (end + 1 < parts.length && parts[end + 1] && parts[end + 1].bundleId === part.bundleId) end++;
+  return { start, count: end - start + 1 };
+}
+function rdBookRows(p) {
+  const parts = rdPartsOf(p);
+  const rows = [];
+  for (let i = 0; i < parts.length; ) {
+    const span = rdBundleSpan(parts, i);
+    const meta = rdPartMetaOf(p, parts[i], i);
+    if (span.count > 1) meta.partNo = 'جميع الأجزاء';
+    rows.push({ start: i, count: span.count, meta, part: parts[i] });
+    i += span.count;
+  }
+  return rows;
+}
+function rdBookCount(p) { return rdBookRows(p).length; }
 
 function renderRdProjects() {
   const tbody = document.getElementById('rdProjectsTableBody');
@@ -266,12 +286,15 @@ function rdRenderProjectDetail() {
     tbody.innerHTML = `<tr><td colspan="5" class="groups-empty-state"><p style="font-size:14px">لا توجد كتب في هذا المشروع بعد. أضف الكتاب أو الجزء الأول من الأزرار أسفل الجدول.</p></td></tr>`;
     return;
   }
-  tbody.innerHTML = parts.map((part, i) => {
-    const meta = rdPartMetaOf(p, part, i);
+  tbody.innerHTML = rdBookRows(p).map(row => {
+    const i = row.start;
+    const meta = row.meta;
+    const part = row.part;
+    const many = row.count > 1;
     return `
     <tr>
       <td>
-        <div class="group-name-cell" onclick="rdOpenPartInReader('${p.id}', ${i})" title="فتح هذا الجزء في نافذة القراءة">
+        <div class="group-name-cell" onclick="rdOpenPartInReader('${p.id}', ${i})" title="فتح هذا الكتاب في نافذة القراءة">
           <span>${rdEsc(meta.book || part.title || `كتاب ${i + 1}`)}</span>
         </div>
       </td>
@@ -287,10 +310,10 @@ function rdRenderProjectDetail() {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
           </button>
           <button type="button" class="action-icon-btn" onclick="rdOpenPartInReader('${p.id}', ${i})" title="فتح القراءة">📖</button>
-          <button type="button" class="action-icon-btn btn-export-group" onclick="rdExportProject('${p.id}', ${i})" title="تصدير هذا الجزء ZIP">
+          <button type="button" class="action-icon-btn btn-export-group" onclick="rdExportProject('${p.id}', ${i})" title="${many ? 'تصدير هذا الكتاب ZIP' : 'تصدير هذا الجزء ZIP'}">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           </button>
-          <button type="button" class="action-icon-btn btn-share-group" onclick="rdShareProjectPack('${p.id}', ${i})" title="مشاركة هذا الجزء مضغوطًا">
+          <button type="button" class="action-icon-btn btn-share-group" onclick="rdShareProjectPack('${p.id}', ${i})" title="${many ? 'مشاركة هذا الكتاب مضغوطًا' : 'مشاركة هذا الجزء مضغوطًا'}">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
           </button>
           <button type="button" class="action-icon-btn btn-delete-group" onclick="rdDeletePart('${p.id}', ${i})" title="حذف هذا الكتاب من المشروع">
@@ -343,8 +366,10 @@ async function rdDeletePart(id, idx) {
   const i = Number(idx);
   const part = parts[i];
   if (!part) return;
+  const span = rdBundleSpan(parts, i);
   const meta = rdPartMetaOf(p, part, i);
-  const label = [meta.book || part.title || 'الكتاب', meta.partNo && `الجزء ${meta.partNo}`].filter(Boolean).join(' — ');
+  const partLabel = span.count > 1 ? 'جميع الأجزاء' : (meta.partNo && `الجزء ${meta.partNo}`);
+  const label = [meta.book || part.title || 'الكتاب', partLabel].filter(Boolean).join(' — ');
   let ok = false;
   if (typeof showConfirmDialog === 'function') {
     ok = await showConfirmDialog({
@@ -359,10 +384,10 @@ async function rdDeletePart(id, idx) {
     ok = confirm(`حذف «${label}» من المشروع؟`);
   }
   if (!ok) return;
-  const start = rdPartStartPage(p.book, i);
-  const len = Number(part.pages) || 0;
+  const start = rdPartStartPage(p.book, span.start);
+  const len = parts.slice(span.start, span.start + span.count).reduce((s, x) => s + (Number(x.pages) || 0), 0);
   rdRemapPagesAfterPartDelete(p, start, len);
-  parts.splice(i, 1);
+  parts.splice(span.start, span.count);
   if (!parts.length) {
     p.book = null;
     p.page = 1;
@@ -379,8 +404,9 @@ async function rdDeletePart(id, idx) {
     p.page = Math.max(1, Math.min(p.book.pages || 1, p.page || 1));
   }
   if (rdBookAnalysisId === id) {
-    if (rdBookAnalysisPartIdx === i) { rdBookAnalysisId = null; rdBookAnalysisPartIdx = null; rdCloseModal('rdBookAnalysisModal'); }
-    else if (Number.isInteger(rdBookAnalysisPartIdx) && rdBookAnalysisPartIdx > i) rdBookAnalysisPartIdx -= 1;
+    if (rdBookAnalysisPartIdx === i || (Number.isInteger(rdBookAnalysisPartIdx) && rdBookAnalysisPartIdx >= span.start && rdBookAnalysisPartIdx < span.start + span.count)) {
+      rdBookAnalysisId = null; rdBookAnalysisPartIdx = null; rdCloseModal('rdBookAnalysisModal');
+    } else if (Number.isInteger(rdBookAnalysisPartIdx) && rdBookAnalysisPartIdx >= span.start + span.count) rdBookAnalysisPartIdx -= span.count;
   }
   if (rdCurrent && rdCurrent.id === id) {
     if (!p.book && rdReaderIsOpen()) rdCloseReader();
@@ -429,6 +455,7 @@ function rdOpenPartMetaModal(opts) {
     edition: lastMeta ? lastMeta.edition : '',
     partNo: nextNo,
   };
+  if (editing && rdBundleSpan(parts, editIdx).count > 1) meta.partNo = 'جميع الأجزاء';
   const setv = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
   setv('rdPartMetaKind', editing ? 'edit' : kind);
   setv('rdPartMetaEditIdx', editing ? String(editIdx) : '');
@@ -462,13 +489,13 @@ function rdReadPartMetaForm() {
   if (!partNo) { rdToast('اكتب رقم الجزء أو اسمه'); document.getElementById('rdPartNo')?.focus(); return null; }
   return { bookName, author, edition, partNo };
 }
-function rdApplyMetaToPart(part, meta) {
+function rdApplyMetaToPart(part, meta, keepPartNo) {
   if (!part || !meta) return part;
   part.bookName = meta.bookName;
   part.title = meta.bookName || part.title;
   part.author = meta.author;
   part.edition = meta.edition;
-  part.partNo = meta.partNo;
+  if (!keepPartNo) part.partNo = meta.partNo;
   return part;
 }
 function rdEditPartMeta(id, idx) {
@@ -487,7 +514,11 @@ function rdSubmitPartMeta() {
     const idx = Number(editRaw);
     const parts = rdPartsOf(p);
     if (!parts[idx]) return;
-    rdApplyMetaToPart(parts[idx], meta);
+    const span = rdBundleSpan(parts, idx);
+    const keepNos = span.count > 1 && /^(جميع|كل)\s*الأجزاء$/.test(String(meta.partNo || '').trim());
+    for (let j = span.start; j < span.start + span.count; j++) {
+      rdApplyMetaToPart(parts[j], meta, keepNos);
+    }
     if (idx === 0) {
       p.bookName = meta.bookName;
       p.author = meta.author;
@@ -615,6 +646,18 @@ function rdCollectComments(p) {
 let rdBookAnalysisId = null;
 let rdBookAnalysisPartIdx = null;
 let rdReturnToAnalysis = false;
+function rdFilterCommentsForPart(p, partIdx) {
+  let rows = rdCollectComments(p);
+  if (!Number.isInteger(partIdx)) return { rows, span: { start: 0, count: 0 } };
+  const parts = rdPartsOf(p);
+  const span = rdBundleSpan(parts, partIdx);
+  if (span.count > 1) {
+    rows = rows.filter(r => Number(r.part) >= span.start + 1 && Number(r.part) < span.start + span.count + 1);
+  } else {
+    rows = rows.filter(r => Number(r.part) === partIdx + 1);
+  }
+  return { rows, span };
+}
 function rdOpenBookAnalysis(id, partIdx) {
   const p = rdProject(id);
   if (!p) return;
@@ -623,14 +666,15 @@ function rdOpenBookAnalysis(id, partIdx) {
   const parts = rdPartsOf(p);
   const part = Number.isInteger(rdBookAnalysisPartIdx) ? parts[rdBookAnalysisPartIdx] : null;
   const meta = part ? rdPartMetaOf(p, part, rdBookAnalysisPartIdx) : rdBookMeta(p);
-  let rows = rdCollectComments(p);
-  if (Number.isInteger(rdBookAnalysisPartIdx)) rows = rows.filter(r => Number(r.part) === rdBookAnalysisPartIdx + 1);
+  const sliced = rdFilterCommentsForPart(p, rdBookAnalysisPartIdx);
+  const rows = sliced.rows;
+  if (sliced.span.count > 1) meta.partNo = 'جميع الأجزاء';
   const title = document.getElementById('rdBookAnalysisTitle');
   const hint = document.getElementById('rdBookAnalysisMeta');
   const wrap = document.getElementById('rdBookAnalysisWrap');
   const dl = document.getElementById('rdBookAnalysisDownload');
   const sh = document.getElementById('rdBookAnalysisShare');
-  const partLabel = meta.partNo ? `الجزء ${meta.partNo}` : '';
+  const partLabel = meta.partNo === 'جميع الأجزاء' ? meta.partNo : (meta.partNo ? `الجزء ${meta.partNo}` : '');
   if (title) title.textContent = `تحليل الكتاب — ${meta.book || p.title}${partLabel ? ` — ${partLabel}` : ''}`;
   if (hint) hint.textContent = [meta.book && `الكتاب: ${meta.book}`, meta.author && `المؤلف: ${meta.author}`, meta.edition && `الطبعة: ${meta.edition}`, partLabel, `${rows.length} تعليقًا`].filter(Boolean).join(' · ');
   if (dl) dl.disabled = !rows.length;
@@ -682,8 +726,9 @@ function rdBookAnalysisCsv() {
   const parts = rdPartsOf(p);
   const part = Number.isInteger(rdBookAnalysisPartIdx) ? parts[rdBookAnalysisPartIdx] : null;
   const meta = part ? rdPartMetaOf(p, part, rdBookAnalysisPartIdx) : rdBookMeta(p);
-  let rows = rdCollectComments(p);
-  if (Number.isInteger(rdBookAnalysisPartIdx)) rows = rows.filter(r => Number(r.part) === rdBookAnalysisPartIdx + 1);
+  const sliced = rdFilterCommentsForPart(p, rdBookAnalysisPartIdx);
+  const rows = sliced.rows;
+  if (sliced.span.count > 1) meta.partNo = 'جميع الأجزاء';
   if (!rows.length) return null;
   const heads = ['اسم الكتاب', 'المؤلف', 'الطبعة', 'الجزء', 'الصفحة', 'النوع', 'النص', 'التحليل والتعليق', 'المرجع', 'نوع التعليق', 'التاريخ والوقت'];
   const lines = [heads.map(rdCsvCell).join(',')];
@@ -735,7 +780,12 @@ window.rdDuplicateProject = rdDuplicateProject;
 async function rdFetchProjectZip(id, partIdx) {
   await rdSave();
   const body = { project_id: id };
-  if (partIdx != null && partIdx !== '') body.part_index = Number(partIdx);
+  if (partIdx != null && partIdx !== '') {
+    const i = Number(partIdx);
+    body.part_index = i;
+    const span = rdBundleSpan(rdPartsOf(rdProject(id)), i);
+    if (span.count > 1) body.part_count = span.count;
+  }
   const res = await fetch('/api/reading-projects/export-project', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -748,14 +798,17 @@ async function rdFetchProjectZip(id, partIdx) {
   }
   const p = rdProject(id);
   const parts = rdPartsOf(p);
-  const part = Number.isInteger(Number(partIdx)) ? parts[Number(partIdx)] : null;
-  const meta = part ? rdPartMetaOf(p, part, Number(partIdx)) : null;
+  const i = Number(partIdx);
+  const part = Number.isInteger(i) ? parts[i] : null;
+  const span = Number.isInteger(i) ? rdBundleSpan(parts, i) : { count: 0 };
+  const meta = part ? rdPartMetaOf(p, part, i) : null;
+  if (meta && span.count > 1) meta.partNo = 'جميع الأجزاء';
   const safe = String((meta && meta.book) || (p && p.title) || 'مشروع').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'مشروع';
   const partBit = meta && meta.partNo ? `-ج${meta.partNo}` : '';
   return {
     blob,
     fileName: `قراءة-${safe}${partBit}.zip`,
-    title: meta ? `${meta.book || safe} — الجزء ${meta.partNo}` : ((p && p.title) || 'مشروع قراءة'),
+    title: meta ? `${meta.book || safe}${meta.partNo ? ` — ${meta.partNo === 'جميع الأجزاء' ? meta.partNo : 'الجزء ' + meta.partNo}` : ''}` : ((p && p.title) || 'مشروع قراءة'),
   };
 }
 async function rdExportProject(id, partIdx) {
@@ -886,6 +939,7 @@ function rdPartOf(nb) {
     book_id: nb.book_id || null,
     pages: nb.pages || 1,
     volumes: Array.isArray(nb.volumes) ? nb.volumes : undefined,
+    bundleId: nb.bundleId || undefined,
   };
 }
 function rdEnsureParts(b) {
@@ -1057,15 +1111,25 @@ function rdVolumesOf(p) {
   if (!p || !p.book) return [];
   const book = rdEnsureParts(p.book);
   const parts = rdPartsOf(p);
-  if (parts.length > 1) {
+  const idx = Math.max(0, (rdLocus(p.page || 1, p.book).part || 1) - 1);
+  const span = rdBundleSpan(parts, idx);
+  if (span.count > 1) {
+    return Array.from({ length: span.count }, (_, k) => {
+      const i = span.start + k;
+      const meta = rdPartMetaOf(p, parts[i], i);
+      return { label: rdVolumeLabel(meta.partNo, i), start: rdPartStartPage(book, i) };
+    });
+  }
+  if (parts.length > 1 && !parts.some(x => x && x.bundleId)) {
     return parts.map((part, i) => {
       const meta = rdPartMetaOf(p, part, i);
       return { label: rdVolumeLabel(meta.partNo, i), start: rdPartStartPage(book, i) };
     });
   }
-  const vols = parts[0] && Array.isArray(parts[0].volumes) ? parts[0].volumes : [];
+  const cur = parts[idx] || parts[0];
+  const vols = cur && Array.isArray(cur.volumes) ? cur.volumes : [];
   if (vols.length > 1) {
-    const base = rdPartStartPage(book, 0);
+    const base = rdPartStartPage(book, Math.max(0, parts.indexOf(cur)));
     return vols.map((v, i) => ({
       label: rdVolumeLabel(v && v.name, i),
       start: base + Math.max(1, Number(v && v.pdf_start) || 1) - 1,
@@ -1822,6 +1886,12 @@ async function rdPullShamelaAll(bookId, title) {
       return;
     }
     if (vols.length === 1) return rdPullShamela(bookId, title, vols[0].name);
+    const files = new Set(vols.map(v => v.file_name).filter(Boolean));
+    if (files.size <= 1) {
+      const saved = rdPendingPartMeta;
+      rdPendingPartMeta = { ...(saved || {}), partNo: 'جميع الأجزاء', bookName: (saved && saved.bookName) || title };
+      return rdPullShamela(bookId, title);
+    }
     const nbs = [];
     for (const v of vols) {
       const res = await fetch(`/api/book/pdf-info?book_id=${bookId}&part=${encodeURIComponent(v.name)}`);
@@ -1832,12 +1902,16 @@ async function rdPullShamelaAll(bookId, title) {
     if (!nbs.length) { rdAppendMode = false; rdToast('⚠️ تعذر سحب الأجزاء المنزّلة', 5000); return; }
     const wasAppend = rdAppendMode; rdAppendMode = false;
     const savedMeta = rdPendingPartMeta;
+    const bundleId = rdUid();
     rdCloseModal('rdShamelaModal');
     nbs.forEach((nb, i) => {
-      rdPendingPartMeta = savedMeta ? { ...savedMeta, partNo: nb.partNo } : { partNo: nb.partNo };
+      nb.bundleId = bundleId;
+      rdPendingPartMeta = savedMeta
+        ? { ...savedMeta, partNo: nb.partNo, bookName: savedMeta.bookName || title }
+        : { partNo: nb.partNo, bookName: title };
       rdApplyBook(nb, wasAppend || i > 0, true);
     });
-    rdToast(`✔ سُحبت ${nbs.length} أجزاء من «${title}»`);
+    rdToast(`✔ سُحب «${title}» بجميع أجزائه (${nbs.length})`);
   } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
 }
 window.rdPullShamelaAll = rdPullShamelaAll;
