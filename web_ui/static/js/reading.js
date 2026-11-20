@@ -958,7 +958,8 @@ function rdReaderHeading(p) {
   const parts = rdPartsOf(p);
   const idx = Math.max(0, (rdLocus(p.page || 1, p.book).part || 1) - 1);
   const meta = rdPartMetaOf(p, parts[idx], idx);
-  return `📖 ${meta.book || p.book.title || p.title}`;
+  const bits = [meta.book || p.book.title || p.title, meta.author, meta.edition].filter(Boolean);
+  return `📖 ${bits.join(' — ')}`;
 }
 function rdVolumeLabel(raw, i) {
   const s = String(raw || '').trim();
