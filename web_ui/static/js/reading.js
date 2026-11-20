@@ -272,7 +272,6 @@ function rdRenderProjectDetail() {
     <tr>
       <td>
         <div class="group-name-cell" onclick="rdOpenPartInReader('${p.id}', ${i})" title="فتح هذا الجزء في نافذة القراءة">
-          <span class="group-icon-avatar">${rdEsc(meta.partNo)}</span>
           <span>${rdEsc(meta.book || part.title || `كتاب ${i + 1}`)}</span>
         </div>
       </td>
