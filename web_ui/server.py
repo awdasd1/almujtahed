@@ -9165,7 +9165,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.809"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.810"},
         },
     })
     if opened.get("error"):
@@ -14694,6 +14694,22 @@ def _save_research_package(owner_id: str, chat_id: str, package: dict) -> None:
         print(f"🏛 [Risk Office] تعذر حفظ حزمة البحث: {_perr}", flush=True)
 
 
+def _parse_death_year(val) -> Optional[int]:
+    try:
+        n = int(val)
+        return n if n > 0 else None
+    except Exception:
+        return None
+
+
+def _scope_death_max(scope: Optional[Dict[str, Any]], fallback: Optional[int] = None) -> Optional[int]:
+    scoped = _parse_death_year((scope or {}).get("death_max")) if scope else None
+    if scoped:
+        fb = _parse_death_year(fallback)
+        return min(scoped, fb) if fb else scoped
+    return _parse_death_year(fallback)
+
+
 def expand_query_with_anchor_rounds(
     query: str,
     scopes: List[Dict[str, Any]],
@@ -14723,7 +14739,8 @@ def expand_query_with_anchor_rounds(
     for _s in _orig_scopes:
         _sig = (tuple(str(b) for b in (_s.get("books") or [])),
                 int(_s.get("top_k") or 12), int(_s.get("pool_size") or 300),
-                bool(_s.get("use_hybrid", True)))
+                bool(_s.get("use_hybrid", True)),
+                _scope_death_max(_s, death_max))
         _rep = _rep_by_sig.get(_sig)
         if _rep is None:
             _rep_by_sig[_sig] = _s
@@ -14752,7 +14769,7 @@ def expand_query_with_anchor_rounds(
                     semantic_channel=semantic_channel,
                     honor_agent_limit=honor_agent_limit,
                     include_query=include_query,
-                    death_max=death_max,
+                    death_max=_scope_death_max(scope, death_max),
                 )
             except Exception as exc:
                 print(f"Error in anchor-round search for {scope.get('name')}: {exc}")
@@ -14911,7 +14928,7 @@ def expand_query_with_anchor_rounds(
                             semantic_channel=semantic_channel,
                             honor_agent_limit=honor_agent_limit,
                             include_query=(idx == 0),
-                            death_max=death_max,
+                            death_max=_scope_death_max(scope, death_max),
                             categories=_cats,
                         )
                     except Exception as exc:
@@ -14979,7 +14996,7 @@ def expand_query_with_anchor_rounds(
                                     top_k=int(_scope.get("top_k") or 12), use_reranker=False,
                                     dynamic_anchors=[_anc], use_hybrid=use_hybrid, semantic_channel=semantic_channel,
                                     honor_agent_limit=honor_agent_limit, include_query=False,
-                                    death_max=death_max, categories=_cats)
+                                    death_max=_scope_death_max(_scope, death_max), categories=_cats)
                             except Exception:
                                 _hits = []
                             with merge_lock:
@@ -14998,7 +15015,7 @@ def expand_query_with_anchor_rounds(
                                         top_k=int(_scope.get("top_k") or 12), use_reranker=False,
                                         dynamic_anchors=[_anc], use_hybrid=use_hybrid, semantic_channel=semantic_channel,
                                         honor_agent_limit=honor_agent_limit, include_query=False,
-                                        death_max=death_max, categories=_cats, fts_mode="words")
+                                        death_max=_scope_death_max(_scope, death_max), categories=_cats, fts_mode="words")
                                 except Exception:
                                     _hits = []
                                 with merge_lock:
@@ -20393,6 +20410,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     "pool_size": max(ag_top_k * 4, 300),
                     # نمط بحث الوكيل الفردي يسري: semantic عنده بلا هجين لفظي
                     "use_hybrid": str(ag.get("search_mode") or ag.get("searchMode") or "hybrid").strip().lower() != "semantic",
+                    "death_max": _scope_death_max({"death_max": ag.get("death_max")}, req.death_max),
                 })
             honor_scope = True
         else:
@@ -20402,6 +20420,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "categories": [str(c).strip() for c in (req.selected_categories or []) if str(c).strip()] or None,
                 "top_k": witness_limit if req.witness_limit else agent_top_k,
                 "pool_size": max(witness_limit * 4, 600) if req.witness_limit else agent_pool_size,
+                "death_max": _parse_death_year(req.death_max),
             })
             honor_scope = bool(req.agent_group) or (bool(target_books) and not req.library_only)
         if req.reading_assistant:
@@ -20423,6 +20442,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     honor_agent_limit=bool(target_books),
                     include_query=True,
                     semantic_channel=_sem_pass,
+                    death_max=_parse_death_year(req.death_max),
                 )
             except Exception as _rd_err:
                 print(f"📖 [Reading Assistant] تعذر البحث المباشر: {_rd_err}", flush=True)

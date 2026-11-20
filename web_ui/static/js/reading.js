@@ -2803,6 +2803,11 @@ function rdOpenAgentAssistantModal(id) {
   const titles = rdAsstBookTitles(asst);
   window._currentAgentBooks = titles.slice();
   rdApplyAgentScopeLabel(titles);
+  const deathEl = document.getElementById('agentDeathMaxInput');
+  if (deathEl) {
+    const d = asst && asst.death_max != null ? Number(asst.death_max) : NaN;
+    deathEl.value = Number.isFinite(d) && d > 0 ? String(d) : '';
+  }
   if (typeof populateAgentModelDropdown === 'function') populateAgentModelDropdown(model);
   rdRaiseAgentModal();
   setTimeout(() => document.getElementById('agentNameInput')?.focus(), 60);
@@ -2815,6 +2820,9 @@ function rdSaveAssistantFromAgentModal() {
   if (!name) { rdToast('يرجى تحديد اسم المساعد'); return; }
   if (!model) { rdToast('اختر نموذجًا'); return; }
   const titles = [...(window._currentAgentBooks || [])];
+  const deathMax = (typeof parseScopeDeathYear === 'function')
+    ? parseScopeDeathYear(document.getElementById('agentDeathMaxInput')?.value)
+    : (parseInt(document.getElementById('agentDeathMaxInput')?.value, 10) || null);
   const searchMode = document.getElementById('agentSearchModeSelect')?.value || 'hybrid';
   const topK = parseInt(document.getElementById('agentTopRerankInput')?.value || document.getElementById('agentTopKInput')?.value || 40, 10) || 40;
   const pool = parseInt(document.getElementById('agentPoolInput')?.value || 250, 10) || 250;
@@ -2826,6 +2834,7 @@ function rdSaveAssistantFromAgentModal() {
     systemPrompt: prompt,
     system_prompt: prompt,
     books: titles.map(t => ({ title: t })),
+    death_max: deathMax || null,
     thinking: document.getElementById('agentThinkingSelect')?.value || 'medium',
     temp: parseFloat(document.getElementById('agentTempInput')?.value || 0.2),
     topK,
@@ -3793,6 +3802,7 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
       system_prompt: prompt,
       messages: visible,
       selected_books: books.length ? books : null,
+      death_max: asst.death_max != null ? Number(asst.death_max) : null,
       witness_limit: topK,
       extraction_capacity: pool,
       reading_assistant: true,

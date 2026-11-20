@@ -4962,6 +4962,7 @@ function buildChatAgentGroupPayload() {
         thinking: activeAgent.thinking || 'medium',
         system_prompt: unifiedSystemPrompt,
         books: agentBooks,
+        death_max: activeAgent.death_max != null ? Number(activeAgent.death_max) : null,
         pool_size: parseInt(activeAgent.poolSize) || 250,
         top_k: parseInt(activeAgent.topK || activeAgent.top_k || activeAgent.topRerank) || 40,
         temp: activeAgent.temp !== undefined ? activeAgent.temp : 0.2
@@ -4984,6 +4985,7 @@ function buildChatAgentGroupPayload() {
           thinking: agent.thinking || 'medium',
           books: booksList,
           booksScope: booksList,
+          death_max: agent.death_max != null ? Number(agent.death_max) : null,
           is_director: !!(agent.is_director || agent.role === 'director' || agent.kind === 'director'),
           role: agent.role || '',
           kind: agent.kind || '',

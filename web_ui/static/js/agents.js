@@ -1055,6 +1055,9 @@ function openAddAgentModal() {
   if (_dirNew) _dirNew.checked = false;
   populateAgentModelDropdown('anthropic/claude-3.7-sonnet');
 
+  const deathEl = document.getElementById('agentDeathMaxInput');
+  if (deathEl) deathEl.value = '';
+
   // تعيين نطاق الكتب لجميع كتب الشاملة
   window._currentAgentBooks = [];
   const label = document.getElementById('agentScopeSelectorLabel');
@@ -1107,6 +1110,12 @@ function editAgent(id) {
   document.getElementById('agentSelectedModelId').value = modelToSet;
   document.getElementById('agentThinkingSelect').value = agent.thinking || 'medium';
   populateAgentModelDropdown(modelToSet);
+
+  const deathEl = document.getElementById('agentDeathMaxInput');
+  if (deathEl) {
+    const d = agent.death_max != null ? Number(agent.death_max) : NaN;
+    deathEl.value = Number.isFinite(d) && d > 0 ? String(d) : '';
+  }
 
   // تعيين نطاق الكتب المخزن مع فحص البدائل
   const currentBooks = (agent.booksScope && Array.isArray(agent.booksScope)) ? agent.booksScope : (agent.books && Array.isArray(agent.books)) ? agent.books : [];
@@ -1304,6 +1313,9 @@ function saveAgentFromModal() {
   const model = document.getElementById('agentSelectedModelId')?.value || 'anthropic/claude-3.7-sonnet';
   const thinking = document.getElementById('agentThinkingSelect')?.value || 'medium';
   const booksScope = [...(window._currentAgentBooks || [])];
+  const deathMax = (typeof parseScopeDeathYear === 'function')
+    ? parseScopeDeathYear(document.getElementById('agentDeathMaxInput')?.value)
+    : (parseInt(document.getElementById('agentDeathMaxInput')?.value, 10) || null);
 
   if (!name) {
     showToast('يرجى تحديد اسم الوكيل');
@@ -1327,6 +1339,7 @@ function saveAgentFromModal() {
     thinking: thinking,
     books: booksScope,
     booksScope: booksScope,
+    death_max: deathMax || null,
     scope_summary: booksScope.join('، ') || 'كامل مصادر الشاملة',
     enabled: true,
     active: true,

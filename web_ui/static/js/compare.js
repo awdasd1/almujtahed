@@ -614,6 +614,7 @@ function buildCompareAgentPayload() {
       thinking: first.thinking || 'medium',
       system_prompt: many ? agents.map(agent => `### اختصاص وتوجيه الوكيل المساعد «${agent.name}»:\n${agent.systemPrompt || agent.desc || ''}`).join('\n\n') : (first.systemPrompt || ''),
       books,
+      death_max: first.death_max != null ? Number(first.death_max) : null,
       pool_size: parseInt(first.poolSize) || 250,
       top_k: parseInt(first.topK || first.top_k || first.topRerank) || 40,
       temp: first.temp !== undefined ? first.temp : 0.2
@@ -628,6 +629,7 @@ function buildCompareAgentPayload() {
         model: agent.model || 'google/gemini-2.5-flash',
         thinking: agent.thinking || 'medium',
         books: list,
+        death_max: agent.death_max != null ? Number(agent.death_max) : null,
         pool_size: parseInt(agent.poolSize) || 250,
         top_k: parseInt(agent.topK || agent.top_k || agent.topRerank) || 40,
         temp: agent.temp !== undefined ? agent.temp : 0.2,

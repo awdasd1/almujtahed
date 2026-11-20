@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.809">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.810">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.809" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.810" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.809 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.810 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -5161,8 +5161,9 @@
                     </div>
                 </div>
 
-                <!-- تحديد الكتب المراد البحث فيها من المخزن التراثي (مطابقة لنطاق البحث في تبويب البحث الدلالي) -->
-                <div class="form-group" style="margin-top: 14px;">
+                <!-- تحديد الكتب وسنة الوفاة (مطابقة لتبويب البحث) -->
+                <div style="display: grid; grid-template-columns: minmax(0, 1fr) 170px; gap: 14px; margin-top: 14px; align-items: start;">
+                <div class="form-group" style="margin-top: 0;">
                     <label>تحديد الكتب المراد البحث فيها من المخزن التراثي:</label>
                     <div class="scope-trigger-wrapper" style="display: flex; align-items: center; gap: 8px;">
                         <button type="button" class="btn-scope-selector" id="btnOpenAgentScopeModal"
@@ -5187,6 +5188,16 @@
                         انقر لاختيار أمهات الكتب أو الأبواب الفقهية والحديثية المحددة التي يستخرج هذا الوكيل الأدلة
                         منها.
                     </small>
+                </div>
+                <div class="form-group" style="margin-top: 0;">
+                    <label for="agentDeathMaxInput">سنة وفاة المؤلف إلى (هـ):</label>
+                    <input type="number" id="agentDeathMaxInput" class="form-input" min="1" max="1600"
+                        placeholder="مثال: 751" value=""
+                        title="سقف وفاة المؤلف هجريًا. فارغ = بحث مفتوح بلا سقف زمني">
+                    <small style="color: var(--text-muted); font-size: 11.5px; margin-top: 4px; display: block;">
+                        فارغ = بلا سقف
+                    </small>
+                </div>
                 </div>
 
                 <div class="form-group">
@@ -7312,26 +7323,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.809"></script>
-    <script src="/static/js/search.js?v=1.10.809"></script>
-    <script src="/static/js/reader.js?v=1.10.809"></script>
-    <script src="/static/js/force3d.js?v=1.10.809"></script>
-    <script src="/static/js/share.js?v=1.10.809"></script>
-    <script src="/static/js/chat.js?v=1.10.809"></script>
-    <script src="/static/js/documents.js?v=1.10.809"></script>
-    <script src="/static/js/designs.js?v=1.10.809"></script>
-    <script src="/static/js/texts.js?v=1.10.809"></script>
-    <script src="/static/js/agents.js?v=1.10.809"></script>
-    <script src="/static/js/providers.js?v=1.10.809"></script>
-    <script src="/static/js/tools.js?v=1.10.809"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.809"></script>
-    <script src="/static/js/projects.js?v=1.10.809"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.809"></script>
-    <script src="/static/js/reading.js?v=1.10.809"></script>
-    <script src="/static/js/archive.js?v=1.10.809"></script>
-    <script src="/static/js/compare.js?v=1.10.809"></script>
-    <script src="/static/js/local_models.js?v=1.10.809"></script>
-    <script src="/static/js/changelog.js?v=1.10.809"></script>
+    <script src="/static/js/app.js?v=1.10.810"></script>
+    <script src="/static/js/search.js?v=1.10.810"></script>
+    <script src="/static/js/reader.js?v=1.10.810"></script>
+    <script src="/static/js/force3d.js?v=1.10.810"></script>
+    <script src="/static/js/share.js?v=1.10.810"></script>
+    <script src="/static/js/chat.js?v=1.10.810"></script>
+    <script src="/static/js/documents.js?v=1.10.810"></script>
+    <script src="/static/js/designs.js?v=1.10.810"></script>
+    <script src="/static/js/texts.js?v=1.10.810"></script>
+    <script src="/static/js/agents.js?v=1.10.810"></script>
+    <script src="/static/js/providers.js?v=1.10.810"></script>
+    <script src="/static/js/tools.js?v=1.10.810"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.810"></script>
+    <script src="/static/js/projects.js?v=1.10.810"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.810"></script>
+    <script src="/static/js/reading.js?v=1.10.810"></script>
+    <script src="/static/js/archive.js?v=1.10.810"></script>
+    <script src="/static/js/compare.js?v=1.10.810"></script>
+    <script src="/static/js/local_models.js?v=1.10.810"></script>
+    <script src="/static/js/changelog.js?v=1.10.810"></script>
 
     <script>
         window.refreshLucideIcons = function () {
