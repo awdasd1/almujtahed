@@ -828,7 +828,7 @@ function rdReaderIsOpen() {
   const m = document.getElementById('rdReaderModal');
   return !!(m && !m.hidden);
 }
-function rdApplyBook(nb, asAppend) {
+function rdApplyBook(nb, asAppend, quiet) {
   if (!rdCurrent) return;
   const part = rdPartOf(nb);
   const meta = rdPendingPartMeta;
@@ -841,7 +841,7 @@ function rdApplyBook(nb, asAppend) {
     if (rdReaderIsOpen()) { rdUpdateBookUI(); rdLoadPage(startPage); }
     rdSaveNow(false);
     rdRenderProjectDetail();
-    rdToast(`✔ أُضيف الجزء ${part.partNo || b.parts.length} «${part.title}» (${part.pages} صفحة) — يبدأ من صفحة ${startPage}`);
+    if (!quiet) rdToast(`✔ أُضيف الجزء ${part.partNo || b.parts.length} «${part.title}» (${part.pages} صفحة) — يبدأ من صفحة ${startPage}`);
     return;
   }
   nb.parts = [part];
@@ -1646,6 +1646,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function rdOpenShamelaPicker() { rdShowModal('rdShamelaModal'); setTimeout(() => document.getElementById('rdShamelaQuery')?.focus(), 120); }
 
+function rdShamelaPartLabel(name) {
+  const s = String(name || '').trim();
+  if (!s) return 'جزء';
+  if (/^\d+$/.test(s)) return `الجزء ${s}`;
+  return s;
+}
 async function rdSearchShamela() {
   const q = document.getElementById('rdShamelaQuery').value.trim();
   const box = document.getElementById('rdShamelaResults');
@@ -1655,29 +1661,100 @@ async function rdSearchShamela() {
     const res = await fetch(`/api/books/search?q=${encodeURIComponent(q)}&limit=30`);
     const data = await res.json();
     const books = data.books || [];
-    box.innerHTML = books.length ? books.map(b => `
-      <div class="ms-form-row" style="justify-content:space-between;border-bottom:1px dashed var(--border-subtle);padding:6px 0">
-        <span><strong>${rdEsc(b.title)}</strong> <span class="ms-wb-meta">${rdEsc(b.author)} · ${rdEsc(b.category)}</span></span>
-        <button type="button" class="ms-btn" onclick="rdPullShamela(${b.book_id}, '${rdEsc(b.title).replace(/'/g, '')}')">⬇ سحب المصوّرة</button>
-      </div>`).join('') : '<div class="ms-hint">لا كتب مطابقة في الفهرس.</div>';
+    if (!books.length) { box.innerHTML = '<div class="ms-hint">لا كتب مطابقة في الفهرس.</div>'; return; }
+    box.innerHTML = books.map(b => `
+      <div class="rd-shamela-hit">
+        <div class="rd-shamela-hit-head">
+          <span><strong>${rdEsc(b.title)}</strong> <span class="ms-wb-meta">${rdEsc(b.author)} · ${rdEsc(b.category)}${b.volume_count > 1 ? ` · ${b.volume_count} أجزاء` : ''}</span></span>
+        </div>
+        <div class="rd-shamela-parts" id="rdShamelaParts${b.book_id}">⏳ جارٍ جلب الأجزاء...</div>
+      </div>`).join('');
+    await Promise.all(books.map(b => rdFillShamelaParts(b)));
   } catch (e) { box.innerHTML = `<div class="ms-hint">❌ ${rdEsc(e.message)}</div>`; }
 }
-
-async function rdPullShamela(bookId, title) {
-  if (!rdCurrent) return;
-  rdToast(`جارٍ التحقق من النسخة المصوّرة لـ«${title}»...`);
+async function rdFillShamelaParts(b) {
+  const el = document.getElementById(`rdShamelaParts${b.book_id}`);
+  if (!el) return;
+  const fallback = `<div class="ms-form-row" style="justify-content:flex-end"><button type="button" class="ms-btn" data-bid="${b.book_id}" data-title="${rdEsc(b.title)}" onclick="rdPullShamelaFromEl(this)">⬇ سحب المصوّرة</button></div>`;
   try {
-    const res = await fetch(`/api/book/pdf-info?book_id=${bookId}`);
+    const res = await fetch(`/api/book/pdf-volumes?book_id=${b.book_id}`);
+    const info = await res.json();
+    const vols = info.volumes || [];
+    if (!vols.length) { el.innerHTML = fallback; return; }
+    const ready = vols.filter(v => v.available);
+    const rows = vols.map(v => {
+      const lab = rdShamelaPartLabel(v.name);
+      const pages = v.pages ? ` · ${v.pages} صفحة` : '';
+      if (!v.available) {
+        return `<div class="rd-shamela-part is-missing"><span>${rdEsc(lab)}${pages}</span><span class="ms-wb-meta">غير منزّل</span></div>`;
+      }
+      return `<div class="rd-shamela-part"><span>${rdEsc(lab)}${pages}</span><button type="button" class="ms-btn" data-bid="${b.book_id}" data-title="${rdEsc(b.title)}" data-part="${rdEsc(v.name)}" onclick="rdPullShamelaFromEl(this)">⬇ سحب</button></div>`;
+    }).join('');
+    const allBtn = ready.length > 1
+      ? `<div class="ms-form-row" style="justify-content:flex-end;margin-top:4px"><button type="button" class="ms-btn ms-btn-primary" data-bid="${b.book_id}" data-title="${rdEsc(b.title)}" onclick="rdPullShamelaAllFromEl(this)">⬇ سحب جميع الأجزاء (${ready.length})</button></div>`
+      : '';
+    el.innerHTML = rows + allBtn;
+  } catch (e) { el.innerHTML = fallback; }
+}
+function rdPullShamelaFromEl(el) {
+  rdPullShamela(Number(el.dataset.bid), el.dataset.title, el.dataset.part || '');
+}
+window.rdPullShamelaFromEl = rdPullShamelaFromEl;
+function rdPullShamelaAllFromEl(el) {
+  rdPullShamelaAll(Number(el.dataset.bid), el.dataset.title);
+}
+window.rdPullShamelaAllFromEl = rdPullShamelaAllFromEl;
+
+async function rdPullShamela(bookId, title, partName) {
+  if (!rdCurrent) return;
+  const part = String(partName || '').trim();
+  rdToast(`جارٍ التحقق من النسخة المصوّرة لـ«${title}»${part ? ` — ${rdShamelaPartLabel(part)}` : ''}...`);
+  try {
+    const qs = `/api/book/pdf-info?book_id=${bookId}${part ? `&part=${encodeURIComponent(part)}` : ''}`;
+    const res = await fetch(qs);
     const info = await res.json();
     if (!info.available) { rdAppendMode = false; rdToast(`⚠️ ${info.reason || 'لا توجد نسخة مصوّرة لهذا الكتاب في الشاملة يمكنك إضافتها عن طريق الشاملة إن كانت متوفرة هنا أو رفع نسخة من جهاز أو سحبها من الشبكة'}`, 8000); return; }
-    const nb = { source: 'shamela', book_id: bookId, title, pages: info.pdf_pages || 1, volumes: info.volumes };
+    const nb = { source: 'shamela', book_id: bookId, title, pages: info.pdf_pages || 1, volumes: info.volumes, partNo: part };
     const wasAppend = rdAppendMode; rdAppendMode = false;
     rdCloseModal('rdShamelaModal');
     rdApplyBook(nb, wasAppend);
-    if (!wasAppend) rdToast(`✔ سُحب «${title}» من الشاملة المصوّرة (${nb.pages} صفحة) — فعّلت الأدوات`);
+    if (!wasAppend) rdToast(`✔ سُحب «${title}»${part ? ` (${rdShamelaPartLabel(part)})` : ''} من الشاملة المصوّرة (${nb.pages} صفحة) — فعّلت الأدوات`);
   } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
 }
 window.rdPullShamela = rdPullShamela;
+
+async function rdPullShamelaAll(bookId, title) {
+  if (!rdCurrent) return;
+  rdToast(`جارٍ جلب أجزاء «${title}»...`);
+  try {
+    const volRes = await fetch(`/api/book/pdf-volumes?book_id=${bookId}`);
+    const volInfo = await volRes.json();
+    const vols = (volInfo.volumes || []).filter(v => v.available);
+    if (!vols.length) {
+      rdAppendMode = false;
+      rdToast(`⚠️ ${volInfo.reason || 'لا توجد نسخة مصوّرة لهذا الكتاب في الشاملة يمكنك إضافتها عن طريق الشاملة إن كانت متوفرة هنا أو رفع نسخة من جهاز أو سحبها من الشبكة'}`, 8000);
+      return;
+    }
+    if (vols.length === 1) return rdPullShamela(bookId, title, vols[0].name);
+    const nbs = [];
+    for (const v of vols) {
+      const res = await fetch(`/api/book/pdf-info?book_id=${bookId}&part=${encodeURIComponent(v.name)}`);
+      const info = await res.json();
+      if (!info.available) continue;
+      nbs.push({ source: 'shamela', book_id: bookId, title, pages: info.pdf_pages || 1, volumes: info.volumes, partNo: v.name });
+    }
+    if (!nbs.length) { rdAppendMode = false; rdToast('⚠️ تعذر سحب الأجزاء المنزّلة', 5000); return; }
+    const wasAppend = rdAppendMode; rdAppendMode = false;
+    const savedMeta = rdPendingPartMeta;
+    rdCloseModal('rdShamelaModal');
+    nbs.forEach((nb, i) => {
+      rdPendingPartMeta = savedMeta ? { ...savedMeta, partNo: nb.partNo } : { partNo: nb.partNo };
+      rdApplyBook(nb, wasAppend || i > 0, true);
+    });
+    rdToast(`✔ سُحبت ${nbs.length} أجزاء من «${title}»`);
+  } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
+}
+window.rdPullShamelaAll = rdPullShamelaAll;
 
 function rdOpenWebFetch() {
   rdShowModal('rdWebModal');

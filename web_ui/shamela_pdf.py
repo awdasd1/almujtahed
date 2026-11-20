@@ -340,6 +340,59 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
     return out
 
 
+_MISSING_PDF = "لا توجد نسخة مصوّرة لهذا الكتاب في الشاملة يمكنك إضافتها عن طريق الشاملة إن كانت متوفرة هنا أو رفع نسخة من جهاز أو سحبها من الشبكة"
+
+
+def list_volumes(book_id=None, rel_path: str = "") -> dict:
+    """أجزاء الكتاب في المصوّرة، وهل ملف كل جزء منزّل على الجهاز."""
+    out = {"available": False, "volumes": []}
+    their_id = _their_id(book_id, rel_path)
+    if not their_id:
+        out["reason"] = "لا مقابل لهذا الكتاب عند الشاملة"
+        return out
+    row = _master_row(their_id)
+    if not row or not row.get("pdf_links"):
+        out["reason"] = _MISSING_PDF
+        return out
+    entries = _parse_entries(row["pdf_links"])
+    if not entries:
+        out["reason"] = _MISSING_PDF
+        return out
+    root = _pdf_root()
+    index = _file_index(root) if root else {}
+    ranges = _part_ranges(their_id)
+    parts = [r[0] for r in ranges]
+    assigned = _assign_files(entries, parts or [""])
+    volumes = []
+    if ranges:
+        for name, count, _mn, _mx in ranges:
+            fn = assigned.get(name)
+            cands = index.get(fn) if fn else None
+            volumes.append({
+                "name": str(name or "").strip() or "1",
+                "pages": int(count or 0),
+                "file_name": fn,
+                "available": bool(cands),
+            })
+    else:
+        for i, entry in enumerate(entries):
+            fn = entry["name"]
+            volumes.append({
+                "name": str(entry.get("tag") or "").strip() or str(i + 1),
+                "pages": 0,
+                "file_name": fn,
+                "available": bool(index.get(fn)),
+            })
+    out["volumes"] = volumes
+    out["book_name"] = str(row.get("book_name") or "")
+    out["available"] = any(v["available"] for v in volumes)
+    if not root:
+        out["reason"] = "مجلد مصوّرات الشاملة غير موجود على هذا الجهاز"
+    elif not out["available"]:
+        out["reason"] = "النسخة المصوّرة غير منزّلة على هذا الجهاز"
+    return out
+
+
 def _ocr_helper():
     env = os.getenv("ALMOGHNI_OCR_HELPER", "").strip()
     cands = [

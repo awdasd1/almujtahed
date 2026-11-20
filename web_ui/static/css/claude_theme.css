@@ -11321,6 +11321,11 @@ body::-webkit-scrollbar,
   font-size: 13px;
 }
 .rd-part-select[hidden] { display: none !important; }
+.rd-shamela-hit { border-bottom: 1px dashed var(--border-subtle); padding: 8px 0; }
+.rd-shamela-hit-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.rd-shamela-parts { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.rd-shamela-part { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 8px; background: rgba(180,85,45,.06); }
+.rd-shamela-part.is-missing { opacity: .55; }
 .rd-page-ind input { width: 58px; text-align: center; }
 .rd-body { display: flex; gap: 10px; align-items: stretch; }
 .rd-toolbar { display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 8px 6px; border: 1px solid var(--border-subtle); border-radius: 12px; position: sticky; top: 0; }

@@ -8623,6 +8623,13 @@ async def book_pdf_info(book_id: Optional[int] = None, rel_path: Optional[str] =
     return info
 
 
+@app.get("/api/book/pdf-volumes")
+async def book_pdf_volumes(book_id: Optional[int] = None, rel_path: Optional[str] = None):
+    """أجزاء النسخة المصوّرة للكتاب وهل كل جزء منزّل."""
+    import shamela_pdf
+    return await asyncio.to_thread(shamela_pdf.list_volumes, book_id, rel_path or "")
+
+
 @app.get("/api/book/pdf-image")
 async def book_pdf_image(book_id: Optional[int] = None, rel_path: Optional[str] = None,
                          part: Optional[str] = None, page_num: Optional[int] = None,
@@ -9157,7 +9164,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.775"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.776"},
         },
     })
     if opened.get("error"):
