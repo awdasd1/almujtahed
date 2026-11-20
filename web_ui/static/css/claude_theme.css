@@ -11303,7 +11303,7 @@ body::-webkit-scrollbar,
 .rd-reader-head .rd-top-actions { justify-content: center; }
 .rd-top-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .rd-page-ind input { width: 58px; text-align: center; }
-.rd-body { display: flex; gap: 10px; align-items: flex-start; }
+.rd-body { display: flex; gap: 10px; align-items: stretch; }
 .rd-toolbar { display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 8px 6px; border: 1px solid var(--border-subtle); border-radius: 12px; position: sticky; top: 0; }
 .rd-toolbar.is-disabled { opacity: .45; pointer-events: none; }
 .rd-tool { width: 40px; height: 40px; font-size: 18px; border: 1px solid var(--border-subtle); border-radius: 10px; background: transparent; color: inherit; cursor: pointer; }
@@ -11315,7 +11315,7 @@ body::-webkit-scrollbar,
 .rd-colors { display: grid; grid-template-columns: repeat(3, 16px); gap: 4px; justify-content: center; }
 .rd-color { width: 16px; height: 16px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
 .rd-color.active { border-color: #333; transform: scale(1.15); }
-.rd-page-scroll { flex: 1; max-height: 68vh; overflow: auto; border: 1px solid var(--border-subtle); border-radius: 8px; background: #8a8378; padding: 14px; }
+.rd-page-scroll { flex: 1 1 auto; height: 0; min-height: 0; max-height: none; overflow: auto; border: 1px solid var(--border-subtle); border-radius: 8px; background: #8a8378; padding: 14px; }
 .rd-a4 { position: relative; margin: 0 auto; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.35); width: 595px; max-width: 100%; aspect-ratio: 1 / 1.414; overflow: hidden; }
 .rd-a4.has-book { aspect-ratio: auto; }
 .rd-a4 img#rdPageImg { width: 100%; display: block; }
@@ -11333,7 +11333,7 @@ body::-webkit-scrollbar,
 .rd-crop-chip { font-size: 11.5px; border: 1px solid var(--border-subtle); background: var(--bg-paper, #fdfaf4); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
 .rd-bottombar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; border-top: 1px dashed var(--border-subtle); padding-top: 10px; }
 .rd-web-bar i { transition: width .3s ease; animation: none; }
-.rd-page-wrap { position: relative; flex: 1; min-width: 0; }
+.rd-page-wrap { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .rd-nav-zone { position: absolute; top: 0; bottom: 0; width: 58px; z-index: 7; border: none; background: transparent; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .rd-nav-zone span { writing-mode: vertical-rl; font-size: 12px; font-weight: 700; background: rgba(60,50,35,.45); padding: 12px 5px; border-radius: 999px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .rd-nav-zone:hover span { opacity: 1; }
@@ -11380,7 +11380,7 @@ body::-webkit-scrollbar,
 .rd-entity-modal .crit-model-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; margin: 0; font-weight: 400; }
 .rd-entity-modal .crit-model-row:has(input:checked) { background: rgba(217,119,87,.12); font-weight: 700; }
 .rd-entity-modal .crit-model-row input { accent-color: var(--accent-clay, #b4552d); margin: 0; }
-@media (max-width: 760px) { .rd-body { flex-direction: column; } .rd-toolbar { flex-direction: row; flex-wrap: wrap; } }
+@media (max-width: 760px) { .rd-body { flex-direction: column; } .rd-toolbar { flex-direction: row; flex-wrap: wrap; } .rd-page-scroll { height: auto; max-height: 68vh; } }
 .ms-report-modal { width: min(880px, 96vw); }
 .ms-report-text { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.95; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px 14px; max-height: 62vh; overflow-y: auto; background: var(--bg-main, transparent); direction: rtl; text-align: right; margin: 0; }
 .ms-auto-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; margin: 10px 0; }
