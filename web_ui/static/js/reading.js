@@ -22,6 +22,8 @@ let rdEditingAsstId = null;
 let rdAnalysis = null; // {id, discussion} المناقشة المفتوحة
 let rdAnalysisAbort = null;
 let rdMediaAction = null; // 'share' | 'publish'
+let rdSearchHitMark = null; // { filePage, rect } تمييز مؤقت لموضع البحث على المصوّرة
+let rdLastSearchQuery = '';
 
 const RD_COLORS = ['#b03a2e', '#1f6fb2', '#2e7d5b', '#b8860b', '#7a5aa1', '#222222'];
 const RD_NOTE_COLORS = ['#ffe58a', '#ffd1dc', '#c8f0c8', '#bfe3ff', '#e6ccff'];
@@ -1306,11 +1308,12 @@ function rdLoadPage(n) {
   const p = rdCurrent;
   if (!p || !p.book) { rdRenderAnnotations(); return; }
   n = Math.max(1, Math.min(p.book.pages || 1, Number(n) || 1));
+  if (rdSearchHitMark && rdSearchHitMark.filePage !== n) rdSearchHitMark = null;
   p.page = n;
   rdUpdateBookUI();
   rdSyncPageField(n);
   const img = document.getElementById('rdPageImg');
-  img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); };
+  img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); rdScrollToSearchMark(); };
   img.onerror = () => { rdToast('تعذر عرض هذه الصفحة'); };
   img.src = rdBookPageUrl(n);
   document.getElementById('rdPageScroll').scrollTop = 0;
@@ -1488,6 +1491,16 @@ function rdRenderAnnotations() {
     handleRect = rdActiveSel.rect;
   }
   if (handleRect) rdDrawCropHandles(ctx, handleRect, W, H);
+  if (rdSearchHitMark && rdSearchHitMark.filePage === (rdCurrent.page || 1) && rdSearchHitMark.rect) {
+    const r = rdSearchHitMark.rect;
+    ctx.save();
+    ctx.fillStyle = 'rgba(232, 89, 12, 0.22)';
+    ctx.fillRect(r.x * W, r.y * H, r.w * W, r.h * H);
+    ctx.strokeStyle = '#e8590c';
+    ctx.lineWidth = Math.max(2, W / 320);
+    ctx.strokeRect(r.x * W, r.y * H, r.w * W, r.h * H);
+    ctx.restore();
+  }
   rdRenderNotes();
   rdRenderCropsBar();
   rdSyncPageSumBadge();
@@ -2584,7 +2597,7 @@ function rdOpenBookSearch() {
     return;
   }
   const hint = document.getElementById('rdSearchHint');
-  if (hint) hint.textContent = `الباحث: «${asst.name}» — ${asst.model}. يُبحث في النسخة النصية لجميع أجزاء هذا الكتاب ثم تُفتح النتيجة في المصوّرة.`;
+  if (hint) hint.textContent = `الباحث: «${asst.name}» — ${asst.model}. يُبحث في النسخة النصية لجميع أجزاء هذا الكتاب، ثم تُفتح النتيجة في المصوّرة ويُميَّز موضعها في الصفحة.`;
   const st = document.getElementById('rdSearchStatus');
   if (st) st.textContent = '';
   const inp = document.getElementById('rdSearchQuery');
@@ -2631,6 +2644,7 @@ async function rdAskResearcher(asst, userText) {
   return data.reply || data.content || data.message || '';
 }
 function rdShowSearchHits(query, asst, rows) {
+  rdLastSearchQuery = String(query || '');
   rdSearchHitsData = rows;
   const title = document.getElementById('rdSearchResultTitle');
   const meta = document.getElementById('rdSearchResultMeta');
@@ -2768,16 +2782,74 @@ async function rdRunBookSearch() {
   }
 }
 window.rdRunBookSearch = rdRunBookSearch;
+function rdSearchPhrase(h) {
+  const q = String(rdLastSearchQuery || '').trim();
+  const snip = String(h && h.snippet || '').replace(/\s+/g, ' ').trim();
+  if (q && snip) {
+    const i = snip.indexOf(q);
+    if (i >= 0) {
+      const a = Math.max(0, i - 48);
+      const b = Math.min(snip.length, i + q.length + 48);
+      return snip.slice(a, b).trim();
+    }
+  }
+  if (snip.length >= 8) return snip.slice(0, 140);
+  return q;
+}
+function rdScrollToSearchMark() {
+  const mark = rdSearchHitMark;
+  if (!mark || !mark.rect || !rdCurrent || mark.filePage !== (rdCurrent.page || 1)) return;
+  const a4 = document.getElementById('rdA4');
+  const sc = document.getElementById('rdPageScroll');
+  if (!a4 || !sc) return;
+  sc.scrollTop = Math.max(0, mark.rect.y * a4.offsetHeight - 90);
+}
+async function rdLocateSearchHit(h, filePage, partIdx) {
+  const p = rdCurrent;
+  if (!h || !p || !p.book) return;
+  const phrase = rdSearchPhrase(h);
+  if (!phrase || phrase.length < 3) return;
+  const parts = rdPartsOf(p);
+  const part = (Number.isInteger(partIdx) && partIdx >= 0) ? parts[partIdx] : (rdPartInfoAt(p.book, filePage).part);
+  if (!part || part.source !== 'shamela' || !part.book_id) return;
+  const start = (Number.isInteger(partIdx) && partIdx >= 0) ? rdPartStartPage(p.book, partIdx) : rdPartInfoAt(p.book, filePage).start;
+  const localPdf = filePage - start + 1;
+  const q = new URLSearchParams();
+  q.set('book_id', String(part.book_id));
+  const partName = rdShamelaPartName(part) || String(h.part || '');
+  if (partName) q.set('part', partName);
+  if (h.page !== '' && h.page != null) q.set('page_num', String(h.page));
+  q.set('pdf_page', String(localPdf));
+  q.set('phrase', phrase);
+  rdToast('جارٍ تمييز الموضع على المصوّرة…');
+  try {
+    const res = await fetch(`/api/book/pdf-locate?${q.toString()}`);
+    const data = await res.json().catch(() => ({}));
+    if (!rdCurrent || (rdCurrent.page || 1) !== filePage) return;
+    if (!data.found || !data.rect) {
+      rdToast(data.reason || 'فُتحت الصفحة ولم يُميَّز موضع الشاهد على الصورة');
+      return;
+    }
+    rdSearchHitMark = { filePage, rect: data.rect };
+    rdRenderAnnotations();
+    rdScrollToSearchMark();
+    rdToast('✔ مُيِّز موضع المطلوب على الصفحة');
+  } catch (e) {
+    /* الصفحة فُتحت ولو تعذر التمييز البصري */
+  }
+}
 function rdGotoSearchHit(i) {
   const h = rdSearchHitsData[i];
   const p = rdCurrent;
   if (!h || !p || !p.book) return;
   const idx = rdPartIndexForSearch(p, h.part);
   rdCloseModal('rdSearchResultModal');
+  rdSearchHitMark = null;
   const filePage = idx >= 0
     ? rdFilePageFromPartShown(p.book, idx, h.page)
     : rdFileFromShown(h.page, p.book);
   rdLoadPage(filePage);
+  rdLocateSearchHit(h, filePage, idx);
 }
 window.rdGotoSearchHit = rdGotoSearchHit;
 function rdToggleSumRange() {
