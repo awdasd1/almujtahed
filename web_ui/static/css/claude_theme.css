@@ -11349,8 +11349,8 @@ body::-webkit-scrollbar,
 .rd-view-reset:hover { border-color: #b4552d; color: #b4552d; }
 #rdColorPicker { position: fixed; z-index: 500000; width: 28px; height: 28px; padding: 0; border: none; opacity: 0; }
 .rd-color-ops { display: flex; gap: 4px; grid-column: 1 / -1; justify-content: center; }
-.rd-color-add { width: 16px; height: 16px; border-radius: 50%; border: 1.5px dashed rgba(120,110,90,.8); background: transparent; color: inherit; cursor: pointer; padding: 0; font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center; }
-.rd-color-add:hover { border-color: #b4552d; color: #b4552d; }
+.rd-color-add { width: 16px; height: 16px; border: none; border-radius: 0; background: transparent; color: inherit; cursor: pointer; padding: 0; font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.rd-color-add:hover { color: #b4552d; }
 .rd-sel-bar { position: absolute; z-index: 8; display: flex; gap: 4px; background: var(--bg-surface); color: var(--text-main); border: 1px solid var(--border-subtle); border-radius: 999px; padding: 4px 6px; box-shadow: var(--shadow-md, 0 6px 18px rgba(0,0,0,.18)); transform: translate(-50%, -110%); }
 .rd-sel-bar[hidden] { display: none !important; }
 .rd-sel-ico { width: 34px; height: 34px; border: none; border-radius: 50%; background: transparent; color: var(--text-main); font-size: 16px; cursor: pointer; }
