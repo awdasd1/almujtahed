@@ -584,18 +584,9 @@ function rdFormatRefs(disc) {
 }
 function rdLocus(filePage, book) {
   const n = Number(filePage) || 1;
-  const shown = rdShownPage(n, book);
-  if (!book) return { filePage: n, part: 1, shown };
-  const b = rdEnsureParts(book);
-  let rest = n, partIdx = 0;
-  if (b && Array.isArray(b.parts) && b.parts.length) {
-    for (let i = 0; i < b.parts.length; i++) {
-      if (rest <= b.parts[i].pages) { partIdx = i; break; }
-      rest -= b.parts[i].pages;
-      partIdx = i;
-    }
-  }
-  return { filePage: n, part: partIdx + 1, shown };
+  if (!book) return { filePage: n, part: 1, shown: n };
+  const info = rdPartInfoAt(book, n);
+  return { filePage: n, part: info.idx + 1, shown: info.local - info.off };
 }
 function rdCollectComments(p) {
   if (!p) return [];
@@ -948,8 +939,18 @@ function rdEnsureParts(b) {
   b.pages = b.parts.reduce((s, x) => s + (x.pages || 0), 0) || b.pages || 1;
   return b;
 }
+function rdShamelaPartName(part) {
+  const n = String((part && (part.partNo || part.part)) || '').trim();
+  if (!n || /^(جميع|كل)\s*الأجزاء$/.test(n)) return '';
+  return n;
+}
 function rdPartPageUrl(part, localPage) {
-  if (part.source === 'shamela') return `/api/book/pdf-image?book_id=${part.book_id}&pdf_page=${localPage}&v=${Date.now()}`;
+  if (part.source === 'shamela') {
+    const q = [`book_id=${part.book_id}`, `pdf_page=${localPage}`, `v=${Date.now()}`];
+    const name = rdShamelaPartName(part);
+    if (name) q.push(`part=${encodeURIComponent(name)}`);
+    return `/api/book/pdf-image?${q.join('&')}`;
+  }
   return `/api/reading-projects/page-image?file=${encodeURIComponent(part.file_name)}&page=${localPage}`;
 }
 function rdBookPageUrl(n) {
@@ -1045,26 +1046,90 @@ function rdOffsetOf(book) {
   const n = Math.trunc(Number(book && book.pageOffset) || 0);
   return Number.isFinite(n) ? n : 0;
 }
+function rdOffsetOfPart(part, book) {
+  if (part && part.pageOffset != null && String(part.pageOffset) !== '') {
+    const n = Math.trunc(Number(part.pageOffset));
+    if (Number.isFinite(n)) return n;
+  }
+  return rdOffsetOf(book);
+}
+function rdOffsetOfVolume(vol, part, book) {
+  if (vol && vol.pageOffset != null && String(vol.pageOffset) !== '') {
+    const n = Math.trunc(Number(vol.pageOffset));
+    if (Number.isFinite(n)) return n;
+  }
+  return rdOffsetOfPart(part, book);
+}
+function rdPartInfoAt(book, filePage) {
+  const n = Math.max(1, Number(filePage) || 1);
+  const b = rdEnsureParts(book);
+  const offBook = rdOffsetOf(b);
+  if (!b || !Array.isArray(b.parts) || !b.parts.length) {
+    return { part: null, idx: 0, start: 1, pages: (b && b.pages) || 1, local: n, off: offBook, fileLocal: n };
+  }
+  let rest = n, idx = 0;
+  for (let i = 0; i < b.parts.length; i++) {
+    const pg = Number(b.parts[i].pages) || 0;
+    if (rest <= pg) { idx = i; break; }
+    rest -= pg;
+    idx = i;
+  }
+  const part = b.parts[idx];
+  const start = rdPartStartPage(b, idx);
+  const localInFile = Math.max(1, rest);
+  const vols = part && Array.isArray(part.volumes) && part.volumes.length > 1 ? part.volumes : null;
+  if (vols) {
+    let vi = 0;
+    for (let i = 0; i < vols.length; i++) {
+      const st = Math.max(1, Number(vols[i].pdf_start) || 1);
+      if (localInFile >= st) vi = i;
+    }
+    const st = Math.max(1, Number(vols[vi].pdf_start) || 1);
+    const nextRaw = vi + 1 < vols.length ? Number(vols[vi + 1].pdf_start) : NaN;
+    const next = Number.isFinite(nextRaw) && nextRaw > st ? nextRaw : (Number(part.pages) || st) + 1;
+    const pages = Math.max(1, next - st);
+    return {
+      part, idx, vol: vols[vi],
+      start: start + st - 1,
+      pages,
+      local: localInFile - st + 1,
+      off: rdOffsetOfVolume(vols[vi], part, b),
+      fileLocal: localInFile,
+    };
+  }
+  return {
+    part, idx, vol: null,
+    start,
+    pages: Number(part.pages) || 1,
+    local: localInFile,
+    off: rdOffsetOfPart(part, b),
+    fileLocal: localInFile,
+  };
+}
 function rdShownPage(filePage, book) {
-  return (Number(filePage) || 1) - rdOffsetOf(book);
+  const info = rdPartInfoAt(book, filePage);
+  return info.local - info.off;
 }
 function rdFileFromShown(shown, book) {
-  return (Number(shown) || 1) + rdOffsetOf(book);
+  const here = (rdCurrent && rdCurrent.page) || 1;
+  const info = rdPartInfoAt(book, here);
+  const local = Math.max(1, Math.min(info.pages, (Number(shown) || 1) + info.off));
+  return info.start + local - 1;
 }
 function rdSyncPageField(filePage) {
   const book = rdCurrent && rdCurrent.book;
   const input = document.getElementById('rdPageInput');
   if (!input || !book) return;
-  const off = rdOffsetOf(book);
-  const pages = book.pages || 1;
-  input.min = String(1 - off);
-  input.max = String(pages - off);
-  input.value = (Number(filePage) || 1) - off;
+  const info = rdPartInfoAt(book, filePage);
+  input.min = String(1 - info.off);
+  input.max = String(info.pages - info.off);
+  input.value = info.local - info.off;
 }
 function rdOpenPageOffset() {
   if (!rdCurrent || !rdCurrent.book) { rdToast('اسحب كتابًا أولًا'); return; }
+  const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
   const input = document.getElementById('rdPageOffsetInput');
-  if (input) input.value = rdOffsetOf(rdCurrent.book);
+  if (input) input.value = info.off;
   rdRefreshOffsetPreview();
   rdShowModal('rdPageOffsetModal');
   setTimeout(() => input && input.focus(), 40);
@@ -1073,23 +1138,26 @@ function rdRefreshOffsetPreview() {
   const el = document.getElementById('rdPageOffsetPreview');
   const input = document.getElementById('rdPageOffsetInput');
   if (!el || !rdCurrent || !rdCurrent.book) return;
+  const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
   const off = Math.trunc(Number(input && input.value) || 0);
-  const file = rdCurrent.page || 1;
-  el.textContent = `موضع الملف الآن صفحة ${file}، ويظهر في الترقيم صفحة ${file - (Number.isFinite(off) ? off : 0)}.`;
+  const shown = info.local - (Number.isFinite(off) ? off : 0);
+  el.textContent = `هذا الجزء: صفحة الملف ${info.local} من ${info.pages}، ويظهر في الترقيم صفحة ${shown}.`;
 }
 function rdApplyPageOffset() {
   if (!rdCurrent || !rdCurrent.book) return;
   const raw = document.getElementById('rdPageOffsetInput').value;
   const off = Math.trunc(Number(raw));
   if (!Number.isFinite(off)) { rdToast('أدخل رقمًا فارقًا صحيحًا'); return; }
-  const pages = rdCurrent.book.pages || 1;
-  if (Math.abs(off) >= pages) { rdToast('الرقم الفارق أصغر من عدد صفحات الكتاب'); return; }
-  rdCurrent.book.pageOffset = off;
+  const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
+  if (Math.abs(off) >= info.pages) { rdToast('الرقم الفارق أصغر من عدد صفحات هذا الجزء'); return; }
+  if (info.vol) info.vol.pageOffset = off;
+  else if (info.part) info.part.pageOffset = off;
+  else rdCurrent.book.pageOffset = off;
   rdUpdateBookUI();
   rdSyncPageField(rdCurrent.page || 1);
   rdSaveSoon();
   rdCloseModal('rdPageOffsetModal');
-  rdToast(off ? `ضُبط الفارق على ${off}: رقم الكتاب = رقم الملف − ${off}` : 'أُلغي الفارق وعاد الترقيم إلى صفحات الملف');
+  rdToast(off ? `ضُبط هذا الجزء بفارق ${off}: رقم الكتاب = رقم الملف − ${off}` : 'أُلغي الفارق في هذا الجزء وعاد الترقيم إلى صفحات الملف');
 }
 
 function rdReaderHeading(p) {
@@ -1182,7 +1250,8 @@ function rdUpdateBookUI() {
   document.getElementById('rdEmpty').style.display = has ? 'none' : 'flex';
   document.getElementById('rdPageImg').style.display = has ? 'block' : 'none';
   document.getElementById('rdA4').classList.toggle('has-book', has);
-  document.getElementById('rdPageTotal').textContent = has ? (p.book.pages - rdOffsetOf(p.book)) : '—';
+  const pi = has ? rdPartInfoAt(p.book, p.page || 1) : null;
+  document.getElementById('rdPageTotal').textContent = pi ? (pi.pages - pi.off) : '—';
   const titleEl = document.getElementById('rdReaderTitle');
   if (titleEl) titleEl.textContent = rdReaderHeading(p);
   if (has) rdEnsureParts(p.book);
@@ -1191,16 +1260,16 @@ function rdUpdateBookUI() {
   if (!info) return;
   if (!has) { info.textContent = ''; return; }
   const parts = rdPartsOf(p);
-  const idx = Math.max(0, (rdLocus(p.page || 1, p.book).part || 1) - 1);
+  const idx = Math.max(0, pi.idx);
   const meta = rdPartMetaOf(p, parts[idx], idx);
   const src = p.book.source === 'shamela' ? 'من الشاملة المصوّرة' : p.book.source === 'web' ? 'من الشبكة' : 'PDF مرفوع';
+  const partLabel = (pi.vol && rdVolumeLabel(pi.vol.name, 0)) || (meta.partNo && !/^(جميع|كل)\s*الأجزاء$/.test(String(meta.partNo)) ? meta.partNo : '');
   info.textContent = [
     meta.book && `الكتاب: ${meta.book}`,
     meta.author && `المؤلف: ${meta.author}`,
     meta.edition && `الطبعة: ${meta.edition}`,
-    meta.partNo && `الجزء ${meta.partNo}`,
-    `${p.book.pages} صفحة`,
-    p.book.parts.length > 1 ? `في ${p.book.parts.length} أجزاء متسلسلة` : '',
+    partLabel && `الجزء ${partLabel}`,
+    `${pi.pages} صفحة في هذا الجزء`,
     `(${src})`,
   ].filter(Boolean).join(' — ');
 }
