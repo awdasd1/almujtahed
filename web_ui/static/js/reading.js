@@ -146,7 +146,6 @@ function rdOpenProject(id) {
   rdSetTool('pen');
   rdUpdateBookUI();
   rdApplyView();
-  rdInitResize();
   rdLoadPage(p.page || 1);
 }
 window.rdOpenProject = rdOpenProject;
@@ -509,37 +508,6 @@ function rdResetView() {
   if (!rdCurrent) return;
   rdCurrent.view = { sharp: 0, contrast: 100, bg: 'white' };
   rdApplyView(); rdSaveSoon();
-}
-
-// تطويل النافذة من الأسفل فقط: مقبض سحب يغيّر ارتفاع نافذة القارئ رأسيًا
-let rdResizeInit = false;
-function rdInitResize() {
-  if (rdResizeInit) return;
-  const handle = document.getElementById('rdResizeHandle');
-  const modal = document.querySelector('.rd-reader-modal');
-  const scroll = document.getElementById('rdPageScroll');
-  if (!handle || !modal || !scroll) return;
-  rdResizeInit = true;
-  handle.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    handle.setPointerCapture(e.pointerId);
-    const startY = e.clientY;
-    const startH = modal.offsetHeight;
-    modal.style.maxHeight = 'none';
-    const move = (ev) => {
-      const h = Math.max(430, Math.min(window.innerHeight - 16, startH + (ev.clientY - startY)));
-      modal.style.height = `${h}px`;
-      scroll.style.maxHeight = `${Math.max(240, h - 250)}px`;
-    };
-    const up = () => {
-      handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', up);
-      handle.removeEventListener('pointercancel', up);
-    };
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', up);
-    handle.addEventListener('pointercancel', up);
-  });
 }
 
 function rdHideSelBar() {
