@@ -291,8 +291,6 @@ function initThemeSelects() {
 
   const menu = document.createElement('div');
   menu.className = 'theme-select-menu';
-  // فوق كل نوافذ التطبيق (مخطوطات/قارئ/نقد تصل إلى ~100800)؛ وإلا تُفتح القائمة خلف النافذة وتبدو متجمدة
-  menu.style.zIndex = '101500';
   menu.hidden = true;
   menu.setAttribute('role', 'listbox');
   document.body.appendChild(menu);
@@ -354,8 +352,17 @@ function initThemeSelects() {
     if (trigger) trigger.disabled = select.disabled;
   }
 
+  function menuZFor(el) {
+    let z = 101500;
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+      const num = parseInt(getComputedStyle(n).zIndex, 10);
+      if (Number.isFinite(num) && num > z) z = num;
+    }
+    return z + 20;
+  }
   function placeMenu(trigger) {
     const rect = trigger.getBoundingClientRect();
+    menu.style.setProperty('z-index', String(menuZFor(trigger)), 'important');
     menu.style.width = 'max-content';
     menu.style.minWidth = Math.max(rect.width, 160) + 'px';
     menu.style.maxWidth = 'min(440px, calc(100vw - 16px))';

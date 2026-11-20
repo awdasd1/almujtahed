@@ -9480,8 +9480,8 @@ table tr:hover td,
 
   .theme-select-menu {
     position: fixed;
-    /* طبقة البوابة: أعلى من ms/قارئ/نقد (حتى ~100800) حتى لا تتجمد القوائم داخل النوافذ */
-    z-index: 101500 !important;
+    /* فوق نوافذ النطاق والقراءة والشاملة (تصل إلى 400200) حتى لا تُفتح قائمة القسم خلف الطبقة */
+    z-index: 500100 !important;
     display: flex;
     flex-direction: column;
     gap: 2px;
