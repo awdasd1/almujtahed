@@ -18,6 +18,7 @@ let rdSaveTimer = null;
 let rdActiveSel = null; // {page, kind:'h'|'c', index, rect:{x,y,w,h}}
 let rdSelFromHover = false; // شريط الأيقونات ظاهر بسبب تمرير على تحليل سابق
 let rdAsstDraftBooks = [];
+let rdEditingAsstId = null;
 let rdAnalysis = null; // {id, discussion} المناقشة المفتوحة
 let rdAnalysisAbort = null;
 let rdMediaAction = null; // 'share' | 'publish'
@@ -1012,7 +1013,10 @@ function rdRenderAssistantsList() {
   box.innerHTML = rdAssistants.map(a => `
     <div class="rd-entity-card">
       <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length} كتاب</div></div>
-      <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteAssistant('${a.id}')">حذف</button>
+      <span class="rd-mode-btns">
+        <button type="button" class="ms-btn" onclick="rdEditAssistant('${a.id}')">تعديل</button>
+        <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteAssistant('${a.id}')">حذف</button>
+      </span>
     </div>`).join('');
 }
 function rdRenderReadersList() {
@@ -1026,7 +1030,13 @@ function rdRenderReadersList() {
     </div>`).join('');
 }
 
+function rdSetAsstAdoptLabel() {
+  const btn = document.getElementById('rdAsstAdoptBtn');
+  if (btn) btn.textContent = rdEditingAsstId ? 'حفظ التعديل' : 'اعتمد';
+}
 async function rdOpenCreateAssistant() {
+  rdEditingAsstId = null;
+  rdSetAsstAdoptLabel();
   rdAsstDraftBooks = [];
   document.getElementById('rdAsstName').value = '';
   document.getElementById('rdAsstPrompt').value = RD_DEFAULT_ASST_PROMPT;
@@ -1060,21 +1070,48 @@ function rdAdoptAssistant() {
   const prompt = document.getElementById('rdAsstPrompt').value.trim() || RD_DEFAULT_ASST_PROMPT;
   if (!name) { rdToast('اكتب اسم المساعد'); return; }
   if (!model) { rdToast('اختر نموذجًا'); return; }
-  rdAssistants.unshift({
-    id: rdUid(), name, model, prompt,
-    books: rdAsstDraftBooks.map(b => ({ ...b })),
-    created_at: new Date().toISOString(),
-  });
+  const books = rdAsstDraftBooks.map(b => ({ ...b }));
+  if (rdEditingAsstId) {
+    const cur = rdAssistants.find(a => a.id === rdEditingAsstId);
+    if (cur) Object.assign(cur, { name, model, prompt, books, updated_at: new Date().toISOString() });
+    rdEditingAsstId = null;
+    rdSetAsstAdoptLabel();
+    rdToast(`✔ حُفظ تعديل المساعد «${name}»`);
+  } else {
+    rdAssistants.unshift({
+      id: rdUid(), name, model, prompt, books,
+      created_at: new Date().toISOString(),
+    });
+    rdToast(`✔ اعتُمد المساعد «${name}»`);
+  }
   rdSave();
   rdRenderAssistantsList();
-  rdToast(`✔ اعتُمد المساعد «${name}»`);
   document.getElementById('rdAsstName').value = '';
+  document.getElementById('rdAsstPrompt').value = RD_DEFAULT_ASST_PROMPT;
   rdAsstDraftBooks = [];
   rdUpdateAsstScopeLabel();
+}
+async function rdEditAssistant(id) {
+  const a = rdAssistants.find(x => x.id === id);
+  if (!a) return;
+  rdEditingAsstId = id;
+  rdSetAsstAdoptLabel();
+  document.getElementById('rdAsstName').value = a.name || '';
+  document.getElementById('rdAsstPrompt').value = a.prompt || RD_DEFAULT_ASST_PROMPT;
+  rdAsstDraftBooks = (a.books || []).map(b => ({ title: b.title, book_id: b.book_id }));
+  window._rdAssistantBookTitles = rdAsstDraftBooks.map(b => b.title).filter(Boolean);
+  rdUpdateAsstScopeLabel();
+  try { await rdLoadModelCatalog(); } catch (e) { /* تبقى القائمة الحالية */ }
+  const hidden = document.getElementById('rdAsstModel');
+  if (hidden) hidden.value = a.model || '';
+  rdRenderAsstModelOptions();
+  document.getElementById('rdAsstName')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  rdToast(`تعديل «${a.name}» — عدّل الحقول ثم اضغط حفظ التعديل`);
 }
 function rdDeleteAssistant(id) {
   if (!confirm('حذف هذا المساعد؟')) return;
   rdAssistants = rdAssistants.filter(a => a.id !== id);
+  if (rdEditingAsstId === id) { rdEditingAsstId = null; rdSetAsstAdoptLabel(); }
   rdSave(); rdRenderAssistantsList();
 }
 function rdAdoptVisionReader() {
