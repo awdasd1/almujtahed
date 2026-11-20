@@ -251,11 +251,11 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
     out["their_id"] = their_id
     row = _master_row(their_id)
     if not row or not row.get("pdf_links"):
-        out["reason"] = "لا نسخة مصوّرة لهذا الكتاب في الشاملة"
+        out["reason"] = "لا توجد نسخة مصوّرة لهذا الكتاب في الشاملة يمكنك إضافتها عن طريق الشاملة إن كانت متوفرة هنا أو رفع نسخة من جهاز أو سحبها من الشبكة"
         return out
     entries = _parse_entries(row["pdf_links"])
     if not entries:
-        out["reason"] = "لا نسخة مصوّرة لهذا الكتاب في الشاملة"
+        out["reason"] = "لا توجد نسخة مصوّرة لهذا الكتاب في الشاملة يمكنك إضافتها عن طريق الشاملة إن كانت متوفرة هنا أو رفع نسخة من جهاز أو سحبها من الشبكة"
         return out
     root = _pdf_root()
     if not root:

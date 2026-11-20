@@ -1575,7 +1575,7 @@ async function rdPullShamela(bookId, title) {
   try {
     const res = await fetch(`/api/book/pdf-info?book_id=${bookId}`);
     const info = await res.json();
-    if (!info.available) { rdAppendMode = false; rdToast(`⚠️ ${info.reason || 'لا نسخة مصوّرة منزّلة لهذا الكتاب على جهازك'}`, 6000); return; }
+    if (!info.available) { rdAppendMode = false; rdToast(`⚠️ ${info.reason || 'لا توجد نسخة مصوّرة لهذا الكتاب في الشاملة يمكنك إضافتها عن طريق الشاملة إن كانت متوفرة هنا أو رفع نسخة من جهاز أو سحبها من الشبكة'}`, 8000); return; }
     const nb = { source: 'shamela', book_id: bookId, title, pages: info.pdf_pages || 1 };
     const wasAppend = rdAppendMode; rdAppendMode = false;
     rdCloseModal('rdShamelaModal');
