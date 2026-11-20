@@ -578,6 +578,41 @@ function rdBookMeta(p) {
   };
 }
 function rdDash(v) { const s = String(v || '').trim(); return s || '—'; }
+function rdPlainAnalysis(text) {
+  let t = String(text || '');
+  if (!t.trim()) return '';
+  let html = t;
+  if (typeof marked !== 'undefined' && (marked.parse || typeof marked === 'function')) {
+    try { html = (marked.parse || marked)(t); } catch (e) { html = t; }
+  }
+  html = String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li|tr|blockquote|pre)>/gi, '\n');
+  t = rdHtmlToText(html);
+  return t
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/```[\s\S]*?```/g, m => m.replace(/```/g, ''))
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/(\*\*|__)([\s\S]*?)\1/g, '$2')
+    .replace(/(\*|_)([^*_\n]+)\1/g, '$2')
+    .replace(/~~([\s\S]*?)~~/g, '$1')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*>\s+/gm, '')
+    .replace(/^[ \t]*\|[ \t]*|[ \t]*\|[ \t]*$/gm, '')
+    .replace(/[ \t]*\|[ \t]*/g, ' ')
+    .replace(/^[-=]{3,}\s*$/gm, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 function rdCommentWhen(item) {
   if (!item) return '—';
   if (item.created_display) return item.created_display;
@@ -741,7 +776,7 @@ function rdOpenBookAnalysis(id, partIdx) {
           <td>${rdEsc(rdDash(r.shown))}</td>
           <td>${rdEsc(r.kind)}</td>
           <td class="rd-ba-text">${rdEsc(rdDash(r.text))}</td>
-          <td class="rd-ba-analysis">${rdEsc(rdDash(r.analysis))}</td>
+          <td class="rd-ba-analysis">${rdEsc(rdDash(rdPlainAnalysis(r.analysis)))}</td>
           <td>${rdEsc(rdDash(r.refs))}</td>
           <td>${rdEsc(rdDash(r.commentKind))}</td>
           <td>${rdEsc(rdDash(r.when))}</td>
@@ -778,7 +813,7 @@ function rdBookAnalysisCsv() {
   const heads = ['اسم الكتاب', 'المؤلف', 'الطبعة', 'الجزء', 'الصفحة', 'النوع', 'النص', 'التحليل والتعليق', 'المرجع', 'نوع التعليق', 'التاريخ والوقت'];
   const lines = [heads.map(rdCsvCell).join(',')];
   rows.forEach(r => {
-    lines.push([meta.book, meta.author, meta.edition, rdCommentPartLabel(p, r), r.shown, r.kind, r.text, r.analysis, r.refs, r.commentKind, r.when].map(rdCsvCell).join(','));
+    lines.push([meta.book, meta.author, meta.edition, rdCommentPartLabel(p, r), r.shown, r.kind, r.text, rdPlainAnalysis(r.analysis), r.refs, r.commentKind, r.when].map(rdCsvCell).join(','));
   });
   const book = String(meta.book || p.title || 'كتاب').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'كتاب';
   const fileName = `تحليل-${book}.csv`;
