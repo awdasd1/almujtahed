@@ -228,6 +228,17 @@ function toggleShareEveryone() {
 }
 
 function saveShareToDevice() {
+  const readingShare = window._rdSharePayload;
+  if (readingShare && readingShare.file) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(readingShare.file);
+    a.download = readingShare.file.name || 'قراءة.zip';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    return true;
+  }
   if (!shareDraft) return false;
   const kind = shareDraft.kind;
   const itemId = shareDraft.itemId;

@@ -285,7 +285,7 @@ function rdAddPart(kind, ev) {
   const p = rdProject(rdDetailId);
   if (!p) { rdToast('افتح مشروعًا أولًا'); return false; }
   rdCurrent = p;
-  if (p.book) rdAppendMode = true;
+  rdAppendMode = !!p.book;
   if (kind === 'upload') {
     if (ev) ev.preventDefault();
     document.getElementById('rdDetailUploadInput')?.click();
@@ -2071,7 +2071,11 @@ function rdShowShareModal(text, file, title) {
   const ext = document.getElementById('shareExternalOption');
   if (ext) ext.hidden = false;
   const extRadio = document.querySelector('input[name="shareDestination"][value="external"]');
-  if (extRadio) extRadio.checked = true;
+  if (file && extRadio) extRadio.checked = true;
+  else if (file) {
+    const deviceRadio = document.querySelector('input[name="shareDestination"][value="device"]');
+    if (deviceRadio) deviceRadio.checked = true;
+  }
   if (typeof toggleShareDestination === 'function') toggleShareDestination();
 }
 async function rdMediaChoice(kind) {
