@@ -771,10 +771,23 @@ function rdEditNote(i, ev) {
   ro.observe(ta);
   ed._rdNoteRo = ro;
   const closeEd = () => { ro.disconnect(); ed.remove(); };
+  const removeNote = () => {
+    const idx = (ann.notes || []).indexOf(n);
+    if (idx >= 0) ann.notes.splice(idx, 1);
+    closeEd();
+    rdRenderNotes();
+    rdSaveSoon();
+  };
   ta.focus();
-  ed.querySelector('[data-act="save"]').onclick = () => { n.text = ta.value; closeEd(); rdRenderNotes(); rdSaveSoon(); };
-  ed.querySelector('[data-act="del"]').onclick = () => { ann.notes.splice(i, 1); closeEd(); rdRenderNotes(); rdSaveSoon(); };
-  ed.querySelector('[data-act="x"]').onclick = () => closeEd();
+  ed.querySelector('[data-act="save"]').onclick = () => {
+    if (!ta.value.trim()) { removeNote(); return; }
+    n.text = ta.value;
+    closeEd();
+    rdRenderNotes();
+    rdSaveSoon();
+  };
+  ed.querySelector('[data-act="del"]').onclick = () => removeNote();
+  ed.querySelector('[data-act="x"]').onclick = () => { if (!ta.value.trim()) removeNote(); else closeEd(); };
 }
 window.rdEditNote = rdEditNote;
 
