@@ -306,7 +306,7 @@ function rdBuildColorBars() {
     const el = document.getElementById(elId);
     if (!el) return;
     el.innerHTML = colors.map(c => `<button type="button" class="rd-color${c === cur ? ' active' : ''}" style="background:${c}" onclick="${fn}('${c}')"></button>`).join('')
-      + `<button type="button" class="rd-color-add" title="لون فارغ — اضغطه لإضافة لون جديد من منتقي الألوان" onclick="rdAddColor('${target}', event)">+</button>`;
+      + `<span class="rd-color-ops"><button type="button" class="rd-color-add" title="إضافة لون من منتقي الألوان" onclick="rdAddColor('${target}', event)">+</button><button type="button" class="rd-color-add" title="إزالة آخر لون مضاف" onclick="rdRemoveColor('${target}')">−</button></span>`;
   };
   mk('rdColors', RD_COLORS.concat(rdCustomColors.pen || []), rdColor, 'rdSetColor', 'pen');
   mk('rdNoteColors', RD_NOTE_COLORS.concat(rdCustomColors.note || []), rdNoteColor, 'rdSetNoteColor', 'note');
@@ -336,6 +336,20 @@ function rdAddColor(target, ev) {
   } catch (e) {
     picker.click();
   }
+}
+function rdRemoveColor(target) {
+  const key = target === 'note' ? 'note' : 'pen';
+  const list = rdCustomColors[key] || [];
+  if (!list.length) return;
+  const removed = list.pop();
+  try { localStorage.setItem('rdCustomColors', JSON.stringify(rdCustomColors)); } catch (e) { /* */ }
+  const base = key === 'note' ? RD_NOTE_COLORS : RD_COLORS;
+  const cur = key === 'note' ? rdNoteColor : rdColor;
+  if (String(cur).toLowerCase() === String(removed).toLowerCase()) {
+    const next = list.length ? list[list.length - 1] : base[0];
+    if (key === 'note') rdNoteColor = next; else rdColor = next;
+  }
+  rdBuildColorBars();
 }
 document.addEventListener('DOMContentLoaded', () => {
   const picker = document.getElementById('rdColorPicker');
