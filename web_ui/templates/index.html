@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.766">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.767">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.766" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.767" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.766 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.767 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -1968,22 +1968,23 @@
                     </div>
                     <div class="agents-header" style="margin-top: 14px;">
                         <div>
-                            <h2 id="rdDetailTitle">كتب المشروع</h2>
+                            <h2 style="display:flex;align-items:center;gap:8px;">
+                                <span id="rdDetailTitle">كتب المشروع</span>
+                                <button type="button" class="action-icon-btn btn-edit-group" onclick="rdOpenCreateModal(rdDetailId)" title="تعديل اسم المشروع ووصفه">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                </button>
+                            </h2>
                             <p id="rdDetailDesc" style="font-size: 14px; color: var(--text-muted); margin-top: 4px;"></p>
-                        </div>
-                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                            <button type="button" class="btn-flat-secondary" onclick="rdOpenCreateModal(rdDetailId)">تعديل الاسم والوصف</button>
-                            <button type="button" class="btn-flat-secondary" onclick="rdOpenBookAnalysis(rdDetailId)">تحليل الكتاب</button>
-                            <button type="button" class="btn-flat-primary" onclick="rdOpenProject(rdDetailId)">فتح القراءة</button>
                         </div>
                     </div>
                     <div class="activity-table-wrapper groups-table-wrap">
                         <table class="activity-table groups-table">
                             <thead>
                                 <tr>
-                                    <th class="col-group-name">اسم الكتاب / الجزء</th>
-                                    <th class="col-group-desc">المصدر</th>
-                                    <th class="col-group-agents">الصفحات</th>
+                                    <th class="col-group-name">اسم الكتاب</th>
+                                    <th class="col-group-desc">المؤلف</th>
+                                    <th>الطبعة</th>
+                                    <th>الجزء</th>
                                     <th class="col-group-actions">الإجراءات</th>
                                 </tr>
                             </thead>
@@ -1992,12 +1993,11 @@
                     </div>
                     <div class="rd-detail-add">
                         <span class="rd-detail-add-label">إضافة كتاب أو جزء:</span>
-                        <label class="ms-btn ms-btn-primary ms-upload-label" onclick="return rdAddPart('upload', event)">⬆ رفع PDF
-                            <input type="file" id="rdDetailUploadInput" accept=".pdf,application/pdf" hidden>
-                        </label>
+                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdAddPart('upload')">⬆ رفع PDF</button>
                         <button type="button" class="ms-btn" onclick="rdAddPart('shamela')">📚 من الشاملة</button>
                         <button type="button" class="ms-btn" onclick="rdAddPart('web')">🌐 من الشبكة</button>
                     </div>
+                    <input type="file" id="rdDetailUploadInput" accept=".pdf,application/pdf" class="rd-top-file-input">
                 </div>
             </div>
 
@@ -2026,6 +2026,43 @@
                     <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
                         <button type="button" class="btn-flat-secondary" onclick="rdCloseCreateModal()">إلغاء</button>
                         <button type="button" class="btn-flat-primary" id="rdProjectModalSubmit" onclick="rdSaveProjectFromModal()">إنشاء</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-overlay" id="rdPartMetaOverlay" onclick="rdHandlePartMetaOverlay(event)">
+                <div class="modal-window" style="height: auto; max-width: 520px;">
+                    <div class="modal-header">
+                        <div class="modal-title" id="rdPartMetaTitle">بيانات الكتاب</div>
+                        <button class="btn-icon" type="button" onclick="rdClosePartMetaModal()" title="إغلاق">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 6 6 18M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="modal-tab-content" style="padding: 22px 24px;">
+                        <input type="hidden" id="rdPartMetaKind" value="">
+                        <input type="hidden" id="rdPartMetaEditIdx" value="">
+                        <div class="form-group">
+                            <label for="rdPartBookName">اسم الكتاب: <span style="color: #ef4444;">*</span></label>
+                            <input type="text" id="rdPartBookName" class="form-input" placeholder="مثال: فتح الباري">
+                        </div>
+                        <div class="form-group" style="margin-top: 14px;">
+                            <label for="rdPartAuthor">المؤلف:</label>
+                            <input type="text" id="rdPartAuthor" class="form-input" placeholder="مثال: ابن حجر العسقلاني">
+                        </div>
+                        <div class="form-group" style="margin-top: 14px;">
+                            <label for="rdPartEdition">الطبعة:</label>
+                            <input type="text" id="rdPartEdition" class="form-input" placeholder="مثال: السلفية">
+                        </div>
+                        <div class="form-group" style="margin-top: 14px;">
+                            <label for="rdPartNo">الجزء: <span style="color: #ef4444;">*</span></label>
+                            <input type="text" id="rdPartNo" class="form-input" placeholder="مثال: 1">
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                        <button type="button" class="btn-flat-secondary" onclick="rdClosePartMetaModal()">إلغاء</button>
+                        <button type="button" class="btn-flat-primary" id="rdPartMetaSubmit" onclick="rdSubmitPartMeta()">متابعة</button>
                     </div>
                 </div>
             </div>
@@ -7248,26 +7285,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.766"></script>
-    <script src="/static/js/search.js?v=1.10.766"></script>
-    <script src="/static/js/reader.js?v=1.10.766"></script>
-    <script src="/static/js/force3d.js?v=1.10.766"></script>
-    <script src="/static/js/share.js?v=1.10.766"></script>
-    <script src="/static/js/chat.js?v=1.10.766"></script>
-    <script src="/static/js/documents.js?v=1.10.766"></script>
-    <script src="/static/js/designs.js?v=1.10.766"></script>
-    <script src="/static/js/texts.js?v=1.10.766"></script>
-    <script src="/static/js/agents.js?v=1.10.766"></script>
-    <script src="/static/js/providers.js?v=1.10.766"></script>
-    <script src="/static/js/tools.js?v=1.10.766"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.766"></script>
-    <script src="/static/js/projects.js?v=1.10.766"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.766"></script>
-    <script src="/static/js/reading.js?v=1.10.766"></script>
-    <script src="/static/js/archive.js?v=1.10.766"></script>
-    <script src="/static/js/compare.js?v=1.10.766"></script>
-    <script src="/static/js/local_models.js?v=1.10.766"></script>
-    <script src="/static/js/changelog.js?v=1.10.766"></script>
+    <script src="/static/js/app.js?v=1.10.767"></script>
+    <script src="/static/js/search.js?v=1.10.767"></script>
+    <script src="/static/js/reader.js?v=1.10.767"></script>
+    <script src="/static/js/force3d.js?v=1.10.767"></script>
+    <script src="/static/js/share.js?v=1.10.767"></script>
+    <script src="/static/js/chat.js?v=1.10.767"></script>
+    <script src="/static/js/documents.js?v=1.10.767"></script>
+    <script src="/static/js/designs.js?v=1.10.767"></script>
+    <script src="/static/js/texts.js?v=1.10.767"></script>
+    <script src="/static/js/agents.js?v=1.10.767"></script>
+    <script src="/static/js/providers.js?v=1.10.767"></script>
+    <script src="/static/js/tools.js?v=1.10.767"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.767"></script>
+    <script src="/static/js/projects.js?v=1.10.767"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.767"></script>
+    <script src="/static/js/reading.js?v=1.10.767"></script>
+    <script src="/static/js/archive.js?v=1.10.767"></script>
+    <script src="/static/js/compare.js?v=1.10.767"></script>
+    <script src="/static/js/local_models.js?v=1.10.767"></script>
+    <script src="/static/js/changelog.js?v=1.10.767"></script>
 
     <script>
         window.refreshLucideIcons = function () {

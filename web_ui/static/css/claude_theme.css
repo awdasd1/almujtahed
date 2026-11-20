@@ -11446,6 +11446,20 @@ body::-webkit-scrollbar,
 .rd-create-form .ms-form-row { gap: 12px; }
 .rd-detail-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
 .rd-detail-add-label { font-size: 13px; font-weight: 700; color: var(--text-muted); font-family: var(--font-naskh); }
+#rdProjectModalOverlay,
+#rdPartMetaOverlay { z-index: 400100 !important; }
+#rdShamelaModal,
+#rdWebModal { z-index: 400200 !important; }
+.rd-top-file-input {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  z-index: 2147483647 !important;
+  pointer-events: none;
+}
 .ms-form-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .ms-form-row input { flex: 1 1 170px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-main, transparent); color: inherit; font-family: inherit; }
 .ms-btn { padding: 7px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface); color: inherit; cursor: pointer; font-family: inherit; font-size: 13px; }

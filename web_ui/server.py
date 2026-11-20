@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.766"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.767"},
         },
     })
     if opened.get("error"):
@@ -15509,6 +15509,15 @@ async def export_reading_project(request: Request, payload: Any = Body(...)):
     parts = book.get("parts") if isinstance(book.get("parts"), list) else []
     if not parts and book.get("file_name"):
         parts = [book]
+    idx_raw = (payload or {}).get("part_index")
+    if idx_raw is not None and str(idx_raw) != "":
+        try:
+            pi = int(idx_raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="رقم الجزء غير صالح")
+        if pi < 0 or pi >= len(parts):
+            raise HTTPException(status_code=404, detail="الجزء غير موجود")
+        parts = [parts[pi]]
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for i, part in enumerate(parts):
             fn = (part or {}).get("file_name")
@@ -15542,7 +15551,10 @@ async def export_reading_project(request: Request, payload: Any = Body(...)):
         }, ensure_ascii=False, indent=1))
         zf.writestr("project.json", json.dumps(proj, ensure_ascii=False, indent=1))
     buf.seek(0)
-    fname = f"قراءة-{_safe(proj.get('title') or 'مشروع')}-{datetime.now().strftime('%Y-%m-%d')}.zip"
+    part_bit = ""
+    if idx_raw is not None and str(idx_raw) != "" and parts:
+        part_bit = "-" + _safe((parts[0] or {}).get("partNo") or (parts[0] or {}).get("title") or "جزء")
+    fname = f"قراءة-{_safe(proj.get('title') or 'مشروع')}{part_bit}-{datetime.now().strftime('%Y-%m-%d')}.zip"
     return StreamingResponse(
         buf, media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{_quote(fname)}",
