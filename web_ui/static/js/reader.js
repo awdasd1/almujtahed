@@ -515,11 +515,7 @@ async function sendPdfCropToChat() {
     const data = await res.json();
     const text = (data.text || '').trim();
     if (!text) { showToast(data.reason || 'لم يُقرأ نص في هذه القصاصة', 6000); return; }
-    const partText = readerState.part ? `الجزء: ${readerState.part}` : '';
-    const pageText = readerState.pageNum ? `الصفحة: ${readerState.pageNum}` : '';
-    const locParts = [partText, pageText].filter(Boolean).join('، ');
-    const locCitation = locParts ? ` [${locParts}]` : '';
-    const promptMessage = `هذا نص مقصوص من النسخة المصوّرة، أرجو قراءته وتحريره وشرحه:\n\n«${text}»\n\n📚 **المصدر:** «${readerState.bookTitle}» للمصنف ${readerState.author}${readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : ''}${locCitation}`;
+    const promptMessage = text;
     closePdfViewer();
     closeBookReader();
     const bookName = (readerState.bookTitle || 'نص من الكتاب').trim();
@@ -608,11 +604,7 @@ function sendWitnessToChat() {
     showToast('لا شاهد محددًا — افتح الكتاب من نتيجة بحث أولاً');
     return;
   }
-  const partText = readerState.part ? `الجزء: ${readerState.part}` : '';
-  const pageText = readerState.pageNum ? `الصفحة: ${readerState.pageNum}` : '';
-  const locParts = [partText, pageText].filter(Boolean).join('، ');
-  const locCitation = locParts ? ` [${locParts}]` : '';
-  const promptMessage = `أرجو شرح وتحرير هذا الشاهد التراثي:\n\n«${passage}»\n\n📚 **المصدر:** «${readerState.bookTitle}» للمصنف ${readerState.author}${readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : ''}${locCitation}`;
+  const promptMessage = passage;
   closePdfViewer();
   closeBookReader();
   const bookName = (readerState.bookTitle || 'نص من الكتاب').trim();
@@ -915,13 +907,7 @@ function sendReaderSelectionToChat() {
     return;
   }
 
-  // صياغة السؤال التراثي المحكم
-  const partText = readerState.part ? `الجزء: ${readerState.part}` : '';
-  const pageText = readerState.pageNum ? `الصفحة: ${readerState.pageNum}` : '';
-  const locParts = [partText, pageText].filter(Boolean).join('، ');
-  const locCitation = locParts ? ` [${locParts}]` : '';
-
-  const promptMessage = `أرجو شرح وتحرير هذه المسألة التراثية وبيان مذاهب الفقهاء فيها:\n\n«${passage}»\n\n📚 **المصدر:** «${readerState.bookTitle}» للمصنف ${readerState.author}${readerState.deathYear ? ` (ت: ${readerState.deathYear} هـ)` : ''}${locCitation}`;
+  const promptMessage = passage;
 
   // إغلاق القارئ
   closeBookReader();

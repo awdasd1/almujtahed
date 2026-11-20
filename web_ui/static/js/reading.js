@@ -3621,9 +3621,7 @@ async function rdStartAnalysis(asstId, mode) {
     if (!ocr || !ocr.text) throw new Error('لم يُستخرج نص من المحدد');
     disc.extracted_text = ocr.text;
     st.textContent = `استُخرج النص بـ«${ocr.reader.name}» — يُرسل الآن إلى المساعد «${asst.name}»...`;
-    const cite = rdCite();
-    const userMsg = `نص محدد من ${cite}:\n\n${ocr.text}`;
-    disc.messages.push({ role: 'user', content: userMsg, at: new Date().toISOString() });
+    disc.messages.push({ role: 'user', content: ocr.text, at: new Date().toISOString() });
     rdRenderAnalysisMsgs();
     await rdAnalysisAsk(disc, asst, true);
     const lastA = [...(disc.messages || [])].reverse().find(m => m.role === 'assistant');
