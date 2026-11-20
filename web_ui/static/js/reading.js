@@ -183,33 +183,52 @@ function rdFormatRefs(disc) {
   }
   return rows.join('\n');
 }
+function rdLocus(filePage, book) {
+  const n = Number(filePage) || 1;
+  const shown = rdShownPage(n, book);
+  if (!book) return { filePage: n, part: 1, shown };
+  const b = rdEnsureParts(book);
+  let rest = n, partIdx = 0;
+  if (b && Array.isArray(b.parts) && b.parts.length) {
+    for (let i = 0; i < b.parts.length; i++) {
+      if (rest <= b.parts[i].pages) { partIdx = i; break; }
+      rest -= b.parts[i].pages;
+      partIdx = i;
+    }
+  }
+  return { filePage: n, part: partIdx + 1, shown };
+}
 function rdCollectComments(p) {
   if (!p) return [];
   const rows = [];
+  const book = p.book;
   const anns = p.annotations || {};
   Object.keys(anns).forEach(page => {
     const ann = anns[page] || {};
+    const loc = rdLocus(page, book);
+    const base = () => ({ filePage: loc.filePage, part: loc.part, shown: loc.shown });
     (ann.highlights || []).forEach(h => rows.push({
       kind: 'تحديد', text: h.text || '', analysis: '', refs: '', commentKind: '',
-      when: rdCommentWhen(h), at: h.created_at || '',
+      when: rdCommentWhen(h), at: h.created_at || '', ...base(),
     }));
     (ann.strokes || []).forEach(s => rows.push({
       kind: 'رسم بالقلم', text: '', analysis: '', refs: '', commentKind: '',
-      when: rdCommentWhen(s), at: s.created_at || '',
+      when: rdCommentWhen(s), at: s.created_at || '', ...base(),
     }));
     (ann.crops || []).forEach(c => rows.push({
       kind: 'تحديد', text: c.text || '', analysis: '', refs: '', commentKind: '',
-      when: rdCommentWhen(c), at: c.created_at || '',
+      when: rdCommentWhen(c), at: c.created_at || '', ...base(),
     }));
     (ann.notes || []).forEach(n => {
       if (!String(n.text || '').trim()) return;
       rows.push({
         kind: 'ملحوظة', text: n.text, analysis: '', refs: '', commentKind: 'يكتب القارئ',
-        when: rdCommentWhen(n), at: n.created_at || '',
+        when: rdCommentWhen(n), at: n.created_at || '', ...base(),
       });
     });
   });
   Object.values(p.discussions || {}).forEach(d => {
+    const loc = rdLocus(d.page, book);
     const answers = (d.messages || []).filter(m => m && m.role === 'assistant').map(m => m.content || '').filter(Boolean);
     rows.push({
       kind: 'تحليل',
@@ -219,40 +238,48 @@ function rdCollectComments(p) {
       commentKind: d.mode === 'fast' ? 'تحليل سريع من ذاكرة النموذج' : 'محرر',
       when: rdCommentWhen(d),
       at: d.created_at || '',
+      filePage: loc.filePage, part: loc.part, shown: loc.shown,
     });
   });
   rows.sort((a, b) => String(a.at).localeCompare(String(b.at)));
   return rows;
 }
+let rdBookAnalysisId = null;
 function rdOpenBookAnalysis(id) {
   const p = rdProject(id);
   if (!p) return;
+  rdBookAnalysisId = id;
   const meta = rdBookMeta(p);
   const rows = rdCollectComments(p);
   const title = document.getElementById('rdBookAnalysisTitle');
   const hint = document.getElementById('rdBookAnalysisMeta');
   const wrap = document.getElementById('rdBookAnalysisWrap');
+  const dl = document.getElementById('rdBookAnalysisDownload');
   if (title) title.textContent = `تحليل الكتاب — ${meta.book || p.title}`;
   if (hint) hint.textContent = [meta.book && `الكتاب: ${meta.book}`, meta.author && `المؤلف: ${meta.author}`, meta.edition && `الطبعة: ${meta.edition}`, `${rows.length} تعليقًا`].filter(Boolean).join(' · ');
+  if (dl) dl.disabled = !rows.length;
   if (wrap) {
     if (!rows.length) {
       wrap.innerHTML = '<div class="rd-book-analysis-empty">لا تعليقات مرصودة بعد في هذا المشروع.</div>';
     } else {
       wrap.innerHTML = `<table class="rd-book-analysis-table">
         <thead><tr>
-          <th>اسم الكتاب</th><th>المؤلف</th><th>الطبعة</th><th>النوع</th>
-          <th>النص</th><th>التحليل والتعليق</th><th>المرجع</th><th>نوع التعليق</th><th>التاريخ والوقت</th>
+          <th>اسم الكتاب</th><th>المؤلف</th><th>الطبعة</th><th>الجزء</th><th>الصفحة</th><th>النوع</th>
+          <th>النص</th><th>التحليل والتعليق</th><th>المرجع</th><th>نوع التعليق</th><th>التاريخ والوقت</th><th>الموضع</th>
         </tr></thead>
         <tbody>${rows.map(r => `<tr>
           <td>${rdEsc(rdDash(meta.book))}</td>
           <td>${rdEsc(rdDash(meta.author))}</td>
           <td>${rdEsc(rdDash(meta.edition))}</td>
+          <td>${rdEsc(rdDash(r.part))}</td>
+          <td>${rdEsc(rdDash(r.shown))}</td>
           <td>${rdEsc(r.kind)}</td>
           <td class="rd-ba-text">${rdEsc(rdDash(r.text))}</td>
           <td class="rd-ba-analysis">${rdEsc(rdDash(r.analysis))}</td>
           <td>${rdEsc(rdDash(r.refs))}</td>
           <td>${rdEsc(rdDash(r.commentKind))}</td>
           <td>${rdEsc(rdDash(r.when))}</td>
+          <td class="rd-ba-locus"><button type="button" class="rd-ba-go" title="فتح الصفحة في نافذة القراءة" onclick="rdGotoCommentPage('${p.id}', ${Number(r.filePage) || 1})">📄</button></td>
         </tr>`).join('')}</tbody>
       </table>`;
     }
@@ -260,6 +287,40 @@ function rdOpenBookAnalysis(id) {
   rdShowModal('rdBookAnalysisModal');
 }
 window.rdOpenBookAnalysis = rdOpenBookAnalysis;
+function rdGotoCommentPage(id, filePage) {
+  const p = rdProject(id);
+  if (!p || !p.book) { rdToast('لا كتاب في هذا المشروع بعد'); return; }
+  rdCloseModal('rdBookAnalysisModal');
+  p.page = Math.max(1, Math.min(p.book.pages || 1, Number(filePage) || 1));
+  rdOpenProject(id);
+}
+window.rdGotoCommentPage = rdGotoCommentPage;
+function rdCsvCell(v) {
+  return `"${String(v ?? '').replace(/"/g, '""')}"`;
+}
+function rdDownloadBookAnalysis() {
+  const p = rdProject(rdBookAnalysisId);
+  if (!p) return;
+  const meta = rdBookMeta(p);
+  const rows = rdCollectComments(p);
+  if (!rows.length) { rdToast('لا صفوف لتحميلها'); return; }
+  const heads = ['اسم الكتاب', 'المؤلف', 'الطبعة', 'الجزء', 'الصفحة', 'النوع', 'النص', 'التحليل والتعليق', 'المرجع', 'نوع التعليق', 'التاريخ والوقت'];
+  const lines = [heads.map(rdCsvCell).join(',')];
+  rows.forEach(r => {
+    lines.push([meta.book, meta.author, meta.edition, r.part, r.shown, r.kind, r.text, r.analysis, r.refs, r.commentKind, r.when].map(rdCsvCell).join(','));
+  });
+  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  const name = String(meta.book || p.title || 'كتاب').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'كتاب';
+  a.href = URL.createObjectURL(blob);
+  a.download = `تحليل-${name}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  rdToast('⬇ جرى تحميل الجدول');
+}
+window.rdDownloadBookAnalysis = rdDownloadBookAnalysis;
 
 function rdDeleteProject(id) {
   const p = rdProject(id);

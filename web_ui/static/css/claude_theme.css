@@ -11366,16 +11366,26 @@ body::-webkit-scrollbar,
 .rd-mode-btns { display: flex; gap: 6px; flex-shrink: 0; }
 .ms-modal.rd-analysis-modal { background: var(--bg-surface); color: var(--text-main); font-family: var(--font-naskh); }
 #rdClearPageModal, #rdPageOffsetModal { z-index: 100400; align-items: center; }
-#rdBookAnalysisModal { z-index: 100300; align-items: flex-start; }
-.ms-modal.rd-book-analysis-modal { width: min(1240px, 98vw); max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-surface); color: var(--text-main); font-family: var(--font-naskh); border-color: var(--border-subtle); }
-.rd-book-analysis-modal .ms-modal-head { color: var(--text-main); font-family: var(--font-naskh); }
-.rd-book-analysis-wrap { overflow: auto; max-height: 72vh; margin-top: 8px; border: 1px solid var(--border-subtle); border-radius: 10px; }
-.rd-book-analysis-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: right; font-family: var(--font-naskh); }
-.rd-book-analysis-table th, .rd-book-analysis-table td { padding: 8px 10px; border: 1px solid var(--border-subtle); vertical-align: top; color: var(--text-main); white-space: pre-wrap; word-break: break-word; }
-.rd-book-analysis-table th { position: sticky; top: 0; background: var(--bg-canvas, var(--bg-surface)); font-weight: 700; z-index: 1; }
+#rdBookAnalysisModal { z-index: 100300; align-items: flex-start; background: color-mix(in srgb, var(--bg-canvas) 22%, rgba(12, 14, 12, .52)); }
+.ms-modal.rd-book-analysis-modal { width: min(1240px, 98vw); max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-surface); color: var(--text-main); font-family: var(--font-naskh); border: 1px solid var(--border-subtle); }
+.rd-book-analysis-modal .ms-modal-head { color: var(--text-main); font-family: var(--font-naskh); gap: 10px; }
+.rd-book-analysis-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.rd-book-analysis-modal .ms-hint { color: var(--text-muted); font-family: var(--font-naskh); }
+.rd-book-analysis-modal .ms-btn { font-family: var(--font-naskh); background: var(--bg-surface); color: var(--text-main); border-color: var(--border-subtle); }
+.rd-book-analysis-modal .ms-btn-primary { background: var(--accent-clay, #b4552d); color: #fff; border-color: transparent; }
+.rd-book-analysis-modal .ms-btn[disabled] { opacity: .45; }
+.rd-book-analysis-wrap { overflow: auto; max-height: 72vh; margin-top: 8px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-canvas, var(--bg-surface)); }
+.rd-book-analysis-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: right; font-family: var(--font-naskh); background: var(--bg-surface); }
+.rd-book-analysis-table th, .rd-book-analysis-table td { padding: 8px 10px; border: 1px solid var(--border-subtle); vertical-align: top; color: var(--text-main); white-space: pre-wrap; word-break: break-word; font-family: var(--font-naskh); }
+.rd-book-analysis-table th { position: sticky; top: 0; background: var(--bg-canvas, var(--bg-surface)); color: var(--text-main); font-weight: 700; z-index: 1; }
+.rd-book-analysis-table tbody tr:nth-child(even) td { background: var(--accent-subtle, color-mix(in srgb, var(--bg-canvas) 70%, var(--bg-surface))); }
+.rd-book-analysis-table tbody tr:hover td { background: var(--accent-subtle, var(--bg-canvas)); }
 .rd-book-analysis-table td.rd-ba-text { min-width: 160px; max-width: 280px; }
 .rd-book-analysis-table td.rd-ba-analysis { min-width: 220px; max-width: 360px; }
-.rd-book-analysis-empty { padding: 22px; text-align: center; opacity: .7; }
+.rd-book-analysis-table td.rd-ba-locus { text-align: center; vertical-align: middle; white-space: nowrap; }
+.rd-ba-go { width: 36px; height: 36px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface); color: var(--text-main); cursor: pointer; font-size: 18px; line-height: 1; }
+.rd-ba-go:hover { border-color: var(--accent-clay, #b4552d); color: var(--accent-clay, #b4552d); background: var(--accent-subtle); }
+.rd-book-analysis-empty { padding: 22px; text-align: center; color: var(--text-muted); font-family: var(--font-naskh); }
 .rd-offset-label { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; font-family: var(--font-naskh); color: var(--text-main); }
 .rd-offset-label input { width: 110px; padding: 6px 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-canvas, var(--bg-surface)); color: var(--text-main); font-family: var(--font-naskh); font-size: 16px; }
 .rd-offset-preview { color: var(--text-muted); font-size: 13.5px; }
