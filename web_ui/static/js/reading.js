@@ -245,6 +245,7 @@ function rdCollectComments(p) {
   return rows;
 }
 let rdBookAnalysisId = null;
+let rdReturnToAnalysis = false;
 function rdOpenBookAnalysis(id) {
   const p = rdProject(id);
   if (!p) return;
@@ -292,6 +293,7 @@ window.rdOpenBookAnalysis = rdOpenBookAnalysis;
 function rdGotoCommentPage(id, filePage) {
   const p = rdProject(id);
   if (!p || !p.book) { rdToast('لا كتاب في هذا المشروع بعد'); return; }
+  rdReturnToAnalysis = true;
   rdCloseModal('rdBookAnalysisModal');
   p.page = Math.max(1, Math.min(p.book.pages || 1, Number(filePage) || 1));
   rdOpenProject(id);
@@ -361,10 +363,13 @@ function rdOpenProject(id) {
 window.rdOpenProject = rdOpenProject;
 
 function rdCloseReader() {
+  const backId = rdReturnToAnalysis ? rdBookAnalysisId : null;
+  rdReturnToAnalysis = false;
   rdSaveNow(false);
   rdCloseModal('rdReaderModal');
   rdCurrent = null;
   renderRdProjects();
+  if (backId) rdOpenBookAnalysis(backId);
 }
 
 function rdSaveNow(manual) {
