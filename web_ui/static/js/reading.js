@@ -2540,6 +2540,41 @@ function rdBookSearchScope(p) {
 function rdNormPartKey(s) {
   return String(s || '').replace(/^الجزء\s*/u, '').replace(/^ج\s*/u, '').trim();
 }
+function rdPartIndexForSearch(p, raw) {
+  const want = rdNormPartKey(raw);
+  const parts = rdPartsOf(p);
+  let found = -1;
+  parts.forEach((part, idx) => {
+    const n = rdNormPartKey(rdPartMetaOf(p, part, idx).partNo);
+    if (n === want || String(part.partNo || '') === String(raw || '') || String(part.part || '') === String(raw || '')) found = idx;
+  });
+  if (found < 0 && (!want || /^(جزء|مقدمة|المقدمه|تقديم|تمهيد)$/u.test(want))) {
+    const intro = parts.findIndex((part, idx) => /مقدمة|مقدمه|تقديم|تمهيد/u.test(rdPartMetaOf(p, part, idx).partNo));
+    if (intro >= 0) found = intro;
+  }
+  return found;
+}
+function rdPrintedPageNum(raw) {
+  const n = Number(String(raw ?? '').replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) ? n : 1;
+}
+function rdFilePageFromPartShown(book, partIdx, shownRaw) {
+  const b = rdEnsureParts(book);
+  const part = ((b && b.parts) || [])[partIdx];
+  const start = rdPartStartPage(b, partIdx);
+  const pages = Math.max(1, Number(part && part.pages) || 1);
+  const off = rdOffsetOfPart(part, b);
+  let shown = rdPrintedPageNum(shownRaw);
+  const total = Number(b && b.pages) || 0;
+  // إن كان الرقم أكبر من صفحات هذا الجزء فهو ترقيم الملف الكلي لكل الأجزاء
+  if (shown > pages && total && shown <= total) {
+    const info = rdPartInfoAt(b, shown);
+    if (info.idx === partIdx) shown = info.local - info.off;
+    else shown = shown - start + 1 - off;
+  }
+  const local = Math.max(1, Math.min(pages, shown + off));
+  return start + local - 1;
+}
 function rdOpenBookSearch() {
   if (!rdCurrent || !rdCurrent.book) { rdToast('افتح كتابًا أولًا'); return; }
   const asst = rdResearcher();
@@ -2665,12 +2700,28 @@ async function rdRunBookSearch() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || data.error || 'تعذر البحث في النسخة النصية');
-    const pool = (data.results || []).map((r, i) => ({
-      i,
-      part: r.volume || r.part || '',
-      page: r.page || r.page_num || '',
-      snippet: (r.witness || r.snippet || r.text || '').replace(/\s+/g, ' ').trim().slice(0, 420),
-    })).filter(h => h.page !== '' && h.page != null);
+    const pool = (data.results || []).map((r, i) => {
+      const part = r.volume || r.part || '';
+      const rawPage = r.page || r.page_num || '';
+      const idx = rdPartIndexForSearch(p, part);
+      let page = rawPage;
+      if (idx >= 0) {
+        const partPages = Math.max(1, Number(rdPartsOf(p)[idx].pages) || 1);
+        let shown = rdPrintedPageNum(rawPage);
+        const total = Number(p.book.pages) || 0;
+        if (shown > partPages && total && shown <= total) {
+          page = rdShownPage(shown, p.book);
+        } else {
+          page = shown;
+        }
+      }
+      return {
+        i,
+        part,
+        page,
+        snippet: (r.witness || r.snippet || r.text || '').replace(/\s+/g, ' ').trim().slice(0, 420),
+      };
+    }).filter(h => h.page !== '' && h.page != null);
     if (!pool.length) throw new Error('لم يُعثر على هذا المطلوب في النسخة النصية للكتاب');
     const partCount = data.parts_hit || new Set(pool.map(h => String(h.part || ''))).size;
     if (st) st.textContent = `عُثر على ${pool.length} موضعًا في ${partCount} جزءًا — جارٍ عرضها بنموذج الباحث...`;
@@ -2721,21 +2772,12 @@ function rdGotoSearchHit(i) {
   const h = rdSearchHitsData[i];
   const p = rdCurrent;
   if (!h || !p || !p.book) return;
-  const want = rdNormPartKey(h.part);
-  let start = null;
-  rdVolumesOf(p).forEach(v => {
-    const lab = rdNormPartKey(v.label);
-    if (lab === want || v.label === h.part || `الجزء ${v.label}` === String(h.part)) start = v.start;
-  });
-  if (start == null) {
-    rdPartsOf(p).forEach((part, idx) => {
-      const n = rdNormPartKey(rdPartMetaOf(p, part, idx).partNo);
-      if (n === want || n === String(h.part)) start = rdPartStartPage(p.book, idx);
-    });
-  }
-  if (start != null) p.page = start;
+  const idx = rdPartIndexForSearch(p, h.part);
   rdCloseModal('rdSearchResultModal');
-  rdLoadPage(rdFileFromShown(h.page, p.book));
+  const filePage = idx >= 0
+    ? rdFilePageFromPartShown(p.book, idx, h.page)
+    : rdFileFromShown(h.page, p.book);
+  rdLoadPage(filePage);
 }
 window.rdGotoSearchHit = rdGotoSearchHit;
 function rdToggleSumRange() {
