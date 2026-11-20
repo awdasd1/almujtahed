@@ -460,11 +460,11 @@ def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
         out["reason"] = "صياغة سؤال لا شاهد منطوقًا فلا تحديد له"
         return out
     target = _witness_target(phrase)
-    words = [w for w in re.split(r"\s+", target) if len(w) >= 3]
+    words = [w for w in re.split(r"\s+", target) if len(w) >= 2]
     if not words:
         out["reason"] = "لا شاهد محددًا للبحث عنه"
         return out
-    needles = list(dict.fromkeys(words[:4] + sorted(words, key=len, reverse=True)[:4]))[:8]
+    needles = list(dict.fromkeys(words))[:24]
     info = resolve_pdf(book_id, rel_path, part, page_num)
     if not info.get("available"):
         out["reason"] = info.get("reason") or "لا نسخة مصوّرة"
@@ -510,13 +510,19 @@ def locate_witness(book_id=None, rel_path: str = "", part=None, page_num=None,
         out["reason"] = "الشاهد غير منطوق بحرفه في هذه الصفحة فلا موضع له"
         _LOCATE_CACHE[cache_key] = out
         return out
-    pad = 0.004
+    pad = 0.003
+    rects = []
+    for r in match["rects"]:
+        rects.append({
+            "x": max(0.0, float(r["x"]) - pad),
+            "y": max(0.0, float(r["y"]) - pad),
+            "w": min(1.0, float(r["w"]) + 2 * pad),
+            "h": min(1.0, float(r["h"]) + 2 * pad),
+        })
     out.update({
         "found": True,
-        "rect": {
-            "x": max(0.0, match["x"] - pad), "y": max(0.0, match["y"] - pad),
-            "w": min(1.0, match["w"] + 2 * pad), "h": min(1.0, match["h"] + 2 * pad),
-        },
+        "rect": rects[0],
+        "rects": rects,
         "text": match["text"],
         "target": target,
         "pdf_page": page,
@@ -542,8 +548,46 @@ def _norm_word(word: str) -> str:
     return re.sub(r"^\d+|\d+$", "", text).strip()
 
 
+def _word_rects(stream, indices):
+    """صندوق لكل لفظ، وتُدمج المتجاورات في السطر نفسه فلا يُرسم مستطيل يبتلع ما بينهما."""
+    idxs = sorted({int(i) for i in indices if 0 <= int(i) < len(stream)})
+    if not idxs:
+        return []
+    runs, run = [], [idxs[0]]
+    for i in idxs[1:]:
+        prev = stream[run[-1]]
+        cur = stream[i]
+        if i == run[-1] + 1 and prev[2] == cur[2]:
+            run.append(i)
+        else:
+            runs.append(run)
+            run = [i]
+    runs.append(run)
+    rects = []
+    for run in runs:
+        picked = [stream[i] for i in run]
+        x0 = min(float(wd["x"]) for _, wd, _, _ in picked)
+        y0 = min(float(wd["y"]) for _, wd, _, _ in picked)
+        x1 = max(float(wd["x"]) + float(wd["w"]) for _, wd, _, _ in picked)
+        y1 = max(float(wd["y"]) + float(wd["h"]) for _, wd, _, _ in picked)
+        rects.append({"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0})
+    return rects
+
+
+def _match_from_indices(stream, lines, indices):
+    idxs = sorted({int(i) for i in indices if 0 <= int(i) < len(stream)})
+    rects = _word_rects(stream, idxs)
+    if not rects:
+        return None
+    line_ids = sorted({stream[i][2] for i in idxs})
+    return {
+        "rects": rects,
+        "text": "\n".join(str(lines[i].get("text") or "") for i in line_ids if 0 <= i < len(lines)),
+    }
+
+
 def _match_witness_words(target: str, lines: list):
-    """أطول تتابع كلمات منطوق بحرفه من الشاهد داخل الصفحة، بصندوق كلماته.
+    """كل ألفاظ الشاهد المنطوقة بحرفها على الصفحة، بصندوق لكل لفظ أو تتابع في سطره.
 
     يعيد None إن لم يوجد تتابع معتبر (شاهد معنوي) فلا تحديد له."""
     from difflib import SequenceMatcher
@@ -569,20 +613,6 @@ def _match_witness_words(target: str, lines: list):
         return None
     pwords = [s[0] for s in stream]
 
-    def _box_of(p_start: int, p_end: int):
-        picked = stream[p_start:p_end]
-        if not picked:
-            return None
-        x0 = min(float(wd["x"]) for _, wd, _, _ in picked)
-        y0 = min(float(wd["y"]) for _, wd, _, _ in picked)
-        x1 = max(float(wd["x"]) + float(wd["w"]) for _, wd, _, _ in picked)
-        y1 = max(float(wd["y"]) + float(wd["h"]) for _, wd, _, _ in picked)
-        line_ids = sorted({li for _, _, li, _ in picked})
-        return {
-            "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
-            "text": "\n".join(str(lines[i].get("text") or "") for i in line_ids if 0 <= i < len(lines)),
-        }
-
     matcher = SequenceMatcher(None, twords, pwords, autojunk=False)
     blocks = [b for b in matcher.get_matching_blocks() if b.size > 0]
     if blocks:
@@ -596,19 +626,28 @@ def _match_witness_words(target: str, lines: list):
                 if (abs(b.a - main.a) <= main.size + 6 and abs(b.b - main.b) <= main.size + 10
                         and not (b.size == 1 and len(twords[b.a]) < 4)):
                     chosen.append(b)
-            return _box_of(min(b.b for b in chosen), max(b.b + b.size for b in chosen))
+            indices = []
+            for b in chosen:
+                indices.extend(range(b.b, b.b + b.size))
+            found = _match_from_indices(stream, lines, indices)
+            if found:
+                return found
     # طبقة متسامحة: طبعات كثيفة قديمة يشوّش تعرفها (كلمات مدمجة أو مبتورة
     # أو بحرف ناقص) فلا تتابع حرفيًا كاملًا؛ محاذاة تقريبية بترتيب الشاهد
     # نفسه وكثافة مطابقة عالية، فلا يمرّ بها شاهد معنوي مبثوث الألفاظ
     fuzzy = _fuzzy_word_match(twords, pwords)
     if fuzzy is None:
         return None
-    box = _box_of(fuzzy[0], fuzzy[1] + 1)
+    found = _match_from_indices(stream, lines, fuzzy)
+    if not found:
+        return None
     # حارس ضد مصادفات العناوين: مطابقة متسامحة في شريط رأس الصفحة تُرفض،
     # فالسؤال المعنوي قد يوافق ألفاظ عنوان الباب فيُتوهم شاهدًا في الأعلى
-    if box and box["y"] < 0.10:
+    top = min(r["y"] for r in found["rects"])
+    bot = max(r["y"] + r["h"] for r in found["rects"])
+    if top < 0.10 and bot < 0.14:
         return None
-    return box
+    return found
 
 
 def _lev_le1(a: str, b: str) -> bool:
@@ -648,7 +687,7 @@ def _word_sim(a: str, b: str) -> bool:
 def _fuzzy_word_match(twords: list, pwords: list):
     """محاذاة الشاهد بترتيبه داخل كلمات الصفحة (برمجة ديناميكية محلية).
 
-    يعيد (أول كلمة، آخر كلمة) في تيار الصفحة أو None. لا يُقبل إلا ما
+    يعيد قائمة فهارس الكلمات المطابقة في تيار الصفحة أو None. لا يُقبل إلا ما
     طابق أكثر كلمات الشاهد بترتيبها وبكلمات تامة عدة، فالشاهد المعنوي
     المبعثر الألفاظ لا يجتمع له ذلك وإن تشابهت مفرداته."""
     n, m = len(twords), len(pwords)
@@ -672,16 +711,14 @@ def _fuzzy_word_match(twords: list, pwords: list):
     # تتبع خلفي لعدّ المطابقات وحدّي الموضع في التيار
     i, j = best_i, best_j
     matched = exact = 0
-    first = last = None
+    hit = []
     while i > 0 and j > 0 and H[i][j] > 0:
         tw, pw = twords[i - 1], pwords[j - 1]
         step = 3.0 if pw == tw else (2.0 if _word_sim(tw, pw) else -3.0)
         if abs(H[i][j] - (H[i - 1][j - 1] + step)) < 1e-9 and step > 0:
             matched += 1
             exact += 1 if pw == tw else 0
-            if last is None:
-                last = j - 1
-            first = j - 1
+            hit.append(j - 1)
             i -= 1
             j -= 1
         elif abs(H[i][j] - (H[i - 1][j] - 1.0)) < 1e-9:
@@ -689,9 +726,9 @@ def _fuzzy_word_match(twords: list, pwords: list):
         else:
             j -= 1
     need = max(4, -(-50 * n // 100))
-    if matched < need or exact < 3 or first is None:
+    if matched < need or exact < 3 or not hit:
         return None
-    return first, last
+    return hit
 
 
 def ocr_region_text(book_id=None, rel_path: str = "", part=None, page_num=None,

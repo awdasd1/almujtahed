@@ -96,7 +96,7 @@ function openBookReaderFromSearch(idx) {
     page_num: parseInt(item.page) || null,
     // الشاهد القابل للتحديد وحده، لا نص الصفحة (نص الصفحة مطلعها فيقع
     // التحديد في أعلى الصفحة دائمًا). الدلالي بلا شاهد فلا تحديد له
-    highlight: item.witness || ''
+    highlight: window._lastSearchQuery || item.witness || ''
   });
 }
 
@@ -550,7 +550,9 @@ function downloadPdfCrop() {
 
 function hidePdfWitnessBox() {
   const box = document.getElementById('pdfWitnessBox');
-  if (box) box.style.display = 'none';
+  if (!box) return;
+  box.style.display = 'none';
+  box.innerHTML = '';
 }
 
 async function locatePdfWitness(manual) {
@@ -572,13 +574,18 @@ async function locatePdfWitness(manual) {
     }
     pdfView.witnessText = data.text || '';
     const box = document.getElementById('pdfWitnessBox');
-    const r = data.rect;
+    const rects = (data.rects && data.rects.length) ? data.rects : (data.rect ? [data.rect] : []);
+    if (!box || !rects.length) return;
     box.style.display = 'block';
-    box.style.left = `${r.x * 100}%`;
-    box.style.top = `${r.y * 100}%`;
-    box.style.width = `${r.w * 100}%`;
-    box.style.height = `${r.h * 100}%`;
-    box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    box.style.left = '0';
+    box.style.top = '0';
+    box.style.width = '100%';
+    box.style.height = '100%';
+    box.innerHTML = rects.map((r) =>
+      `<span class="pdf-witness-box" style="left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%"></span>`
+    ).join('');
+    const first = box.querySelector('.pdf-witness-box');
+    if (first) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
   } catch (e) {
     if (manual) showToast('تعذر تحديد موضع الشاهد');
   } finally {

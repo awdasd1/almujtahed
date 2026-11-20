@@ -22,7 +22,7 @@ let rdEditingAsstId = null;
 let rdAnalysis = null; // {id, discussion} المناقشة المفتوحة
 let rdAnalysisAbort = null;
 let rdMediaAction = null; // 'share' | 'publish'
-let rdSearchHitMark = null; // { filePage, rect } تمييز مؤقت لموضع البحث على المصوّرة
+let rdSearchHitMark = null; // { filePage, rects } تمييز مؤقت لكل ألفاظ البحث على المصوّرة
 let rdLastSearchQuery = '';
 
 const RD_COLORS = ['#b03a2e', '#1f6fb2', '#2e7d5b', '#b8860b', '#7a5aa1', '#222222'];
@@ -1491,14 +1491,18 @@ function rdRenderAnnotations() {
     handleRect = rdActiveSel.rect;
   }
   if (handleRect) rdDrawCropHandles(ctx, handleRect, W, H);
-  if (rdSearchHitMark && rdSearchHitMark.filePage === (rdCurrent.page || 1) && rdSearchHitMark.rect) {
-    const r = rdSearchHitMark.rect;
+  const hitRects = (rdSearchHitMark && rdSearchHitMark.filePage === (rdCurrent.page || 1))
+    ? (rdSearchHitMark.rects || (rdSearchHitMark.rect ? [rdSearchHitMark.rect] : []))
+    : [];
+  if (hitRects.length) {
     ctx.save();
     ctx.fillStyle = 'rgba(232, 89, 12, 0.22)';
-    ctx.fillRect(r.x * W, r.y * H, r.w * W, r.h * H);
     ctx.strokeStyle = '#e8590c';
     ctx.lineWidth = Math.max(2, W / 320);
-    ctx.strokeRect(r.x * W, r.y * H, r.w * W, r.h * H);
+    hitRects.forEach((r) => {
+      ctx.fillRect(r.x * W, r.y * H, r.w * W, r.h * H);
+      ctx.strokeRect(r.x * W, r.y * H, r.w * W, r.h * H);
+    });
     ctx.restore();
   }
   rdRenderNotes();
@@ -2713,25 +2717,20 @@ async function rdRunBookSearch() {
 window.rdRunBookSearch = rdRunBookSearch;
 function rdSearchPhrase(h) {
   const q = String(rdLastSearchQuery || '').trim();
+  if (q.length >= 2) return q;
   const snip = String(h && h.snippet || '').replace(/\s+/g, ' ').trim();
-  if (q && snip) {
-    const i = snip.indexOf(q);
-    if (i >= 0) {
-      const a = Math.max(0, i - 48);
-      const b = Math.min(snip.length, i + q.length + 48);
-      return snip.slice(a, b).trim();
-    }
-  }
   if (snip.length >= 8) return snip.slice(0, 140);
-  return q;
+  return q || snip;
 }
 function rdScrollToSearchMark() {
   const mark = rdSearchHitMark;
-  if (!mark || !mark.rect || !rdCurrent || mark.filePage !== (rdCurrent.page || 1)) return;
+  const rects = (mark && (mark.rects || (mark.rect ? [mark.rect] : []))) || [];
+  if (!mark || !rects.length || !rdCurrent || mark.filePage !== (rdCurrent.page || 1)) return;
   const a4 = document.getElementById('rdA4');
   const sc = document.getElementById('rdPageScroll');
   if (!a4 || !sc) return;
-  sc.scrollTop = Math.max(0, mark.rect.y * a4.offsetHeight - 90);
+  const top = rects.reduce((a, b) => (a.y <= b.y ? a : b));
+  sc.scrollTop = Math.max(0, top.y * a4.offsetHeight - 90);
 }
 async function rdLocateSearchHit(h, filePage, partIdx) {
   const p = rdCurrent;
@@ -2755,14 +2754,15 @@ async function rdLocateSearchHit(h, filePage, partIdx) {
     const res = await fetch(`/api/book/pdf-locate?${q.toString()}`);
     const data = await res.json().catch(() => ({}));
     if (!rdCurrent || (rdCurrent.page || 1) !== filePage) return;
-    if (!data.found || !data.rect) {
+    const rects = (data.rects && data.rects.length) ? data.rects : (data.rect ? [data.rect] : []);
+    if (!data.found || !rects.length) {
       rdToast(data.reason || 'فُتحت الصفحة ولم يُميَّز موضع الشاهد على الصورة');
       return;
     }
-    rdSearchHitMark = { filePage, rect: data.rect };
+    rdSearchHitMark = { filePage, rects };
     rdRenderAnnotations();
     rdScrollToSearchMark();
-    rdToast('✔ مُيِّز موضع المطلوب على الصفحة');
+    rdToast(`✔ مُيِّز ${rects.length} موضعًا لألفاظ المطلوب على الصفحة`);
   } catch (e) {
     /* الصفحة فُتحت ولو تعذر التمييز البصري */
   }

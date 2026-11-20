@@ -213,6 +213,7 @@ function renderSearchResults(results, query, duration, rawData = {}) {
   else if (/فهرس المكتبة|المراسي|لفظي/.test(src)) modeLabel = ' (بحث لفظي في فهرس المكتبة)';
   else if (/متجهات|دلالي/.test(src)) modeLabel = ' (دلالي متجهات صرف)';
   else modeLabel = src ? ` (${src})` : '';
+  window._lastSearchQuery = query || '';
   countText.textContent = `تم العثور على ${results.length} نصاً محققاً ومطابقاً${modeLabel}`;
   timingText.textContent = `زمن البحث: ${duration} ثانية`;
 
@@ -329,7 +330,7 @@ function openBookReaderFromMcp() {
       part: _mcpLastVerifiedItem.part !== undefined ? _mcpLastVerifiedItem.part : '',
       page_num: _mcpLastVerifiedItem.page_num || null,
       seq: _mcpLastVerifiedItem.seq || null,
-      highlight: _mcpLastVerifiedItem.snippet || ''
+      highlight: window._lastSearchQuery || _mcpLastVerifiedItem.snippet || ''
     });
   }
 }
