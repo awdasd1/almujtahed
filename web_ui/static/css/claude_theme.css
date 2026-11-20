@@ -4372,7 +4372,8 @@ input:checked+.slider-toggle:before {
   background: transparent;
   padding: 0;
   box-shadow: none;
-  z-index: 10000;
+  z-index: 100650;
+  pointer-events: auto;
   animation: fadeIn 0.15s ease;
 }
 

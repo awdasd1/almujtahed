@@ -81,6 +81,14 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('click', (event) => {
     if (!event.target.closest('#readerBookFilter')) closeReaderBookFilter();
   });
+  const studyTip = document.getElementById('readerSelectionTooltip');
+  if (studyTip && !studyTip.dataset.bound) {
+    studyTip.dataset.bound = '1';
+    studyTip.addEventListener('mousedown', (event) => event.preventDefault());
+  }
+  document.addEventListener('selectionchange', () => {
+    if (readerState.isOpen) onReaderTextSelected();
+  });
 });
 
 // فتح قارئ الكتاب من بطاقة نتيجة البحث الدلالي
@@ -865,21 +873,31 @@ function navigateReaderPage(direction) {
 // رصد التحديد في متن الصفحة
 function onReaderTextSelected() {
   const selection = window.getSelection();
-  const selectedStr = selection ? selection.toString().trim() : '';
   const tooltip = document.getElementById('readerSelectionTooltip');
+  if (!tooltip) return;
+  if (tooltip.contains(document.activeElement) || tooltip.matches(':hover')) return;
 
-  readerState.selectedText = selectedStr;
+  const selectedStr = selection ? selection.toString().trim() : '';
+  const root = document.getElementById('readerContentScroll') || document.getElementById('readerPageBody');
+  const inside = !!(selection && selection.rangeCount && root && (
+    root.contains(selection.anchorNode) || root.contains(selection.focusNode)
+  ));
 
-  if (selectedStr.length > 5 && tooltip) {
+  if (inside && selectedStr) {
+    readerState.selectedText = selectedStr;
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
-    tooltip.style.display = 'flex';
-    tooltip.style.top = `${rect.top - 8}px`;
-    tooltip.style.left = `${rect.left + (rect.width / 2)}px`;
-  } else if (tooltip) {
-    tooltip.style.display = 'none';
+    if (rect.width || rect.height) {
+      tooltip.style.display = 'flex';
+      tooltip.style.top = `${Math.max(16, rect.top - 8)}px`;
+      tooltip.style.left = `${rect.left + (rect.width / 2)}px`;
+      return;
+    }
   }
+  if (!selectedStr) readerState.selectedText = '';
+  tooltip.style.display = 'none';
 }
+window.onReaderTextSelected = onReaderTextSelected;
 
 // إرسال النص المحدد (أو الصفحة كاملة) إلى نافذة الشات للمناقشة مع النموذج
 function sendReaderSelectionToChat() {
