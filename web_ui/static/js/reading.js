@@ -3913,24 +3913,16 @@ function rdRaisePublishOverlay() {
   ov.style.setProperty('z-index', '350000', 'important');
 }
 function rdShowShareModal(text, file, title) {
-  window._rdSharePayload = { text: text || '', file: file || null, title: title || (rdCurrent && rdCurrent.title) || 'قراءة' };
-  const modal = document.getElementById('shareModal');
-  if (!modal || typeof openSharePicker !== 'function') {
-    if (file) rdNativeShareImage(file, text); else rdNativeShareText(text);
+  const payload = {
+    text: text || '',
+    title: title || (rdCurrent && rdCurrent.title) || 'قراءة',
+  };
+  if (file) payload.files = [file];
+  if (typeof presentSystemShareSheet === 'function') {
+    presentSystemShareSheet(payload);
     return;
   }
-  if (modal.parentElement !== document.body) document.body.appendChild(modal);
-  openSharePicker('chat', 'reading-selection', window._rdSharePayload.title);
-  modal.style.setProperty('z-index', '400000', 'important');
-  const ext = document.getElementById('shareExternalOption');
-  if (ext) ext.hidden = false;
-  const extRadio = document.querySelector('input[name="shareDestination"][value="external"]');
-  if (file && extRadio) extRadio.checked = true;
-  else if (file) {
-    const deviceRadio = document.querySelector('input[name="shareDestination"][value="device"]');
-    if (deviceRadio) deviceRadio.checked = true;
-  }
-  if (typeof toggleShareDestination === 'function') toggleShareDestination();
+  if (file) rdNativeShareImage(file, text); else rdNativeShareText(text);
 }
 async function rdMediaChoice(kind) {
   rdCloseModal('rdMediaChoiceModal');

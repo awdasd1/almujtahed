@@ -8,7 +8,118 @@ const shareKindNames = {
   key: 'المفتاح'
 };
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadShareFile(file) {
+  if (!file) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = file.name || 'share.bin';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+async function presentNativeShareBridge(payload) {
+  const files = payload.files || [];
+  const file = files[0] || null;
+  const body = {
+    action: 'share',
+    title: payload.title || '',
+    text: payload.text || '',
+    filename: file ? (file.name || 'share.bin') : '',
+    mime: file ? (file.type || 'application/octet-stream') : '',
+    data: file ? await fileToBase64(file) : '',
+  };
+  const mac = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almoghni;
+  if (mac) {
+    mac.postMessage(body);
+    return true;
+  }
+  if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+    window.chrome.webview.postMessage(JSON.stringify(body));
+    return true;
+  }
+  return false;
+}
+
+async function presentSystemShareSheet(payload) {
+  const files = (payload && payload.files) || [];
+  const title = (payload && payload.title) || '';
+  const text = (payload && payload.text) || '';
+  const webPayload = {};
+  if (title) webPayload.title = title;
+  if (text) webPayload.text = text;
+  if (files.length) webPayload.files = files;
+  if (typeof navigator.share === 'function') {
+    const allowed = typeof navigator.canShare !== 'function' || navigator.canShare(webPayload)
+      || (typeof navigator.canShare === 'function' && !files.length && navigator.canShare({ title, text }));
+    if (allowed) {
+      try {
+        await navigator.share(files.length ? webPayload : { title, text });
+        return true;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return true;
+      }
+    }
+  }
+  try {
+    if (await presentNativeShareBridge({ files, title, text })) return true;
+  } catch (err) { /* يُجرَّب التنزيل */ }
+  if (files[0]) {
+    downloadShareFile(files[0]);
+    if (typeof showToast === 'function') showToast('مشاركة النظام غير متاحة هنا — تم تحميل الملف بدلًا منها');
+    return true;
+  }
+  if (text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (typeof showToast === 'function') showToast('نُسخ النص إلى الحافظة لمشاركته');
+      return true;
+    } catch (err) {}
+  }
+  if (typeof showToast === 'function') showToast('تعذر فتح مشاركة النظام');
+  return false;
+}
+window.presentSystemShareSheet = presentSystemShareSheet;
+
+async function presentChatSystemShare(itemId, label, options) {
+  const reading = window._rdSharePayload;
+  if (reading) {
+    window._rdSharePayload = null;
+    const payload = { title: reading.title || label || 'قراءة', text: reading.text || '' };
+    if (reading.file) payload.files = [reading.file];
+    await presentSystemShareSheet(payload);
+    return;
+  }
+  const messageIndex = options && Number.isInteger(options.messageIndex) ? options.messageIndex : null;
+  if (typeof buildChatSharePayload === 'function') {
+    const built = buildChatSharePayload(itemId, messageIndex, label);
+    if (built) {
+      await presentSystemShareSheet(built);
+      return;
+    }
+  }
+  if (typeof showToast === 'function') showToast('تعذر تجهيز المحادثة للمشاركة');
+}
+
 function openSharePicker(kind, itemId, label, options) {
+  if (kind === 'chat') {
+    presentChatSystemShare(itemId, label, options);
+    return;
+  }
   shareDraft = {
     kind,
     itemId: String(itemId || ''),

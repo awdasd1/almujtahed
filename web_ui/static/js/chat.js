@@ -1061,6 +1061,50 @@ async function revealSharedChat(itemId) {
   selectChatSession(itemId);
 }
 
+function chatShareSafeName(title, fallback) {
+  const raw = String(title || fallback || 'محادثة').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+  return (raw || fallback || 'محادثة').slice(0, 80);
+}
+
+function buildChatSharePayload(sessionId, messageIndex, label) {
+  const session = chatSessions.find(item => item.id === sessionId);
+  if (!session) return null;
+  let chat = session;
+  let title = label || session.title || 'المحادثة';
+  if (Number.isInteger(messageIndex) && session.messages[messageIndex]) {
+    const message = session.messages[messageIndex];
+    title = label || (typeof chatMessagePaperTitle === 'function' ? chatMessagePaperTitle(message, session) : session.title) || 'إجابة';
+    chat = {
+      id: session.id,
+      title,
+      createdAt: new Date().toISOString(),
+      messages: [message],
+      shared_answer: true
+    };
+  }
+  const lines = [title, ''];
+  (chat.messages || []).forEach((msg) => {
+    if (!msg || typeof msg.content !== 'string') return;
+    lines.push(msg.role === 'user' ? 'السائل:' : 'المغني:');
+    lines.push(msg.content);
+    lines.push('');
+  });
+  const payload = {
+    export_version: '1.0',
+    exported_at: new Date().toISOString(),
+    type: 'almojtahed_chat',
+    chat
+  };
+  const prefix = chat.shared_answer ? 'answer' : 'chat';
+  const file = new File(
+    [JSON.stringify(payload, null, 2)],
+    `${chatShareSafeName(title, prefix)}.json`,
+    { type: 'application/json' }
+  );
+  return { title, text: lines.join('\n').trim(), files: [file] };
+}
+window.buildChatSharePayload = buildChatSharePayload;
+
 function exportChatSessionFile(sessionId, messageIndex) {
   const session = chatSessions.find(item => item.id === sessionId);
   if (!session) {

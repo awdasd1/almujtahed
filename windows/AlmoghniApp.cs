@@ -1257,7 +1257,50 @@ sealed class AppForm : Form
                 {
                     string text = "";
                     try { text = e.TryGetWebMessageAsString() ?? ""; } catch { }
-                    if (!text.Contains("chooseFolder")) return;
+                    string action = "";
+                    string prompt = "";
+                    string shareTitle = "";
+                    string shareText = "";
+                    string filename = "";
+                    string dataB64 = "";
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(text);
+                        var root = doc.RootElement;
+                        action = root.TryGetProperty("action", out var act) ? act.GetString() ?? "" : "";
+                        prompt = root.TryGetProperty("prompt", out var pr) ? pr.GetString() ?? "" : "";
+                        shareTitle = root.TryGetProperty("title", out var ti) ? ti.GetString() ?? "" : "";
+                        shareText = root.TryGetProperty("text", out var st) ? st.GetString() ?? "" : "";
+                        filename = root.TryGetProperty("filename", out var fn) ? fn.GetString() ?? "" : "";
+                        dataB64 = root.TryGetProperty("data", out var da) ? da.GetString() ?? "" : "";
+                    }
+                    catch { }
+                    if (action == "share")
+                    {
+                        try
+                        {
+                            BeginInvoke((Action)(() =>
+                            {
+                                string? path = null;
+                                try
+                                {
+                                    if (!string.IsNullOrEmpty(dataB64) && !string.IsNullOrEmpty(filename))
+                                    {
+                                        var bytes = Convert.FromBase64String(dataB64);
+                                        var safe = string.Concat((filename.Length == 0 ? "share.bin" : filename)
+                                            .Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
+                                        path = Path.Combine(Path.GetTempPath(), "almoghni-share-" + Guid.NewGuid().ToString("n") + "-" + safe);
+                                        File.WriteAllBytes(path, bytes);
+                                    }
+                                }
+                                catch { path = null; }
+                                try { NativeShare.Show(Handle, shareTitle, shareText, path); } catch { }
+                            }));
+                        }
+                        catch { }
+                        return;
+                    }
+                    if (action != "chooseFolder" && !text.Contains("chooseFolder")) return;
                     try
                     {
                         BeginInvoke((Action)(() =>
@@ -1265,7 +1308,9 @@ sealed class AppForm : Form
                             string picked = "";
                             using (var dialog = new FolderBrowserDialog
                             {
-                                Description = "اختر مجلد المكتبة الشاملة (الذي يحتوي مجلد database)",
+                                Description = string.IsNullOrWhiteSpace(prompt)
+                                    ? "اختر مجلد المكتبة الشاملة (الذي يحتوي مجلد database)"
+                                    : prompt,
                                 ShowNewFolderButton = false
                             })
                             {

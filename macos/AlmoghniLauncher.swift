@@ -320,6 +320,7 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     var onQuit: (() -> Void)?
     private var quitting = false
     private var readingWindows: [ReadingWindow] = []
+    private var sharePicker: NSSharingServicePicker?
 
     init(url: URL) {
         let configuration = WKWebViewConfiguration()
@@ -443,6 +444,28 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
         presentWebOpenPanel(on: window, parameters: parameters, completionHandler: completionHandler)
     }
 
+    private func presentNativeShare(text: String, filename: String, dataB64: String) {
+        var items: [Any] = []
+        if !text.isEmpty { items.append(text as NSString) }
+        if !dataB64.isEmpty, let data = Data(base64Encoded: dataB64) {
+            let safe = filename.isEmpty ? "share.bin" : filename
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("almoghni-\(UUID().uuidString)-\(safe)")
+            do {
+                try data.write(to: url, options: .atomic)
+                items.append(url)
+            } catch {}
+        }
+        guard !items.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.sharePicker = NSSharingServicePicker(items: items)
+            let view = self.webView
+            let rect = NSRect(x: view.bounds.midX - 1, y: view.bounds.midY - 1, width: 2, height: 2)
+            self.sharePicker?.show(relativeTo: rect, of: view, preferredEdge: .minY)
+        }
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "almoghni" else { return }
         if let text = message.body as? String {
@@ -457,6 +480,14 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
             let base = (body["base"] as? String).flatMap { URL(string: $0) }
                 ?? URL(string: "http://127.0.0.1:8085/")!
             NativePrinter.shared.enqueue(html: html, baseURL: base, presentingWindow: window)
+            return
+        }
+        if action == "share" {
+            presentNativeShare(
+                text: body["text"] as? String ?? "",
+                filename: body["filename"] as? String ?? "",
+                dataB64: body["data"] as? String ?? ""
+            )
             return
         }
         guard action == "chooseFolder" else { return }
