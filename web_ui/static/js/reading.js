@@ -471,12 +471,19 @@ function rdUndo() {
 
 function rdClearPage() {
   if (!rdCurrent) return;
-  if (!confirm(`⚠️ تنبيه: سيتم إزالة جميع التعليقات من هذه الصفحة فقط (صفحة ${rdCurrent.page || 1}: رسوم الأقلام والتظليل والقصاصات وملصقات الملحوظات)، وتبقى تعليقات بقية الصفحات كما هي دون مساس. متابعة المسح؟`)) return;
+  const el = document.getElementById('rdClearPageText');
+  if (el) el.textContent = `سيتم إزالة جميع التعليقات من هذه الصفحة فقط (صفحة ${rdCurrent.page || 1}: رسوم الأقلام والتظليل والقصاصات وملصقات الملحوظات)، وتبقى تعليقات بقية الصفحات كما هي دون مساس.`;
+  rdShowModal('rdClearPageModal');
+}
+function rdConfirmClearPage() {
+  if (!rdCurrent) { rdCloseModal('rdClearPageModal'); return; }
+  const page = rdCurrent.page || 1;
   const ann = rdPageAnn();
   ann.strokes = []; ann.highlights = []; ann.crops = []; ann.notes = []; ann.seq = [];
   document.querySelectorAll('.rd-note-editor').forEach(x => { if (x._rdNoteRo) x._rdNoteRo.disconnect(); x.remove(); });
+  rdCloseModal('rdClearPageModal');
   rdRenderAnnotations(); rdSaveSoon();
-  rdToast(`🧹 مُسحت كل تعليقات صفحة ${rdCurrent.page || 1} وحدها`);
+  rdToast(`🧹 مُسحت كل تعليقات صفحة ${page} وحدها`);
 }
 
 // ---------- عرض الصفحة: حدّة وتباين وخلفية ورقية ----------
