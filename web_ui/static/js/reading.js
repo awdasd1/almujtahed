@@ -1291,10 +1291,8 @@ function rdLoadPage(n) {
   if (!p || !p.book) { rdRenderAnnotations(); return; }
   n = Math.max(1, Math.min(p.book.pages || 1, Number(n) || 1));
   p.page = n;
+  rdUpdateBookUI();
   rdSyncPageField(n);
-  const titleEl = document.getElementById('rdReaderTitle');
-  if (titleEl) titleEl.textContent = rdReaderHeading(p);
-  rdFillPartSelect();
   const img = document.getElementById('rdPageImg');
   img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); };
   img.onerror = () => { rdToast('تعذر عرض هذه الصفحة'); };
