@@ -9164,7 +9164,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.794"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.795"},
         },
     })
     if opened.get("error"):
@@ -15474,16 +15474,20 @@ def _reading_search_book_sync(query: str, ids: List[str], titles: List[str],
         cursor = db.cursor() if db else None
     except Exception:
         cursor = None
-    if cursor:
-        extra = _selected_book_ids([f"#{i}" for i in ids] + titles, cursor)
+    if cursor and not ids and titles:
+        # أرقام الكتاب المصوّر حاكمة: لا يُوسَّع العنوان القصير إلى كتب أخرى
+        extra = _selected_book_ids(titles, cursor)
         for bid in extra:
             if bid not in ids:
                 ids.append(bid)
+    allowed = {str(i) for i in ids}
 
     def _take(raw_hits, title=""):
         for h in raw_hits or []:
             row = _reading_search_hit(h, title)
             if not row["page"]:
+                continue
+            if allowed and str(row.get("book_id") or "") not in allowed:
                 continue
             key = (str(row.get("book_id") or ""), row["part"], row["page"])
             if key in seen:

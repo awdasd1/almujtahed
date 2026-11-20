@@ -2561,7 +2561,7 @@ function rdPartIndexForSearch(p, raw) {
     const n = rdNormPartKey(rdPartMetaOf(p, part, idx).partNo);
     if (n === want || String(part.partNo || '') === String(raw || '') || String(part.part || '') === String(raw || '')) found = idx;
   });
-  if (found < 0 && (!want || /^(جزء|مقدمة|المقدمه|تقديم|تمهيد)$/u.test(want))) {
+  if (found < 0 && /مقدمة|مقدمه|تقديم|تمهيد/u.test(want)) {
     const intro = parts.findIndex((part, idx) => /مقدمة|مقدمه|تقديم|تمهيد/u.test(rdPartMetaOf(p, part, idx).partNo));
     if (intro >= 0) found = intro;
   }
@@ -2688,11 +2688,16 @@ async function rdRunBookSearch() {
       }
       return {
         i,
+        book_id: r.book_id,
         part,
         page,
         snippet: (r.witness || r.snippet || r.text || '').replace(/\s+/g, ' ').trim().slice(0, 420),
       };
-    }).filter(h => h.page !== '' && h.page != null);
+    }).filter(h => {
+      if (h.page === '' || h.page == null) return false;
+      if (!scope.ids.length || h.book_id == null || h.book_id === '') return true;
+      return scope.ids.includes(String(h.book_id));
+    });
     if (!pool.length) throw new Error('لم يُعثر على هذا المطلوب في النسخة النصية للكتاب');
     const partCount = data.parts_hit || new Set(pool.map(h => String(h.part || ''))).size;
     if (st) st.textContent = `عُثر على ${pool.length} موضعًا في ${partCount} جزءًا`;

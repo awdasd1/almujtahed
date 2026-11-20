@@ -4,7 +4,9 @@
 (قائمة ملفات المصوّرة ووسم الجزء لكل ملف)، والملفات منزّلة عنده تحت
 pdf/<المؤلف>/<الكتاب>/. القاعدة المثبتة بالفحص على كتب مفردة ومتعددة
 الأجزاء: رقم صفحة المصوّرة داخل ملف جزئها يساوي رقم الصفحة المطبوعة
-(page_num) نفسه. التغطية جزئية (~خُمس المكتبة)، فغياب الملف جواب مشروع.
+(page_num) نفسه. إن ضم الملف أجزاء عدة استأنف كل منها ترقيمه فالموضع
+هو الترقيم المطبوع داخل جزئه لا عدد قيود النص. التغطية جزئية
+(~خُمس المكتبة)، فغياب الملف جواب مشروع.
 """
 from __future__ import annotations
 
@@ -127,27 +129,37 @@ def _part_ranges(their_id: int) -> list:
         return []
 
 
-def _seq_within(their_id: int, ranges: list, part: str, page_num: int, covered: list):
-    """موضع الصفحة تسلسليًا داخل ملف يضم أجزاء عدة (حين لا يكفي الرقم المطبوع)."""
-    cand = _their_book_db(their_id)
-    if not cand:
-        return None
+def _printed_span(mn, mx, count=0) -> int:
     try:
-        con = sqlite3.connect(f"file:{cand}?mode=ro", uri=True)
-        offset = 0
-        for name, count, _mn, _mx in ranges:
-            if name not in covered:
-                continue
-            if name == part:
-                rank = con.execute(
-                    "SELECT COUNT(*) FROM page WHERE part=? AND page<=?", (part, page_num)
-                ).fetchone()[0]
-                con.close()
-                return offset + max(1, int(rank))
-            offset += count
-        con.close()
-    except Exception:
-        return None
+        span = int(mx or 0) - int(mn or 0) + 1
+    except (TypeError, ValueError):
+        span = 0
+    if span <= 0:
+        span = int(count or 0)
+    return max(1, span) if (span or count) else 0
+
+
+def _seq_within(their_id: int, ranges: list, part: str, page_num: int, covered: list):
+    """موضع الصفحة داخل ملف يضم أجزاء عدة: بالترقيم المطبوع لا بعدد قيود النص."""
+    offset = 0
+    try:
+        page_num = int(page_num or 0)
+    except (TypeError, ValueError):
+        page_num = 0
+    for name, count, mn, mx in ranges:
+        if name not in covered:
+            continue
+        span = _printed_span(mn, mx, count)
+        if name == part:
+            local = page_num
+            try:
+                start = int(mn or 0)
+            except (TypeError, ValueError):
+                start = 0
+            if start and local >= start:
+                local = local - start + 1
+            return offset + max(1, local)
+        offset += span
     return None
 
 
@@ -187,8 +199,7 @@ def _assign_files(entries: list, parts: list) -> dict:
                 assigned.setdefault(tag, name)
                 continue
             if _is_intro(tag) or tag.startswith("مقدمة"):
-                if intro_parts:
-                    assigned.setdefault(intro_parts[0], name)
+                assigned.setdefault(intro_parts[0] if intro_parts else tag, name)
                 continue
             if tag == "0":
                 for part in numbered:
@@ -270,9 +281,12 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
     if parts and want_part not in parts:
         # جزءنا برقمه قد يقابل جزءهم بموضعه بين الأجزاء المرقّمة
         numbered = [p for p in parts if not _is_intro(p)]
-        if want_part.isdigit() and 1 <= int(want_part) <= len(numbered):
+        intros = [p for p in parts if _is_intro(p)]
+        if _is_intro(want_part) and intros:
+            want_part = intros[0]
+        elif want_part.isdigit() and 1 <= int(want_part) <= len(numbered):
             want_part = numbered[int(want_part) - 1]
-        elif numbered:
+        elif not want_part and numbered:
             want_part = numbered[0]
     assigned = _assign_files(entries, parts or [want_part])
     file_name = assigned.get(want_part)
@@ -321,12 +335,13 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
         fn = assigned.get(name)
         if fn != file_name:
             continue
+        span = _printed_span(_mn, _mx, count)
         volumes.append({
             "name": name,
-            "pages": int(count or 0),
+            "pages": span,
             "pdf_start": offset + 1,
         })
-        offset += int(count or 0)
+        offset += span
     out.update({
         "available": True,
         "file_name": file_name,
@@ -370,7 +385,7 @@ def list_volumes(book_id=None, rel_path: str = "") -> dict:
             cands = index.get(fn) if fn else None
             volumes.append({
                 "name": str(name or "").strip() or "1",
-                "pages": int(count or 0),
+                "pages": _printed_span(_mn, _mx, count),
                 "file_name": fn,
                 "available": bool(cands),
             })
