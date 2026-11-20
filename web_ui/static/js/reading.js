@@ -329,7 +329,10 @@ function rdAddColor(target, ev) {
   picker.style.zIndex = '500000';
   picker.style.opacity = '0.02';
   picker.style.pointerEvents = 'auto';
-  picker.value = target === 'note' ? rdNoteColor : rdColor;
+  if (target === 'bg') {
+    const v = rdView();
+    picker.value = v.bgColor || '#f4efe4';
+  } else picker.value = target === 'note' ? rdNoteColor : rdColor;
   try {
     if (typeof picker.showPicker === 'function') picker.showPicker();
     else picker.click();
@@ -356,6 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!picker) return;
   picker.addEventListener('input', () => {
     const c = picker.value;
+    if (rdColorTarget === 'bg') { rdApplyCustomBg(c); return; }
     const key = rdColorTarget === 'note' ? 'note' : 'pen';
     rdCustomColors[key] = rdCustomColors[key] || [];
     if (!rdCustomColors[key].includes(c)) rdCustomColors[key].push(c);
@@ -516,7 +520,9 @@ function rdApplyView() {
   const v = rdView();
   const img = document.getElementById('rdPageImg');
   const a4 = document.getElementById('rdA4');
-  const bg = RD_BGS[v.bg] || RD_BGS.white;
+  const bg = (v.bg === 'custom' && v.bgColor)
+    ? { page: v.bgColor, sepia: 0, bright: 1, sat: 1, scroll: rdShade(v.bgColor, -32) }
+    : (RD_BGS[v.bg] || RD_BGS.white);
   if (a4) a4.style.background = bg.page;
   const scroll = document.getElementById('rdPageScroll');
   if (scroll) scroll.style.background = bg.scroll;
@@ -532,6 +538,35 @@ function rdApplyView() {
   const sh = document.getElementById('rdSharp'); if (sh) sh.value = v.sharp;
   const ct = document.getElementById('rdContrast'); if (ct) ct.value = v.contrast;
   document.querySelectorAll('.rd-bg-btn').forEach(b => b.classList.toggle('active', b.dataset.rdbg === v.bg));
+  const add = document.getElementById('rdBgAdd');
+  if (add) {
+    if (v.bgColor) {
+      add.style.background = v.bgColor;
+      add.textContent = '';
+      add.classList.add('has-color');
+      add.title = 'اللون المختار — اضغط لتغييره وتغيير خلفية الكتاب';
+    } else {
+      add.style.background = '';
+      add.textContent = '+';
+      add.classList.remove('has-color');
+      add.title = 'إضافة لون لخلفية الكتاب';
+    }
+  }
+}
+function rdShade(hex, amt) {
+  const raw = String(hex || '').replace('#', '');
+  const full = raw.length === 3 ? raw.split('').map(ch => ch + ch).join('') : raw;
+  const num = parseInt(full, 16);
+  if (!Number.isFinite(num)) return '#8a8378';
+  const ch = (n) => Math.max(0, Math.min(255, n + amt)).toString(16).padStart(2, '0');
+  return `#${ch(num >> 16)}${ch((num >> 8) & 255)}${ch(num & 255)}`;
+}
+function rdApplyCustomBg(hex) {
+  const v = rdView();
+  v.bg = 'custom';
+  v.bgColor = hex;
+  rdApplyView();
+  rdSaveSoon();
 }
 function rdSetView(key, val) {
   const v = rdView();
@@ -545,7 +580,7 @@ function rdSetBg(bg) {
 }
 function rdResetView() {
   if (!rdCurrent) return;
-  rdCurrent.view = { sharp: 0, contrast: 100, bg: 'white' };
+  rdCurrent.view = { sharp: 0, contrast: 100, bg: 'white', bgColor: '' };
   rdApplyView(); rdSaveSoon();
 }
 
