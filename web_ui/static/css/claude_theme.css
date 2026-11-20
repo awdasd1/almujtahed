@@ -5940,7 +5940,8 @@ input:checked+.slider-toggle:before {
 
 .model-hover-card {
   position: fixed;
-  z-index: 101600;
+  /* فوق نافذة المساعد/الوكيل في وضع القراءة (200000) ونوافذ النطاق والقراءة (تصل إلى 400200) */
+  z-index: 500200;
   width: 320px;
   max-height: min(420px, calc(100vh - 16px));
   overflow: auto;

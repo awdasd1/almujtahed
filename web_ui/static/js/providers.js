@@ -1169,6 +1169,16 @@ function moneyPerMillion(value) {
   return `$${number.toFixed(3)} / 1M`;
 }
 
+function raiseModelHoverCardLayer(card, item) {
+  const overlay = item && item.closest('.modal-overlay, .ms-modal-overlay');
+  let z = 500200;
+  if (overlay) {
+    const oz = parseInt(window.getComputedStyle(overlay).zIndex, 10);
+    if (Number.isFinite(oz) && oz >= z) z = oz + 50;
+  }
+  card.style.setProperty('z-index', String(z));
+}
+
 function placeModelHoverCard(item, card, fromScroll) {
   const rect = item.getBoundingClientRect();
   const menu = item.closest('.custom-model-dropdown-menu, .theme-select-menu, .compare-slot-menu');
@@ -1182,6 +1192,7 @@ function placeModelHoverCard(item, card, fromScroll) {
   const width = 320;
   const gap = 10;
   card.hidden = false;
+  raiseModelHoverCardLayer(card, item);
   const cardHeight = card.offsetHeight || 200;
   let left = rect.left - width - gap;
   if (left < 8) left = rect.right + gap;
