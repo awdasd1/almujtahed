@@ -1397,6 +1397,9 @@ function rdSetTool(t) {
   document.querySelectorAll('#rdToolbar .rd-tool[data-rd-tool]').forEach(b =>
     b.classList.toggle('active', b.dataset.rdTool === t));
   document.getElementById('rdLoupe').hidden = t !== 'loupe';
+  const cv = document.getElementById('rdCanvas');
+  if (cv) cv.style.cursor = t === 'crop' ? 'crosshair' : (t === 'loupe' ? 'none' : '');
+  rdRenderAnnotations();
 }
 
 function rdPageAnn() {
@@ -1461,6 +1464,13 @@ function rdRenderAnnotations() {
     ctx.strokeRect(cr.x * W, cr.y * H, cr.w * W, cr.h * H);
     ctx.restore();
   });
+  let handleRect = null;
+  if (rdDraw && rdDraw.type === 'resize') {
+    handleRect = (ann.crops || [])[rdDraw.index];
+  } else if (rdActiveSel && rdActiveSel.kind === 'c' && rdActiveSel.page === (rdCurrent.page || 1)) {
+    handleRect = rdActiveSel.rect;
+  }
+  if (handleRect) rdDrawCropHandles(ctx, handleRect, W, H);
   rdRenderNotes();
   rdRenderCropsBar();
 }
@@ -1614,6 +1624,112 @@ function rdSetActiveSel(kind, index, rect) {
   rdActiveSel = { page: rdCurrent.page || 1, kind, index, rect: { ...rect } };
   rdShowSelBar(rect);
 }
+function rdClampRect(r) {
+  const x = Math.min(1, Math.max(0, Number(r.x) || 0));
+  const y = Math.min(1, Math.max(0, Number(r.y) || 0));
+  return {
+    x, y,
+    w: Math.min(1 - x, Math.max(0.01, Number(r.w) || 0.01)),
+    h: Math.min(1 - y, Math.max(0.01, Number(r.h) || 0.01)),
+  };
+}
+function rdHandlePoints(rect) {
+  if (!rect) return [];
+  const x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+  return [
+    { edge: 'nw', x, y, cursor: 'nwse-resize' },
+    { edge: 'n', x: x + w / 2, y, cursor: 'ns-resize' },
+    { edge: 'ne', x: x + w, y, cursor: 'nesw-resize' },
+    { edge: 'e', x: x + w, y: y + h / 2, cursor: 'ew-resize' },
+    { edge: 'se', x: x + w, y: y + h, cursor: 'nwse-resize' },
+    { edge: 's', x: x + w / 2, y: y + h, cursor: 'ns-resize' },
+    { edge: 'sw', x, y: y + h, cursor: 'nesw-resize' },
+    { edge: 'w', x, y: y + h / 2, cursor: 'ew-resize' },
+  ];
+}
+function rdResizeRect(orig, edge, qx, qy) {
+  let x0 = orig.x, y0 = orig.y, x1 = orig.x + orig.w, y1 = orig.y + orig.h;
+  if (edge.indexOf('w') >= 0) x0 = qx;
+  if (edge.indexOf('e') >= 0) x1 = qx;
+  if (edge.indexOf('n') >= 0) y0 = qy;
+  if (edge.indexOf('s') >= 0) y1 = qy;
+  return rdClampRect({
+    x: Math.min(x0, x1),
+    y: Math.min(y0, y1),
+    w: Math.abs(x1 - x0),
+    h: Math.abs(y1 - y0),
+  });
+}
+function rdHitCropHandle(qx, qy, rect, rw, rh) {
+  if (!rect || !rw || !rh) return null;
+  const tolX = Math.max(0.012, 12 / rw);
+  const tolY = Math.max(0.012, 12 / rh);
+  const pts = rdHandlePoints(rect);
+  for (let i = 0; i < pts.length; i++) {
+    if (Math.abs(qx - pts[i].x) <= tolX && Math.abs(qy - pts[i].y) <= tolY) return pts[i];
+  }
+  const left = rect.x, right = rect.x + rect.w, top = rect.y, bottom = rect.y + rect.h;
+  const inX = qx >= left - tolX && qx <= right + tolX;
+  const inY = qy >= top - tolY && qy <= bottom + tolY;
+  if (!inX || !inY) return null;
+  const nearL = Math.abs(qx - left) <= tolX;
+  const nearR = Math.abs(qx - right) <= tolX;
+  const nearT = Math.abs(qy - top) <= tolY;
+  const nearB = Math.abs(qy - bottom) <= tolY;
+  const find = edge => pts.find(p => p.edge === edge);
+  if (nearT && nearL) return find('nw');
+  if (nearT && nearR) return find('ne');
+  if (nearB && nearL) return find('sw');
+  if (nearB && nearR) return find('se');
+  if (nearT) return find('n');
+  if (nearB) return find('s');
+  if (nearL) return find('w');
+  if (nearR) return find('e');
+  return null;
+}
+function rdCropHandleTarget(qx, qy, rw, rh) {
+  if (!rdCurrent) return null;
+  const ann = rdPageAnn();
+  const crops = ann.crops || [];
+  const tryOne = (index) => {
+    const cr = crops[index];
+    if (!cr) return null;
+    const hit = rdHitCropHandle(qx, qy, cr, rw, rh);
+    return hit ? { index, rect: cr, handle: hit } : null;
+  };
+  if (rdActiveSel && rdActiveSel.kind === 'c' && rdActiveSel.page === (rdCurrent.page || 1)) {
+    const hit = tryOne(rdActiveSel.index);
+    if (hit) return hit;
+  }
+  for (let i = crops.length - 1; i >= 0; i--) {
+    const hit = tryOne(i);
+    if (hit) return hit;
+  }
+  return null;
+}
+function rdWriteCropRect(index, rect) {
+  const ann = rdPageAnn();
+  const cr = (ann.crops || [])[index];
+  if (!cr || !rect) return;
+  cr.x = rect.x; cr.y = rect.y; cr.w = rect.w; cr.h = rect.h;
+  if (rdActiveSel && rdActiveSel.kind === 'c' && rdActiveSel.index === index) {
+    rdActiveSel.rect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+  }
+}
+function rdDrawCropHandles(ctx, rect, W, H) {
+  if (!rect || !ctx) return;
+  const hs = Math.max(7, Math.min(14, W / 70));
+  ctx.save();
+  ctx.setLineDash([]);
+  rdHandlePoints(rect).forEach(p => {
+    ctx.fillStyle = '#fffef8';
+    ctx.strokeStyle = '#b4552d';
+    ctx.lineWidth = Math.max(1.2, W / 500);
+    ctx.fillRect(p.x * W - hs / 2, p.y * H - hs / 2, hs, hs);
+    ctx.strokeRect(p.x * W - hs / 2, p.y * H - hs / 2, hs, hs);
+  });
+  ctx.restore();
+}
 function rdHitRegion(qx, qy, discussedOnly) {
   if (!rdCurrent) return null;
   const ann = rdPageAnn();
@@ -1661,6 +1777,19 @@ function rdArmSelHide() {
     cv.addEventListener('pointerdown', (e) => {
       if (!rdCurrent || !rdCurrent.book) return;
       const q = pos(e);
+      if (rdTool !== 'pen') {
+        const grip = rdCropHandleTarget(q.x, q.y, q.rw, q.rh);
+        if (grip) {
+          rdHideSelBar();
+          const orig = { x: grip.rect.x, y: grip.rect.y, w: grip.rect.w, h: grip.rect.h };
+          rdDraw = { type: 'resize', index: grip.index, edge: grip.handle.edge, orig };
+          rdSetActiveSel('c', grip.index, orig);
+          rdHideSelBar();
+          cv.style.cursor = grip.handle.cursor;
+          cv.setPointerCapture(e.pointerId);
+          return;
+        }
+      }
       const disc = rdHitDiscussion(q.x, q.y);
       // ضغط على موضع مناقشة محفوظة يفتحها مباشرة (أولوية على بدء رسم جديد)
       if (disc) {
@@ -1686,14 +1815,26 @@ function rdArmSelHide() {
       const q = pos(e);
       // شريط أيقونات (تحليل/قراءة/مشاركة/نشر) عند التمرير على تحليل سابق رمادي فقط
       if (!rdDraw && rdTool !== 'loupe' && rdCurrent && rdCurrent.book) {
-        const over = rdHitRegion(q.x, q.y, false);
-        if (over) {
+        const grip = rdTool !== 'pen' ? rdCropHandleTarget(q.x, q.y, q.rw, q.rh) : null;
+        if (grip) {
+          cv.style.cursor = grip.handle.cursor;
           rdCancelSelHide();
-          rdActiveSel = { page: rdCurrent.page || 1, kind: over.kind, index: over.index, rect: { x: over.rect.x, y: over.rect.y, w: over.rect.w, h: over.rect.h }, discussion_id: over.id };
+          rdActiveSel = { page: rdCurrent.page || 1, kind: 'c', index: grip.index, rect: { x: grip.rect.x, y: grip.rect.y, w: grip.rect.w, h: grip.rect.h } };
           rdSelFromHover = true;
           rdShowSelBar(rdActiveSel.rect);
+          rdRenderAnnotations();
         } else {
-          rdArmSelHide();
+          cv.style.cursor = rdTool === 'crop' ? 'crosshair' : '';
+          const over = rdHitRegion(q.x, q.y, false);
+          if (over) {
+            rdCancelSelHide();
+            rdActiveSel = { page: rdCurrent.page || 1, kind: over.kind, index: over.index, rect: { x: over.rect.x, y: over.rect.y, w: over.rect.w, h: over.rect.h }, discussion_id: over.id };
+            rdSelFromHover = true;
+            rdShowSelBar(rdActiveSel.rect);
+            rdRenderAnnotations();
+          } else {
+            rdArmSelHide();
+          }
         }
       }
       if (rdTool === 'loupe' && rdCurrent && rdCurrent.book) {
@@ -1723,6 +1864,10 @@ function rdArmSelHide() {
         cvx.beginPath();
         s.pts.forEach(([x, y], i) => { if (i) cvx.lineTo(x * cv.width, y * cv.height); else cvx.moveTo(x * cv.width, y * cv.height); });
         cvx.stroke(); cvx.restore();
+      } else if (rdDraw.type === 'resize') {
+        const next = rdResizeRect(rdDraw.orig, rdDraw.edge, q.x, q.y);
+        rdWriteCropRect(rdDraw.index, next);
+        rdRenderAnnotations();
       } else {
         rdDraw.x1 = q.x; rdDraw.y1 = q.y;
         rdRenderAnnotations();
@@ -1765,12 +1910,19 @@ function rdArmSelHide() {
           ann.seq.push('c');
           rdSetActiveSel('c', ann.crops.length - 1, rect);
         }
+      } else if (rdDraw.type === 'resize') {
+        const cr = (ann.crops || [])[rdDraw.index];
+        if (cr) rdSetActiveSel('c', rdDraw.index, { x: cr.x, y: cr.y, w: cr.w, h: cr.h });
       }
       rdDraw = null;
       rdRenderAnnotations(); rdSaveSoon();
     };
     cv.addEventListener('pointerup', finish);
-    cv.addEventListener('pointercancel', () => { rdDraw = null; rdRenderAnnotations(); });
+    cv.addEventListener('pointercancel', () => {
+      if (rdDraw && rdDraw.type === 'resize') rdWriteCropRect(rdDraw.index, rdDraw.orig);
+      rdDraw = null;
+      rdRenderAnnotations();
+    });
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready);
   else ready();
