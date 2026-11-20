@@ -140,7 +140,7 @@ function rdOpenProject(id) {
   if (!p) return;
   rdCurrent = p;
   if (p.book) rdEnsureParts(p.book);
-  document.getElementById('rdReaderTitle').textContent = `📖 ${p.title}`;
+  document.getElementById('rdReaderTitle').textContent = `📖 ${p.book ? p.book.title : p.title}`;
   rdShowModal('rdReaderModal');
   rdBuildColorBars();
   rdSetTool('pen');
@@ -263,6 +263,8 @@ function rdUpdateBookUI() {
   document.getElementById('rdPageImg').style.display = has ? 'block' : 'none';
   document.getElementById('rdA4').classList.toggle('has-book', has);
   document.getElementById('rdPageTotal').textContent = has ? p.book.pages : '—';
+  const titleEl = document.getElementById('rdReaderTitle');
+  if (titleEl) titleEl.textContent = `📖 ${has ? p.book.title : p.title}`;
   if (has) rdEnsureParts(p.book);
   document.getElementById('rdBookInfo').textContent = has
     ? `الكتاب: ${p.book.title} (${p.book.source === 'shamela' ? 'من الشاملة المصوّرة' : p.book.source === 'web' ? 'من الشبكة' : 'PDF مرفوع'}) — ${p.book.pages} صفحة${p.book.parts.length > 1 ? ` في ${p.book.parts.length} أجزاء متسلسلة` : ''}`
