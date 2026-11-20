@@ -9164,7 +9164,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.789"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.790"},
         },
     })
     if opened.get("error"):
@@ -15440,6 +15440,145 @@ def _rd_load_bundle(owner_id: str) -> Dict[str, Any]:
     if isinstance(raw, list):
         return {"projects": raw, "assistants": [], "readers": []}
     return {"projects": [], "assistants": [], "readers": []}
+
+
+def _reading_search_hit(h: Dict[str, Any], title: str = "") -> Dict[str, Any]:
+    part = str(h.get("part") or h.get("volume") or "")
+    page = h.get("page_num")
+    if page in (None, ""):
+        page = h.get("page")
+    snippet = re.sub(r"\s+", " ", str(h.get("snippet") or h.get("text") or h.get("witness") or "")).strip()[:420]
+    return {
+        "book_id": h.get("book_id"),
+        "book_title": h.get("title") or h.get("book_title") or title or "",
+        "volume": part,
+        "part": part,
+        "page": str(page if page not in (None, "") else ""),
+        "snippet": snippet,
+    }
+
+
+def _reading_search_book_sync(query: str, ids: List[str], titles: List[str],
+                              limit_per_part: int, max_results: int) -> Dict[str, Any]:
+    """بحث النسخة النصية لكل أجزاء الكتاب المصوّر، لا الجزء الحالي وحده."""
+    hits: List[Dict[str, Any]] = []
+    seen = set()
+    counts: Dict[str, int] = {}
+    cap_part = max(4, min(int(limit_per_part or 16), 40))
+    cap_all = max(cap_part * 20, min(int(max_results or 200), 400))
+    ids = [str(i).strip() for i in (ids or []) if str(i).strip()]
+    titles = [str(t).strip() for t in (titles or []) if str(t).strip()]
+
+    try:
+        db = get_db()
+        cursor = db.cursor() if db else None
+    except Exception:
+        cursor = None
+    if cursor:
+        extra = _selected_book_ids([f"#{i}" for i in ids] + titles, cursor)
+        for bid in extra:
+            if bid not in ids:
+                ids.append(bid)
+
+    def _take(raw_hits, title=""):
+        for h in raw_hits or []:
+            row = _reading_search_hit(h, title)
+            if not row["page"]:
+                continue
+            key = (str(row.get("book_id") or ""), row["part"], row["page"])
+            if key in seen:
+                continue
+            n = counts.get(row["part"], 0)
+            if n >= cap_part:
+                continue
+            seen.add(key)
+            counts[row["part"]] = n + 1
+            hits.append(row)
+        return len(hits) >= cap_all
+
+    # 1) فهرس الشاملة مباشرة داخل أرقام الكتاب — يغطي الأجزاء بلا استخراج كامل
+    lucene_ok = False
+    try:
+        import shamela_search
+        bids = [int(b) for b in ids if str(b).isdigit()]
+        if bids:
+            fetch_n = max(cap_all * 4, cap_part * 40, 200)
+            found = shamela_search.search(query, mode="phrase", book_ids=bids, limit=fetch_n)
+            raw = found.get("results") or []
+            if not raw and len(query.split()) > 1:
+                found = shamela_search.search(query, mode="words", book_ids=bids, limit=fetch_n)
+                raw = found.get("results") or []
+            if raw:
+                lucene_ok = True
+                _take(raw)
+    except Exception as e:
+        print(f"📖 [ReadingSearch] تعذر بحث الجسر: {e}", flush=True)
+
+    # 2) فهرس المكتبة اللفظي إن لم يُرجع الجسر شيئًا
+    if not hits:
+        try:
+            import library_search
+            bids = [int(b) for b in ids if str(b).isdigit()] or None
+            found = library_search.get_index().search(
+                query, mode="phrase", book_ids=bids, limit=max(cap_all * 3, 160))
+            raw = found.get("results") or []
+            if not raw and len(query.split()) > 1:
+                found = library_search.get_index().search(
+                    query, mode="words", book_ids=bids, limit=max(cap_all * 3, 160))
+                raw = found.get("results") or []
+            _take(raw)
+        except Exception as e:
+            print(f"📖 [ReadingSearch] تعذر فهرس المكتبة: {e}", flush=True)
+
+    # 3) مسح صفحات الكتاب المستخرجة جزءًا جزءًا إن بقيت فجوات أو لم يُصب شيء
+    if not lucene_ok or not hits:
+        for bid in ids:
+            try:
+                found = shamela_local_mcp.search_in_book_all_parts(
+                    book=bid, query=query, limit_per_part=cap_part, limit=cap_all)
+            except Exception:
+                continue
+            if found.get("status") != "ok":
+                continue
+            if _take(found.get("results") or [], found.get("book_title") or ""):
+                break
+
+    def _sort_key(h):
+        pm = re.search(r"\d+", str(h.get("part") or ""))
+        qm = re.search(r"\d+", str(h.get("page") or ""))
+        return (int(pm.group()) if pm else 10**9, str(h.get("part") or ""),
+                int(qm.group()) if qm else 10**9)
+
+    hits.sort(key=_sort_key)
+    parts = []
+    for h in hits:
+        p = str(h.get("part") or "").strip()
+        if p and p not in parts:
+            parts.append(p)
+    return {"query": query, "results": hits, "count": len(hits), "parts_hit": len(parts), "parts": parts}
+
+
+@app.post("/api/reading-projects/search-book")
+async def reading_search_book(request: Request, payload: Any = Body(...)):
+    """بحث النسخة النصية لجميع أجزاء الكتاب المصوّر الحالي."""
+    body = payload or {}
+    query = str(body.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="اكتب المطلوب بحثه")
+    ids = [str(x).strip() for x in (body.get("book_ids") or []) if str(x).strip()]
+    titles = [str(x).strip() for x in (body.get("titles") or []) if str(x).strip()]
+    if not ids and not titles:
+        raise HTTPException(status_code=400, detail="لا يُعرف كتاب هذا المشروع في النسخة النصية")
+    try:
+        limit_per_part = int(body.get("limit_per_part") or 16)
+    except (TypeError, ValueError):
+        limit_per_part = 16
+    try:
+        max_results = int(body.get("max_results") or 200)
+    except (TypeError, ValueError):
+        max_results = 200
+    return await asyncio.to_thread(
+        _reading_search_book_sync, query, ids, titles, limit_per_part, max_results)
 
 
 @app.get("/api/reading-projects")

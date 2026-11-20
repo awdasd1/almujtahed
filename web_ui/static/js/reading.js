@@ -2549,7 +2549,7 @@ function rdOpenBookSearch() {
     return;
   }
   const hint = document.getElementById('rdSearchHint');
-  if (hint) hint.textContent = `الباحث: «${asst.name}» — ${asst.model}. يُبحث في النسخة النصية لهذا الكتاب ثم تُفتح النتيجة في المصوّرة.`;
+  if (hint) hint.textContent = `الباحث: «${asst.name}» — ${asst.model}. يُبحث في النسخة النصية لجميع أجزاء هذا الكتاب ثم تُفتح النتيجة في المصوّرة.`;
   const st = document.getElementById('rdSearchStatus');
   if (st) st.textContent = '';
   const inp = document.getElementById('rdSearchQuery');
@@ -2600,21 +2600,40 @@ function rdShowSearchHits(query, asst, rows) {
   const title = document.getElementById('rdSearchResultTitle');
   const meta = document.getElementById('rdSearchResultMeta');
   const box = document.getElementById('rdSearchHits');
+  const partKeys = [];
+  rows.forEach(h => {
+    const k = rdShamelaPartLabel(h.part);
+    if (!partKeys.includes(k)) partKeys.push(k);
+  });
   if (title) title.textContent = `نتائج البحث — ${query}`;
-  if (meta) meta.textContent = [`الباحث: ${asst && asst.name || ''}`, `${rows.length} موضعًا`].filter(Boolean).join(' · ');
+  if (meta) {
+    const bits = [`الباحث: ${asst && asst.name || ''}`, `${rows.length} موضعًا`];
+    if (partKeys.length) bits.push(`في ${partKeys.length} جزءًا`);
+    meta.textContent = bits.filter(Boolean).join(' · ');
+  }
   if (box) {
     if (!rows.length) {
       box.innerHTML = '<div class="rd-book-analysis-empty">لا مواضع مطابقة في النسخة النصية لهذا الكتاب.</div>';
     } else {
-      box.innerHTML = rows.map((h, i) => `
+      const groups = [];
+      const map = new Map();
+      rows.forEach((h, i) => {
+        const k = rdShamelaPartLabel(h.part);
+        if (!map.has(k)) { map.set(k, []); groups.push(k); }
+        map.get(k).push({ h, i });
+      });
+      box.innerHTML = groups.map(g => `
+        <div class="rd-search-part-group">
+          <div class="rd-search-part-head">${rdEsc(g)}</div>
+          ${map.get(g).map(({ h, i }) => `
         <div class="rd-search-hit">
           <div class="rd-search-hit-meta">
-            <span>${rdEsc(rdShamelaPartLabel(h.part))}</span>
             <span>صفحة ${rdEsc(h.page)}</span>
             <button type="button" class="rd-ba-go" title="فتح الجزء والصفحة في النسخة المصوّرة" onclick="rdGotoSearchHit(${i})">📄</button>
           </div>
           <div class="rd-search-hit-text">${rdEsc(h.snippet || '')}</div>
           ${h.why ? `<div class="ms-hint">${rdEsc(h.why)}</div>` : ''}
+        </div>`).join('')}
         </div>`).join('');
     }
   }
@@ -2632,53 +2651,61 @@ async function rdRunBookSearch() {
   const run = document.getElementById('rdSearchRunBtn');
   const st = document.getElementById('rdSearchStatus');
   if (run) run.disabled = true;
-  if (st) st.textContent = 'جارٍ البحث في النسخة النصية...';
+  if (st) st.textContent = 'جارٍ البحث في النسخة النصية لجميع الأجزاء...';
   try {
-    const res = await fetch('/api/search', {
+    const res = await fetch('/api/reading-projects/search-book', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query,
-        selected_books: scope.titles,
-        book_name: scope.titles[0] || (p.book && p.book.title) || '',
-        top_k: 24,
-        pool_size: 40,
-        use_hybrid: true,
-        use_reranker: false,
+        book_ids: scope.ids,
+        titles: scope.titles,
+        limit_per_part: 16,
+        max_results: 280,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || data.error || 'تعذر البحث في النسخة النصية');
-    const raw = (data.results || []).filter(r => {
-      if (scope.ids.length && r.book_id != null && scope.ids.includes(String(r.book_id))) return true;
-      const t = String(r.book_title || '');
-      return !scope.titles.length || scope.titles.some(x => t.includes(x) || x.includes(t));
-    });
-    const pool = (raw.length ? raw : (data.results || [])).slice(0, 24).map((r, i) => ({
+    const pool = (data.results || []).map((r, i) => ({
       i,
       part: r.volume || r.part || '',
       page: r.page || r.page_num || '',
       snippet: (r.witness || r.snippet || r.text || '').replace(/\s+/g, ' ').trim().slice(0, 420),
     })).filter(h => h.page !== '' && h.page != null);
     if (!pool.length) throw new Error('لم يُعثر على هذا المطلوب في النسخة النصية للكتاب');
-    if (st) st.textContent = `عُثر على ${pool.length} موضعًا — جارٍ عرضها بنموذج الباحث...`;
-    const catalog = pool.map(h => `#${h.i} — ${rdShamelaPartLabel(h.part)} — صفحة ${h.page}\n${h.snippet}`).join('\n\n');
+    const partCount = data.parts_hit || new Set(pool.map(h => String(h.part || ''))).size;
+    if (st) st.textContent = `عُثر على ${pool.length} موضعًا في ${partCount} جزءًا — جارٍ عرضها بنموذج الباحث...`;
+    const byPart = new Map();
+    pool.forEach(h => {
+      const k = String(h.part || '');
+      if (!byPart.has(k)) byPart.set(k, []);
+      byPart.get(k).push(h);
+    });
+    const forModel = [];
+    byPart.forEach(arr => { arr.slice(0, 6).forEach(h => forModel.push(h)); });
+    const catalog = forModel.map(h => `#${h.i} — ${rdShamelaPartLabel(h.part)} — صفحة ${h.page}\n${h.snippet}`).join('\n\n');
     let picked = pool;
     try {
-      const reply = await rdAskResearcher(asst, `طلب القارئ: «${query}»\nالكتاب: «${p.book.title || p.title}»\nهذه مواضع من النسخة النصية. أعد JSON فقط مصفوفة العناصر المطابقة: [{"i":رقم,"why":"سبب قصير"}].\n\n${catalog}`);
+      const reply = await rdAskResearcher(asst, `طلب القارئ: «${query}»\nالكتاب: «${p.book.title || p.title}»\nالمواضع من جميع أجزاء النسخة النصية. أعد JSON فقط مصفوفة العناصر المطابقة: [{"i":رقم,"why":"سبب قصير"}]. لا تحذف أجزاء فيها مطابقة.\n\n${catalog}`);
       const arr = rdParseJsonArray(reply);
       if (arr && arr.length) {
-        const next = [];
-        const seen = new Set();
+        const why = new Map();
         arr.forEach(item => {
           const idx = Number(item && item.i);
-          if (!Number.isInteger(idx) || idx < 0 || idx >= pool.length || seen.has(idx)) return;
-          seen.add(idx);
-          next.push({ ...pool[idx], why: String((item && item.why) || '').trim() });
+          if (!Number.isInteger(idx) || idx < 0 || idx >= pool.length) return;
+          why.set(idx, String((item && item.why) || '').trim());
         });
-        if (next.length) picked = next;
+        if (why.size) {
+          const chosen = [];
+          const rest = [];
+          pool.forEach(h => {
+            if (why.has(h.i)) chosen.push({ ...h, why: why.get(h.i) });
+            else rest.push(h);
+          });
+          picked = chosen.concat(rest);
+        }
       }
     } catch (e) {
-      /* تبقى مواضع الفهرس إن تعذر ترتيب النموذج */
+      /* تبقى مواضع الفهرس من جميع الأجزاء إن تعذر ترتيب النموذج */
     }
     rdCloseModal('rdSearchModal');
     rdShowSearchHits(query, asst, picked);

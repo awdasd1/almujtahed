@@ -11450,7 +11450,9 @@ body::-webkit-scrollbar,
 .rd-ba-go:hover { border-color: var(--accent-clay, #b4552d); color: var(--accent-clay, #b4552d); background: var(--accent-subtle); }
 .rd-book-analysis-empty { padding: 22px; text-align: center; color: var(--text-muted); font-family: var(--font-naskh); }
 .ms-modal.rd-search-result-modal { width: min(720px, 96vw); max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-surface); color: var(--text-main); font-family: var(--font-naskh); }
-.rd-search-hits { overflow: auto; max-height: 62vh; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.rd-search-hits { overflow: auto; max-height: 62vh; margin-top: 8px; display: flex; flex-direction: column; gap: 10px; }
+.rd-search-part-group { display: flex; flex-direction: column; gap: 8px; }
+.rd-search-part-head { font-weight: 800; font-size: 14px; color: var(--accent-clay, #b4552d); padding: 2px 2px 0; }
 .rd-search-hit { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; background: var(--bg-canvas, var(--bg-surface)); }
 .rd-search-hit-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 700; font-size: 13.5px; margin-bottom: 6px; }
 .rd-search-hit-meta span { color: var(--text-main); }

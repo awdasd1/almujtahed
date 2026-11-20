@@ -1456,6 +1456,70 @@ def search_in_book(book: Any, query: str, limit: int = 10) -> Dict[str, Any]:
         "results": hits
     }
 
+
+def search_in_book_all_parts(book: Any, query: str, limit_per_part: int = 16, limit: int = 240) -> Dict[str, Any]:
+    """بحث حرفي في كل أجزاء الكتاب: لا يتوقف عند أول جزء يمتلئ فيه السقف."""
+    b_dir = resolve_book_files(book)
+    if not b_dir:
+        return {"status": "error", "error": f"تعذر العثور على ملفات الكتاب: {book}", "results": []}
+
+    idx = get_book_index(b_dir)
+    entries = idx["entries"]
+    clean_q = clean_arabic_text(query)
+    q_words = clean_q.split()
+    if not clean_q:
+        return {"status": "error", "error": "empty query", "results": []}
+
+    pages_file = b_dir / "pages.jsonl"
+    hits = []
+    per_part: Dict[str, int] = {}
+    cap_part = max(1, min(int(limit_per_part or 16), 40))
+    cap_all = max(cap_part, min(int(limit or 240), 500))
+
+    try:
+        with open(pages_file, "rb") as f:
+            for entry in entries:
+                part_key = str(entry.get("part") or "")
+                if per_part.get(part_key, 0) >= cap_part:
+                    continue
+                f.seek(entry["offset"])
+                line = f.readline()
+                if not line:
+                    continue
+                data = json.loads(line.decode("utf-8"))
+                body = data.get("body", "")
+                clean_b = clean_arabic_text(body)
+                if not (clean_q in clean_b or (len(q_words) > 1 and all(w in clean_b for w in q_words))):
+                    continue
+                clean_plain = re.sub(r"<[^>]+>", " ", body)
+                clean_plain = re.sub(r"\s+", " ", clean_plain).strip()
+                snippet = clean_plain[:350]
+                if q_words:
+                    flex = "".join(re.escape(ch) + r"[ـً-ٰ]*" for ch in q_words[0] if not ch.isspace())
+                    m = re.search(flex, clean_plain)
+                    if m:
+                        snippet = clean_plain[max(0, m.start() - 130): m.start() + 240]
+                hits.append({
+                    "part": entry.get("part"),
+                    "page_num": entry.get("page_num"),
+                    "seq": entry.get("seq"),
+                    "snippet": snippet,
+                })
+                per_part[part_key] = per_part.get(part_key, 0) + 1
+                if len(hits) >= cap_all:
+                    break
+    except Exception as e:
+        return {"status": "error", "error": f"فشل البحث داخل الكتاب: {e}", "results": []}
+
+    return {
+        "status": "ok",
+        "book_title": idx["meta"].get("title_ar") or b_dir.name.split("__")[-1].replace("-", " "),
+        "query": query,
+        "results_count": len(hits),
+        "parts_hit": len(per_part),
+        "results": hits,
+    }
+
 # =============================================================================
 # مواصفات أدوات MCP لتمريرها للنماذج الذكية (MCP Tools Catalog Schema)
 # =============================================================================
