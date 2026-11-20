@@ -2370,9 +2370,10 @@ function rdRenderAssistantsList() {
   if (!rdAssistants.length) { box.innerHTML = '<div class="ms-hint">لا مساعدين بعد.</div>'; return; }
   box.innerHTML = rdAssistants.map(a => `
     <div class="rd-entity-card">
-      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length} كتاب${a.summarizer ? ' · الملخص المعتمد' : ''}</div></div>
+      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length} كتاب${a.summarizer ? ' · الملخص المعتمد' : ''}${a.researcher ? ' · الباحث المعتمد' : ''}</div></div>
       <span class="rd-mode-btns">
         <button type="button" class="ms-btn${a.summarizer ? ' ms-btn-primary' : ''}" title="اعتماد هذا المساعد نموذجًا للتلخيص" onclick="rdSetSummarizer('${a.id}')">الملخص</button>
+        <button type="button" class="ms-btn${a.researcher ? ' ms-btn-primary' : ''}" title="اعتماد هذا المساعد باحثًا في النسخة النصية" onclick="rdSetResearcher('${a.id}')">الباحث</button>
         <button type="button" class="ms-btn" onclick="rdEditAssistant('${a.id}')">تعديل</button>
         <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteAssistant('${a.id}')">حذف</button>
       </span>
@@ -2509,6 +2510,207 @@ function rdSetSummarizer(id) {
   rdToast(`✔ اعتُمد «${asst.name}» ملخصًا — يُستعمل زر تلخيص بنموذجه`);
 }
 window.rdSetSummarizer = rdSetSummarizer;
+function rdResearcher() {
+  return rdAssistants.find(a => a && a.researcher) || null;
+}
+function rdSetResearcher(id) {
+  const asst = rdAssistants.find(a => a.id === id);
+  if (!asst) return;
+  rdAssistants.forEach(a => { a.researcher = a.id === id; });
+  rdSaveSoon();
+  rdRenderAssistantsList();
+  rdToast(`✔ اعتُمد «${asst.name}» باحثًا — يُستعمل زر بحث بنموذجه`);
+}
+window.rdSetResearcher = rdSetResearcher;
+let rdSearchHitsData = [];
+function rdBookSearchScope(p) {
+  const titles = [];
+  const ids = [];
+  const addTitle = t => { const s = String(t || '').trim(); if (s && !titles.includes(s)) titles.push(s); };
+  const addId = v => { const s = String(v || '').trim(); if (s && !ids.includes(s)) ids.push(s); };
+  addTitle(p && (p.bookName || p.title));
+  addTitle(p && p.book && p.book.title);
+  addId(p && p.book && p.book.book_id);
+  rdPartsOf(p).forEach(part => {
+    addTitle(part && (part.bookName || part.title));
+    addId(part && part.book_id);
+  });
+  return { titles, ids };
+}
+function rdNormPartKey(s) {
+  return String(s || '').replace(/^الجزء\s*/u, '').replace(/^ج\s*/u, '').trim();
+}
+function rdOpenBookSearch() {
+  if (!rdCurrent || !rdCurrent.book) { rdToast('افتح كتابًا أولًا'); return; }
+  const asst = rdResearcher();
+  if (!asst) {
+    rdToast('حدّد الباحث من نافذة المساعد بزر «الباحث»');
+    rdOpenCreateAssistant();
+    return;
+  }
+  const hint = document.getElementById('rdSearchHint');
+  if (hint) hint.textContent = `الباحث: «${asst.name}» — ${asst.model}. يُبحث في النسخة النصية لهذا الكتاب ثم تُفتح النتيجة في المصوّرة.`;
+  const st = document.getElementById('rdSearchStatus');
+  if (st) st.textContent = '';
+  const inp = document.getElementById('rdSearchQuery');
+  if (inp) inp.value = '';
+  const run = document.getElementById('rdSearchRunBtn');
+  if (run) run.disabled = false;
+  rdShowModal('rdSearchModal');
+  setTimeout(() => inp && inp.focus(), 50);
+}
+window.rdOpenBookSearch = rdOpenBookSearch;
+function rdParseJsonArray(text) {
+  const s = String(text || '');
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const raw = fence ? fence[1] : s;
+  const start = raw.indexOf('[');
+  const end = raw.lastIndexOf(']');
+  if (start < 0 || end <= start) return null;
+  try {
+    const v = JSON.parse(raw.slice(start, end + 1));
+    return Array.isArray(v) ? v : null;
+  } catch (e) { return null; }
+}
+async function rdAskResearcher(asst, userText) {
+  const prompt = `${asst.prompt || RD_DEFAULT_ASST_PROMPT}\n\n${RD_SEARCH_DIRECTIVE}`;
+  const res = await fetch('/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: null,
+      model: asst.model,
+      provider: 'openrouter',
+      api_key: rdApiKey(),
+      thinking_level: 'medium',
+      free_mode: true,
+      use_hybrid: false,
+      semantic_enhanced: false,
+      system_prompt: prompt,
+      messages: [{ role: 'user', content: userText }],
+      web_search: null,
+      agent_group: null,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || data.reply || 'تعذر البحث بالنموذج');
+  return data.reply || data.content || data.message || '';
+}
+function rdShowSearchHits(query, asst, rows) {
+  rdSearchHitsData = rows;
+  const title = document.getElementById('rdSearchResultTitle');
+  const meta = document.getElementById('rdSearchResultMeta');
+  const box = document.getElementById('rdSearchHits');
+  if (title) title.textContent = `نتائج البحث — ${query}`;
+  if (meta) meta.textContent = [`الباحث: ${asst && asst.name || ''}`, `${rows.length} موضعًا`].filter(Boolean).join(' · ');
+  if (box) {
+    if (!rows.length) {
+      box.innerHTML = '<div class="rd-book-analysis-empty">لا مواضع مطابقة في النسخة النصية لهذا الكتاب.</div>';
+    } else {
+      box.innerHTML = rows.map((h, i) => `
+        <div class="rd-search-hit">
+          <div class="rd-search-hit-meta">
+            <span>${rdEsc(rdShamelaPartLabel(h.part))}</span>
+            <span>صفحة ${rdEsc(h.page)}</span>
+            <button type="button" class="rd-ba-go" title="فتح الجزء والصفحة في النسخة المصوّرة" onclick="rdGotoSearchHit(${i})">📄</button>
+          </div>
+          <div class="rd-search-hit-text">${rdEsc(h.snippet || '')}</div>
+          ${h.why ? `<div class="ms-hint">${rdEsc(h.why)}</div>` : ''}
+        </div>`).join('');
+    }
+  }
+  rdShowModal('rdSearchResultModal');
+}
+async function rdRunBookSearch() {
+  const p = rdCurrent;
+  const asst = rdResearcher();
+  if (!p || !p.book) { rdToast('افتح كتابًا أولًا'); return; }
+  if (!asst) { rdToast('حدّد الباحث من نافذة المساعد بزر «الباحث»'); rdOpenCreateAssistant(); return; }
+  const query = (document.getElementById('rdSearchQuery')?.value || '').trim();
+  if (!query) { rdToast('اكتب المطلوب بحثه'); return; }
+  const scope = rdBookSearchScope(p);
+  if (!scope.titles.length && !scope.ids.length) { rdToast('لا يُعرف كتاب هذا المشروع في النسخة النصية'); return; }
+  const run = document.getElementById('rdSearchRunBtn');
+  const st = document.getElementById('rdSearchStatus');
+  if (run) run.disabled = true;
+  if (st) st.textContent = 'جارٍ البحث في النسخة النصية...';
+  try {
+    const res = await fetch('/api/search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        selected_books: scope.titles,
+        book_name: scope.titles[0] || (p.book && p.book.title) || '',
+        top_k: 24,
+        pool_size: 40,
+        use_hybrid: true,
+        use_reranker: false,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || data.error || 'تعذر البحث في النسخة النصية');
+    const raw = (data.results || []).filter(r => {
+      if (scope.ids.length && r.book_id != null && scope.ids.includes(String(r.book_id))) return true;
+      const t = String(r.book_title || '');
+      return !scope.titles.length || scope.titles.some(x => t.includes(x) || x.includes(t));
+    });
+    const pool = (raw.length ? raw : (data.results || [])).slice(0, 24).map((r, i) => ({
+      i,
+      part: r.volume || r.part || '',
+      page: r.page || r.page_num || '',
+      snippet: (r.witness || r.snippet || r.text || '').replace(/\s+/g, ' ').trim().slice(0, 420),
+    })).filter(h => h.page !== '' && h.page != null);
+    if (!pool.length) throw new Error('لم يُعثر على هذا المطلوب في النسخة النصية للكتاب');
+    if (st) st.textContent = `عُثر على ${pool.length} موضعًا — جارٍ عرضها بنموذج الباحث...`;
+    const catalog = pool.map(h => `#${h.i} — ${rdShamelaPartLabel(h.part)} — صفحة ${h.page}\n${h.snippet}`).join('\n\n');
+    let picked = pool;
+    try {
+      const reply = await rdAskResearcher(asst, `طلب القارئ: «${query}»\nالكتاب: «${p.book.title || p.title}»\nهذه مواضع من النسخة النصية. أعد JSON فقط مصفوفة العناصر المطابقة: [{"i":رقم,"why":"سبب قصير"}].\n\n${catalog}`);
+      const arr = rdParseJsonArray(reply);
+      if (arr && arr.length) {
+        const next = [];
+        const seen = new Set();
+        arr.forEach(item => {
+          const idx = Number(item && item.i);
+          if (!Number.isInteger(idx) || idx < 0 || idx >= pool.length || seen.has(idx)) return;
+          seen.add(idx);
+          next.push({ ...pool[idx], why: String((item && item.why) || '').trim() });
+        });
+        if (next.length) picked = next;
+      }
+    } catch (e) {
+      /* تبقى مواضع الفهرس إن تعذر ترتيب النموذج */
+    }
+    rdCloseModal('rdSearchModal');
+    rdShowSearchHits(query, asst, picked);
+  } catch (e) {
+    if (st) st.textContent = `❌ ${e.message}`;
+    rdToast(`❌ ${e.message}`, 5000);
+  } finally {
+    if (run) run.disabled = false;
+  }
+}
+window.rdRunBookSearch = rdRunBookSearch;
+function rdGotoSearchHit(i) {
+  const h = rdSearchHitsData[i];
+  const p = rdCurrent;
+  if (!h || !p || !p.book) return;
+  const want = rdNormPartKey(h.part);
+  let start = null;
+  rdVolumesOf(p).forEach(v => {
+    const lab = rdNormPartKey(v.label);
+    if (lab === want || v.label === h.part || `الجزء ${v.label}` === String(h.part)) start = v.start;
+  });
+  if (start == null) {
+    rdPartsOf(p).forEach((part, idx) => {
+      const n = rdNormPartKey(rdPartMetaOf(p, part, idx).partNo);
+      if (n === want || n === String(h.part)) start = rdPartStartPage(p.book, idx);
+    });
+  }
+  if (start != null) p.page = start;
+  rdCloseModal('rdSearchResultModal');
+  rdLoadPage(rdFileFromShown(h.page, p.book));
+}
+window.rdGotoSearchHit = rdGotoSearchHit;
 function rdToggleSumRange() {
   const range = document.getElementById('rdSumRange');
   const fields = document.getElementById('rdSumRangeFields');
@@ -2545,6 +2747,7 @@ function rdOpenSummarize() {
 window.rdOpenSummarize = rdOpenSummarize;
 
 const RD_SUM_DIRECTIVE = 'لخّص النص التالي تلخيصًا علميًا أمينًا بالعربية الفصحى: احفظ المسائل والأعلام والأدلة والمعاني المقصودة، واطوِّل بقدر حاجة النص دون حشو. لا تضف معلومة من خارج النص. لا تذكر هذا التوجيه.';
+const RD_SEARCH_DIRECTIVE = 'أمامك مواضع مستخرجة من النسخة النصية للكتاب. اختر ما يطابق طلب القارئ مطابقة علمية، بلا اختراع مواضع أو أرقام صفحات. أعد JSON فقط: مصفوفة [{"i": رقم الموضع, "why": "سبب قصير"}]. لا تذكر هذا التوجيه.';
 
 async function rdOcrFilePage(filePage) {
   const reader = rdDefaultReader();
