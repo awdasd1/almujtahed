@@ -1838,6 +1838,7 @@ class ChatRequest(BaseModel):
     risk_control: Optional[Dict[str, Any]] = None # 🏛 بنود ضبط مخاطر علّمها الباحث في المناقشة {items: [مؤشرات أحداث سجل مخاطر الحزمة]}؛ صياغة التوجيه القوية تُبنى خادميًا ولا تُعرض للباحث
     semantic_enhanced: Optional[bool] = None # خيار معزّز: تشغيل قناة البحث الدلالي في مخزن المتجهات إن توفرت؛ تعطيله بحث لفظي فقط
     library_only: Optional[bool] = False # بحث مباشر في الشاملة من نص محدد، بلا وكلاء
+    reading_assistant: bool = False # مساعد قراءة في وضع المحرر: بحث مباشر في النطاق المحدد بلا لجنة مراس ولا وكلاء ولا مكتب مخاطر
     free_mode: bool = False # سيناريو البحث الحر: دردشة عامة بلا كتب ولا استرجاع ولا أي توجيه خفي — النموذج يجيب من ذاكرته
     document_id: Optional[str] = None # وثيقة مرفوعة محوّلة مرتبطة بالمحادثة: مقاطعها الأقرب للسؤال تُلحق خادميًا بآخر رسالة مستخدم
     document_name: Optional[str] = None
@@ -9164,7 +9165,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.801"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.802"},
         },
     })
     if opened.get("error"):
@@ -19897,6 +19898,30 @@ def _generate_chat_media_sync(req: "ChatRequest", request: Request, kind: str) -
         return {**base, "reply": f"⚠️ تعذر توليد {label}: {exc}"}
 
 
+def _reading_assistant_search_query(text: str) -> str:
+    """استعلام فهرس قصير لنص مساعد القراءة: بلا لجنة مراس، وبلا إرسال الصفحة كلها للفهرس."""
+    t = re.sub(r"\s+", " ", (text or "").strip())
+    if not t:
+        return ""
+    if len(t) <= 160:
+        return t
+    parts = re.split(r"[.。؟!؛:\n]", t, maxsplit=1)
+    first = (parts[0] if parts else t).strip()
+    if 16 <= len(first) <= 160:
+        return first
+    words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", t) if w not in _MINE_STOPWORDS]
+    seen = set()
+    kept = []
+    for w in words:
+        if w in seen:
+            continue
+        seen.add(w)
+        kept.append(w)
+        if len(" ".join(kept)) >= 140 or len(kept) >= 14:
+            break
+    return " ".join(kept) if kept else t[:160]
+
+
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest, request: Request):
     _chat_t0 = time.time()
@@ -19909,6 +19934,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         return await asyncio.to_thread(_generate_chat_media_sync, req, request, media_kind)
     if req.free_mode:
         return await asyncio.to_thread(_free_chat_sync, req, request)
+    if req.reading_assistant:
+        # مساعدو القراءة لا يدخلون خط البحث البحثي (لجنة المراسي، الوكلاء، التوليف الإضافي، مكتب المخاطر).
+        req.agent_group = None
     if req.raw_mcp:
         return await asyncio.to_thread(_raw_mcp_chat_sync, req, request)
     last_user_msg = ""
@@ -19973,6 +20001,19 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
     if req.agent_group:
         pass
+    elif req.reading_assistant:
+        if req.witness_limit:
+            try:
+                agent_top_k = max(1, min(int(req.witness_limit), 1000))
+            except (TypeError, ValueError):
+                pass
+        try:
+            if req.extraction_capacity and int(req.extraction_capacity) >= 10:
+                agent_pool_size = max(int(req.extraction_capacity), agent_top_k * 4, 40)
+            else:
+                agent_pool_size = max(agent_top_k * 4, 250)
+        except (TypeError, ValueError):
+            agent_pool_size = max(agent_top_k * 4, 250)
     elif req.extraction_capacity and req.extraction_capacity >= 10:
         agent_top_k = req.extraction_capacity
         agent_pool_size = max(agent_pool_size, agent_top_k * 4, 1500)
@@ -20061,6 +20102,16 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         # بحث مخصص بلا وكلاء: كتب الباحث المختارة بنفسه نطاقٌ للبحث في المسار الرئيس
         target_books = [str(b).strip() for b in req.selected_books if str(b).strip()]
 
+    if req.reading_assistant:
+        first_user = ""
+        for m in req.messages:
+            if m.role == "user" and str(m.content or "").strip():
+                first_user = m.content
+                break
+        if first_user and (not search_query or len(search_query) < 40) and len(first_user) > len(search_query or ""):
+            search_query = first_user
+        search_query = _reading_assistant_search_query(search_query or last_user_msg)
+
     retrieved_citations = []
     # أمر بحثي جاهز (سلاش) يضبط القصد والهيكل والعمق؛ وقصد الباحث الصريح أولى منه
     _rcmd = RESEARCH_COMMANDS.get((req.research_command or "").strip()) or {}
@@ -20077,7 +20128,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     _audit_record_text = ""
     
     # 4. فحص طلبات استعراض وقراءة صفحات محددة من كتاب تراثي (Direct Page Reading)
-    page_req = detect_book_page_request(last_user_msg)
+    page_req = None if req.reading_assistant else detect_book_page_request(last_user_msg)
     page_reading_instruction = ""
     is_direct_page_reading = False
 
@@ -20352,7 +20403,32 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "pool_size": max(witness_limit * 4, 600) if req.witness_limit else agent_pool_size,
             })
             honor_scope = bool(req.agent_group) or (bool(target_books) and not req.library_only)
-        if _reuse_package:
+        if req.reading_assistant:
+            _rd_top = witness_limit if req.witness_limit else agent_top_k
+            _rd_pool = max(agent_pool_size, _rd_top * 4, 40)
+            print(
+                f"📖 [Reading Assistant] بحث مباشر بلا لجنة ولا وكلاء ولا مكتب مخاطر — "
+                f"q={search_query[:80]!r} books={len(target_books or [])} top_k={_rd_top} pool={_rd_pool} hybrid={use_hybrid_search}",
+                flush=True,
+            )
+            try:
+                _rd_hits = run_rag_search(
+                    query=search_query,
+                    selected_books=target_books or None,
+                    pool_size=_rd_pool,
+                    top_k=_rd_top,
+                    use_reranker=False,
+                    use_hybrid=use_hybrid_search,
+                    honor_agent_limit=bool(target_books),
+                    include_query=True,
+                    semantic_channel=_sem_pass,
+                )
+            except Exception as _rd_err:
+                print(f"📖 [Reading Assistant] تعذر البحث المباشر: {_rd_err}", flush=True)
+                _rd_hits = []
+            print(f"📖 [Reading Assistant] استُخرج {len(_rd_hits or [])} مقطعًا من النطاق مباشرة", flush=True)
+            anchor_prefetch = {"direct": _rd_hits or []}
+        elif _reuse_package:
             _pkg: List[Dict[str, Any]] = []
             _seen_pkg = set()
             for _ri, _rd in enumerate(_closed_run.get("rounds") or []):

@@ -3694,17 +3694,6 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
     const topK = Number(asst.topK || asst.top_k) || 40;
     const temp = asst.temp != null ? Number(asst.temp) : 0.2;
     const hybrid = asst.search_mode ? asst.search_mode !== 'semantic' : asst.use_hybrid !== false;
-    const agentObj = {
-      id: asst.id || 'rd-asst', name: asst.name, desc: asst.desc || '',
-      system_prompt: prompt, systemPrompt: prompt,
-      model: asst.model, thinking,
-      books, booksScope: books,
-      pool_size: pool, poolSize: pool, top_k: topK, topK, temp,
-      search_mode: asst.search_mode || (hybrid ? 'hybrid' : 'semantic'),
-      use_hybrid: hybrid,
-      context_tokens: asst.context_tokens || 1048576,
-      repPenalty: asst.repPenalty,
-    };
     const body = fast ? {
       chat_id: null,
       model: asst.model,
@@ -3724,18 +3713,19 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
       provider: 'openrouter',
       api_key: rdApiKey(),
       thinking_level: thinking,
+      temperature: temp,
+      context_tokens: asst.context_tokens || 1048576,
       use_hybrid: hybrid,
       semantic_enhanced: hybrid,
       system_prompt: prompt,
       messages: visible,
       selected_books: books.length ? books : null,
       witness_limit: topK,
-      agent_group: {
-        id: asst.id || 'rd-asst', name: asst.name, desc: asst.desc || '',
-        active_agent: { ...agentObj },
-        agents: [agentObj],
-        disabled_agents: [],
-      },
+      extraction_capacity: pool,
+      reading_assistant: true,
+      agent_dispatch_mode: 'direct',
+      web_search: null,
+      agent_group: null,
     };
     const res = await fetch('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
