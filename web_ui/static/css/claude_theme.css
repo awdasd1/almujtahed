@@ -11317,6 +11317,23 @@ body::-webkit-scrollbar,
 .rd-reader-title { display: block; text-align: center; font-size: 18px; line-height: 1.6; }
 .rd-reader-head .rd-top-actions { justify-content: center; }
 .rd-top-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rd-top-icon-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+#paneReading .rd-head-icon-btn {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
 .rd-part-select {
   min-width: 92px;
   max-width: 160px;

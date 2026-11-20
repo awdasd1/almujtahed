@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.808">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.809">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.808" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.809" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.808 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.809 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -1915,20 +1915,18 @@
                             </p>
                         </div>
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <label class="btn-flat-secondary native-file-btn" title="استيراد مشروع قراءة من ملف ZIP">
+                            <label class="btn-flat-secondary native-file-btn rd-head-icon-btn" title="استيراد مشروع قراءة من ملف ZIP" aria-label="استيراد مشروع قراءة من ملف ZIP">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                                     <polyline points="7 10 12 15 17 10" />
                                     <line x1="12" y1="15" x2="12" y2="3" />
                                 </svg>
-                                <span>استيراد 📥</span>
                                 <input type="file" id="rdImportFileInput" class="native-file-input" accept=".zip,application/zip" onchange="rdHandleProjectImport(event)">
                             </label>
-                            <button type="button" class="btn-flat-primary" onclick="rdOpenCreateModal()">
+                            <button type="button" class="btn-flat-primary rd-head-icon-btn" onclick="rdOpenCreateModal()" title="إنشاء مشروع قراءة" aria-label="إنشاء مشروع قراءة">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M12 5v14M5 12h14" />
                                 </svg>
-                                <span>إنشاء مشروع</span>
                             </button>
                         </div>
                     </div>
@@ -2064,16 +2062,16 @@
                     <div class="rd-topbar rd-reader-head">
                         <strong class="rd-reader-title" id="rdReaderTitle">📖 مشروع قراءة</strong>
                         <span class="rd-top-actions">
-                            <button type="button" class="ms-btn" id="rdSearchBtn" title="بحث في النسخة النصية للكتاب المصوّر بنموذج الباحث" onclick="rdOpenBookSearch()">🔍 بحث</button>
-                            <button type="button" class="ms-btn" id="rdCreateAssistantBtn" title="إنشاء مساعد لتحليل النصوص المحددة" onclick="rdOpenCreateAssistant()">🧠 مساعد</button>
-                            <button type="button" class="ms-btn" id="rdCreateReaderBtn" title="إنشاء قارئ بصري يستخرج النص من الصورة" onclick="rdOpenCreateReader()">👁 قارئ</button>
-                            <button type="button" class="ms-btn" id="rdSummarizeBtn" title="تلخيص الصفحة الحالية أو نطاق صفحات بنموذج الملخص" onclick="rdOpenSummarize()">تلخيص</button>
+                            <button type="button" class="ms-btn rd-top-icon-btn" id="rdSearchBtn" title="بحث في النسخة النصية للكتاب المصوّر" aria-label="بحث في النسخة النصية للكتاب المصوّر" onclick="rdOpenBookSearch()">🔍</button>
+                            <button type="button" class="ms-btn rd-top-icon-btn" id="rdCreateAssistantBtn" title="إنشاء مساعد لتحليل النصوص المحددة" aria-label="إنشاء مساعد لتحليل النصوص المحددة" onclick="rdOpenCreateAssistant()">🧠</button>
+                            <button type="button" class="ms-btn rd-top-icon-btn" id="rdCreateReaderBtn" title="إنشاء قارئ بصري يستخرج النص من الصورة" aria-label="إنشاء قارئ بصري يستخرج النص من الصورة" onclick="rdOpenCreateReader()">👁</button>
+                            <button type="button" class="ms-btn rd-top-icon-btn" id="rdSummarizeBtn" title="تلخيص الصفحة الحالية أو نطاق صفحات بنموذج الملخص" aria-label="تلخيص الصفحة الحالية أو نطاق صفحات" onclick="rdOpenSummarize()">📝</button>
                             <select id="rdPartSelect" class="rd-part-select" hidden onchange="rdGoPart(this.value)" title="الانتقال إلى جزء"></select>
-                            <button type="button" class="ms-btn" onclick="rdFlipPage(-1)" title="الصفحة السابقة">⟨ سابق</button>
-                            <span class="rd-page-ind"><input type="number" id="rdPageInput" min="1" value="1" onchange="rdGoPage(this.value)"> / <span id="rdPageTotal">—</span></span>
-                            <button type="button" class="ms-btn" onclick="rdFlipPage(1)" title="الصفحة اللاحقة">لاحق ⟩</button>
-                            <button type="button" class="ms-btn" onclick="rdOpenPageOffset()" title="ضبط رقم الصفحة الظاهر ليوافق ترقيم الكتاب">ضبط</button>
-                            <button type="button" class="ms-btn" onclick="rdCloseReader()">✕ إغلاق</button>
+                            <button type="button" class="ms-btn rd-top-icon-btn" onclick="rdFlipPage(-1)" title="الصفحة السابقة" aria-label="الصفحة السابقة">⟨</button>
+                            <span class="rd-page-ind"><input type="number" id="rdPageInput" min="1" value="1" onchange="rdGoPage(this.value)" title="رقم الصفحة"> / <span id="rdPageTotal">—</span></span>
+                            <button type="button" class="ms-btn rd-top-icon-btn" onclick="rdFlipPage(1)" title="الصفحة اللاحقة" aria-label="الصفحة اللاحقة">⟩</button>
+                            <button type="button" class="ms-btn rd-top-icon-btn" onclick="rdOpenPageOffset()" title="ضبط رقم الصفحة الظاهر ليوافق ترقيم الكتاب" aria-label="ضبط رقم الصفحة الظاهر ليوافق ترقيم الكتاب">⚙</button>
+                            <button type="button" class="ms-btn rd-top-icon-btn" onclick="rdCloseReader()" title="إغلاق نافذة القراءة" aria-label="إغلاق نافذة القراءة">✕</button>
                         </span>
                     </div>
                     <div class="rd-viewbar" id="rdViewBar">
@@ -2342,7 +2340,7 @@
                         <strong id="rdAnalysisTitle">🧠 تحليل النص</strong>
                         <span class="rd-top-actions">
                             <span class="ms-hint" id="rdAnalysisMeta"></span>
-                            <button type="button" class="ms-btn ms-btn-primary" onclick="rdCloseAnalysis()">اقفال التحليل</button>
+                            <button type="button" class="ms-btn rd-top-icon-btn" onclick="rdCloseAnalysis()" title="إقفال التحليل" aria-label="إقفال التحليل">✕</button>
                         </span>
                     </div>
                     <div class="rd-analysis-layout">
@@ -7314,26 +7312,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.808"></script>
-    <script src="/static/js/search.js?v=1.10.808"></script>
-    <script src="/static/js/reader.js?v=1.10.808"></script>
-    <script src="/static/js/force3d.js?v=1.10.808"></script>
-    <script src="/static/js/share.js?v=1.10.808"></script>
-    <script src="/static/js/chat.js?v=1.10.808"></script>
-    <script src="/static/js/documents.js?v=1.10.808"></script>
-    <script src="/static/js/designs.js?v=1.10.808"></script>
-    <script src="/static/js/texts.js?v=1.10.808"></script>
-    <script src="/static/js/agents.js?v=1.10.808"></script>
-    <script src="/static/js/providers.js?v=1.10.808"></script>
-    <script src="/static/js/tools.js?v=1.10.808"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.808"></script>
-    <script src="/static/js/projects.js?v=1.10.808"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.808"></script>
-    <script src="/static/js/reading.js?v=1.10.808"></script>
-    <script src="/static/js/archive.js?v=1.10.808"></script>
-    <script src="/static/js/compare.js?v=1.10.808"></script>
-    <script src="/static/js/local_models.js?v=1.10.808"></script>
-    <script src="/static/js/changelog.js?v=1.10.808"></script>
+    <script src="/static/js/app.js?v=1.10.809"></script>
+    <script src="/static/js/search.js?v=1.10.809"></script>
+    <script src="/static/js/reader.js?v=1.10.809"></script>
+    <script src="/static/js/force3d.js?v=1.10.809"></script>
+    <script src="/static/js/share.js?v=1.10.809"></script>
+    <script src="/static/js/chat.js?v=1.10.809"></script>
+    <script src="/static/js/documents.js?v=1.10.809"></script>
+    <script src="/static/js/designs.js?v=1.10.809"></script>
+    <script src="/static/js/texts.js?v=1.10.809"></script>
+    <script src="/static/js/agents.js?v=1.10.809"></script>
+    <script src="/static/js/providers.js?v=1.10.809"></script>
+    <script src="/static/js/tools.js?v=1.10.809"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.809"></script>
+    <script src="/static/js/projects.js?v=1.10.809"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.809"></script>
+    <script src="/static/js/reading.js?v=1.10.809"></script>
+    <script src="/static/js/archive.js?v=1.10.809"></script>
+    <script src="/static/js/compare.js?v=1.10.809"></script>
+    <script src="/static/js/local_models.js?v=1.10.809"></script>
+    <script src="/static/js/changelog.js?v=1.10.809"></script>
 
     <script>
         window.refreshLucideIcons = function () {
