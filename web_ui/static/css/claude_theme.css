@@ -11297,9 +11297,11 @@ body::-webkit-scrollbar,
 .ms-export-bar.is-done i { width: 100%; background: #2e7d5b; animation: none; }
 @keyframes msExportSlide { 0% { margin-right: -38%; } 100% { margin-right: 100%; } }
 .rd-reader-modal { width: min(1060px, 97vw); }
-.rd-topbar { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-bottom: 8px; }
+.rd-topbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.rd-reader-head { flex-direction: column; align-items: stretch; gap: 8px; margin-bottom: 8px; }
 .rd-reader-title { display: block; text-align: center; font-size: 18px; line-height: 1.6; }
-.rd-top-actions { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
+.rd-reader-head .rd-top-actions { justify-content: center; }
+.rd-top-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .rd-page-ind input { width: 58px; text-align: center; }
 .rd-body { display: flex; gap: 10px; align-items: flex-start; }
 .rd-toolbar { display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 8px 6px; border: 1px solid var(--border-subtle); border-radius: 12px; position: sticky; top: 0; }
