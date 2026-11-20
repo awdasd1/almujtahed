@@ -9164,7 +9164,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.795"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.796"},
         },
     })
     if opened.get("error"):
@@ -10315,45 +10315,134 @@ async def search_diagnose():
     return diag
 
 
+def _search_tab_books(req) -> Optional[List[str]]:
+    books = [str(b).strip() for b in (req.selected_books or []) if str(b).strip()]
+    if req.book_name and str(req.book_name).strip():
+        bn = str(req.book_name).strip()
+        if bn not in books:
+            books.append(bn)
+    return books or None
+
+
+def _search_tab_categories(req, cursor=None) -> Optional[List[str]]:
+    """أسماء التصنيف كما في الفهرس. إن حُددت كتب فلا يُطبَّق القسم."""
+    if not req.category or _search_tab_books(req):
+        return None
+    names: List[str] = []
+    clean = resolve_clean_category_name(req.category)
+    if clean:
+        names.append(clean)
+    cid = None
+    try:
+        cid = int(str(req.category).strip())
+    except (TypeError, ValueError):
+        if clean and clean in CATEGORY_MAP:
+            cid = CATEGORY_MAP[clean]
+    if cid is not None:
+        official = ID_TO_CATEGORY_NAME.get(cid)
+        if official and official not in names:
+            names.append(official)
+        for k, v in CATEGORY_MAP.items():
+            if v == cid and not str(k).isdigit() and k not in names:
+                names.append(k)
+        if cursor:
+            try:
+                cursor.execute(
+                    "SELECT DISTINCT category_name_ar FROM books WHERE category_id = ?",
+                    (cid,))
+                for r in cursor.fetchall():
+                    n = (r["category_name_ar"] or "").strip()
+                    if n and n not in names:
+                        names.append(n)
+            except Exception:
+                pass
+    return names or None
+
+
+def _filter_search_cands(cands, selected_books, categories, cursor=None):
+    """حارس نطاق حتمي لصفحة البحث: لا نتيجة خارج الكتب أو القسم المحددين."""
+    if not cands:
+        return cands
+    ids = set(_selected_book_ids(selected_books, cursor) or [])
+    if selected_books and ids:
+        cands = [c for c in cands if str(c.get("book_id") or "") in ids]
+    elif selected_books:
+        titles = set()
+        for b in selected_books:
+            raw = str(b).strip()
+            m = re.match(r"\s*#\s*\d{1,7}\s+(.*)$", raw)
+            titles.add((m.group(1) if m else raw).strip())
+        cands = [c for c in cands if str(c.get("title") or "").strip() in titles]
+    if categories:
+        catset = set(categories)
+        cands = [c for c in cands if str(c.get("category") or "").strip() in catset]
+    return cands
+
+
+def _search_scope_source(selected_books, categories, kind: str) -> str:
+    if selected_books:
+        n = len(selected_books)
+        return f"{kind} (بحث لفظي في {n} كتاب محدد، بلا متجهات)"
+    if categories:
+        return f"{kind} (بحث لفظي في القسم المحدد، بلا متجهات)"
+    return f"{kind} (بحث لفظي في المكتبة، بلا متجهات)"
+
+
 @app.post("/api/search")
 async def search_endpoint(req: SearchRequest):
     """
-    البحث الدلالي الحي في كولكشن shamela_corpus (5.14 مليون مقطع)
+    البحث اللفظي في المكتبة حسب نطاق الكتب أو القسم. بلا مخزن متجهات.
     """
     query = req.query.strip()
     if not query:
         return {"results": [], "query": query}
 
     t0 = time.time()
+    try:
+        db = get_db()
+        cursor = db.cursor() if db else None
+    except Exception:
+        cursor = None
+    selected_books = _search_tab_books(req)
+    categories = _search_tab_categories(req, cursor)
+
     # طبقات المراسي أولاً: إن طابق السؤال جدول المقابلة التراثي فالبحث لفظي بلا متجهات
-    _tc = _anchor_candidates(query, getattr(req, "books", None), max(req.top_k, 10))
+    _tc = _filter_search_cands(
+        _anchor_candidates(query, selected_books, max(req.top_k, 10)),
+        selected_books, categories, cursor)
     if _tc:
         return {
             "results": _format_endpoint_results(_tc, req), "query": query,
             "duration": round(time.time() - t0, 3), "count": min(len(_tc), max(1, min(req.top_k, 500))),
             "pool_size": len(_tc),
-            "source": "جدول المراسي التراثية (بحث لفظي في كتب قبل 1000هـ، بلا متجهات)",
+            "source": _search_scope_source(selected_books, categories, "جدول المراسي التراثية"),
             "is_hybrid": False, "is_reranked": False,
         }
     if not _qdrant_alive():
         # المخزن متوقف (وهو قرار المنتج الدائم الآن): فهرس المكتبة اللفظي
-        # على المكتبة كلها هو البحث نفسه، بسقف وفاة الباحث إن حدّده فقط.
-        _fc = _fts_candidates(query, None, getattr(req, "books", None), max(req.top_k, 10), death_max=req.death_max)
+        # في النطاق المحدد (كتب أو قسم) أو المكتبة كلها إن لم يُحدد نطاق.
+        _fc = _filter_search_cands(
+            _fts_candidates(query, None, selected_books, max(req.top_k, 10),
+                            death_max=req.death_max, categories=categories),
+            selected_books, categories, cursor)
         if _fc:
             return {
                 "results": _format_endpoint_results(_fc, req), "query": query,
                 "duration": round(time.time() - t0, 3), "count": min(len(_fc), max(1, min(req.top_k, 500))),
                 "pool_size": len(_fc),
-                "source": "فهرس المكتبة (بحث لفظي فوري في المكتبة كلها، بلا متجهات)",
+                "source": _search_scope_source(selected_books, categories, "فهرس المكتبة"),
                 "is_hybrid": False, "is_reranked": False,
             }
-        _lc = _lexical_only_candidates(query, None, getattr(req, "books", None), max(req.top_k, 10))
+        _lc = _filter_search_cands(
+            _lexical_only_candidates(query, None, selected_books, max(req.top_k, 10),
+                                     categories=categories),
+            selected_books, categories, cursor)
         if _lc:
             return {
                 "results": _format_endpoint_results(_lc, req), "query": query,
                 "duration": round(time.time() - t0, 3), "count": min(len(_lc), max(1, min(req.top_k, 500))),
                 "pool_size": len(_lc),
-                "source": "بحث لفظي بالمراسي داخل كتب التراث (مخزن المتجهات متوقف)",
+                "source": _search_scope_source(selected_books, categories, "بحث لفظي بالمراسي"),
                 "is_hybrid": False, "is_reranked": False,
             }
     # التحقق من جاهزية الاتصال ومحرك التضمين
@@ -11578,10 +11667,19 @@ def _normalize_hybrid_payload(p: Optional[dict]) -> dict:
 def _selected_book_ids(selected_books, cursor) -> List[str]:
     """حل عناوين كتب مختارة إلى أرقامها لإغلاق النطاق اللفظي عليها."""
     ids: List[str] = []
-    if not selected_books or not cursor:
+    if not selected_books:
         return ids
     # صيغة «#الرقم العنوان» المعتمدة في بطاقات الوكلاء: الرقم وحده حاسم،
     # وبدون فهمه هنا ينهار نطاق الكتاب المستدعى إلى فراغ (عطل سنن أبي داود).
+    for b in selected_books:
+        raw = str(b).strip()
+        _m = re.match(r"\s*#\s*(\d{1,7})\b", raw)
+        if _m and _m.group(1) not in ids:
+            ids.append(_m.group(1))
+        elif raw.isdigit() and raw not in ids:
+            ids.append(raw)
+    if not cursor:
+        return ids
     for b in selected_books:
         _m = re.match(r"\s*#\s*(\d{1,7})\b", str(b))
         if _m and _m.group(1) not in ids:
@@ -11611,8 +11709,11 @@ def _selected_book_ids(selected_books, cursor) -> List[str]:
         if row and str(row["book_id"]) not in ids:
             ids.append(str(row["book_id"]))
     # هوية هجينة فوق المسار القديم: اسم مشهور أو طبعة مختلفة لا يُسقط الكتاب،
-    # وطبعات العمل المحسوم تُضمّ، والملتبس يُسجَّل بمرشحيه بدل حذفه بصمت
+    # وطبعات العمل المحسوم تُضمّ، والملتبس يُسجَّل بمرشحيه بدل حذفه بصمت.
+    # رقم صريح (#id) يغلق النطاق على ذلك الكتاب فلا تُوسَّع هويته إلى طبعات أخرى.
     for b in selected_books:
+        if re.match(r"\s*#\s*\d{1,7}\b", str(b)):
+            continue
         ident = _book_identity_resolve(str(b))
         if not ident:
             continue
@@ -11719,7 +11820,10 @@ def _anchor_candidates(query: str, selected_books, top_k: int) -> List[Dict[str,
         cursor = db.cursor() if db else None
     except Exception:
         cursor = None
-    book_ids = _selected_book_ids(selected_books, cursor) or None
+    _sel = _selected_book_ids(selected_books, cursor)
+    if selected_books and not _sel:
+        return []
+    book_ids = _sel or None
     try:
         res = shamela_local_mcp.anchor_search(query, limit=max(top_k, 12), book_ids=book_ids)
     except Exception as e:
@@ -11731,14 +11835,29 @@ def _anchor_candidates(query: str, selected_books, top_k: int) -> List[Dict[str,
     return _map_lexical_hits(hits, cursor, max(top_k, 12))
 
 
-def _lexical_only_candidates(query: str, dynamic_anchors, selected_books, top_k: int) -> List[Dict[str, Any]]:
+def _lexical_only_candidates(query: str, dynamic_anchors, selected_books, top_k: int, categories=None) -> List[Dict[str, Any]]:
     """مسار لفظي خالص عند غياب مخزن المتجهات: مراسي الوكيل أو نص السؤال داخل كتب النطاق."""
     try:
         db = get_db()
         cursor = db.cursor() if db else None
     except Exception:
         cursor = None
-    book_ids = _selected_book_ids(selected_books, cursor) or shamela_local_mcp.anchor_table_scope_ids()
+    book_ids = _selected_book_ids(selected_books, cursor)
+    if selected_books and not book_ids:
+        return []
+    if not book_ids and categories and cursor:
+        try:
+            q_marks = ",".join("?" * len(categories))
+            cursor.execute(
+                f"SELECT book_id FROM books WHERE category_name_ar IN ({q_marks})",
+                tuple(categories))
+            book_ids = [str(r["book_id"]) for r in cursor.fetchall()]
+        except Exception:
+            book_ids = []
+        if not book_ids:
+            return []
+    if not book_ids:
+        book_ids = shamela_local_mcp.anchor_table_scope_ids()
     phrases = [str(a).strip() for a in (dynamic_anchors or []) if str(a).strip() and len(str(a).strip()) >= 3]
     if not phrases:
         phrases = [query]
@@ -11960,7 +12079,10 @@ def _shamela_bridge_candidates(query, dynamic_anchors, selected_books, top_k, de
     except Exception:
         cursor = None
     _sel = _selected_book_ids(selected_books, cursor)
-    book_ids = [int(b) for b in _sel if str(b).isdigit()] or None
+    book_ids = [int(b) for b in _sel if str(b).isdigit()]
+    if selected_books and not book_ids:
+        return []
+    book_ids = book_ids or None
     phrases = [str(a).strip() for a in (dynamic_anchors or []) if str(a).strip() and len(str(a).strip()) >= 3]
     if not phrases:
         phrases = [query]
@@ -12035,7 +12157,10 @@ def _fts_candidates(query: str, dynamic_anchors, selected_books, top_k: int, dea
     except Exception:
         cursor = None
     _sel = _selected_book_ids(selected_books, cursor)
-    book_ids = [int(b) for b in _sel if str(b).isdigit()] or None
+    book_ids = [int(b) for b in _sel if str(b).isdigit()]
+    if selected_books and not book_ids:
+        return []
+    book_ids = book_ids or None
     # لا سقف افتراضيًا: البحث مفتوح بلا تحديد زمني ما لم يحدد الباحث سقف وفاة بنفسه
     phrases = [str(a).strip() for a in (dynamic_anchors or []) if str(a).strip() and len(str(a).strip()) >= 3]
     if not phrases:

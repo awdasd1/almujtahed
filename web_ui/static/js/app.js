@@ -118,9 +118,6 @@ function switchMainTab(tabName) {
   if (tabName === 'search') {
     document.getElementById('paneSearch').classList.add('active');
     document.getElementById('tabNavSearch').classList.add('active');
-    if (typeof updateHybridToggleUI === 'function') {
-      updateHybridToggleUI();
-    }
   } else if (tabName === 'chat') {
     document.getElementById('paneChat').classList.add('active');
     document.getElementById('tabNavChat').classList.add('active');

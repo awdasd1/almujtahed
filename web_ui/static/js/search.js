@@ -57,66 +57,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     setTimeout(performSearch, 300);
   }
-
-  // تهيئة حالة زر التبديل للبحث الهجين
-  initHybridToggleState();
 });
 
-// إدارة وتفعيل / تعطيل نمط البحث الهجين (Dense + BM25)
-let isHybridSearchEnabled = true;
-
-function initHybridToggleState() {
-  const saved = localStorage.getItem('almojtahed_hybrid_search');
-  if (saved !== null) {
-    isHybridSearchEnabled = saved === 'true';
-  }
-  updateHybridToggleUI();
-}
-
-function toggleHybridSearchMode() {
-  isHybridSearchEnabled = !isHybridSearchEnabled;
-  localStorage.setItem('almojtahed_hybrid_search', isHybridSearchEnabled);
-  updateHybridToggleUI();
-  if (typeof showToast === 'function') {
-    if (isHybridSearchEnabled) {
-      showToast('تم تفعيل نمط البحث الهجين (دلالي + لفظي) ⚡');
-    } else {
-      showToast('تم تفعيل نمط البحث الدلالي الصرف (Dense Vector Only) 🧠');
+function searchTabSelectedBooks() {
+  const titles = (window._searchTabBooks && window._searchTabBooks.length > 0)
+    ? window._searchTabBooks
+    : (selectedBooksScope && selectedBooksScope.length > 0 ? selectedBooksScope : null);
+  if (!titles || !titles.length) return null;
+  const byTitle = {};
+  (catalogBooksCache || []).forEach((book) => {
+    if (book && book.title != null && book.id != null && byTitle[book.title] == null) {
+      byTitle[book.title] = book.id;
     }
-  }
-  // إعادة تشغيل البحث فوراً إذا كان هناك استعلام نشط في شريط البحث
-  const q = document.getElementById('searchInput')?.value?.trim();
-  const resList = document.getElementById('searchResultsList');
-  if (q && resList && resList.children.length > 0 && !resList.querySelector('.search-welcome-card')) {
-    performSearch();
-  }
-}
-
-function updateHybridToggleUI() {
-  const btn = document.getElementById('btnToggleHybridSearch');
-  const label = document.getElementById('labelHybridToggle');
-  const icon = document.getElementById('iconHybridToggle');
-  if (!btn || !label) return;
-
-  if (isHybridSearchEnabled) {
-    btn.classList.add('is-active');
-    btn.classList.remove('is-disabled');
-    btn.setAttribute('aria-pressed', 'true');
-    btn.title = 'البحث الهجين مفعّل: يدمج الفهم الدلالي للذكاء الاصطناعي مع التطابق اللفظي الصارم (BM25). انقر للتعطيل.';
-    label.textContent = 'بحث هجين مفعّل (دلالي + لفظي)';
-    if (icon) icon.setAttribute('data-lucide', 'layers');
-  } else {
-    btn.classList.remove('is-active');
-    btn.classList.add('is-disabled');
-    btn.setAttribute('aria-pressed', 'false');
-    btn.title = 'البحث الدلالي الصرف مفعّل: يعتمد كلياً على تضمين المتجهات Almoghni 8B. انقر لتفعيل الدمج الهجين.';
-    label.textContent = 'بحث دلالي صرف (Dense Only)';
-    if (icon) icon.setAttribute('data-lucide', 'cpu');
-  }
-
-  if (window.lucide && typeof window.lucide.createIcons === 'function') {
-    window.lucide.createIcons();
-  }
+  });
+  return titles.map((title) => {
+    const id = byTitle[title];
+    return id != null ? `#${id} ${title}` : title;
+  });
 }
 
 // معالجة تغيير عدد النتائج المسترجعة
@@ -174,16 +131,14 @@ async function performSearch() {
   resultsList.innerHTML = `
     <div style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
       <div style="display: inline-block; width: 32px; height: 32px; border: 3px solid var(--border-subtle); border-top-color: var(--accent-clay); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px;"></div>
-      <p style="font-family: var(--font-amiri); font-size: 18px;">جارٍ استخراج المتجهات وإعادة الترتيب بدقة من 8.14 مليون نص...</p>
+      <p style="font-family: var(--font-amiri); font-size: 18px;">جارٍ البحث اللفظي في المكتبة حسب النطاق المحدد...</p>
     </div>
   `;
 
   const startTime = performance.now();
 
   try {
-    const activeBooks = (window._searchTabBooks && window._searchTabBooks.length > 0)
-      ? window._searchTabBooks
-      : (selectedBooksScope && selectedBooksScope.length > 0 ? selectedBooksScope : null);
+    const activeBooks = searchTabSelectedBooks();
 
     const payload = {
       query: query,
@@ -192,7 +147,7 @@ async function performSearch() {
       selected_books: activeBooks,
       death_max: deathMax ? parseInt(deathMax) : null,
       use_reranker: false,
-      use_hybrid: isHybridSearchEnabled,
+      use_hybrid: true,
       pool_size: poolSize,
       top_k: topK
     };
@@ -216,8 +171,8 @@ async function performSearch() {
     console.error('Search error:', err);
     resultsList.innerHTML = `
       <div class="result-card" style="text-align: center; color: var(--text-muted); padding: 30px;">
-        <p style="color: #c0392b; font-weight: 600; margin-bottom: 6px;">تعذر استكمال البحث الدلالي</p>
-        <p style="font-size: 13px;">${err.message}. يرجى التأكد من تشغيل مخزن المتجهات المحلي.</p>
+        <p style="color: #c0392b; font-weight: 600; margin-bottom: 6px;">تعذر استكمال البحث</p>
+        <p style="font-size: 13px;">${err.message}. يرجى المحاولة مرة أخرى.</p>
       </div>
     `;
   } finally {
