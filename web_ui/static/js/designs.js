@@ -1450,9 +1450,10 @@ function ensureDesignPublishWired() {
   if (!overlay || overlay.dataset.wired) return;
   overlay.dataset.wired = '1';
   const publishClose = document.getElementById('designPublishClose');
-  if (publishClose) publishClose.addEventListener('click', () => { overlay.hidden = true; });
-  overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.hidden = true; });
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') overlay.hidden = true; });
+  const hidePublish = () => { overlay.hidden = true; overlay.style.removeProperty('display'); };
+  if (publishClose) publishClose.addEventListener('click', hidePublish);
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) hidePublish(); });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !overlay.hidden) hidePublish(); });
   const publishSubmit = document.getElementById('designPublishSubmit');
   if (publishSubmit) publishSubmit.addEventListener('click', submitDesignPublish);
   document.querySelectorAll('input[name="designPublishWhen"]').forEach(radio => {

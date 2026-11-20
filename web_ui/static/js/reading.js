@@ -1440,13 +1440,29 @@ function rdSelPublish() {
   rdShowModal('rdMediaChoiceModal');
 }
 
-// رفع نافذة النشر/المشاركة فوق نافذة القراءة وكل النوافذ
+// رفع نافذة النشر فوق نافذة القراءة وكل النوافذ، بلا فرض display حتى ينجح الإغلاق
 function rdRaisePublishOverlay() {
   const ov = document.getElementById('designPublishOverlay');
   if (!ov) return;
   if (ov.parentElement !== document.body) document.body.appendChild(ov);
-  ov.style.setProperty('z-index', '300500', 'important');
-  ov.style.display = 'flex';
+  ov.style.removeProperty('display');
+  ov.style.setProperty('z-index', '350000', 'important');
+}
+function rdShowShareModal(text, file) {
+  window._rdSharePayload = { text: text || '', file: file || null, title: (rdCurrent && rdCurrent.title) || 'قراءة' };
+  const modal = document.getElementById('shareModal');
+  if (!modal || typeof openSharePicker !== 'function') {
+    if (file) rdNativeShareImage(file, text); else rdNativeShareText(text);
+    return;
+  }
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
+  openSharePicker('chat', 'reading-selection', window._rdSharePayload.title);
+  modal.style.setProperty('z-index', '400000', 'important');
+  const ext = document.getElementById('shareExternalOption');
+  if (ext) ext.hidden = false;
+  const extRadio = document.querySelector('input[name="shareDestination"][value="external"]');
+  if (extRadio) extRadio.checked = true;
+  if (typeof toggleShareDestination === 'function') toggleShareDestination();
 }
 async function rdMediaChoice(kind) {
   rdCloseModal('rdMediaChoiceModal');
@@ -1458,7 +1474,7 @@ async function rdMediaChoice(kind) {
       rdToast('جارٍ استخراج النص للمشاركة...');
       const ocr = await rdOcrSelection();
       const payload = `${ocr.text}\n\n—\n${rdCite()}`;
-      if (action === 'share') await rdNativeShareText(payload);
+      if (action === 'share') { rdShowShareModal(payload, null); return; }
       else if (typeof window.openDesignTextPublish === 'function') { rdRaisePublishOverlay(); window.openDesignTextPublish(payload, null); }
       else rdToast('نافذة النشر غير متاحة');
     } else {
@@ -1466,7 +1482,7 @@ async function rdMediaChoice(kind) {
       if (!blob) throw new Error('تعذر قص الصورة');
       const up = await rdUploadBlob(blob, 'rd-share.png');
       const caption = rdCite();
-      if (action === 'share') await rdNativeShareImage(blob, caption);
+      if (action === 'share') { rdShowShareModal(caption, new File([blob], 'قراءة.png', { type: 'image/png' })); return; }
       else if (typeof window.openDesignImagePublish === 'function') {
         rdRaisePublishOverlay();
         window.openDesignImagePublish(up.file_url, caption, null);

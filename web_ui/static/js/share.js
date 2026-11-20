@@ -116,6 +116,19 @@ function selectShareDestination(mode) {
 
 function presentExternalShare() {
   const note = document.getElementById('shareFormNote');
+  const readingShare = window._rdSharePayload;
+  if (readingShare) {
+    const file = readingShare.file || new File([readingShare.text || ''], 'قراءة.txt', { type: 'text/plain' });
+    const payload = { files: [file], title: readingShare.title || 'قراءة', text: readingShare.text || '' };
+    window._rdSharePayload = null;
+    if (typeof navigator.share !== 'function') {
+      if (note) note.textContent = 'هذا النظام لا يفتح قائمة المشاركة';
+      return;
+    }
+    closeSharePicker();
+    navigator.share(payload).catch((err) => { if (err && err.name === 'AbortError') return; });
+    return;
+  }
   const file = externalShareState.file;
   if (!file) {
     if (note) {
@@ -166,8 +179,10 @@ function closeSharePicker() {
   const modal = document.getElementById('shareModal');
   if (!modal) return;
   modal.style.display = 'none';
+  modal.style.removeProperty('z-index');
   modal.classList.remove('active', 'open');
   shareDraft = null;
+  window._rdSharePayload = null;
   externalShareState.token += 1;
 }
 
