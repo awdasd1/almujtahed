@@ -1150,16 +1150,22 @@ function rdSelAnalyze() {
   const box = document.getElementById('rdPickAsstList');
   box.innerHTML = rdAssistants.map(a => `
     <div class="rd-entity-card">
-      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length} كتاب</div></div>
-      <button type="button" class="ms-btn ms-btn-primary" onclick="rdStartAnalysis('${a.id}')">تحليل بهذا المساعد</button>
+      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length ? `${a.books.length} كتاب محدد` : 'بلا نطاق كتب'}</div></div>
+      <span class="rd-mode-btns">
+        <button type="button" class="ms-btn" title="يجيب من ذاكرة النموذج" onclick="rdStartAnalysis('${a.id}', 'fast')">⚡ سريع</button>
+        <button type="button" class="ms-btn ms-btn-primary" title="يجيب من نطاق الكتب المحددة ويمتنع عن ذاكرته" onclick="rdStartAnalysis('${a.id}', 'edited')">✒️ محرر</button>
+      </span>
     </div>`).join('');
-  document.getElementById('rdPickAsstHint').textContent = 'بعد الاختيار يُستخرج النص بالقارئ ثم يُرسل تلقائيًا للمساعد دون تدخل منك.';
   rdShowModal('rdPickAsstModal');
 }
 
-async function rdStartAnalysis(asstId) {
+const RD_FAST_DIRECTIVE = 'أجب من ذاكرتك مباشرة عن النص المعروض. لا تبحث في المكتبة ولا تستدعِ كتبًا ولا مراسي بحث ولا شواهد. الإجابة من ذاكرتك وحدها، بين متوسطة ومختصرة اختصارًا غير مخل، ووفق توجيه المساعد. لا تذكر هذا التوجيه ولا تعِده في إجابتك.';
+const RD_EDITED_DIRECTIVE = 'أجب من نطاق الكتب المحددة وحدها، ومن الشواهد المسترجعة منه حصرًا. امتنع امتناعًا تامًا عن الإجابة من ذاكرتك؛ فما لم تجده في الشواهد المسترجعة صرّح بغيابه ولا تكمله من محفوظك. التزم بالإحالة النموذجية لكل دعوى. لا تذكر هذا التوجيه ولا تعِده في إجابتك.';
+
+async function rdStartAnalysis(asstId, mode) {
   const asst = rdAssistants.find(a => a.id === asstId);
   if (!asst || !rdCurrent || !rdActiveSel) return;
+  mode = mode === 'fast' ? 'fast' : 'edited';
   rdCloseModal('rdPickAsstModal');
   const discId = rdUid();
   const disc = {
@@ -1171,6 +1177,7 @@ async function rdStartAnalysis(asstId) {
     assistant_id: asst.id,
     assistant_name: asst.name,
     model: asst.model,
+    mode,
     extracted_text: '',
     messages: [],
     created_at: new Date().toISOString(),
@@ -1196,13 +1203,15 @@ async function rdStartAnalysis(asstId) {
     disc.extracted_text = ocr.text;
     st.textContent = `استُخرج النص بـ«${ocr.reader.name}» — يُرسل الآن إلى المساعد «${asst.name}»...`;
     const cite = rdCite();
-    const userMsg = `نص محدد من ${cite}:\n\n${ocr.text}\n\nحلّل هذا النص وصنّفه وفق توجيهك، والتزم التزامًا تامًا بالإحالة النموذجية من الشواهد المسترجعة من نطاق البحث (لا تجب من ذاكرتك، ولكل دعوى شاهدها المحال بدقة).`;
+    const userMsg = `نص محدد من ${cite}:\n\n${ocr.text}`;
     disc.messages.push({ role: 'user', content: userMsg, at: new Date().toISOString() });
     rdRenderAnalysisMsgs();
     await rdAnalysisAsk(disc, asst, true);
     const lastA = [...(disc.messages || [])].reverse().find(m => m.role === 'assistant');
     const wCount = lastA && Array.isArray(lastA.witnesses) ? lastA.witnesses.length : 0;
-    st.textContent = `مناقشة رقم ${discId} · المساعد «${asst.name}» · اكتمل عبر مراسي البحث والاسترجاع (${wCount} شاهدًا موثقًا) — اضغط 📖 عند أي إحالة لتصفح الكتاب`;
+    st.textContent = mode === 'fast'
+      ? `مناقشة رقم ${discId} · ${asst.name} · تحليل سريع من ذاكرة النموذج`
+      : `مناقشة رقم ${discId} · ${asst.name} · تحليل محرر من نطاق الكتب (${wCount} شاهدًا) — 📖 تفتح الكتاب`;
   } catch (e) {
     st.textContent = `❌ ${e.message}`;
     rdToast(`❌ ${e.message}`, 5000);
@@ -1217,7 +1226,8 @@ function rdOpenDiscussion(id, fresh) {
   rdHideSelBar();
   rdAnalysis = { id, discussion: disc };
   document.getElementById('rdAnalysisTitle').textContent = `🧠 تحليل النص — ${disc.assistant_name || 'مساعد'}`;
-  document.getElementById('rdAnalysisMeta').textContent = `رقم المناقشة: ${id}`;
+  const modeLabel = disc.mode === 'fast' ? 'سريع · من الذاكرة' : 'محرر · من نطاق الكتب';
+  document.getElementById('rdAnalysisMeta').textContent = `رقم المناقشة: ${id} · ${modeLabel}`;
   document.getElementById('rdAnalysisStatus').textContent = fresh
     ? 'جار تحليل النص...'
     : `مناقشة محفوظة · صفحة ${disc.page}`;
@@ -1256,11 +1266,12 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
   sendBtn.disabled = true; stopBtn.hidden = false;
   rdAnalysisAbort = new AbortController();
   try {
-    // إلزام بمسار تبويب المحادثات الكامل: نماذج مراسي بحث دلالية + استرجاع هجين
-    // من نطاق كتب المساعد (أو المكتبة كاملة) — لا بحث حر من الذاكرة أبدًا،
-    // لتصدر الإحالة النموذجية المختمة القابلة لتصفح الكتاب الأصلي.
+    // التوجيهان يُرسلان في رسالة النظام فقط، فلا يُكتبان في رسائل النافذة.
+    const fast = disc.mode === 'fast';
     const books = (asst.books || []).map(b => b.title).filter(Boolean);
-    const prompt = asst.prompt || RD_DEFAULT_ASST_PROMPT;
+    const basePrompt = asst.prompt || RD_DEFAULT_ASST_PROMPT;
+    const prompt = `${basePrompt}\n\n${fast ? RD_FAST_DIRECTIVE : RD_EDITED_DIRECTIVE}`;
+    const visible = (disc.messages || []).map(m => ({ role: m.role, content: m.content }));
     const agentObj = {
       id: asst.id || 'rd-asst', name: asst.name, desc: '',
       system_prompt: prompt, systemPrompt: prompt,
@@ -1268,7 +1279,20 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
       books, booksScope: books,
       pool_size: 800, top_k: 60, temp: 0.2,
     };
-    const body = {
+    const body = fast ? {
+      chat_id: null,
+      model: asst.model,
+      provider: 'openrouter',
+      api_key: rdApiKey(),
+      thinking_level: 'medium',
+      free_mode: true,
+      use_hybrid: false,
+      semantic_enhanced: false,
+      system_prompt: prompt,
+      messages: visible,
+      web_search: null,
+      agent_group: null,
+    } : {
       chat_id: null,
       model: asst.model,
       provider: 'openrouter',
@@ -1277,7 +1301,7 @@ async function rdAnalysisAsk(disc, asst, isFirst) {
       use_hybrid: true,
       semantic_enhanced: true,
       system_prompt: prompt,
-      messages: (disc.messages || []).map(m => ({ role: m.role, content: m.content })),
+      messages: visible,
       selected_books: books.length ? books : null,
       witness_limit: 50,
       agent_group: {

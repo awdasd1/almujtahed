@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.737"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.738"},
         },
     })
     if opened.get("error"):
@@ -19030,6 +19030,12 @@ def _free_chat_sync(req: "ChatRequest", request: Request) -> Dict[str, Any]:
                       [{"type": "text", "text": last_text}] + image_parts}
     if not dialog:
         return {**base, "reply": "⚠️ لا توجد رسائل للإرسال."}
+
+    # توجيه صريح يطلبه المتصل (تحليل سريع من الذاكرة): يُمرَّر رسالة نظام
+    # ولا يُضاف إلى نص المستخدم، فيبقى مخفيًا عن نافذة المحادثة.
+    _free_sys = str(req.system_prompt or "").strip()
+    if _free_sys:
+        dialog = [{"role": "system", "content": _free_sys}] + dialog
 
     # أداة بحث الويب (Tavily) بقرار الباحث: مفعّلة تكون أداة بيد النموذج
     # يستدعيها متى لم تسعفه ذاكرته، ومعطّلة يعتذر إن عجزت ويطلب تفعيلها
