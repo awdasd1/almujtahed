@@ -11436,6 +11436,8 @@ body::-webkit-scrollbar,
 .ms-stage-node.is-done { border-color: #2e7d5b; background: rgba(46, 125, 91, .06); }
 .ms-stage-arrow { align-self: center; font-weight: 800; color: var(--accent-clay, #b4552d); font-size: 13px; }
 .ms-create-title { font-weight: 800; margin-bottom: 10px; }
+.rd-create-form { display: flex; flex-direction: column; gap: 14px; }
+.rd-create-form .ms-form-row { gap: 12px; }
 .ms-form-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .ms-form-row input { flex: 1 1 170px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-main, transparent); color: inherit; font-family: inherit; }
 .ms-btn { padding: 7px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface); color: inherit; cursor: pointer; font-family: inherit; font-size: 13px; }
