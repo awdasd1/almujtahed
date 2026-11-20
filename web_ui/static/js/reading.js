@@ -306,18 +306,36 @@ function rdBuildColorBars() {
     const el = document.getElementById(elId);
     if (!el) return;
     el.innerHTML = colors.map(c => `<button type="button" class="rd-color${c === cur ? ' active' : ''}" style="background:${c}" onclick="${fn}('${c}')"></button>`).join('')
-      + `<button type="button" class="rd-color-add" title="لون فارغ — اضغطه لإضافة لون جديد من منتقي الألوان" onclick="rdAddColor('${target}')">+</button>`;
+      + `<button type="button" class="rd-color-add" title="لون فارغ — اضغطه لإضافة لون جديد من منتقي الألوان" onclick="rdAddColor('${target}', event)">+</button>`;
   };
   mk('rdColors', RD_COLORS.concat(rdCustomColors.pen || []), rdColor, 'rdSetColor', 'pen');
   mk('rdNoteColors', RD_NOTE_COLORS.concat(rdCustomColors.note || []), rdNoteColor, 'rdSetNoteColor', 'note');
 }
 // اللون الفارغ: يفتح منتقي ألوان النظام فيُضاف اللون المختار إلى اللوحة ويُحفظ
-function rdAddColor(target) {
+function rdAddColor(target, ev) {
+  if (ev) ev.stopPropagation();
   rdColorTarget = target;
   const picker = document.getElementById('rdColorPicker');
   if (!picker) return;
+  if (picker.parentElement !== document.body) document.body.appendChild(picker);
+  const btn = ev && ev.currentTarget;
+  const r = btn ? btn.getBoundingClientRect() : { left: 24, top: 24, width: 28, height: 28 };
+  picker.hidden = false;
+  picker.style.position = 'fixed';
+  picker.style.left = `${Math.max(8, r.left)}px`;
+  picker.style.top = `${Math.max(8, r.top)}px`;
+  picker.style.width = `${Math.max(28, r.width)}px`;
+  picker.style.height = `${Math.max(28, r.height)}px`;
+  picker.style.zIndex = '500000';
+  picker.style.opacity = '0.02';
+  picker.style.pointerEvents = 'auto';
   picker.value = target === 'note' ? rdNoteColor : rdColor;
-  picker.click();
+  try {
+    if (typeof picker.showPicker === 'function') picker.showPicker();
+    else picker.click();
+  } catch (e) {
+    picker.click();
+  }
 }
 document.addEventListener('DOMContentLoaded', () => {
   const picker = document.getElementById('rdColorPicker');
