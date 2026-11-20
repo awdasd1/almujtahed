@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.798">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.799">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.798" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.799" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.798 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.799 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -1987,6 +1987,7 @@
                         <button type="button" class="ms-btn ms-btn-primary" onclick="rdAddPart('upload')">⬆ رفع PDF</button>
                         <button type="button" class="ms-btn" onclick="rdAddPart('shamela')">📚 من الشاملة</button>
                         <button type="button" class="ms-btn" onclick="rdAddPart('web')">🌐 من الشبكة</button>
+                        <button type="button" class="ms-btn" onclick="rdAddPart('notebook')">✎ إنشاء دفتر</button>
                     </div>
                     <input type="file" id="rdDetailUploadInput" accept=".pdf,application/pdf" class="rd-top-file-input">
                 </div>
@@ -2093,6 +2094,7 @@
                     </defs></svg>
                     <div class="rd-body">
                         <div class="rd-toolbar" id="rdToolbar">
+                            <button type="button" class="rd-tool" data-rd-tool="type" title="كتابة في الدفتر" onclick="rdSetTool('type')" hidden>⌨️</button>
                             <button type="button" class="rd-tool" data-rd-tool="pen" title="قلم" onclick="rdSetTool('pen')">✏️</button>
                             <div class="rd-sizes" id="rdPenSizes">
                                 <button type="button" data-rd-size="1.5" onclick="rdSetPenSize(1.5)">S</button>
@@ -2114,8 +2116,16 @@
                         <button type="button" class="rd-nav-zone rd-nav-prev" onclick="rdFlipPage(-1)" title="الصفحة السابقة"><span>السابقة ❯</span></button>
                         <div class="rd-page-scroll" id="rdPageScroll">
                             <div class="rd-a4" id="rdA4">
-                                <div class="rd-empty" id="rdEmpty">لا كتاب بعد في هذا المشروع.<br>أضف الكتاب أو الجزء من صفحة المشروع (رفع PDF، أو من الشاملة، أو من الشبكة) ثم افتح القراءة.</div>
+                                <div class="rd-empty" id="rdEmpty">لا كتاب بعد في هذا المشروع.<br>أضف الكتاب أو الجزء من صفحة المشروع (رفع PDF، أو من الشاملة، أو من الشبكة، أو إنشاء دفتر) ثم افتح القراءة.</div>
                                 <img id="rdPageImg" alt="صفحة الكتاب" draggable="false">
+                                <div class="rd-nb-format" id="rdNbFormat" hidden>
+                                    <button type="button" title="عريض" onclick="rdNotebookCmd('bold')"><b>ع</b></button>
+                                    <button type="button" title="مائل" onclick="rdNotebookCmd('italic')"><i>م</i></button>
+                                    <button type="button" title="تسطير" onclick="rdNotebookCmd('underline')"><u>س</u></button>
+                                    <button type="button" title="عنوان" onclick="rdNotebookCmd('formatBlock','h3')">عنوان</button>
+                                    <button type="button" title="قائمة" onclick="rdNotebookCmd('insertUnorderedList')">• قائمة</button>
+                                </div>
+                                <div id="rdNotebook" class="rd-notebook" hidden dir="rtl" lang="ar" spellcheck="true" data-placeholder="اكتب في هذه الصفحة…"></div>
                                 <canvas id="rdCanvas"></canvas>
                                 <div id="rdNotesLayer"></div>
                                 <div id="rdLoupe" hidden><img id="rdLoupeImg" alt="" draggable="false"></div>
@@ -7337,26 +7347,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.798"></script>
-    <script src="/static/js/search.js?v=1.10.798"></script>
-    <script src="/static/js/reader.js?v=1.10.798"></script>
-    <script src="/static/js/force3d.js?v=1.10.798"></script>
-    <script src="/static/js/share.js?v=1.10.798"></script>
-    <script src="/static/js/chat.js?v=1.10.798"></script>
-    <script src="/static/js/documents.js?v=1.10.798"></script>
-    <script src="/static/js/designs.js?v=1.10.798"></script>
-    <script src="/static/js/texts.js?v=1.10.798"></script>
-    <script src="/static/js/agents.js?v=1.10.798"></script>
-    <script src="/static/js/providers.js?v=1.10.798"></script>
-    <script src="/static/js/tools.js?v=1.10.798"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.798"></script>
-    <script src="/static/js/projects.js?v=1.10.798"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.798"></script>
-    <script src="/static/js/reading.js?v=1.10.798"></script>
-    <script src="/static/js/archive.js?v=1.10.798"></script>
-    <script src="/static/js/compare.js?v=1.10.798"></script>
-    <script src="/static/js/local_models.js?v=1.10.798"></script>
-    <script src="/static/js/changelog.js?v=1.10.798"></script>
+    <script src="/static/js/app.js?v=1.10.799"></script>
+    <script src="/static/js/search.js?v=1.10.799"></script>
+    <script src="/static/js/reader.js?v=1.10.799"></script>
+    <script src="/static/js/force3d.js?v=1.10.799"></script>
+    <script src="/static/js/share.js?v=1.10.799"></script>
+    <script src="/static/js/chat.js?v=1.10.799"></script>
+    <script src="/static/js/documents.js?v=1.10.799"></script>
+    <script src="/static/js/designs.js?v=1.10.799"></script>
+    <script src="/static/js/texts.js?v=1.10.799"></script>
+    <script src="/static/js/agents.js?v=1.10.799"></script>
+    <script src="/static/js/providers.js?v=1.10.799"></script>
+    <script src="/static/js/tools.js?v=1.10.799"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.799"></script>
+    <script src="/static/js/projects.js?v=1.10.799"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.799"></script>
+    <script src="/static/js/reading.js?v=1.10.799"></script>
+    <script src="/static/js/archive.js?v=1.10.799"></script>
+    <script src="/static/js/compare.js?v=1.10.799"></script>
+    <script src="/static/js/local_models.js?v=1.10.799"></script>
+    <script src="/static/js/changelog.js?v=1.10.799"></script>
 
     <script>
         window.refreshLucideIcons = function () {

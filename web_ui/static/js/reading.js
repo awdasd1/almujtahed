@@ -24,6 +24,8 @@ let rdAnalysisAbort = null;
 let rdMediaAction = null; // 'share' | 'publish'
 let rdSearchHitMark = null; // { filePage, rects } تمييز مؤقت لكل ألفاظ البحث على المصوّرة
 let rdLastSearchQuery = '';
+let rdNotebookBoundPage = null;
+let rdNotebookNavLock = false;
 
 const RD_COLORS = ['#b03a2e', '#1f6fb2', '#2e7d5b', '#b8860b', '#7a5aa1', '#222222'];
 const RD_NOTE_COLORS = ['#ffe58a', '#ffd1dc', '#c8f0c8', '#bfe3ff', '#e6ccff'];
@@ -468,7 +470,7 @@ function rdOpenPartMetaModal(opts) {
   const titleEl = document.getElementById('rdPartMetaTitle');
   const btn = document.getElementById('rdPartMetaSubmit');
   if (titleEl) titleEl.textContent = editing ? 'تعديل بيانات الكتاب' : 'بيانات الكتاب';
-  if (btn) btn.textContent = editing ? 'حفظ' : (kind === 'upload' ? 'متابعة واختيار الملف' : 'متابعة');
+  if (btn) btn.textContent = editing ? 'حفظ' : (kind === 'upload' ? 'متابعة واختيار الملف' : (kind === 'notebook' ? 'إنشاء الدفتر' : 'متابعة'));
   if (overlay) {
     if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
     overlay.classList.add('open');
@@ -913,10 +915,10 @@ function rdOpenProject(id) {
   if (p.book) rdEnsureParts(p.book);
   rdShowModal('rdReaderModal');
   rdBuildColorBars();
-  rdSetTool('pen');
   rdUpdateBookUI();
   rdApplyView();
   rdLoadPage(p.page || 1);
+  rdSetTool(rdNotebookActive() ? 'type' : 'pen');
   rdEnsureShamelaVolumes(p);
 }
 window.rdOpenProject = rdOpenProject;
@@ -935,6 +937,7 @@ function rdCloseReader() {
 }
 
 function rdSaveNow(manual) {
+  rdNotebookSaveCurrent();
   if (rdCurrent) rdCurrent.updated_at = new Date().toISOString();
   clearTimeout(rdSaveTimer);
   rdSave();
@@ -949,7 +952,7 @@ function rdSaveSoon() {
 // كتاب متعدد الأجزاء: parts متسلسلة وصفحات المشروع مرقّمة عبر الأجزاء كلها
 function rdPartOf(nb) {
   const meta = rdPendingPartMeta || {};
-  return {
+  const part = {
     source: nb.source,
     title: meta.bookName || nb.title,
     bookName: meta.bookName || nb.title || '',
@@ -962,10 +965,23 @@ function rdPartOf(nb) {
     volumes: Array.isArray(nb.volumes) ? nb.volumes : undefined,
     bundleId: nb.bundleId || undefined,
   };
+  if (nb.source === 'notebook' || Array.isArray(nb.texts)) {
+    part.texts = Array.isArray(nb.texts) && nb.texts.length ? nb.texts.slice() : [''];
+    part.pages = part.texts.length;
+  }
+  return part;
 }
 function rdEnsureParts(b) {
   if (!b) return null;
   if (!Array.isArray(b.parts) || !b.parts.length) b.parts = [rdPartOf(b)];
+  b.parts.forEach(part => {
+    if (part && part.source === 'notebook') {
+      if (!Array.isArray(part.texts) || !part.texts.length) {
+        part.texts = Array.isArray(b.texts) && b.texts.length ? b.texts.slice() : [''];
+      }
+      part.pages = part.texts.length;
+    }
+  });
   b.pages = b.parts.reduce((s, x) => s + (x.pages || 0), 0) || b.pages || 1;
   return b;
 }
@@ -975,6 +991,7 @@ function rdShamelaPartName(part) {
   return n;
 }
 function rdPartPageUrl(part, localPage) {
+  if (!part || part.source === 'notebook') return '';
   if (part.source === 'shamela') {
     const q = [`book_id=${part.book_id}`, `pdf_page=${localPage}`, `v=${Date.now()}`];
     const name = rdShamelaPartName(part);
@@ -1049,11 +1066,36 @@ function rdGuardSource(kind, ev) {
 function rdOpenSource(kind) {
   if (kind === 'shamela') rdOpenShamelaPicker();
   else if (kind === 'web') rdOpenWebFetch();
+  else if (kind === 'notebook') rdCreateNotebook();
   else if (kind === 'upload') {
     const input = rdMountDetailUploadInput();
     if (input) { input.value = ''; input.click(); }
   }
 }
+function rdCreateNotebook() {
+  const meta = rdPendingPartMeta || {};
+  const title = (meta.bookName || 'دفتر').trim() || 'دفتر';
+  const nb = {
+    source: 'notebook',
+    title,
+    author: meta.author || '',
+    edition: meta.edition || '',
+    pages: 1,
+    texts: [''],
+  };
+  rdApplyBook(nb, rdAppendMode);
+  if (rdCurrent) {
+    if (rdAppendMode && rdCurrent.book) {
+      const parts = rdPartsOf(rdCurrent);
+      rdCurrent.page = rdPartStartPage(rdCurrent.book, Math.max(0, parts.length - 1));
+    }
+    if (!rdReaderIsOpen()) rdOpenProject(rdCurrent.id);
+    else rdSetTool('type');
+    const el = document.getElementById('rdNotebook');
+    if (el) setTimeout(() => el.focus(), 80);
+  }
+}
+window.rdCreateNotebook = rdCreateNotebook;
 function rdBookExistsChoice(choice) {
   rdCloseModal('rdBookExistsModal');
   const kind = rdPendingSource;
@@ -1278,9 +1320,27 @@ function rdUpdateBookUI() {
   const has = !!(p && p.book);
   document.getElementById('rdToolbar').classList.toggle('is-disabled', !has);
   document.getElementById('rdEmpty').style.display = has ? 'none' : 'flex';
-  document.getElementById('rdPageImg').style.display = has ? 'block' : 'none';
-  document.getElementById('rdA4').classList.toggle('has-book', has);
   const pi = has ? rdPartInfoAt(p.book, p.page || 1) : null;
+  const nbMode = !!(pi && pi.part && pi.part.source === 'notebook');
+  const a4 = document.getElementById('rdA4');
+  if (a4) {
+    a4.classList.toggle('has-book', has);
+    a4.classList.toggle('rd-notebook-mode', nbMode);
+    a4.classList.toggle('rd-typing', nbMode && rdTool === 'type');
+  }
+  const img = document.getElementById('rdPageImg');
+  const nb = document.getElementById('rdNotebook');
+  const fmt = document.getElementById('rdNbFormat');
+  if (img) img.style.display = has && !nbMode ? 'block' : 'none';
+  if (nb) {
+    nb.hidden = !nbMode;
+    if (nbMode) nb.contentEditable = rdTool === 'type' ? 'true' : 'false';
+  }
+  if (fmt) fmt.hidden = !(nbMode && rdTool === 'type');
+  const typeBtn = document.querySelector('#rdToolbar .rd-tool[data-rd-tool="type"]');
+  if (typeBtn) typeBtn.hidden = !nbMode;
+  const loupeBtn = document.querySelector('#rdToolbar .rd-tool[data-rd-tool="loupe"]');
+  if (loupeBtn) loupeBtn.hidden = nbMode;
   document.getElementById('rdPageTotal').textContent = pi ? (pi.pages - pi.off) : '—';
   const titleEl = document.getElementById('rdReaderTitle');
   if (titleEl) titleEl.textContent = rdReaderHeading(p);
@@ -1292,7 +1352,8 @@ function rdUpdateBookUI() {
   const parts = rdPartsOf(p);
   const idx = Math.max(0, pi.idx);
   const meta = rdPartMetaOf(p, parts[idx], idx);
-  const src = p.book.source === 'shamela' ? 'من الشاملة المصوّرة' : p.book.source === 'web' ? 'من الشبكة' : 'PDF مرفوع';
+  const srcKind = (pi.part && pi.part.source) || p.book.source;
+  const src = srcKind === 'shamela' ? 'من الشاملة المصوّرة' : srcKind === 'web' ? 'من الشبكة' : srcKind === 'notebook' ? 'دفتر مؤلَّف' : 'PDF مرفوع';
   const partLabel = (pi.vol && rdVolumeLabel(pi.vol.name, 0)) || (meta.partNo && !/^(جميع|كل)\s*الأجزاء$/.test(String(meta.partNo)) ? meta.partNo : '');
   info.textContent = [
     meta.book && `الكتاب: ${meta.book}`,
@@ -1307,25 +1368,56 @@ function rdUpdateBookUI() {
 function rdLoadPage(n) {
   const p = rdCurrent;
   if (!p || !p.book) { rdRenderAnnotations(); return; }
+  rdNotebookSaveCurrent();
   n = Math.max(1, Math.min(p.book.pages || 1, Number(n) || 1));
   if (rdSearchHitMark && rdSearchHitMark.filePage !== n) rdSearchHitMark = null;
   p.page = n;
   rdUpdateBookUI();
   rdSyncPageField(n);
   const img = document.getElementById('rdPageImg');
-  img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); rdScrollToSearchMark(); };
-  img.onerror = () => { rdToast('تعذر عرض هذه الصفحة'); };
-  img.src = rdBookPageUrl(n);
   document.getElementById('rdPageScroll').scrollTop = 0;
   rdHideSelBar();
   rdActiveSel = null;
   rdSyncPageSumBadge();
+  if (rdNotebookActive()) {
+    if (img) {
+      img.onload = null;
+      img.onerror = null;
+      img.removeAttribute('src');
+    }
+    rdNotebookBind();
+    rdNotebookFillEditor();
+    requestAnimationFrame(() => {
+      rdFitCanvas();
+      rdRenderAnnotations();
+      rdNotebookAfterShow();
+    });
+    rdSaveSoon();
+    return;
+  }
+  rdNotebookBoundPage = null;
+  img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); rdScrollToSearchMark(); };
+  img.onerror = () => { rdToast('تعذر عرض هذه الصفحة'); };
+  img.src = rdBookPageUrl(n);
   rdSaveSoon();
 }
 
 function rdFlipPage(d) {
   if (!rdCurrent || !rdCurrent.book) return;
-  rdLoadPage((rdCurrent.page || 1) + d);
+  rdNotebookSaveCurrent();
+  const n = (rdCurrent.page || 1) + d;
+  if (d > 0 && rdNotebookActive() && n > (rdCurrent.book.pages || 1)) {
+    const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
+    const html = (document.getElementById('rdNotebook') || {}).innerHTML || '';
+    if (info.part && info.part.source === 'notebook' && rdHtmlToText(html).trim()) {
+      info.part.texts = info.part.texts || [''];
+      info.part.texts.push('');
+      rdSyncNotebookPages(rdCurrent.book);
+      rdLoadPage(rdCurrent.book.pages);
+      return;
+    }
+  }
+  rdLoadPage(n);
 }
 function rdGoPage(v) { rdLoadPage(rdFileFromShown(v, rdCurrent && rdCurrent.book)); }
 
@@ -1413,12 +1505,20 @@ function rdSetPenSize(s) {
     b.classList.toggle('active', Number(b.dataset.rdSize) === Number(s)));
 }
 function rdSetTool(t) {
+  if (t === 'type' && !rdNotebookActive()) t = 'pen';
   rdTool = t;
   document.querySelectorAll('#rdToolbar .rd-tool[data-rd-tool]').forEach(b =>
     b.classList.toggle('active', b.dataset.rdTool === t));
   document.getElementById('rdLoupe').hidden = t !== 'loupe';
   const cv = document.getElementById('rdCanvas');
-  if (cv) cv.style.cursor = t === 'crop' ? 'crosshair' : (t === 'loupe' ? 'none' : '');
+  if (cv) cv.style.cursor = t === 'crop' ? 'crosshair' : (t === 'loupe' ? 'none' : (t === 'type' ? 'text' : ''));
+  const a4 = document.getElementById('rdA4');
+  if (a4) a4.classList.toggle('rd-typing', rdNotebookActive() && t === 'type');
+  const nb = document.getElementById('rdNotebook');
+  if (nb && rdNotebookActive()) nb.contentEditable = t === 'type' ? 'true' : 'false';
+  const fmt = document.getElementById('rdNbFormat');
+  if (fmt) fmt.hidden = !(rdNotebookActive() && t === 'type');
+  if (t === 'type') setTimeout(() => nb && nb.focus(), 30);
   rdRenderAnnotations();
 }
 
@@ -1432,11 +1532,300 @@ function rdPageAnn() {
 }
 
 function rdFitCanvas() {
-  const img = document.getElementById('rdPageImg');
   const cv = document.getElementById('rdCanvas');
-  if (!img || !cv || !img.naturalWidth) return;
+  if (!cv) return;
+  if (rdNotebookActive()) {
+    const a4 = document.getElementById('rdA4');
+    cv.width = Math.max(1, a4 ? a4.offsetWidth : 595);
+    cv.height = Math.max(1, a4 ? a4.offsetHeight : 842);
+    return;
+  }
+  const img = document.getElementById('rdPageImg');
+  if (!img || !img.naturalWidth) return;
   cv.width = img.naturalWidth;
   cv.height = img.naturalHeight;
+}
+
+function rdNotebookActive() {
+  if (!rdCurrent || !rdCurrent.book) return false;
+  const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
+  return !!(info.part && info.part.source === 'notebook');
+}
+function rdHtmlToText(html) {
+  const d = document.createElement('div');
+  d.innerHTML = html || '';
+  return (d.innerText || d.textContent || '').replace(/\u00a0/g, ' ');
+}
+function rdSyncNotebookPages(book) {
+  const b = rdEnsureParts(book);
+  if (!b) return;
+  b.parts.forEach(part => {
+    if (part && part.source === 'notebook') {
+      if (!Array.isArray(part.texts) || !part.texts.length) part.texts = [''];
+      part.pages = part.texts.length;
+    }
+  });
+  b.pages = b.parts.reduce((s, x) => s + (x.pages || 0), 0) || 1;
+}
+function rdNotebookSaveCurrent() {
+  const nb = document.getElementById('rdNotebook');
+  if (!nb || nb.hidden || !rdCurrent || !rdCurrent.book) return;
+  if (rdNotebookBoundPage !== (rdCurrent.page || 1)) return;
+  const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
+  if (!info.part || info.part.source !== 'notebook') return;
+  info.part.texts = info.part.texts || [''];
+  const idx = Math.max(0, info.local - 1);
+  while (info.part.texts.length <= idx) info.part.texts.push('');
+  info.part.texts[idx] = nb.innerHTML;
+  rdSyncNotebookPages(rdCurrent.book);
+}
+function rdNotebookSyncEmpty() {
+  const nb = document.getElementById('rdNotebook');
+  if (!nb) return;
+  nb.classList.toggle('is-empty', !rdHtmlToText(nb.innerHTML).trim());
+}
+function rdNotebookFillEditor() {
+  const nb = document.getElementById('rdNotebook');
+  if (!nb || !rdCurrent || !rdCurrent.book) return;
+  const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
+  const html = ((info.part && info.part.texts) || [])[Math.max(0, info.local - 1)] || '';
+  nb.innerHTML = html;
+  rdNotebookBoundPage = rdCurrent.page || 1;
+  rdNotebookSyncEmpty();
+}
+function rdNotebookFocusStart() {
+  const nb = document.getElementById('rdNotebook');
+  if (!nb || nb.hidden) return;
+  nb.focus();
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  range.selectNodeContents(nb);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+function rdNotebookFocusEnd() {
+  const nb = document.getElementById('rdNotebook');
+  if (!nb || nb.hidden) return;
+  nb.focus();
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  range.selectNodeContents(nb);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+function rdNotebookNeedsSpill() {
+  const nb = document.getElementById('rdNotebook');
+  if (!nb || nb.hidden) return false;
+  if (nb.clientHeight < 80) return false;
+  return nb.scrollHeight > nb.clientHeight + 3;
+}
+function rdNotebookExtractOverflow() {
+  const nb = document.getElementById('rdNotebook');
+  if (!nb) return '';
+  const bottom = nb.getBoundingClientRect().bottom - 2;
+  const walker = document.createTreeWalker(nb, NodeFilter.SHOW_TEXT);
+  let overflowNode = null;
+  let overflowOff = 0;
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const len = node.length;
+    if (!len) continue;
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, Math.min(1, len));
+    const first = range.getBoundingClientRect();
+    if (first.bottom > bottom) {
+      overflowNode = node;
+      overflowOff = 0;
+      break;
+    }
+    let lo = 0, hi = len;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      range.setStart(node, mid - 1);
+      range.setEnd(node, mid);
+      const rr = range.getBoundingClientRect();
+      if (!rr.height || rr.bottom <= bottom) lo = mid;
+      else hi = mid - 1;
+    }
+    if (lo < len) {
+      overflowNode = node;
+      overflowOff = lo;
+      break;
+    }
+  }
+  if (!overflowNode) return '';
+  const raw = overflowNode.nodeValue || '';
+  if (overflowOff > 0) {
+    const slice = raw.slice(0, overflowOff);
+    const ws = Math.max(slice.lastIndexOf(' '), slice.lastIndexOf('\u00a0'), slice.lastIndexOf('\n'));
+    overflowOff = ws >= 0 ? ws + 1 : 0;
+  }
+  const extract = document.createRange();
+  extract.setStart(overflowNode, overflowOff);
+  extract.setEnd(nb, nb.childNodes.length);
+  const frag = extract.extractContents();
+  const wrap = document.createElement('div');
+  wrap.appendChild(frag);
+  return wrap.innerHTML;
+}
+function rdNotebookSpillOnce() {
+  const overflow = rdNotebookExtractOverflow();
+  if (!overflow || !rdHtmlToText(overflow).trim()) return false;
+  const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
+  const part = info.part;
+  if (!part || part.source !== 'notebook') return false;
+  const idx = Math.max(0, info.local - 1);
+  part.texts = part.texts || [''];
+  while (part.texts.length <= idx + 1) part.texts.push('');
+  part.texts[idx] = document.getElementById('rdNotebook').innerHTML;
+  part.texts[idx + 1] = overflow + (part.texts[idx + 1] || '');
+  rdSyncNotebookPages(rdCurrent.book);
+  rdCurrent.page = info.start + idx + 1;
+  rdNotebookFillEditor();
+  return true;
+}
+function rdNotebookAfterShow() {
+  if (!rdNotebookActive() || rdNotebookNavLock) return;
+  let hops = 0;
+  while (rdNotebookNeedsSpill() && hops++ < 120) {
+    rdNotebookNavLock = true;
+    if (!rdNotebookSpillOnce()) break;
+    rdNotebookNavLock = false;
+  }
+  rdNotebookNavLock = false;
+  if (hops) {
+    rdUpdateBookUI();
+    rdSyncPageField(rdCurrent.page || 1);
+    rdFitCanvas();
+    rdRenderAnnotations();
+    rdNotebookFocusEnd();
+    rdSaveSoon();
+  }
+}
+function rdNotebookTextInRect(rect) {
+  const nb = document.getElementById('rdNotebook');
+  const a4 = document.getElementById('rdA4');
+  if (!nb || !a4 || !rect) return '';
+  const box = a4.getBoundingClientRect();
+  const left = box.left + rect.x * box.width;
+  const top = box.top + rect.y * box.height;
+  const right = left + rect.w * box.width;
+  const bottom = top + rect.h * box.height;
+  const walker = document.createTreeWalker(nb, NodeFilter.SHOW_TEXT);
+  const bits = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const t = node.nodeValue || '';
+    if (!t.trim()) continue;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const r = range.getBoundingClientRect();
+    if (r.bottom < top || r.top > bottom || r.right < left || r.left > right) continue;
+    bits.push(t);
+  }
+  return bits.join(' ').replace(/\s+/g, ' ').trim();
+}
+function rdNotebookOnSelection() {
+  if (!rdNotebookActive() || rdTool !== 'type') return;
+  const nb = document.getElementById('rdNotebook');
+  const selBar = document.getElementById('rdSelBar');
+  if (selBar && selBar.matches(':hover')) return;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+  if (!nb || !nb.contains(sel.anchorNode) || !nb.contains(sel.focusNode)) return;
+  const text = String(sel.toString() || '').trim();
+  if (!text) return;
+  const rr = sel.getRangeAt(0).getBoundingClientRect();
+  const a4 = document.getElementById('rdA4');
+  if (!a4) return;
+  const box = a4.getBoundingClientRect();
+  const rect = {
+    x: Math.max(0, (rr.left - box.left) / box.width),
+    y: Math.max(0, (rr.top - box.top) / box.height),
+    w: Math.max(0.02, rr.width / box.width),
+    h: Math.max(0.02, rr.height / box.height),
+  };
+  rdActiveSel = { page: rdCurrent.page || 1, kind: 'nb', index: -1, rect, text };
+  rdSelFromHover = false;
+  rdShowSelBar(rect);
+}
+function rdNotebookCmd(cmd, val) {
+  const nb = document.getElementById('rdNotebook');
+  if (!nb || nb.hidden) return;
+  nb.focus();
+  try {
+    if (cmd === 'formatBlock' && val) {
+      const tag = String(val).replace(/[<>]/g, '');
+      if (!document.execCommand(cmd, false, tag)) document.execCommand(cmd, false, `<${tag}>`);
+    } else document.execCommand(cmd, false, val || null);
+  } catch (e) { /* */ }
+  rdNotebookOnInput();
+}
+window.rdNotebookCmd = rdNotebookCmd;
+function rdNotebookOnInput() {
+  if (!rdNotebookActive()) return;
+  rdNotebookSyncEmpty();
+  rdNotebookSaveCurrent();
+  rdNotebookAfterShow();
+  rdSaveSoon();
+}
+function rdNotebookBind() {
+  const nb = document.getElementById('rdNotebook');
+  if (!nb || nb.dataset.rdBound === '1') return;
+  nb.dataset.rdBound = '1';
+  nb.addEventListener('input', () => {
+    if (nb.dataset.rdComposing === '1') return;
+    rdNotebookOnInput();
+  });
+  nb.addEventListener('compositionstart', () => { nb.dataset.rdComposing = '1'; });
+  nb.addEventListener('compositionend', () => {
+    nb.dataset.rdComposing = '0';
+    rdNotebookOnInput();
+  });
+  nb.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    try { document.execCommand('insertText', false, text); } catch (err) { /* */ }
+    rdNotebookOnInput();
+  });
+  nb.addEventListener('keydown', (e) => {
+    if (e.key !== 'Backspace' || e.altKey || e.metaKey || e.ctrlKey) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.isCollapsed) return;
+    const info = rdPartInfoAt(rdCurrent && rdCurrent.book, (rdCurrent && rdCurrent.page) || 1);
+    if (!info.part || info.part.source !== 'notebook' || info.local <= 1) return;
+    const range = sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (!range) return;
+    const pre = document.createRange();
+    pre.selectNodeContents(nb);
+    pre.setEnd(range.startContainer, range.startOffset);
+    if ((pre.toString() || '').replace(/\u00a0/g, ' ').trim()) return;
+    e.preventDefault();
+    rdNotebookSaveCurrent();
+    rdLoadPage((rdCurrent.page || 1) - 1);
+  });
+  const fmt = document.getElementById('rdNbFormat');
+  if (fmt && !fmt.dataset.rdBound) {
+    fmt.dataset.rdBound = '1';
+    fmt.addEventListener('mousedown', (e) => {
+      if (e.target.closest('button')) e.preventDefault();
+    });
+  }
+  document.addEventListener('selectionchange', rdNotebookOnSelection);
+  const a4 = document.getElementById('rdA4');
+  if (a4 && !a4.dataset.rdNbResize) {
+    a4.dataset.rdNbResize = '1';
+    new ResizeObserver(() => {
+      if (!rdNotebookActive()) return;
+      rdFitCanvas();
+      rdRenderAnnotations();
+    }).observe(a4);
+  }
 }
 
 function rdRenderAnnotations() {
@@ -1811,6 +2200,7 @@ function rdArmSelHide() {
     };
     cv.addEventListener('pointerdown', (e) => {
       if (!rdCurrent || !rdCurrent.book) return;
+      if (rdTool === 'type') return;
       const q = pos(e);
       if (rdTool !== 'pen') {
         const grip = rdCropHandleTarget(q.x, q.y, q.rw, q.rh);
@@ -1872,7 +2262,7 @@ function rdArmSelHide() {
           }
         }
       }
-      if (rdTool === 'loupe' && rdCurrent && rdCurrent.book) {
+      if (rdTool === 'loupe' && rdCurrent && rdCurrent.book && !rdNotebookActive()) {
         const loupe = document.getElementById('rdLoupe');
         const limg = document.getElementById('rdLoupeImg');
         const img = document.getElementById('rdPageImg');
@@ -1932,7 +2322,7 @@ function rdArmSelHide() {
           const r = cv.getBoundingClientRect();
           const lineH = 36 / r.height;
           const rect = { x, y: rdDraw.y0 - lineH / 2, w, h: lineH };
-          ann.highlights.push(rdStampOn({ ...rect, c: rdColor }));
+          ann.highlights.push(rdStampOn({ ...rect, c: rdColor, text: rdNotebookActive() ? rdNotebookTextInRect(rect) : '' }));
           ann.seq.push('h');
           rdSetActiveSel('h', ann.highlights.length - 1, rect);
         }
@@ -1941,7 +2331,7 @@ function rdArmSelHide() {
         const w = Math.abs(rdDraw.x1 - rdDraw.x0), h = Math.abs(rdDraw.y1 - rdDraw.y0);
         if (w > 0.01 && h > 0.01) {
           const rect = { x, y, w, h };
-          ann.crops.push(rdStampOn({ ...rect }));
+          ann.crops.push(rdStampOn({ ...rect, text: rdNotebookActive() ? rdNotebookTextInRect(rect) : '' }));
           ann.seq.push('c');
           rdSetActiveSel('c', ann.crops.length - 1, rect);
         }
@@ -2508,7 +2898,10 @@ function rdDeleteReader(id) {
 }
 
 function rdNeedActiveSel() {
-  if (!rdActiveSel || !rdCurrent) { rdToast('حدّد أولًا موضعًا بأداة التظليل أو القص'); return false; }
+  if (!rdActiveSel || !rdCurrent) {
+    rdToast(rdNotebookActive() ? 'حدّد نصًا في الدفتر أو موضعًا بأداة التظليل أو القص' : 'حدّد أولًا موضعًا بأداة التظليل أو القص');
+    return false;
+  }
   return true;
 }
 function rdDefaultReader() {
@@ -2592,10 +2985,46 @@ function rdFilePageFromPartShown(book, partIdx, shownRaw) {
   const local = Math.max(1, Math.min(pages, shown + off));
   return start + local - 1;
 }
+function rdNotebookSearch(query) {
+  const q = String(query || '').trim();
+  if (!q || !rdCurrent || !rdCurrent.book) return [];
+  const fold = s => String(s || '').replace(/[\u064B-\u0652\u0670\u0640]/g, '').toLowerCase();
+  const nq = fold(q);
+  const rows = [];
+  const parts = rdPartsOf(rdCurrent);
+  let start = 1;
+  parts.forEach((part, pi) => {
+    const pages = Number(part.pages) || 0;
+    if (part.source === 'notebook') {
+      (part.texts || []).forEach((html, i) => {
+        const text = rdHtmlToText(html);
+        const folded = fold(text);
+        const at = folded.indexOf(nq);
+        if (at < 0) return;
+        const rawAt = Math.max(0, text.indexOf(q) >= 0 ? text.indexOf(q) : at);
+        const snip = text.slice(Math.max(0, rawAt - 70), rawAt + q.length + 90).replace(/\s+/g, ' ').trim();
+        rows.push({
+          i: rows.length,
+          part: part.partNo || '',
+          page: i + 1,
+          snippet: snip,
+          book_id: '',
+          notebook: true,
+          filePage: start + i,
+        });
+      });
+    }
+    start += pages;
+  });
+  return rows;
+}
 function rdOpenBookSearch() {
   if (!rdCurrent || !rdCurrent.book) { rdToast('افتح كتابًا أولًا'); return; }
   const hint = document.getElementById('rdSearchHint');
-  if (hint) hint.textContent = 'بحث لفظي في النسخة النصية لجميع أجزاء هذا الكتاب بلا نموذج، ثم تُفتح النتيجة في المصوّرة ويُميَّز موضعها في الصفحة.';
+  const onlyNb = rdPartsOf(rdCurrent).length && rdPartsOf(rdCurrent).every(x => x.source === 'notebook');
+  if (hint) hint.textContent = onlyNb
+    ? 'بحث لفظي في صفحات الدفتر، ثم تُفتح الصفحة التي فيها المطلوب.'
+    : 'بحث لفظي في النسخة النصية لجميع أجزاء هذا الكتاب بلا نموذج، ثم تُفتح النتيجة في المصوّرة ويُميَّز موضعها في الصفحة.';
   const st = document.getElementById('rdSearchStatus');
   if (st) st.textContent = '';
   const inp = document.getElementById('rdSearchQuery');
@@ -2656,8 +3085,24 @@ async function rdRunBookSearch() {
   if (!p || !p.book) { rdToast('افتح كتابًا أولًا'); return; }
   const query = (document.getElementById('rdSearchQuery')?.value || '').trim();
   if (!query) { rdToast('اكتب المطلوب بحثه'); return; }
+  const nbHits = rdNotebookSearch(query);
+  const onlyNb = rdPartsOf(p).length && rdPartsOf(p).every(x => x.source === 'notebook');
+  if (onlyNb) {
+    if (!nbHits.length) { rdToast('لم يُعثر على هذا المطلوب في الدفتر'); return; }
+    rdCloseModal('rdSearchModal');
+    rdShowSearchHits(query, null, nbHits);
+    return;
+  }
   const scope = rdBookSearchScope(p);
-  if (!scope.titles.length && !scope.ids.length) { rdToast('لا يُعرف كتاب هذا المشروع في النسخة النصية'); return; }
+  if (!scope.titles.length && !scope.ids.length) {
+    if (nbHits.length) {
+      rdCloseModal('rdSearchModal');
+      rdShowSearchHits(query, null, nbHits);
+      return;
+    }
+    rdToast('لا يُعرف كتاب هذا المشروع في النسخة النصية');
+    return;
+  }
   const run = document.getElementById('rdSearchRunBtn');
   const st = document.getElementById('rdSearchStatus');
   if (run) run.disabled = true;
@@ -2702,6 +3147,7 @@ async function rdRunBookSearch() {
       if (!scope.ids.length || h.book_id == null || h.book_id === '') return true;
       return scope.ids.includes(String(h.book_id));
     });
+    if (nbHits.length) pool.push(...nbHits.map((h, i) => ({ ...h, i: pool.length + i })));
     if (!pool.length) throw new Error('لم يُعثر على هذا المطلوب في النسخة النصية للكتاب');
     const partCount = data.parts_hit || new Set(pool.map(h => String(h.part || ''))).size;
     if (st) st.textContent = `عُثر على ${pool.length} موضعًا في ${partCount} جزءًا`;
@@ -2771,9 +3217,13 @@ function rdGotoSearchHit(i) {
   const h = rdSearchHitsData[i];
   const p = rdCurrent;
   if (!h || !p || !p.book) return;
-  const idx = rdPartIndexForSearch(p, h.part);
   rdCloseModal('rdSearchResultModal');
   rdSearchHitMark = null;
+  if (h.notebook && h.filePage) {
+    rdLoadPage(h.filePage);
+    return;
+  }
+  const idx = rdPartIndexForSearch(p, h.part);
   const filePage = idx >= 0
     ? rdFilePageFromPartShown(p.book, idx, h.page)
     : rdFileFromShown(h.page, p.book);
@@ -2795,7 +3245,7 @@ function rdOpenSummarize() {
     rdOpenCreateAssistant();
     return;
   }
-  if (!rdDefaultReader()) return;
+  if (!rdNotebookActive() && !rdDefaultReader()) return;
   const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
   const shown = info.local - info.off;
   const max = info.pages - info.off;
@@ -2819,6 +3269,11 @@ window.rdOpenSummarize = rdOpenSummarize;
 const RD_SUM_DIRECTIVE = 'لخّص النص التالي تلخيصًا علميًا أمينًا بالعربية الفصحى: احفظ المسائل والأعلام والأدلة والمعاني المقصودة، واطوِّل بقدر حاجة النص دون حشو. لا تضف معلومة من خارج النص. لا تذكر هذا التوجيه.';
 
 async function rdOcrFilePage(filePage) {
+  const info = rdCurrent && rdCurrent.book ? rdPartInfoAt(rdCurrent.book, filePage) : null;
+  if (info && info.part && info.part.source === 'notebook') {
+    if (filePage === (rdCurrent.page || 1)) rdNotebookSaveCurrent();
+    return rdHtmlToText((info.part.texts || [])[Math.max(0, info.local - 1)] || '').trim();
+  }
   const reader = rdDefaultReader();
   if (!reader) return null;
   const url = rdBookPageUrl(filePage);
@@ -2862,7 +3317,6 @@ async function rdRunSummarize() {
   const asst = rdSummarizer();
   if (!p || !p.book) { rdToast('افتح كتابًا أولًا'); return; }
   if (!asst) { rdToast('حدّد الملخص من نافذة المساعد بزر «الملخص»'); return; }
-  if (!rdDefaultReader()) return;
   const info = rdPartInfoAt(p.book, p.page || 1);
   const rangeOn = document.getElementById('rdSumRange') && document.getElementById('rdSumRange').checked;
   let shownFrom = info.local - info.off;
@@ -2879,6 +3333,11 @@ async function rdRunSummarize() {
   const end = Math.max(fileFrom, fileTo);
   const pages = [];
   for (let n = start; n <= end; n++) pages.push(n);
+  const needsReader = pages.some(n => {
+    const inf = rdPartInfoAt(p.book, n);
+    return !(inf.part && inf.part.source === 'notebook');
+  });
+  if (needsReader && !rdDefaultReader()) return;
   const run = document.getElementById('rdSumRunBtn');
   const st = document.getElementById('rdSumStatus');
   if (run) run.disabled = true;
@@ -2887,7 +3346,11 @@ async function rdRunSummarize() {
     for (let i = 0; i < pages.length; i++) {
       const n = pages[i];
       const shown = rdShownPage(n, p.book);
-      if (st) st.textContent = `جارٍ قراءة الصفحة ${shown} (${i + 1} من ${pages.length}) بالقارئ...`;
+      const pageInfo = rdPartInfoAt(p.book, n);
+      const fromNb = !!(pageInfo.part && pageInfo.part.source === 'notebook');
+      if (st) st.textContent = fromNb
+        ? `جارٍ أخذ نص الصفحة ${shown} من الدفتر (${i + 1} من ${pages.length})...`
+        : `جارٍ قراءة الصفحة ${shown} (${i + 1} من ${pages.length}) بالقارئ...`;
       const text = await rdOcrFilePage(n);
       if (text) chunks.push(`— صفحة ${shown} —\n${text}`);
     }
@@ -2991,8 +3454,63 @@ function rdCopySummary() {
 }
 window.rdCopySummary = rdCopySummary;
 
+async function rdNotebookCropBlob(rect) {
+  const a4 = document.getElementById('rdA4');
+  const nb = document.getElementById('rdNotebook');
+  if (!a4 || !nb || !rect) return null;
+  const scale = 2;
+  const W = Math.max(1, Math.round(a4.offsetWidth * scale));
+  const H = Math.max(1, Math.round(a4.offsetHeight * scale));
+  const style = [
+    `width:${a4.offsetWidth}px`,
+    `height:${a4.offsetHeight}px`,
+    `background:#fffef8`,
+    `font-family:Amiri,serif`,
+    `font-size:20px`,
+    `line-height:2.15`,
+    `padding:56px 46px 64px`,
+    `direction:rtl`,
+    `text-align:justify`,
+    `color:#1f1a14`,
+    `box-sizing:border-box`,
+    `overflow:hidden`,
+  ].join(';');
+  const wrap = document.createElement('div');
+  wrap.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+  wrap.setAttribute('style', style);
+  wrap.innerHTML = nb.innerHTML;
+  let xhtml = '';
+  try { xhtml = new XMLSerializer().serializeToString(wrap); } catch (e) { xhtml = wrap.outerHTML; }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${a4.offsetWidth}px;height:${a4.offsetHeight}px;transform:scale(${scale});transform-origin:top left">${xhtml}</div></foreignObject></svg>`;
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = reject;
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(rect.w * W));
+  cv.height = Math.max(1, Math.round(rect.h * H));
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fffef8';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(img, -Math.round(rect.x * W), -Math.round(rect.y * H));
+  const overlay = document.getElementById('rdCanvas');
+  if (overlay && overlay.width && overlay.height) {
+    ctx.drawImage(
+      overlay,
+      rect.x * overlay.width, rect.y * overlay.height, Math.max(1, rect.w * overlay.width), Math.max(1, rect.h * overlay.height),
+      0, 0, cv.width, cv.height
+    );
+  }
+  return await new Promise(resolve => cv.toBlob(b => resolve(b), 'image/png'));
+}
+
 async function rdCropSelBlob() {
   if (!rdActiveSel) return null;
+  if (rdNotebookActive()) {
+    try { return await rdNotebookCropBlob(rdActiveSel.rect); } catch (e) { return null; }
+  }
   const img = document.getElementById('rdPageImg');
   if (!img || !img.naturalWidth) return null;
   const r = rdActiveSel.rect;
@@ -3016,6 +3534,13 @@ async function rdUploadBlob(blob, name) {
 }
 
 async function rdOcrSelection() {
+  if (rdNotebookActive()) {
+    const fromSel = (rdActiveSel && String(rdActiveSel.text || '').trim()) || '';
+    const fromRect = rdActiveSel ? rdNotebookTextInRect(rdActiveSel.rect) : '';
+    const text = fromSel || fromRect || rdHtmlToText((document.getElementById('rdNotebook') || {}).innerHTML || '').trim();
+    if (!text) throw new Error('لا نص في هذا الموضع');
+    return { text, file_url: '', reader: { name: 'دفتر' } };
+  }
   const reader = rdDefaultReader();
   if (!reader) return null;
   const blob = await rdCropSelBlob();
@@ -3035,7 +3560,7 @@ function rdSelAnalyze() {
   if (!rdNeedActiveSel()) return;
   rdHideSelBar(); rdSelFromHover = false;
   if (!rdAssistants.length) { rdToast('أنشئ مساعدًا أولًا بزر «مساعد»'); return; }
-  if (!rdDefaultReader()) return;
+  if (!rdNotebookActive() && !rdDefaultReader()) return;
   const box = document.getElementById('rdPickAsstList');
   box.innerHTML = rdAssistants.map(a => `
     <div class="rd-entity-card">
@@ -3078,6 +3603,13 @@ async function rdStartAnalysis(asstId, mode) {
   rdCurrent.discussions[discId] = disc;
   // ربط التحديد بالمناقشة وتظليله رماديًا
   const ann = rdPageAnn();
+  if (rdActiveSel.kind === 'nb') {
+    const rect = { ...rdActiveSel.rect };
+    ann.highlights.push(rdStampOn({ ...rect, c: '#888888', discussion_id: discId, text: rdActiveSel.text || '' }));
+    ann.seq.push('h');
+    rdActiveSel.kind = 'h';
+    rdActiveSel.index = ann.highlights.length - 1;
+  }
   const arr = rdActiveSel.kind === 'c' ? ann.crops : ann.highlights;
   if (arr && arr[rdActiveSel.index]) {
     arr[rdActiveSel.index].discussion_id = discId;
@@ -3261,9 +3793,9 @@ function rdCloseAnalysis() {
 async function rdSelRead() {
   if (!rdNeedActiveSel()) return;
   rdHideSelBar(); rdSelFromHover = false;
-  if (!rdDefaultReader()) return;
+  if (!rdNotebookActive() && !rdDefaultReader()) return;
   rdShowModal('rdReadTextModal');
-  document.getElementById('rdReadTextStatus').textContent = 'جارٍ استخراج النص بالقارئ...';
+  document.getElementById('rdReadTextStatus').textContent = rdNotebookActive() ? 'جارٍ أخذ النص من الدفتر...' : 'جارٍ استخراج النص بالقارئ...';
   document.getElementById('rdReadTextBody').textContent = '';
   try {
     const ocr = await rdOcrSelection();

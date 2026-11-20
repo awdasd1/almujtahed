@@ -11350,8 +11350,57 @@ body::-webkit-scrollbar,
 .rd-page-scroll { flex: 1 1 auto; height: 0; min-height: 0; max-height: none; overflow: auto; border: 1px solid var(--border-subtle); border-radius: 8px; background: #8a8378; padding: 14px; }
 .rd-a4 { position: relative; margin: 0 auto; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.35); width: 595px; max-width: 100%; aspect-ratio: 1 / 1.414; overflow: hidden; }
 .rd-a4.has-book { aspect-ratio: auto; }
+.rd-a4.rd-notebook-mode { aspect-ratio: 1 / 1.414; min-height: 842px; background: #fffef8; }
+.rd-a4.has-book.rd-notebook-mode { aspect-ratio: 1 / 1.414; }
 .rd-a4 img#rdPageImg { width: 100%; display: block; }
-.rd-a4 canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.rd-a4 canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; z-index: 2; }
+.rd-a4.rd-notebook-mode.rd-typing canvas { pointer-events: none; }
+.rd-notebook {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 56px 46px 64px;
+  overflow: hidden;
+  outline: none;
+  font-family: var(--font-amiri), serif;
+  font-size: 20px;
+  line-height: 2.15;
+  color: var(--text-dark, #1f1a14);
+  background: transparent;
+  word-spacing: 1px;
+  text-align: justify;
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: #6b3f24;
+}
+.rd-notebook.is-empty:before {
+  content: attr(data-placeholder);
+  color: #b3aa9c;
+  pointer-events: none;
+}
+.rd-notebook h3 { font-size: 24px; font-weight: 800; margin: 0 0 12px; line-height: 1.8; }
+.rd-notebook p { margin: 0 0 8px; }
+.rd-notebook ul, .rd-notebook ol { margin: 0 0 10px; padding-inline-start: 1.4em; }
+.rd-nb-format {
+  position: absolute;
+  top: 8px;
+  inset-inline: 10px;
+  z-index: 4;
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  pointer-events: auto;
+}
+.rd-nb-format button {
+  border: 1px solid var(--border-subtle);
+  background: rgba(255,255,255,.92);
+  color: inherit;
+  border-radius: 7px;
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.rd-nb-format button:hover { border-color: #b4552d; }
 .rd-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 14px; line-height: 2.1; color: #777; padding: 20px; }
 #rdNotesLayer { position: absolute; inset: 0; pointer-events: none; }
 .rd-note { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50% 50% 50% 4px; border: 1.5px solid rgba(0,0,0,.35); cursor: pointer; pointer-events: auto; font-size: 13px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
