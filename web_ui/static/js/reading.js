@@ -407,7 +407,10 @@ function rdSubmitPartMeta() {
       p.author = meta.author;
       p.edition = meta.edition;
     }
-    rdSave(); rdRenderProjectDetail(); rdClosePartMetaModal();
+    if (p.book) p.book.title = meta.bookName || p.book.title;
+    rdSave(); rdRenderProjectDetail();
+    if (rdCurrent && rdCurrent.id === p.id) rdUpdateBookUI();
+    rdClosePartMetaModal();
     rdToast('حُفظت بيانات الكتاب');
     return;
   }
@@ -746,7 +749,6 @@ function rdOpenProject(id) {
   if (!p) return;
   rdCurrent = p;
   if (p.book) rdEnsureParts(p.book);
-  document.getElementById('rdReaderTitle').textContent = `📖 ${p.book ? p.book.title : p.title}`;
   rdShowModal('rdReaderModal');
   rdBuildColorBars();
   rdSetTool('pen');
@@ -874,7 +876,10 @@ function rdGuardSource(kind, ev) {
 function rdOpenSource(kind) {
   if (kind === 'shamela') rdOpenShamelaPicker();
   else if (kind === 'web') rdOpenWebFetch();
-  else if (kind === 'upload') document.getElementById('rdUploadInput')?.click();
+  else if (kind === 'upload') {
+    const input = rdMountDetailUploadInput();
+    if (input) { input.value = ''; input.click(); }
+  }
 }
 function rdBookExistsChoice(choice) {
   rdCloseModal('rdBookExistsModal');
@@ -945,6 +950,15 @@ function rdApplyPageOffset() {
   rdToast(off ? `ضُبط الفارق على ${off}: رقم الكتاب = رقم الملف − ${off}` : 'أُلغي الفارق وعاد الترقيم إلى صفحات الملف');
 }
 
+function rdReaderHeading(p) {
+  if (!p) return '📖 مشروع قراءة';
+  if (!p.book) return `📖 ${p.title}`;
+  const parts = rdPartsOf(p);
+  const idx = Math.max(0, (rdLocus(p.page || 1, p.book).part || 1) - 1);
+  const meta = rdPartMetaOf(p, parts[idx], idx);
+  const name = meta.book || p.book.title || p.title;
+  return `📖 ${name}${meta.partNo ? ` — الجزء ${meta.partNo}` : ''}`;
+}
 function rdUpdateBookUI() {
   const p = rdCurrent;
   const has = !!(p && p.book);
@@ -954,11 +968,24 @@ function rdUpdateBookUI() {
   document.getElementById('rdA4').classList.toggle('has-book', has);
   document.getElementById('rdPageTotal').textContent = has ? (p.book.pages - rdOffsetOf(p.book)) : '—';
   const titleEl = document.getElementById('rdReaderTitle');
-  if (titleEl) titleEl.textContent = `📖 ${has ? p.book.title : p.title}`;
+  if (titleEl) titleEl.textContent = rdReaderHeading(p);
   if (has) rdEnsureParts(p.book);
-  document.getElementById('rdBookInfo').textContent = has
-    ? `الكتاب: ${p.book.title} (${p.book.source === 'shamela' ? 'من الشاملة المصوّرة' : p.book.source === 'web' ? 'من الشبكة' : 'PDF مرفوع'}) — ${p.book.pages} صفحة${p.book.parts.length > 1 ? ` في ${p.book.parts.length} أجزاء متسلسلة` : ''}`
-    : '';
+  const info = document.getElementById('rdBookInfo');
+  if (!info) return;
+  if (!has) { info.textContent = ''; return; }
+  const parts = rdPartsOf(p);
+  const idx = Math.max(0, (rdLocus(p.page || 1, p.book).part || 1) - 1);
+  const meta = rdPartMetaOf(p, parts[idx], idx);
+  const src = p.book.source === 'shamela' ? 'من الشاملة المصوّرة' : p.book.source === 'web' ? 'من الشبكة' : 'PDF مرفوع';
+  info.textContent = [
+    meta.book && `الكتاب: ${meta.book}`,
+    meta.author && `المؤلف: ${meta.author}`,
+    meta.edition && `الطبعة: ${meta.edition}`,
+    meta.partNo && `الجزء ${meta.partNo}`,
+    `${p.book.pages} صفحة`,
+    p.book.parts.length > 1 ? `في ${p.book.parts.length} أجزاء متسلسلة` : '',
+    `(${src})`,
+  ].filter(Boolean).join(' — ');
 }
 
 function rdLoadPage(n) {
@@ -967,6 +994,8 @@ function rdLoadPage(n) {
   n = Math.max(1, Math.min(p.book.pages || 1, Number(n) || 1));
   p.page = n;
   rdSyncPageField(n);
+  const titleEl = document.getElementById('rdReaderTitle');
+  if (titleEl) titleEl.textContent = rdReaderHeading(p);
   const img = document.getElementById('rdPageImg');
   img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); };
   img.onerror = () => { rdToast('تعذر عرض هذه الصفحة'); };
@@ -1537,16 +1566,14 @@ async function rdUploadPdfFile(file) {
   } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
 }
 document.addEventListener('DOMContentLoaded', () => {
-  rdMountDetailUploadInput();
-  ['rdUploadInput', 'rdDetailUploadInput'].forEach(id => {
-    const up = document.getElementById(id);
-    if (!up) return;
+  const up = rdMountDetailUploadInput();
+  if (up) {
     up.addEventListener('change', () => {
       const file = (up.files || [])[0];
       up.value = '';
       rdUploadPdfFile(file);
     });
-  });
+  }
 });
 
 function rdOpenShamelaPicker() { rdShowModal('rdShamelaModal'); setTimeout(() => document.getElementById('rdShamelaQuery')?.focus(), 120); }
