@@ -252,6 +252,28 @@ function rdPartStartPage(book, idx) {
   for (let i = 0; i < idx; i++) n += Number(parts[i].pages) || 0;
   return n;
 }
+function rdPartRange(book, idx) {
+  const parts = (book && book.parts) || [];
+  const span = rdBundleSpan(parts, idx);
+  let start = rdPartStartPage(book, span.start);
+  let len = 0;
+  for (let i = span.start; i < span.start + span.count; i++) len += Number(parts[i] && parts[i].pages) || 0;
+  return { start, len, end: start + len, span };
+}
+function rdBookRowKey(book, idx) {
+  const parts = (book && book.parts) || [];
+  const span = rdBundleSpan(parts, idx);
+  const part = parts[span.start];
+  if (part && part.bundleId) return `b:${part.bundleId}`;
+  return `i:${span.start}`;
+}
+function rdRememberPage(p, n) {
+  if (!p || !p.book) return;
+  const page = Math.max(1, Number(n) || 1);
+  const info = rdPartInfoAt(p.book, page);
+  p.lastPages = p.lastPages || {};
+  p.lastPages[rdBookRowKey(p.book, info.idx)] = page;
+}
 function rdPartSourceLabel(part) {
   if (!part) return '—';
   if (part.source === 'shamela') return 'الشاملة المصوّرة';
@@ -325,7 +347,12 @@ function rdOpenPartInReader(id, idx) {
   const p = rdProject(id);
   if (!p || !p.book) { rdOpenProject(id); return; }
   rdEnsureParts(p.book);
-  p.page = rdPartStartPage(p.book, idx);
+  const range = rdPartRange(p.book, idx);
+  const cur = Number(p.page) || 1;
+  if (cur < range.start || cur >= range.end) {
+    const remembered = Number(p.lastPages && p.lastPages[rdBookRowKey(p.book, range.span.start)]);
+    p.page = (remembered >= range.start && remembered < range.end) ? remembered : range.start;
+  }
   rdOpenProject(id);
 }
 window.rdOpenPartInReader = rdOpenPartInReader;
@@ -920,6 +947,7 @@ function rdCloseReader() {
   const backId = rdReturnToAnalysis ? rdBookAnalysisId : null;
   const backPart = rdReturnToAnalysis ? rdBookAnalysisPartIdx : null;
   rdReturnToAnalysis = false;
+  if (rdCurrent) rdRememberPage(rdCurrent, rdCurrent.page || 1);
   rdSaveNow(false);
   rdCloseModal('rdReaderModal');
   if (rdDetailId) rdCurrent = rdProject(rdDetailId);
@@ -1365,6 +1393,7 @@ function rdLoadPage(n) {
   n = Math.max(1, Math.min(p.book.pages || 1, Number(n) || 1));
   if (rdSearchHitMark && rdSearchHitMark.filePage !== n) rdSearchHitMark = null;
   p.page = n;
+  rdRememberPage(p, n);
   rdUpdateBookUI();
   rdSyncPageField(n);
   const img = document.getElementById('rdPageImg');
