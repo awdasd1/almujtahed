@@ -9157,7 +9157,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.763"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.764"},
         },
     })
     if opened.get("error"):
@@ -15483,6 +15483,126 @@ async def upload_reading_book(request: Request, file: UploadFile = File(...)):
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="الملف ليس PDF صالحًا")
     return {"ok": True, "file_name": name, "title": safe, "pages": pages}
+
+
+@app.post("/api/reading-projects/export-project")
+async def export_reading_project(request: Request, payload: Any = Body(...)):
+    """تصدير مشروع قراءة في ZIP: بياناته وملفات PDF المرفوعة."""
+    owner_id = current_owner_id(request)
+    pid = str((payload or {}).get("project_id") or "")
+    bundle = _rd_load_bundle(owner_id)
+    project = next((p for p in bundle["projects"] if p.get("id") == pid), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="المشروع غير موجود")
+    import io, copy, re as _re, zipfile
+    from urllib.parse import quote as _quote
+    proj = copy.deepcopy(project)
+    buf = io.BytesIO()
+    used = set()
+    pdf_count = 0
+
+    def _safe(s):
+        return _re.sub(r"[\\/:*?\"<>|\s]+", "-", str(s or "")).strip("-") or "x"
+
+    rdir = _rd_reading_dir(owner_id)
+    book = proj.get("book") if isinstance(proj.get("book"), dict) else {}
+    parts = book.get("parts") if isinstance(book.get("parts"), list) else []
+    if not parts and book.get("file_name"):
+        parts = [book]
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for i, part in enumerate(parts):
+            fn = (part or {}).get("file_name")
+            if not fn:
+                continue
+            src = rdir / Path(str(fn)).name
+            if not src.exists():
+                continue
+            arc = f"books/{i + 1:02d}_{_safe(part.get('title') or src.stem)}{src.suffix or '.pdf'}"
+            n = 2
+            while arc in used:
+                arc = f"books/{i + 1:02d}_{_safe(part.get('title') or src.stem)}_{n}{src.suffix or '.pdf'}"
+                n += 1
+            used.add(arc)
+            try:
+                zf.write(src, arc)
+                part["file_name"] = arc
+                pdf_count += 1
+            except Exception:
+                continue
+        if book:
+            book["parts"] = parts
+            proj["book"] = book
+        zf.writestr("manifest.json", json.dumps({
+            "app": "Almoghni — قراءة وتحليل",
+            "kind": "reading_project_export",
+            "exported_at": datetime.now().isoformat(timespec="seconds"),
+            "project_title": proj.get("title") or "",
+            "project_id": proj.get("id") or "",
+            "pdfs": pdf_count,
+        }, ensure_ascii=False, indent=1))
+        zf.writestr("project.json", json.dumps(proj, ensure_ascii=False, indent=1))
+    buf.seek(0)
+    fname = f"قراءة-{_safe(proj.get('title') or 'مشروع')}-{datetime.now().strftime('%Y-%m-%d')}.zip"
+    return StreamingResponse(
+        buf, media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{_quote(fname)}",
+                 "X-Project-Pdfs": str(pdf_count)},
+    )
+
+
+@app.post("/api/reading-projects/import-project")
+async def import_reading_project(request: Request, file: UploadFile = File(...)):
+    """استيراد مشروع قراءة من ZIP: البيانات ونسخ ملفات PDF إلى مجلد القراءة."""
+    owner_id = current_owner_id(request)
+    raw = await file.read()
+    import io, copy, re as _re, zipfile, time as _time
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except Exception:
+        raise HTTPException(status_code=400, detail="الملف ليس أرشيف ZIP صالحًا")
+    names = zf.namelist()
+    proj_name = next((n for n in names if n.endswith("project.json")), None)
+    if not proj_name:
+        raise HTTPException(status_code=400, detail="الأرشيف بلا project.json")
+    try:
+        proj = json.loads(zf.read(proj_name).decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="تعذر قراءة بيانات المشروع")
+    if not isinstance(proj, dict):
+        raise HTTPException(status_code=400, detail="صيغة المشروع غير صالحة")
+    rdir = _rd_reading_dir(owner_id)
+    book = proj.get("book") if isinstance(proj.get("book"), dict) else None
+    parts = (book.get("parts") if book and isinstance(book.get("parts"), list) else []) or []
+    if book and not parts and book.get("file_name"):
+        parts = [book]
+    for part in parts:
+        fn = str((part or {}).get("file_name") or "")
+        if not fn:
+            continue
+        member = fn if fn in names else next((n for n in names if n.endswith(Path(fn).name)), None)
+        if not member:
+            continue
+        try:
+            data = zf.read(member)
+        except Exception:
+            continue
+        safe = _re.sub(r"[\\/:*?\"<>|]", "", Path(member).stem).strip() or "كتاب"
+        name = f"{int(_time.time() * 1000)}_{safe}.pdf"
+        dest = rdir / name
+        dest.write_bytes(data)
+        part["file_name"] = name
+        part["source"] = part.get("source") or "pdf"
+    if book:
+        book["parts"] = parts
+        proj["book"] = book
+    stamp_iso = datetime.now().isoformat(timespec="seconds")
+    proj["id"] = f"rd{int(_time.time() * 1000):x}"
+    proj["created_at"] = stamp_iso
+    proj["updated_at"] = stamp_iso
+    bundle = _rd_load_bundle(owner_id)
+    bundle["projects"].insert(0, proj)
+    _save_owned_json(owner_id, "reading", bundle)
+    return {"ok": True, "id": proj["id"], "title": proj.get("title") or ""}
 
 
 @app.get("/api/reading-projects/page-image")

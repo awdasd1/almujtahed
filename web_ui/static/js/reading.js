@@ -72,10 +72,10 @@ function rdStampOn(obj) {
   return obj;
 }
 
+let rdDetailId = null;
+
 async function initReadingTab() {
-  const hint = document.getElementById('rdNewDateHint');
-  if (hint) hint.textContent = `تاريخ بداية المشروع الجديد إن اعتمدته الآن: ${rdNowStamp().display}`;
-  if (rdLoaded) { renderRdProjects(); return; }
+  if (rdLoaded) { renderRdProjects(); if (rdDetailId) rdRenderProjectDetail(); return; }
   try {
     const res = await fetch('/api/reading-projects');
     const data = await res.json();
@@ -99,53 +99,202 @@ async function rdSave() {
   } catch (e) { /* يحفظ عند عودة الاتصال */ }
 }
 
+function rdPartsOf(p) {
+  if (!p || !p.book) return [];
+  const b = rdEnsureParts(p.book);
+  return (b && b.parts) || [];
+}
+function rdBookCount(p) { return rdPartsOf(p).length; }
+
 function renderRdProjects() {
-  const wrap = document.getElementById('rdProjectsList');
-  if (!wrap) return;
+  const tbody = document.getElementById('rdProjectsTableBody');
+  if (!tbody) return;
   if (!rdProjects.length) {
-    wrap.innerHTML = '<div class="ms-empty">لا مشاريع قراءة بعد. أنشئ أول مشروع، ثم اسحب كتابه وابدأ القراءة والتحليل.</div>';
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" class="groups-empty-state">
+          <p style="font-size: 14px; margin-bottom: 12px;">لا مشاريع قراءة بعد. أنشئ أول مشروع، ثم أضف كتبه وأجزاءه داخله.</p>
+          <button type="button" class="btn-flat-primary" onclick="rdOpenCreateModal()" style="margin: 0 auto;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            <span>إنشاء مشروع جديد</span>
+          </button>
+        </td>
+      </tr>`;
     return;
   }
-  wrap.innerHTML = rdProjects.map(p => {
-    const metaLine = [p.bookName || (p.book && p.book.title) ? `الكتاب: ${rdEsc(p.bookName || p.book.title)}` : '', p.author ? `المؤلف: ${rdEsc(p.author)}` : '', p.edition ? `الطبعة: ${rdEsc(p.edition)}` : ''].filter(Boolean).join(' · ');
+  tbody.innerHTML = rdProjects.map(p => {
+    const count = rdBookCount(p);
     return `
-    <div class="ms-project-card">
-      <div class="ms-project-card-title">📖 ${rdEsc(p.title)}</div>
-      ${p.desc ? `<div class="ms-project-card-desc">${rdEsc(p.desc)}</div>` : ''}
-      <div class="ms-project-card-stats">بدأ: ${rdEsc(p.created_display || '')}</div>
-      ${metaLine ? `<div class="ms-project-card-stats">${metaLine}</div>` : ''}
-      <div class="ms-project-card-stats">${p.book ? `${p.book.pages} صفحة${(p.book.parts && p.book.parts.length > 1) ? ` · ${p.book.parts.length} أجزاء` : ''} · وقفت عند صفحة ${rdShownPage(p.page, p.book)} · ${rdCollectComments(p).length} تعليقًا` : 'لا كتاب مسحوبًا بعد'}</div>
-      <div class="ms-card-actions">
-        <button type="button" class="ms-btn ms-btn-primary" onclick="rdOpenProject('${p.id}')">فتح القراءة</button>
-        <button type="button" class="ms-btn" onclick="rdOpenBookAnalysis('${p.id}')">تحليل الكتاب</button>
-        <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteProject('${p.id}')">حذف</button>
-      </div>
-    </div>`;
+      <tr id="rdrow_${p.id}">
+        <td>
+          <div class="group-name-cell" onclick="rdOpenProjectDetail('${p.id}')" title="انقر لفتح المشروع وإضافة الكتب">
+            <span class="group-icon-avatar">📖</span>
+            <span>${rdEsc(p.title)}</span>
+          </div>
+        </td>
+        <td><div class="group-desc-cell">${rdEsc(p.desc || '')}</div></td>
+        <td style="text-align:center">
+          <span class="group-badge-count">${count ? `${count} ${count === 1 ? 'كتاب' : 'أجزاء'}` : 'بلا كتب'}</span>
+        </td>
+        <td style="text-align:center">
+          <div class="group-actions-cell">
+            <button type="button" class="action-icon-btn btn-edit-group" onclick="rdOpenProjectDetail('${p.id}')" title="فتح المشروع وإضافة الكتب">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button type="button" class="action-icon-btn btn-duplicate-group" onclick="rdDuplicateProject('${p.id}')" title="تكرار المشروع">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="13" height="13" x="9" y="9" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+            <button type="button" class="action-icon-btn btn-export-group" onclick="rdExportProject('${p.id}')" title="تصدير المشروع وكتبه ZIP">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </button>
+            <button type="button" class="action-icon-btn" onclick="rdShareProjectPack('${p.id}')" title="مشاركة المشروع مضغوطًا مع كتبه">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            </button>
+            <button type="button" class="action-icon-btn btn-delete-group" onclick="rdDeleteProject('${p.id}')" title="حذف المشروع">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </td>
+      </tr>`;
   }).join('');
 }
 
-function rdCreateProject() {
-  const title = document.getElementById('rdNewTitle').value.trim();
-  if (!title) { rdToast('اكتب اسم المشروع أولًا'); return; }
+function rdOpenCreateModal(editId) {
+  const overlay = document.getElementById('rdProjectModalOverlay');
+  const idEl = document.getElementById('rdEditProjectId');
+  const nameEl = document.getElementById('rdGroupNameInput');
+  const descEl = document.getElementById('rdGroupDescInput');
+  const titleEl = document.getElementById('rdProjectModalTitle');
+  const btn = document.getElementById('rdProjectModalSubmit');
+  const hint = document.getElementById('rdNewDateHint');
+  const p = editId ? rdProject(editId) : null;
+  if (idEl) idEl.value = p ? p.id : '';
+  if (nameEl) nameEl.value = p ? (p.title || '') : '';
+  if (descEl) descEl.value = p ? (p.desc || '') : '';
+  if (titleEl) titleEl.textContent = p ? 'تعديل مشروع القراءة' : 'إنشاء مشروع قراءة';
+  if (btn) btn.textContent = p ? 'حفظ' : 'إنشاء';
+  if (hint) hint.textContent = p ? `أُنشئ: ${p.created_display || ''}` : `تاريخ بداية المشروع إن اعتمدته الآن: ${rdNowStamp().display}`;
+  if (overlay) overlay.classList.add('open');
+  setTimeout(() => nameEl && nameEl.focus(), 80);
+}
+function rdCloseCreateModal() {
+  const overlay = document.getElementById('rdProjectModalOverlay');
+  if (overlay) overlay.classList.remove('open');
+}
+function rdHandleProjectModalOverlay(e) {
+  if (e.target.id === 'rdProjectModalOverlay') rdCloseCreateModal();
+}
+function rdSaveProjectFromModal() {
+  const editId = (document.getElementById('rdEditProjectId').value || '').trim();
+  const title = (document.getElementById('rdGroupNameInput').value || '').trim();
+  const desc = (document.getElementById('rdGroupDescInput').value || '').trim();
+  if (!title) { rdToast('اكتب اسم المشروع'); document.getElementById('rdGroupNameInput')?.focus(); return; }
+  if (!desc) { rdToast('اكتب وصف المشروع'); document.getElementById('rdGroupDescInput')?.focus(); return; }
+  if (editId) {
+    const p = rdProject(editId);
+    if (!p) return;
+    p.title = title; p.desc = desc; p.updated_at = new Date().toISOString();
+    rdSave(); renderRdProjects(); rdRenderProjectDetail(); rdCloseCreateModal();
+    rdToast(`حُدّث مشروع «${title}»`);
+    return;
+  }
   const stamp = rdNowStamp();
   const p = {
-    id: rdUid(), title,
-    bookName: (document.getElementById('rdNewBookName').value || '').trim(),
-    author: (document.getElementById('rdNewAuthor').value || '').trim(),
-    edition: (document.getElementById('rdNewEdition').value || '').trim(),
-    desc: document.getElementById('rdNewDesc').value.trim(),
+    id: rdUid(), title, desc,
+    bookName: '', author: '', edition: '',
     created_at: stamp.iso, created_display: stamp.display,
     book: null, page: 1, annotations: {}, updated_at: stamp.iso,
   };
   rdProjects.unshift(p);
-  document.getElementById('rdNewTitle').value = '';
-  document.getElementById('rdNewBookName').value = '';
-  document.getElementById('rdNewAuthor').value = '';
-  document.getElementById('rdNewEdition').value = '';
-  document.getElementById('rdNewDesc').value = '';
-  rdSave(); renderRdProjects();
-  rdOpenProject(p.id);
+  rdSave(); renderRdProjects(); rdCloseCreateModal();
+  rdOpenProjectDetail(p.id);
+  rdToast(`أُنشئ مشروع «${title}» — أضف كتبه أو أجزاءه`);
 }
+function rdShowProjectsView() {
+  rdDetailId = null;
+  const list = document.getElementById('rdProjectsSection');
+  const det = document.getElementById('rdProjectDetailSection');
+  if (list) list.style.display = '';
+  if (det) det.style.display = 'none';
+  renderRdProjects();
+}
+function rdOpenProjectDetail(id) {
+  const p = rdProject(id);
+  if (!p) return;
+  rdDetailId = id;
+  const list = document.getElementById('rdProjectsSection');
+  const det = document.getElementById('rdProjectDetailSection');
+  if (list) list.style.display = 'none';
+  if (det) det.style.display = '';
+  rdRenderProjectDetail();
+}
+window.rdOpenProjectDetail = rdOpenProjectDetail;
+function rdPartStartPage(book, idx) {
+  let n = 1;
+  const parts = (book && book.parts) || [];
+  for (let i = 0; i < idx; i++) n += Number(parts[i].pages) || 0;
+  return n;
+}
+function rdPartSourceLabel(part) {
+  if (!part) return '—';
+  if (part.source === 'shamela') return 'الشاملة المصوّرة';
+  if (part.source === 'web') return 'من الشبكة';
+  return 'PDF مرفوع';
+}
+function rdRenderProjectDetail() {
+  const p = rdProject(rdDetailId);
+  if (!p) { rdShowProjectsView(); return; }
+  const title = document.getElementById('rdDetailTitle');
+  const desc = document.getElementById('rdDetailDesc');
+  const crumb = document.getElementById('rdProjectBreadcrumb');
+  const tbody = document.getElementById('rdPartsTableBody');
+  if (title) title.textContent = p.title;
+  if (desc) desc.textContent = p.desc || '';
+  if (crumb) crumb.textContent = `مشروع: ${p.title}`;
+  if (!tbody) return;
+  const parts = rdPartsOf(p);
+  if (!parts.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="groups-empty-state"><p style="font-size:14px">لا كتب في هذا المشروع بعد. أضف الكتاب أو الجزء الأول من الأزرار أسفل الجدول.</p></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = parts.map((part, i) => `
+    <tr>
+      <td>
+        <div class="group-name-cell" onclick="rdOpenPartInReader('${p.id}', ${i})" title="فتح هذا الجزء في نافذة القراءة">
+          <span class="group-icon-avatar">${i + 1}</span>
+          <span>${rdEsc(part.title || `الجزء ${i + 1}`)}</span>
+        </div>
+      </td>
+      <td><div class="group-desc-cell">${rdEsc(rdPartSourceLabel(part))}</div></td>
+      <td style="text-align:center"><span class="group-badge-count">${part.pages || 1} صفحة</span></td>
+      <td style="text-align:center">
+        <div class="group-actions-cell">
+          <button type="button" class="action-icon-btn" onclick="rdOpenPartInReader('${p.id}', ${i})" title="فتح القراءة من هذا الجزء">📖</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+function rdOpenPartInReader(id, idx) {
+  const p = rdProject(id);
+  if (!p || !p.book) { rdOpenProject(id); return; }
+  rdEnsureParts(p.book);
+  p.page = rdPartStartPage(p.book, idx);
+  rdOpenProject(id);
+}
+function rdAddPart(kind, ev) {
+  const p = rdProject(rdDetailId);
+  if (!p) { rdToast('افتح مشروعًا أولًا'); return false; }
+  rdCurrent = p;
+  if (p.book) rdAppendMode = true;
+  if (kind === 'upload') {
+    if (ev) ev.preventDefault();
+    document.getElementById('rdDetailUploadInput')?.click();
+    return false;
+  }
+  rdOpenSource(kind);
+  return false;
+}
+window.rdAddPart = rdAddPart;
 
 function rdBookMeta(p) {
   return {
@@ -339,11 +488,106 @@ function rdShareBookAnalysis() {
 }
 window.rdShareBookAnalysis = rdShareBookAnalysis;
 
-function rdDeleteProject(id) {
-  const p = rdProject(id);
-  if (!p || !confirm(`حذف مشروع قراءة «${p.title}» بكل تعليقاته وملصقاته؟`)) return;
-  rdProjects = rdProjects.filter(x => x.id !== id);
+function rdDuplicateProject(id) {
+  const original = rdProject(id);
+  if (!original) return;
+  const cloned = JSON.parse(JSON.stringify(original));
+  const stamp = rdNowStamp();
+  cloned.id = rdUid();
+  cloned.title = `${original.title} (نسخة)`;
+  cloned.created_at = stamp.iso;
+  cloned.created_display = stamp.display;
+  cloned.updated_at = stamp.iso;
+  rdProjects.unshift(cloned);
   rdSave(); renderRdProjects();
+  rdToast(`كُرّر مشروع «${cloned.title}»`);
+}
+window.rdDuplicateProject = rdDuplicateProject;
+
+async function rdFetchProjectZip(id) {
+  const res = await fetch('/api/reading-projects/export-project', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: id }),
+  });
+  const blob = await res.blob();
+  if (!res.ok) {
+    let msg = 'تعذر تصدير المشروع';
+    try { const j = JSON.parse(await blob.text()); msg = j.detail || msg; } catch (e) { /* */ }
+    throw new Error(msg);
+  }
+  const p = rdProject(id);
+  const safe = String((p && p.title) || 'مشروع').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'مشروع';
+  return { blob, fileName: `قراءة-${safe}.zip`, title: (p && p.title) || 'مشروع قراءة' };
+}
+async function rdExportProject(id) {
+  try {
+    rdToast('جارٍ تحزيم المشروع وكتبه...');
+    const pack = await rdFetchProjectZip(id);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(pack.blob);
+    a.download = pack.fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    rdToast(`📤 صُدّر «${pack.title}» ملفًا مضغوطًا`);
+  } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
+}
+window.rdExportProject = rdExportProject;
+async function rdShareProjectPack(id) {
+  try {
+    rdToast('جارٍ تحزيم المشروع للمشاركة...');
+    const pack = await rdFetchProjectZip(id);
+    const file = new File([pack.blob], pack.fileName, { type: 'application/zip' });
+    rdShowShareModal('', file, pack.title);
+  } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
+}
+window.rdShareProjectPack = rdShareProjectPack;
+async function rdHandleProjectImport(ev) {
+  const file = (ev.target && ev.target.files && ev.target.files[0]) || null;
+  if (ev.target) ev.target.value = '';
+  if (!file) return;
+  rdToast('جارٍ استيراد المشروع...');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/reading-projects/import-project', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر الاستيراد');
+    rdLoaded = false;
+    await initReadingTab();
+    if (data.id) rdOpenProjectDetail(data.id);
+    rdToast(`✔ استُورد مشروع «${data.title || ''}»`);
+  } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
+}
+window.rdHandleProjectImport = rdHandleProjectImport;
+
+async function rdDeleteProject(id) {
+  const p = rdProject(id);
+  if (!p) return;
+  const parts = rdBookCount(p);
+  const msg = parts
+    ? `حذف مشروع «${p.title}» وكل كتبه وتعليقاته (${parts} جزءًا)؟`
+    : `حذف مشروع قراءة «${p.title}» بكل تعليقاته؟`;
+  let ok = false;
+  if (typeof showConfirmDialog === 'function') {
+    ok = await showConfirmDialog({
+      title: 'تأكيد حذف مشروع القراءة',
+      message: msg,
+      confirmText: 'نعم، احذف المشروع',
+      cancelText: 'إلغاء',
+      danger: true,
+      icon: 'trash-2',
+    });
+  } else {
+    ok = confirm(msg);
+  }
+  if (!ok) return;
+  rdProjects = rdProjects.filter(x => x.id !== id);
+  if (rdDetailId === id) rdShowProjectsView();
+  if (rdCurrent && rdCurrent.id === id) { rdCloseModal('rdReaderModal'); rdCurrent = null; }
+  rdSave(); renderRdProjects();
+  rdToast(`حُذف مشروع «${p.title}»`);
 }
 
 // ---------- نافذة القراءة ----------
@@ -367,8 +611,10 @@ function rdCloseReader() {
   rdReturnToAnalysis = false;
   rdSaveNow(false);
   rdCloseModal('rdReaderModal');
-  rdCurrent = null;
+  if (rdDetailId) rdCurrent = rdProject(rdDetailId);
+  else rdCurrent = null;
   renderRdProjects();
+  if (rdDetailId) rdRenderProjectDetail();
   if (backId) rdOpenBookAnalysis(backId);
 }
 
@@ -412,6 +658,10 @@ function rdBookPageUrl(n) {
   return rdPartPageUrl(last, last.pages);
 }
 // اعتماد كتاب مسحوب: كتابًا أول أو جزءًا تاليًا يلحق بالتسلسل
+function rdReaderIsOpen() {
+  const m = document.getElementById('rdReaderModal');
+  return !!(m && !m.hidden);
+}
 function rdApplyBook(nb, asAppend) {
   if (!rdCurrent) return;
   if (asAppend && rdCurrent.book) {
@@ -419,7 +669,9 @@ function rdApplyBook(nb, asAppend) {
     const startPage = b.pages + 1;
     b.parts.push(rdPartOf(nb));
     rdEnsureParts(b);
-    rdUpdateBookUI(); rdLoadPage(startPage); rdSaveNow(false);
+    if (rdReaderIsOpen()) { rdUpdateBookUI(); rdLoadPage(startPage); }
+    rdSaveNow(false);
+    rdRenderProjectDetail();
     rdToast(`✔ أُضيف الجزء التالي «${nb.title}» (${nb.pages} صفحة) — يبدأ من صفحة ${startPage}، والكتاب الآن ${b.parts.length} أجزاء`);
     return;
   }
@@ -427,7 +679,10 @@ function rdApplyBook(nb, asAppend) {
   rdCurrent.book = nb;
   if (!rdCurrent.bookName && nb.title) rdCurrent.bookName = nb.title;
   rdCurrent.annotations = {};
-  rdUpdateBookUI(); rdLoadPage(1); rdSaveNow(false);
+  if (rdReaderIsOpen()) { rdUpdateBookUI(); rdLoadPage(1); }
+  else rdCurrent.page = 1;
+  rdSaveNow(false);
+  rdRenderProjectDetail();
 }
 
 // تنبيه وجود كتاب حالي عند ضغط أي زر سحب/رفع
@@ -461,10 +716,9 @@ function rdBookExistsChoice(choice) {
     if (kind) rdOpenSource(kind);
   } else if (choice === 'new') {
     rdAppendMode = false;
-    rdCloseReader();
-    rdToast('📖 لحسن التنظيم: أنشئ مشروع قراءة جديدًا لهذا الكتاب من الأعلى', 5000);
-    const t = document.getElementById('rdNewTitle');
-    if (t) { t.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => t.focus(), 350); }
+    rdCloseModal('rdReaderModal');
+    rdOpenCreateModal();
+    rdToast('📖 أنشئ مشروع قراءة جديدًا لهذا الكتاب', 4000);
   } else {
     rdAppendMode = false;
   }
@@ -1098,23 +1352,29 @@ function rdEditNote(i, ev) {
 window.rdEditNote = rdEditNote;
 
 // ---------- مصادر الكتاب ----------
+async function rdUploadPdfFile(file) {
+  if (!file || !rdCurrent) return;
+  rdToast('جارٍ رفع الكتاب إلى مجلد مشاريع القراءة...');
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/reading-projects/upload-book', { method: 'POST', body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر رفع الكتاب');
+    const wasAppend = rdAppendMode; rdAppendMode = false;
+    rdApplyBook({ source: 'pdf', title: data.title, file_name: data.file_name, pages: data.pages }, wasAppend);
+    if (!wasAppend) rdToast(`✔ سُحب كتاب «${data.title}» (${data.pages} صفحة) — فعّلت الأدوات`);
+  } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
+}
 document.addEventListener('DOMContentLoaded', () => {
-  const up = document.getElementById('rdUploadInput');
-  if (up) up.addEventListener('change', async () => {
-    const file = (up.files || [])[0];
-    up.value = '';
-    if (!file || !rdCurrent) return;
-    rdToast('جارٍ رفع الكتاب إلى مجلد مشاريع القراءة...');
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await fetch('/api/reading-projects/upload-book', { method: 'POST', body: form });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || 'تعذر رفع الكتاب');
-      const wasAppend = rdAppendMode; rdAppendMode = false;
-      rdApplyBook({ source: 'pdf', title: data.title, file_name: data.file_name, pages: data.pages }, wasAppend);
-      if (!wasAppend) rdToast(`✔ سُحب كتاب «${data.title}» (${data.pages} صفحة) — فعّلت الأدوات`);
-    } catch (e) { rdToast(`❌ ${e.message}`, 5000); }
+  ['rdUploadInput', 'rdDetailUploadInput'].forEach(id => {
+    const up = document.getElementById(id);
+    if (!up) return;
+    up.addEventListener('change', () => {
+      const file = (up.files || [])[0];
+      up.value = '';
+      rdUploadPdfFile(file);
+    });
   });
 });
 

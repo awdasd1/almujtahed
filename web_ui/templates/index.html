@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.763">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.764">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.763" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.764" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.763 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.764 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -1914,25 +1914,120 @@
         </div>
 
         <section class="tab-pane" id="paneReading">
-            <div class="ms-wrap">
-                <p class="ms-sub">مشاريع قراءتك الخاصة: قيّد وابحث ودقّق وحلّل على صفحات كتبك بأقلامك وتظليلك وملصقاتك، واحفظ موضع وقوفك لتعود إليه.</p>
-                <div class="ms-create-card">
-                    <div class="ms-create-title">مشروع قراءة جديد</div>
-                    <div class="rd-create-form">
-                    <div class="ms-form-row">
-                        <input type="text" id="rdNewTitle" placeholder="اسم المشروع *">
-                        <input type="text" id="rdNewBookName" placeholder="اسم الكتاب">
-                        <input type="text" id="rdNewAuthor" placeholder="المؤلف">
-                        <input type="text" id="rdNewEdition" placeholder="الطبعة">
+            <div class="agents-container">
+                <div id="rdProjectsSection">
+                    <div class="agents-header">
+                        <div>
+                            <h2>مشاريع القراءة والتحليل</h2>
+                            <p style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+                                نظّم كتبك وأجزاءها في مشاريع، ثم اقرأ وحلّل على الصفحات بأقلامك وتظليلك وملصقاتك
+                            </p>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <label class="btn-flat-secondary native-file-btn" title="استيراد مشروع قراءة من ملف ZIP">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                                <span>استيراد 📥</span>
+                                <input type="file" id="rdImportFileInput" class="native-file-input" accept=".zip,application/zip" onchange="rdHandleProjectImport(event)">
+                            </label>
+                            <button type="button" class="btn-flat-primary" onclick="rdOpenCreateModal()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M5 12h14" />
+                                </svg>
+                                <span>إنشاء مشروع</span>
+                            </button>
+                        </div>
                     </div>
-                    <div class="ms-form-row">
-                        <input type="text" id="rdNewDesc" placeholder="وصف المشروع (الغرض، أسئلة القراءة...)">
-                        <button type="button" class="ms-btn ms-btn-primary" onclick="rdCreateProject()">اعتمد</button>
+                    <div class="activity-table-wrapper groups-table-wrap">
+                        <table class="activity-table groups-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-group-name">اسم المشروع</th>
+                                    <th class="col-group-desc">وصف المشروع</th>
+                                    <th class="col-group-agents">الكتب</th>
+                                    <th class="col-group-actions">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rdProjectsTableBody"></tbody>
+                        </table>
                     </div>
-                    </div>
-                    <div class="ms-hint" id="rdNewDateHint"></div>
                 </div>
-                <div id="rdProjectsList" class="ms-projects-grid"></div>
+
+                <div id="rdProjectDetailSection" style="display:none">
+                    <div class="group-detail-nav-bar">
+                        <button type="button" class="btn-flat-secondary btn-back-to-groups" onclick="rdShowProjectsView()" title="الرجوع لقائمة المشاريع">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="m9 18 6-6-6-6" />
+                            </svg>
+                            <span>العودة إلى المشاريع</span>
+                        </button>
+                        <div class="group-breadcrumb-tag" id="rdProjectBreadcrumb">مشروع قراءة</div>
+                    </div>
+                    <div class="agents-header" style="margin-top: 14px;">
+                        <div>
+                            <h2 id="rdDetailTitle">كتب المشروع</h2>
+                            <p id="rdDetailDesc" style="font-size: 14px; color: var(--text-muted); margin-top: 4px;"></p>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            <button type="button" class="btn-flat-secondary" onclick="rdOpenCreateModal(rdDetailId)">تعديل الاسم والوصف</button>
+                            <button type="button" class="btn-flat-secondary" onclick="rdOpenBookAnalysis(rdDetailId)">تحليل الكتاب</button>
+                            <button type="button" class="btn-flat-primary" onclick="rdOpenProject(rdDetailId)">فتح القراءة</button>
+                        </div>
+                    </div>
+                    <div class="activity-table-wrapper groups-table-wrap">
+                        <table class="activity-table groups-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-group-name">اسم الكتاب / الجزء</th>
+                                    <th class="col-group-desc">المصدر</th>
+                                    <th class="col-group-agents">الصفحات</th>
+                                    <th class="col-group-actions">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rdPartsTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="rd-detail-add">
+                        <span class="rd-detail-add-label">إضافة كتاب أو جزء:</span>
+                        <label class="ms-btn ms-btn-primary ms-upload-label" onclick="return rdAddPart('upload', event)">⬆ رفع PDF
+                            <input type="file" id="rdDetailUploadInput" accept=".pdf,application/pdf" hidden>
+                        </label>
+                        <button type="button" class="ms-btn" onclick="rdAddPart('shamela')">📚 من الشاملة</button>
+                        <button type="button" class="ms-btn" onclick="rdAddPart('web')">🌐 من الشبكة</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-overlay" id="rdProjectModalOverlay" onclick="rdHandleProjectModalOverlay(event)">
+                <div class="modal-window" style="height: auto; max-width: 520px;">
+                    <div class="modal-header">
+                        <div class="modal-title" id="rdProjectModalTitle">إنشاء مشروع قراءة</div>
+                        <button class="btn-icon" type="button" onclick="rdCloseCreateModal()" title="إغلاق">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 6 6 18M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="modal-tab-content" style="padding: 22px 24px;">
+                        <input type="hidden" id="rdEditProjectId" value="">
+                        <div class="form-group">
+                            <label for="rdGroupNameInput">اسم المشروع: <span style="color: #ef4444;">*</span></label>
+                            <input type="text" id="rdGroupNameInput" class="form-input" placeholder="مثال: قراءة فتح الباري">
+                        </div>
+                        <div class="form-group" style="margin-top: 14px;">
+                            <label for="rdGroupDescInput">وصف المشروع: <span style="color: #ef4444;">*</span></label>
+                            <textarea id="rdGroupDescInput" class="form-textarea" rows="3" placeholder="الغرض من القراءة، أسئلة المشروع، الطبعة المعتمدة..."></textarea>
+                        </div>
+                        <div class="ms-hint" id="rdNewDateHint"></div>
+                    </div>
+                    <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                        <button type="button" class="btn-flat-secondary" onclick="rdCloseCreateModal()">إلغاء</button>
+                        <button type="button" class="btn-flat-primary" id="rdProjectModalSubmit" onclick="rdSaveProjectFromModal()">إنشاء</button>
+                    </div>
+                </div>
             </div>
 
             <div class="ms-modal-overlay" id="rdReaderModal" hidden>
@@ -7153,26 +7248,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.763"></script>
-    <script src="/static/js/search.js?v=1.10.763"></script>
-    <script src="/static/js/reader.js?v=1.10.763"></script>
-    <script src="/static/js/force3d.js?v=1.10.763"></script>
-    <script src="/static/js/share.js?v=1.10.763"></script>
-    <script src="/static/js/chat.js?v=1.10.763"></script>
-    <script src="/static/js/documents.js?v=1.10.763"></script>
-    <script src="/static/js/designs.js?v=1.10.763"></script>
-    <script src="/static/js/texts.js?v=1.10.763"></script>
-    <script src="/static/js/agents.js?v=1.10.763"></script>
-    <script src="/static/js/providers.js?v=1.10.763"></script>
-    <script src="/static/js/tools.js?v=1.10.763"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.763"></script>
-    <script src="/static/js/projects.js?v=1.10.763"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.763"></script>
-    <script src="/static/js/reading.js?v=1.10.763"></script>
-    <script src="/static/js/archive.js?v=1.10.763"></script>
-    <script src="/static/js/compare.js?v=1.10.763"></script>
-    <script src="/static/js/local_models.js?v=1.10.763"></script>
-    <script src="/static/js/changelog.js?v=1.10.763"></script>
+    <script src="/static/js/app.js?v=1.10.764"></script>
+    <script src="/static/js/search.js?v=1.10.764"></script>
+    <script src="/static/js/reader.js?v=1.10.764"></script>
+    <script src="/static/js/force3d.js?v=1.10.764"></script>
+    <script src="/static/js/share.js?v=1.10.764"></script>
+    <script src="/static/js/chat.js?v=1.10.764"></script>
+    <script src="/static/js/documents.js?v=1.10.764"></script>
+    <script src="/static/js/designs.js?v=1.10.764"></script>
+    <script src="/static/js/texts.js?v=1.10.764"></script>
+    <script src="/static/js/agents.js?v=1.10.764"></script>
+    <script src="/static/js/providers.js?v=1.10.764"></script>
+    <script src="/static/js/tools.js?v=1.10.764"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.764"></script>
+    <script src="/static/js/projects.js?v=1.10.764"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.764"></script>
+    <script src="/static/js/reading.js?v=1.10.764"></script>
+    <script src="/static/js/archive.js?v=1.10.764"></script>
+    <script src="/static/js/compare.js?v=1.10.764"></script>
+    <script src="/static/js/local_models.js?v=1.10.764"></script>
+    <script src="/static/js/changelog.js?v=1.10.764"></script>
 
     <script>
         window.refreshLucideIcons = function () {
