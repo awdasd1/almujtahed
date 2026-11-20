@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.755">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.756">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -25,9 +25,9 @@
         <div class="header-top">
             <div class="brand-section">
                 <div class="brand-title">
-                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.755" alt="المغني">
+                    <img class="brand-mark" src="/static/brand-mark.png?v=1.10.756" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.755</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">النسخة: 1.10.756</span>
             </div>
 
             <div class="header-actions">
@@ -1946,12 +1946,14 @@
                         <label>حدّة الصورة <input type="range" id="rdSharp" min="0" max="100" value="0" oninput="rdSetView('sharp', this.value)"></label>
                         <label>التباين <input type="range" id="rdContrast" min="60" max="160" value="100" oninput="rdSetView('contrast', this.value)"></label>
                         <span class="rd-viewbar-sep">خلفية الكتاب:</span>
-                        <button type="button" class="rd-bg-btn active" data-rdbg="white" style="background:#ffffff" title="أبيض" onclick="rdSetBg('white')">أبيض</button>
-                        <button type="button" class="rd-bg-btn" data-rdbg="yellow" style="background:#f7e7b4" title="أصفر ورقي" onclick="rdSetBg('yellow')">أصفر ورق</button>
-                        <button type="button" class="rd-bg-btn" data-rdbg="beige" style="background:#eee0c3" title="بيج دافئ" onclick="rdSetBg('beige')">بيج</button>
-                        <button type="button" class="rd-bg-btn" data-rdbg="gray" style="background:#e3e3e0" title="رمادي مريح للعين" onclick="rdSetBg('gray')">رمادي</button>
+                        <span class="rd-bg-row">
+                        <button type="button" class="rd-bg-btn active" data-rdbg="white" style="background:#ffffff" title="أبيض" onclick="rdSetBg('white')"></button>
+                        <button type="button" class="rd-bg-btn" data-rdbg="yellow" style="background:#f7e7b4" title="أصفر ورقي" onclick="rdSetBg('yellow')"></button>
+                        <button type="button" class="rd-bg-btn" data-rdbg="beige" style="background:#eee0c3" title="بيج دافئ" onclick="rdSetBg('beige')"></button>
+                        <button type="button" class="rd-bg-btn" data-rdbg="gray" style="background:#e3e3e0" title="رمادي مريح للعين" onclick="rdSetBg('gray')"></button>
                         <button type="button" class="rd-bg-btn rd-bg-add" id="rdBgAdd" data-rdbg="custom" title="إضافة لون لخلفية الكتاب" onclick="rdAddColor('bg', event)">+</button>
                         <button type="button" class="rd-view-reset" title="إعادة ضبط العرض" onclick="rdResetView()">↺</button>
+                        </span>
                     </div>
                     <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
                         <filter id="rdSharpenFilter"><feConvolveMatrix id="rdSharpKernel" order="3" kernelMatrix="0 0 0 0 1 0 0 0 0" preserveAlpha="true"/></filter>
@@ -7113,26 +7115,26 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.755"></script>
-    <script src="/static/js/search.js?v=1.10.755"></script>
-    <script src="/static/js/reader.js?v=1.10.755"></script>
-    <script src="/static/js/force3d.js?v=1.10.755"></script>
-    <script src="/static/js/share.js?v=1.10.755"></script>
-    <script src="/static/js/chat.js?v=1.10.755"></script>
-    <script src="/static/js/documents.js?v=1.10.755"></script>
-    <script src="/static/js/designs.js?v=1.10.755"></script>
-    <script src="/static/js/texts.js?v=1.10.755"></script>
-    <script src="/static/js/agents.js?v=1.10.755"></script>
-    <script src="/static/js/providers.js?v=1.10.755"></script>
-    <script src="/static/js/tools.js?v=1.10.755"></script>
-    <script src="/static/js/shamela_link.js?v=1.10.755"></script>
-    <script src="/static/js/projects.js?v=1.10.755"></script>
-    <script src="/static/js/manuscripts.js?v=1.10.755"></script>
-    <script src="/static/js/reading.js?v=1.10.755"></script>
-    <script src="/static/js/archive.js?v=1.10.755"></script>
-    <script src="/static/js/compare.js?v=1.10.755"></script>
-    <script src="/static/js/local_models.js?v=1.10.755"></script>
-    <script src="/static/js/changelog.js?v=1.10.755"></script>
+    <script src="/static/js/app.js?v=1.10.756"></script>
+    <script src="/static/js/search.js?v=1.10.756"></script>
+    <script src="/static/js/reader.js?v=1.10.756"></script>
+    <script src="/static/js/force3d.js?v=1.10.756"></script>
+    <script src="/static/js/share.js?v=1.10.756"></script>
+    <script src="/static/js/chat.js?v=1.10.756"></script>
+    <script src="/static/js/documents.js?v=1.10.756"></script>
+    <script src="/static/js/designs.js?v=1.10.756"></script>
+    <script src="/static/js/texts.js?v=1.10.756"></script>
+    <script src="/static/js/agents.js?v=1.10.756"></script>
+    <script src="/static/js/providers.js?v=1.10.756"></script>
+    <script src="/static/js/tools.js?v=1.10.756"></script>
+    <script src="/static/js/shamela_link.js?v=1.10.756"></script>
+    <script src="/static/js/projects.js?v=1.10.756"></script>
+    <script src="/static/js/manuscripts.js?v=1.10.756"></script>
+    <script src="/static/js/reading.js?v=1.10.756"></script>
+    <script src="/static/js/archive.js?v=1.10.756"></script>
+    <script src="/static/js/compare.js?v=1.10.756"></script>
+    <script src="/static/js/local_models.js?v=1.10.756"></script>
+    <script src="/static/js/changelog.js?v=1.10.756"></script>
 
     <script>
         window.refreshLucideIcons = function () {

@@ -520,12 +520,13 @@ function rdApplyView() {
   const v = rdView();
   const img = document.getElementById('rdPageImg');
   const a4 = document.getElementById('rdA4');
-  const bg = (v.bg === 'custom' && v.bgColor)
-    ? { page: v.bgColor, sepia: 0, bright: 1, sat: 1, scroll: rdShade(v.bgColor, -32) }
+  const custom = v.bg === 'custom' && v.bgColor;
+  const bg = custom
+    ? { page: v.bgColor, sepia: 0, bright: 1, sat: 1 }
     : (RD_BGS[v.bg] || RD_BGS.white);
   if (a4) a4.style.background = bg.page;
   const scroll = document.getElementById('rdPageScroll');
-  if (scroll) scroll.style.background = bg.scroll;
+  if (scroll) scroll.style.background = '';
   const kernel = document.getElementById('rdSharpKernel');
   const k = Math.max(0, Math.min(2, (Number(v.sharp) || 0) / 50));
   if (kernel) kernel.setAttribute('kernelMatrix', `0 ${-k} 0 ${-k} ${1 + 4 * k} ${-k} 0 ${-k} 0`);
@@ -534,6 +535,7 @@ function rdApplyView() {
     if (k > 0) parts.push('url(#rdSharpenFilter)');
     parts.push(`contrast(${v.contrast}%)`, `brightness(${bg.bright})`, `sepia(${bg.sepia})`, `saturate(${bg.sat})`);
     img.style.filter = parts.join(' ');
+    img.style.mixBlendMode = custom ? 'multiply' : 'normal';
   }
   const sh = document.getElementById('rdSharp'); if (sh) sh.value = v.sharp;
   const ct = document.getElementById('rdContrast'); if (ct) ct.value = v.contrast;
@@ -552,14 +554,6 @@ function rdApplyView() {
       add.title = 'إضافة لون لخلفية الكتاب';
     }
   }
-}
-function rdShade(hex, amt) {
-  const raw = String(hex || '').replace('#', '');
-  const full = raw.length === 3 ? raw.split('').map(ch => ch + ch).join('') : raw;
-  const num = parseInt(full, 16);
-  if (!Number.isFinite(num)) return '#8a8378';
-  const ch = (n) => Math.max(0, Math.min(255, n + amt)).toString(16).padStart(2, '0');
-  return `#${ch(num >> 16)}${ch((num >> 8) & 255)}${ch(num & 255)}`;
 }
 function rdApplyCustomBg(hex) {
   const v = rdView();
