@@ -755,6 +755,7 @@ function rdOpenProject(id) {
   rdUpdateBookUI();
   rdApplyView();
   rdLoadPage(p.page || 1);
+  rdEnsureShamelaVolumes(p);
 }
 window.rdOpenProject = rdOpenProject;
 
@@ -798,6 +799,7 @@ function rdPartOf(nb) {
     file_name: nb.file_name || null,
     book_id: nb.book_id || null,
     pages: nb.pages || 1,
+    volumes: Array.isArray(nb.volumes) ? nb.volumes : undefined,
   };
 }
 function rdEnsureParts(b) {
@@ -958,6 +960,70 @@ function rdReaderHeading(p) {
   const meta = rdPartMetaOf(p, parts[idx], idx);
   return `📖 ${meta.book || p.book.title || p.title}`;
 }
+function rdVolumeLabel(raw, i) {
+  const s = String(raw || '').trim();
+  if (!s) return String(i + 1);
+  if (/^\d+$/.test(s)) return s;
+  return s;
+}
+function rdVolumesOf(p) {
+  if (!p || !p.book) return [];
+  const book = rdEnsureParts(p.book);
+  const parts = rdPartsOf(p);
+  if (parts.length > 1) {
+    return parts.map((part, i) => {
+      const meta = rdPartMetaOf(p, part, i);
+      return { label: rdVolumeLabel(meta.partNo, i), start: rdPartStartPage(book, i) };
+    });
+  }
+  const vols = parts[0] && Array.isArray(parts[0].volumes) ? parts[0].volumes : [];
+  if (vols.length > 1) {
+    const base = rdPartStartPage(book, 0);
+    return vols.map((v, i) => ({
+      label: rdVolumeLabel(v && v.name, i),
+      start: base + Math.max(1, Number(v && v.pdf_start) || 1) - 1,
+    }));
+  }
+  return [];
+}
+function rdFillPartSelect() {
+  const sel = document.getElementById('rdPartSelect');
+  if (!sel) return;
+  const vols = rdVolumesOf(rdCurrent);
+  if (vols.length < 2) {
+    sel.hidden = true;
+    sel.innerHTML = '';
+    return;
+  }
+  const page = (rdCurrent && rdCurrent.page) || 1;
+  let cur = vols[0].start;
+  vols.forEach(v => { if (page >= v.start) cur = v.start; });
+  sel.innerHTML = vols.map(v => {
+    const lab = /^\d+$/.test(v.label) ? `الجزء ${rdEsc(v.label)}` : rdEsc(v.label);
+    return `<option value="${v.start}">${lab}</option>`;
+  }).join('');
+  sel.value = String(cur);
+  sel.hidden = false;
+}
+function rdGoPart(start) {
+  rdLoadPage(Number(start) || 1);
+}
+window.rdGoPart = rdGoPart;
+async function rdEnsureShamelaVolumes(p) {
+  const parts = rdPartsOf(p);
+  const part = parts[0];
+  if (!part || parts.length > 1 || part.source !== 'shamela' || !part.book_id) return;
+  if (Array.isArray(part.volumes) && part.volumes.length > 1) return;
+  try {
+    const res = await fetch(`/api/book/pdf-info?book_id=${part.book_id}`);
+    const info = await res.json();
+    if (Array.isArray(info.volumes) && info.volumes.length > 1) {
+      part.volumes = info.volumes;
+      rdSaveSoon();
+      rdFillPartSelect();
+    }
+  } catch (e) { /* بدون قائمة إن تعذر الجلب */ }
+}
 function rdUpdateBookUI() {
   const p = rdCurrent;
   const has = !!(p && p.book);
@@ -969,6 +1035,7 @@ function rdUpdateBookUI() {
   const titleEl = document.getElementById('rdReaderTitle');
   if (titleEl) titleEl.textContent = rdReaderHeading(p);
   if (has) rdEnsureParts(p.book);
+  rdFillPartSelect();
   const info = document.getElementById('rdBookInfo');
   if (!info) return;
   if (!has) { info.textContent = ''; return; }
@@ -995,6 +1062,7 @@ function rdLoadPage(n) {
   rdSyncPageField(n);
   const titleEl = document.getElementById('rdReaderTitle');
   if (titleEl) titleEl.textContent = rdReaderHeading(p);
+  rdFillPartSelect();
   const img = document.getElementById('rdPageImg');
   img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); };
   img.onerror = () => { rdToast('تعذر عرض هذه الصفحة'); };
@@ -1601,7 +1669,7 @@ async function rdPullShamela(bookId, title) {
     const res = await fetch(`/api/book/pdf-info?book_id=${bookId}`);
     const info = await res.json();
     if (!info.available) { rdAppendMode = false; rdToast(`⚠️ ${info.reason || 'لا توجد نسخة مصوّرة لهذا الكتاب في الشاملة يمكنك إضافتها عن طريق الشاملة إن كانت متوفرة هنا أو رفع نسخة من جهاز أو سحبها من الشبكة'}`, 8000); return; }
-    const nb = { source: 'shamela', book_id: bookId, title, pages: info.pdf_pages || 1 };
+    const nb = { source: 'shamela', book_id: bookId, title, pages: info.pdf_pages || 1, volumes: info.volumes };
     const wasAppend = rdAppendMode; rdAppendMode = false;
     rdCloseModal('rdShamelaModal');
     rdApplyBook(nb, wasAppend);

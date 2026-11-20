@@ -315,6 +315,18 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
         else:
             page = total
             clamped = True
+    volumes = []
+    offset = 0
+    for name, count, _mn, _mx in ranges:
+        fn = assigned.get(name)
+        if fn != file_name:
+            continue
+        volumes.append({
+            "name": name,
+            "pages": int(count or 0),
+            "pdf_start": offset + 1,
+        })
+        offset += int(count or 0)
     out.update({
         "available": True,
         "file_name": file_name,
@@ -323,6 +335,7 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
         "pdf_pages": total,
         "book_name": book_name,
         "clamped": clamped,
+        "volumes": volumes,
     })
     return out
 

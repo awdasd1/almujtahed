@@ -11308,6 +11308,19 @@ body::-webkit-scrollbar,
 .rd-reader-title { display: block; text-align: center; font-size: 18px; line-height: 1.6; }
 .rd-reader-head .rd-top-actions { justify-content: center; }
 .rd-top-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rd-part-select {
+  min-width: 92px;
+  max-width: 160px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+}
+.rd-part-select[hidden] { display: none !important; }
 .rd-page-ind input { width: 58px; text-align: center; }
 .rd-body { display: flex; gap: 10px; align-items: stretch; }
 .rd-toolbar { display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 8px 6px; border: 1px solid var(--border-subtle); border-radius: 12px; position: sticky; top: 0; }
