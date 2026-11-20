@@ -915,17 +915,15 @@ function rdCloseReader() {
 }
 
 function rdSaveNow(manual) {
-  if (!rdCurrent) return;
-  rdCurrent.updated_at = new Date().toISOString();
+  if (rdCurrent) rdCurrent.updated_at = new Date().toISOString();
   clearTimeout(rdSaveTimer);
   rdSave();
   const st = document.getElementById('rdSaveState');
-  if (st) st.textContent = `حُفظ المشروع وموضع وقوفك (صفحة ${rdShownPage(rdCurrent.page, rdCurrent.book)}) — ${new Date().toLocaleTimeString('ar-EG')}`;
-  if (manual) rdToast('💾 حُفظ المشروع وموضع وقوفك في القراءة');
+  if (st && rdCurrent) st.textContent = `يُحفظ تلقائيًا — صفحة ${rdShownPage(rdCurrent.page, rdCurrent.book)}`;
 }
 function rdSaveSoon() {
   clearTimeout(rdSaveTimer);
-  rdSaveTimer = setTimeout(() => rdSaveNow(false), 900);
+  rdSaveTimer = setTimeout(() => rdSaveNow(false), 400);
 }
 
 // كتاب متعدد الأجزاء: parts متسلسلة وصفحات المشروع مرقّمة عبر الأجزاء كلها
@@ -2352,8 +2350,9 @@ function rdRenderAssistantsList() {
   if (!rdAssistants.length) { box.innerHTML = '<div class="ms-hint">لا مساعدين بعد.</div>'; return; }
   box.innerHTML = rdAssistants.map(a => `
     <div class="rd-entity-card">
-      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length} كتاب</div></div>
+      <div><strong>🧠 ${rdEsc(a.name)}</strong><div class="ms-hint">${rdEsc(a.model)} · ${(a.books || []).length} كتاب${a.summarizer ? ' · الملخص المعتمد' : ''}</div></div>
       <span class="rd-mode-btns">
+        <button type="button" class="ms-btn${a.summarizer ? ' ms-btn-primary' : ''}" title="اعتماد هذا المساعد نموذجًا للتلخيص" onclick="rdSetSummarizer('${a.id}')">الملخص</button>
         <button type="button" class="ms-btn" onclick="rdEditAssistant('${a.id}')">تعديل</button>
         <button type="button" class="ms-btn ms-btn-danger" onclick="rdDeleteAssistant('${a.id}')">حذف</button>
       </span>
@@ -2424,7 +2423,7 @@ function rdAdoptAssistant() {
     });
     rdToast(`✔ اعتُمد المساعد «${name}»`);
   }
-  rdSave();
+  rdSaveSoon();
   rdRenderAssistantsList();
   document.getElementById('rdAsstName').value = '';
   document.getElementById('rdAsstPrompt').value = RD_DEFAULT_ASST_PROMPT;
@@ -2452,7 +2451,7 @@ function rdDeleteAssistant(id) {
   if (!confirm('حذف هذا المساعد؟')) return;
   rdAssistants = rdAssistants.filter(a => a.id !== id);
   if (rdEditingAsstId === id) { rdEditingAsstId = null; rdSetAsstAdoptLabel(); }
-  rdSave(); rdRenderAssistantsList();
+  rdSaveSoon(); rdRenderAssistantsList();
 }
 function rdAdoptVisionReader() {
   const name = document.getElementById('rdVisName').value.trim();
@@ -2478,6 +2477,174 @@ function rdDefaultReader() {
   if (!rdReaders.length) { rdToast('أنشئ قارئًا بصريًا أولًا بزر «قارئ»'); return null; }
   return rdReaders[0];
 }
+function rdSummarizer() {
+  return rdAssistants.find(a => a && a.summarizer) || null;
+}
+function rdSetSummarizer(id) {
+  const asst = rdAssistants.find(a => a.id === id);
+  if (!asst) return;
+  rdAssistants.forEach(a => { a.summarizer = a.id === id; });
+  rdSaveSoon();
+  rdRenderAssistantsList();
+  rdToast(`✔ اعتُمد «${asst.name}» ملخصًا — يُستعمل زر تلخيص بنموذجه`);
+}
+window.rdSetSummarizer = rdSetSummarizer;
+function rdToggleSumRange() {
+  const range = document.getElementById('rdSumRange');
+  const fields = document.getElementById('rdSumRangeFields');
+  if (fields) fields.hidden = !(range && range.checked);
+}
+window.rdToggleSumRange = rdToggleSumRange;
+function rdOpenSummarize() {
+  if (!rdCurrent || !rdCurrent.book) { rdToast('افتح كتابًا أولًا'); return; }
+  const asst = rdSummarizer();
+  if (!asst) {
+    rdToast('حدّد الملخص من نافذة المساعد بزر «الملخص»');
+    rdOpenCreateAssistant();
+    return;
+  }
+  if (!rdDefaultReader()) return;
+  const info = rdPartInfoAt(rdCurrent.book, rdCurrent.page || 1);
+  const shown = info.local - info.off;
+  const max = info.pages - info.off;
+  const fromEl = document.getElementById('rdSumFrom');
+  const toEl = document.getElementById('rdSumTo');
+  if (fromEl) { fromEl.value = shown; fromEl.min = String(1 - info.off); fromEl.max = String(max); }
+  if (toEl) { toEl.value = max; toEl.min = String(1 - info.off); toEl.max = String(max); }
+  const cur = document.getElementById('rdSumCurrent');
+  if (cur) cur.checked = true;
+  rdToggleSumRange();
+  const hint = document.getElementById('rdSumHint');
+  if (hint) hint.textContent = `الملخص: «${asst.name}» — ${asst.model}. حدّد نطاق التلخيص في هذا الجزء.`;
+  const st = document.getElementById('rdSumStatus');
+  if (st) st.textContent = '';
+  const run = document.getElementById('rdSumRunBtn');
+  if (run) run.disabled = false;
+  rdShowModal('rdSummarizeModal');
+}
+window.rdOpenSummarize = rdOpenSummarize;
+
+const RD_SUM_DIRECTIVE = 'لخّص النص التالي تلخيصًا علميًا أمينًا بالعربية الفصحى: احفظ المسائل والأعلام والأدلة والمعاني المقصودة، واطوِّل بقدر حاجة النص دون حشو. لا تضف معلومة من خارج النص. لا تذكر هذا التوجيه.';
+
+async function rdOcrFilePage(filePage) {
+  const reader = rdDefaultReader();
+  if (!reader) return null;
+  const url = rdBookPageUrl(filePage);
+  const imgRes = await fetch(url);
+  if (!imgRes.ok) throw new Error(`تعذر جلب صورة الصفحة ${filePage}`);
+  const blob = await imgRes.blob();
+  const up = await rdUploadBlob(blob, `rd-page-${filePage}.png`);
+  const res = await fetch('/api/manuscripts/transcribe-one', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_path: up.file_path, model: reader.model, api_key: rdApiKey() }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || 'تعذرت قراءة الصفحة');
+  return (data.text || '').trim();
+}
+async function rdAskSummary(asst, userText) {
+  const prompt = `${asst.prompt || RD_DEFAULT_ASST_PROMPT}\n\n${RD_SUM_DIRECTIVE}`;
+  const res = await fetch('/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: null,
+      model: asst.model,
+      provider: 'openrouter',
+      api_key: rdApiKey(),
+      thinking_level: 'medium',
+      free_mode: true,
+      use_hybrid: false,
+      semantic_enhanced: false,
+      system_prompt: prompt,
+      messages: [{ role: 'user', content: userText }],
+      web_search: null,
+      agent_group: null,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || data.reply || 'تعذر التلخيص');
+  return data.reply || data.content || data.message || '';
+}
+async function rdRunSummarize() {
+  const p = rdCurrent;
+  const asst = rdSummarizer();
+  if (!p || !p.book) { rdToast('افتح كتابًا أولًا'); return; }
+  if (!asst) { rdToast('حدّد الملخص من نافذة المساعد بزر «الملخص»'); return; }
+  if (!rdDefaultReader()) return;
+  const info = rdPartInfoAt(p.book, p.page || 1);
+  const rangeOn = document.getElementById('rdSumRange') && document.getElementById('rdSumRange').checked;
+  let shownFrom = info.local - info.off;
+  let shownTo = shownFrom;
+  if (rangeOn) {
+    shownFrom = Number(document.getElementById('rdSumFrom').value);
+    shownTo = Number(document.getElementById('rdSumTo').value);
+    if (!Number.isFinite(shownFrom) || !Number.isFinite(shownTo)) { rdToast('أدخل صفحتي البداية والنهاية'); return; }
+    if (shownFrom > shownTo) { const t = shownFrom; shownFrom = shownTo; shownTo = t; }
+  }
+  const fileFrom = rdFileFromShown(shownFrom, p.book);
+  const fileTo = rdFileFromShown(shownTo, p.book);
+  const start = Math.min(fileFrom, fileTo);
+  const end = Math.max(fileFrom, fileTo);
+  const pages = [];
+  for (let n = start; n <= end; n++) pages.push(n);
+  const run = document.getElementById('rdSumRunBtn');
+  const st = document.getElementById('rdSumStatus');
+  if (run) run.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < pages.length; i++) {
+      const n = pages[i];
+      const shown = rdShownPage(n, p.book);
+      if (st) st.textContent = `جارٍ قراءة الصفحة ${shown} (${i + 1} من ${pages.length}) بالقارئ...`;
+      const text = await rdOcrFilePage(n);
+      if (text) chunks.push(`— صفحة ${shown} —\n${text}`);
+    }
+    if (!chunks.length) throw new Error('لم يُستخرج نص من الصفحات المحددة');
+    if (st) st.textContent = `جارٍ التلخيص بنموذج «${asst.name}»...`;
+    const partName = rdCommentPartLabel(p, { filePage: start });
+    const loc = shownFrom === shownTo ? `صفحة ${shownFrom}` : `صفحات ${shownFrom}–${shownTo}`;
+    const userText = `لخّص هذا النص من «${p.book.title || p.title}»${partName ? ` — ${rdShamelaPartLabel(partName)}` : ''} — ${loc}:\n\n${chunks.join('\n\n')}`;
+    const summary = await rdAskSummary(asst, userText);
+    const stamp = rdNowStamp();
+    const row = {
+      id: rdUid(),
+      from: shownFrom,
+      to: shownTo,
+      fileFrom: start,
+      fileTo: end,
+      part: rdCommentPartLabel(p, { filePage: start }),
+      text: summary,
+      assistant_id: asst.id,
+      assistant_name: asst.name,
+      created_at: stamp.iso,
+      created_display: stamp.display,
+    };
+    p.summaries = p.summaries || [];
+    p.summaries.unshift(row);
+    rdSaveSoon();
+    rdCloseModal('rdSummarizeModal');
+    const title = document.getElementById('rdSummaryResultTitle');
+    const meta = document.getElementById('rdSummaryResultMeta');
+    const body = document.getElementById('rdSummaryResultBody');
+    const same = shownFrom === shownTo;
+    if (title) title.textContent = same ? `الملخص — صفحة ${shownFrom}` : `الملخص — من ${shownFrom} إلى ${shownTo}`;
+    if (meta) meta.textContent = [row.part && `الجزء ${row.part}`, `الملخص: ${asst.name}`, row.created_display].filter(Boolean).join(' · ');
+    if (body) body.textContent = summary || '(لا ملخص)';
+    rdShowModal('rdSummaryResultModal');
+  } catch (e) {
+    if (st) st.textContent = `❌ ${e.message}`;
+    rdToast(`❌ ${e.message}`, 5000);
+  } finally {
+    if (run) run.disabled = false;
+  }
+}
+window.rdRunSummarize = rdRunSummarize;
+function rdCopySummary() {
+  const t = document.getElementById('rdSummaryResultBody')?.textContent || '';
+  if (!t) return;
+  navigator.clipboard.writeText(t).then(() => rdToast('نُسخ الملخص')).catch(() => rdToast('تعذر النسخ'));
+}
+window.rdCopySummary = rdCopySummary;
 
 async function rdCropSelBlob() {
   if (!rdActiveSel) return null;

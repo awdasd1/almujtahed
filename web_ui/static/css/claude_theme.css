@@ -11410,6 +11410,8 @@ body::-webkit-scrollbar,
 .rd-ba-go { width: 36px; height: 36px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface); color: var(--text-main); cursor: pointer; font-size: 18px; line-height: 1; }
 .rd-ba-go:hover { border-color: var(--accent-clay, #b4552d); color: var(--accent-clay, #b4552d); background: var(--accent-subtle); }
 .rd-book-analysis-empty { padding: 22px; text-align: center; color: var(--text-muted); font-family: var(--font-naskh); }
+.rd-sum-opt { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-family: var(--font-naskh); color: var(--text-main); cursor: pointer; }
+.rd-sum-range { display: flex; flex-wrap: wrap; gap: 12px; margin: 6px 0 4px; }
 .rd-offset-label { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; font-family: var(--font-naskh); color: var(--text-main); }
 .rd-offset-label input { width: 110px; padding: 6px 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-canvas, var(--bg-surface)); color: var(--text-main); font-family: var(--font-naskh); font-size: 16px; }
 .rd-offset-preview { color: var(--text-muted); font-size: 13.5px; }
