@@ -6184,7 +6184,7 @@ input:checked+.slider-toggle:before {
 }
 
 .groups-table .col-group-actions {
-  width: 18%;
+  width: 22%;
 }
 
 .groups-table th {
@@ -6307,6 +6307,12 @@ input:checked+.slider-toggle:before {
   color: #10b981;
   border-color: #10b981;
   background: rgba(16, 185, 129, 0.12);
+}
+
+.action-icon-btn.btn-share-group:hover {
+  color: #8b5cf6;
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.12);
 }
 
 .action-icon-btn.btn-delete-group:hover {

@@ -147,8 +147,8 @@ function renderRdProjects() {
             <button type="button" class="action-icon-btn btn-export-group" onclick="rdExportProject('${p.id}')" title="تصدير المشروع وكتبه ZIP">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </button>
-            <button type="button" class="action-icon-btn" onclick="rdShareProjectPack('${p.id}')" title="مشاركة المشروع مضغوطًا مع كتبه">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            <button type="button" class="action-icon-btn btn-share-group" onclick="rdShareProjectPack('${p.id}')" title="مشاركة المشروع مضغوطًا مع كتبه">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
             </button>
             <button type="button" class="action-icon-btn btn-delete-group" onclick="rdDeleteProject('${p.id}')" title="حذف المشروع">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -505,6 +505,7 @@ function rdDuplicateProject(id) {
 window.rdDuplicateProject = rdDuplicateProject;
 
 async function rdFetchProjectZip(id) {
+  await rdSave();
   const res = await fetch('/api/reading-projects/export-project', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ project_id: id }),
