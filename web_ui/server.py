@@ -1941,7 +1941,7 @@ CITATION_FORMAT_RULE = """
    وإن لم يظهر رقم الحديث أو الكتاب والباب في الشاهد المرفق فاختصر القالب بحذف الغائب ولا تخترعه، والموضع (جزء-صفحة) لا يسقط بحال لأنه مفتاح التصفح.
    ج. سياسة الاكتفاء في التخريج: إن كان الحديث في البخاري ومسلم أو في أحدهما فذلك أهم تخريج ويُكتفى به وحده. وما لم يكن فيهما وجب تخريجه من الكتب الستة وصحيح ابن خزيمة وصحيح ابن حبان ومستدرك الحاكم، فإن خلا منها فمن تمام التسعة (أحمد ومالك والدارمي)، ثم سنن الدارقطني، ثم سنن البيهقي، ثم معاجم الطبراني الثلاثة، ثم المصنفات والآثار. ولا يُعزَ حديث إلى كتاب دونه في الترتيب وفي الأعلى شاهد واصل إليك، ولا تُسقِط الأعلى اكتفاءً بالأدنى.
    د. رقم الحديث وموضعه تابعان لطبعة الشاهد الذي بين يديك حصرًا: فلا تجمع رقم طبعة وموضع طبعة أخرى في إحالة واحدة، فإن اختلفت الطبعة المذكورة عن طبعة شاهدك فخذ الرقم والموضع من طبعة شاهدك أو صرّح بالطبعة.
-   هـ. النقل من موسوعة مقارنة أو كتاب جامع متأخر لا يقوم وحده سندًا لقول مذهب ولا لمتن حديث: ائتِ بأصله من كتب فنه، فإن تعذّر الوقوف عليه صرّح في الحاشية بـ«بالواسطة» صراحة، ولا تقدّمه للقارئ أصلًا وهو وسيط.
+   هـ. يُمنع النقل بالواسطة منعًا صارمًا متى كان الأصل في مكتبة الشاملة: لا تبنِ متنًا ولا حاشيةً ولا حكمًا على وسيط (مختصر، شرح ناقل، حاشية محقق، موسوعة) وفي المكتبة أصل الفن. صرّح بـ«بالواسطة» فقط إن ثبت أن الأصل غير موجود في المكتبة، وسمِّ الأصل الغائب باسمه. وجود الكتاب الوسيط في المكتبة لا يبيح اتخاذه بدل أصله.
    و. دعوى الاتفاق والإجماع لا تُطلق بلا نسبة: انسبها إلى قائلها أو كتاب إجماعها باسم وموضع، فإن لم تقف على نسبتها فخفّفها إلى «الجمهور» ولا تبنِ عليها ترجيحًا.
 5. في المتن الرقم المرتفع وحده. يُمنع ذكر اسم الكتاب أو المؤلف أو الجزء أو الصفحة في المتن. تقارير الاستخراج تُبقي سطر الإحالة المعتمدة كما هو.
 ═══════════════════════════════════════════════════════════
@@ -1956,7 +1956,7 @@ CARD_DISCIPLINE_RULE = """
 📇 ضوابط بطاقات عامة (تلزم كل وكيل في أي مجموعة):
 ١- الخلو مصرّحًا به لا سكوتًا: اختم قسم «بطاقات الأدلة» بسطر «كتب خالية في نطاقي:» تسمّي فيه كل أصل مؤثر في فنّك كان في نطاق كتبك فبحثت فيه — بأدواتك أو فيما وردك من مقاطع نطاقك — فلم تجد فيه نصّ هذه المسألة. الخلو المصرّح به نتيجة تُبنى عليها سياسة الاكتفاء في التخريج وتحرير المذاهب، أما السكوت ففجوة لا يُدرى معها أبُحث الكتاب أم أُهمل، ولا تبنِ على غياب كتاب من بطاقاتك نفيًا لما فيه.
 ٢- درجة الحديث من مظانّها: لا تُبنَ درجة حديث على حكم معاصر منقول وحده (تصحيح أو تضعيف متأخر في شرح أو فتوى أو تحقيق معاصر)؛ الدرجة تُحرَّر من كتب التخريج والعلل والرجال (التلخيص الحبير، نصب الراية، إرواء الغليل، البدر المنير، كتب العلل والجرح والتعديل)، فإن لم تقف عليها فصرّح: «لم أقف على درجة محررة لهذا الحديث» ولا تنقل درجة عن ناقل معاصر على أنها محررة.
-٣- قول الإمام من مصدره الأول: ما نسبته إلى إمام (مالك، أبو حنيفة، الشافعي، أحمد، أو غيرهم) فمن كتابه أو مصدره الأول متى وجدت بطاقته؛ فإن نقلته من كتاب متأخر عنه فصرّح: «نقلته بواسطة (اسم الكتاب الناقل)» ولا تقدّمه كنصّ الإمام من كتابه.
+٣- قول الإمام من مصدره الأول: ما نسبته إلى إمام (مالك، أبو حنيفة، الشافعي، أحمد، أو غيرهم) فمن كتابه أو مصدره الأول متى وُجد في المكتبة؛ يُمنع النقل بالواسطة ما دام الأصل فيها. فإن ثبت أن الأصل غير موجود في الشاملة فصرّح: «نقلته بواسطة (اسم الكتاب الناقل) عن أصل غائب: (اسم الأصل)» ولا تقدّمه كنصّ الإمام من كتابه.
 ٤- النص المبتور لا يُكمَّل ولا يُبنى عليه: ما انتهت صفحته في أثناء نصّ تحتاجه فاطلب تتمته بموضعها كما وُجّهت، ولا تستنتج خاتمته من عندك.
 ═══════════════════════════════════════════════════════════
 """
@@ -1968,7 +1968,7 @@ SYNTHESIS_DISCIPLINE_RULE = """
 ١- لا يمرّ في الجواب دعوى بلا بطاقة من تقارير فريقك: دعوى سكتت عنها البطاقات تُحذف أو تُخفف إلى ما تسنده البطاقات فعلًا، ولا تُستكمل من ذاكرتك.
 ٢- غياب كتاب عن البطاقات ليس نفيًا لما فيه: لا تكتب «ليس في مسلم» أو «لم يقل مالك» اعتمادًا على خلوّ التقارير؛ النفي لا يكون إلا بتصريح خلوٍّ من الوكيل المختص أو ببطاقة من كتاب خلاف ينصّ عليه.
 ٣- درجة حديث لا تُذكر إلا منقولة عن كتب التخريج والعلل والرجال في البطاقات؛ فإن لم ترد فاكتب متنه بتخريجه وصرّح أن درجته لم تُحرر في النطاق، ولا تنقل حكم معاصر وحده على أنه الدرجة.
-٤- قول إمام وردك بواسطة كتاب متأخر يُقدَّم على أنه بواسطة («نقله عنه فلان في كتابه») لا كنصّ الإمام من كتابه، ودعوى اتفاق مطلقة بلا نسبة لقائل أو كتاب إجماع تُخفف إلى «الجمهور».
+٤- يُمنع تقديم قول إمام أو حكم فنّ بالواسطة ما دام أصله في المكتبة؛ يُستبدل بالأصل. فإن ثبت غياب الأصل من الشاملة وحدها جاز التصريح بالواسطة مع تسمية الأصل الغائب. ودعوى اتفاق مطلقة بلا نسبة لقائل أو كتاب إجماع تُخفف إلى «الجمهور».
 ═══════════════════════════════════════════════════════════
 """
 
@@ -9463,7 +9463,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.822"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.823"},
         },
     })
     if opened.get("error"):
@@ -14641,12 +14641,128 @@ _AUTO_RISK_KINDS = {
     "unverified_kept", "unresolved_citations", "verified_ratio",
     "outside_library", "display_edition_leak", "takhrij_no_numbers",
     "footnote_swept", "single_tier_source", "unresolved_book_browse",
-    "ijma_unattributed", "book_dominance",
+    "ijma_unattributed", "book_dominance", "wasita_original_in_library",
 }
 
 
 def _cit_src_book_ids(text: str) -> List[str]:
     return re.findall(r'<span class="cit-src"[^>]*data-book-id="(\d+)"', text or "")
+
+
+def _named_wasita_origins(plain: str) -> List[str]:
+    """أسماء الأصول المصرَّح أنها غائبة عند الوسم بالواسطة."""
+    found: List[str] = []
+    for pat in (
+        r"بالواسطة\s*(?:عن|من)\s*«([^»]{3,90})»",
+        r"بالواسطة\s*(?:عن|من)\s+([^،؛.\n]{4,70})",
+        r"واسطة\s+(?:عن|من)\s*«([^»]{3,90})»",
+        r"نقلته?\s+بواسطة\s*\(?\s*([^)»،.\n]{4,70})",
+        r"نقله?\s+(?:عنه\s+)?(?:عن|من)\s*«([^»]{3,90})»",
+        r"أصل غائب\s*[:：]?\s*«([^»]{3,90})»",
+    ):
+        for m in re.finditer(pat, plain or ""):
+            t = re.sub(r"\s+", " ", (m.group(1) or "")).strip(" :،,.")
+            if len(t) >= 4:
+                found.append(t)
+    return found
+
+
+def _library_has_title(title: str) -> bool:
+    """هل العنوان يطابق كتابًا في مكتبة الشاملة؟"""
+    title = (title or "").strip()
+    if len(title) < 4:
+        return False
+    try:
+        if _catalog_title_candidates(title, limit=2, deep=False):
+            return True
+    except Exception:
+        pass
+    try:
+        if _catalog_title_candidates(title, limit=2, deep=True):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _wasita_allowed_for_body(plain: str) -> bool:
+    """تُباح الواسطة فقط إن سُمّي أصل غائب وليس في المكتبة."""
+    titles = _named_wasita_origins(plain)
+    if not titles:
+        return False
+    return not any(_library_has_title(t) for t in titles)
+
+
+def _scan_wasita_violations(text: str) -> List[dict]:
+    """حواشٍ وُسمت بالواسطة دون ثبوت غياب أصلها من المكتبة."""
+    out: List[dict] = []
+    for match in _FOOTNOTE_ITEM.finditer(text or ""):
+        body = match.group("body") or ""
+        if "بالواسطة" not in body:
+            continue
+        plain = re.sub(r"<[^>]+>", " ", body)
+        if _wasita_allowed_for_body(plain):
+            continue
+        bids = re.findall(r'data-book-id="(\d+)"', body)
+        books = []
+        for bid in bids:
+            meta = _book_meta_by_id(bid)
+            books.append((meta.get("title") or "").strip() or f"كتاب #{bid}")
+        out.append({
+            "num": _footnote_number(match.group("num")),
+            "books": books[:6],
+            "origins": _named_wasita_origins(plain),
+        })
+    return out
+
+
+def _strip_forbidden_wasita(text: str) -> Tuple[str, dict]:
+    """يحذف من الحاشية مقاطع الواسطة المحظورة (أصلها في المكتبة أو أصل غير مسمّى)."""
+    items = list(_FOOTNOTE_ITEM.finditer(text or ""))
+    if not items:
+        return text or "", {"wasita_stripped": 0, "wasita_fns": 0}
+    replacements = {}
+    stripped = 0
+    fns = 0
+    for match in items:
+        body = match.group("body") or ""
+        if "بالواسطة" not in body:
+            continue
+        tokens = _split_footnote_segments(body)
+        new_tokens: List[str] = []
+        changed = False
+        for tok in tokens:
+            if tok in ("؛", ";"):
+                if new_tokens and new_tokens[-1] not in ("؛", ";"):
+                    new_tokens.append(tok)
+                continue
+            if "بالواسطة" not in tok:
+                new_tokens.append(tok)
+                continue
+            plain = re.sub(r"<[^>]+>", " ", tok)
+            if _wasita_allowed_for_body(plain):
+                new_tokens.append(tok)
+                continue
+            stripped += len(re.findall(r'class="cit-src"', tok))
+            if "cit-src" not in tok:
+                while new_tokens and new_tokens[-1] in ("؛", ";"):
+                    new_tokens.pop()
+                if new_tokens:
+                    stripped += len(re.findall(r'class="cit-src"', new_tokens[-1]))
+                    new_tokens.pop()
+            changed = True
+        if not changed:
+            continue
+        fns += 1
+        rebuilt = "".join(new_tokens)
+        rebuilt = re.sub(r"(?:\s*[؛;]\s*){2,}", "؛ ", rebuilt)
+        rebuilt = re.sub(r"[؛;]\s*\.", ".", rebuilt)
+        rebuilt = re.sub(r"^[؛;\s]+|[؛;\s.]+$", "", rebuilt)
+        replacements[match.start()] = f"<li{match.group('attrs')}>{rebuilt}</li>"
+    if not replacements:
+        return text or "", {"wasita_stripped": 0, "wasita_fns": 0}
+    result = _FOOTNOTE_ITEM.sub(lambda m: replacements.get(m.start(), m.group(0)), text or "")
+    return result, {"wasita_stripped": stripped, "wasita_fns": fns}
 
 
 def _short_stamp_title(bid: str, inner: str, open_tag: str = "") -> str:
@@ -14841,6 +14957,7 @@ def _apply_paper_treatments(text: str) -> Tuple[str, dict]:
     orig_top = Counter(before_ids).most_common(1)[0] if before_ids else ("", 0)
     share_before = (orig_top[1] / len(before_ids)) if before_ids else 0.0
     text, dedupe = _apply_stamp_dedupe(text)
+    text, wasita = _strip_forbidden_wasita(text)
     text, dropped = _drop_repeat_footnote_residue(text)
     text, cap = _apply_dominance_cap(text)
     after_ids = _cit_src_book_ids(text)
@@ -14854,6 +14971,8 @@ def _apply_paper_treatments(text: str) -> Tuple[str, dict]:
         "stamps_capped": int(cap.get("capped") or 0),
         "stamps_kept_unique": int(dedupe.get("kept") or 0),
         "footnotes_dropped": int(dropped or 0),
+        "wasita_stripped": int(wasita.get("wasita_stripped") or 0),
+        "wasita_fns": int(wasita.get("wasita_fns") or 0),
         "dominance_book_id": tracked,
         "dominance_n_before": int(orig_top[1] or 0),
         "dominance_n_after": n_after,
@@ -14874,6 +14993,14 @@ def _sync_risk_register_from_html(owner_id, chat_id, html_text, summary, source=
             return None
         ev = list(pkg.get("risk_events") or [])
         pct_before = _risk_register_pct(ev)
+        n_wasita = int(summary.get("wasita_fns") or 0) + len(_scan_wasita_violations(html_text))
+        if n_wasita and not any(e.get("kind") == "wasita_original_in_library" for e in ev):
+            ev.append(_risk_event(
+                "wasita_original_in_library", "عالية",
+                "نقل بالواسطة وأصله في المكتبة",
+                f"{n_wasita} حاشية وُسمت «بالواسطة» دون ثبوت غياب أصلها من المكتبة",
+                "مفتوح",
+                "يُمنع النقل بالواسطة ما دام الأصل في الشاملة؛ يُستبدل بالأصل أو تُحذف الحاشية إن لم يُجلب"))
         _apply_autofix_to_risk_events(ev, summary, html_text)
         pct_after = _risk_register_pct(ev)
         pkg["risk_events"] = ev
@@ -15083,7 +15210,7 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
             "أقوال أئمة منقولة بواسطة بلا مصدر أول حاضر",
             "نُسبت أقوال إلى " + "، ".join(g.get("imam") or "" for g in _imamp)
             + " ولم يحضر مصدر أول لها في الشواهد ولا الإحالات",
-            "مفتوح", "يُصرَّح بالواسطة أو تُستكمل البطاقة من المصدر الأول"))
+            "مفتوح", "يُستكمل المصدر الأول إن كان في المكتبة؛ والواسطة ممنوعة ما دام الأصل فيها"))
     _unb = int(gs.get("unresolved_book") or 0)
     if _unb:
         ev.append(_risk_event(
@@ -15107,6 +15234,21 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
             _dom["book_title"] = _top_meta.get("title") or ""
             _dom["book_author"] = _top_meta.get("author") or ""
             ev.append(_dom)
+    _was_v = _scan_wasita_violations(text)
+    if _was_v:
+        _wbooks, _wseen = [], set()
+        for _w in _was_v:
+            for _b in _w.get("books") or []:
+                if _b and _b not in _wseen:
+                    _wseen.add(_b)
+                    _wbooks.append(_b)
+        ev.append(_risk_event(
+            "wasita_original_in_library", "عالية",
+            "نقل بالواسطة وأصله في المكتبة",
+            f"{len(_was_v)} حاشية وُسمت «بالواسطة» دون ثبوت غياب أصلها من المكتبة"
+            + (": " + "، ".join(_wbooks[:6]) if _wbooks else ""),
+            "مفتوح",
+            "يُمنع النقل بالواسطة ما دام الأصل في الشاملة؛ يُستبدل بالأصل أو تُحذف الحاشية إن لم يُجلب"))
     _disp = re.findall(r'<span class="cit-src"[^>]*>(.*?)</span>', text, re.S)
     _leak = [d for d in _disp if re.search(r"\s-\s(ط|ت)\s", d)]
     if _leak:
@@ -15325,6 +15467,14 @@ def _apply_autofix_to_risk_events(events: List[dict], stats: dict, html: str) ->
             base = orig_n(e) or max(ijma, 1)
             if ijma <= 0:
                 pct, note = 80, "لم تُرصد دعوى اتفاق مطلقة بعد الإصلاح"
+        elif kind == "wasita_original_in_library":
+            n = len(_scan_wasita_violations(html))
+            if n <= 0:
+                pct, note = 100, "أُزيل من الورقة النقل بالواسطة الذي أصله في المكتبة أو لم يُسمَّ أصله الغائب"
+            else:
+                base = orig_n(e) or n
+                pct = max(0, min(95, round(100 * (1 - min(n, base) / max(base, 1)))))
+                note = f"بقي {n} حاشية بالواسطة دون ثبوت غياب أصلها من المكتبة"
         elif kind == "book_dominance":
             from collections import Counter as _DomCounter
             ids = _cit_src_book_ids(html)
@@ -15470,7 +15620,8 @@ def _risk_officer_memo(events, *, question, group, manager_model, ledger,
         "٢) أضف من سجل الأدلة مخاطر نوعية لا تلتقطها العدّادات إن وجدت: ترجيح بلا بطاقة، تغطية مذهبية ناقصة، تناقض بين وكيلين مرّ صامتًا، دعوى بلا سند — بحد أقصى أربع، وبتصنيفها ودليلها من السجل.\n"
         "٣) اكتب مذكرة ماركداون قصيرة محكمة إلى «صاحب البحث» لا تتجاوز ٢٢٠٠ حرف، بهذا الهيكل حصرًا: سطر «## الحكم العام» وجملة واحدة بعده (صالح للاعتماد / صالح بتنبيهات / لا يُعتمد قبل معالجة العالية المفتوحة مع السبب)، ثم «## أخطر ما يجب معالجته» وفيه ثلاثة إلى خمسة بنود مرقمة فقط (الخطر ودليله الرقمي وإجراء واحد لكل بند)، ثم «## قرارات مطلوبة من صاحب البحث» إن وجد ما لا يعالج إلا بقراره. سجلّ الأحداث الكامل يرفق بعد مذكرتك جدولًا آليًا فلا تعيد سرده ولا تكرر حدثًا واحدًا في موضعين، ولا تكتب مقدمات عن المنظومة ولا وصفًا عامًا لعملها.\n"
         "التزم الأرقام الواردة حرفيًا ولا تخترع عددًا ولا اسمًا، واختم بسطر: مسؤول المخاطر: " + officer + ".\n"
-        "تنبيه ضبط مذهبي ملزم لحكمك: مصدر فروع الظاهرية في هذه المكتبة هو «المحلى» وحده (كتب داود الظاهري غير موجودة فيها)، وكتب نقلتها شواهد نسبة؛ فلا تُعدّ غياب «النبذة الكافية» أو «مراتب الإجماع» أو «الإحكام» في مسألة فرعية خطرًا على وكيل الظاهرية — فهي كتب أصول وإجماع لا فروع — وإنما الخطر غياب المحلى نفسه أو انقطاع النقلة عنه."
+        "تنبيه ضبط مذهبي ملزم لحكمك: مصدر فروع الظاهرية في هذه المكتبة هو «المحلى» وحده (كتب داود الظاهري غير موجودة فيها)، وكتب نقلتها شواهد نسبة؛ فلا تُعدّ غياب «النبذة الكافية» أو «مراتب الإجماع» أو «الإحكام» في مسألة فرعية خطرًا على وكيل الظاهرية — فهي كتب أصول وإجماع لا فروع — وإنما الخطر غياب المحلى نفسه أو انقطاع النقلة عنه.\n"
+        "تنبيه حوكمة ملزم: النقل بالواسطة مع وجود الأصل في المكتبة خلل منهجي عالٍ لا يُوثَّق بقرار ولا يُخفَّض إلى تنبيه شكلي؛ لا تجزه. يُباح التصريح بالواسطة فقط إن ثبت أن الأصل غير موجود في الشاملة وسُمّي الأصل الغائب."
     )
     try:
         memo = call_openrouter_raw(
@@ -23569,9 +23720,9 @@ async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Reques
     fixed, stats = await asyncio.to_thread(
         _documentation_gate, html, req.witnesses or [], "")
     fixed, paper = _apply_paper_treatments(fixed)
-    if paper.get("stamps_deduped") or paper.get("stamps_capped") or paper.get("footnotes_dropped"):
+    if paper.get("stamps_deduped") or paper.get("stamps_capped") or paper.get("footnotes_dropped") or paper.get("wasita_fns"):
         print(f"🔧 [Autofix] أختام {paper.get('stamps_before')} ← {paper.get('stamps_after')} "
-              f"(تكرار {paper.get('stamps_deduped')} · حواشٍ حُذفت {paper.get('footnotes_dropped')} · سقف {paper.get('stamps_capped')}) "
+              f"(تكرار {paper.get('stamps_deduped')} · حواشٍ حُذفت {paper.get('footnotes_dropped')} · واسطة محظورة {paper.get('wasita_fns')} · سقف {paper.get('stamps_capped')}) "
               f"هيمنة {round((paper.get('dominance_share_before') or 0) * 100)}٪ ← "
               f"{round((paper.get('dominance_share_after') or 0) * 100)}٪", flush=True)
 
@@ -23613,6 +23764,8 @@ async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Reques
         "stamps_deduped": paper.get("stamps_deduped") or 0,
         "stamps_capped": paper.get("stamps_capped") or 0,
         "footnotes_dropped": paper.get("footnotes_dropped") or 0,
+        "wasita_stripped": paper.get("wasita_stripped") or 0,
+        "wasita_fns": paper.get("wasita_fns") or 0,
         "dominance_share_before": paper.get("dominance_share_before") or 0,
         "dominance_share_after": paper.get("dominance_share_after") or 0,
         "changed": fixed != html,
@@ -23753,9 +23906,9 @@ async def research_finalize_endpoint(req: ResearchAutofixRequest, request: Reque
 
     # معالجات الورقة بعد البوابة: لا تُستنسخ المسودة بأختام الكتاب المكرر.
     fixed, paper = _apply_paper_treatments(fixed)
-    if paper.get("stamps_deduped") or paper.get("stamps_capped") or paper.get("footnotes_dropped"):
+    if paper.get("stamps_deduped") or paper.get("stamps_capped") or paper.get("footnotes_dropped") or paper.get("wasita_fns"):
         print(f"🔒 [Fast Finalize] أختام {paper.get('stamps_before')} ← {paper.get('stamps_after')} "
-              f"(تكرار {paper.get('stamps_deduped')} · حواشٍ حُذفت {paper.get('footnotes_dropped')} · سقف {paper.get('stamps_capped')}) "
+              f"(تكرار {paper.get('stamps_deduped')} · حواشٍ حُذفت {paper.get('footnotes_dropped')} · واسطة محظورة {paper.get('wasita_fns')} · سقف {paper.get('stamps_capped')}) "
               f"هيمنة {round((paper.get('dominance_share_before') or 0) * 100)}٪ ← "
               f"{round((paper.get('dominance_share_after') or 0) * 100)}٪", flush=True)
 
@@ -23788,6 +23941,8 @@ async def research_finalize_endpoint(req: ResearchAutofixRequest, request: Reque
         "stamps_deduped": paper.get("stamps_deduped") or 0,
         "stamps_capped": paper.get("stamps_capped") or 0,
         "footnotes_dropped": paper.get("footnotes_dropped") or 0,
+        "wasita_stripped": paper.get("wasita_stripped") or 0,
+        "wasita_fns": paper.get("wasita_fns") or 0,
         "dominance_share_before": paper.get("dominance_share_before") or 0,
         "dominance_share_after": paper.get("dominance_share_after") or 0,
         "changed": fixed != html,

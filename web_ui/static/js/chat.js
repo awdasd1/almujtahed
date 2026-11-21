@@ -4515,6 +4515,7 @@ async function runResearchAutofix() {
     if (s.tier_resolved) fixed.push(`وسيط وحيد وُجد له أصل: ${s.tier_resolved}`);
     if (s.stamps_deduped) fixed.push(`أختام مكررة حُذفت من الحواشي: ${s.stamps_deduped}`);
     if (s.footnotes_dropped) fixed.push(`حواشٍ فُرّغت من التكرار فحُذفت: ${s.footnotes_dropped}`);
+    if (s.wasita_fns) fixed.push(`نقل بالواسطة حُذف لأن أصله في المكتبة: ${s.wasita_fns} حاشية`);
     if (s.stamps_capped) fixed.push(`وسوم هيمنة أُنزلت: ${s.stamps_capped}`);
     const ratio = s.checked ? Math.round(100 * (s.checked - (s.unverified || 0)) / s.checked) : null;
     const cell = x => String(x || '').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 150);
@@ -4780,7 +4781,7 @@ async function produceFinalResearch() {
     if (s.purged_paras) bits.push(`نُقّيت ${s.purged_paras} فقرة`);
     if ((s.insertions_applied || []).length) bits.push(`أُدرجت ${s.insertions_applied.length} مادة من المناقشة في مواضعها (بعد حواشٍ ${s.insertions_applied.join('، ')})`);
     if ((s.insertions_failed || []).length) bits.push(`تعذر إدراج مادة بعد حاشية ${s.insertions_failed.join('، ')} — راجع رقم الحاشية مع المدير`);
-    if (s.stamps_deduped || s.footnotes_dropped) bits.push(`خُفّضت الأختام المكررة ${s.stamps_before} ← ${s.stamps_after}` + (s.footnotes_dropped ? ` وحُذفت ${s.footnotes_dropped} حاشية تكرار` : '') + ` (هيمنة ${Math.round(100 * (s.dominance_share_before || 0))}٪ ← ${Math.round(100 * (s.dominance_share_after || 0))}٪)`);
+    if (s.stamps_deduped || s.footnotes_dropped || s.wasita_fns) bits.push(`خُفّضت الأختام المكررة ${s.stamps_before} ← ${s.stamps_after}` + (s.footnotes_dropped ? ` وحُذفت ${s.footnotes_dropped} حاشية تكرار` : '') + (s.wasita_fns ? ` ومُنع ${s.wasita_fns} نقلًا بالواسطة أصله في المكتبة` : '') + ` (هيمنة ${Math.round(100 * (s.dominance_share_before || 0))}٪ ← ${Math.round(100 * (s.dominance_share_after || 0))}٪)`);
     if (s.unverified) bits.push(`بقي ${s.unverified} موضعًا للمراجعة (في التقرير لا في الورقة)`);
     if (typeof showToast === 'function') showToast('🔒 ' + bits.join(' · '), 6000);
   } catch (e) {
