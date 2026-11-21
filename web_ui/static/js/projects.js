@@ -2224,14 +2224,21 @@ async function sendArchitectMessage() {
 
     if (data.blueprint) {
       currentStudioBlueprint = data.blueprint;
+      window.lastArchitectDesignValidation = data.design_validation || null;
       renderStudioCardsPreview(data.blueprint);
       saveProjectDraftNow();
       const applyBtn = document.getElementById('btnApplyStudioBlueprint');
       const statusBadge = document.getElementById('blueprintLiveStatus');
+      const blocking = (data.design_validation && data.design_validation.blocking) || [];
       if (applyBtn) applyBtn.disabled = false;
       if (statusBadge) {
-        statusBadge.textContent = 'جاهز للاعتماد ✅';
-        statusBadge.className = 'p-status-pill active';
+        if (blocking.length) {
+          statusBadge.textContent = 'مخطط ناقص الأرضيات — أصلح قبل الاعتماد';
+          statusBadge.className = 'p-status-pill warn';
+        } else {
+          statusBadge.textContent = 'جاهز للاعتماد ✅';
+          statusBadge.className = 'p-status-pill active';
+        }
       }
     }
 
@@ -2801,6 +2808,7 @@ async function applyStudioBlueprint() {
           const data = await res.json();
           if (data.blueprint) {
             currentStudioBlueprint = data.blueprint;
+            if (data.design_validation) window.lastArchitectDesignValidation = data.design_validation;
             renderStudioCardsPreview(data.blueprint);
           }
         }
@@ -2816,6 +2824,22 @@ async function applyStudioBlueprint() {
     }
 
     const bp = currentStudioBlueprint;
+    const floorIssues = (window.lastArchitectDesignValidation && window.lastArchitectDesignValidation.blocking) || [];
+    if (floorIssues.length && architectProjectKind !== 'manuscripts') {
+      const ok = window.confirm(
+        'المخطط ناقص أرضيات التصميم ولن ينتج بحثًا موثوقًا كما هو:\n\n- '
+        + floorIssues.join('\n- ')
+        + '\n\nأصلح المخطط مع المهندس قبل الاعتماد. هل تريد الاعتماد رغم ذلك؟'
+      );
+      if (!ok) {
+        if (applyBtn) {
+          applyBtn.disabled = false;
+          applyBtn.style.opacity = '';
+          applyBtn.innerHTML = origBtnContent;
+        }
+        return;
+      }
+    }
 
     // تحقيق مخطوط: الاعتماد ينشئ مجموعة تحقيق لا مشروعًا بحثيًا
     if (architectProjectKind === 'manuscripts' || bp?.ms_kind === 'manuscripts' || bp?.investigation_profile) {
@@ -2948,6 +2972,7 @@ async function applyStudioBlueprint() {
         id: targetGroupId,
         name: bp.subagents_group.name || `فريق: ${(bp.title || 'المشروع').slice(0, 20)}`,
         desc: bp.subagents_group.desc || 'مجموعة وكلاء مخصصة لهذا المشروع البحثي',
+        research_profile: bp.research_profile || null,
         agents: mappedAgents
       };
 

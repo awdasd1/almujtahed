@@ -7061,6 +7061,11 @@ table tr:hover td,
   color: #059669;
 }
 
+.p-status-pill.warn {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
 .p-card-body {
   padding: 18px 20px;
   display: flex;
