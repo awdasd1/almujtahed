@@ -1773,6 +1773,7 @@ async function resolveAndVerifyProjectBooks() {
 // =============================================================================
 
 let architectHistory = [];
+let architectSendInFlight = false;
 let currentStudioBlueprint = null;
 let currentPlanningProjectId = null;
 // مهندس واحد بنوعين: '' لم يُختر بعد | research مشروع علمي | manuscripts تحقيق مخطوط
@@ -2056,15 +2057,28 @@ function architectChoicesHtml(questions, index) {
       <label class="architect-choice-extra">إضافة
         <textarea rows="2" placeholder="اكتب ما تريد إضافته، إن رغبت"></textarea>
       </label>
-      <button type="button" class="btn-primary-gradient" onclick="submitArchitectChoices(${index})">إرسال الاختيار</button>
+      <button type="button" class="btn-primary-gradient architect-choices-send" onclick="submitArchitectChoices(${index})">إرسال الاختيار</button>
     </div>
   `;
+}
+
+function lockArchitectChoices(root) {
+  if (!root) return;
+  root.classList.add('is-locked');
+  root.dataset.submitted = '1';
+  root.setAttribute('aria-disabled', 'true');
+  root.querySelectorAll('input, textarea, button').forEach(el => {
+    el.disabled = true;
+  });
+  const btn = root.querySelector('.architect-choices-send') || root.querySelector('button');
+  if (btn) btn.textContent = 'تم الإرسال';
 }
 
 function submitArchitectChoices(index) {
   const root = document.getElementById(`architectChoices${index}`);
   const input = document.getElementById('architectUserInput');
   if (!root || !input) return;
+  if (root.dataset.submitted === '1' || architectSendInFlight) return;
   const lines = [...root.querySelectorAll('.architect-choice-q')].map(block => {
     const prompt = block.getAttribute('data-prompt') || '';
     const chosen = [...block.querySelectorAll('input:checked')].map(item => item.value);
@@ -2076,6 +2090,7 @@ function submitArchitectChoices(index) {
     if (typeof showToast === 'function') showToast('اختر جواباً أو اكتب إضافة');
     return;
   }
+  lockArchitectChoices(root);
   const joined = lines.join('\n');
   // أول سؤال (نوع المشروع) يبدّل توجيه المهندس نفسه قبل إرسال الرسالة
   const kind = architectKindFromText(joined);
@@ -2093,6 +2108,7 @@ function renderArchitectChat() {
   const container = document.getElementById('architectChatHistory');
   if (!container) return;
   const lastAssistant = architectHistory.reduce((found, message, index) => message.role === 'assistant' ? index : found, -1);
+  const lastIsAssistant = architectHistory.length && architectHistory[architectHistory.length - 1].role === 'assistant';
 
   container.innerHTML = architectHistory.map((m, index) => {
     const isUser = m.role === 'user';
@@ -2100,7 +2116,8 @@ function renderArchitectChat() {
     let cleanText = (m.content || '').replace(/```json[\s\S]*?```/g, '').replace(/```choices[\s\S]*?```/g, '').trim();
     if (!cleanText && isUser) cleanText = m.content;
     const bodyHtml = (typeof formatMarkdown === 'function') ? formatMarkdown(cleanText) : (typeof marked !== 'undefined' ? marked.parse(cleanText) : cleanText.replace(/\n/g, '<br>'));
-    const choices = (!isUser && index === lastAssistant) ? architectChoicesHtml(extractArchitectChoices(m.content), index) : '';
+    const choices = (!isUser && index === lastAssistant && lastIsAssistant)
+      ? architectChoicesHtml(extractArchitectChoices(m.content), index) : '';
 
     return `
       <div class="studio-msg ${isUser ? 'user' : 'architect'}">
@@ -2116,8 +2133,11 @@ function renderArchitectChat() {
 async function sendArchitectMessage() {
   const inputEl = document.getElementById('architectUserInput');
   const userText = (inputEl?.value || '').trim();
-  if (!userText) return;
-
+  if (!userText || architectSendInFlight) return;
+  architectSendInFlight = true;
+  const sendBtn = document.getElementById('btnSendArchitect');
+  const tempMsgId = 'temp_waiting_' + Date.now();
+  try {
   // استدلال نوع المشروع من أول إجابة/رسالة فيبدّل التوجيه الخادمي
   if (!architectProjectKind) {
     const inferred = architectKindFromText(userText);
@@ -2130,8 +2150,6 @@ async function sendArchitectMessage() {
   architectHistory.push({ role: 'user', content: userText });
   renderArchitectChat();
   saveProjectDraftNow();
-
-  const sendBtn = document.getElementById('btnSendArchitect');
   const modelSelect = document.getElementById('architectModelSelect');
   const chosenModel = modelSelect?.value || 'google/gemini-2.5-flash';
   const thinkingLevel = document.getElementById('architectThinkingSelect')?.value || 'medium';
@@ -2143,7 +2161,6 @@ async function sendArchitectMessage() {
   }
 
   // إضافة فقاعة انتظار مؤقتة
-  const tempMsgId = 'temp_waiting_' + Date.now();
   const container = document.getElementById('architectChatHistory');
   if (container) {
     const waitDiv = document.createElement('div');
@@ -2166,7 +2183,6 @@ async function sendArchitectMessage() {
   } catch (e) { }
   const apiKey = savedKeys.openrouter || '';
 
-  try {
     const res = await fetch('/api/projects/architect-dialog', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2247,6 +2263,7 @@ async function sendArchitectMessage() {
     if (waitEl) waitEl.remove();
     showToast(`خطأ في استدعاء المهندس: ${err.message}`);
   } finally {
+    architectSendInFlight = false;
     if (sendBtn) {
       sendBtn.disabled = false;
       sendBtn.innerHTML = `

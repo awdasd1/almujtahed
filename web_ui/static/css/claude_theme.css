@@ -7486,6 +7486,21 @@ table tr:hover td,
   margin-top: 12px;
 }
 
+.architect-choices.is-locked,
+.architect-choices.is-locked .architect-choice-option,
+.architect-choices.is-locked button {
+  pointer-events: none;
+  cursor: default;
+}
+
+.architect-choices.is-locked {
+  opacity: 0.72;
+}
+
+.architect-choices.is-locked button {
+  opacity: 0.7;
+}
+
 .architect-choice-q,
 .architect-choice-extra {
   border: 1px solid var(--border-subtle);
