@@ -2776,8 +2776,10 @@ function downloadResearchReport(idx) {
   const ratio = a.checked ? Math.round(100 * ((a.verified || 0) + (a.relocated || 0)) / a.checked) : null;
   const linkRatio = a.checked && a.linked != null ? Math.round(100 * a.linked / a.checked) : null;
   const failed = it.agents_failed || [];
+  const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
+  const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
   let verdict = 'قوي';
-  if (failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
+  if (sahihaynGap || sahihaynMissed || failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
   else if (failed.length === 2 || (ratio !== null && ratio < 65) || (a.ijma_unattributed || 0) > 0) verdict = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
   const L = [];
   L.push('# 📏 تقرير بحث خاص — سجل قياس البحوث في المغني');

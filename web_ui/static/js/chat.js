@@ -4531,6 +4531,7 @@ async function runResearchAutofix() {
     } else md.push('### ⚠️ ما بقي\n- لا شيء مفتوحًا في فحص التوثيق.', '');
     if ((s.madhhab_gaps || []).length) md.push('قصور استغراق باقٍ: ' + s.madhhab_gaps.map(g => `${g.madhhab} (${g.books} كتابًا في ${g.layers} طبقة)`).join('، ') + ' — يحتاج بحثًا تكميليًا لا إصلاحًا آليًا.', '');
     if ((s.hadith_core_gaps || []).length) md.push('أصول حديثية غائبة بلا بطاقة ولا تصريح خلو: ' + s.hadith_core_gaps.map(g => g.work).join('، ') + '.', '');
+    if ((s.takhrij_sahihayn_missed || []).length) md.push('تخريج ناقص: الحديث ثابت في الصحيحين ولم يُعزَ إليهما في الحاشية.', '');
     // المراجع لا تُعاد طباعتها كاملة عند كل إصلاح: دلتا فقط.
     if (s.refs_after !== undefined) {
       md.push(`**المراجع المستشهد بها في الجواب: ${s.refs_before} ← ${s.refs_after} كتابًا**`
@@ -5309,8 +5310,10 @@ async function downloadChatResearchReport(idx) {
     const ratio = a.checked ? Math.round(100 * ((a.verified || 0) + (a.relocated || 0)) / a.checked) : null;
     const failed = entry.agents_failed || [];
     const disabled = entry.agents_disabled || [];
+    const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
+    const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
     let verdict = 'قوي';
-    if (failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
+    if (sahihaynGap || sahihaynMissed || failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
     else if (failed.length === 2 || (ratio !== null && ratio < 65) || (a.ijma_unattributed || 0) > 0) verdict = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
     L.push('| البند | القيمة |', '|---|---|');
     L.push(`| البحث | ${cell(entry.question)} |`);
@@ -5349,6 +5352,10 @@ async function downloadChatResearchReport(idx) {
     if ((a.hadith_core_gaps || []).length) {
       L.push('', '### فجوات أصول معلنة (لا بطاقة ولا تصريح خلو)', '', '| العمل | النوع | الحلقة |', '|---|---|---|');
       a.hadith_core_gaps.forEach(g => L.push(`| ${cell(g.work)} | ${cell(g.kind)} | ${g.ring === 1 ? 'الصحيحان' : g.ring === 2 ? 'السنن الأربعة' : g.ring === 3 ? 'تمام التسعة' : 'شروح'} |`));
+    }
+    if ((a.takhrij_sahihayn_missed || []).length) {
+      L.push('', '### تخريج ناقص: الحديث في الصحيحين ولم يُعزَ إليهما', '', '| الكتاب | الموضع | رقم الحديث |', '|---|---|---|');
+      a.takhrij_sahihayn_missed.slice(0, 8).forEach(x => L.push(`| ${cell(x.book)} | ${cell((x.part || '') + '-' + (x.page || ''))} | ${x.number ?? '—'} |`));
     }
     if ((a.imam_primary_gaps || []).length) {
       L.push('', '### أقوال أئمة بواسطة (لا مصدر أول حاضر)', '', '| الإمام | مصادره الأولى الغائبة |', '|---|---|');

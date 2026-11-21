@@ -1958,6 +1958,7 @@ CARD_DISCIPLINE_RULE = """
 ٢- درجة الحديث من مظانّها: لا تُبنَ درجة حديث على حكم معاصر منقول وحده (تصحيح أو تضعيف متأخر في شرح أو فتوى أو تحقيق معاصر)؛ الدرجة تُحرَّر من كتب التخريج والعلل والرجال (التلخيص الحبير، نصب الراية، إرواء الغليل، البدر المنير، كتب العلل والجرح والتعديل)، فإن لم تقف عليها فصرّح: «لم أقف على درجة محررة لهذا الحديث» ولا تنقل درجة عن ناقل معاصر على أنها محررة.
 ٣- قول الإمام من مصدره الأول: ما نسبته إلى إمام (مالك، أبو حنيفة، الشافعي، أحمد، أو غيرهم) فمن كتابه أو مصدره الأول متى وُجد في المكتبة؛ يُمنع النقل بالواسطة ما دام الأصل فيها. إن ذكرت الواسطة أصلًا فسمِّه واطلب جلبه قبل إسقاط النقل. فإن ثبت أن الأصل غير موجود في الشاملة فصرّح: «نقلته بواسطة (اسم الكتاب الناقل) عن أصل غائب: (اسم الأصل)» ولا تقدّمه كنصّ الإمام من كتابه.
 ٤- النص المبتور لا يُكمَّل ولا يُبنى عليه: ما انتهت صفحته في أثناء نصّ تحتاجه فاطلب تتمته بموضعها كما وُجّهت، ولا تستنتج خاتمته من عندك.
+٥- تخريج حديث مسمّى: إن ذكر الباحث متن حديث بعينه فابحث بلفظه في الصحيحين ثم الكتب الستة أولًا (hadith_loci / hadith_dossier / search_passages بمتن الحديث)، ولا تبحث بأسماء أبواب الكتب التي وقع فيها الحديث اتفاقًا. المراسي لفلك المتن (لفظه وسبب وروده وأعلامه) لا لباب بدء الوحي ونحوه. إن وجدت وسيطًا يسمّي البخاري أو مسلمًا والأصل في نطاقك أو في المكتبة فاجلب الأصل ولا تكتفِ بالوسيط.
 ═══════════════════════════════════════════════════════════
 """
 
@@ -1969,6 +1970,7 @@ SYNTHESIS_DISCIPLINE_RULE = """
 ٢- غياب كتاب عن البطاقات ليس نفيًا لما فيه: لا تكتب «ليس في مسلم» أو «لم يقل مالك» اعتمادًا على خلوّ التقارير؛ النفي لا يكون إلا بتصريح خلوٍّ من الوكيل المختص أو ببطاقة من كتاب خلاف ينصّ عليه.
 ٣- درجة حديث لا تُذكر إلا منقولة عن كتب التخريج والعلل والرجال في البطاقات؛ فإن لم ترد فاكتب متنه بتخريجه وصرّح أن درجته لم تُحرر في النطاق، ولا تنقل حكم معاصر وحده على أنه الدرجة.
 ٤- يُمنع تقديم قول إمام أو حكم فنّ بالواسطة ما دام أصله في المكتبة؛ يُستبدل بالأصل بعد جلبه لا بإسقاط الواسطة قبل التحقق. فإن ثبت غياب الأصل من الشاملة وحدها جاز التصريح بالواسطة مع تسمية الأصل الغائب. ودعوى اتفاق مطلقة بلا نسبة لقائل أو كتاب إجماع تُخفف إلى «الجمهور».
+٥- حديث مسمّى في الصحيحين أو الستة: لا تُخرج حاشيته من وسيط (كالبيهقي) وفي الشواهد أو المكتبة أصل البخاري أو مسلم أو السنن. إن سمّت الواسطة الصحيحين فاستدع الأصل بطلب-كتاب أو طلب-وكيل قبل الصياغة، ولا تكتفِ بنقل البيهقي أن مسلمًا أو البخاري أخرجه.
 ═══════════════════════════════════════════════════════════
 """
 
@@ -9473,7 +9475,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.830"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.831"},
         },
     })
     if opened.get("error"):
@@ -9625,6 +9627,7 @@ ALMOGHNI_MCP_GUIDE = (
     "وsearch_library بعبارات تراثية مع سقف وفاة يختاره الباحث (death_max) أو نطاق وكيل (book_ids). "
     "نتائج الفهرس مرشحات: اقرأ الصفحة كاملة وطابق قبل النقل، والعزو بالكتاب والمؤلف والجزء والصفحة. "
     "قاعدة نقل الحديث: متن الحديث يُنقل من كتابه الأصلي (نصوص «أصول» المرفقة في hadith_dossier أو get_page على مواضعها) بعزو الكتاب والجزء والصفحة، والحكم عليه من كتب التخريج والعلل؛ ولا يُنقل متن حديث من كتاب فقه أو شرح فقهي إلا عند تعذر بلوغ الأصل، وحينها صرّح في جوابك «نقلته من كذا لتعذر الأصل». "
+    "إن كان السؤال حديثًا مسمّى بمتنه فابدأ بـhadith_loci أو hadith_dossier أو search_passages بلفظ المتن في الصحيحين ثم الستة قبل أي وسيط؛ ولا تبحث بعنوان باب الكتاب الذي وقع فيه الحديث اتفاقًا. "
     "قاعدة الطبعات والطبقات: عند تعدد طبعات الكتاب الواحد اكتفِ بأول طبعة تلتقطها ولا تنقل من طبعتين للعمل نفسه، والصحيحان مقدمان على المسانيد والسنن في نقل المتون؛ وفي عرض قول كل مذهب مثّل طبقاته الزمنية (كتابًا متقدمًا ومتوسطًا ومتأخرًا) ما وجدت نصوصها، ولا تحصر المذهب في طبقة واحدة. "
     "فهارس متخصصة: ayah_loci لمواضع الآية في التفاسير بالوفيات، وattestations لنسب عبارة ثابتة بترتيب وفيات قائليها، "
     "وhadith_loci لمواضع المتن في كتب السنة وشروحها والتخريج، وhadith_dossier لملف حديث بأحكام مستخرجة آليًا، وayah_dossier لملف آية طبقي بمقتطفات وقائلي السلف، وqawaid_search للقواعد، وcreed_search للعقيدة، وcreed_issue لمسألة عقدية مفهرسة بمذاهب مدارسها، "
@@ -9706,16 +9709,31 @@ def _mcp_search_passages(args: Dict[str, Any]) -> Dict[str, Any]:
     if not titles:
         return {"status": "error", "code": "BOOK_NOT_FOUND", "error": "أرقام الكتب لا تقابل كتباً في القاعدة."}
     limit = max(1, min(int(args.get("limit") or 20), 60))
-    hits = run_rag_search(
-        query=args.get("query") or "",
+    _q = args.get("query") or ""
+    _anc = _filter_scatter_anchors(_q, list(args.get("anchors") or []))
+    hits = []
+    _matn = _named_hadith_matn(_q)
+    if _matn:
+        hits.extend(_sitta_first_passages(_matn, selected_books=titles, top_k=limit))
+    hits.extend(run_rag_search(
+        query=_q,
         selected_books=titles,
         pool_size=max(limit * 4, 200),
         top_k=limit,
         use_reranker=False,
-        dynamic_anchors=list(args.get("anchors") or []),
+        dynamic_anchors=_anc,
         use_hybrid=True,
         honor_agent_limit=True,
-    )
+    ))
+    _seen_h = set()
+    _uniq = []
+    for h in hits:
+        k = _citation_identity(h)
+        if k in _seen_h:
+            continue
+        _seen_h.add(k)
+        _uniq.append(h)
+    hits = _uniq[:limit]
     return {
         "status": "ok",
         "results": [{
@@ -9772,16 +9790,31 @@ def _mcp_research_evidence(args: Dict[str, Any], request: Request) -> Dict[str, 
     # كافية أُغلق الطلب في ثوانٍ؛ وإلا سقط للمسار الموسّع كما كان.
     _t0 = time.monotonic()
     try:
-        direct_hits = run_rag_search(
-            query=args.get("query") or "",
+        _q = args.get("query") or ""
+        _anc = _filter_scatter_anchors(_q, list(args.get("anchors") or []))
+        _matn = _named_hadith_matn(_q)
+        direct_hits = []
+        if _matn:
+            direct_hits.extend(_sitta_first_passages(_matn, selected_books=titles, top_k=limit))
+        direct_hits.extend(run_rag_search(
+            query=_q,
             selected_books=titles,
             pool_size=max(limit * 4, 200),
             top_k=limit,
             use_reranker=False,
-            dynamic_anchors=list(args.get("anchors") or []) or None,
+            dynamic_anchors=_anc or None,
             use_hybrid=True,
             honor_agent_limit=True,
-        )
+        ))
+        _seen_d = set()
+        _uniq_d = []
+        for h in direct_hits:
+            k = _citation_identity(h)
+            if k in _seen_d:
+                continue
+            _seen_d.add(k)
+            _uniq_d.append(h)
+        direct_hits = _uniq_d[:limit]
     except Exception:
         direct_hits = []
     if direct_hits:
@@ -12327,7 +12360,7 @@ _ART_STRUCTURES = {
                "٦) شرح غريبه وفوائده وأقوال الشراح الكبار.\n"
                "٧) ثمرته الفقهية إن كان من أحاديث الأحكام بإيجاز موثق من كتب الفقه.",
                "بحث حديثي مختصر: نص الحديث ومصادره الأصلية وأرقامه، وخلاصة طرقه وتخريجه، والحكم عليه معللاً بأقوال النقاد، وفائدة وجيزة.",
-               "لبحث حديثي: المراسي من ألفاظ المتن المميزة وأسماء أبواب كتب السنة وطرق الحديث المشهورة، ونوّع بين أصل الحديث وكتب العلل والرجال."),
+               "لبحث حديثي: المراسي من ألفاظ المتن المميزة وما يدور في فلكه (سبب الورود وأعلام المدار)، لا أسماء أبواب كتب السنة التي وقع فيها الحديث اتفاقًا؛ ونوّع بين أصل الحديث وكتب العلل والرجال."),
     "tafsir": (["تفسير"], "تفسيري",
                "توجيه البحث التفسيري المطوّل — التزمه مبحثاً مبحثاً:\n"
                "١) الآية بنصها وسياقها ومناسبتها لما قبلها وبعدها، وسبب نزولها الثابت من كتب أسباب النزول.\n"
@@ -12612,6 +12645,9 @@ def run_rag_search(query: str, selected_books: Optional[List[str]] = None, pool_
     is_plague_query = any(w in clean_q for w in ["طاعون", "وباء"])
 
     # بناء مراسي الاستعلام: السؤال ثم المراسي الديناميكية. الجولات اللاحقة قد تبحث بالمراسي الجديدة وحدها.
+    # حديث مسمّى: المتن أولًا، ومراسي الفلك بعد تصفية أبواب التشتيت.
+    if dynamic_anchors or _named_hadith_matn(clean_q):
+        dynamic_anchors = _filter_scatter_anchors(clean_q, dynamic_anchors)
     anchor_queries = [clean_q] if include_query and clean_q else []
     if dynamic_anchors:
         for anc in dynamic_anchors:
@@ -12976,7 +13012,7 @@ def plan_retrieval_round(question: str, api_key: str, model: str, prior_anchors:
         "لا تشترط ظهور لفظ السؤال المعاصر. إذا كانت المقاطع تتناول جوهر المسألة بمصطلحها القديم فاجعل covered قيمة true ولو خلا النص من لفظ المستخدم.\n"
         "استخرج مراسيك أيضاً من المقاطع المعروضة نفسها، بميزان فنّ السؤال أيّاً كان (فقه أو عقيدة أو تفسير أو حديث أو أصول أو قواعد أو مقاصد أو فروق أو لغة أو تاريخ): رؤوس المسائل وأسماء الأبواب، ومصطلحات المؤلفين كما هي حرفياً، وأعلام الأشخاص والأماكن والأحداث، وصيغ القواعد والتعريفات، وجذور الألفاظ الغريبة واشتقاقاتها، وصيغاً أخرى محتملة للمعنى نفسه عند غيرهم.\n"
         "في أي فنّ: إن لم يظهر إلا مصدر واحد أو مؤلف واحد أو زاوية واحدة فلا تجعل covered قيمة true؛ فالمسألة الواحدة مدوّنة في أمهات كتب فنّها ومختصراته وشروحه بصيغ ومصطلحات متقاربة مختلفة، ولا تكتمل التغطية حتى تُجرَّب مراسٍ مستخرجة من النصوص التي وُجدت نفسها.\n"
-        "إذا خلت المقاطع من جوهر المسألة فاجعل covered قيمة false، وصغ من 6 إلى 8 مراسي جديدة غير المكررة: اسم الباب التراثي، والمترادفات، وجملاً مميزة من الرواية إن كان السؤال عن حديث أو أثر، ورؤوس المسائل.\n"
+        "إذا خلت المقاطع من جوهر المسألة فاجعل covered قيمة false، وصغ من 4 إلى 6 مراسي جديدة غير المكررة في فلك السؤال نفسه: جمل المتن المميزة إن كان حديثًا، وسبب وروده وأعلامه، والمترادفات لعين المسألة. ممنوع اسم باب كتاب وقع فيه النص اتفاقًا إن لم يكن الباب هو المطلوب.\n"
         "أخرج JSON فقط بهذا الشكل: {\"covered\": false, \"anchors\": [\"مرساة قصيرة\"]}"
     )
     user = f"السؤال:\n{(question or '')[:1200]}\n\nمراسي جُرّبت:\n{prior}\n\nمقاطع مسترجعة:\n{sample}"
@@ -13011,11 +13047,13 @@ _ANCHOR_PANEL_GENERATORS = [
 
 _ANCHOR_GEN_SYSTEM = (
     "أنت خبير بالمكتبة التراثية الإسلامية (ما قبل 1000هـ) وبألفاظ مصنفيها، تولد مراسي بحث لفظية ولا تجيب عن المسألة.\n"
+    "المراسي للضبط لا للتشتيت: إن وضح المطلوب (متن حديث مسمّى، آية، عبارة محددة) فالبحث بلفظه وما يدور في فلكه، ولا تُزاد أبواب كتب وقع فيها النص اتفاقًا.\n"
     "المطلوب: عبارات بحث قصيرة (كلمتان إلى ست كلمات) من لسان التراث نفسه كما ترد حرفيا في الكتب: "
-    "ألفاظ أحاديث مشهورة في الباب، وتعريفات الفقهاء للمسألة، وأسماء الأبواب والفصول، وصيغ القواعد.\n"
-    "ممنوع: ترجمة حرفية للفظ المعاصر، وعبارات إنشائية حديثة، وكلمات مفردة عامة (كالزينة وحدها)، وكسرات لا معنى لها.\n"
+    "ألفاظ المتن أو المسألة، وسبب ورود الحديث إن كان حديثًا، وأعلام مداره، وتعريفات الفقهاء إن كانت المسألة فقهية.\n"
+    "ممنوع: أسماء أبواب كتب السنة التي يُدرج تحتها الحديث عرضًا (نحو بدء الوحي لحديث النية)، "
+    "وترجمة حرفية للفظ المعاصر، وعبارات إنشائية حديثة، وكلمات مفردة عامة تشتت الفهرس، وكسرات لا معنى لها.\n"
     "لكل مسألة معاصرة قابلها بجوهرها القديم: الحقن التجميلية بالوشم وتغيير الخلق وإزالة الشين، والعملات الرقمية بالصرف والغرر، وهكذا.\n"
-    "أخرج JSON فقط: {\"anchors\": [\"عبارة تراثية\", ...]} سبع عبارات فقط لا أكثر، متنوعة الزوايا."
+    "أخرج JSON فقط: {\"anchors\": [\"عبارة تراثية\", ...]} سبع عبارات فقط لا أكثر، كلها في فلك المطلوب."
 )
 
 
@@ -13078,6 +13116,174 @@ def _anchor_cluster_key(a: str) -> str:
     return re.sub(r"\s+", " ", a).strip()
 
 
+_NAMED_HADITH_WRAP = re.compile(
+    r"^(?:طلب\s+)?(?:تخريج\s+)?(?:حديث|الحديث)\s*[:：]?\s*",
+)
+_NOT_HADITH_MATN = re.compile(r"باب |كتاب |حكم |مسألة |الواردة في|الأحاديث")
+_SCATTER_CHAPTER_RE = re.compile(r"بدء الوحي|غار حراء|بدء الخلق")
+_SITTA_WORK_NAMES = (
+    "صحيح البخاري", "صحيح مسلم",
+    "سنن أبي داود", "سنن الترمذي", "سنن النسائي", "سنن ابن ماجه",
+)
+
+
+def _named_hadith_matn(query: str) -> Optional[str]:
+    """إن سمّى السؤال حديثًا بمتنه فأعِد المتن. «حديث إنما الأعمال بالنيات»
+    متن واضح؛ «حديث النية» وحده ليس متنًا يُبحث به في أبواب الكتب."""
+    q = re.sub(r"\s+", " ", str(query or "")).strip()
+    if not q:
+        return None
+    quoted = re.findall(r"[«\"']([^«»\"']{8,90})[»\"']", q)
+    core = quoted[0].strip() if quoted else ""
+    if not core:
+        rest = _NAMED_HADITH_WRAP.sub("", q).strip(" :،.-")
+        if rest != q or re.search(r"حديث|تخريج", q):
+            core = rest
+        elif (4 <= len(q.split()) <= 14
+              and not re.search(r"[؟?]|حكم |هل |ما قول|اشرح", q)):
+            core = q
+        else:
+            return None
+    if not core or _NOT_HADITH_MATN.search(core):
+        return None
+    words = [w for w in re.findall(r"[\u0600-\u06FF]{2,}", core)
+             if w not in {"حديث", "الحديث", "تخريج", "النبوي", "الشريف"}]
+    if len(words) < 3:
+        return None
+    return " ".join(core.split())
+
+
+def _anchor_discipline_prompt(query: str) -> str:
+    """توجيه لجنة المراسي: للضبط لا للتشتيت."""
+    matn = _named_hadith_matn(query)
+    if matn:
+        return (
+            "السؤال حديث مسمّى بمتنه. المراسي للضبط لا للتشتيت:\n"
+            f"- المرساة الأولى حتمًا متن الحديث كما كُتب: «{matn}».\n"
+            "- زِد فقط ما يدور في فلك هذا الحديث بعينه: ألفاظ المتن المشهورة، "
+            "سبب وروده، أعلام من دار عليهم (نحو مهاجر أم قيس إن لزم لهذا المتن)، "
+            "ومدار إسناده المشهور.\n"
+            "- ممنوع منعًا: أسماء أبواب كتب السنة التي وقع فيها الحديث اتفاقًا "
+            "(نحو بدء الوحي)، ومفردات عامة تشتت الفهرس (نية، دين، وحي)، "
+            "وعناوين كتب ليست من لفظ المتن.\n"
+            "- إن وضح المطلوب فلا تُكثر المراسي ولا تخرج عن فلك المتن.\n"
+        )
+    return (
+        "المراسي للضبط لا للتشتيت. إن وضح المطلوب فالبحث بألفاظه وما يدور في فلكه، "
+        "ولا تُزاد مراسٍ بأسماء أبواب كتب قد يرد فيها الموضوع عرضًا. "
+        "إن غمض المطلوب فأوضح المراد بعبارات المسألة نفسها قبل التوسيع، ولا تخترع أبوابًا مشتتة.\n"
+    )
+
+
+def _filter_scatter_anchors(query: str, anchors: Optional[List[str]] = None) -> List[str]:
+    """أسقط مراسي التشتيت وأبقِ فلك المطلوب. الحديث المسمّى: المتن ثم مداره، لا باب الكتاب."""
+    q = re.sub(r"\s+", " ", str(query or "")).strip()
+    matn = _named_hadith_matn(q)
+    lead = matn or q
+    out: List[str] = []
+    seen = set()
+
+    def add(raw: Any) -> None:
+        line = re.sub(r"\s+", " ", str(raw or "")).strip(" .،:-_\"'«»")
+        if not line or len(line) < 3:
+            return
+        key = _anchor_cluster_key(line)
+        if not key or key in seen:
+            return
+        seen.add(key)
+        out.append(line)
+
+    if lead:
+        add(lead)
+    for raw in anchors or []:
+        line = re.sub(r"\s+", " ", str(raw or "")).strip(" .،:-_\"'«»")
+        if not line:
+            continue
+        if matn:
+            if _SCATTER_CHAPTER_RE.search(line) and not _SCATTER_CHAPTER_RE.search(q):
+                print(f"⚓ [Anchor Discipline] أُسقطت مرساة تشتيت: «{line}»", flush=True)
+                continue
+            if re.match(r"^(باب|كتاب)\s+", line) and _anchor_cluster_key(matn) not in _anchor_cluster_key(line):
+                print(f"⚓ [Anchor Discipline] أُسقط باب مشتت: «{line}»", flush=True)
+                continue
+            if len(line.split()) == 1:
+                continue
+        add(line)
+        cap = 5 if matn else 8
+        if len(out) >= cap:
+            break
+    return out
+
+
+def _sitta_first_passages(matn: str, selected_books=None, top_k: int = 12) -> List[Dict[str, Any]]:
+    """بحث لفظ المتن في الصحيحين ثم الكتب الستة قبل أي وسيط."""
+    matn = " ".join(str(matn or "").split())
+    if len(matn) < 10:
+        return []
+    try:
+        db = get_db()
+        cursor = db.cursor() if db else None
+    except Exception:
+        cursor = None
+    try:
+        scope_ids = set(str(x) for x in (_selected_book_ids(selected_books, cursor) or [])) if selected_books else set()
+    except Exception:
+        scope_ids = set()
+    hits: List[Dict[str, Any]] = []
+    seen = set()
+
+    def _add_hit(bid, title, part, page, body=""):
+        key = (str(bid), str(part or ""), str(page or ""))
+        if key in seen or not bid:
+            return
+        if scope_ids and str(bid) not in scope_ids:
+            return
+        seen.add(key)
+        snip = re.sub(r"\s+", " ", str(body or "")).strip()[:750] or matn
+        hits.append({
+            "book_id": str(bid), "title": title or "", "part": part,
+            "page_num": page, "phrase": matn, "term": None, "text": body or "",
+            "snippet": snip, "snippet_centered": True,
+        })
+
+    try:
+        import hadith_takhrij as _HTA
+        r = _HTA.takhrij(matn, str(DB_INDEX_PATH))
+        for h in list(r.get("in_sahih") or []) + list(r.get("found") or []):
+            body = ""
+            try:
+                body = _HTA.page_text(int(h["book_id"]), h.get("part"), h.get("page"))
+            except Exception:
+                body = ""
+            _add_hit(h.get("book_id"), h.get("title") or h.get("work"), h.get("part"), h.get("page"), body)
+        import shamela_search
+        for work_name in _SITTA_WORK_NAMES:
+            ed = _HTA._primary_edition(work_name, str(DB_INDEX_PATH))
+            if not ed:
+                continue
+            bid = int(ed["book_id"])
+            if any(str(h.get("book_id")) == str(bid) for h in hits):
+                continue
+            try:
+                found = shamela_search.search(matn, mode="phrase", book_ids=[bid], limit=2)
+            except Exception:
+                found = {"results": []}
+            for h in found.get("results") or []:
+                _add_hit(h.get("book_id") or bid, h.get("title") or ed.get("title") or work_name,
+                         h.get("part"), h.get("page_num"), h.get("snippet") or "")
+                break
+    except Exception as exc:
+        print(f"⚓ [Sitta First] تعذر بحث الصحيحين/الستة: {exc}", flush=True)
+    if not hits:
+        return []
+    mapped = _map_lexical_hits(hits, cursor, top_k)
+    for c in mapped:
+        c["sitta_first"] = True
+        c["lexical_hit"] = True
+    print(f"⚓ [Sitta First] {len(mapped)} شاهدًا من الصحيحين/الستة بلفظ «{matn[:48]}»", flush=True)
+    return mapped
+
+
 _ANCHOR_ARBITER_MODEL = os.getenv("ALMOGHNI_ANCHOR_ARBITER", "anthropic/claude-sonnet-4.5")
 
 
@@ -13094,8 +13300,8 @@ def generate_anchor_panel(query: str, api_key: str, intent_genres: Optional[List
             raw = call_openrouter_raw(
                 model_id=model_id,
                 messages=[
-                    {"role": "system", "content": _ANCHOR_GEN_SYSTEM},
-                    {"role": "user", "content": f"المسألة المعاصرة:\n{(query or '')[:800]}"},
+                    {"role": "system", "content": _ANCHOR_GEN_SYSTEM + "\n" + _anchor_discipline_prompt(query)},
+                    {"role": "user", "content": f"المسألة:\n{(query or '')[:800]}"},
                 ],
                 api_key=key, temperature=0.3, max_tokens=4000, timeout=90, thinking_level="low",
             )
@@ -13143,12 +13349,16 @@ def generate_anchor_panel(query: str, api_key: str, intent_genres: Optional[List
             messages=[
                 {"role": "system", "content": (
                     "أنت حاكم مراسي بحث تراثية (Sonnet). أمامك مراس أجمع عليها نموذجان فأكثر بعدد مؤيديها، ومراس فريدة من نموذج واحد.\n"
-                    "اختر خمس مراس فقط: العبارات الحرفية المشهورة أولا (نصوص أحاديث في الباب وتعريفات الفقهاء وأسماء الأبواب)، فالبحث لفظي حرفي.\n"
-                    "احذر الصياغات الوصفية المركبة حديثا ولو أجمع عليها المولدون؛ فالإجماع على ترجمة وصفية لا قيمة له بحثيا، وقد تسبقها عبارة حرفية فريدة من نموذج واحد.\n"
+                    "اختر خمس مراس فقط: العبارات الحرفية في فلك المسألة أولا (متن الحديث المسمّى وما يدور عليه، وتعريفات الفقهاء لعين الحكم). "
+                    "المراسي للضبط لا للتشتيت: إن وضح المطلوب فلا تخرج عن فلكه، ولا تختر أسماء أبواب كتب وقع فيها النص اتفاقًا.\n"
+                    + _anchor_discipline_prompt(query)
+                    + "احذر الصياغات الوصفية المركبة حديثا ولو أجمع عليها المولدون؛ فالإجماع على ترجمة وصفية لا قيمة له بحثيا، وقد تسبقها عبارة حرفية فريدة من نموذج واحد.\n"
                     "لكل مرساة درجة ثقة: عالية إن كانت مجمعا عليها أو نصا مشهورا في الباب، ومتوسطة لغيرها.\n"
                     "وسم كل مرساة بفنها الذي ستُبحث فيه: حديث (نص نبوي أو أثر)، فقه (حكم وخلاف المذاهب)، تفسير (آية وسبب ومعنى قرآني)، عقيدة، لغة (معنى لفظ ومعاجم)، تاريخ، عام.\n"
-                    "توازن الفنون إلزامي في مسائل الأحكام الشرعية: احرص أن تضم الخمسُ مرساةً من الحديث الأصل ومرساةً من الفقه على الأقل متى وجدتا بين المرشحات، ولا تجعل المراسي اللغوية أكثر من واحدة إلا إن كانت المسألة لغوية الأصل؛ فالبحث المحكم يوازن التخريج والخلاف الفقهي والتفسير ولا يميل لفن واحد.\n"
-                    + (f"قصد الباحث المعلن: الفنون المستهدفة هي ({'، '.join(intent_genres)}). اجعل ثلاثًا من الخمس على الأقل من هذه الفنون بمراس حرفية منها، ولكل فن مستهدف مرساة واحدة على الأقل، والباقي علوم خادمة للمسألة.\n" if intent_genres else "")
+                    + ("الحديث المسمّى بمتنه لا يُوازن بفنون أخرى: الخمس كلها في فلك المتن (لفظه وسبب وروده وأعلامه)، بلا مرساة فقهية أو لغوية تشتت العزو.\n"
+                       if _named_hadith_matn(query) else
+                       "توازن الفنون إلزامي في مسائل الأحكام الشرعية: احرص أن تضم الخمسُ مرساةً من الحديث الأصل ومرساةً من الفقه على الأقل متى وجدتا بين المرشحات، ولا تجعل المراسي اللغوية أكثر من واحدة إلا إن كانت المسألة لغوية الأصل؛ فالبحث المحكم يوازن التخريج والخلاف الفقهي والتفسير ولا يميل لفن واحد.\n")
+                    + (f"قصد الباحث المعلن: الفنون المستهدفة هي ({'، '.join(intent_genres)}). اجعل ثلاثًا من الخمس على الأقل من هذه الفنون بمراس حرفية منها، ولكل فن مستهدف مرساة واحدة على الأقل، والباقي علوم خادمة للمسألة.\n" if intent_genres and not _named_hadith_matn(query) else "")
                     + ((panel_hint.strip() + "\n") if panel_hint else "")
                     + "أخرج JSON فقط: {\"anchors\": [{\"phrase\": \"...\", \"confidence\": \"عالية\", \"genre\": \"فقه\"}, ...]} خمس مراس مرتبة بالأعلى عائدا."
                 )},
@@ -13176,11 +13386,24 @@ def generate_anchor_panel(query: str, api_key: str, intent_genres: Optional[List
     except Exception as exc:
         print(f"⚓ [Anchor Panel] تعذر التحكيم: {exc}")
     adopted = [a for a in adopted if a["phrase"] in set(_sanitize_anchors([a["phrase"] for a in adopted], cap=5))]
+    _kept = _filter_scatter_anchors(query, [a["phrase"] for a in adopted])
+    _by_ph = {a["phrase"]: a for a in adopted}
+    adopted = [
+        _by_ph[p] if p in _by_ph else {
+            "phrase": p, "support": 1, "confidence": "عالية",
+            "genre": "حديث" if _named_hadith_matn(query) else "عام",
+        }
+        for p in _kept
+    ]
     ranked_clusters = sorted(clusters, key=lambda c: (-len(c["models"]), len(c["phrase"])))
     candidate_pool = [{"phrase": c["phrase"], "support": len(c["models"])} for c in ranked_clusters]
-    if len(adopted) < 3:
+    if len(adopted) < 3 and not _named_hadith_matn(query):
         adopted = [{"phrase": c["phrase"], "support": len(c["models"]), "genre": "عام",
                     "confidence": "عالية" if len(c["models"]) >= 2 else "متوسطة"} for c in ranked_clusters[:5]]
+        _kept = _filter_scatter_anchors(query, [a["phrase"] for a in adopted])
+        _by_ph = {a["phrase"]: a for a in adopted}
+        adopted = [_by_ph[p] if p in _by_ph else {"phrase": p, "support": 1, "confidence": "متوسطة", "genre": "عام"}
+                   for p in _kept]
     print(f"⚓ [Anchor Panel] المراسي المعتمدة ({len(adopted)}): {adopted}")
     return {"adopted": adopted, "candidates": candidate_pool}
 
@@ -13276,9 +13499,10 @@ def _mine_evidence_anchors(passages: List[Dict[str, Any]], question: str, used: 
         # 1) عبارات مقتبسة كما وردت
         for quoted in re.findall(r"[«\"]([^«»\"]{8,70})[»\"]", snippet):
             add(quoted)
-        # 2) رؤوس المسائل والأبواب والقواعد والتعريفات بميزان كل فن
-        for match in re.finditer(r"(باب|فصل|مسألة|المسألة|قاعدة|القاعدة|تعريف|الأصل|المقصد)\s+[:：]?\s*([^\n،.:؛]{4,48})", snippet):
-            add(f"{match.group(1)} {match.group(2)}")
+        # 2) رؤوس المسائل والقواعد والتعريفات — لا أبواب كتب تشتت حديثًا مسمّى
+        if not _named_hadith_matn(question):
+            for match in re.finditer(r"(باب|فصل|مسألة|المسألة|قاعدة|القاعدة|تعريف|الأصل|المقصد)\s+[:：]?\s*([^\n،.:؛]{4,48})", snippet):
+                add(f"{match.group(1)} {match.group(2)}")
         # 3) أسماء الأعلام بعد أدوات الرواية والنقل (سنداً كان أو عزواً لمؤلف)
         for match in re.finditer(r"(?:حدثنا|أخبرنا|حدثني|أخبرني|عن|سمعت|قال|ذكر|نقل)\s+([^\n،.:؛]{3,42})", snippet):
             words = [w for w in re.findall(r"[A-Za-z\u0621-\u064A]+", match.group(1)) if w not in _MINE_STOPWORDS]
@@ -13506,6 +13730,8 @@ def _extract_classical_terms(query: str, api_key: str) -> List[str]:
     الكتب: فعبارة حديثة كـ«يكره تقبيل الفرج» تسقط في بوابة العبارة
     الحرفية، بينما الكتب تقول «تقبيل فرجها» و«يلحسه بلسانه»."""
     if not (query or "").strip() or not (api_key or "").strip():
+        return []
+    if _named_hadith_matn(query):
         return []
     _sys = (
         "أنت وكيل متخصص واحد فقط: استخراج الألفاظ الدلالية عند المتقدمين لتكون مراسي بحث دلالي يقود الاسترجاع كله. لا تكتب بحثًا ولا حكمًا ولا تقريرًا.\n"
@@ -15306,12 +15532,22 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
     if _hcore:
         _ring1 = [g for g in _hcore if g.get("ring") == 1]
         ev.append(_risk_event(
-            "hadith_core_gap", "متوسطة" if _ring1 else "منخفضة",
+            "hadith_core_gap", "عالية" if _ring1 else "متوسطة",
             "أصول حديثية غائبة بلا بطاقة ولا تصريح خلو",
             "لا حضور في الشواهد ولا الإحالات من: "
             + "، ".join(f"{g.get('work')} ({g.get('kind')})" for g in _hcore[:8]),
             "مفتوح",
-            "تُستكمل بطاقات الغائب أو يُصرَّح بخلوه؛ لا يُبنى على سكوته نفي ولا درجة"))
+            "تُستكمل بطاقات الغائب من الصحيحين والستة بلفظ المتن قبل أي وسيط؛ لا يُبنى على سكوته نفي ولا درجة"))
+    _tm = gs.get("takhrij_sahihayn_missed") or []
+    if _tm:
+        ev.append(_risk_event(
+            "takhrij_sahihayn_missed", "عالية",
+            "حديث ثابت في الصحيحين لم يُخرَّج منهما",
+            f"{len(_tm)} حديثًا ثبت في البخاري أو مسلم آليًا ولم تُحل حاشيته إليهما: "
+            + "؛ ".join(
+                f"«{x.get('book')}» ({x.get('part')}-{x.get('page')})" for x in _tm[:4]),
+            "مفتوح",
+            "يُعاد العزو إلى أصل الصحيحين في المكتبة ولا يُكتفى بوسيط كالبيهقي"))
     _imamp = gs.get("imam_primary_gaps") or []
     if _imamp:
         ev.append(_risk_event(
@@ -15883,6 +16119,8 @@ def expand_query_with_anchor_rounds(
         line = re.sub(r"\s+", " ", str(seed)).strip()
         if line and line not in anchors:
             anchors.append(line)
+    anchors = _filter_scatter_anchors(query, anchors)
+    _matn = _named_hadith_matn(query)
 
     def search_scopes(anchor_list: List[str], include_query: bool, round_no: int) -> int:
         def one(scope: Dict[str, Any]):
@@ -15927,6 +16165,18 @@ def expand_query_with_anchor_rounds(
         return [row for rows in buckets.values() for row in rows]
 
     key = (api_key or "").strip()
+    if _matn:
+        print(f"⚓ [Hadith Matn] بحث لفظ المتن في الصحيحين والستة أولًا: {_matn}", flush=True)
+        for scope in scopes:
+            try:
+                _sf = _sitta_first_passages(_matn, selected_books=scope.get("books"),
+                                            top_k=int(scope.get("top_k") or 12))
+            except Exception as _sf_err:
+                print(f"⚓ [Sitta First] {_sf_err}", flush=True)
+                _sf = []
+            if _sf:
+                _merge_passages(buckets[scope["name"]], _sf, 0)
+        search_scopes([_matn], False, 0)
     if not key:
         search_scopes(anchors, True, 1)
     else:
@@ -16019,7 +16269,8 @@ def expand_query_with_anchor_rounds(
                           "confidence": "متحقق" if _verdicts.get(ph) == "phrase" else "متحقق دلاليًا",
                           "genre": _gmap.get(ph, "عام")} for ph in adopted]
             print(f"⚓ [Anchor Gate] مراس متحقق منها حيا ({len(adopted)}): {adopted}")
-        if semantic_terms:
+        adopted = _filter_scatter_anchors(query, adopted)
+        if semantic_terms and not _matn:
             # مراسي وكيل الألفاظ الدلالية عند المتقدمين (موثقة كلماتيًا لا
             # عباريًا): جولات مستقلة بصيغ المصنفين وضمائرهم وتصريفاتهم،
             # فلا تسقط كما تسقط العبارة الحديثة في بوابة العبارة الحرفية.
@@ -21964,6 +22215,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 f"{snippets_txt}\n\n"
                 f"المطلوب منك كوكيل متخصص: هذه المقاطع أُحضرت بمراسي دلالية من لغة المصنفين، وقد لا يرد فيها لفظ السؤال بحروفه. استخلص ما يتناول جوهر المسألة، وانسخ كل إحالة من سطر «الإحالة المعتمدة» بلا تغيير، وابدأ تقريرك ببطاقات الأدلة المرقمة ثم التحرير المبني عليها حصرًا. لا تُكمل من الذاكرة ما لم يرد في المقاطع، ولا تنسب لمذهب من بطاقة كتاب مذهب آخر."
             )
+            if _named_hadith_matn(search_query):
+                sub_user += (
+                    "\n\nتنبيه تخريج: السؤال حديث مسمّى بمتنه. إن وردت في مقاطعك بطاقات من الصحيحين أو الستة فقدّمها على كل وسيط. "
+                    "لا تُخرج الحديث من البيهقي أو نحوه وفي المقاطع أصل البخاري أو مسلم. البحث بلفظ المتن لا باسم باب الكتاب."
+                )
             if "الحَكَم" in str(ag_name):
                 # الحَكَم فرّغ ردّه أربع جولات متتالية بنماذج مختلفة على مهمة
                 # مسبح كامل بلا بنية. دواؤه بنية حكم صارمة ومادة مركزة:
@@ -23981,6 +24237,7 @@ async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Reques
         "madhhab_gaps": stats.get("madhhab_coverage_gaps") or [],
         "hadith_core_gaps": stats.get("hadith_core_gaps") or [],
         "imam_primary_gaps": stats.get("imam_primary_gaps") or [],
+        "takhrij_sahihayn_missed": stats.get("takhrij_sahihayn_missed") or [],
         "sahihayn_missed": len(stats.get("takhrij_sahihayn_missed") or []),
         "failures": (stats.get("failures") or [])[:20],
         "refs_before": len(_refs_before),
@@ -24158,6 +24415,7 @@ async def research_finalize_endpoint(req: ResearchAutofixRequest, request: Reque
         "failures": (stats.get("failures") or [])[:20],
         "hadith_core_gaps": stats.get("hadith_core_gaps") or [],
         "imam_primary_gaps": stats.get("imam_primary_gaps") or [],
+        "takhrij_sahihayn_missed": stats.get("takhrij_sahihayn_missed") or [],
         "madhhab_gaps": stats.get("madhhab_coverage_gaps") or [],
         "purged_paras": purged,
         "warn_removed": warn_removed,
@@ -30577,7 +30835,7 @@ def _architect_fiqh_discipline_section() -> str:
         "5. وكيل الإجماع وأسباب الخلاف والخلاف العالي: قوائم كتبها أدناه مظانها الأولى؛ ودعوى الإجماع أو الاتفاق لا تستقيم إلا بنقل منها، وإلا فلفظ «الجمهور» أسلم.\n"
         "5ب. وكيل الرجال والتخريج والعلل: أصول الفن في بطاقته (التقريب، التهذيب، الجرح والتعديل، لسان الميزان، ميزان الاعتدال، كتب العلل) لا دراسة محقق لوسيط كالكاشف؛ وما نُقل بالواسطة يُجلب أصله أو يُقترح وكيل مؤقت لتلك الأصول.\n"
         "6. وكيل المقارنة المرجعية: الموسوعة الفقهية الكويتية وحدها موضعها الطبيعي عنده للمقابلة والضبط، ولا يحسن أن تكون سندًا وحيدًا لمتن حديث أو قول مذهبي.\n"
-        "7. مراسي الاسترجاع (`retrieval_anchors`) لكل وكيل مذهب تُصاغ بألفاظ مذهبه وأسماء أبوابه في كتبه، لا بعبارات حديثية عامة وحدها.\n"
+        "7. مراسي الاسترجاع (`retrieval_anchors`) لكل وكيل مذهب تُصاغ بألفاظ مذهبه في كتبه لعين المسألة، لا بعبارات حديثية عامة وحدها ولا بأبواب تشتت المطلوب الواضح.\n"
     ]
     for madhhab in ("الحنفي", "المالكي", "الشافعي", "الحنبلي", "الظاهري"):
         try:
@@ -30688,6 +30946,10 @@ def _architect_academic_governance_section() -> str:
         "٧) في مخططك: (أ) نصّ هذا الميثاق في توجيه المدير بنقاطه لا بإشارة عامة؛ (ب) املأ `books` المتخصصين بأصول فنهم لا بوسائطها وبصيغة «#الرقم العنوان» لا عنوانًا عاريًا؛ "
         "(ج) إن بقيت أصول خارج البطاقات فاقترح وكيلًا مؤقتًا أو بند إضافة كتب في الميثاق؛ (د) معايير القبول النهائي تشمل: لا واسطة لأصل موجود، ولا هيمنة وسيط، ولا تقرير يسكت عن فجوة منهجية.\n"
         "٨) الاختصار والاقتصاد في المستشارين والمتناظرين بقدر التعقيد والطول، لا بمنع ما تحتاجه الحوكمة وجودة النتيجة: قرار المستشارين والمناظرة لك؛ لا تُسرف في طلبهم على خلاصة قصيرة، ولا تبخل بهم على أصول فقه أو مسألة فقهية طويلة معقّدة. الكتب بـ#رقم في كل طول، وسقف الوفاة إن حُدّد يُحترم.\n"
+        "٩) مراسي البحث للضبط لا للتشتيت، وتخريج الحديث المسمّى يبدأ من الصحيحين والستة بلفظ المتن: "
+        "إن كتب الباحث حديث «إنما الأعمال بالنيات» فالمراسي متنه وما يدور في فلكه (النية والعمل، سبب الورود، مهاجر أم قيس) لا باب بدء الوحي ولا غار حراء. "
+        "إن وضح المطلوب فلا تُزاد المراسي، وإن غمض فيُوضَّح قبل التوسيع. "
+        "ولا يُكتفى بوسيط كالبيهقي وفي المكتبة البخاري ومسلم؛ ولا يُقبل مخطط تخريج يسكت عن هذا.\n"
     )
 
 
@@ -30705,7 +30967,8 @@ def _architect_design_floors_section() -> str:
         "إن اخترت مناظرة: مثبت ونافٍ وحكَم. اكتب القرار في research_profile.counsel (none|advisors|debate|both) وdebate (full|mini|none).\n"
         "ج) حجم الفريق: المختصر يميل إلى مدير + متخصص أو اثنين + مدير أدوات؛ والمتوسط والمطوّل تتسع فيهما أدوار الفن. هذا أصلٌ لا سقفًا يمنع مستشارًا أو مناظرًا إن اقتضته الجودة.\n"
         "د) أرضيات الفنون (المتخصصون والكتب، لا المستشارون):\n"
-        "   • حديث/تخريج مختصر: متخصصان مرقّمان: (١) عزو المصادر المسندة بـ#رقم، (٢) كلام المحدثين والدرجة/العلل بـ#رقم.\n"
+        "   • حديث/تخريج مختصر: متخصصان مرقّمان: (١) عزو المصادر المسندة بـ#رقم، (٢) كلام المحدثين والدرجة/العلل بـ#رقم. "
+        "والاستخراج بلفظ المتن في الصحيحين ثم الستة قبل أي وسيط؛ والمراسي فلك الحديث لا أسماء أبواب الكتب.\n"
         "   • حديث متوسط/مطوّل: أربعة متخصصين منفصلين إن اتسع البحث: طرق، رجال، علل، تخريج تطبيقي/درجة.\n"
         "   • فقه مقارن مطوّل: وكيل مستقل لكل مذهب مطلوب. أصول الفقه والمسائل المعقّدة: لا تحذف المستشارين والمتناظرين بحجة الاقتصاد.\n"
         "   • تفسير/عقيدة/تاريخ/لغة: متخصصون بقدر الفن والطول، وكتبهم بـ#رقم.\n"
@@ -31168,7 +31431,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "2. النطاق والمنهج وأدواته.\n"
         "3. خريطة المظانّ مصنفة بحسب الفن والمذهب، مع أرقام الكتب المعيارية #[رقم_الكتاب] من الجدول المعتمد المرفق أدناه.\n"
         "4. تحديد سعة الاستخراج المباشر في الكروت (`extraction_capacity`: مثلاً 150 أو 200 أو 300 مقطع توثيقي).\n"
-        "5. مراسي الاسترجاع التخصصية الديناميكية (`retrieval_anchors`): صغ ديناميكياً لكل بحث مصفوفة من 4 إلى 8 مراسٍ لغوية وحولية ذكية متخصصة حصراً بأسلوب وصياغات مصنفي هذا الفن في الشاملة لتكون شبكة صيد محكمة وتفادي قلة النتائج.\n"
+        "5. مراسي الاسترجاع التخصصية الديناميكية (`retrieval_anchors`): للضبط لا للتشتيت. إن سمّى الباحث حديثًا بمتنه فالمرساة الأولى المتن نفسه ثم ما يدور في فلكه (ألفاظه وسبب وروده وأعلامه)، لا أسماء أبواب الكتب التي وقع فيها اتفاقًا. إن وضح المطلوب فلا تُزد المراسي، وإن غمض فيُوضَّح في ```choices قبل التوسيع.\n"
         "6. المخاطر ومعايير القبول النهائي وهيكل المخرج — ومنها بنود الحوكمة الأكاديمية: لا واسطة لأصل موجود في المكتبة، ولا هيمنة كتاب وسيط، ولا تقرير يسكت عن فجوة منهجية، وجلب أصل الواسطة (إضافة كتاب أو مختص أو وكيل مؤقت) قبل إسقاط النقل.\n"
         "7. المخطط التقني البرمجي المعياري للمشروع (Blueprint JSON) المباشر.\n\n"
         "【سادساً: هندسة الفريق】\n"
@@ -31208,7 +31471,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "• الجولة 4: الرد على الأجوبة إن بقي إشكال حقيقي.\n"
         "• الجولة 5: الحكم والتحرير: جدول سلامة ونقض الأدلة، إعمال قواعد الترجيح (الجمع فالنسخ فالترجيح)، وتحديث الخريطة الذهنية النهائية.\n\n"
         "【ثامناً: بروتوكول الاسترجاع الاستقصائي】\n"
-        "أ. توليد استعلامات بلغة المصنفين لا العصر، وبمصطلح كل مذهب، وألفاظ الحديث، وأبواب الاستطراد، ورسم الحروف.\n"
+        "أ. توليد استعلامات بلغة المصنفين لا العصر، وبمصطلح كل مذهب، وألفاظ الحديث وما يدور في فلكه. حديث مسمّى يُبحث بمتنه في الصحيحين والستة أولًا، لا بعنوان باب الكتاب.\n"
         "ب. التصفية الطبقية: بالمذهب، والفن، والطبقة الزمنية، وأسماء المظانّ.\n"
         "ج. معيار التشبّع: يستمر البحث حتى تأتي 3 جولات متتالية من استعلامات جديدة دون مصدر جديد ذي صلة.\n"
         "د. الجمع الدائري: تتبّع كل إحالة واردة في نص مسترجع مباشرة حتى لا يبقى إحالة جديدة.\n"
@@ -31260,10 +31523,10 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '  "extraction_capacity": 150,\n'
         '  "research_profile": {"discipline": "فن البحث", "purpose": "الغرض (محكّم/دراسات عليا/تدريس/مختصر/موسوعة/فتوى/مقال)", "depth": "العمق", "length": "الطول المستهدف", "audience": "الجمهور", "method": "المنهج", "debate": "full|mini|none", "counsel": "none|advisors|debate|both", "output_structure": "بنية المخرج بسطر واحد", "death_max": null},\n'
         '  "retrieval_anchors": [\n'
-        '    "مرساة استرجاع دلالية مصممة خصيصاً لأسلوب مصنفي هذا الفن المحدد في الشاملة",\n'
-        '    "مرساة استرجاع ديناميكية 2",\n'
-        '    "مرساة استرجاع ديناميكية 3",\n'
-        '    "مرساة استرجاع ديناميكية 4"\n'
+        '    "متن الحديث أو عبارة المسألة كما كتبها الباحث",\n'
+        '    "ما يدور في فلك المطلوب (سبب ورود أو أعلام المدار) لا باب كتاب أجنبي",\n'
+        '    "مرساة ثالثة في الفلك نفسه إن لزم",\n'
+        '    "مرساة رابعة إن لزم ولا تُزاد إن وضح المطلوب"\n'
         '  ],\n'
         '  "director": {\n'
         '    "name": "اسم مدير المشروع التخصصي",\n'
