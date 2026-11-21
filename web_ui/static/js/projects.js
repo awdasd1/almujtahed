@@ -2999,7 +2999,7 @@ async function applyStudioBlueprint() {
     // المخرج المصنفة عند المهندس تسري على التنفيذ كله ولو نسيها المهندس.
     const rp = bp.research_profile || null;
     if (rp && !directorPrompt.includes('ملف الطلب:')) {
-      const rpLine = `ملف الطلب: الفن: ${rp.discipline || 'غير مصنف'}؛ الغرض: ${rp.purpose || 'بحث'}؛ العمق: ${rp.depth || 'متوسط'}؛ الطول المستهدف: ${rp.length || 'متوسط'}؛ الجمهور: ${rp.audience || 'متخصصون'}؛ المنهج: ${rp.method || 'تحليلي'}؛ المناظرة: ${rp.debate || 'mini'}؛ بنية المخرج: ${rp.output_structure || 'دراسة محررة بعناوين وحواشٍ وثبت مصادر'}؛ سقف وفاة المؤلفين: ${deathMaxPromptText(rp)}. التزم بهذا الملف في بنية تقريرك وطوله ولغته التزامًا صارمًا: المختصر لا يُطال ولا يتجاوز أربعة إلى خمسة وكلاء، والمطوّل لا يُختصر، والتدريسي يُبنى بأهداف وأمثلة وأسئلة، والأكاديمي يُبنى بإشكالية ومنهج وخاتمة بنتائج وثبت مصادر. لا تدخل مؤلفات بعد سقف الوفاة إن حُدّد.`;
+      const rpLine = `ملف الطلب: الفن: ${rp.discipline || 'غير مصنف'}؛ الغرض: ${rp.purpose || 'بحث'}؛ العمق: ${rp.depth || 'متوسط'}؛ الطول المستهدف: ${rp.length || 'متوسط'}؛ الجمهور: ${rp.audience || 'متخصصون'}؛ المنهج: ${rp.method || 'تحليلي'}؛ المناظرة: ${rp.debate || 'none'}؛ المستشارون/المناظرة: ${rp.counsel || 'بقدر التعقيد'}؛ بنية المخرج: ${rp.output_structure || 'دراسة محررة بعناوين وحواشٍ وثبت مصادر'}؛ سقف وفاة المؤلفين: ${deathMaxPromptText(rp)}. التزم بهذا الملف في بنية تقريرك وطوله ولغته: المختصر لا يُطال، والمطوّل لا يُختصر، والمستشارون والمتناظرون بقدر التعقيد والطول لا إسرافًا ولا بخلًا يمنع الحوكمة. لا تدخل مؤلفات بعد سقف الوفاة إن حُدّد.`;
       directorPrompt = rpLine + '\n\n' + directorPrompt;
     }
     const chosenArchitectModel = document.getElementById('architectModelSelect')?.value || 'google/gemini-2.5-flash';
