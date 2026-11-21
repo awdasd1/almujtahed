@@ -4864,22 +4864,209 @@ function stepAnswerSearch(dir) { jumpToAnswerMark((_answerSearch.current < 0 ? 0
 
 // 📏 تقرير البحث: وثيقة ماركداون واحدة بجداول مرتبة — تُعرض ملوّنة في
 // نافذة التقرير وتُحفظ بامتداد ‎.md‎.
-function showMarkdownReport(md, filename) {
+function formatExcludedReportMd(items) {
+  if (!items || !items.length) return [];
+  const cell = s => String(s ?? '—').replace(/\s+/g, ' ').replace(/\|/g, '¦');
+  const L = ['', '### نقول استُبعدت من الحواشي', '',
+    '| الصيغة الأصلية | الكتاب | المؤلف | الموضع | الحكم |',
+    '|---|---|---|---|---|'];
+  items.slice(0, 24).forEach(x => {
+    L.push(
+      `| «${cell((x.quote || '').slice(0, 70))}» `
+      + `| ${cell((x.title || x.label || '—').slice(0, 80))} `
+      + `| ${cell((x.author || '—').slice(0, 50))} `
+      + `| ${cell(x.locator || '—')} `
+      + `| ${cell((x.verdict || '—').slice(0, 140))} |`);
+  });
+  return L;
+}
+
+function _rrDisposeCharts(ov) {
+  (ov && ov._rrCharts || []).forEach(ch => { try { ch.dispose(); } catch (e) {} });
+  if (ov) ov._rrCharts = [];
+}
+
+function renderResearchReportDashboard(host, entry) {
+  if (!host || !entry) return;
+  const a = entry.audit || {};
+  const failed = (entry.agents_failed || []).length;
+  const total = Number(entry.agents_total || 0);
+  const checked = Number(a.checked || 0);
+  const verified = Number(a.verified || 0);
+  const relocated = Number(a.relocated || 0);
+  const unverified = Number(a.unverified || 0);
+  const excluded = (entry.excluded_items || []).length || Number(a.excluded_outside || 0);
+  const ratio = checked ? Math.round(100 * (verified + relocated) / checked) : 0;
+  const teamPct = total ? Math.round(100 * (total - failed) / total) : 0;
+  const risk = entry.risk_events || [];
+  const high = risk.filter(e => e.cls === 'عالية').length;
+  const med = risk.filter(e => e.cls === 'متوسطة').length;
+  const low = risk.filter(e => e.cls === 'منخفضة').length;
+  const riskScore = Math.min(100, high * 35 + med * 12 + low * 4);
+  const chars = Number(entry.answer_chars || 0);
+  const witnesses = Number(entry.witnesses || 0);
+  const duration = Number(entry.duration_s || 0);
+  const fmtN = n => Number(n || 0).toLocaleString('ar-SA');
+  const durTxt = duration ? (duration >= 60 ? (Math.round(duration / 6) / 10) + ' د' : duration + ' ث') : '—';
+  host.innerHTML = `
+    <section class="rr-dash" id="rrDash">
+      <div class="rr-kpis">
+        <div class="rr-kpi"><b>${fmtN(chars)}</b><span>حروف الجواب</span></div>
+        <div class="rr-kpi"><b>${fmtN(witnesses)}</b><span>الشواهد</span></div>
+        <div class="rr-kpi"><b>${fmtN(checked)}</b><span>نقول مفحوصة</span></div>
+        <div class="rr-kpi"><b>${fmtN(excluded)}</b><span>مستبعدات</span></div>
+        <div class="rr-kpi"><b>${fmtN(failed)}</b><span>سواقط الفريق</span></div>
+        <div class="rr-kpi"><b>${durTxt}</b><span>مدة البحث</span></div>
+      </div>
+      <div class="rr-gauges">
+        <div class="rr-gaugebox"><div id="rrGaugeAudit" class="rr-gauge"></div><div class="rr-gaugelabel">اكتمال التدقيق</div></div>
+        <div class="rr-gaugebox"><div id="rrGaugeTeam" class="rr-gauge"></div><div class="rr-gaugelabel">اكتمال الفريق</div></div>
+        <div class="rr-gaugebox"><div id="rrGaugeRisk" class="rr-gauge"></div><div class="rr-gaugelabel">مؤشر المخاطر</div></div>
+      </div>
+      <div class="rr-charts">
+        <div class="rr-chartcard"><div class="rr-chart-caption">توزيع التدقيق التوثيقي</div><div id="rrPieAudit" class="rr-chart"></div></div>
+        <div class="rr-chartcard"><div class="rr-chart-caption">حجم المادة والمستبعدات</div><div id="rrBarVol" class="rr-chart"></div></div>
+        <div class="rr-chartcard"><div class="rr-chart-caption">أحداث المخاطر حسب الخطورة</div><div id="rrBarRisk" class="rr-chart"></div></div>
+        <div class="rr-chartcard rr-chart-wide"><div class="rr-chart-caption">مدد المراحل</div><div id="rrLineStages" class="rr-chart"></div></div>
+        <div class="rr-chartcard rr-chart-wide"><div class="rr-chart-caption">وكلاء الفريق: الشواهد وحجم التقرير</div><div id="rrBarAgents" class="rr-chart"></div></div>
+      </div>
+    </section>`;
+  if (!window.echarts) return;
+  const ov = document.getElementById('mdReportOverlay');
+  const charts = [];
+  const themeText = '#8a6414';
+  const axis = { axisLabel: { fontSize: 11, color: themeText }, splitLine: { lineStyle: { color: 'rgba(140,120,90,.18)' } } };
+  const gaugeOpt = (val, color, suffix) => ({
+    series: [{
+      type: 'gauge', startAngle: 210, endAngle: -30, min: 0, max: 100,
+      radius: '100%', center: ['50%', '58%'],
+      progress: { show: true, width: 14, roundCap: true, itemStyle: { color } },
+      axisLine: { roundCap: true, lineStyle: { width: 14, color: [[1, 'rgba(140,120,90,.22)']] } },
+      axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+      pointer: { show: false }, anchor: { show: false },
+      detail: { valueAnimation: true, formatter: '{value}' + suffix, fontSize: 22, fontWeight: 800, color: themeText, offsetCenter: [0, '8%'] },
+      title: { show: false },
+      data: [{ value: val }],
+    }],
+  });
+  const init = (id, opt, height) => {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    if (height) el.style.height = height;
+    const ch = echarts.init(el);
+    ch.setOption(opt);
+    charts.push(ch);
+    return ch;
+  };
+  init('rrGaugeAudit', gaugeOpt(ratio, ratio >= 65 ? '#2e7d5b' : (ratio >= 50 ? '#d9a441' : '#b03a2e'), '%'));
+  init('rrGaugeTeam', gaugeOpt(teamPct, teamPct >= 80 ? '#2e7d5b' : (teamPct >= 50 ? '#d9a441' : '#b03a2e'), '%'));
+  init('rrGaugeRisk', gaugeOpt(riskScore, riskScore >= 50 ? '#b03a2e' : (riskScore >= 20 ? '#d9a441' : '#2e7d5b'), ''));
+  init('rrPieAudit', {
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0, textStyle: { fontSize: 11 } },
+    series: [{
+      type: 'pie', radius: ['42%', '68%'], center: ['50%', '44%'],
+      label: { formatter: '{b}\n{c}', fontSize: 11 },
+      data: [
+        { name: 'ثابت في موضعه', value: verified, itemStyle: { color: '#2e7d5b' } },
+        { name: 'ثابت في غير موضعه', value: relocated, itemStyle: { color: '#d9a441' } },
+        { name: 'غير ثابت آليًا', value: unverified, itemStyle: { color: '#b03a2e' } },
+        { name: 'مستبعد', value: excluded, itemStyle: { color: '#7a5a3a' } },
+      ].filter(d => d.value > 0),
+    }],
+  });
+  init('rrBarVol', {
+    tooltip: { trigger: 'axis' },
+    grid: { left: 36, right: 12, top: 18, bottom: 36 },
+    xAxis: { type: 'category', data: ['شواهد', 'نقول مفحوصة', 'مستبعدات', 'سواقط'], axisLabel: { fontSize: 11, color: themeText } },
+    yAxis: { type: 'value', ...axis },
+    series: [{
+      type: 'bar', barWidth: 28,
+      data: [
+        { value: witnesses, itemStyle: { color: '#b4552d' } },
+        { value: checked, itemStyle: { color: '#2e7d5b' } },
+        { value: excluded, itemStyle: { color: '#7a5a3a' } },
+        { value: failed, itemStyle: { color: '#b03a2e' } },
+      ],
+    }],
+  });
+  init('rrBarRisk', {
+    tooltip: { trigger: 'axis' },
+    grid: { left: 36, right: 12, top: 18, bottom: 36 },
+    xAxis: { type: 'category', data: ['عالية', 'متوسطة', 'منخفضة'], axisLabel: { fontSize: 11, color: themeText } },
+    yAxis: { type: 'value', minInterval: 1, ...axis },
+    series: [{
+      type: 'bar', barWidth: 32,
+      data: [
+        { value: high, itemStyle: { color: '#b03a2e' } },
+        { value: med, itemStyle: { color: '#d9a441' } },
+        { value: low, itemStyle: { color: '#8a8a8a' } },
+      ],
+    }],
+  });
+  const stages = entry.stage_s || {};
+  const stageKeys = Object.keys(stages);
+  const stageEl = document.getElementById('rrLineStages');
+  if (stageKeys.length) {
+    init('rrLineStages', {
+      tooltip: { trigger: 'axis' },
+      grid: { left: 44, right: 16, top: 22, bottom: 48 },
+      xAxis: { type: 'category', data: stageKeys, axisLabel: { rotate: 28, fontSize: 10, color: themeText, interval: 0 } },
+      yAxis: { type: 'value', name: 'ث', ...axis },
+      series: [{
+        type: 'line', smooth: true, symbol: 'circle', symbolSize: 8,
+        data: stageKeys.map(k => Number(stages[k] || 0)),
+        itemStyle: { color: '#2e7d5b' },
+        areaStyle: { color: 'rgba(46,125,91,.18)' },
+        lineStyle: { width: 2 },
+      }],
+    });
+  } else if (stageEl) {
+    stageEl.parentElement.style.display = 'none';
+  }
+  const agents = entry.core_agents || [];
+  const agentEl = document.getElementById('rrBarAgents');
+  if (agents.length) {
+    init('rrBarAgents', {
+      tooltip: { trigger: 'axis' },
+      legend: { top: 0, textStyle: { fontSize: 11 } },
+      grid: { left: 48, right: 44, top: 28, bottom: 52 },
+      xAxis: { type: 'category', data: agents.map(ag => ag.name || ag.model || 'وكيل'), axisLabel: { rotate: 22, fontSize: 10, color: themeText, interval: 0 } },
+      yAxis: [
+        { type: 'value', name: 'شواهد', ...axis },
+        { type: 'value', name: 'حروف', ...axis },
+      ],
+      series: [
+        { name: 'شواهد', type: 'bar', data: agents.map(ag => Number(ag.citations || 0)), itemStyle: { color: '#b4552d', borderRadius: [4, 4, 0, 0] } },
+        { name: 'حروف التقرير', type: 'line', yAxisIndex: 1, smooth: true, data: agents.map(ag => Number(ag.report_chars || 0)), itemStyle: { color: '#2e7d5b' } },
+      ],
+    });
+  } else if (agentEl) {
+    agentEl.parentElement.style.display = 'none';
+  }
+  if (ov) ov._rrCharts = charts;
+  requestAnimationFrame(() => charts.forEach(ch => { try { ch.resize(); } catch (e) {} }));
+}
+
+function showMarkdownReport(md, filename, entry) {
   let ov = document.getElementById('mdReportOverlay');
-  if (ov) ov.remove();
+  if (ov) { _rrDisposeCharts(ov); ov.remove(); }
   ov = document.createElement('div');
   ov.id = 'mdReportOverlay';
   ov.className = 'md-report-overlay';
-  ov.innerHTML = '<div class="md-report-box">'
+  ov._rrCharts = [];
+  ov.innerHTML = '<div class="md-report-box' + (entry ? ' is-dash' : '') + '">'
     + '<div class="md-report-head"><b>📏 تقرير البحث</b>'
     + '<span style="flex:1"></span>'
     + '<button type="button" class="btn-msg-export" id="mdReportDownload">⬇ تنزيل ‎.md‎</button>'
     + '<button type="button" class="btn-msg-export" id="mdReportClose">إغلاق ✕</button></div>'
     + '<div class="md-report-body" dir="rtl"></div></div>';
   document.body.appendChild(ov);
-  renderMarkdownInto(ov.querySelector('.md-report-body'), md);
-  ov.querySelector('#mdReportClose').onclick = () => ov.remove();
-  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  const body = ov.querySelector('.md-report-body');
+  renderMarkdownInto(body, md);
+  const close = () => { _rrDisposeCharts(ov); ov.remove(); };
+  ov.querySelector('#mdReportClose').onclick = close;
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
   ov.querySelector('#mdReportDownload').onclick = () => {
     const blob = new Blob(['\ufeff' + md], { type: 'text/markdown;charset=utf-8' });
     const dl = document.createElement('a');
@@ -4888,7 +5075,27 @@ function showMarkdownReport(md, filename) {
     dl.click();
     URL.revokeObjectURL(dl.href);
   };
+  if (entry) {
+    let mount = body.querySelector('#rrDashMount');
+    if (!mount) {
+      const h = Array.from(body.querySelectorAll('h2')).find(el => /الرسوم البيانية/.test(el.textContent || ''));
+      if (h) {
+        mount = document.createElement('div');
+        h.insertAdjacentElement('afterend', mount);
+      }
+    }
+    if (!mount) {
+      mount = document.createElement('div');
+      const md = body.querySelector('.md-report');
+      (md || body).insertBefore(mount, (md || body).firstChild);
+    }
+    renderResearchReportDashboard(mount, entry);
+    requestAnimationFrame(() => (ov._rrCharts || []).forEach(ch => { try { ch.resize(); } catch (e) {} }));
+  }
 }
+window.formatExcludedReportMd = formatExcludedReportMd;
+window.showMarkdownReport = showMarkdownReport;
+window.renderResearchReportDashboard = renderResearchReportDashboard;
 
 async function downloadChatResearchReport(idx) {
   const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
@@ -4964,10 +5171,13 @@ async function downloadChatResearchReport(idx) {
       L.push('', '### مواضع منبّهة للمراجعة البشرية', '', '| النقل | رقم الحاشية | سبب التنبيه |', '|---|---|---|');
       entry.audit_failures.slice(0, 16).forEach(f => L.push(`| «${cell((f.quote || '').slice(0, 90))}» | ${f.num ?? '—'} | ${cell(f.reason)} |`));
     }
-    if ((entry.excluded_items || []).length) {
-      L.push('', '### نقول استُبعدت لخارجها عن المكتبة', '');
-      entry.excluded_items.slice(0, 20).forEach(x => L.push('- «' + cell((x.quote || '').slice(0, 110)) + '»'));
-    }
+    formatExcludedReportMd(entry.excluded_items).forEach(line => L.push(line));
+    L.push('');
+    L.push('## 📊 الرسوم البيانية');
+    L.push('');
+    L.push('<div id="rrDashMount"></div>');
+    L.push('');
+    L.push('> القيودات والمنحنيات تُعرض في نافذة التقرير: حروف الجواب، الشواهد، المستبعدات، السواقط، اكتمال الفريق، التدقيق، والمخاطر.');
     L.push('');
     L.push(buildRiskRegisterMd(entry.risk_events || [], { verdict: entry.risk_verdict, officer: entry.risk_officer }));
     if (entry.risk_memo) {
@@ -4996,7 +5206,7 @@ async function downloadChatResearchReport(idx) {
   L.push('');
   L.push('---');
   L.push('> تنبيه: التقرير بوصلة تنبيه من مؤشرات آلية، لا بديل عن قراءة متن البحث.');
-  showMarkdownReport(L.join('\n'), 'تقرير-بحث-' + (activeSessionId || 'chat') + '.md');
+  showMarkdownReport(L.join('\n'), 'تقرير-بحث-' + (activeSessionId || 'chat') + '.md', entry);
 }
 
 function buildChatAgentGroupPayload() {

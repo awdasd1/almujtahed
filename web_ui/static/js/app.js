@@ -2829,13 +2829,32 @@ function downloadResearchReport(idx) {
     L.push('--------------------------------------------------');
     L.push(it.risk_memo);
     if ((it.excluded_items || []).length) {
-      L.push('');
-      L.push('النقول المستبعدة لخارجها عن المكتبة (قاعدة: لا نقل من خارجها):');
-      it.excluded_items.slice(0, 26).forEach(x => L.push('- «' + (x.quote || '').slice(0, 110) + '»'));
+      const rows = (typeof formatExcludedReportMd === 'function')
+        ? formatExcludedReportMd(it.excluded_items)
+        : [];
+      if (rows.length) rows.forEach(line => L.push(line));
+      else {
+        L.push('');
+        L.push('النقول المستبعدة من الحواشي:');
+        it.excluded_items.slice(0, 26).forEach(x => {
+          const book = x.label || (x.title ? ('«' + x.title + '»' + (x.author ? ' ل' + x.author : '')) : '');
+          L.push('- «' + (x.quote || '').slice(0, 90) + '»'
+            + (book ? ' — ' + book : '')
+            + (x.verdict ? ' — ' + x.verdict : ''));
+        });
+      }
     }
   }
   L.push('');
+  L.push('## 📊 الرسوم البيانية');
+  L.push('');
+  L.push('<div id="rrDashMount"></div>');
+  L.push('');
   L.push('تنبيه: هذا التقرير بوصلة تنبيه من مؤشرات آلية، لا بديل عن قراءة متن البحث.');
+  if (typeof showMarkdownReport === 'function') {
+    showMarkdownReport(L.join('\n'), 'تقرير-بحث-' + (it.chat_id || idx) + '.md', it);
+    return;
+  }
   const blob = new Blob(['\ufeff' + L.join('\n')], { type: 'text/markdown;charset=utf-8' });
   const dl = document.createElement('a');
   dl.href = URL.createObjectURL(blob);

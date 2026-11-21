@@ -2430,6 +2430,238 @@ def _stamp_title_key(value: str) -> str:
     return key
 
 
+_BOOK_CATALOG: Dict[str, Any] = {"loaded": False, "meta": {}, "idx": {}}
+
+
+def _ensure_book_catalog() -> Dict[str, Any]:
+    """فهرس عنوان→معرّف وبطاقة كل كتاب: لإظهار اسم الكتاب والمؤلف بدل الرقم."""
+    if _BOOK_CATALOG["loaded"]:
+        return _BOOK_CATALOG
+    meta: Dict[int, dict] = {}
+    idx: Dict[str, set] = {}
+    db = get_db()
+    if db is not None:
+        try:
+            for row in db.execute(
+                    "SELECT book_id, title_ar, main_author_name_ar FROM books"):
+                bid = int(row["book_id"])
+                title = str(row["title_ar"] or "")
+                author = str(row["main_author_name_ar"] or "")
+                meta[bid] = {"bid": str(bid), "title": title, "author": author}
+                keys = {_stamp_title_key(title)}
+                for piece in re.split(r"\s+(?:أو|=)\s+", title):
+                    keys.add(_stamp_title_key(piece))
+                keys.add(_stamp_title_key(re.split(r"\s+[-–—]\s+", title)[0]))
+                for k in keys:
+                    if k:
+                        idx.setdefault(k, set()).add(bid)
+        except Exception:
+            pass
+    if meta:
+        _BOOK_CATALOG.update({"loaded": True, "meta": meta, "idx": idx})
+    return {"loaded": bool(meta), "meta": meta or _BOOK_CATALOG["meta"], "idx": idx or _BOOK_CATALOG["idx"]}
+
+
+def _book_meta_by_id(book_id) -> dict:
+    try:
+        bid = int(str(book_id or "").strip())
+    except Exception:
+        return {}
+    return dict(_ensure_book_catalog()["meta"].get(bid) or {})
+
+
+def _format_book_label(title: str = "", author: str = "", book_id=None) -> str:
+    title = (title or "").strip()
+    author = (author or "").strip()
+    if title and author:
+        return f"«{title}» ل{author}"
+    if title:
+        return f"«{title}»"
+    if book_id:
+        return f"الكتاب #{book_id}"
+    return ""
+
+
+def _catalog_title_candidates(head: str, limit: int = 4, deep: bool = False) -> List[dict]:
+    """مرشحو عنوان من الكتالوج: تطابق مفتاح ثم تداخل كلمات، واختياريًا resolve_book."""
+    head = (head or "").strip(" ،,؛:⚠")
+    if len(head) < 4:
+        return []
+    cat = _ensure_book_catalog()
+    key = _stamp_title_key(head)
+    bids: List[int] = []
+    if deep:
+        try:
+            row = shamela_local_mcp.resolve_book(head)
+            if row and row.get("status") == "ok" and row.get("book_id") is not None:
+                bids.append(int(row["book_id"]))
+        except Exception:
+            pass
+    if key:
+        bids.extend(int(b) for b in (cat["idx"].get(key) or set()))
+    out: List[dict] = []
+    seen = set()
+    for bid in bids:
+        if bid in seen:
+            continue
+        seen.add(bid)
+        meta = cat["meta"].get(bid)
+        if meta:
+            out.append(dict(meta))
+        if len(out) >= limit:
+            return out
+    words = [w for w in (key or "").split() if len(w) >= 4]
+    if len(words) >= 2:
+        scored = []
+        wset = set(words)
+        for bid, meta in cat["meta"].items():
+            tk = _stamp_title_key(meta.get("title") or "")
+            if not tk:
+                continue
+            hit = len(wset & set(tk.split()))
+            if hit >= min(2, len(words)):
+                scored.append((hit, -len(tk), meta))
+        scored.sort(reverse=True)
+        for _, __, meta in scored:
+            bid = int(meta["bid"])
+            if bid in seen:
+                continue
+            seen.add(bid)
+            out.append(dict(meta))
+            if len(out) >= limit:
+                break
+    return out[:limit]
+
+
+def _enrich_excluded_cite(*, quote: str, book_id: str = "", num=None,
+                          footnote_html: str = "", via: str = "",
+                          deep: bool = False) -> dict:
+    """بطاقة مستبعد مقروءة: اسم الكتاب والمؤلف، والموضع، وحكم الاستبعاد
+    (خارج المكتبة حقًا، أم موجود ولم تطابق صيغته، أم موضع عارٍ بلا اسم)."""
+    plain = re.sub(r"\s+", " ", quote or "").strip()
+    lm = _STAMP_LOCATOR.search(plain)
+    part, page = _locator_parts(lm)
+    head = (plain[:lm.start()] if lm else plain).strip(" ،,؛:⚠")
+    locator = ""
+    if part and page:
+        locator = f"ج{part} ص{page}"
+    elif page:
+        locator = f"ص{page}"
+    fn_books: List[dict] = []
+    seen_fn = set()
+    for bid in re.findall(r'data-book-id="(\d+)"', footnote_html or ""):
+        if bid in seen_fn:
+            continue
+        seen_fn.add(bid)
+        meta = _book_meta_by_id(bid)
+        if meta:
+            fn_books.append(meta)
+    prior = fn_books[-1] if fn_books else None
+    bid = str(book_id or "").strip()
+    title = author = ""
+    if bid:
+        meta = _book_meta_by_id(bid)
+        if meta:
+            title, author = meta.get("title") or "", meta.get("author") or ""
+    candidates = _catalog_title_candidates(head, limit=4, deep=deep) if head else []
+    locator_only = bool(lm and len(_STAMP_LOCATOR.sub("", plain).strip(" ،؛:و")) <= 2)
+    if locator_only:
+        kind = "locator_orphan"
+        if prior:
+            title = title or prior.get("title") or ""
+            author = author or prior.get("author") or ""
+            bid = bid or prior.get("bid") or ""
+            verdict = (
+                f"صيغة موضع بلا اسم كتاب ({locator or 'موضع'}). "
+                f"الكتاب السابق في الحاشية: {_format_book_label(title, author, bid)} "
+                "— الكتاب موجود في المكتبة؛ الاستبعاد لأن الموضع لم يُربط آليًا بهذا الكتاب، فراجع الموضع فيه."
+            )
+        else:
+            verdict = (
+                f"صيغة موضع بلا اسم كتاب ({locator or 'موضع'}) ولم تُعثر إحالة سابقة في الحاشية. "
+                "الاستبعاد في محلّه حتى يُعيَّن الكتاب."
+            )
+    elif candidates:
+        kind = "exists_unmatched"
+        c0 = candidates[0]
+        title = title or c0.get("title") or ""
+        author = author or c0.get("author") or ""
+        bid = bid or c0.get("bid") or ""
+        names = "؛ ".join(
+            _format_book_label(c.get("title"), c.get("author"), c.get("bid"))
+            for c in candidates[:3])
+        verdict = (
+            "العنوان يوجد في المكتبة لكن صيغة الإحالة لم تطابق الختم الآلي. "
+            f"مرشحون: {names}. الاستبعاد ليس لأن الكتاب خارج المكتبة، بل لعدم المطابقة — يُراجع الربط."
+        )
+    elif title:
+        kind = "named"
+        verdict = (
+            f"{_format_book_label(title, author, bid)} — سُجّل الاستبعاد مع اسم الكتاب."
+        )
+    else:
+        kind = "outside"
+        shown = head or plain
+        verdict = (
+            f"لم يُعثر على «{shown[:80]}» في فهرس المكتبة — الاستبعاد في محلّه (خارج المكتبة)."
+            if shown else "إحالة بلا اسم كتاب ولا موضع مقروء — الاستبعاد في محلّه."
+        )
+    return {
+        "quote": plain[:160],
+        "book_id": bid,
+        "title": title,
+        "author": author,
+        "locator": locator,
+        "num": num,
+        "via": via,
+        "kind": kind,
+        "verdict": verdict,
+        "candidates": [
+            {"book_id": c.get("bid"), "title": c.get("title"), "author": c.get("author")}
+            for c in candidates[:4]],
+        "label": _format_book_label(title, author, bid),
+    }
+
+
+def _enrich_metrics_report_item(it: dict) -> dict:
+    """إثراء تقرير محفوظ: أسماء الكتب في المستبعدات وهيمنة الكتاب بلا إعادة بحث."""
+    if not isinstance(it, dict):
+        return it
+    it = dict(it)
+    excl = []
+    for x in (it.get("excluded_items") or []):
+        if not isinstance(x, dict):
+            continue
+        if x.get("title") or x.get("verdict") or x.get("label"):
+            excl.append(x)
+            continue
+        excl.append(_enrich_excluded_cite(
+            quote=x.get("quote") or "",
+            book_id=str(x.get("book_id") or ""),
+            num=x.get("num"),
+            via=x.get("via") or "",
+            deep=False))
+    it["excluded_items"] = excl
+    events = []
+    for e in (it.get("risk_events") or []):
+        if not isinstance(e, dict):
+            continue
+        e = dict(e)
+        evd = str(e.get("evidence") or "")
+        m = re.search(r"الكتاب #(\d+)", evd)
+        if m:
+            meta = _book_meta_by_id(m.group(1))
+            if meta:
+                lab = _format_book_label(meta.get("title"), meta.get("author"), m.group(1))
+                e["evidence"] = evd.replace(f"الكتاب #{m.group(1)}", lab)
+                e["book_id"] = m.group(1)
+                e["book_title"] = meta.get("title") or ""
+                e["book_author"] = meta.get("author") or ""
+        events.append(e)
+    it["risk_events"] = events
+    return it
+
+
 def _possessive_detached(text: str) -> str:
     """فصل نسبة القياسي عن العنوان للبحث: «المجموع للنووي» ← «المجموع
     النووي»، و«التدمرية لابن تيمية» ← «التدمرية ابن تيمية»."""
@@ -4256,9 +4488,17 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                         _ebid = str(cited_bid(job.get("num")) or "")
                     except Exception:
                         _ebid = ""
+                    _dhtml = ""
+                    try:
+                        _drow = next((x for x in defs if x["num"] == job.get("num")), None)
+                        _dhtml = (_drow or {}).get("body") or ""
+                    except Exception:
+                        pass
                     stats.setdefault("excluded_items", []).append(
-                        {"quote": job["quote"][:120], "book_id": _ebid,
-                         "num": job.get("num")})
+                        _enrich_excluded_cite(
+                            quote=job["quote"][:160], book_id=_ebid,
+                            num=job.get("num"), footnote_html=_dhtml,
+                            via="quote_outside", deep=True))
                 else:
                     stats["unverified"] = stats.get("unverified", 0) + 1
                     stats["failures"].append({"quote": job["quote"][:120], "num": job.get("num"), "reason": "لم يثبت آليًا في كتاب إحالته ولا في كتب الشواهد: أُبقي للمراجعة"})
@@ -4530,13 +4770,19 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                         stats["judge_healed"] = stats.get("judge_healed", 0) + 1
                     else:
                         # موضع عارٍ بلا اسم كتاب («(3-81)» بعد إحالة محلولة):
-                        # يرث كتاب آخر cit-src قبله في الحاشية نفسها بموضعه هو.
+                        # يرث كتاب آخر cit-src قبله في الحاشية نفسها بموضعه هو،
+                        # بما فيها الإحالات التي شُفيت في هذه الدورة (pieces).
                         _lm3 = _STAMP_LOCATOR.search(_plain)
                         if _lm3 and len(_STAMP_LOCATOR.sub("", _plain).strip(" ،؛:و")) <= 2:
                             _prior = None
+                            _search_html = "".join(pieces) + body[pos:um.start()]
                             for _sm in re.finditer(
-                                    r'<span class="cit-src"[^>]*data-book-id="(\d+)"', body[:um.start()]):
+                                    r'<span class="cit-src"[^>]*data-book-id="(\d+)"', _search_html):
                                 _prior = _sm
+                            if not _prior:
+                                for _sm in re.finditer(
+                                        r'<span class="cit-src"[^>]*data-book-id="(\d+)"', body):
+                                    _prior = _sm
                             if _prior:
                                 _meta3 = _book_key_index()["meta"].get(int(_prior.group(1)))
                                 if _meta3:
@@ -4547,15 +4793,16 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                                             "part": _pp3, "page": _pg3}
                                     stats["inherited_healed"] = stats.get("inherited_healed", 0) + 1
                 if not info:
-                    # كتاب خارج المكتبة: تُستبعد إحالته من الحاشية فورًا.
-                    # يُسجَّل نص الإحالة كما كتبه المولّف (حتى 60) تشخيصًا:
-                    # عددٌ أصم (45 في قياسين) لم يكشف أهي كتب غائبة حقًا أم
-                    # صيغ أسماء لا تطابق الكتالوج.
+                    # كتاب خارج المكتبة أو صيغة لم تُشفَ: تُستبعد من الحاشية،
+                    # وتُسجَّل ببطاقة مقروءة (عنوان ومؤلف وحكم الاستبعاد).
                     _drop_txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", um.group(1)).replace("⚠", " ")).strip()
                     if len(stats.get("excluded_items") or []) < 60:
                         stats.setdefault("excluded_items", []).append(
-                            {"quote": _drop_txt[:160], "book_id": "", "num": d.get("num"),
-                             "via": "footnote_unresolved"})
+                            _enrich_excluded_cite(
+                                quote=_drop_txt[:160], book_id="",
+                                num=d.get("num"),
+                                footnote_html="".join(pieces) + body,
+                                via="footnote_unresolved", deep=True))
                     pieces.append(body[pos:um.start()])
                     pos = um.end()
                     changed = True
@@ -4620,7 +4867,11 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
         stats["excluded_outside"] = stats.get("excluded_outside", 0) + _dropped_n
         print(f"🚧 [Documentation Audit] استُبعدت {_dropped_n} إحالة كتابها خارج المكتبة", flush=True)
         for _xs in (stats.get("excluded_items") or [])[:8]:
-            print(f"🚧   مستبعد: «{str(_xs.get('quote') or '')[:110]}»", flush=True)
+            print(
+                f"🚧   مستبعد: «{str(_xs.get('quote') or '')[:80]}»"
+                + (f" — {_xs.get('label')}" if _xs.get("label") else "")
+                + (f" — {_xs.get('verdict')}" if _xs.get("verdict") else ""),
+                flush=True)
     _no_bid = sum(1 for j in failed if not j.get("bid"))
     if failed:
         print(f"🚧 [Documentation Audit] تشخيص: بلا كتاب إحالة={_no_bid}/{len(failed)}", flush=True)
@@ -4996,6 +5247,23 @@ def _documentation_record(stats: dict) -> str:
                 f"| {_cell(_f.get('reason') or '')} |")
         if len(_fails) > 24:
             lines.append(f"| … | — | وبقية المواضع ({len(_fails) - 24}) في سجل القياسات الكامل |")
+    _excl = stats.get("excluded_items") or []
+    if _excl:
+        _cell = lambda s: re.sub(r"\s+", " ", str(s or "")).replace("|", "¦")
+        lines.append("")
+        lines.append("**نقول استُبعدت من الحواشي (باسم الكتاب وحكم الاستبعاد):**")
+        lines.append("")
+        lines.append("| الصيغة الأصلية | الكتاب | المؤلف | الموضع | الحكم |")
+        lines.append("|---|---|---|---|---|")
+        for _x in _excl[:24]:
+            lines.append(
+                f"| «{_cell((_x.get('quote') or '')[:70])}» "
+                f"| {_cell(_x.get('title') or '—')} "
+                f"| {_cell(_x.get('author') or '—')} "
+                f"| {_cell(_x.get('locator') or '—')} "
+                f"| {_cell(_x.get('verdict') or '')} |")
+        if len(_excl) > 24:
+            lines.append(f"| … | — | — | — | وبقية المستبعدات ({len(_excl) - 24}) في سجل القياسات |")
     return "\n".join(lines)
 
 
@@ -9165,7 +9433,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.815"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.816"},
         },
     })
     if opened.get("error"):
@@ -14479,10 +14747,17 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
     if len(_span_ids) >= 20:
         _top_id, _top_n = _Counter(_span_ids).most_common(1)[0]
         if _top_n >= 12 and _top_n / len(_span_ids) >= _RISK_DOMINANCE_SHARE:
-            ev.append(_risk_event(
+            _top_meta = _book_meta_by_id(_top_id)
+            _top_label = _format_book_label(
+                _top_meta.get("title"), _top_meta.get("author"), _top_id) or f"الكتاب #{_top_id}"
+            _dom = _risk_event(
                 "book_dominance", "متوسطة", "هيمنة كتاب واحد على حواشي الجواب",
-                f"الكتاب #{_top_id} في {_top_n} من {len(_span_ids)} وسمًا ({round(_top_n / len(_span_ids) * 100)}٪)",
-                "مفتوح", "وازِن النقل بين كتب الفن؛ فالهيمنة تحيّز تغطية وإن صحت نقولها"))
+                f"{_top_label} في {_top_n} من {len(_span_ids)} وسمًا ({round(_top_n / len(_span_ids) * 100)}٪)",
+                "مفتوح", "وازِن النقل بين كتب الفن؛ فالهيمنة تحيّز تغطية وإن صحت نقولها")
+            _dom["book_id"] = str(_top_id)
+            _dom["book_title"] = _top_meta.get("title") or ""
+            _dom["book_author"] = _top_meta.get("author") or ""
+            ev.append(_dom)
     _disp = re.findall(r'<span class="cit-src"[^>]*>(.*?)</span>', text, re.S)
     _leak = [d for d in _disp if re.search(r"\s-\s(ط|ت)\s", d)]
     if _leak:
@@ -14649,8 +14924,11 @@ def _risk_officer_memo(events, *, question, group, manager_model, ledger,
         for d in (dossiers or [])]
     fails = [f"- «{str(f.get('quote') or '')[:90]}» — {f.get('reason', '')}"
              for f in (gs.get("failures") or [])[:12]]
-    excl = [f"- «{str(x.get('quote') or '')[:90]}»"
-            for x in (gs.get("excluded_items") or [])[:15]]
+    excl = [
+        "- «" + str(x.get("quote") or "")[:90] + "»"
+        + (f" — {x.get('label')}" if x.get("label") else "")
+        + (f" — {x.get('verdict')}" if x.get("verdict") else "")
+        for x in (gs.get("excluded_items") or [])[:15]]
     dossier_text = (
         f"المسألة: {question}\nالفريق: {group}\nمدير البحث (المدير التنفيذي): {manager_model}\n\n"
         "أحداث المخاطر المرصودة آليًا من طبقات القياس الثلاث (قياسات مدمجة، أحداث الجولة، تشريح الجواب):\n"
@@ -22675,7 +22953,8 @@ async def research_metrics_endpoint(request: Request):
         "avg_quotes_checked": _avg([(it.get("audit") or {}).get("checked") for it in items]),
         "ijma_unattributed_total": sum((it.get("audit") or {}).get("ijma_unattributed", 0) for it in items),
     }
-    return {"status": "ok", "summary": summary, "items": items[-50:]}
+    return {"status": "ok", "summary": summary,
+            "items": [_enrich_metrics_report_item(it) for it in items[-50:]]}
 
 
 class ResearchAutofixRequest(BaseModel):
