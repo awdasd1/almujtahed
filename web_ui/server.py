@@ -1931,9 +1931,9 @@ CITATION_FORMAT_RULE = """
 ═══════════════════════════════════════════════════════════
 ⛔ إلزام تام للإحالة القياسية. لا تُقبل صيغة سواها، ويُعاد ضبط كل إحالة إليها:
 1. اسم الكتاب يُنسخ حرفياً كما هو في سطر «الإحالة المعتمدة» المعدّ بصيغة الحواشي المحكّمة: عنوان بلا طبعة ولا تحقيق، ومؤلف باسمه المشهور وحده بلا أوصاف (الشاطبي لا الشاطبي الأصولي النحوي). يُمنع اختصاره أو تغيير حرف فيه أو إضافة طبعة من عندك.
-1ب. سطر «الإحالة المعتمدة» يبدأ برقم الشاملة الفريد على صورة #ID. في الحاشية وحدها انسخ #ID قبل اسم الكتاب كما هو تماماً، مثل: #1220 سنن الترمذي - ط الرسالة للترمذي (2-123). هذا الرقم علامة ربط آلية بقاعدة الكتب وسيُحذف من العرض، فلا تحذفه ولا تغيّره ولا تستبدله، ولا تضعه في المتن ولا في قائمة المصادر والمراجع.
+1ب. سطر «الإحالة المعتمدة» يبدأ برقم الشاملة الفريد على صورة #ID. في الحاشية وحدها انسخ #ID قبل اسم الكتاب كما هو تماماً، مثل: #1220 سنن الترمذي - ط الرسالة للترمذي (2-123). هذا الرقم علامة ربط آلية بقاعدة الكتب وسيُحذف من العرض، فلا تحذفه ولا تغيّره ولا تستبدله، ولا تضعه في المتن ولا في قائمة المصادر والمراجع، ولا تكتبه بين معقوفين مثل [#1220].
 1ج. الحاشية شهادة نقل: لا تكتب حاشية ولا إحالة إلا لكتاب ورد نصه في الشواهد المعطاة ونقلتَ منه في الفقرة المرتبطة بها نصاً أو معنى فعلاً. ما لم تنقل منه لا تذكره في حاشية ولو كنت تعرفه أو كان مشهوراً في الباب، ولا تجمع مراجع للزينة أو للاستكثار.
-2. الحاشية الظاهرة تتبع الإخراج القياسي الآتي لا غير: اسم الكتاب للمؤلف (جزء-صفحة) بأرقام لاتينية بين قوسين إنجليزيين، مثل: مجموع الفتاوى لابن تيمية (2-368). فإن كان الكتاب جزءًا واحدًا لا أجزاء له: اسم الكتاب للمؤلف ص (صفحة)، مثل: التدمرية لابن تيمية ص (217). ويُصدَّر النقل الحرفي بـ«انظر:» والنقل بالمعنى بـ«ينظر:»، ولا يوضع أحدهما مكان الآخر. مثال الحرفي: انظر: مجموع الفتاوى لابن تيمية (2-368). ومثال المعنوي: ينظر: مجموع الفتاوى لابن تيمية (2-368). وفي الحاشية الواحدة متعددة المصادر لا يتكرر «انظر/ينظر» عند كل مصدر: يُصدَّر أول مصدر وحده به ثم تُعطف بقية المصادر بالواو مجردة، مثل: ينظر: مجموع الفتاوى لابن تيمية (2-368)؛ والموافقات للشاطبي (2-413)؛ والمحلى لابن حزم (2-187).
+2. الحاشية الظاهرة تتبع الإخراج القياسي الآتي لا غير: اسم الكتاب للمؤلف (جزء-صفحة) بأرقام لاتينية بين قوسين إنجليزيين، مثل: مجموع الفتاوى لابن تيمية (2-368). لا يُزاد داخل القوسين شيء بعد الصفحة (لا «ترجمة» ولا رقم ترجمة ولا تعليق). فإن كان الكتاب جزءًا واحدًا لا أجزاء له: اسم الكتاب للمؤلف ص (صفحة)، مثل: التدمرية لابن تيمية ص (217). ويُصدَّر النقل الحرفي بـ«انظر:» والنقل بالمعنى بـ«ينظر:»، ولا يوضع أحدهما مكان الآخر. مثال الحرفي: انظر: مجموع الفتاوى لابن تيمية (2-368). ومثال المعنوي: ينظر: مجموع الفتاوى لابن تيمية (2-368). وفي الحاشية الواحدة متعددة المصادر لا يتكرر «انظر/ينظر» عند كل مصدر: يُصدَّر أول مصدر وحده به ثم تُعطف بقية المصادر بالواو مجردة، مثل: ينظر: مجموع الفتاوى لابن تيمية (2-368)؛ والموافقات للشاطبي (2-413)؛ والمحلى لابن حزم (2-187).
 3. قبل اسم الكتاب في الحاشية وحدها ضع #ID من سطر الإحالة المعتمدة، مثل: #1220 مجموع الفتاوى لابن تيمية (2-368). الرقم علامة ربط ويُحذف من العرض.
 4. تخريج الأحاديث والآثار له قالباه لا ثالث لهما، وبعدهما درجة الحديث إن كان في غير الصحيحين:
    أ. في الصحاح والسنن والمصنفات المبوبة: «أخرجه البخاري، كتاب الصلاة، باب الأذان، حديث رقم (367)، (3-405)» — المخرِّج باسمه المشهور، ثم الكتاب والباب ورقم الحديث منسوخة من متن الصفحة المرفقة وعناوينها لا من الذاكرة، ثم (جزء-صفحة) بصيغة الموضع القياسية.
@@ -2211,12 +2211,15 @@ _CITATION_REJECT = {
 }
 _CITATION_INSIDE = re.compile(
     r"\(\s*"
-    r"(«[^»\n]{3,80}»|[\u0600-\u06FF][\u0600-\u06FF\s]{2,70}?)"
-    r"\s+([0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*([0-9٠-٩۰-۹]{1,4})\s*\)"
+    r"(?P<ibook>«[^»\n]{3,80}»|[\u0600-\u06FF][\u0600-\u06FF\s]{2,70}?)"
+    r"\s+(?P<ifirst>[0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*(?P<isecond>[0-9٠-٩۰-۹]{1,4})"
+    r"(?:\s*[،,;؛]\s*[^)]{0,60})?\s*\)"
 )
 _CITATION_OUTSIDE = re.compile(
-    r"(«[^»\n]{3,80}»|[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){0,8})"
-    r"\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*([0-9٠-٩۰-۹]{1,4})\s*\)"
+    r"(?P<obook>«[^»\n]{3,80}»|[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){0,8})"
+    r"(?P<idgap>\s*[\[【]?\s*#\s*\d{1,7}\s*[\]】]?)?"
+    r"\s*\(\s*(?P<ofirst>[0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*(?P<osecond>[0-9٠-٩۰-۹]{1,4})"
+    r"(?:\s*[،,;؛]\s*[^)]{0,60})?\s*\)"
 )
 _CITATION_PAGE = re.compile(r"ص\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*\)")
 
@@ -2252,20 +2255,22 @@ def _citation_title(raw: str):
 
 def _rewrite_citation_chunk(chunk: str) -> str:
     def inside(match):
-        title = _citation_title(match.group(1))
-        loc = _locator_pair(match.group(2), match.group(3))
+        title = _citation_title(match.group("ibook"))
+        loc = _locator_pair(match.group("ifirst"), match.group("isecond"))
         if not title or not loc:
             return match.group(0)
         return f"{title} {loc}"
 
     def outside(match):
-        raw = match.group(1)
+        raw = match.group("obook")
         title = _citation_title(raw)
-        loc = _locator_pair(match.group(2), match.group(3))
+        loc = _locator_pair(match.group("ofirst"), match.group("osecond"))
         if not title or not loc:
             return match.group(0)
         kept = raw[:raw.rfind(title)]
-        return f"{kept}{title} {loc}"
+        id_m = re.search(r"#\s*(\d{1,7})", match.group("idgap") or "")
+        ident = f"#{id_m.group(1)} " if id_m else ""
+        return f"{kept}{ident}{title} {loc}"
 
     chunk = _CITATION_INSIDE.sub(inside, chunk)
     chunk = _CITATION_OUTSIDE.sub(outside, chunk)
@@ -2386,16 +2391,35 @@ def public_chat_witnesses(citations: List[dict], limit: int = 200) -> List[dict]
 _STAMP_GENERIC_WORDS = {"التفسير", "الحديث", "الفقه", "الشرح", "الكتاب", "الصحيح", "السنن", "التاريخ", "مجموع", "شرح", "كتاب", "الرساله", "رساله", "طبعه", "الطبعه"}
 _STAMP_EDITION_WORDS = {"ط", "ت", "طبعه", "الطبعه", "تحقيق", "بتحقيق"}
 _STAMP_LOCATOR = re.compile(
-    r"(?:\(\s*(?P<part>[0-9٠-٩۰-۹]{1,3})\s*[-–—]\s*(?P<page>[0-9٠-٩۰-۹]{1,4})\s*\)"
+    r"(?:\(\s*(?P<part>[0-9٠-٩۰-۹]{1,3})\s*[-–—]\s*(?P<page>[0-9٠-٩۰-۹]{1,4})(?:\s*[،,;؛]\s*[^)]{0,60})?\s*\)"
     r"|ص\s*\(\s*(?P<only_page>[0-9٠-٩۰-۹]{1,4})\s*\)"
     r"|،\s*(?P<comma_part>[0-9٠-٩۰-۹]{1,3})\s*،\s*(?P<comma_page>[0-9٠-٩۰-۹]{1,4})"
     # صيغ النماذج الشائعة خارج القالب القياسي: «ج2 ص413» و«(٢/٤١٣)»
     # و«ص 837» المجردة ومدى «ص 84-85» — كانت تعمى عنها القواعد فتبقى
     # الحاشية صامتة بلا ختم ولا تنبيه ولو حملت رقم الكتاب صريحًا.
+    # و«(8/ 30، ترجمة 1805)» حاشية رجال بتعليق داخل القوس كانت تُسقط الختم.
     r"|ج\s*[:：]?\s*(?P<bpart>[0-9٠-٩۰-۹]{1,3})\s*[،,]?\s*ص\s*[:：]?\s*(?P<bpage>[0-9٠-٩۰-۹]{1,4})(?:\s*[-–—]\s*[0-9٠-٩۰-۹]{1,4})?"
-    r"|\(\s*(?P<spart>[0-9٠-٩۰-۹]{1,3})\s*/\s*(?P<spage>[0-9٠-٩۰-۹]{1,4})\s*\)"
+    r"|\(\s*(?P<spart>[0-9٠-٩۰-۹]{1,3})\s*/\s*(?P<spage>[0-9٠-٩۰-۹]{1,4})(?:\s*[،,;؛]\s*[^)]{0,60})?\s*\)"
     r"|ص\s*[:：]?\s*(?P<ponly>[0-9٠-٩۰-۹]{1,4})(?:\s*[-–—]\s*[0-9٠-٩۰-۹]{1,4})?)"
 )
+_SHAMELA_ID_TOKEN = re.compile(r"\[?#\s*(\d{1,7})\]?")
+
+
+def _strip_visible_shamela_ids(text: str) -> str:
+    """يحذف أرقام الشاملة الظاهرة (#4609 و[#4609]) من النص دون المساس بوسوم HTML."""
+    if not text:
+        return text
+    parts = re.split(r"(<[^>]+>)", text)
+    out = []
+    for part in parts:
+        if part.startswith("<"):
+            out.append(part)
+            continue
+        part = re.sub(r"\[#\s*\d{1,7}\]\s*", "", part)
+        part = re.sub(r"(?<![#])#\s*\d{1,7}\b\s*", "", part)
+        part = re.sub(r"[ \t]{2,}", " ", part)
+        out.append(part)
+    return "".join(out)
 
 
 def _locator_parts(m) -> Tuple[str, str]:
@@ -2777,7 +2801,7 @@ def stamp_citation_sources(text: str, rows: List[dict]) -> str:
             cut = max(segment.rfind(mark) for mark in ("\n", "؛", ";", "•", "|", ")")) + 1
             raw_title = segment[cut:]
             part, page = _locator_parts(match)
-            id_match = re.search(r"#\s*(\d{1,5})\b", raw_title)
+            id_match = _SHAMELA_ID_TOKEN.search(raw_title)
             prefix_end = pos + cut
             display_text = None
             if id_match:
@@ -2831,7 +2855,7 @@ def stamp_citation_sources(text: str, rows: List[dict]) -> str:
     known_ids = {str(_book_id_value(item["row"].get("book_id"))) for item in prepared}
     for book_id in known_ids:
         if book_id and book_id != "None":
-            stamped = re.sub(rf"#\s*{re.escape(book_id)}\s+(?=[\u0600-\u06FF])", "", stamped)
+            stamped = re.sub(rf"\[?#\s*{re.escape(book_id)}\]?\s+(?=[\u0600-\u06FF])", "", stamped)
     return stamped
 
 
@@ -3003,7 +3027,7 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             part, page = _locator_parts(match)
             # الرقم الصريح يُبحث في كامل المقطع السابق للموضع: فالأقواس التوضيحية
             # «(شرح صحيح البخاري)» تقطع استخراج العنوان وتُسقط الرقم منه.
-            id_match = re.search(r"#\s*(\d{1,5})\b", segment)
+            id_match = _SHAMELA_ID_TOKEN.search(segment)
             if not id_match and _is_takhrij_context(segment):
                 # قالب التخريج سطحُه هو: يُحلّ المخرِّج باسمه المشهور إلى
                 # كتابه، ويُختم الموضع وحده فيبقى القالب كما كُتب وعلى ذيله
@@ -4965,7 +4989,7 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
                 _sconn.close()
         except Exception:
             pass
-    return text, stats
+    return _strip_visible_shamela_ids(text), stats
 
 
 def _authority_coverage_lines(cited_book_ids: List[str], cited_titles: List[str] = None) -> List[str]:
@@ -9439,7 +9463,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.818"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.819"},
         },
     })
     if opened.get("error"):
@@ -22675,9 +22699,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             reply_text = strip_trailing_bibliography(
                 _stamped if req.agent_group else filter_unverified_footnotes(_stamped)
             )
-            # قائمة المصادر والمراجع = الكتب المستشهد بها فعلاً في الجواب (حواشيه
-            # تحمل #رقمها)، لا كل ما استخرجه البحث. بلا إحالات مرقمة تبقى القائمة كما هي.
-            cited_ids = {int(num) for num in re.findall(r"#(\d{1,7})", reply_text)}
+            # قائمة المصادر = الكتب المختومة في الجواب (data-book-id)، لا أرقام
+            # الشاملة الظاهرة ولا كل ما استخرجه البحث.
+            cited_ids = {int(num) for num in re.findall(r'data-book-id="(\d{1,7})"', reply_text)}
+            cited_ids |= {int(num) for num in re.findall(r"#(\d{1,7})", reply_text)}
+            reply_text = _strip_visible_shamela_ids(reply_text)
             if cited_ids:
                 cited_rows = [row for row in witness_rows if row.get("book_id") in cited_ids]
                 if cited_rows:

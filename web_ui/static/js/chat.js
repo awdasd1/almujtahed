@@ -6229,6 +6229,52 @@ function chatIndicToWestern(value) {
     .replace(/[۰-۹]/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit));
 }
 
+function stripVisibleShamelaIds(text) {
+  const source = String(text || '');
+  if (!source) return source;
+  return source.split(/(<[^>]+>)/).map((part) => {
+    if (part.startsWith('<')) return part;
+    return part
+      .replace(/\[#\s*\d{1,7}\]\s*/g, '')
+      .replace(/(?<![#])#\s*\d{1,7}\b\s*/g, '')
+      .replace(/[ \t]{2,}/g, ' ');
+  }).join('');
+}
+
+function restoreEscapedCitSpans(text) {
+  return String(text || '').replace(
+    /&lt;span(\s[^&]*?class=(?:&quot;|")cit-(?:src|unresolved)(?:&quot;|")[\s\S]*?)&lt;\/span&gt;/gi,
+    (_, inner) => {
+      const decoded = (`<span${inner}</span>`)
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+      return decoded;
+    }
+  );
+}
+
+function protectCitSpansForMarkdown(text) {
+  const store = [];
+  const protectedText = String(text || '').replace(
+    /<span\s[^>]*class="cit-(?:src|unresolved)"[^>]*>[\s\S]*?<\/span>/gi,
+    (span) => {
+      store.push(span);
+      return `%%CITSPAN${store.length - 1}%%`;
+    }
+  );
+  return { text: protectedText, store };
+}
+
+function restoreProtectedCitSpans(html, store) {
+  let out = String(html || '');
+  store.forEach((span, i) => {
+    out = out.split(`%%CITSPAN${i}%%`).join(span);
+  });
+  return out;
+}
+
 function chatDisplayText(text, scope) {
   const source = String(text || '');
   if (!/<p[\s>]|<sup[\s>]/i.test(source)) return source;
@@ -6291,17 +6337,19 @@ function enforceStandardCitations(text) {
     return `(${volume}-${page})`;
   };
   const rewrite = (chunk) => chunk
-    .replace(/\(\s*(«[^»\n]{3,80}»|[\u0600-\u06FF][\u0600-\u06FF\s]{2,70}?)\s+([0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*([0-9٠-٩۰-۹]{1,4})\s*\)/g, (all, book, first, second) => {
+    .replace(/\(\s*(«[^»\n]{3,80}»|[\u0600-\u06FF][\u0600-\u06FF\s]{2,70}?)\s+([0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*([0-9٠-٩۰-۹]{1,4})(?:\s*[،,;؛]\s*[^)]{0,60})?\s*\)/g, (all, book, first, second) => {
       const title = titleOf(book);
       const loc = locator(first, second);
       return title && loc ? `${title} ${loc}` : all;
     })
-    .replace(/(«[^»\n]{3,80}»|[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){0,8})\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*([0-9٠-٩۰-۹]{1,4})\s*\)/g, (all, book, first, second) => {
+    .replace(/(«[^»\n]{3,80}»|[\u0600-\u06FF]+(?:\s+[\u0600-\u06FF]+){0,8})(?:\s*[\[【]?\s*#\s*\d{1,7}\s*[\]】]?)?\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*[-–—/／]\s*([0-9٠-٩۰-۹]{1,4})(?:\s*[،,;؛]\s*[^)]{0,60})?\s*\)/g, (all, book, first, second) => {
       const title = titleOf(book);
       const loc = locator(first, second);
       if (!title || !loc) return all;
       const kept = book.slice(0, book.lastIndexOf(title));
-      return `${kept}${title} ${loc}`;
+      const idm = all.match(/\[?#\s*(\d{1,7})\]?/);
+      const ident = idm ? `#${idm[1]} ` : '';
+      return `${kept}${ident}${title} ${loc}`;
     })
     .replace(/ص\s*\(\s*([0-9٠-٩۰-۹]{1,4})\s*\)/g, (_, page) => `ص(${toInt(page)})`);
   return source.split(/(```[\s\S]*?```)/).map((part) => (part.startsWith('```') ? part : rewrite(part))).join('');
@@ -6339,17 +6387,21 @@ function renderScholarlyAnswer(text, scope) {
     return `<a class="chat-fn-ref" id="${refId}" href="#${prefix}fn${western}">(${number})</a>`;
   });
   next = next.replace(/(?:<br\s*\/?>\s*)*<hr\b[^>]*>(?:\s*<br\s*\/?>)*(?=\s*<ol class="chat-fn-list">)/gi, '');
-  next = next.replace(/(^|[>\s])#(\d{2,6})(?=\s)/g, '$1');
+  next = stripVisibleShamelaIds(next);
   return `<div class="chat-academic">${next}</div>`;
 }
 
 function formatMarkdown(text, scope) {
   if (!text) return '';
+  text = restoreEscapedCitSpans(text);
   text = enforceStandardCitations(text);
+  text = stripVisibleShamelaIds(text);
   if (/<p[\s>]|<sup[\s>]|<ol[\s>]/i.test(text)) {
     return attachTableToolbar(renderScholarlyAnswer(text, scope));
   }
   text = chatDisplayText(text, scope);
+  const protectedCit = protectCitSpansForMarkdown(text);
+  text = protectedCit.text;
 
   let html = '';
   if (typeof marked !== 'undefined' && (marked.parse || typeof marked === 'function')) {
@@ -6379,6 +6431,7 @@ function formatMarkdown(text, scope) {
     html = `<p>${res}</p>`;
   }
 
+  html = restoreProtectedCitSpans(html, protectedCit.store);
   return attachTableToolbar(html);
 }
 
