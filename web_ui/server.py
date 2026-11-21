@@ -9463,7 +9463,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.821"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.822"},
         },
     })
     if opened.get("error"):
@@ -14677,8 +14677,11 @@ def _split_cit_src_span(tag: str) -> Tuple[str, str]:
     return tag[: gt + 1], tag[gt + 1: lt]
 
 
+_REPEAT_XREF_RE = re.compile(r"\s*و?الموضع نفسه من «[^»]+»")
+
+
 def _apply_stamp_dedupe(text: str) -> Tuple[str, dict]:
-    """يبقي أول ختم لكل (كتاب، جزء، صفحة) ويحوّل التكرار إلى «الموضع نفسه» بلا وسم."""
+    """يبقي أول ختم لكل (كتاب، جزء، صفحة) ويحذف التكرار من الحاشية، لا يُعيد تسميته."""
     seen = set()
     removed = 0
     by_book: Dict[str, int] = {}
@@ -14701,16 +14704,88 @@ def _apply_stamp_dedupe(text: str) -> Tuple[str, dict]:
             return tag
         removed += 1
         by_book[bid] = by_book.get(bid, 0) + 1
-        title = _short_stamp_title(bid, inner, open_tag)
-        return f"الموضع نفسه من «{title}»"
+        return ""
 
     out = _CIT_SRC_SPAN_RE.sub(repl, text or "")
-    out = re.sub(
-        r"(الموضع نفسه من «([^»]+)»)(?:\s*[؛,،]\s*و?الموضع نفسه من «\2»)+",
-        r"\1",
-        out,
-    )
     return out, {"removed": removed, "kept": len(seen), "by_book": by_book}
+
+
+def _footnote_body_hollow(body: str) -> bool:
+    """حاشية لم يبق فيها شاهد بعد نزع التكرار: انظر/بالواسطة/ترقيم فقط."""
+    if "cit-src" in (body or ""):
+        return False
+    plain = re.sub(r"<sup\b.*?</sup>", " ", body or "", flags=re.I | re.S)
+    plain = re.sub(r"<[^>]+>", " ", plain)
+    plain = _REPEAT_XREF_RE.sub("", plain)
+    plain = _FOOTNOTE_LEAD.sub("", plain)
+    plain = re.sub(r"بالواسطة", "", plain)
+    plain = re.sub(r"[\s.؛;:،،و()«»\-–—0-9٠-٩]+", "", plain)
+    return len(plain) < 6
+
+
+def _drop_repeat_footnote_residue(text: str) -> Tuple[str, int]:
+    """ينزع «الموضع نفسه من…» وبقايا انظر/بالواسطة، ويحذف الحاشية إن فرغت ثم يعيد الترقيم."""
+    items = list(_FOOTNOTE_ITEM.finditer(text or ""))
+    if not items:
+        cleaned = _REPEAT_XREF_RE.sub("", text or "")
+        return cleaned, 0
+    mapping: Dict[int, int] = {}
+    removed: set = set()
+    replacements = {}
+    dropped = 0
+    for match in items:
+        old = _footnote_number(match.group("num"))
+        body = _REPEAT_XREF_RE.sub("", match.group("body") or "")
+        body = re.sub(r"(?:\s*[؛;،]\s*){2,}", "؛ ", body)
+        body = re.sub(
+            r"(?:ينظر|انظر|راجع|يُنظر)\s*[:：]\s*[؛;،,]+\s*",
+            "",
+            body,
+        )
+        body = re.sub(
+            r"(?:ينظر|انظر|راجع|يُنظر)\s*[:：]\s*(?=(?:[؛;،.]|$))",
+            "",
+            body,
+        )
+        body = re.sub(r"(</sup>)\s*[؛;،,]+\s*", r"\1 ", body)
+        body = re.sub(r"^[؛;،,\s]+|[؛;،,\s]+$", "", body)
+        if _footnote_body_hollow(body):
+            removed.add(old)
+            replacements[match.start()] = ""
+            dropped += 1
+            continue
+        if "cit-src" not in body:
+            body = re.sub(r"\s*بالواسطة\s*", " ", body)
+            body = re.sub(r"\s{2,}", " ", body).strip()
+            if _footnote_body_hollow(body):
+                removed.add(old)
+                replacements[match.start()] = ""
+                dropped += 1
+                continue
+        new_n = len(mapping) + 1
+        mapping[old] = new_n
+        attrs = re.sub(
+            r"(\bid\s*=\s*[\"'])fn[0-9٠-٩۰-۹]{1,3}([\"'])",
+            rf"\g<1>fn{new_n}\g<2>",
+            match.group("attrs"),
+            count=1,
+        )
+        replacements[match.start()] = f"<li{attrs}>{body}</li>"
+    result = _FOOTNOTE_ITEM.sub(lambda m: replacements[m.start()], text or "")
+    result = _REPEAT_XREF_RE.sub("", result)
+
+    def marker(match: re.Match) -> str:
+        old_n = _footnote_number(match.group(1))
+        if old_n in removed:
+            return ""
+        new_n = mapping.get(old_n)
+        if not new_n:
+            return ""
+        return f"<sup><small>({_arabic_indic_number(new_n)})</small></sup>"
+
+    result = _FOOTNOTE_MARKER.sub(marker, result)
+    result = re.sub(r"[ \t]+(?=[.،,؛;])", "", result)
+    return result, dropped
 
 
 def _apply_dominance_cap(text: str) -> Tuple[str, dict]:
@@ -14760,12 +14835,13 @@ def _apply_dominance_cap(text: str) -> Tuple[str, dict]:
 
 
 def _apply_paper_treatments(text: str) -> Tuple[str, dict]:
-    """معالجات تظهر في الورقة نفسها: إزالة تكرار الأختام ثم سقف هيمنة كتاب واحد."""
+    """معالجات تظهر في الورقة نفسها: حذف تكرار الأختام والحواشي الفارغة ثم سقف الهيمنة."""
     from collections import Counter
     before_ids = _cit_src_book_ids(text)
     orig_top = Counter(before_ids).most_common(1)[0] if before_ids else ("", 0)
     share_before = (orig_top[1] / len(before_ids)) if before_ids else 0.0
     text, dedupe = _apply_stamp_dedupe(text)
+    text, dropped = _drop_repeat_footnote_residue(text)
     text, cap = _apply_dominance_cap(text)
     after_ids = _cit_src_book_ids(text)
     tracked = str(orig_top[0] or cap.get("book_id") or "")
@@ -14777,6 +14853,7 @@ def _apply_paper_treatments(text: str) -> Tuple[str, dict]:
         "stamps_deduped": int(dedupe.get("removed") or 0),
         "stamps_capped": int(cap.get("capped") or 0),
         "stamps_kept_unique": int(dedupe.get("kept") or 0),
+        "footnotes_dropped": int(dropped or 0),
         "dominance_book_id": tracked,
         "dominance_n_before": int(orig_top[1] or 0),
         "dominance_n_after": n_after,
@@ -23492,9 +23569,9 @@ async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Reques
     fixed, stats = await asyncio.to_thread(
         _documentation_gate, html, req.witnesses or [], "")
     fixed, paper = _apply_paper_treatments(fixed)
-    if paper.get("stamps_deduped") or paper.get("stamps_capped"):
+    if paper.get("stamps_deduped") or paper.get("stamps_capped") or paper.get("footnotes_dropped"):
         print(f"🔧 [Autofix] أختام {paper.get('stamps_before')} ← {paper.get('stamps_after')} "
-              f"(تكرار {paper.get('stamps_deduped')} · سقف {paper.get('stamps_capped')}) "
+              f"(تكرار {paper.get('stamps_deduped')} · حواشٍ حُذفت {paper.get('footnotes_dropped')} · سقف {paper.get('stamps_capped')}) "
               f"هيمنة {round((paper.get('dominance_share_before') or 0) * 100)}٪ ← "
               f"{round((paper.get('dominance_share_after') or 0) * 100)}٪", flush=True)
 
@@ -23535,6 +23612,7 @@ async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Reques
         "stamps_after": paper.get("stamps_after") or 0,
         "stamps_deduped": paper.get("stamps_deduped") or 0,
         "stamps_capped": paper.get("stamps_capped") or 0,
+        "footnotes_dropped": paper.get("footnotes_dropped") or 0,
         "dominance_share_before": paper.get("dominance_share_before") or 0,
         "dominance_share_after": paper.get("dominance_share_after") or 0,
         "changed": fixed != html,
@@ -23675,9 +23753,9 @@ async def research_finalize_endpoint(req: ResearchAutofixRequest, request: Reque
 
     # معالجات الورقة بعد البوابة: لا تُستنسخ المسودة بأختام الكتاب المكرر.
     fixed, paper = _apply_paper_treatments(fixed)
-    if paper.get("stamps_deduped") or paper.get("stamps_capped"):
+    if paper.get("stamps_deduped") or paper.get("stamps_capped") or paper.get("footnotes_dropped"):
         print(f"🔒 [Fast Finalize] أختام {paper.get('stamps_before')} ← {paper.get('stamps_after')} "
-              f"(تكرار {paper.get('stamps_deduped')} · سقف {paper.get('stamps_capped')}) "
+              f"(تكرار {paper.get('stamps_deduped')} · حواشٍ حُذفت {paper.get('footnotes_dropped')} · سقف {paper.get('stamps_capped')}) "
               f"هيمنة {round((paper.get('dominance_share_before') or 0) * 100)}٪ ← "
               f"{round((paper.get('dominance_share_after') or 0) * 100)}٪", flush=True)
 
@@ -23709,6 +23787,7 @@ async def research_finalize_endpoint(req: ResearchAutofixRequest, request: Reque
         "stamps_after": paper.get("stamps_after") or 0,
         "stamps_deduped": paper.get("stamps_deduped") or 0,
         "stamps_capped": paper.get("stamps_capped") or 0,
+        "footnotes_dropped": paper.get("footnotes_dropped") or 0,
         "dominance_share_before": paper.get("dominance_share_before") or 0,
         "dominance_share_after": paper.get("dominance_share_after") or 0,
         "changed": fixed != html,
