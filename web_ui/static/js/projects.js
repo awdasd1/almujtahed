@@ -2930,15 +2930,15 @@ async function applyStudioBlueprint() {
           maxTokens: 65536,
           context_tokens: ag.context_tokens || ag.contextTokens || bp.director?.context_tokens || 1048576,
           system_prompt: prompt,
-          systemPrompt: prompt
+          systemPrompt: prompt,
+          death_max: ag.death_max != null ? ag.death_max : blueprintDeathMax(bp)
         };
       });
 
       // مدير المشروع بطاقة قائد داخل مجموعة الوكلاء نفسها (لا سلطة موازية
       // خارجها): يقود التوليف بنموذجه وتفكيره وتوجيهه، ولا يُرسل وكيلَ جمع،
       // وتعطيله من قائمة الوكلاء يعيد القيادة لنموذج المحادثة.
-      ensureToolsManagerAgent(mappedAgents);
-      ensurePlannerAgent(mappedAgents);
+      ensureTeamSupportAgents(mappedAgents, bp);
       if (bp.director) {
         mappedAgents.unshift({
           id: `director_${targetGroupId}`,
@@ -2964,15 +2964,19 @@ async function applyStudioBlueprint() {
           maxTokens: 65536,
           context_tokens: bp.director.context_tokens || 1048576,
           system_prompt: bp.director.system_prompt || '',
-          systemPrompt: bp.director.system_prompt || ''
+          systemPrompt: bp.director.system_prompt || '',
+          death_max: blueprintDeathMax(bp)
         });
       }
 
+      const groupDeathMax = blueprintDeathMax(bp);
+      stampTeamDeathMax(mappedAgents, groupDeathMax);
       const updatedGroup = {
         id: targetGroupId,
         name: bp.subagents_group.name || `فريق: ${(bp.title || 'المشروع').slice(0, 20)}`,
         desc: bp.subagents_group.desc || 'مجموعة وكلاء مخصصة لهذا المشروع البحثي',
         research_profile: bp.research_profile || null,
+        death_max: groupDeathMax,
         agents: mappedAgents
       };
 
@@ -2995,7 +2999,7 @@ async function applyStudioBlueprint() {
     // المخرج المصنفة عند المهندس تسري على التنفيذ كله ولو نسيها المهندس.
     const rp = bp.research_profile || null;
     if (rp && !directorPrompt.includes('ملف الطلب:')) {
-      const rpLine = `ملف الطلب: الفن: ${rp.discipline || 'غير مصنف'}؛ الغرض: ${rp.purpose || 'بحث'}؛ العمق: ${rp.depth || 'متوسط'}؛ الطول المستهدف: ${rp.length || 'متوسط'}؛ الجمهور: ${rp.audience || 'متخصصون'}؛ المنهج: ${rp.method || 'تحليلي'}؛ المناظرة: ${rp.debate || 'mini'}؛ بنية المخرج: ${rp.output_structure || 'دراسة محررة بعناوين وحواشٍ وثبت مصادر'}. التزم بهذا الملف في بنية تقريرك وطوله ولغته التزامًا صارمًا: المختصر لا يُطال، والمطوّل لا يُختصر، والتدريسي يُبنى بأهداف وأمثلة وأسئلة، والأكاديمي يُبنى بإشكالية ومنهج وخاتمة بنتائج وثبت مصادر.`;
+      const rpLine = `ملف الطلب: الفن: ${rp.discipline || 'غير مصنف'}؛ الغرض: ${rp.purpose || 'بحث'}؛ العمق: ${rp.depth || 'متوسط'}؛ الطول المستهدف: ${rp.length || 'متوسط'}؛ الجمهور: ${rp.audience || 'متخصصون'}؛ المنهج: ${rp.method || 'تحليلي'}؛ المناظرة: ${rp.debate || 'mini'}؛ بنية المخرج: ${rp.output_structure || 'دراسة محررة بعناوين وحواشٍ وثبت مصادر'}؛ سقف وفاة المؤلفين: ${deathMaxPromptText(rp)}. التزم بهذا الملف في بنية تقريرك وطوله ولغته التزامًا صارمًا: المختصر لا يُطال ولا يتجاوز أربعة إلى خمسة وكلاء، والمطوّل لا يُختصر، والتدريسي يُبنى بأهداف وأمثلة وأسئلة، والأكاديمي يُبنى بإشكالية ومنهج وخاتمة بنتائج وثبت مصادر. لا تدخل مؤلفات بعد سقف الوفاة إن حُدّد.`;
       directorPrompt = rpLine + '\n\n' + directorPrompt;
     }
     const chosenArchitectModel = document.getElementById('architectModelSelect')?.value || 'google/gemini-2.5-flash';
@@ -3029,6 +3033,9 @@ async function applyStudioBlueprint() {
       };
       if (bp.extraction_capacity) targetProject.extraction_capacity = bp.extraction_capacity;
       if (bp.research_profile) targetProject.research_profile = bp.research_profile;
+      if (Object.prototype.hasOwnProperty.call(bp, 'death_max') || (bp.research_profile && Object.prototype.hasOwnProperty.call(bp.research_profile, 'death_max'))) {
+        targetProject.death_max = blueprintDeathMax(bp);
+      }
       if (bp.retrieval_anchors) targetProject.retrieval_anchors = bp.retrieval_anchors;
       if (bp.internal_benchmark) targetProject.internal_benchmark = bp.internal_benchmark;
       if (bp.external_web_benchmark) targetProject.external_web_benchmark = bp.external_web_benchmark;
@@ -3066,6 +3073,7 @@ async function applyStudioBlueprint() {
         },
         extraction_capacity: bp.extraction_capacity || 150,
         research_profile: bp.research_profile || null,
+        death_max: blueprintDeathMax(bp),
         retrieval_anchors: bp.retrieval_anchors || [],
         internal_benchmark: bp.internal_benchmark || { enabled: false, title: '', author: '', methodology: '' },
         external_web_benchmark: bp.external_web_benchmark || { enabled: false, query: bp.title || '', domains: [], prompt: '' },
@@ -3089,6 +3097,47 @@ async function applyStudioBlueprint() {
       applyBtn.innerHTML = origBtnContent;
     }
   }
+}
+
+function profileIsConcise(rp) {
+  const blob = [rp?.length, rp?.purpose].filter(Boolean).join(' ');
+  return /مختصر|خلاصة/.test(blob);
+}
+
+function blueprintDeathMax(bp) {
+  const rp = (bp && bp.research_profile) || {};
+  let raw = Object.prototype.hasOwnProperty.call(rp, 'death_max') ? rp.death_max : bp?.death_max;
+  if (raw == null || raw === '' || raw === 'بلا سقف' || raw === 'بلا سقف زمني' || raw === 'null') return null;
+  const m = String(raw).match(/(\d{3,4})/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    return n > 0 ? n : null;
+  }
+  const n = parseInt(raw, 10);
+  return n > 0 ? n : null;
+}
+
+function stampTeamDeathMax(agents, deathMax) {
+  if (!Array.isArray(agents)) return agents;
+  agents.forEach(a => {
+    if (a && a.death_max == null) a.death_max = deathMax;
+  });
+  return agents;
+}
+
+function ensureTeamSupportAgents(agents, bp) {
+  ensureToolsManagerAgent(agents);
+  if (!profileIsConcise(bp && bp.research_profile)) {
+    ensurePlannerAgent(agents);
+  }
+  return agents;
+}
+
+function deathMaxPromptText(rp) {
+  if (!rp || rp.death_max == null || rp.death_max === '' || rp.death_max === 'بلا سقف' || rp.death_max === 'بلا سقف زمني') {
+    return 'بلا سقف زمني';
+  }
+  return 'إلى ' + rp.death_max + 'هـ';
 }
 
 // كل مشروع يبنيه مهندس المشروع يحمل مدير أدوات معيّنًا: إن نسيه المخطط
@@ -3186,6 +3235,8 @@ async function updateActiveProjectCardsFromBlueprint() {
     };
   }
   if (bp.extraction_capacity) project.extraction_capacity = bp.extraction_capacity;
+  if (bp.research_profile) project.research_profile = bp.research_profile;
+  project.death_max = blueprintDeathMax(bp);
   if (bp.retrieval_anchors) project.retrieval_anchors = bp.retrieval_anchors;
   if (bp.internal_benchmark) project.internal_benchmark = bp.internal_benchmark;
   if (bp.external_web_benchmark) project.external_web_benchmark = bp.external_web_benchmark;
@@ -3247,11 +3298,12 @@ async function updateActiveProjectCardsFromBlueprint() {
         maxTokens: 65536,
         context_tokens: ag.context_tokens || ag.contextTokens || 1048576,
         system_prompt: prompt,
-        systemPrompt: prompt
+        systemPrompt: prompt,
+        death_max: ag.death_max != null ? ag.death_max : blueprintDeathMax(bp)
       };
     });
-    ensureToolsManagerAgent(mappedAgents);
-    ensurePlannerAgent(mappedAgents);
+    ensureTeamSupportAgents(mappedAgents, bp);
+    stampTeamDeathMax(mappedAgents, blueprintDeathMax(bp));
 
     let groups = window.agentGroups || [];
     let gid = project.linked_group_id || `group_${project.id}`;
@@ -3262,12 +3314,16 @@ async function updateActiveProjectCardsFromBlueprint() {
         id: gid,
         name: bp.subagents_group.name || `فريق: ${(project.title || 'المشروع').slice(0, 20)}`,
         desc: bp.subagents_group.desc || 'مجموعة وكلاء مخصصة لهذا المشروع البحثي',
+        research_profile: bp.research_profile || null,
+        death_max: blueprintDeathMax(bp),
         agents: mappedAgents
       };
       groups.unshift(linkedGroup);
     } else {
       linkedGroup.name = bp.subagents_group.name || linkedGroup.name;
       linkedGroup.desc = bp.subagents_group.desc || linkedGroup.desc;
+      linkedGroup.research_profile = bp.research_profile || linkedGroup.research_profile || null;
+      linkedGroup.death_max = blueprintDeathMax(bp);
       linkedGroup.agents = mappedAgents;
     }
 

@@ -5429,6 +5429,9 @@ function buildChatAgentGroupPayload() {
       id: chosen.map(g => g.id).join(','),
       name: groupName,
       desc: chosen.map(g => g.desc || '').filter(Boolean).join(' \n'),
+      death_max: chosen[0] && chosen[0].death_max != null ? Number(chosen[0].death_max)
+        : (activeAgent.death_max != null ? Number(activeAgent.death_max) : null),
+      research_profile: (chosen[0] && chosen[0].research_profile) || null,
       active_agent: {
         id: activeAgent.id,
         name: isMulti ? `فريق الوكلاء المختارين (${bundles.length}): ${names}` : activeAgent.name,

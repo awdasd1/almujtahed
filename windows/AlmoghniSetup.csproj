@@ -8,8 +8,8 @@
     <AssemblyName>AlmoghniSetup</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <RootNamespace>Almoghni.Setup</RootNamespace>
-    <Version>1.10.818</Version>
-    <InformationalVersion>1.10.818</InformationalVersion>
+    <Version>1.10.827</Version>
+    <InformationalVersion>1.10.827</InformationalVersion>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
