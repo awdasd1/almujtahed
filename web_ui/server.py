@@ -2520,9 +2520,9 @@ def _catalog_title_candidates(head: str, limit: int = 4, deep: bool = False) -> 
                 continue
             hit = len(wset & set(tk.split()))
             if hit >= min(2, len(words)):
-                scored.append((hit, -len(tk), meta))
+                scored.append((hit, -len(tk), int(meta.get("bid") or 0), dict(meta)))
         scored.sort(reverse=True)
-        for _, __, meta in scored:
+        for _, __, ___, meta in scored:
             bid = int(meta["bid"])
             if bid in seen:
                 continue
@@ -2627,39 +2627,45 @@ def _enrich_metrics_report_item(it: dict) -> dict:
     """إثراء تقرير محفوظ: أسماء الكتب في المستبعدات وهيمنة الكتاب بلا إعادة بحث."""
     if not isinstance(it, dict):
         return it
-    it = dict(it)
-    excl = []
-    for x in (it.get("excluded_items") or []):
-        if not isinstance(x, dict):
-            continue
-        if x.get("title") or x.get("verdict") or x.get("label"):
-            excl.append(x)
-            continue
-        excl.append(_enrich_excluded_cite(
-            quote=x.get("quote") or "",
-            book_id=str(x.get("book_id") or ""),
-            num=x.get("num"),
-            via=x.get("via") or "",
-            deep=False))
-    it["excluded_items"] = excl
-    events = []
-    for e in (it.get("risk_events") or []):
-        if not isinstance(e, dict):
-            continue
-        e = dict(e)
-        evd = str(e.get("evidence") or "")
-        m = re.search(r"الكتاب #(\d+)", evd)
-        if m:
-            meta = _book_meta_by_id(m.group(1))
-            if meta:
-                lab = _format_book_label(meta.get("title"), meta.get("author"), m.group(1))
-                e["evidence"] = evd.replace(f"الكتاب #{m.group(1)}", lab)
-                e["book_id"] = m.group(1)
-                e["book_title"] = meta.get("title") or ""
-                e["book_author"] = meta.get("author") or ""
-        events.append(e)
-    it["risk_events"] = events
-    return it
+    try:
+        it = dict(it)
+        excl = []
+        for x in (it.get("excluded_items") or []):
+            if not isinstance(x, dict):
+                continue
+            if x.get("title") or x.get("verdict") or x.get("label"):
+                excl.append(x)
+                continue
+            try:
+                excl.append(_enrich_excluded_cite(
+                    quote=x.get("quote") or "",
+                    book_id=str(x.get("book_id") or ""),
+                    num=x.get("num"),
+                    via=x.get("via") or "",
+                    deep=False))
+            except Exception:
+                excl.append(x)
+        it["excluded_items"] = excl
+        events = []
+        for e in (it.get("risk_events") or []):
+            if not isinstance(e, dict):
+                continue
+            e = dict(e)
+            evd = str(e.get("evidence") or "")
+            m = re.search(r"الكتاب #(\d+)", evd)
+            if m:
+                meta = _book_meta_by_id(m.group(1))
+                if meta:
+                    lab = _format_book_label(meta.get("title"), meta.get("author"), m.group(1))
+                    e["evidence"] = evd.replace(f"الكتاب #{m.group(1)}", lab)
+                    e["book_id"] = m.group(1)
+                    e["book_title"] = meta.get("title") or ""
+                    e["book_author"] = meta.get("author") or ""
+            events.append(e)
+        it["risk_events"] = events
+        return it
+    except Exception:
+        return it
 
 
 def _possessive_detached(text: str) -> str:
@@ -9433,7 +9439,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.816"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.817"},
         },
     })
     if opened.get("error"):
@@ -22953,8 +22959,13 @@ async def research_metrics_endpoint(request: Request):
         "avg_quotes_checked": _avg([(it.get("audit") or {}).get("checked") for it in items]),
         "ijma_unattributed_total": sum((it.get("audit") or {}).get("ijma_unattributed", 0) for it in items),
     }
-    return {"status": "ok", "summary": summary,
-            "items": [_enrich_metrics_report_item(it) for it in items[-50:]]}
+    enriched = []
+    for it in items[-50:]:
+        try:
+            enriched.append(_enrich_metrics_report_item(it))
+        except Exception:
+            enriched.append(it)
+    return {"status": "ok", "summary": summary, "items": enriched}
 
 
 class ResearchAutofixRequest(BaseModel):

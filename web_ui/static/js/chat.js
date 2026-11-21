@@ -5100,15 +5100,49 @@ window.renderResearchReportDashboard = renderResearchReportDashboard;
 async function downloadChatResearchReport(idx) {
   const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
   const msg = session && session.messages ? session.messages[idx] : null;
+  const sid = String(activeSessionId || '');
   let entry = null;
   try {
     const res = await fetch('/api/research-metrics');
     if (res.ok) {
       const data = await res.json();
-      const mine = (data.items || []).filter(it => it.chat_id === activeSessionId);
+      const items = data.items || [];
+      const mine = items.filter(it => String(it.chat_id || '') === sid);
       entry = mine.length ? mine[mine.length - 1] : null;
+      if (!entry && sid) {
+        const q = String((session && session.messages || []).slice().reverse().find(m => m.role === 'user')?.content || '').slice(0, 40);
+        const byQ = q ? items.filter(it => String(it.question || '').indexOf(q) >= 0) : [];
+        if (byQ.length) entry = byQ[byQ.length - 1];
+      }
     }
   } catch (e) { }
+  if (!entry && sid) {
+    try {
+      const pres = await fetch('/api/research-package/' + encodeURIComponent(sid));
+      if (pres.ok) {
+        const pkg = await pres.json();
+        if (pkg && pkg.found !== false && (pkg.risk_events || pkg.dossiers || pkg.risk_memo)) {
+          const dossiers = pkg.dossiers || [];
+          entry = {
+            ts: pkg.ts, chat_id: sid, question: pkg.question, group: pkg.group,
+            manager_model: pkg.manager_model, risk_officer: pkg.risk_officer,
+            risk_verdict: pkg.risk_verdict, risk_events: pkg.risk_events || [],
+            risk_memo: pkg.risk_memo, research_plan: pkg.research_plan,
+            plan_review: pkg.plan_review, audit: pkg.audit || {},
+            excluded_items: pkg.excluded_items || [],
+            agents_total: dossiers.length,
+            agents_failed: dossiers.filter(d => d.failed).map(d => d.name || ''),
+            agents_disabled: [],
+            core_agents: dossiers.map(d => ({
+              name: d.name, model: d.model, citations: d.citations || 0,
+              report_chars: (d.report || '').length, failed: !!d.failed
+            })),
+            answer_chars: pkg.answer_chars, witnesses: pkg.witnesses, duration_s: pkg.duration_s
+          };
+        }
+      }
+    } catch (e) { }
+  }
   const cell = s => String(s ?? '—').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 160);
   const L = [];
   L.push('# 📏 تقرير بحث — المغني');
