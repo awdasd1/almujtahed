@@ -9463,7 +9463,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.819"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.820"},
         },
     })
     if opened.get("error"):
@@ -14638,9 +14638,69 @@ _RISK_TARGETED_MIN = 3            # صفحات موجّهة دنيا لنطاق 
 _RISK_DURATION_S = 32 * 60        # سقف مدة البحث المعتاد
 
 
+def _risk_is_done(e: dict) -> bool:
+    st = str((e or {}).get("status") or "")
+    return st.startswith("مُغلق") or st.startswith("عولج آليًا") or st.startswith("موثق")
+
+
+def _risk_progress_of(e: dict) -> int:
+    """نسبة إنجاز البند 0–100: التام 100، والجزئي من حقله أو من نص حالته."""
+    e = e or {}
+    if _risk_is_done(e):
+        return 100
+    try:
+        stored = int(e.get("progress")) if e.get("progress") is not None else -1
+    except (TypeError, ValueError):
+        stored = -1
+    st = str(e.get("status") or "")
+    m = re.search(r"(\d{1,3})\s*٪", st)
+    from_status = int(m.group(1)) if m else -1
+    val = max(stored, from_status, 0)
+    if st.startswith("قيد المعالجة") and val < 10:
+        val = 10
+    return max(0, min(100, val))
+
+
+def _risk_register_pct(events) -> int:
+    ev = list(events or [])
+    if not ev:
+        return 100
+    return int(round(sum(_risk_progress_of(e) for e in ev) / len(ev)))
+
+
+def _set_risk_progress(e: dict, pct, *, note: str = "", source: str = "") -> Tuple[int, int]:
+    """يرفع نسبة البند بلا رجوع للخلف، ويكتب حالته ظاهرة للشريط."""
+    old = _risk_progress_of(e)
+    try:
+        pct = int(pct)
+    except (TypeError, ValueError):
+        pct = old
+    pct = max(0, min(100, pct))
+    if pct < old:
+        pct = old
+    e["progress"] = pct
+    note = " ".join(str(note or "").split())[:220]
+    if pct >= 100:
+        if source == "autofix" or str(e.get("status") or "").startswith("عولج آليًا"):
+            prefix = "عولج آليًا"
+        elif source == "decision" or str(e.get("status") or "").startswith("موثق"):
+            prefix = "موثق بقرار"
+        else:
+            prefix = "مُغلق"
+        e["status"] = f"{prefix}: {note}" if note else prefix
+    elif source == "queued":
+        e["status"] = f"قيد المعالجة ({pct}٪): {note}" if note else f"قيد المعالجة ({pct}٪)"
+    else:
+        src = "الإصلاح الآلي" if source == "autofix" else "معالجة المدير وتحقق مسؤول المخاطر"
+        e["status"] = f"معالجة جزئية {pct}٪ بعد {src}" + (f": {note}" if note else "")
+    return old, pct
+
+
 def _risk_event(kind, cls, title, evidence, status, action):
-    return {"kind": kind, "cls": cls, "title": title, "evidence": evidence,
-            "status": status, "action": action}
+    e = {"kind": kind, "cls": cls, "title": title, "evidence": evidence,
+         "status": status, "action": action}
+    e["progress"] = 100 if _risk_is_done(e) else 0
+    return e
 
 
 def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
@@ -14849,9 +14909,9 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
 
 
 def _risk_verdict(events) -> str:
-    if any(e["cls"] == "عالية" and e["status"].startswith("مفتوح") for e in events):
+    if any(e.get("cls") == "عالية" and _risk_progress_of(e) < 100 for e in events):
         return "لا يُعتمد قبل معالجة المخاطر العالية المفتوحة"
-    if any(e["cls"] in ("عالية", "متوسطة") for e in events):
+    if any(e.get("cls") in ("عالية", "متوسطة") for e in events):
         return "صالح للاعتماد بتنبيهات مسجلة"
     return "صالح للاعتماد"
 
@@ -14872,6 +14932,148 @@ def _risk_events_dedup(events):
     return out
 
 
+def _parse_director_risk_pcts(text: str) -> Dict[int, int]:
+    """نِسَب المدير المعلنة في أسطر الختام: نسبة المعالجة: NN٪ بترتيب البنود."""
+    out: Dict[int, int] = {}
+    n = 0
+    for m in re.finditer(r"نسبة المعالجة\s*[:：]?\s*(\d{1,3})\s*[٪%]", text or ""):
+        n += 1
+        out[n] = max(0, min(100, int(m.group(1))))
+    for m in re.finditer(
+            r"\[(\d+)\][^\n]{0,160}?نسبة المعالجة\s*[:：]?\s*(\d{1,3})\s*[٪%]", text or ""):
+        out[int(m.group(1))] = max(0, min(100, int(m.group(2))))
+    return out
+
+
+def _parse_officer_risk_verdicts(text: str) -> Dict[int, Tuple[str, int, str]]:
+    """حكم مسؤول المخاطر: (الحالة، النسبة، التعليل) لكل رقم بند."""
+    out: Dict[int, Tuple[str, int, str]] = {}
+    for m in re.finditer(
+            r"\[(\d+)\]\s*(مُغلق|مغلق|جزئي|معالجة جزئية|مفتوح)\s*[—\-:]*\s*(.+)",
+            text or ""):
+        num = int(m.group(1))
+        label = m.group(2)
+        rest = (m.group(3) or "").strip()
+        pct_m = re.search(r"نسبة\s*[:：]?\s*(\d{1,3})", rest)
+        note = re.sub(r"\|?\s*نسبة\s*[:：]?\s*\d{1,3}\s*[٪%]?", "", rest).strip(" —|-")
+        if label in ("مُغلق", "مغلق"):
+            pct = 100
+            state = "مُغلق"
+        elif label in ("جزئي", "معالجة جزئية"):
+            pct = int(pct_m.group(1)) if pct_m else 50
+            state = "جزئي"
+        else:
+            pct = int(pct_m.group(1)) if pct_m else 0
+            state = "مفتوح"
+        out[num] = (state, max(0, min(100, pct)), note[:200])
+    return out
+
+
+def _apply_autofix_to_risk_events(events: List[dict], stats: dict, html: str) -> List[dict]:
+    """يرفع نسب بنود التوثيق التي يلمسها الإصلاح الآلي، بلا مساس ببنود الفريق والتغطية."""
+    stats = stats or {}
+    html = html or ""
+    checked = int(stats.get("checked") or 0)
+    unver = int(stats.get("unverified") or 0)
+    ver = int(stats.get("verified") or 0) + int(stats.get("relocated") or 0)
+    healed = int(stats.get("healed") or 0)
+    repaired = int(stats.get("repaired") or 0)
+    takhrij_n = len(stats.get("takhrij_locator_fixed") or [])
+    if isinstance(stats.get("takhrij_fixed"), int):
+        takhrij_n = max(takhrij_n, int(stats.get("takhrij_fixed") or 0))
+    tier_w = int(stats.get("tier_warnings") or 0)
+    tier_r = int(stats.get("tier_resolved") or 0)
+    excl = int(stats.get("excluded_outside") or 0)
+    unresolved_n = html.count('cit-unresolved')
+    warn_n = html.count("⚠")
+    tk_n = len(re.findall(r"أخرجه", html))
+    tk_num = len(re.findall(r"حديث رقم\s*\(\d+\)", html))
+    leaks = [d for d in re.findall(r'<span class="cit-src"[^>]*>(.*?)</span>', html, re.S)
+             if re.search(r"\s-\s(ط|ت)\s", d)]
+    ijma = stats.get("ijma_unattributed") or 0
+    if isinstance(ijma, (list, tuple)):
+        ijma = len(ijma)
+    ijma = int(ijma or 0)
+
+    def orig_n(e):
+        m = re.search(r"(\d+)", str(e.get("evidence") or ""))
+        try:
+            return int(m.group(1)) if m else None
+        except Exception:
+            return None
+
+    for e in events or []:
+        kind = e.get("kind") or ""
+        if _risk_is_done(e):
+            e["progress"] = 100
+            continue
+        note = ""
+        pct = None
+        if kind == "unverified_kept":
+            base = orig_n(e) or max(unver, 1)
+            if unver <= 0:
+                pct, note = 100, "لم يبقَ نقل بلا ثبوت آلي بعد الإصلاح"
+            else:
+                pct = max(0, min(95, round(100 * (1 - min(unver, base) / base))))
+                note = f"بقي {unver} نقلًا بلا ثبوت من أصل {base}"
+        elif kind == "unresolved_citations":
+            base = orig_n(e) or max(unresolved_n, 1)
+            if unresolved_n <= 0:
+                pct, note = 100, f"شُفيت الإحالات الموسومة (شفاء {healed})"
+            else:
+                pct = max(0, min(95, round(100 * (1 - min(unresolved_n, base) / base))))
+                note = f"بقي {unresolved_n} إحالة ⚠"
+        elif kind == "verified_ratio":
+            if checked >= 1:
+                r = ver / checked
+                if r >= _RISK_MIN_VERIFIED_RATIO:
+                    pct, note = 100, f"بلغت نسبة الثبوت {round(r * 100)}٪"
+                else:
+                    pct = max(0, min(95, round(100 * r / _RISK_MIN_VERIFIED_RATIO)))
+                    note = f"الثبوت {round(r * 100)}٪ من حد {int(_RISK_MIN_VERIFIED_RATIO * 100)}٪"
+        elif kind == "outside_library":
+            pct, note = 100, f"استُبعد {excl} نقلًا خارج المكتبة من المتن"
+        elif kind == "display_edition_leak":
+            base = orig_n(e) or max(len(leaks), 1)
+            if not leaks:
+                pct, note = 100, "زالت أوصاف الطبعة من عرض الحواشي"
+            else:
+                pct = max(0, min(95, round(100 * (1 - min(len(leaks), base) / base))))
+                note = f"بقي {len(leaks)} وسمًا بطبعة ظاهرة"
+        elif kind == "takhrij_no_numbers":
+            if tk_n and tk_num:
+                pct, note = 100, f"ظهرت أرقام أحاديث في {tk_num} تخريجًا"
+            elif takhrij_n:
+                pct, note = 40, f"ضُبط {takhrij_n} موضع تخريج ولم تكتمل الأرقام كلها"
+        elif kind == "footnote_swept":
+            base = orig_n(e) or max(warn_n, 1)
+            if warn_n <= 0:
+                pct, note = 100, "زالت علامات ⚠ من الحواشي"
+            else:
+                pct = max(0, min(95, round(100 * (1 - min(warn_n, base) / base))))
+                note = f"بقي {warn_n} موضعًا موسومًا"
+        elif kind == "single_tier_source":
+            base = orig_n(e) or max(tier_w + tier_r, 1)
+            if tier_w <= 0:
+                pct, note = 100, f"وُجد أصل للوسائط (حُلّ {tier_r})"
+            elif tier_r:
+                pct = max(10, min(95, round(100 * tier_r / base)))
+                note = f"حُلّ {tier_r} وبقي {tier_w} وسيطًا وحيدًا"
+        elif kind == "unresolved_book_browse":
+            if unresolved_n <= 0 and warn_n <= 0:
+                pct, note = 100, "لم تبقَ حاشية ⚠ بتصفح غير مؤكد"
+        elif kind == "ijma_unattributed":
+            base = orig_n(e) or max(ijma, 1)
+            if ijma <= 0:
+                pct, note = 80, "لم تُرصد دعوى اتفاق مطلقة بعد الإصلاح"
+        if pct is None:
+            continue
+        if pct <= _risk_progress_of(e) and pct < 100:
+            continue
+        _set_risk_progress(e, pct, note=note, source="autofix")
+    return events
+
+
 def _risk_register_markdown(events, question: str = "", officer: str = "") -> str:
     """سجل مخاطر إدارة المخاطر بجداول ماركداون: يُبنى حتميًا من الحصاد
     المرقّى فلا اجتهاد فيه ولا تكرار، ويُختم بمذكرة المسؤول القصيرة."""
@@ -14880,10 +15082,13 @@ def _risk_register_markdown(events, question: str = "", officer: str = "") -> st
     def cell(s: Any) -> str:
         return " ".join(str(s or "").split()).replace("|", "¦")[:180]
     def is_done(e: dict) -> bool:
-        st = e.get("status") or ""
-        return st.startswith("مُغلق") or st.startswith("عولج آليًا") or st.startswith("موثق بقرار")
+        return _risk_is_done(e)
     lines = ["# 🏛 سجل مخاطر إدارة المخاطر", ""]
-    meta = [f"**الحكم العام:** {_risk_verdict(ev)}"]
+    pct = _risk_register_pct(ev)
+    closed_n = sum(1 for e in ev if is_done(e))
+    partial_n = sum(1 for e in ev if not is_done(e) and _risk_progress_of(e) > 0)
+    meta = [f"**الحكم العام:** {_risk_verdict(ev)}",
+            f"**نسبة المعالجة:** {pct}٪ (أُغلق {closed_n} · جزئي {partial_n} · من {len(ev)})"]
     if question:
         meta.append(f"**البحث:** {question}")
     if officer:
@@ -15017,6 +15222,7 @@ def _compact_research_register(pkg: dict) -> dict:
         "risk_events": pkg.get("risk_events") or [],
         "risk_memo": pkg.get("risk_memo") or "",
         "risk_treatments": pkg.get("risk_treatments") or [],
+        "risk_pct": _risk_register_pct(pkg.get("risk_events") or []),
     }
 
 
@@ -21980,8 +22186,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                             _risk_control_selected.append(_rev[_i])
                     if _risk_control_selected and _rpkg is not None:
                         for _i in _risk_control_indexes:
-                            if not str(_rev[_i].get("status") or "").startswith("مُغلق"):
-                                _rev[_i]["status"] = "قيد المعالجة: أرسلها صاحب البحث إلى مدير المشروع"
+                            if _risk_progress_of(_rev[_i]) >= 100:
+                                continue
+                            _set_risk_progress(
+                                _rev[_i], max(_risk_progress_of(_rev[_i]), 10),
+                                note="أرسلها صاحب البحث إلى مدير المشروع", source="queued")
                         _save_research_package(current_owner_id(request), req.chat_id, _rpkg)
                         _items_txt = "\n".join(
                             f"{n}. [{_RISK_ICONS.get(e.get('cls'), '')} {e.get('cls')}] {e.get('title')} — الدليل: {e.get('evidence')} — حالته قبل الإرسال: {e.get('status')}"
@@ -22003,7 +22212,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                             "١) عالج أولًا من حزمة البحث المحفوظة المرفقة بعد هذا التوجيه (سجل الأدلة وتقارير الوكلاء بنصوصها وبطاقاتها) بلا بحث جديد؛ فهي قاعدة الشواهد المحفوظة لهذا البحث. ولا تُدخل في ردك كتابًا من ذاكرتك خارج الحزمة والتقارير المرفقة، ولا سيما كتبًا معاصرة في غير فنّ المسألة.\n"
                             "٢) فإن كان بندٌ قصورًا في مادة البحث نفسها لا يُسدّ من الحزمة، فأصدر للوكيل المعني طلبًا بصيغة ⟦طلب-وكيل: اسم الوكيل | المهمة⟧ واذكر صراحة في صلب مهمته: «هذا قد لُوحظ عليك من إدارة المخاطر».\n"
                             "٣) حاسِب المتسبب: بيّن لكل بند سبب وقوعه ومن يتحمله (نموذج توليف، أو وكيل بعينه، أو نطاق كتب، أو بوابة من بوابات المنظومة).\n"
-                            "٤) لا تُصدر الصياغة النهائية في هذا الرد؛ هذه جولة معالجة ومحاسبة. واختم بسطر لكل بند: «البند: ... | ما فُعل: ... | يحتاج قرار الباحث: نعم/لا»."
+                            "٤) لا تُصدر الصياغة النهائية في هذا الرد؛ هذه جولة معالجة ومحاسبة.\n"
+                            "٥) قِس لكل بند نسبة معالجة من 0 إلى 100 مما أنجزتَه فعلًا في هذه الجولة لا أمنية: 0 لم يُمسّ، 30–70 معالجة جزئية موثقة بدليل في ردك أو تقارير الوكلاء، 100 أُغلق الخطر. أعلنها في سطر الختام حصرًا: «البند: [رقم] العنوان | ما فُعل: ... | نسبة المعالجة: NN٪ | يحتاج قرار الباحث: نعم/لا». بلا هذه النسبة لا تُحتسب المعالجة في شريط التقدم."
                             + ("\n\n═══ حزمة البحث المحفوظة (مادة الإصلاح) ═══" + _pkg_ctx if _pkg_ctx else "")
                         )})
                         print(f"🏛 [Risk Control] أُرسل {len(_risk_control_selected)} بند ضبط مخاطر إلى المدير مع الحزمة المحفوظة", flush=True)
@@ -22555,7 +22765,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         {"role": "system", "content": (
                             "أنت مدير المشروع وقائد الفريق في جلسة مناقشة مفتوحة مع الباحث حول بحث منجز. أصدرتَ طلبات إرسال لوكلاء، وهذه تقاريرهم الراجعة. "
                             "أجب الباحث الآن جواب المناقشة بناءً على هذه التقارير حصرًا في الجديد: بيّن ما أضافه كل وكيل أو ما صرّح بخلوّه، وناقش أثره في النواقص، ولا تصدر طلبات إرسال جديدة في هذا الرد، ولا تعد صياغة البحث كاملًا. ولا تخترع أسبابًا تقنية من عندك (كتعذر حفظ أو عطل فهرسة) لم ترد في التقارير؛ سبب أي إخفاق هو ما في التقرير فقط، وما لم تعرفه قل: لا أعلم سببه بعد. "
-                            "واختم ببيان: «اتفقنا على: ... | بقي مفتوحًا: ... | سيتغير في الصياغة النهائية: ...».")},
+                            "واختم ببيان: «اتفقنا على: ... | بقي مفتوحًا: ... | سيتغير في الصياغة النهائية: ...»."
+                            + (" ولأن هذه جولة ضبط مخاطر، اختم سطرًا لكل بند عالجته: «البند: [رقم] العنوان | ما فُعل: ... | نسبة المعالجة: NN٪ | يحتاج قرار الباحث: نعم/لا»." if _risk_control_selected else ""))},
                         {"role": "user", "content": f"سؤال الباحث/موضوع الجولة: {last_user_msg}\n\nنتائج طلباتك المنفذة (تقارير وكلاء ونصوص صفحات مجلوبة بتقليب الصفحات):\n" + "\n\n".join(_reports)},
                     ],
                     api_key=_dkey, temperature=0.2, max_tokens=24576, timeout=200,
@@ -22571,8 +22782,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     if _risk_control_selected and _discussion == "open" and live_reply and req.chat_id:
         try:
             _officer = next((m for m in _RISK_OFFICER_MODELS if m != call_model), _RISK_OFFICER_MODELS[-1])
+            _dir_pcts = _parse_director_risk_pcts(str(live_reply) or "")
             _items_v = "\n".join(
-                f"[{n}] [{e.get('cls')}] {e.get('title')} — الدليل الأصلي: {e.get('evidence')}"
+                f"[{n}] [{e.get('cls')}] {e.get('title')} — الدليل الأصلي: {e.get('evidence')} "
+                f"— نسبة مسجّلة سابقًا: {_risk_progress_of(e)}٪"
+                + (f" — نسبة أعلنها المدير: {_dir_pcts.get(n)}٪" if n in _dir_pcts else " — المدير لم يعلن نسبة لهذا البند")
                 for n, e in enumerate(_risk_control_selected, 1))
             _reports_v = "\n\n".join(str(r)[:4000] for r in (locals().get("_reports") or []))[:12000]
             _verdict_raw = call_openrouter_raw(
@@ -22580,8 +22794,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 messages=[
                     {"role": "system", "content": (
                         "أنت مسؤول إدارة المخاطر المستقل في حوكمة منظومة المغني. أرسل صاحب البحث بنود مخاطر إلى مدير المشروع لمعالجتها، وهذا رد المدير وما نفّذه من طلبات وكلاء. "
-                        "احكم على كل بند: هل عولج فعلًا بما يزيل خطره أو يخفضه إلى مقبول، أم بقي مفتوحًا؟ لا يكفي وعد المدير ولا كلامه عن نفسه؛ العبرة بما في الرد والتقارير المنفذة من إصلاح أو سدّ موثق. "
-                        "أخرج لكل بند سطرًا واحدًا حصرًا بصيغة: [رقم البند] مُغلق — تعليل بسطر | أو: [رقم البند] مفتوح — ما بقي ناقصًا بسطر.")},
+                        "احكم على كل بند بثلاث حالات لا اثنتين: مُغلق (100٪) أو جزئي (1–99٪) أو مفتوح (0٪ إن لم يُنجز شيء). "
+                        "لا يكفي وعد المدير؛ العبرة بما في الرد والتقارير من إصلاح أو سدّ موثق. نسبة المدير مقترحٌ تراجعه: اخفضها إن بُولغ فيها، ولا تُصفر عملًا جزئيًا موثقًا، ولا ترجع عن نسبة سابقة مسجّلة إلا إذا ظهر تراجع فعلي. "
+                        "أخرج لكل بند سطرًا واحدًا حصرًا: [رقم] مُغلق — تعليل | نسبة: 100   أو  [رقم] جزئي — تعليل | نسبة: NN   أو  [رقم] مفتوح — تعليل | نسبة: 0")},
                     {"role": "user", "content": (
                         f"البنود المرسلة للمعالجة:\n{_items_v}\n\nرد مدير المشروع:\n{str(live_reply)[:24000]}"
                         + (f"\n\nتقارير منفذة أثناء الجولة:\n{_reports_v}" if _reports_v else ""))},
@@ -22589,30 +22804,48 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 api_key=owner_openrouter_key(request, req.api_key),
                 temperature=0.1, max_tokens=4000, timeout=240,
                 thinking_level="medium") or ""
-            _verdicts = {}
-            for _vm in re.finditer(r"\[(\d+)\]\s*(مُغلق|مغلق|مفتوح)\s*[—\-:]\s*(.+)", _verdict_raw):
-                _verdicts[int(_vm.group(1))] = (_vm.group(2), _vm.group(3).strip()[:200])
-            if _verdicts:
-                _rpkg2 = _load_research_package(current_owner_id(request), req.chat_id)
-                if _rpkg2 is not None:
-                    _rev2 = _rpkg2.get("risk_events") or []
-                    _treated = []
-                    for _n, (_idx, _e) in enumerate(zip(_risk_control_indexes, _risk_control_selected), 1):
-                        _v = _verdicts.get(_n)
-                        if not _v or _idx >= len(_rev2):
+            _verdicts = _parse_officer_risk_verdicts(_verdict_raw)
+            _rpkg2 = _load_research_package(current_owner_id(request), req.chat_id)
+            if _rpkg2 is not None:
+                _rev2 = _rpkg2.get("risk_events") or []
+                _treated = []
+                _pct_before = _risk_register_pct(_rev2)
+                for _n, (_idx, _e) in enumerate(zip(_risk_control_indexes, _risk_control_selected), 1):
+                    if _idx >= len(_rev2):
+                        continue
+                    _v = _verdicts.get(_n)
+                    if _v:
+                        _state, _pct, _note = _v
+                        if _state == "مفتوح" and _pct <= 0:
+                            _pct = _dir_pcts.get(_n, 0)
+                            if _pct > 0:
+                                _state, _note = "جزئي", (_note or "عمل جزئي من إعلان المدير بعد التحقق")
+                    elif _n in _dir_pcts:
+                        _pct = _dir_pcts[_n]
+                        _state = "مُغلق" if _pct >= 100 else ("جزئي" if _pct > 0 else "مفتوح")
+                        _note = "من نسبة أعلنها المدير بعد تعذر تفصيل حكم المسؤول"
+                    else:
+                        if len(str(live_reply)) >= 400:
+                            _pct, _note = 25, "قُدّمت معالجة ولم تُعلن نسبة صريحة؛ احتُسبت جزئية دنيا حتى يُعاد قياسها"
+                        else:
                             continue
-                        _closed = _v[0] in ("مُغلق", "مغلق")
-                        _rev2[_idx]["status"] = (
-                            f"{'مُغلق' if _closed else 'ما زال مفتوحًا'} بعد معالجة المدير "
-                            f"وتحقق مسؤول المخاطر ({datetime.now().date()}): {_v[1]}")
-                        _treated.append({"title": _e.get("title"),
-                                         "verdict": "مُغلق" if _closed else "مفتوح",
-                                         "note": _v[1]})
-                    if _treated:
-                        _rpkg2.setdefault("risk_treatments", []).append(
-                            {"ts": datetime.now().isoformat(), "officer": _officer, "items": _treated})
-                        _save_research_package(current_owner_id(request), req.chat_id, _rpkg2)
-                        print(f"🏛 [Risk Control] تحقق {_officer}: أُغلق {sum(1 for t in _treated if t['verdict'] == 'مُغلق')} من {len(_treated)} بندًا مرسلًا", flush=True)
+                    _old, _new = _set_risk_progress(
+                        _rev2[_idx], _pct, note=_note, source="director")
+                    _treated.append({"title": _e.get("title"),
+                                     "verdict": "مُغلق" if _new >= 100 else ("جزئي" if _new > 0 else "مفتوح"),
+                                     "progress": _new, "progress_before": _old, "note": _note})
+                if _treated:
+                    _pct_after = _risk_register_pct(_rev2)
+                    _rpkg2["risk_verdict"] = _risk_verdict(_rev2)
+                    _rpkg2.setdefault("risk_treatments", []).append(
+                        {"ts": datetime.now().isoformat(), "officer": _officer,
+                         "source": "director", "pct_before": _pct_before,
+                         "pct_after": _pct_after, "items": _treated})
+                    _save_research_package(current_owner_id(request), req.chat_id, _rpkg2)
+                    print(f"🏛 [Risk Control] تحقق {_officer}: النسبة {_pct_before}٪ ← {_pct_after}٪ "
+                          f"(أُغلق {sum(1 for t in _treated if t['verdict'] == 'مُغلق')} · "
+                          f"جزئي {sum(1 for t in _treated if t['verdict'] == 'جزئي')} من {len(_treated)})",
+                          flush=True)
         except Exception as _rcv_err:
             print(f"🏛 [Risk Control] تعذر تحقق الإغلاق: {_rcv_err}", flush=True)
 
@@ -23038,6 +23271,7 @@ class ResearchAutofixRequest(BaseModel):
     html: str
     witnesses: Optional[List[dict]] = None
     discussion_texts: Optional[List[str]] = None
+    chat_id: Optional[str] = None
 
 
 @app.post("/api/research-autofix")
@@ -23087,8 +23321,41 @@ async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Reques
         "refs_removed": len(_refs_before - _refs_after),
         "changed": fixed != html,
     }
+    register = None
+    if req.chat_id:
+        try:
+            pkg = _load_research_package(current_owner_id(request), req.chat_id)
+            if pkg is not None:
+                ev = list(pkg.get("risk_events") or [])
+                pct_before = _risk_register_pct(ev)
+                _apply_autofix_to_risk_events(ev, summary, fixed)
+                pct_after = _risk_register_pct(ev)
+                pkg["risk_events"] = ev
+                pkg["risk_verdict"] = _risk_verdict(ev)
+                _auto_kinds = {
+                    "unverified_kept", "unresolved_citations", "verified_ratio",
+                    "outside_library", "display_edition_leak", "takhrij_no_numbers",
+                    "footnote_swept", "single_tier_source", "unresolved_book_browse",
+                    "ijma_unattributed"}
+                pkg.setdefault("risk_treatments", []).append({
+                    "ts": datetime.now().isoformat(), "source": "autofix",
+                    "pct_before": pct_before, "pct_after": pct_after,
+                    "items": [
+                        {"title": e.get("title"),
+                         "verdict": "مُغلق" if _risk_is_done(e) else ("جزئي" if _risk_progress_of(e) else "مفتوح"),
+                         "progress": _risk_progress_of(e)}
+                        for e in ev if (e.get("kind") in _auto_kinds) and _risk_progress_of(e) > 0],
+                })
+                _save_research_package(current_owner_id(request), req.chat_id, pkg)
+                register = _compact_research_register(pkg)
+                summary["risk_pct_before"] = pct_before
+                summary["risk_pct_after"] = pct_after
+                print(f"🔧 [Autofix Register] النسبة {pct_before}٪ ← {pct_after}٪", flush=True)
+        except Exception as _af_reg_err:
+            print(f"🔧 [Autofix Register] تعذر تحديث سجل المخاطر: {_af_reg_err}", flush=True)
     return {"status": "ok", "html": fixed, "summary": summary,
-            "record": _documentation_record(stats)}
+            "record": _documentation_record(stats),
+            "research_register": register}
 
 
 _FINAL_META_PATS = ("وكيل", "الوكلاء", "المقطع المستخرج", "المقتطف", "الاسترجاع",

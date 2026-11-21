@@ -4428,7 +4428,7 @@ function buildRiskRegisterMd(events, opts) {
   const ev = Array.from(seen.values());
   const icons = { 'عالية': '🔴', 'متوسطة': '🟡', 'منخفضة': '⚪' };
   const cell = s => String(s || '').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 180);
-  const done = e => /^(مُغلق|عولج آليًا|موثق بقرار)/.test(e.status || '');
+  const done = e => /^(مُغلق|عولج آليًا|موثق)/.test(e.status || '');
   const L = ['# 🏛 سجل مخاطر إدارة المخاطر', ''];
   const meta = [];
   if (opts.verdict) meta.push('**الحكم العام:** ' + opts.verdict);
@@ -4487,7 +4487,7 @@ async function runResearchAutofix() {
     const res = await fetch('/api/research-autofix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html: msg.content, witnesses: msg.witnesses || [] })
+      body: JSON.stringify({ html: msg.content, witnesses: msg.witnesses || [], chat_id: activeSessionId || session.id || '' })
     });
     if (!res.ok) throw new Error('autofix ' + res.status);
     const data = await res.json();
@@ -4499,6 +4499,9 @@ async function runResearchAutofix() {
     // تُحفظ نتيجة الإصلاح على الجلسة: إعادة فتح النافذة تُظهر أثره ونسبته
     // بدل قائمة جامدة لا تدل على ما عولج فعلًا.
     session.lastAutofix = { ts: new Date().toISOString(), summary: s };
+    if (data.research_register && typeof attachResearchRegister === 'function') {
+      attachResearchRegister(session, data.research_register);
+    }
     if (typeof saveChatSessions === 'function') saveChatSessions();
     const fixed = [];
     if (s.takhrij_fixed) fixed.push(`ضبط تخريج وطبعاته: ${s.takhrij_fixed}`);
@@ -4528,8 +4531,16 @@ async function runResearchAutofix() {
         + '. القائمة الكاملة كما هي تحت الجواب، ولا تُعاد طباعتها هنا.');
     }
     const out = document.getElementById('riskControlPanel');
-    if (out) renderMarkdownInto(out, md.join('\n'));
-    if (typeof showToast === 'function') showToast(s.changed ? 'اكتمل الإصلاح الآلي وحُفظت الإجابة مصححة' : 'الإجابة سليمة توثيقيًا — لا إصلاح لزم', 4000);
+    const pkg = registerForSession(session) || data.research_register;
+    if (out && pkg) fillRiskRegisterPanel(out, pkg, session);
+    else if (out) renderMarkdownInto(out, md.join('\n'));
+    const before = s.risk_pct_before;
+    const after = s.risk_pct_after;
+    let toast = s.changed ? 'اكتمل الإصلاح الآلي وحُفظت الإجابة مصححة' : 'الإجابة سليمة توثيقيًا — لا إصلاح لزم';
+    if (before !== undefined && after !== undefined) {
+      toast += after > before ? ` · نسبة المعالجة ${before}٪ ← ${after}٪` : ` · نسبة السجل ${after}٪ (بنود التوثيق فقط؛ تغطية الفريق تُعالج عبر المدير)`;
+    }
+    if (typeof showToast === 'function') showToast(toast, 5000);
   } catch (e) {
     const errHost = document.getElementById('riskControlPanel');
     if (errHost) errHost.innerHTML = '<div style="padding:6px;">تعذر الإصلاح الآلي: ' + String(e && e.message || e) + '</div>';
@@ -4575,6 +4586,23 @@ function registerForSession(session) {
   return null;
 }
 
+function riskItemProgress(e) {
+  const st = String((e && e.status) || '');
+  if (/^(مُغلق|عولج آليًا|موثق)/.test(st)) return 100;
+  let p = Number(e && e.progress);
+  if (!Number.isFinite(p) || p < 0) p = 0;
+  const m = st.match(/(\d{1,3})\s*٪/);
+  if (m) p = Math.max(p, parseInt(m[1], 10));
+  if (/^قيد المعالجة/.test(st) && p < 10) p = 10;
+  return Math.max(0, Math.min(100, p));
+}
+
+function riskRegisterPct(events) {
+  const ev = events || [];
+  if (!ev.length) return 100;
+  return Math.round(ev.reduce((s, e) => s + riskItemProgress(e), 0) / ev.length);
+}
+
 function fillRiskRegisterPanel(panel, pkg, session) {
   if (!panel || !pkg) return;
   const sid = String((session && session.id) || activeSessionId || '');
@@ -4584,25 +4612,33 @@ function fillRiskRegisterPanel(panel, pkg, session) {
   }
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const events = pkg.risk_events || [];
-  const isDone = e => /^(مُغلق|عولج آليًا|موثق بقرار)/.test(e.status || '');
+  const isDone = e => riskItemProgress(e) >= 100;
   const doneN = events.filter(isDone).length;
-  const pct = events.length ? Math.round(100 * doneN / events.length) : 100;
+  const partialN = events.filter(e => !isDone(e) && riskItemProgress(e) > 0).length;
+  const pct = riskRegisterPct(events);
   const treats = pkg.risk_treatments || [];
   const lastTreat = treats.length ? treats[treats.length - 1] : null;
   const la = session && session.lastAutofix ? session.lastAutofix : null;
   let h = '<div style="border:1px solid rgba(150,130,90,.35); border-radius:10px; padding:10px 12px; margin-bottom:10px;">'
-    + `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px;"><b>📊 نسبة المعالجة: ${pct}٪</b><span style="font-size:12px;">أُغلق ${doneN} من ${events.length} بندًا · المفتوح ${events.length - doneN}</span></div>`
+    + `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px;"><b>📊 نسبة المعالجة: ${pct}٪</b><span style="font-size:12px;">أُغلق ${doneN} · جزئي ${partialN} · مفتوح ${events.length - doneN - partialN} من ${events.length}</span></div>`
     + `<div style="height:8px; background:rgba(150,130,90,.18); border-radius:6px; margin-top:7px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:linear-gradient(90deg,#b98a2f,#d9a400);"></div></div>`;
   if (lastTreat) {
     const closedT = (lastTreat.items || []).filter(t => t.verdict === 'مُغلق').length;
-    h += `<div style="font-size:12px; margin-top:7px;">آخر معالجة عبر المدير (${esc(String(lastTreat.ts || '').slice(0, 10))}): أُغلق ${closedT} من ${(lastTreat.items || []).length} بندًا مرسلًا — وما بقي مفتوحًا سببه مكتوب تحت كل بند أدناه.</div>`;
+    const partT = (lastTreat.items || []).filter(t => t.verdict === 'جزئي' || (t.progress > 0 && t.verdict !== 'مُغلق')).length;
+    const src = lastTreat.source === 'autofix' ? 'الإصلاح الآلي' : 'المدير ومسؤول المخاطر';
+    let delta = '';
+    if (lastTreat.pct_before !== undefined && lastTreat.pct_after !== undefined) {
+      const d = lastTreat.pct_after - lastTreat.pct_before;
+      delta = `النسبة ${lastTreat.pct_before}٪ ← ${lastTreat.pct_after}٪` + (d ? ` (${d > 0 ? '+' : ''}${d})` : '') + ' — ';
+    }
+    h += `<div style="font-size:12px; margin-top:7px;">آخر معالجة عبر ${src} (${esc(String(lastTreat.ts || '').slice(0, 16).replace('T', ' '))}): ${delta}أُغلق ${closedT} · جزئي ${partT} من ${(lastTreat.items || []).length} بندًا.</div>`;
   }
   if (la && la.summary) {
     const s = la.summary;
     const r = s.checked ? Math.round(100 * (s.checked - (s.unverified || 0)) / s.checked) : null;
     h += `<div style="font-size:12px; margin-top:5px;">آخر إصلاح آلي (${esc(String(la.ts || '').slice(0, 16).replace('T', ' '))}): نسبة إغلاق فحص التوثيق ${r !== null ? r + '٪' : '—'}، بقي ${(s.failures || []).length} موضعًا منبّهًا، والمراجع ${s.refs_before} ← ${s.refs_after}.</div>`;
   }
-  h += '<div style="font-size:11.5px; opacity:.85; margin-top:7px;">ترتيب العمل: الإصلاح الآلي أولًا (ثوانٍ، من المحفوظ وحده)، ثم لا يُرسل إلى المدير إلا ما بقي بعده — وإرسال البنود للمدير جولة بحث جديدة بطيئة لا تُستعمل إلا لما يستحيل من المحفوظ.</div></div>';
+  h += '<div style="font-size:11.5px; opacity:.85; margin-top:7px;">الشريط متوسط نسب البنود (جزئي + تام). الإصلاح الآلي يحرّك بنود التوثيق فقط؛ قصور الفريق والتغطية لا تتحرك إلا بمعالجة المدير بعد قياسه النسبة وإقرار مسؤول المخاطر. لا تُعاد المحاولة إن لم يتغير الشريط بعد جولة أُعلنت نسبها.</div></div>';
   h += '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">'
     + '<button type="button" class="btn-msg-export" onclick="runResearchAutofix()" style="font-weight:700;">🔧 إصلاح آلي شامل (من المحفوظ — ثوانٍ)</button>'
     + '<button type="button" class="btn-msg-export" onclick="produceFinalResearch()" style="font-weight:700;">🔒 إنشاء البحث النهائي القابل للطباعة</button>'
@@ -4618,9 +4654,13 @@ function fillRiskRegisterPanel(panel, pkg, session) {
     if (isDone(e)) return;
     const dot = e.cls === 'عالية' ? '#dc2626' : (e.cls === 'متوسطة' ? '#d9a400' : '#9ca3af');
     const note = (e.status || '').replace(/^مفتوح[:：]?\s*/, '');
+    const ip = riskItemProgress(e);
     c += `<label style="display:flex; gap:8px; align-items:flex-start; padding:6px 8px; border:1px solid rgba(150,130,90,.3); border-radius:8px; margin-bottom:5px;">
       <input type="checkbox" class="risk-item-check" value="${i}" style="margin-top:5px;">
-      <span style="flex:1;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${dot}; margin-left:5px;"></span><b>${esc(e.title)}</b><br><small>${esc(e.evidence)}</small>${note ? `<br><small style="color:#b3541e;">سبب البقاء — آخر تحقق: ${esc(note.slice(0, 220))}</small>` : ''}</span></label>`;
+      <span style="flex:1;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${dot}; margin-left:5px;"></span><b>${esc(e.title)}</b>
+      <span style="display:inline-block; font-size:11px; margin-right:6px; opacity:.85;">${ip}٪</span>
+      <div style="height:5px; background:rgba(150,130,90,.16); border-radius:4px; margin:4px 0 6px; overflow:hidden;"><div style="height:100%; width:${ip}%; background:#c9a227;"></div></div>
+      <small>${esc(e.evidence)}</small>${note ? `<br><small style="color:#b3541e;">آخر قياس: ${esc(note.slice(0, 220))}</small>` : ''}</span></label>`;
   });
   c += '<div style="margin-top:8px;"><button type="button" class="btn-msg-export" onclick="sendRiskControlItems()">📨 إرسال البنود المعلّمة إلى مدير المشروع (بحث تكميلي — دقائق)</button></div>';
   list.innerHTML = c;
@@ -4745,7 +4785,7 @@ async function sendRiskControlItems() {
   renderSessionMessages(activeSessionId);
   if (typeof saveChatSessions === 'function') saveChatSessions();
   await triggerChatCompletion(session, [], { discussionMode: 'open', riskControl: checks });
-  if (typeof showToast === 'function') showToast('أُرسلت بنود الضبط؛ بعد رد المدير يتحقق مسؤول المخاطر من إغلاقها — أعد فتح «الضبط» لترى حالتها', 4500);
+  if (typeof showToast === 'function') showToast('أُرسلت بنود الضبط؛ يقيس المدير نسبة كل بند ثم يقرّها مسؤول المخاطر — أعد فتح «الضبط» لترى حركة الشريط', 4500);
 }
 
 async function finalizeDiscussion() {
