@@ -9463,7 +9463,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.820"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.821"},
         },
     })
     if opened.get("error"):
@@ -14636,6 +14636,188 @@ _RISK_SHORT_REPORT_RATIO = 0.35   # أو دون هذه النسبة من وسي�
 _RISK_DOMINANCE_SHARE = 0.18      # حصة كتاب واحد من أوسمة الجواب
 _RISK_TARGETED_MIN = 3            # صفحات موجّهة دنيا لنطاق المذهب
 _RISK_DURATION_S = 32 * 60        # سقف مدة البحث المعتاد
+_CIT_SRC_SPAN_RE = re.compile(r'<span class="cit-src"[^>]*>.*?</span>', re.S)
+_AUTO_RISK_KINDS = {
+    "unverified_kept", "unresolved_citations", "verified_ratio",
+    "outside_library", "display_edition_leak", "takhrij_no_numbers",
+    "footnote_swept", "single_tier_source", "unresolved_book_browse",
+    "ijma_unattributed", "book_dominance",
+}
+
+
+def _cit_src_book_ids(text: str) -> List[str]:
+    return re.findall(r'<span class="cit-src"[^>]*data-book-id="(\d+)"', text or "")
+
+
+def _short_stamp_title(bid: str, inner: str, open_tag: str = "") -> str:
+    """عنوان مختصر لإحالة «الموضع نفسه» دون تكرار الاسم الطويل والوسم."""
+    meta = _book_meta_by_id(bid)
+    title = (meta.get("title") or "").strip()
+    if not title:
+        bm = re.search(r'data-book="([^"]+)"', open_tag or "")
+        title = (bm.group(1) if bm else "").strip()
+    if not title:
+        title = html.unescape(re.sub(r"<[^>]+>", "", inner or ""))
+        title = re.split(r"\s+\(", title, 1)[0]
+        title = re.split(r"\s+لابن\s+", title, 1)[0]
+        title = re.split(r"\s+لأبي\s+", title, 1)[0]
+    title = re.split(r"\s+على\s+", title, 1)[0].strip()
+    title = re.split(r"\s+-\s+(?:ط|ت)\s+", title, 1)[0].strip()
+    title = re.sub(r"\s+", " ", title)
+    if len(title) > 42:
+        title = title[:40].rstrip() + "…"
+    return title or "المصدر"
+
+
+def _split_cit_src_span(tag: str) -> Tuple[str, str]:
+    gt = tag.find(">")
+    lt = tag.rfind("<")
+    if gt < 0 or lt <= gt:
+        return tag, ""
+    return tag[: gt + 1], tag[gt + 1: lt]
+
+
+def _apply_stamp_dedupe(text: str) -> Tuple[str, dict]:
+    """يبقي أول ختم لكل (كتاب، جزء، صفحة) ويحوّل التكرار إلى «الموضع نفسه» بلا وسم."""
+    seen = set()
+    removed = 0
+    by_book: Dict[str, int] = {}
+
+    def repl(m):
+        nonlocal removed
+        tag = m.group(0)
+        open_tag, inner = _split_cit_src_span(tag)
+        bid_m = re.search(r'data-book-id="(\d+)"', open_tag)
+        part_m = re.search(r'data-part="([^"]*)"', open_tag)
+        page_m = re.search(r'data-page="([^"]*)"', open_tag)
+        bid = bid_m.group(1) if bid_m else ""
+        part = (part_m.group(1) if part_m else "").strip()
+        page = (page_m.group(1) if page_m else "").strip()
+        if not bid or not page:
+            return tag
+        key = (bid, part, page)
+        if key not in seen:
+            seen.add(key)
+            return tag
+        removed += 1
+        by_book[bid] = by_book.get(bid, 0) + 1
+        title = _short_stamp_title(bid, inner, open_tag)
+        return f"الموضع نفسه من «{title}»"
+
+    out = _CIT_SRC_SPAN_RE.sub(repl, text or "")
+    out = re.sub(
+        r"(الموضع نفسه من «([^»]+)»)(?:\s*[؛,،]\s*و?الموضع نفسه من «\2»)+",
+        r"\1",
+        out,
+    )
+    return out, {"removed": removed, "kept": len(seen), "by_book": by_book}
+
+
+def _apply_dominance_cap(text: str) -> Tuple[str, dict]:
+    """إن بقيت حصة كتاب واحد فوق العتبة بعد إزالة التكرار: يُنزع وسم الصفحات الزائدة ويبقى نص الإحالة."""
+    from collections import Counter
+    ids = _cit_src_book_ids(text)
+    total = len(ids)
+    info = {
+        "capped": 0, "book_id": "", "n_before": 0, "n_after": 0,
+        "total_before": total, "total_after": total,
+        "share_before": 0.0, "share_after": 0.0,
+    }
+    if total < 20:
+        return text, info
+    top_id, top_n = Counter(ids).most_common(1)[0]
+    share = top_n / total
+    info.update(book_id=str(top_id), n_before=top_n, share_before=round(share, 4))
+    if top_n < 12 or share < _RISK_DOMINANCE_SHARE:
+        info.update(n_after=top_n, share_after=round(share, 4))
+        return text, info
+    keep_n = max(2, int(total * _RISK_DOMINANCE_SHARE * 0.66))
+    kept = 0
+    capped = 0
+
+    def repl(m):
+        nonlocal kept, capped
+        tag = m.group(0)
+        open_tag, inner = _split_cit_src_span(tag)
+        bid_m = re.search(r'data-book-id="(\d+)"', open_tag)
+        if not bid_m or bid_m.group(1) != str(top_id):
+            return tag
+        if kept < keep_n:
+            kept += 1
+            return tag
+        capped += 1
+        return inner
+
+    out = _CIT_SRC_SPAN_RE.sub(repl, text or "")
+    ids2 = _cit_src_book_ids(out)
+    n2 = sum(1 for x in ids2 if x == str(top_id))
+    t2 = len(ids2)
+    info.update(
+        capped=capped, n_after=n2, total_after=t2,
+        share_after=round((n2 / t2) if t2 else 0.0, 4),
+    )
+    return out, info
+
+
+def _apply_paper_treatments(text: str) -> Tuple[str, dict]:
+    """معالجات تظهر في الورقة نفسها: إزالة تكرار الأختام ثم سقف هيمنة كتاب واحد."""
+    from collections import Counter
+    before_ids = _cit_src_book_ids(text)
+    orig_top = Counter(before_ids).most_common(1)[0] if before_ids else ("", 0)
+    share_before = (orig_top[1] / len(before_ids)) if before_ids else 0.0
+    text, dedupe = _apply_stamp_dedupe(text)
+    text, cap = _apply_dominance_cap(text)
+    after_ids = _cit_src_book_ids(text)
+    tracked = str(orig_top[0] or cap.get("book_id") or "")
+    n_after = sum(1 for x in after_ids if x == tracked) if tracked else 0
+    share_after = (n_after / len(after_ids)) if after_ids else 0.0
+    stats = {
+        "stamps_before": len(before_ids),
+        "stamps_after": len(after_ids),
+        "stamps_deduped": int(dedupe.get("removed") or 0),
+        "stamps_capped": int(cap.get("capped") or 0),
+        "stamps_kept_unique": int(dedupe.get("kept") or 0),
+        "dominance_book_id": tracked,
+        "dominance_n_before": int(orig_top[1] or 0),
+        "dominance_n_after": n_after,
+        "dominance_share_before": round(share_before, 4),
+        "dominance_share_after": round(share_after, 4),
+        "dedupe_by_book": dedupe.get("by_book") or {},
+    }
+    return text, stats
+
+
+def _sync_risk_register_from_html(owner_id, chat_id, html_text, summary, source="autofix"):
+    """يحدّث سجل المخاطر من النص بعد الإصلاح أو الإعداد النهائي، بما فيه بند الهيمنة."""
+    if not chat_id:
+        return None
+    try:
+        pkg = _load_research_package(owner_id, chat_id)
+        if pkg is None:
+            return None
+        ev = list(pkg.get("risk_events") or [])
+        pct_before = _risk_register_pct(ev)
+        _apply_autofix_to_risk_events(ev, summary, html_text)
+        pct_after = _risk_register_pct(ev)
+        pkg["risk_events"] = ev
+        pkg["risk_verdict"] = _risk_verdict(ev)
+        pkg.setdefault("risk_treatments", []).append({
+            "ts": datetime.now().isoformat(), "source": source,
+            "pct_before": pct_before, "pct_after": pct_after,
+            "items": [
+                {"title": e.get("title"),
+                 "verdict": "مُغلق" if _risk_is_done(e) else ("جزئي" if _risk_progress_of(e) else "مفتوح"),
+                 "progress": _risk_progress_of(e)}
+                for e in ev if (e.get("kind") in _AUTO_RISK_KINDS) and _risk_progress_of(e) > 0],
+        })
+        _save_research_package(owner_id, chat_id, pkg)
+        summary["risk_pct_before"] = pct_before
+        summary["risk_pct_after"] = pct_after
+        print(f"🔧 [{source}] النسبة {pct_before}٪ ← {pct_after}٪", flush=True)
+        return _compact_research_register(pkg)
+    except Exception as err:
+        print(f"🔧 [{source}] تعذر تحديث سجل المخاطر: {err}", flush=True)
+        return None
 
 
 def _risk_is_done(e: dict) -> bool:
@@ -14833,7 +15015,7 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
             "معروضة بزر تصفح مميز (موضع غير مؤكد)", "تحقق يدويًا من الموضع قبل الاعتماد"))
     # — هيمنة كتاب وصيغ العرض (من تشريح الجواب)
     text = reply_text or ""
-    _span_ids = re.findall(r'data-book-id="(\d+)"', text)
+    _span_ids = _cit_src_book_ids(text)
     if len(_span_ids) >= 20:
         _top_id, _top_n = _Counter(_span_ids).most_common(1)[0]
         if _top_n >= 12 and _top_n / len(_span_ids) >= _RISK_DOMINANCE_SHARE:
@@ -15066,6 +15248,30 @@ def _apply_autofix_to_risk_events(events: List[dict], stats: dict, html: str) ->
             base = orig_n(e) or max(ijma, 1)
             if ijma <= 0:
                 pct, note = 80, "لم تُرصد دعوى اتفاق مطلقة بعد الإصلاح"
+        elif kind == "book_dominance":
+            from collections import Counter as _DomCounter
+            ids = _cit_src_book_ids(html)
+            total = len(ids)
+            target = str(e.get("book_id") or "")
+            if target:
+                n = sum(1 for x in ids if x == target)
+            elif ids:
+                target, n = _DomCounter(ids).most_common(1)[0]
+            else:
+                n = 0
+            share = (n / total) if total else 0.0
+            if total < 20 or n < 12 or share < _RISK_DOMINANCE_SHARE:
+                pct, note = 100, (
+                    f"خُفّضت الهيمنة إلى {n} من {total} وسمًا "
+                    f"({round(share * 100)}٪) بإبقاء ختم واحد لكل موضع")
+            else:
+                base = orig_n(e) or n
+                if base > 0 and n < base:
+                    pct = max(20, min(95, round(100 * (1 - n / base))))
+                    note = (f"نزلت الأختام من {base} إلى {n} من {total} "
+                            f"({round(share * 100)}٪) ولا تزال فوق العتبة")
+                else:
+                    pct, note = 20, f"بقي {n} من {total} وسمًا ({round(share * 100)}٪)"
         if pct is None:
             continue
         if pct <= _risk_progress_of(e) and pct < 100:
@@ -23285,6 +23491,12 @@ async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Reques
         raise HTTPException(status_code=400, detail="نص الإجابة قصير جدًا للإصلاح")
     fixed, stats = await asyncio.to_thread(
         _documentation_gate, html, req.witnesses or [], "")
+    fixed, paper = _apply_paper_treatments(fixed)
+    if paper.get("stamps_deduped") or paper.get("stamps_capped"):
+        print(f"🔧 [Autofix] أختام {paper.get('stamps_before')} ← {paper.get('stamps_after')} "
+              f"(تكرار {paper.get('stamps_deduped')} · سقف {paper.get('stamps_capped')}) "
+              f"هيمنة {round((paper.get('dominance_share_before') or 0) * 100)}٪ ← "
+              f"{round((paper.get('dominance_share_after') or 0) * 100)}٪", flush=True)
 
     def _cited_ids(text):
         ids = {int(x) for x in re.findall(r'data-book-id="(\d{1,7})"', text or "")}
@@ -23319,40 +23531,16 @@ async def research_autofix_endpoint(req: ResearchAutofixRequest, request: Reques
         "refs_after": len(_refs_after),
         "refs_added": _refs_added,
         "refs_removed": len(_refs_before - _refs_after),
+        "stamps_before": paper.get("stamps_before") or 0,
+        "stamps_after": paper.get("stamps_after") or 0,
+        "stamps_deduped": paper.get("stamps_deduped") or 0,
+        "stamps_capped": paper.get("stamps_capped") or 0,
+        "dominance_share_before": paper.get("dominance_share_before") or 0,
+        "dominance_share_after": paper.get("dominance_share_after") or 0,
         "changed": fixed != html,
     }
-    register = None
-    if req.chat_id:
-        try:
-            pkg = _load_research_package(current_owner_id(request), req.chat_id)
-            if pkg is not None:
-                ev = list(pkg.get("risk_events") or [])
-                pct_before = _risk_register_pct(ev)
-                _apply_autofix_to_risk_events(ev, summary, fixed)
-                pct_after = _risk_register_pct(ev)
-                pkg["risk_events"] = ev
-                pkg["risk_verdict"] = _risk_verdict(ev)
-                _auto_kinds = {
-                    "unverified_kept", "unresolved_citations", "verified_ratio",
-                    "outside_library", "display_edition_leak", "takhrij_no_numbers",
-                    "footnote_swept", "single_tier_source", "unresolved_book_browse",
-                    "ijma_unattributed"}
-                pkg.setdefault("risk_treatments", []).append({
-                    "ts": datetime.now().isoformat(), "source": "autofix",
-                    "pct_before": pct_before, "pct_after": pct_after,
-                    "items": [
-                        {"title": e.get("title"),
-                         "verdict": "مُغلق" if _risk_is_done(e) else ("جزئي" if _risk_progress_of(e) else "مفتوح"),
-                         "progress": _risk_progress_of(e)}
-                        for e in ev if (e.get("kind") in _auto_kinds) and _risk_progress_of(e) > 0],
-                })
-                _save_research_package(current_owner_id(request), req.chat_id, pkg)
-                register = _compact_research_register(pkg)
-                summary["risk_pct_before"] = pct_before
-                summary["risk_pct_after"] = pct_after
-                print(f"🔧 [Autofix Register] النسبة {pct_before}٪ ← {pct_after}٪", flush=True)
-        except Exception as _af_reg_err:
-            print(f"🔧 [Autofix Register] تعذر تحديث سجل المخاطر: {_af_reg_err}", flush=True)
+    register = _sync_risk_register_from_html(
+        current_owner_id(request), req.chat_id, fixed, summary, source="autofix")
     return {"status": "ok", "html": fixed, "summary": summary,
             "record": _documentation_record(stats),
             "research_register": register}
@@ -23368,10 +23556,10 @@ _FINAL_META_PATS = ("وكيل", "الوكلاء", "المقطع المستخرج
 @app.post("/api/research-finalize")
 async def research_finalize_endpoint(req: ResearchAutofixRequest, request: Request):
     """النسخة النهائية من المحفوظ لا من إعادة كتابة: البحث المحفوظ نفسه
-    يمرّ ببوابة التوثيق وتنقية موضعية للفقرات المتسللة إليها لغة العملية
-    (تُعاد صياغة تلك الفقرات وحدها بنموذج سريع) ونزع علامات ⚠، في ثوانٍ —
-    بدل صياغة مدير كاملة تعيد توليد البحث من سياق المحادثة فتطول ربع
-    ساعة وتختصر النص إلى خمسه وتسقط بوابتها بخطأ مفتاح."""
+    يمرّ ببوابة التوثيق، ثم تُطبَّق معالجات الورقة (إدراج المناقشة، إزالة
+    تكرار الأختام، سقف هيمنة كتاب واحد)، وتنقية موضعية للفقرات المتسللة
+    إليها لغة العملية ونزع علامات ⚠، في ثوانٍ — بدل صياغة مدير كاملة تعيد
+    توليد البحث من سياق المحادثة فتطول ربع ساعة وتختصر النص إلى خمسه."""
     current_owner_id(request)
     html = (req.html or "").strip()
     if len(html) < 200:
@@ -23485,6 +23673,14 @@ async def research_finalize_endpoint(req: ResearchAutofixRequest, request: Reque
     if warn_removed:
         fixed = fixed.replace("⚠ ", "").replace("⚠", "")
 
+    # معالجات الورقة بعد البوابة: لا تُستنسخ المسودة بأختام الكتاب المكرر.
+    fixed, paper = _apply_paper_treatments(fixed)
+    if paper.get("stamps_deduped") or paper.get("stamps_capped"):
+        print(f"🔒 [Fast Finalize] أختام {paper.get('stamps_before')} ← {paper.get('stamps_after')} "
+              f"(تكرار {paper.get('stamps_deduped')} · سقف {paper.get('stamps_capped')}) "
+              f"هيمنة {round((paper.get('dominance_share_before') or 0) * 100)}٪ ← "
+              f"{round((paper.get('dominance_share_after') or 0) * 100)}٪", flush=True)
+
     def _cited_ids(text):
         ids = {int(x) for x in re.findall(r'data-book-id="(\d{1,7})"', text or "")}
         ids |= {int(x) for x in re.findall(r"#(\d{1,7})\b", text or "")}
@@ -23509,10 +23705,19 @@ async def research_finalize_endpoint(req: ResearchAutofixRequest, request: Reque
         "insertions_applied": ins_applied,
         "insertions_failed": ins_failed,
         "refs_before": len(_rb), "refs_after": len(_ra),
+        "stamps_before": paper.get("stamps_before") or 0,
+        "stamps_after": paper.get("stamps_after") or 0,
+        "stamps_deduped": paper.get("stamps_deduped") or 0,
+        "stamps_capped": paper.get("stamps_capped") or 0,
+        "dominance_share_before": paper.get("dominance_share_before") or 0,
+        "dominance_share_after": paper.get("dominance_share_after") or 0,
         "changed": fixed != html,
     }
+    register = _sync_risk_register_from_html(
+        current_owner_id(request), req.chat_id, fixed, summary, source="finalize")
     return {"status": "ok", "html": fixed, "summary": summary,
-            "record": _documentation_record(stats)}
+            "record": _documentation_record(stats),
+            "research_register": register}
 
 
 # =============================================================================

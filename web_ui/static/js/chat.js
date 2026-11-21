@@ -4475,7 +4475,11 @@ async function runResearchAutofix() {
   const msgs = session.messages || [];
   let msg = null;
   for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === 'assistant' && (msgs[i].content || '').length > 200) { msg = msgs[i]; break; }
+    const m = msgs[i];
+    if (m.role !== 'assistant' || (m.content || '').length < 200) continue;
+    if (m.stage === 'discussion') continue;
+    msg = m;
+    break;
   }
   if (!msg) { if (typeof showToast === 'function') showToast('لا إجابة بحث محفوظة في هذه المحادثة للإصلاح', 3000); return; }
   if (!panel) {
@@ -4509,6 +4513,8 @@ async function runResearchAutofix() {
     if (s.healed) fixed.push(`إحالات شُفيت وخُتمت: ${s.healed}`);
     if (s.excluded_outside) fixed.push(`نقول خارج المكتبة استُبعدت: ${s.excluded_outside}`);
     if (s.tier_resolved) fixed.push(`وسيط وحيد وُجد له أصل: ${s.tier_resolved}`);
+    if (s.stamps_deduped) fixed.push(`أختام مكررة حُوّلت إلى «الموضع نفسه»: ${s.stamps_deduped}`);
+    if (s.stamps_capped) fixed.push(`وسوم هيمنة أُنزلت: ${s.stamps_capped}`);
     const ratio = s.checked ? Math.round(100 * (s.checked - (s.unverified || 0)) / s.checked) : null;
     const cell = x => String(x || '').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 150);
     const md = ['## 🔧 نتيجة الإصلاح الآلي الشامل', '',
@@ -4537,6 +4543,11 @@ async function runResearchAutofix() {
     const before = s.risk_pct_before;
     const after = s.risk_pct_after;
     let toast = s.changed ? 'اكتمل الإصلاح الآلي وحُفظت الإجابة مصححة' : 'الإجابة سليمة توثيقيًا — لا إصلاح لزم';
+    if (s.stamps_deduped) {
+      const a0 = Math.round(100 * (s.dominance_share_before || 0));
+      const a1 = Math.round(100 * (s.dominance_share_after || 0));
+      toast += ` · هيمنة الأختام ${a0}٪ ← ${a1}٪`;
+    }
     if (before !== undefined && after !== undefined) {
       toast += after > before ? ` · نسبة المعالجة ${before}٪ ← ${after}٪` : ` · نسبة السجل ${after}٪ (بنود التوثيق فقط؛ تغطية الفريق تُعالج عبر المدير)`;
     }
@@ -4746,7 +4757,7 @@ async function produceFinalResearch() {
     const res = await fetch('/api/research-finalize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html: src.content, witnesses: src.witnesses || [], discussion_texts: discussionTexts })
+      body: JSON.stringify({ html: src.content, witnesses: src.witnesses || [], discussion_texts: discussionTexts, chat_id: activeSessionId || session.id || '' })
     });
     if (!res.ok) throw new Error('finalize ' + res.status);
     const data = await res.json();
@@ -4756,6 +4767,9 @@ async function produceFinalResearch() {
       model: 'إعداد نهائي من المحفوظ (بوابة التوثيق)',
       duration_ms: Date.now() - t0, witnesses: src.witnesses || []
     });
+    if (data.research_register && typeof attachResearchRegister === 'function') {
+      attachResearchRegister(session, data.research_register);
+    }
     setDiscussionState(activeSessionId, 'closed');
     renderSessionMessages(activeSessionId);
     if (typeof saveChatSessions === 'function') saveChatSessions();
@@ -4765,6 +4779,7 @@ async function produceFinalResearch() {
     if (s.purged_paras) bits.push(`نُقّيت ${s.purged_paras} فقرة`);
     if ((s.insertions_applied || []).length) bits.push(`أُدرجت ${s.insertions_applied.length} مادة من المناقشة في مواضعها (بعد حواشٍ ${s.insertions_applied.join('، ')})`);
     if ((s.insertions_failed || []).length) bits.push(`تعذر إدراج مادة بعد حاشية ${s.insertions_failed.join('، ')} — راجع رقم الحاشية مع المدير`);
+    if (s.stamps_deduped) bits.push(`خُفّضت الأختام المكررة ${s.stamps_before} ← ${s.stamps_after} (هيمنة ${Math.round(100 * (s.dominance_share_before || 0))}٪ ← ${Math.round(100 * (s.dominance_share_after || 0))}٪)`);
     if (s.unverified) bits.push(`بقي ${s.unverified} موضعًا للمراجعة (في التقرير لا في الورقة)`);
     if (typeof showToast === 'function') showToast('🔒 ' + bits.join(' · '), 6000);
   } catch (e) {
