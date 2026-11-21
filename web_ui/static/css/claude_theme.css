@@ -7535,6 +7535,24 @@ table tr:hover td,
   color: var(--text-main);
 }
 
+.architect-choice-other-field {
+  margin: 8px 26px 4px;
+}
+
+.architect-choice-other-field[hidden] {
+  display: none;
+}
+
+.architect-choice-other-field .architect-choice-other-text {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: 13.5px;
+}
+
 .studio-books-drawer {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);

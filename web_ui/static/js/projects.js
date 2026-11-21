@@ -2034,33 +2034,68 @@ function extractArchitectChoices(text) {
   }
 }
 
+function architectOptionLooksOther(option) {
+  return /^(آخر|اخرى|أخرى|خيار آخر|غير ذلك|غير هذه|أكتب|اكتب)/.test(String(option || '').trim());
+}
+
 function architectChoicesHtml(questions, index) {
   if (!questions.length) return '';
   const blocks = questions.map((question, qIndex) => {
     const inputType = question.multiple ? 'checkbox' : 'radio';
-    const options = question.options.map((option, oIndex) => `
-      <label class="architect-choice-option">
-        <input type="${inputType}" name="architectQ${index}_${qIndex}" value="${escapeHtml(String(option))}">
+    const name = `architectQ${index}_${qIndex}`;
+    const hasOther = question.options.some(architectOptionLooksOther);
+    const options = question.options.map(option => {
+      const isOther = architectOptionLooksOther(option);
+      return `
+      <label class="architect-choice-option${isOther ? ' architect-choice-other' : ''}">
+        <input type="${inputType}" name="${name}" value="${escapeHtml(String(option))}"${isOther ? ' data-other="1"' : ''}>
         <span>${escapeHtml(String(option))}</span>
       </label>
-    `).join('');
+    `;
+    }).join('');
+    const otherOpt = hasOther ? '' : `
+      <label class="architect-choice-option architect-choice-other">
+        <input type="${inputType}" name="${name}" value="__other__" data-other="1">
+        <span>خيار آخر</span>
+      </label>
+    `;
     return `
-      <div class="architect-choice-q" data-prompt="${escapeHtml(question.prompt)}">
+      <div class="architect-choice-q" data-prompt="${escapeHtml(question.prompt)}" onchange="syncArchitectOtherField(event)">
         <strong>${escapeHtml(question.prompt)}</strong>
         ${options}
+        ${otherOpt}
+        <div class="architect-choice-other-field" hidden>
+          <input type="text" class="architect-choice-other-text" placeholder="اكتب ما تريد" dir="rtl" autocomplete="off">
+        </div>
       </div>
     `;
   }).join('');
   return `
     <div class="architect-choices" id="architectChoices${index}">
       ${blocks}
-      <label class="architect-choice-extra">إضافة
-        <textarea rows="2" placeholder="اكتب ما تريد إضافته، إن رغبت"></textarea>
-      </label>
       <button type="button" class="btn-primary-gradient architect-choices-send" onclick="submitArchitectChoices(${index})">إرسال الاختيار</button>
     </div>
   `;
 }
+
+function syncArchitectOtherField(ev) {
+  const block = ev?.currentTarget?.classList?.contains('architect-choice-q')
+    ? ev.currentTarget
+    : ev?.target?.closest?.('.architect-choice-q');
+  if (!block) return;
+  const other = block.querySelector('input[data-other="1"]')
+    || [...block.querySelectorAll('.architect-choice-option input')].find(el => architectOptionLooksOther(el.value));
+  const wrap = block.querySelector('.architect-choice-other-field');
+  const field = wrap?.querySelector('.architect-choice-other-text');
+  if (!wrap) return;
+  const on = !!(other && other.checked);
+  wrap.hidden = !on;
+  if (field) {
+    field.disabled = !on;
+    if (on) field.focus();
+  }
+}
+window.syncArchitectOtherField = syncArchitectOtherField;
 
 function lockArchitectChoices(root) {
   if (!root) return;
@@ -2079,15 +2114,27 @@ function submitArchitectChoices(index) {
   const input = document.getElementById('architectUserInput');
   if (!root || !input) return;
   if (root.dataset.submitted === '1' || architectSendInFlight) return;
+  let missingOther = false;
   const lines = [...root.querySelectorAll('.architect-choice-q')].map(block => {
     const prompt = block.getAttribute('data-prompt') || '';
-    const chosen = [...block.querySelectorAll('input:checked')].map(item => item.value);
+    const chosen = [...block.querySelectorAll('input:checked')].map(item => {
+      const isOther = item.dataset.other === '1' || architectOptionLooksOther(item.value);
+      if (!isOther) return item.value;
+      const txt = block.querySelector('.architect-choice-other-text')?.value.trim() || '';
+      if (!txt) {
+        missingOther = true;
+        return '';
+      }
+      return txt;
+    }).filter(Boolean);
     return chosen.length ? `${prompt}: ${chosen.join('، ')}` : '';
   }).filter(Boolean);
-  const extra = root.querySelector('textarea')?.value.trim() || '';
-  if (extra) lines.push(`إضافة: ${extra}`);
+  if (missingOther) {
+    if (typeof showToast === 'function') showToast('اكتب ما تريد في خيار آخر');
+    return;
+  }
   if (!lines.length) {
-    if (typeof showToast === 'function') showToast('اختر جواباً أو اكتب إضافة');
+    if (typeof showToast === 'function') showToast('اختر جواباً أو اكتب خياراً آخر');
     return;
   }
   lockArchitectChoices(root);
