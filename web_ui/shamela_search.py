@@ -170,6 +170,12 @@ def _ensure_reader():
             # أجهزة ≤9.5GB تأخذ سقفًا أخف (512m) تلقائيًا.
             jpype.startJVM(jvm, f"-Xmx{_jvm_heap()}", classpath=jars, convertStrings=True)
         _attach()
+        # نطاق وكيل قد يتجاوز ألف كتاب؛ سقف BooleanQuery الافتراضي 1024
+        # كان يُسقط البحث إلى مسح ملفات مع استخراج كسول (دقائق بدل ثوانٍ).
+        try:
+            jpype.JClass("org.apache.lucene.search.BooleanQuery").setMaxClauseCount(65536)
+        except Exception:
+            pass
         Paths = jpype.JClass("java.nio.file.Paths")
         FSDirectory = jpype.JClass("org.apache.lucene.store.FSDirectory")
         DirectoryReader = jpype.JClass("org.apache.lucene.index.DirectoryReader")
@@ -391,6 +397,44 @@ def _bytesref(jpype, s: str):
     return jpype.JClass("org.apache.lucene.util.BytesRef")(jpype.JArray(jpype.JByte)(s.encode("utf-8")))
 
 
+def _book_id_filter(jpype, id_map, book_ids):
+    """فلتر نطاق الكتب في Lucene: TermInSetQuery لا سقف له عند آلاف الكتب،
+    وخلاف BooleanQuery ببند SHOULD لكل كتاب (ينهار عند 1025)."""
+    tids, seen = [], set()
+    for oid in book_ids or []:
+        tid = id_map.get(str(oid))
+        if tid is None:
+            continue
+        s = str(tid)
+        if s in seen:
+            continue
+        seen.add(s)
+        tids.append(s)
+    if not tids:
+        return None
+    try:
+        TermInSetQuery = jpype.JClass("org.apache.lucene.search.TermInSetQuery")
+        lst = jpype.JClass("java.util.ArrayList")()
+        for s in tids:
+            lst.add(_bytesref(jpype, s))
+        return TermInSetQuery("book_key", lst)
+    except Exception:
+        pass
+    Term = jpype.JClass("org.apache.lucene.index.Term")
+    TermQuery = jpype.JClass("org.apache.lucene.search.TermQuery")
+    Builder = jpype.JClass("org.apache.lucene.search.BooleanQuery$Builder")
+    Occur = jpype.JClass("org.apache.lucene.search.BooleanClause$Occur")
+    try:
+        jpype.JClass("org.apache.lucene.search.BooleanQuery").setMaxClauseCount(
+            max(1024, len(tids) + 16))
+    except Exception:
+        pass
+    fb = Builder()
+    for s in tids:
+        fb.add(TermQuery(Term("book_key", _bytesref(jpype, s))), Occur.SHOULD)
+    return fb.build()
+
+
 _OURS_CACHE = None
 
 
@@ -486,16 +530,9 @@ def _search_local(query, mode="phrase", death_max=None, death_min=None, categori
     def _full_query(field):
         bb = _build(field)
         if book_ids:
-            fb = Builder()
-            any_scope = False
-            for oid in book_ids:
-                tid = id_map.get(str(oid))
-                if tid is not None:
-                    fb.add(J("org.apache.lucene.search.TermQuery")(
-                        Term("book_key", _bytesref(jpype, str(tid)))), Occur.SHOULD)
-                    any_scope = True
-            if any_scope:
-                bb.add(fb.build(), Occur.FILTER)
+            filt = _book_id_filter(jpype, id_map, book_ids)
+            if filt is not None:
+                bb.add(filt, Occur.FILTER)
         return bb.build()
 
     searcher = _STATE["searcher"]

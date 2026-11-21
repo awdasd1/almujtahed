@@ -2522,10 +2522,55 @@ def search_books_scoped(query: str, book_ids: List[Any], limit_per_book: int = 2
             ids.append(text)
     if not ids:
         return _error("SCOPE_REQUIRED", "يلزم تمرير book_ids. لا بحث مفتوحاً في المكتبة من هذه الأداة.")
+    cap = max(1, int(limit or 20))
+    # نطاق واسع: فهرس الشاملة مباشرة. المسح كتابًا كتابًا كان يستخرج كل
+    # كتاب غير محوَّل عند أول لمس فيستغرق ساعات في بطاقات التخريج الكبيرة.
+    if len(ids) >= 4:
+        try:
+            import shamela_link as _SL
+            if _SL.library_source() == "shamela":
+                import shamela_search
+                _int_ids = [int(x) for x in ids if str(x).isdigit()]
+                r = shamela_search.search(
+                    query, mode="phrase", book_ids=_int_ids or None, limit=cap)
+                if r.get("status") == "ok":
+                    results = [{
+                        "book_id": str(h.get("book_id") or ""),
+                        "title": h.get("title") or "",
+                        "part": h.get("part"),
+                        "page_num": h.get("page_num"),
+                        "snippet": h.get("snippet") or "",
+                        "quotable": False,
+                    } for h in (r.get("results") or [])]
+                    return {
+                        "status": "ok",
+                        "query": query,
+                        "results": results,
+                        "ledger": {"searched_books": len(_int_ids), "scope_books": len(ids), "zero_books": []},
+                        "note": "بحث في فهرس الشاملة داخل النطاق المغلق، بلا استخراج.",
+                    }
+        except Exception:
+            pass
     results = []
     zero = []
     searched = 0
     for book_id in ids:
+        # لا استخراج كسول في المسح الجماعي: الكتاب غير المحوَّل يُتخطى.
+        on_disk = False
+        try:
+            if DB_PATH.exists() and str(book_id).isdigit():
+                conn = sqlite3.connect(str(DB_PATH), timeout=5)
+                row = conn.execute(
+                    "SELECT rel_path FROM books WHERE book_id = ? LIMIT 1",
+                    (int(book_id),)).fetchone()
+                conn.close()
+                if row and row[0] and _dir_for_rel(row[0]):
+                    on_disk = True
+        except Exception:
+            on_disk = False
+        if not on_disk:
+            zero.append(book_id)
+            continue
         found = search_in_book(book=book_id, query=query, limit=max(1, min(int(limit_per_book or 2), 5)))
         if found.get("status") != "ok":
             zero.append(book_id)
@@ -2543,9 +2588,9 @@ def search_books_scoped(query: str, book_ids: List[Any], limit_per_book: int = 2
                 "snippet": hit.get("snippet") or "",
                 "quotable": False,
             })
-            if len(results) >= max(1, int(limit or 20)):
+            if len(results) >= cap:
                 break
-        if len(results) >= max(1, int(limit or 20)):
+        if len(results) >= cap:
             break
     return {
         "status": "ok",

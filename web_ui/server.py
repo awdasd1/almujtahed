@@ -9165,7 +9165,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.814"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.815"},
         },
     })
     if opened.get("error"):
@@ -11665,11 +11665,20 @@ def _normalize_hybrid_payload(p: Optional[dict]) -> dict:
         "text": "",
     }
 
+_SELECTED_IDS_CACHE: Dict[tuple, List[str]] = {}
+_SELECTED_IDS_LOCK = threading.Lock()
+
+
 def _selected_book_ids(selected_books, cursor) -> List[str]:
     """حل عناوين كتب مختارة إلى أرقامها لإغلاق النطاق اللفظي عليها."""
     ids: List[str] = []
     if not selected_books:
         return ids
+    _ckey = tuple(str(b).strip() for b in selected_books)
+    with _SELECTED_IDS_LOCK:
+        _cached = _SELECTED_IDS_CACHE.get(_ckey)
+        if _cached is not None:
+            return list(_cached)
     # صيغة «#الرقم العنوان» المعتمدة في بطاقات الوكلاء: الرقم وحده حاسم،
     # وبدون فهمه هنا ينهار نطاق الكتاب المستدعى إلى فراغ (عطل سنن أبي داود).
     for b in selected_books:
@@ -11680,6 +11689,8 @@ def _selected_book_ids(selected_books, cursor) -> List[str]:
         elif raw.isdigit() and raw not in ids:
             ids.append(raw)
     if not cursor:
+        with _SELECTED_IDS_LOCK:
+            _SELECTED_IDS_CACHE[_ckey] = list(ids)
         return ids
     for b in selected_books:
         _m = re.match(r"\s*#\s*(\d{1,7})\b", str(b))
@@ -11701,6 +11712,7 @@ def _selected_book_ids(selected_books, cursor) -> List[str]:
         titles = resolve_book_titles_for_search(selected_books, cursor=cursor)
     except Exception:
         titles = []
+    _exact_titles = set()
     for t in list(titles or []) + [str(b) for b in selected_books]:
         try:
             cursor.execute("SELECT book_id FROM books WHERE title_ar = ? LIMIT 1", (t,))
@@ -11709,13 +11721,17 @@ def _selected_book_ids(selected_books, cursor) -> List[str]:
             row = None
         if row and str(row["book_id"]) not in ids:
             ids.append(str(row["book_id"]))
+        if row:
+            _exact_titles.add(str(t).strip())
     # هوية هجينة فوق المسار القديم: اسم مشهور أو طبعة مختلفة لا يُسقط الكتاب،
     # وطبعات العمل المحسوم تُضمّ، والملتبس يُسجَّل بمرشحيه بدل حذفه بصمت.
     # رقم صريح (#id) يغلق النطاق على ذلك الكتاب فلا تُوسَّع هويته إلى طبعات أخرى.
+    # العنوان المطابق حرفيًا في الكتالوج لا يُعاد إلى محلّل الهوية (كلفة آلاف الكتب).
     for b in selected_books:
-        if re.match(r"\s*#\s*\d{1,7}\b", str(b)):
+        raw = str(b).strip()
+        if re.match(r"\s*#\s*\d{1,7}\b", raw) or raw in _exact_titles:
             continue
-        ident = _book_identity_resolve(str(b))
+        ident = _book_identity_resolve(raw)
         if not ident:
             continue
         if ident.get("status") == "resolved":
@@ -11727,6 +11743,10 @@ def _selected_book_ids(selected_books, cursor) -> List[str]:
             print(f"📚 [BookIdentity] «{b}» بلا حسم آلي — مرشحون: {tops}", flush=True)
         else:
             print(f"📚 [BookIdentity] «{b}» لم يُحلّ في فهرس الهوية ولا في المسار القديم", flush=True)
+    with _SELECTED_IDS_LOCK:
+        _SELECTED_IDS_CACHE[_ckey] = list(ids)
+        while len(_SELECTED_IDS_CACHE) > 24:
+            _SELECTED_IDS_CACHE.pop(next(iter(_SELECTED_IDS_CACHE)))
     return ids
 
 
@@ -14819,8 +14839,8 @@ def expand_query_with_anchor_rounds(
             _ranked = list(adopted) + [c["phrase"] for c in (panel_res.get("candidates") or []) if c["phrase"] not in adopted]
 
             def _hits(ph: str) -> bool:
-                # مصدر الشاملة الكسول: التحقق عباريًا في فهرسها مباشرة (دقيق
-                # وسريع)، وإلا فهرس المكتبة المحلي إن وُجد، وإلا المسح اللفظي
+                # التحقق في الفهرس فقط: مسح الملفات كان يستخرج كل كتاب في
+                # نطاق الوكيل عند أول لمس (ساعات لنطاق تخريج بآلاف العناوين).
                 try:
                     import shamela_link as _SLG
                     if _SLG.library_source() == "shamela":
@@ -14838,11 +14858,7 @@ def expand_query_with_anchor_rounds(
                         return bool(r.get("results"))
                 except Exception:
                     pass
-                try:
-                    f = shamela_local_mcp.search_books_scoped(query=ph, book_ids=_vids or shamela_local_mcp.anchor_table_scope_ids(), limit_per_book=1, limit=1)
-                    return bool(f.get("results"))
-                except Exception:
-                    return False
+                return False
 
             def _hits_words(ph: str) -> bool:
                 # طبقة دلالية: ألفاظ المرسى مجتمعة في مواضع حقيقية — لصيغ
