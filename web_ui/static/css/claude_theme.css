@@ -12098,6 +12098,14 @@ html[data-visual-lab="on"] .compare-msg {
 .md-report ul, .md-report ol { margin: 6px 0 10px; padding-inline-start: 22px; }
 .md-report code { background: rgba(120,90,20,.12); padding: 1px 5px; border-radius: 4px; }
 .md-report hr { border: none; border-top: 1px solid rgba(150,130,90,.4); margin: 14px 0; }
+/* نافذة سجل المخاطر المنبثقة: تمرير مستقل يصل لآخر البنود ولا يُقص داخل عمود المحادثة */
+.risk-register-overlay { position: fixed; inset: 0; z-index: 10020; background: rgba(30,22,8,.55); display: flex; align-items: center; justify-content: center; padding: 18px 12px; }
+.risk-register-box { background: #fdf8ec; color: #2b2110; width: min(920px, 96vw); max-height: 92vh; border-radius: 14px; border: 1px solid rgba(184,150,60,.6); box-shadow: 0 18px 50px rgba(0,0,0,.35); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.risk-register-head { display: flex; align-items: flex-start; gap: 8px; border-bottom: 1px solid rgba(150,130,90,.4); padding: 12px 16px 10px; flex-shrink: 0; }
+.risk-register-head b { font-size: 15px; }
+.risk-register-meta { font-size: 11.5px; opacity: .85; margin-top: 3px; word-break: break-all; }
+.risk-register-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 22px; font-size: 12.5px; line-height: 1.75; -webkit-overflow-scrolling: touch; }
+
 .md-report-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(30,22,8,.55); display: flex; align-items: flex-start; justify-content: center; overflow: auto; padding: 28px 12px; }
 .md-report-box { background: #fdf8ec; color: #2b2110; width: min(960px, 96vw); border-radius: 14px; border: 1px solid rgba(184,150,60,.6); box-shadow: 0 18px 50px rgba(0,0,0,.35); padding: 18px 22px 22px; }
 .md-report-box.is-dash { width: min(1180px, 96vw); }

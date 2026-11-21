@@ -1119,7 +1119,8 @@ function exportChatSessionFile(sessionId, messageIndex) {
       title: chatMessagePaperTitle(message, session),
       createdAt: new Date().toISOString(),
       messages: [message],
-      shared_answer: true
+      shared_answer: true,
+      research_register: session.research_register || undefined
     };
   }
   const payload = {
@@ -1170,7 +1171,9 @@ function importChatSessionFile(input) {
       return {
         title: String(session.title || '').trim(),
         createdAt: session.createdAt || new Date().toISOString(),
-        messages
+        messages,
+        research_register: (session.research_register && typeof session.research_register === 'object')
+          ? session.research_register : null
       };
     }).filter(session => session.messages.length);
     if (!found.length) {
@@ -1184,6 +1187,9 @@ function importChatSessionFile(input) {
         createdAt: session.createdAt,
         messages: session.messages
       };
+      if (session.research_register) {
+        imported.research_register = Object.assign({}, session.research_register, { chat_id: imported.id });
+      }
       chatSessions.unshift(imported);
       activeSessionId = imported.id;
     });
@@ -1206,6 +1212,7 @@ function shareActiveChat() {
 }
 
 function selectChatSession(id) {
+  if (activeSessionId !== id && typeof closeRiskRegisterOverlay === 'function') closeRiskRegisterOverlay();
   activeSessionId = id;
   renderChatHistorySidebar();
   renderSessionMessages(id);
@@ -4148,6 +4155,9 @@ async function triggerChatCompletion(session, attachments = [], options = {}) {
     };
     placeChatReply(session, replyMessage, options);
     applyDraftTitle(session, replyMessage);
+    if (data.research_register && typeof attachResearchRegister === 'function') {
+      attachResearchRegister(session, data.research_register);
+    }
 
     saveChatSessions();
     renderSessionMessages(activeSessionId);
@@ -4384,6 +4394,10 @@ function refreshDiscussionBar() {
   if (!bar) return;
   const open = (typeof activeSessionId !== 'undefined') && discussionState(activeSessionId) === 'open';
   bar.style.display = open ? 'block' : 'none';
+  const ov = document.getElementById('riskRegisterOverlay');
+  if (ov && ov.dataset.bound && ov.dataset.bound !== String(activeSessionId || '')) {
+    closeRiskRegisterOverlay();
+  }
 }
 function openDiscussion(idx) {
   if (typeof activeSessionId === 'undefined' || !activeSessionId) return;
@@ -4464,7 +4478,11 @@ async function runResearchAutofix() {
     if (msgs[i].role === 'assistant' && (msgs[i].content || '').length > 200) { msg = msgs[i]; break; }
   }
   if (!msg) { if (typeof showToast === 'function') showToast('لا إجابة بحث محفوظة في هذه المحادثة للإصلاح', 3000); return; }
-  if (panel) { panel.style.display = 'block'; panel.innerHTML = '<div style="padding:6px;">🔧 جارٍ الإصلاح الآلي الشامل على بوابة التوثيق…</div>'; }
+  if (!panel) {
+    if (typeof toggleRiskControlPanel === 'function') toggleRiskControlPanel();
+  }
+  const host = document.getElementById('riskControlPanel');
+  if (host) host.innerHTML = '<div style="padding:6px;">🔧 جارٍ الإصلاح الآلي الشامل على بوابة التوثيق…</div>';
   try {
     const res = await fetch('/api/research-autofix', {
       method: 'POST',
@@ -4509,10 +4527,12 @@ async function runResearchAutofix() {
         + (s.refs_removed ? `؛ وحُذف منها ${s.refs_removed} باستبعاد نقولها` : '')
         + '. القائمة الكاملة كما هي تحت الجواب، ولا تُعاد طباعتها هنا.');
     }
-    if (panel) renderMarkdownInto(panel, md.join('\n'));
+    const out = document.getElementById('riskControlPanel');
+    if (out) renderMarkdownInto(out, md.join('\n'));
     if (typeof showToast === 'function') showToast(s.changed ? 'اكتمل الإصلاح الآلي وحُفظت الإجابة مصححة' : 'الإجابة سليمة توثيقيًا — لا إصلاح لزم', 4000);
   } catch (e) {
-    if (panel) panel.innerHTML = '<div style="padding:6px;">تعذر الإصلاح الآلي: ' + String(e && e.message || e) + '</div>';
+    const errHost = document.getElementById('riskControlPanel');
+    if (errHost) errHost.innerHTML = '<div style="padding:6px;">تعذر الإصلاح الآلي: ' + String(e && e.message || e) + '</div>';
   }
 }
 
@@ -4520,19 +4540,46 @@ async function runResearchAutofix() {
 // تشيك ليست (عالية 🔴 في الأعلى، متوسطة 🟡، منخفضة ⚪)؛ يعلّم الباحث ما
 // يشاء فيصل مديرَ المشروع بتوجيه محاسبة رقابي يُبنى خادميًا ولا يرى
 // الباحث صياغته، ثم يتحقق مسؤول المخاطر من إغلاق البنود في السجل.
-async function toggleRiskControlPanel() {
-  const panel = document.getElementById('riskControlPanel');
-  if (!panel) return;
-  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
-  panel.style.display = 'block';
-  panel.innerHTML = '<div style="padding:4px;">جارٍ جلب سجل المخاطر من حزمة البحث المحفوظة…</div>';
-  let pkg = null;
-  try {
-    const res = await fetch('/api/research-package/' + encodeURIComponent(activeSessionId));
-    if (res.ok) pkg = await res.json();
-  } catch (e) { }
-  if (!pkg || !pkg.found) {
-    panel.innerHTML = '<div style="padding:4px;">لا حزمة مخاطر محفوظة لهذه المحادثة — سجلات المخاطر تُحفظ للبحوث المنفذة من إصدار 1.10.284 فصاعدًا.</div>';
+let _riskPanelReq = 0;
+
+function closeRiskRegisterOverlay() {
+  _riskPanelReq += 1;
+  const ov = document.getElementById('riskRegisterOverlay');
+  if (ov) ov.remove();
+}
+
+function attachResearchRegister(session, src) {
+  if (!session || !src) return null;
+  const chatId = String(session.id || '');
+  const incomingId = String(src.chat_id || '');
+  if (incomingId && incomingId !== chatId) return session.research_register || null;
+  const ts = src.ts || new Date().toISOString();
+  session.research_register = {
+    register_id: src.register_id || (chatId + ':' + ts),
+    chat_id: chatId,
+    ts,
+    question: src.question || '',
+    group: src.group || '',
+    risk_officer: src.risk_officer || '',
+    risk_verdict: src.risk_verdict || '',
+    risk_events: src.risk_events || [],
+    risk_memo: src.risk_memo || '',
+    risk_treatments: src.risk_treatments || []
+  };
+  return session.research_register;
+}
+
+function registerForSession(session) {
+  const reg = session && session.research_register;
+  if (reg && String(reg.chat_id || '') === String(session.id || '')) return reg;
+  return null;
+}
+
+function fillRiskRegisterPanel(panel, pkg, session) {
+  if (!panel || !pkg) return;
+  const sid = String((session && session.id) || activeSessionId || '');
+  if (String(pkg.chat_id || sid) !== sid) {
+    panel.innerHTML = '<div style="padding:4px;">هذا السجل ليس لهذه المحادثة.</div>';
     return;
   }
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -4542,7 +4589,6 @@ async function toggleRiskControlPanel() {
   const pct = events.length ? Math.round(100 * doneN / events.length) : 100;
   const treats = pkg.risk_treatments || [];
   const lastTreat = treats.length ? treats[treats.length - 1] : null;
-  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
   const la = session && session.lastAutofix ? session.lastAutofix : null;
   let h = '<div style="border:1px solid rgba(150,130,90,.35); border-radius:10px; padding:10px 12px; margin-bottom:10px;">'
     + `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px;"><b>📊 نسبة المعالجة: ${pct}٪</b><span style="font-size:12px;">أُغلق ${doneN} من ${events.length} بندًا · المفتوح ${events.length - doneN}</span></div>`
@@ -4560,7 +4606,7 @@ async function toggleRiskControlPanel() {
   h += '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">'
     + '<button type="button" class="btn-msg-export" onclick="runResearchAutofix()" style="font-weight:700;">🔧 إصلاح آلي شامل (من المحفوظ — ثوانٍ)</button>'
     + '<button type="button" class="btn-msg-export" onclick="produceFinalResearch()" style="font-weight:700;">🔒 إنشاء البحث النهائي القابل للطباعة</button>'
-    + '<button type="button" class="btn-msg-export" onclick="toggleRiskControlPanel()">إغلاق النافذة</button>'
+    + '<button type="button" class="btn-msg-export" onclick="closeRiskRegisterOverlay()">إغلاق النافذة</button>'
     + '<span style="font-size:11.5px; opacity:.85;">«إغلاق النافذة» يخفي هذا اللوح فقط ولا يغيّر شيئًا؛ والزر الأخير قبله هو وحده الذي يقفل العمل ويصوغ البحث النهائي النظيف للطباعة.</span></div>';
   panel.innerHTML = h + '<div id="riskRegisterView"></div><div id="riskChecklist"></div>';
   renderMarkdownInto(document.getElementById('riskRegisterView'),
@@ -4580,11 +4626,66 @@ async function toggleRiskControlPanel() {
   list.innerHTML = c;
 }
 
+async function toggleRiskControlPanel() {
+  const existing = document.getElementById('riskRegisterOverlay');
+  if (existing) { closeRiskRegisterOverlay(); return; }
+  const sid = String(activeSessionId || '');
+  if (!sid) return;
+  const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
+  const ov = document.createElement('div');
+  ov.id = 'riskRegisterOverlay';
+  ov.className = 'risk-register-overlay';
+  ov.dataset.bound = sid;
+  const local = registerForSession(session);
+  const rid = (local && local.register_id) || (sid + ':…');
+  ov.innerHTML = '<div class="risk-register-box" role="dialog" aria-modal="true">'
+    + '<div class="risk-register-head"><div style="flex:1; min-width:0"><b>🏛 سجل مخاطر إدارة المخاطر</b>'
+    + `<div class="risk-register-meta">محادثة <span dir="ltr">${sid}</span>`
+    + (session && session.title ? ' · ' + String(session.title).slice(0, 60) : '')
+    + `<br>ختم السجل: <span dir="ltr">${rid}</span></div></div>`
+    + '<button type="button" class="btn-msg-export" onclick="closeRiskRegisterOverlay()">إغلاق ✕</button></div>'
+    + '<div id="riskControlPanel" class="risk-register-body"></div></div>';
+  ov.addEventListener('click', e => { if (e.target === ov) closeRiskRegisterOverlay(); });
+  document.body.appendChild(ov);
+  const panel = document.getElementById('riskControlPanel');
+  const req = ++_riskPanelReq;
+  if (panel) panel.innerHTML = '<div style="padding:4px;">جارٍ جلب سجل المخاطر الخاص بهذه المحادثة…</div>';
+  let pkg = local;
+  try {
+    const res = await fetch('/api/research-package/' + encodeURIComponent(sid));
+    if (res.ok) {
+      const remote = await res.json();
+      if (remote && remote.found && String(remote.chat_id || sid) === sid) {
+        pkg = remote;
+        attachResearchRegister(session, remote);
+        if (typeof saveChatSessions === 'function') saveChatSessions();
+      }
+    }
+  } catch (e) { }
+  if (req !== _riskPanelReq) return;
+  if (sid !== String(activeSessionId || '') || ov.dataset.bound !== sid) {
+    closeRiskRegisterOverlay();
+    return;
+  }
+  const meta = ov.querySelector('.risk-register-meta');
+  if (meta && pkg) {
+    meta.innerHTML = 'محادثة <span dir="ltr">' + sid + '</span>'
+      + (session && session.title ? ' · ' + String(session.title).slice(0, 60) : '')
+      + '<br>ختم السجل: <span dir="ltr">' + (pkg.register_id || rid) + '</span>';
+  }
+  if (!pkg || (!(pkg.risk_events || []).length && !pkg.risk_memo && !pkg.found && !pkg.register_id)) {
+    if (panel) panel.innerHTML = '<div style="padding:4px;">لا حزمة مخاطر محفوظة لهذه المحادثة — سجلات المخاطر تُحفظ مع البحث نفسه ولا تُنقل إلى محادثة أخرى.</div>';
+    return;
+  }
+  fillRiskRegisterPanel(panel, pkg, session);
+}
+window.closeRiskRegisterOverlay = closeRiskRegisterOverlay;
+window.toggleRiskControlPanel = toggleRiskControlPanel;
+
 async function produceFinalResearch() {
   const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
   if (!session) return;
-  const panel = document.getElementById('riskControlPanel');
-  if (panel) panel.style.display = 'none';
+  if (typeof closeRiskRegisterOverlay === 'function') closeRiskRegisterOverlay();
   // النسخة النهائية من المحفوظ نفسه (بوابة + تنقية موضعية في ثوانٍ)،
   // لا إعادة كتابة مدير من سياق المحادثة تختصر البحث وتطول دقائق طويلة.
   const msgs = session.messages || [];
@@ -4640,8 +4741,7 @@ async function sendRiskControlItems() {
   if (!session) return;
   if (discussionState(activeSessionId) !== 'open') setDiscussionState(activeSessionId, 'open');
   session.messages.push({ role: 'user', content: '🏛 أرسلتُ ' + checks.length + ' بندًا من بنود سجل مخاطر هذا البحث إلى مدير المشروع للمعالجة الفورية ومحاسبة المتسبب فيها، على أن يعالجها من حزمة البحث المحفوظة أو يطلب الوكيل المعني بسدّ ما قصّر فيه.' });
-  const panel = document.getElementById('riskControlPanel');
-  if (panel) panel.style.display = 'none';
+  if (typeof closeRiskRegisterOverlay === 'function') closeRiskRegisterOverlay();
   renderSessionMessages(activeSessionId);
   if (typeof saveChatSessions === 'function') saveChatSessions();
   await triggerChatCompletion(session, [], { discussionMode: 'open', riskControl: checks });

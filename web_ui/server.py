@@ -9439,7 +9439,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.817"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.818"},
         },
     })
     if opened.get("error"):
@@ -14977,6 +14977,25 @@ def _risk_officer_memo(events, *, question, group, manager_model, ledger,
         return _risk_memo_fallback(events, officer), officer
 
 
+def _compact_research_register(pkg: dict) -> dict:
+    """سجل مخاطر مختصر يرافق المحادثة: أحداث ومذكرة بلا تقارير الوكلاء."""
+    pkg = pkg or {}
+    chat_id = str(pkg.get("chat_id") or "")
+    ts = str(pkg.get("ts") or "")
+    return {
+        "register_id": str(pkg.get("register_id") or (f"{chat_id}:{ts}" if chat_id else ts)),
+        "chat_id": chat_id,
+        "ts": ts,
+        "question": pkg.get("question") or "",
+        "group": pkg.get("group") or "",
+        "risk_officer": pkg.get("risk_officer") or "",
+        "risk_verdict": pkg.get("risk_verdict") or "",
+        "risk_events": pkg.get("risk_events") or [],
+        "risk_memo": pkg.get("risk_memo") or "",
+        "risk_treatments": pkg.get("risk_treatments") or [],
+    }
+
+
 def _save_research_package(owner_id: str, chat_id: str, package: dict) -> None:
     """حزمة البحث المحفوظة: تقارير الوكلاء وسجل الأدلة وسجل المخاطر مع
     البحث نفسه — للمحاسبة في المناقشة وإعادة التوليف بمدير آخر بلا بحث
@@ -14984,9 +15003,21 @@ def _save_research_package(owner_id: str, chat_id: str, package: dict) -> None:
     if not chat_id:
         return
     try:
+        package = dict(package or {})
+        package["chat_id"] = str(chat_id)
+        if not package.get("ts"):
+            package["ts"] = datetime.now().isoformat()
         key = f"research_package:{owner_id}:{chat_id}"
         conn = _ensure_app_memory()
         try:
+            prev = conn.execute("SELECT payload FROM kv_documents WHERE key=?", (key,)).fetchone()
+            old_rid = None
+            if prev:
+                try:
+                    old_rid = (json.loads(prev["payload"] or "{}") or {}).get("register_id")
+                except Exception:
+                    old_rid = None
+            package["register_id"] = old_rid or package.get("register_id") or f"{chat_id}:{package['ts']}"
             conn.execute(
                 "INSERT INTO kv_documents (key, payload, updated_at) VALUES (?, ?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
@@ -22883,7 +22914,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             },
         })
 
-    return {
+    _out = {
         "reply": reply_text,
         "model": call_model if live_reply else (req.model or "unknown"),
         "provider": req.provider or "openrouter",
@@ -22892,6 +22923,14 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         "agent_group": group_name if req.agent_group else None,
         "witnesses": witness_rows
     }
+    if req.chat_id:
+        try:
+            _pkg_out = _load_research_package(current_owner_id(request), req.chat_id)
+            if _pkg_out:
+                _out["research_register"] = _compact_research_register(_pkg_out)
+        except Exception:
+            pass
+    return _out
 
 
 def _load_research_package(owner_id: str, chat_id: str) -> Optional[dict]:
@@ -22917,8 +22956,9 @@ async def research_package_endpoint(chat_id: str, request: Request):
     مادة محاسبة المدير في المناقشة وإعادة التوليف بمدير آخر."""
     pkg = _load_research_package(current_owner_id(request), chat_id)
     if pkg is None:
-        return {"found": False}
+        return {"found": False, "chat_id": chat_id}
     pkg["found"] = True
+    pkg["chat_id"] = str(pkg.get("chat_id") or chat_id)
     return pkg
 
 
