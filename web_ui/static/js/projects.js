@@ -2960,6 +2960,7 @@ async function applyStudioBlueprint() {
     }
 
     // 1. تسجيل أو تحديث مجموعة الوكلاء المخصصة في agentGroups
+    let appliedGroupAgents = [];
     if (bp.subagents_group?.agents && bp.subagents_group.agents.length > 0) {
       let groups = window.agentGroups || [];
       if (groups.length === 0) {
@@ -3043,6 +3044,7 @@ async function applyStudioBlueprint() {
         death_max: groupDeathMax,
         agents: mappedAgents
       };
+      appliedGroupAgents = mappedAgents;
 
       const existingIdx = groups.findIndex(g => g.id === targetGroupId);
       if (existingIdx >= 0) {
@@ -3089,11 +3091,14 @@ async function applyStudioBlueprint() {
       };
       targetProject.use_hybrid = (targetProject.director.search_mode || 'hybrid') !== 'semantic';
       targetProject.linked_group_id = targetGroupId;
+      targetProject.agent_dispatch_mode = 'parallel';
       targetProject.subagents_group = {
         id: targetGroupId,
         name: bp.subagents_group?.name || targetProject.subagents_group?.name || `فريق: ${(bp.title || targetProject.title).slice(0, 20)}`,
         desc: bp.subagents_group?.desc || '',
-        agents: (bp.subagents_group?.agents && bp.subagents_group.agents.length > 0) ? (window.agentGroups?.find(g => g.id === targetGroupId)?.agents || []) : (targetProject.subagents_group?.agents || [])
+        agents: appliedGroupAgents.length
+          ? appliedGroupAgents
+          : (window.agentGroups?.find(g => g.id === targetGroupId)?.agents || targetProject.subagents_group?.agents || [])
       };
       if (bp.extraction_capacity) targetProject.extraction_capacity = bp.extraction_capacity;
       if (bp.research_profile) targetProject.research_profile = bp.research_profile;
@@ -3129,11 +3134,14 @@ async function applyStudioBlueprint() {
         },
         use_hybrid: (bp.director?.search_mode || 'hybrid') !== 'semantic',
         linked_group_id: targetGroupId,
+        agent_dispatch_mode: 'parallel',
         subagents_group: {
           id: targetGroupId,
           name: bp.subagents_group?.name || `فريق: ${(bp.title || 'المشروع').slice(0, 20)}`,
           desc: bp.subagents_group?.desc || '',
-          agents: (bp.subagents_group?.agents && bp.subagents_group.agents.length > 0) ? (window.agentGroups?.find(g => g.id === targetGroupId)?.agents || []) : []
+          agents: appliedGroupAgents.length
+            ? appliedGroupAgents
+            : (window.agentGroups?.find(g => g.id === targetGroupId)?.agents || [])
         },
         extraction_capacity: bp.extraction_capacity || 150,
         research_profile: bp.research_profile || null,
@@ -4006,6 +4014,62 @@ async function composeProjectIslamap(project, researchText, statusMsg) {
   }
 }
 
+function _groupAgentIsDirector(a) {
+  return !!(a && (a.is_director || a.role === 'director' || a.kind === 'director'));
+}
+
+function _groupAgentCollects(a) {
+  if (!a || a.enabled === false || a.active === false) return false;
+  if (_groupAgentIsDirector(a)) return false;
+  const kind = String(a.kind || a.role || '').toLowerCase();
+  if (['advisor', 'consultant', 'tavily', 'web_advisor', 'planner', 'research_planner', 'plan_reviewer'].includes(kind)) {
+    return false;
+  }
+  if (String(a.name || '').includes('مستشار')) return false;
+  return true;
+}
+
+function projectGroupHasSearchAgents(group) {
+  return Array.isArray(group?.agents) && group.agents.some(_groupAgentCollects);
+}
+
+async function resolveProjectAgentGroup(project) {
+  const loadLocal = () => {
+    let groups = window.agentGroups || [];
+    if (!groups.length) {
+      try {
+        groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
+      } catch (e) {
+        groups = [];
+      }
+    }
+    return Array.isArray(groups) ? groups : [];
+  };
+  const pick = (g) => (g && Array.isArray(g.agents) && g.agents.length > 0) ? g : null;
+  let groups = loadLocal();
+  let fromStore = project.linked_group_id
+    ? (groups.find(g => g.id === project.linked_group_id) || null)
+    : null;
+  let chosen = pick(fromStore) || pick(project.subagents_group);
+  if (!chosen) {
+    try {
+      const res = await fetch('/api/agent-groups');
+      if (res.ok) {
+        const serverGroups = await res.json();
+        if (Array.isArray(serverGroups) && serverGroups.length) {
+          window.agentGroups = serverGroups;
+          groups = serverGroups;
+          fromStore = project.linked_group_id
+            ? (groups.find(g => g.id === project.linked_group_id) || null)
+            : null;
+          chosen = pick(fromStore) || pick(project.subagents_group);
+        }
+      }
+    } catch (e) { }
+  }
+  return chosen || fromStore || project.subagents_group || null;
+}
+
 async function runCurrentProjectExecution() {
   if (!activeProjectId) return;
   saveCurrentProjectWorkspaceState();
@@ -4116,19 +4180,17 @@ async function runCurrentProjectExecution() {
     const directorPrompt = project.director?.system_prompt || 'أنت مدير المشروع البحثي، فرغ النتائج في جدول مرتب دقيق مع أرقام الأجزاء والصفحات والمطابقة.';
     const directorModel = project.director?.model || 'google/gemini-2.5-flash';
 
-    // تجهيز مجموعة الوكلاء المرتبطة لربط استخراج نصوص الشاملة
-    let linkedGroupPayload = null;
-    let groups = window.agentGroups || [];
-    if (groups.length === 0) {
-      try {
-        groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
-      } catch (e) { }
-    }
-    if (project.linked_group_id) {
-      linkedGroupPayload = groups.find(g => g.id === project.linked_group_id) || null;
-    }
-    if (!linkedGroupPayload || !linkedGroupPayload.agents || linkedGroupPayload.agents.length === 0) {
-      linkedGroupPayload = project.subagents_group || null;
+    const linkedGroupPayload = await resolveProjectAgentGroup(project);
+    const dispatchMode = (project.agent_dispatch_mode === 'direct') ? 'direct' : 'parallel';
+    if (dispatchMode !== 'direct' && !projectGroupHasSearchAgents(linkedGroupPayload)) {
+      clearInterval(execTimerInterval);
+      if (spinner) spinner.style.display = 'none';
+      if (timerEl) timerEl.style.display = 'none';
+      if (statusMsg) statusMsg.textContent = 'تعذر التشغيل: لا وكلاء في مجموعة المشروع';
+      if (typeof showToast === 'function') {
+        showToast('تنفيذ المشروع يحتاج وكلاء المجموعة ومديرها — اربط المجموعة أو اعتمد مخطط المهندس قبل التشغيل');
+      }
+      return;
     }
 
     // بناء قسم أدلة الويب المسترجعة من موقع ناسا والمواقع الفلكية
@@ -4215,7 +4277,7 @@ ${toolDirectives}
         context_tokens: project.director?.context_tokens || parseInt(document.getElementById('pDirectorMaxTokens')?.value || '1048576', 10),
         providers: savedKeys,
         agent_group: linkedGroupPayload,
-        agent_dispatch_mode: project.agent_dispatch_mode || 'parallel',
+        agent_dispatch_mode: dispatchMode,
         use_hybrid: (project.use_hybrid !== undefined) ? !!project.use_hybrid : isProjectHybridSearchEnabled,
         computational_tool: project.computational_tool || { enabled: false }
       })
@@ -4959,19 +5021,19 @@ async function continueProjectExecutionRound() {
     const directorPrompt = project.director?.system_prompt || 'أنت مدير المشروع البحثي، فرغ النتائج في جدول مرتب دقيق مع أرقام الأجزاء والصفحات والمطابقة.';
     const directorModel = project.director?.model || 'google/gemini-2.5-flash';
 
-    // تجهيز مجموعة الوكلاء
-    let linkedGroupPayload = null;
-    let groups = window.agentGroups || [];
-    if (groups.length === 0) {
-      try {
-        groups = JSON.parse(localStorage.getItem(ownerStorageKey('almojtahed_agent_groups')) || '[]');
-      } catch (e) { }
-    }
-    if (project.linked_group_id) {
-      linkedGroupPayload = groups.find(g => g.id === project.linked_group_id) || null;
-    }
-    if (!linkedGroupPayload || !linkedGroupPayload.agents || linkedGroupPayload.agents.length === 0) {
-      linkedGroupPayload = project.subagents_group || null;
+    const linkedGroupPayload = await resolveProjectAgentGroup(project);
+    const dispatchMode = (project.agent_dispatch_mode === 'direct') ? 'direct' : 'parallel';
+    if (dispatchMode !== 'direct' && !projectGroupHasSearchAgents(linkedGroupPayload)) {
+      clearInterval(roundTimerInterval);
+      if (spinner) spinner.style.display = 'none';
+      if (timerEl) timerEl.style.display = 'none';
+      if (statusMsg) statusMsg.textContent = 'تعذر الاستكمال: لا وكلاء في مجموعة المشروع';
+      const waitElMissing = document.getElementById(waitingDivId);
+      if (waitElMissing) waitElMissing.remove();
+      if (typeof showToast === 'function') {
+        showToast('استكمال المشروع يحتاج وكلاء المجموعة ومديرها — اربط المجموعة قبل التشغيل');
+      }
+      return;
     }
 
     // إعداد سياق الرسائل التراكمي
@@ -5014,7 +5076,7 @@ ${projectOutputDirective(outputFormats)}
         context_tokens: project.director?.context_tokens || parseInt(document.getElementById('pDirectorMaxTokens')?.value || '1048576', 10),
         providers: savedKeys,
         agent_group: linkedGroupPayload,
-        agent_dispatch_mode: project.agent_dispatch_mode || 'parallel',
+        agent_dispatch_mode: dispatchMode,
         use_hybrid: (project.use_hybrid !== undefined) ? !!project.use_hybrid : isProjectHybridSearchEnabled,
         computational_tool: project.computational_tool || { enabled: false }
       })

@@ -9537,7 +9537,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.840"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.841"},
         },
     })
     if opened.get("error"):
@@ -13425,8 +13425,8 @@ def _research_runtime_lens(profile=None, group_name: str = "", query: str = "",
                            agents=None) -> Dict[str, Any]:
     """عدسة التنفيذ والتقرير من تصنيف مهندس المشروع: الفن × الطول.
 
-    طبقات المذاهب لفقه الفروع فقط؛ قاطع الاكتفاء للحديث المسمّى في فن الحديث
-    أو في المختصر؛ تقرير التخريج لا يقاس بمسند أحمد ولا فتح الباري."""
+    طبقات المذاهب لفقه الفروع فقط؛ قاطع الاكتفاء للحديث المسمّى في المحادثة
+    بلا فريق فقط، لا مع مجموعة وكلاء؛ تقرير التخريج لا يقاس بمسند أحمد ولا فتح الباري."""
     prof = profile if isinstance(profile, dict) else {}
     names = ""
     if agents:
@@ -13450,8 +13450,11 @@ def _research_runtime_lens(profile=None, group_name: str = "", query: str = "",
         named = bool(_named_hadith_matn("حديث " + q.strip()))
     needs_depth = _named_hadith_needs_depth(q)
     has_team = bool(agents)
+    # قاطع الاكتفاء لمسار المحادثة بلا فريق فقط. إن وُجدت مجموعة وكلاء
+    # فالتشغيل عبرهم ومديرهم، لا بحثاً مباشراً في الشاملة يغني عن الفريق.
     sufficiency_eligible = bool(
-        named and not needs_depth and (hadithish or length == "concise" or not has_team))
+        named and not needs_depth and not has_team
+        and (hadithish or length == "concise"))
     skip_hadith_core = not hadithish
     if length == "concise":
         hadith_core_max_ring = 3
@@ -22115,7 +22118,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         print(f"🗣️ [Director Discussion] جلسة مناقشة ({_discussion}) مع قائد الفريق حول الحزمة المغلقة {req.chat_id}", flush=True)
 
     # قاطع اكتفاء التخريج المسمّى: سلّم الطبقات حتى أول وجود ثم توقف — بلا لجنة ولا وكلاء.
-    # يُشغَّل من عدسة ملف الطلب: حديث، أو مختصر سُمّي متنه، لا فقه مطوّل عرضًا.
+    # يُشغَّل من عدسة ملف الطلب في المحادثة بلا فريق فقط. مجموعة الوكلاء
+    # ومديرها لا تُتجاوز ببحث مباشر في الشاملة ولو سُمّي المتن.
     if not _research_lens:
         _research_lens = _research_runtime_lens(
             {}, query=search_query or last_user_msg)
@@ -22128,6 +22132,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     if (
         _named_matn
         and _research_lens.get("sufficiency_eligible")
+        and not req.agent_group
         and not _reuse_package
         and not is_direct_page_reading
         and not req.graph_only
@@ -22160,6 +22165,32 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         not is_greeting and
         not is_study_discussion
     )
+    if req.agent_group and not is_parallel_dispatch:
+        _why = []
+        if req.library_only:
+            _why.append("library_only")
+        if _sufficiency_short:
+            _why.append("sufficiency")
+        if req.agent_dispatch_mode == "direct":
+            _why.append("direct_mode")
+        if len(active_agents) < 1:
+            _why.append("no_collecting_agents")
+        if is_direct_page_reading:
+            _why.append("direct_page")
+        if _reuse_package:
+            _why.append("reuse_package")
+        if not search_query:
+            _why.append("no_query")
+        if is_greeting:
+            _why.append("greeting")
+        if is_study_discussion:
+            _why.append("study_discussion")
+        print(
+            f"⚠️ [Multi-Agent] طُلبت مجموعة وكلاء لكن الإرسال المتوازي لم يُفعَّل "
+            f"({', '.join(_why) or 'شرط آخر'}) — مدير={bool(_group_director)} "
+            f"وكلاء جمع={len(active_agents)}",
+            flush=True,
+        )
 
     anchor_prefetch = None
     # عدد الشواهد الذي اختاره المستخدم في الأعلى: أقصى ما يصل إلى النموذج وقائمة المصادر.
