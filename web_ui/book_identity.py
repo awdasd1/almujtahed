@@ -331,7 +331,7 @@ def resolve_book(query: str, db_path: str, author_hint: str = "", limit: int = 5
         cands.append({
             "work_id": g["card"]["work_id"],
             "book_id": head["book_id"],
-            "book_ids": [c["book_id"] for c in g["editions"][:4]],
+            "book_ids": [c["book_id"] for c in g["editions"][:16]],
             "title": head["title"],
             "author": head["author"],
             "confidence": round(float(g["score"]), 3),
@@ -357,7 +357,7 @@ def resolve_book(query: str, db_path: str, author_hint: str = "", limit: int = 5
         base.update({
             "status": "resolved",
             "work_id": top["card"]["work_id"],
-            "book_ids": [c["book_id"] for c in top["editions"][:4]],
+            "book_ids": [c["book_id"] for c in top["editions"][:16]],
             "title": top["editions"][0]["title"],
             "confidence": round(float(top["score"]), 3),
             "evidence": top["evidence"],

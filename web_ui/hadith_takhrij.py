@@ -107,6 +107,40 @@ def _mcp():
     return shamela_local_mcp
 
 
+def editions_for_work(work_name: str, db_path: str) -> List[Dict[str, Any]]:
+    """كل طبعات العمل المحسومة (لا الطبعة الأولى وحدها): البحث في إحداها يكفي."""
+    out: List[Dict[str, Any]] = []
+    seen = set()
+
+    def _add(bid: Any, title: str) -> None:
+        try:
+            n = int(bid)
+        except Exception:
+            return
+        if n in seen:
+            return
+        seen.add(n)
+        out.append({"book_id": n, "title": title or work_name})
+
+    try:
+        import book_identity
+        r = book_identity.resolve_book(work_name, db_path, limit=8)
+        title = str(r.get("title") or work_name)
+        for bid in r.get("book_ids") or []:
+            _add(bid, title)
+        for c in r.get("candidates") or []:
+            ctitle = str(c.get("title") or title)
+            for bid in (c.get("book_ids") or [c.get("book_id")]):
+                _add(bid, ctitle)
+    except Exception:
+        pass
+    if not out:
+        ed = _primary_edition(work_name, db_path)
+        if ed:
+            out.append(ed)
+    return out
+
+
 def _primary_edition(work_name: str, db_path: str) -> Optional[Dict[str, Any]]:
     """الطبعة الرئيسة لعمل واحد بمحلّل الهوية (أول طبعة محسومة)."""
     try:
@@ -278,16 +312,17 @@ def locate_in_book(book_id: int, quote: str, limit: int = 6) -> List[Dict[str, A
 
 def _search_work(work_name: str, famous: str, quote: str,
                  db_path: str) -> Optional[Dict[str, Any]]:
-    ed = _primary_edition(work_name, db_path)
-    if not ed:
-        return None
-    locs = locate_in_book(ed["book_id"], quote, limit=3)
-    if not locs:
-        return None
-    first = locs[0]
-    return {"work": work_name, "famous": famous, "book_id": ed["book_id"],
-            "title": ed["title"], "part": first["part"], "page": first["page"],
-            "number": first["number"], "occurrences": len(locs)}
+    """أول طبعة يثبت فيها المتن على الصفحة؛ لا يُكتفى بطبعة رئيسة خالية."""
+    for ed in editions_for_work(work_name, db_path):
+        locs = locate_in_book(ed["book_id"], quote, limit=3)
+        if not locs:
+            continue
+        first = locs[0]
+        return {"work": work_name, "famous": famous, "book_id": ed["book_id"],
+                "title": ed.get("title") or work_name, "part": first["part"],
+                "page": first["page"], "number": first["number"],
+                "occurrences": len(locs)}
+    return None
 
 
 def takhrij(text: str, db_path: str, guides: bool = False) -> Dict[str, Any]:

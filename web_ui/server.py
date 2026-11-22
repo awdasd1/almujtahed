@@ -5134,13 +5134,19 @@ def _work_book_ids(work_name: str) -> set:
     ids: set = set()
     try:
         import book_identity
-        r = book_identity.resolve_book(work_name, str(DB_INDEX_PATH))
-        w = r.get("work") or {}
-        ids = {str(x) for x in (w.get("book_ids") or []) if x}
+        r = book_identity.resolve_book(work_name, str(DB_INDEX_PATH), limit=8)
+        ids = {str(x) for x in (r.get("book_ids") or []) if x}
+        for c in r.get("candidates") or []:
+            if c.get("book_id"):
+                ids.add(str(c["book_id"]))
+            for x in (c.get("book_ids") or []):
+                if x:
+                    ids.add(str(x))
         if not ids:
-            cands = [c for c in (r.get("candidates") or []) if c.get("book_id")]
-            if cands:
-                ids = {str(cands[0]["book_id"])}
+            import hadith_takhrij as _HTW
+            for ed in _HTW.editions_for_work(work_name, str(DB_INDEX_PATH)):
+                if ed.get("book_id"):
+                    ids.add(str(ed["book_id"]))
     except Exception:
         ids = set()
     _WORK_IDS_CACHE[work_name] = ids
@@ -9475,7 +9481,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.831"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.832"},
         },
     })
     if opened.get("error"):
@@ -13282,6 +13288,141 @@ def _sitta_first_passages(matn: str, selected_books=None, top_k: int = 12) -> Li
         c["lexical_hit"] = True
     print(f"⚓ [Sitta First] {len(mapped)} شاهدًا من الصحيحين/الستة بلفظ «{matn[:48]}»", flush=True)
     return mapped
+
+
+_HADITH_DEPTH_RE = re.compile(
+    r"علل|علّة|طرقه|طرقها|شواهده|متابعات|اختلاف الرواة|رجال الإسناد|كلام النقاد|استوعب الطرق"
+)
+_TRIVIAL_RESEARCH_RE = re.compile(
+    r"حديث|تخريج|بحث|أعد|وضح|صحح|استكمل|ناقش|علل|أين|لماذا|كيف|ما هو|حكم|أخرج"
+)
+
+
+def _named_hadith_needs_depth(query: str) -> bool:
+    """سؤال عن العلل أو الطرق: لا يُغلق بقاطع الاكتفاء."""
+    return bool(_HADITH_DEPTH_RE.search(query or ""))
+
+
+def _is_trivial_followup(text: str) -> bool:
+    """متابعة ليست سؤال بحث: لا تُشغّل استخراجًا ولا مديرًا طويلًا."""
+    t = (text or "").strip()
+    if not t:
+        return True
+    if _TRIVIAL_RESEARCH_RE.search(t):
+        return False
+    letters = re.findall(r"[\u0600-\u06FFA-Za-z]", t)
+    if len(letters) < 4:
+        return True
+    return len(t) < 8
+
+
+def _enrich_sufficiency_passages(passages: List[Dict[str, Any]], matn: str) -> List[Dict[str, Any]]:
+    """متن الصفحة كاملًا (وتاليتها إن بُتر) حتى لا يُكتب على مقتطف مقطوع."""
+    try:
+        import hadith_takhrij as _HTA
+    except Exception:
+        return passages
+    out: List[Dict[str, Any]] = []
+    for p in passages or []:
+        q = dict(p)
+        try:
+            bid = int(q.get("book_id") or 0)
+        except Exception:
+            bid = 0
+        part = q.get("part_raw") or q.get("part")
+        page = q.get("page_num_raw") if q.get("page_num_raw") is not None else q.get("page_num") or q.get("page")
+        body = ""
+        if bid:
+            try:
+                body = _HTA.page_text(bid, part, page) or ""
+            except Exception:
+                body = ""
+            if body:
+                try:
+                    nxt = _HTA.page_text(bid, part, int(page) + 1) if str(page).isdigit() else ""
+                except Exception:
+                    nxt = ""
+                if nxt:
+                    body = (body + "\n— تتمة الصفحة التالية —\n" + nxt).strip()
+                q["snippet"] = re.sub(r"\s+", " ", body)[:4200]
+                q["text"] = body[:4200]
+                q["sufficiency_page"] = True
+        out.append(q)
+    return out
+
+
+def _sufficiency_takhrij_run(matn: str, selected_books=None) -> Dict[str, Any]:
+    """قاطع التشغيل: إن ثبت المتن على صفحة الصحيحين (أو الستة إن خلت) تُغلق الجولة."""
+    empty = {"sufficient": False, "short_circuit": False, "passages": [],
+             "note": "", "tier": None, "hits": []}
+    matn = " ".join(str(matn or "").split())
+    if len(matn) < 10:
+        return empty
+    try:
+        import hadith_takhrij as _HTA
+        r = _HTA.takhrij(matn, str(DB_INDEX_PATH))
+    except Exception as exc:
+        print(f"⚓ [Sufficiency] تعذر محرك التخريج: {exc}", flush=True)
+        r = {}
+    passages = _sitta_first_passages(matn, selected_books=selected_books, top_k=12)
+    passages = _enrich_sufficiency_passages(passages, matn)
+    titles = " ".join(str(p.get("title") or "") for p in passages)
+    sufficient = bool(r.get("sufficient")) or (
+        "صحيح البخاري" in titles or "صحيح مسلم" in titles
+    )
+    tier = r.get("tier")
+    short = bool(passages) and (
+        sufficient or tier in (None, "الصحيحان", "الستة وملحقات التصحيح")
+        or any(n in titles for n in _SITTA_WORK_NAMES)
+    )
+    note = str(r.get("note") or "")
+    if sufficient:
+        note = note or "ثبت في الصحيحين: يُكتفى به"
+    print(
+        f"⚓ [Sufficiency] short={short} sufficient={sufficient} tier={tier} "
+        f"passages={len(passages)} note={note[:80]}",
+        flush=True,
+    )
+    return {
+        "sufficient": sufficient, "short_circuit": short, "passages": passages,
+        "note": note, "tier": tier,
+        "hits": list(r.get("in_sahih") or []) + list(r.get("found") or []),
+    }
+
+
+def _format_sufficiency_takhrij(matn: str, pack: Dict[str, Any]) -> str:
+    """جواب تخريج من الصفحات المثبتة إن تعذر توليف النموذج."""
+    lines = [
+        f"تخريج حديث: «{matn}»",
+        "",
+        str(pack.get("note") or "ثبت المتن على صفحات الأصول الآتية، ويُكتفى بها على سياسة التخريج."),
+        "",
+    ]
+    seen = set()
+    for i, p in enumerate((pack.get("passages") or pack.get("hits") or [])[:8], 1):
+        title = p.get("title") or p.get("work") or p.get("famous") or "كتاب"
+        part = p.get("part_raw") or p.get("part") or ""
+        page = p.get("page_num_raw") if p.get("page_num_raw") is not None else p.get("page") or p.get("page_num") or ""
+        num = p.get("number")
+        key = (str(p.get("book_id")), str(part), str(page))
+        if key in seen:
+            continue
+        seen.add(key)
+        loc = f"{title}"
+        if part not in (None, "", "None"):
+            loc += f" ({part}-{page})"
+        elif page not in (None, ""):
+            loc += f" ({page})"
+        if num:
+            loc += f"، حديث رقم ({num})"
+        snip = re.sub(r"\s+", " ", str(p.get("snippet") or p.get("text") or ""))[:420]
+        lines.append(f"{i}. أخرجه {loc}.")
+        if snip:
+            lines.append(f"   «{snip}»")
+        lines.append("")
+    if pack.get("sufficient"):
+        lines.append("والحديث في الصحيحين أو أحدهما، فيُكتفى بذلك عن تتبع الطرق والعلل.")
+    return "\n".join(lines).strip()
 
 
 _ANCHOR_ARBITER_MODEL = os.getenv("ALMOGHNI_ANCHOR_ARBITER", "anthropic/claude-sonnet-4.5")
@@ -21337,6 +21478,32 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         if m.role == "user":
             last_user_msg = m.content
             break
+    _prior_assistant = any(
+        getattr(m, "role", None) == "assistant" for m in (req.messages or [])[:-1]
+    )
+    _disc_now = str(req.discussion_mode or "").strip().lower()
+    if (
+        _prior_assistant
+        and _is_trivial_followup(last_user_msg)
+        and _disc_now not in ("open", "finalize")
+        and not any(p in (last_user_msg or "") for p in (
+            "أعد البحث", "اعد البحث", "بحث جديد", "ابحث من جديد",
+            "ابحث مجددًا", "ابحث مجددا", "إعادة البحث"))
+        and not req.reading_assistant
+        and not req.graph_only
+        and not req.table_only
+        and not req.library_only
+    ):
+        print("🛑 [Governor] متابعة غير بحثية — بلا استخراج ولا مدير", flush=True)
+        return {
+            "reply": "لم يتضح الطلب. أعد صياغة السؤال، أو اطلب مناقشة البحث، أو اكتب «أعد البحث».",
+            "model": req.model or "unknown",
+            "provider": req.provider or "openrouter",
+            "thinking_level": req.thinking_level,
+            "thinking_effort": None,
+            "agent_group": (req.agent_group or {}).get("name") if req.agent_group else None,
+            "witnesses": [],
+        }
 
     thinking_indicator = ""
     if not req.reading_assistant:
@@ -21707,6 +21874,30 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         _discussion = str(req.discussion_mode).strip().lower()
         print(f"🗣️ [Director Discussion] جلسة مناقشة ({_discussion}) مع قائد الفريق حول الحزمة المغلقة {req.chat_id}", flush=True)
 
+    # قاطع اكتفاء التخريج المسمّى: الصحيحان ثم الستة ثم توقف — بلا لجنة ولا وكلاء.
+    _sufficiency_hit: Dict[str, Any] = {}
+    _sufficiency_short = False
+    _named_matn = _named_hadith_matn(search_query or last_user_msg)
+    if (
+        _named_matn
+        and not _reuse_package
+        and not is_direct_page_reading
+        and not req.graph_only
+        and not req.table_only
+        and not req.library_only
+        and not req.reading_assistant
+        and not _named_hadith_needs_depth(search_query or last_user_msg)
+    ):
+        _sufficiency_hit = _sufficiency_takhrij_run(
+            _named_matn, selected_books=target_books or None)
+        _sufficiency_short = bool(_sufficiency_hit.get("short_circuit"))
+        if _sufficiency_short:
+            print(
+                f"⚓ [Sufficiency Gate] قاطع تشغيل: اكتفاء={_sufficiency_hit.get('sufficient')} "
+                f"طبقة={_sufficiency_hit.get('tier')} شواهد={len(_sufficiency_hit.get('passages') or [])}",
+                flush=True,
+            )
+
     # فحص ما إذا كان نمط التوزيع المتوازي مفعلاً وهناك وكلاء في المجموعة
     is_parallel_dispatch = (
         not req.graph_only and
@@ -21714,6 +21905,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         not req.library_only and
         not is_direct_page_reading and
         not _reuse_package and
+        not _sufficiency_short and
         req.agent_dispatch_mode != "direct" and
         len(active_agents) >= 1 and
         bool(search_query) and
@@ -21849,6 +22041,30 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     })
             anchor_prefetch = {"direct": _pkg}
             print(f"📦 [Research Package] حُمل {len(_pkg)} مقطعًا محفوظًا للتوليف", flush=True)
+        elif _sufficiency_short:
+            _suf_pass = list(_sufficiency_hit.get("passages") or [])
+            anchor_prefetch = {"direct": _suf_pass}
+            print(
+                f"⚓ [Sufficiency Gate] استُغني عن لجنة المراسي والوكلاء — "
+                f"{len(_suf_pass)} صفحة أصل بلفظ المتن",
+                flush=True,
+            )
+            if req.chat_id:
+                _research_run_save(
+                    req.chat_id, search_query or last_user_msg,
+                    [{"phrase": _named_matn or search_query, "support": 1,
+                      "confidence": "متحقق", "genre": "حديث"}],
+                    [{"anchor": _named_matn or search_query, "count": len(_suf_pass),
+                      "books": list({str(p.get("title") or "") for p in _suf_pass if p.get("title")}),
+                      "passages": [
+                          {"book_id": p.get("book_id"), "title": p.get("title"),
+                           "part": p.get("part_raw") or p.get("part"),
+                           "page": p.get("page_num_raw") if p.get("page_num_raw") is not None else p.get("page_num"),
+                           "snippet": (p.get("snippet") or "")[:400]}
+                          for p in _suf_pass[:12]
+                      ]}],
+                    "done",
+                )
         else:
             # ⚓ وكيل الألفاظ الدلالية عند المتقدمين يسبق الجولات: مراسيه
             # بصيغ المصنفين تصل ما انقطع بين صياغة الباحث ولسان الكتب.
@@ -22686,7 +22902,21 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             f"4. الحدود صارمة: لا تستشهد بكتاب خارج نطاق الوكلاء، ولا تُكمل الحكم أو التخريج من الذاكرة. المقاطع قد تسمي المسألة بمصطلح المصنفين لا بلفظ السؤال، فاعرضها إن كانت في الموضوع. إن وُجد مقطع واحد فاعرضه. إن لم يُوجد شيء بعد جولات البحث فأخبر المستخدم أن النطاق لم يجد شيئاً."
         )
 
-    if req.agent_group and not req.library_only and not req.graph_only and not req.table_only:
+    if _sufficiency_short:
+        _suf_note = _sufficiency_hit.get("note") or "ثبت المتن على صفحات الأصول المرفقة."
+        agent_routing_instruction = (
+            "\n\n⚓ [قاطع اكتفاء التخريج — مسار قصير موثّق]\n"
+            f"السؤال حديث مسمّى، وثبت متنه على صفحات الصحيحين أو الكتب الستة المرفقة. {_suf_note}\n"
+            "اكتب تخريجًا مقتضبًا من هذه الصفحات وحدها:\n"
+            "١) لكل أصل: أخرجه [الكتاب] كتاب… باب… حديث رقم (…) بلفظ الصفحة حرفيًا.\n"
+            "٢) إن كان في الصحيحين أو أحدهما فاكتف بهما، ولا تتبع العلل ولا الطرق ولا البيهقي ولا الشروح.\n"
+            "٣) لا تطلب وكيلًا ولا أداة ولا بحثًا جديدًا. الذاكرة لتحديد الباب أو الرقم فقط إن وافق نص الصفحة.\n"
+            "٤) الإحالات من سطور «الإحالة المعتمدة» في المقاطع المرفقة حرفيًا.\n"
+        )
+        if req.agent_group:
+            group_name = req.agent_group.get("name", group_name or "تخريج مكتفٍ")
+
+    if req.agent_group and not req.library_only and not req.graph_only and not req.table_only and not _sufficiency_short:
         try:
             import library_search
             _auth_lines = []
@@ -23118,6 +23348,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
             safe_max_output_tokens = _custom_output_limit(req.max_tokens) if req.custom_generation else _get_safe_max_tokens_for_model(call_model, req.max_tokens)
             applied_effort = None
+            _director_http_timeout = 90 if _sufficiency_short else 180
 
             def _query_openrouter(target_model: str, max_tok: Optional[int] = None, with_reasoning: bool = True, allow_tools: bool = True):
                 nonlocal applied_effort
@@ -23163,7 +23394,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         },
                         data=json.dumps(body_payload).encode("utf-8")
                     )
-                    with urllib.request.urlopen(o_req, timeout=180) as resp:
+                    with urllib.request.urlopen(o_req, timeout=_director_http_timeout) as resp:
                         return json.loads(resp.read().decode("utf-8"))
 
                 def _finish(msg_obj: dict) -> str:
@@ -23345,6 +23576,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         _sampling_temperature(),
                         min(safe_max_output_tokens, 4096),
                     )
+                elif _sufficiency_short:
+                    print("⚓ [Sufficiency] توليف قصير من صفحات الأصول بلا أدوات", flush=True)
+                    live_reply = _query_openrouter(
+                        call_model, min(8192, max(safe_max_output_tokens, 4096)),
+                        with_reasoning=False, allow_tools=False)
                 elif _synthesis_mode:
                     print("📦 [Synthesis] بحث مغلق مكتمل: توليف بلا أدوات وبتفكير منخفض وسقف إخراج محمي", flush=True)
                     live_reply = _query_openrouter(call_model, min(65536, max(safe_max_output_tokens, 24576)), with_reasoning=False, allow_tools=False)
@@ -23358,7 +23594,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     # إعادة أخيرة بنفس سقف الإخراج وبلا معلمة تفكير؛ تقليص السقف إلى
                     # 4096 كان يستهلكه التفكير الداخلي فيرجع الرد فارغاً.
                     print(f"Retrying same model {call_model} without reasoning param...")
-                    live_reply = _query_openrouter(call_model, safe_max_output_tokens, with_reasoning=False, allow_tools=not _synthesis_mode)
+                    live_reply = _query_openrouter(call_model, safe_max_output_tokens, with_reasoning=False, allow_tools=not (_synthesis_mode or _sufficiency_short))
                 except Exception as retry_err:
                     live_error = str(retry_err)[:240]
                     print(f"Retry with same model failed: {retry_err}")
@@ -23369,6 +23605,11 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 print(f"Live model query error for {call_model}: {type(e).__name__}: {str(e)[:300]}", flush=True)
         except Exception as outer_e:
             print(f"Outer live model handler error: {outer_e}")
+
+    if _sufficiency_short and not (live_reply or "").strip():
+        live_reply = _format_sufficiency_takhrij(_named_matn, _sufficiency_hit)
+        live_error = None
+        print("⚓ [Sufficiency] صيغ التخريج من الصفحات المثبتة بعد تعذر النموذج", flush=True)
 
     if not live_reply and req.chat_id and retrieved_citations:
         # الاستئناف من الحزمة: إن تعذر التوليف المباشر أو ابتُّر، تبنى الإجابة من
@@ -23901,6 +24142,17 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                             print("🗺 [TOC] أُدرج فهرس البحث في صدر الجواب", flush=True)
                     if locals().get("_hadith_project"):
                         _gate_stats["skip_madhhab_coverage"] = True
+                    if _sufficiency_short:
+                        _gate_stats["skip_madhhab_coverage"] = True
+                        _gate_stats["takhrij_sufficient"] = bool(_sufficiency_hit.get("sufficient"))
+                        _gate_stats["takhrij_tier"] = _sufficiency_hit.get("tier")
+                        if _sufficiency_hit.get("sufficient"):
+                            _gate_stats["hadith_core_gaps"] = []
+                        else:
+                            _gate_stats["hadith_core_gaps"] = [
+                                g for g in (_gate_stats.get("hadith_core_gaps") or [])
+                                if g.get("ring") == 1
+                            ]
                     # سجل التدقيق وتنبيها اكتمال الفريق والنطاق لا تُختم في
                     # متن الجواب بعد اليوم: تُحفظ كاملة في سجل القياس وتخرج
                     # بملف «تقرير البحث» المنفصل أسفل الإجابة، فلا تشوّه
@@ -23977,7 +24229,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
     # تسجيل مؤشرات قياس هذا البحث دائمًا (بحوث الوكلاء المنفذة حيًا فقط،
     # والصياغة النهائية بعد إقفال مناقشة تُقاس أيضًا لتوثق أثر الاستكمال)
-    if req.agent_group and live_reply and (subagents_dossiers or _discussion == "finalize") and _discussion != "open":
+    if req.agent_group and live_reply and (subagents_dossiers or _discussion == "finalize" or _sufficiency_short) and _discussion != "open":
         _gs = _gate_stats or {}
         # 🏛 إدارة المخاطر: حصاد حتمي من الطبقات الثلاث، ومسؤول مخاطر
         # مستقل يكتب مذكرة صاحب البحث، وحفظ حزمة البحث كاملة مع سجلها.
@@ -23992,15 +24244,27 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 duration_s=time.time() - _chat_t0,
                 targeted_map=locals().get("_targeted_map") or {},
                 unresolved_citations=_unresolved_citations)
+            if _sufficiency_short and _sufficiency_hit.get("sufficient"):
+                _risk_events = [e for e in _risk_events if e.get("kind") not in (
+                    "verified_ratio", "hadith_core_gap", "draft_unbundled",
+                    "synthesis_collapse", "book_dominance", "agent_short_report",
+                )]
             _mark("synthesis")
             print("⏱ [Stage Times Final] " + " | ".join(
                 f"{k}:{v}s" for k, v in _stage_marks), flush=True)
-            _risk_memo, _risk_officer = _risk_officer_memo(
-                _risk_events, question=(last_user_msg or "")[:200],
-                group=group_name or "", manager_model=call_model,
-                ledger=locals().get("_evidence_ledger") or "",
-                dossiers=subagents_dossiers, gate_stats=_gate_stats,
-                api_key=owner_openrouter_key(request, req.api_key))
+            if _sufficiency_short:
+                _risk_officer = "قاطع الاكتفاء"
+                _risk_memo = (
+                    "## الحكم العام\nاكتفاء بصفحات الأصول المثبتة بلفظ المتن؛ بلا لجنة مراسٍ ولا وكلاء.\n\n"
+                    f"{_sufficiency_hit.get('note') or ''}"
+                )
+            else:
+                _risk_memo, _risk_officer = _risk_officer_memo(
+                    _risk_events, question=(last_user_msg or "")[:200],
+                    group=group_name or "", manager_model=call_model,
+                    ledger=locals().get("_evidence_ledger") or "",
+                    dossiers=subagents_dossiers, gate_stats=_gate_stats,
+                    api_key=owner_openrouter_key(request, req.api_key))
             _save_research_package(current_owner_id(request), req.chat_id or "", {
                 "chat_id": req.chat_id or "", "ts": datetime.now().isoformat(),
                 "question": (last_user_msg or "")[:200], "group": group_name or "",
@@ -24085,6 +24349,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "draft_quotes_unbundled": (_gs.get("draft_quotes_unbundled") or [])[:8],
                 "takhrij_locator_fixed": (_gs.get("takhrij_locator_fixed") or [])[:20],
                 "takhrij_sahihayn_missed": (_gs.get("takhrij_sahihayn_missed") or [])[:10],
+                "takhrij_sufficient": bool(_gs.get("takhrij_sufficient")),
+                "takhrij_tier": _gs.get("takhrij_tier") or "",
                 "madhhab_coverage_gaps": _gs.get("madhhab_coverage_gaps") or [],
                 "hadith_core_gaps": _gs.get("hadith_core_gaps") or [],
                 "imam_primary_gaps": _gs.get("imam_primary_gaps") or [],
