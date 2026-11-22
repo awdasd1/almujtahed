@@ -2223,19 +2223,26 @@ def _realign_citation_stamps(text: str) -> str:
         return text
     edits: List[Tuple[int, int, str]] = []
     prev_attrs: Optional[Dict[str, str]] = None
+    prev_end = 0
     for m in spans:
         attrs = _cit_src_attr_map(m.group(1))
         inner = re.sub(r"<[^>]+>", " ", m.group(2) or "")
-        prefix = text[max(0, m.start() - 220):m.start()]
-        prefix = re.sub(r'<span class="cit-src"[^>]*>.*?</span>', " ", prefix, flags=re.S)
-        prefix = re.sub(r"<[^>]+>", " ", prefix)
-        clause = re.sub(r"\s+", " ", prefix + " " + inner)
+        # جملة هذه الإحالة وحدها: النص المرئي منذ نهاية الختم السابق،
+        # بلا عبور إلى حاشية قبلها ولا قراءة لخصائص الوسوم المخفية
+        # (نصوص data-quote فيها أسماء رواة تُفسد تعيين المخرِّج).
+        between = re.sub(r"<[^>]+>", " ", text[prev_end:m.start()])
+        prev_end = m.end()
+        fn_marks = list(re.finditer(r"\(\s*[0-9٠-٩]{1,3}\s*\)", between))
+        same_clause = not fn_marks
+        if fn_marks:
+            between = between[fn_marks[-1].end():]
+        clause = re.sub(r"\s+", " ", between + " " + inner)
         hit = _pick_takhrij_hit(clause)
         title = attrs.get("book") or ""
         bid = attrs.get("book-id") or ""
         part, page = attrs.get("part") or "", attrs.get("page") or ""
         new_row = None
-        if (prev_attrs and str(prev_attrs.get("part") or "") == str(part)
+        if (same_clause and prev_attrs and str(prev_attrs.get("part") or "") == str(part)
                 and str(prev_attrs.get("page") or "") == str(page)
                 and prev_attrs.get("book-id")
                 and (not hit or _citation_fits_named(
@@ -9691,7 +9698,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.843"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.844"},
         },
     })
     if opened.get("error"):

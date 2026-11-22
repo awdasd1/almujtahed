@@ -111,6 +111,42 @@ class CitationIdentityTests(unittest.TestCase):
             self.assertEqual(str(row.get("book-id")), "4593")
 
 
+class RealignBoundaryTests(unittest.TestCase):
+    """إعادة الربط لا تعبر حاشية ولا تقرأ نص اقتباس مخفيًا (خطأ بحث ٠٠:٣٣)."""
+
+    RAW = """<p>قال الحسن: لا طاعة لمخلوق في معصية الخالق<sup><small>(٩)</small></sup> وقال الدارقطني كلاما<sup><small>(١٠)</small></sup></p>
+<ol>
+<li id="fn9"><sup><small>(٩)</small></sup> ينظر: المصنف - ابن أبي شيبة (18-546).</li>
+<li id="fn10"><sup><small>(١٠)</small></sup> ينظر: (5-155).</li>
+<li id="fn29"><sup><small>(٢٩)</small></sup> انظر: العلل الواردة في الأحاديث النبوية للدارقطني (5-155).</li>
+<li id="fn39"><sup><small>(٣٩)</small></sup> انظر: التمهيد - ابن عبد البر (23-277)؛ والتمهيد - ابن عبد البر (23-278).</li>
+</ol>"""
+
+    def pipeline(self):
+        s1 = server.stamp_citation_sources(self.RAW, [])
+        s2, _ = server.enrich_unstamped_citations(s1)
+        s3, _stats = server._documentation_gate(s2, [], api_key="")
+        return server._realign_citation_stamps(s3)
+
+    def test_named_stamp_survives_previous_footnotes(self):
+        out = self.pipeline()
+        rows = stamped(out, 5, 155)
+        self.assertTrue(rows, "ختم العلل (5-155) غائب")
+        for row in rows:
+            self.assertIn("الدارقطني", row.get("book") or "")
+            self.assertNotIn("ابن أبي شيبة", row.get("book") or "")
+        rows39 = stamped(out, 23, 277)
+        self.assertTrue(rows39, "ختم التمهيد (23-277) غائب")
+        for row in rows39:
+            self.assertIn("التمهيد", row.get("book") or "")
+            self.assertNotIn("أحمد", row.get("book") or "")
+
+    def test_bare_locator_gets_no_guessed_book(self):
+        out = self.pipeline()
+        # الحاشية ١٠ موضع عارٍ بلا اسم كتاب: لا يبقى لها ختم بكتاب مخمَّن
+        self.assertNotIn('id="fn10"', out)
+
+
 class RuntimeLensTests(unittest.TestCase):
     """قاطع الاكتفاء لمحادثة بلا فريق فقط، والفريق لا يُتجاوز."""
 
