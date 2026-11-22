@@ -5255,6 +5255,25 @@ window.formatExcludedReportMd = formatExcludedReportMd;
 window.showMarkdownReport = showMarkdownReport;
 window.renderResearchReportDashboard = renderResearchReportDashboard;
 
+function researchReportVerdict(a, failed) {
+  a = a || {};
+  failed = failed || [];
+  const checked = Number(a.checked || 0);
+  const verifiedOnly = Number(a.verified || 0);
+  const ratio = checked ? Math.round(100 * (verifiedOnly + Number(a.relocated || 0)) / checked) : null;
+  const stampCollapsed = !!a.collapsed || (checked >= 8 && verifiedOnly * 10 < checked);
+  const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
+  const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
+  const weak = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
+  const ok = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
+  if (a.takhrij_sufficient) return { verdict: sahihaynMissed ? weak : 'قوي', stampCollapsed, ratio };
+  if (sahihaynGap || sahihaynMissed || failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
+  if (failed.length === 2 || (a.ijma_unattributed || 0) > 0) return { verdict: ok, stampCollapsed, ratio };
+  if (ratio !== null && ratio < 50 && !stampCollapsed) return { verdict: weak, stampCollapsed, ratio };
+  if (ratio !== null && ratio < 65 && !stampCollapsed) return { verdict: ok, stampCollapsed, ratio };
+  return { verdict: 'قوي', stampCollapsed, ratio };
+}
+
 async function downloadChatResearchReport(idx) {
   const session = (typeof chatSessions !== 'undefined') ? chatSessions.find(s => s.id === activeSessionId) : null;
   const msg = session && session.messages ? session.messages[idx] : null;
@@ -5307,16 +5326,11 @@ async function downloadChatResearchReport(idx) {
   L.push('');
   if (entry) {
     const a = entry.audit || {};
-    const ratio = a.checked ? Math.round(100 * ((a.verified || 0) + (a.relocated || 0)) / a.checked) : null;
     const failed = entry.agents_failed || [];
     const disabled = entry.agents_disabled || [];
     const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
     const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
-    let verdict = 'قوي';
-    if (a.takhrij_sufficient) {
-      verdict = sahihaynMissed ? 'ضعيف — يعاد توليده ولا يعتمد مرجعًا' : 'قوي';
-    } else if (sahihaynGap || sahihaynMissed || failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
-    else if (failed.length === 2 || (ratio !== null && ratio < 65) || (a.ijma_unattributed || 0) > 0) verdict = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
+    const { verdict, stampCollapsed, ratio } = researchReportVerdict(a, failed);
     L.push('| البند | القيمة |', '|---|---|');
     L.push(`| البحث | ${cell(entry.question)} |`);
     L.push(`| التاريخ | ${cell(entry.ts)} |`);
@@ -5327,6 +5341,10 @@ async function downloadChatResearchReport(idx) {
     L.push('');
     L.push('> ## الحكم العام: ' + verdict);
     L.push('');
+    if (stampCollapsed) {
+      L.push('> انخفاض الثبوت الآلي هنا من انهيار ربط الحواشي بصيغة الختم، لا من غياب الأصل في المكتبة؛ لا يُجعل وحده حكمًا بضعف التخريج.');
+      L.push('');
+    }
     L.push('## 👥 أولًا: اكتمال الفريق');
     L.push('');
     L.push('| المؤشر | العدد |', '|---|---|');
@@ -5343,7 +5361,7 @@ async function downloadChatResearchReport(idx) {
     L.push(`| ثابتة في كتب إحالتها | ${a.verified ?? '—'} |`);
     L.push(`| ثابتة في غير موضعها | ${a.relocated ?? '—'} |`);
     L.push(`| غير ثابتة آليًا | ${a.unverified ?? '—'} |`);
-    L.push(`| نسبة الثبوت | ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪) |`);
+    L.push(`| نسبة الثبوت | ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪${stampCollapsed ? ' — لا تُعتمد عند انهيار الربط' : ''}) |`);
     L.push(`| تنبيهات وسيط وحيد | ${a.tier_warnings ?? 0}${a.tier_resolved ? ` (و${a.tier_resolved} وسيط وجد له أصل فعولج)` : ''} |`);
     L.push(`| دعاوى إجماع / اتفاق بلا نسبة | ${a.ijma_flags ?? 0} / ${a.ijma_unattributed ?? 0} |`);
     L.push(`| حزم مدير الأدوات | ${a.packages_present ? ((a.packages_count ?? 0) + ' حزمة · توثيق ' + (a.packages_verified_mentions ?? 0) + ' · نقول خارج الحزم ' + (a.draft_quotes_unbundled_n ?? 0)) : 'لم يعمل في هذه الجولة'} |`);

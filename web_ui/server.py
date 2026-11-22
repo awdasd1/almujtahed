@@ -9481,7 +9481,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.832"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.833"},
         },
     })
     if opened.get("error"):
@@ -24351,6 +24351,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "takhrij_sahihayn_missed": (_gs.get("takhrij_sahihayn_missed") or [])[:10],
                 "takhrij_sufficient": bool(_gs.get("takhrij_sufficient")),
                 "takhrij_tier": _gs.get("takhrij_tier") or "",
+                "collapsed": bool(_gs.get("collapsed")),
                 "madhhab_coverage_gaps": _gs.get("madhhab_coverage_gaps") or [],
                 "hadith_core_gaps": _gs.get("hadith_core_gaps") or [],
                 "imam_primary_gaps": _gs.get("imam_primary_gaps") or [],

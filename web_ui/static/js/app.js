@@ -2768,21 +2768,35 @@ function _agentFixText(name) {
   return s + ' — يعدَّل من بطاقة الوكيل في مجموعته ثم يعاد البحث.';
 }
 
+function researchReportVerdict(a, failed) {
+  a = a || {};
+  failed = failed || [];
+  const checked = Number(a.checked || 0);
+  const verifiedOnly = Number(a.verified || 0);
+  const ratio = checked ? Math.round(100 * (verifiedOnly + Number(a.relocated || 0)) / checked) : null;
+  const stampCollapsed = !!a.collapsed || (checked >= 8 && verifiedOnly * 10 < checked);
+  const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
+  const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
+  const weak = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
+  const ok = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
+  if (a.takhrij_sufficient) return { verdict: sahihaynMissed ? weak : 'قوي', stampCollapsed, ratio };
+  if (sahihaynGap || sahihaynMissed || failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
+  if (failed.length === 2 || (a.ijma_unattributed || 0) > 0) return { verdict: ok, stampCollapsed, ratio };
+  if (ratio !== null && ratio < 50 && !stampCollapsed) return { verdict: weak, stampCollapsed, ratio };
+  if (ratio !== null && ratio < 65 && !stampCollapsed) return { verdict: ok, stampCollapsed, ratio };
+  return { verdict: 'قوي', stampCollapsed, ratio };
+}
+
 function downloadResearchReport(idx) {
   const items = (_researchMetricsCache || {}).items || [];
   const it = items[idx];
   if (!it) return;
   const a = it.audit || {};
-  const ratio = a.checked ? Math.round(100 * ((a.verified || 0) + (a.relocated || 0)) / a.checked) : null;
   const linkRatio = a.checked && a.linked != null ? Math.round(100 * a.linked / a.checked) : null;
   const failed = it.agents_failed || [];
   const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
   const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
-  let verdict = 'قوي';
-  if (a.takhrij_sufficient) {
-    verdict = sahihaynMissed ? 'ضعيف — يعاد توليده ولا يعتمد مرجعًا' : 'قوي';
-  } else if (sahihaynGap || sahihaynMissed || failed.length >= 3 || (ratio !== null && ratio < 50)) verdict = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
-  else if (failed.length === 2 || (ratio !== null && ratio < 65) || (a.ijma_unattributed || 0) > 0) verdict = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
+  const { verdict, stampCollapsed, ratio } = researchReportVerdict(a, failed);
   const L = [];
   L.push('# 📏 تقرير بحث خاص — سجل قياس البحوث في المغني');
   L.push('');
@@ -2792,6 +2806,7 @@ function downloadResearchReport(idx) {
   L.push('');
   L.push('الحكم العام: ' + verdict);
   L.push('');
+  if (stampCollapsed) L.push('انخفاض الثبوت الآلي هنا من انهيار ربط الحواشي بصيغة الختم، لا من غياب الأصل في المكتبة؛ لا يُجعل وحده حكمًا بضعف التخريج.');
   L.push('أولًا: اكتمال الفريق');
   L.push(`الوكلاء المرسلون: ${it.agents_total ?? '—'} · الساقطون: ${failed.length}${failed.length ? ' (' + failed.join('، ') + ')' : ''}`);
   if (!failed.length) L.push('لا سقوط: تقارير الفريق كلها حاضرة، والأقسام مبنية على تحرير وكلائها أنفسهم.');
@@ -2804,7 +2819,8 @@ function downloadResearchReport(idx) {
   L.push('');
   L.push('ثانيًا: التدقيق التوثيقي');
   L.push(`نقول دخلت الفحص: ${a.checked ?? '—'} · مربوطة بحواشيها: ${a.linked ?? '—'}${linkRatio !== null ? ' (' + linkRatio + '٪)' : ''} · ثابتة في كتب إحالتها: ${a.verified ?? '—'} · ثابتة في غير موضعها: ${a.relocated ?? '—'} · غير ثابتة آليًا: ${a.unverified ?? '—'} · نسبة الثبوت: ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪)`);
-  if (ratio !== null && ratio < 65) L.push('ملحوظة: الثبوت دون العتبة؛ راجع يدويًا النقول غير الثابتة المؤثرة المذكورة في «سجل التدقيق» ذيل الجواب قبل اعتماد البحث أكاديميًا، وقلّل شواهد وكلاء المسح الواسع لصالح شواهد أضيق منتقاة من كتب الطبقات.');
+  if (ratio !== null && ratio < 65 && !stampCollapsed) L.push('ملحوظة: الثبوت دون العتبة؛ راجع يدويًا النقول غير الثابتة المؤثرة المذكورة في «سجل التدقيق» ذيل الجواب قبل اعتماد البحث أكاديميًا، وقلّل شواهد وكلاء المسح الواسع لصالح شواهد أضيق منتقاة من كتب الطبقات.');
+  else if (stampCollapsed) L.push('ملحوظة: التدقيق الآلي انهار على ربط الحواشي فلا تُقرأ نسبته حكمًا على مادة التخريج.');
   if (linkRatio !== null && linkRatio < 80) L.push('ملحوظة: ربط الحواشي دون ٨٠٪؛ أكثر النقول خارج عين التدقيق لا محكوم عليها. المعالجة: طلب إحالات مرقمة ملاصقة لكل نقل في توجيه المدير قبل إعادة التوليد.');
   if ((a.tier_warnings || 0) > 0) L.push(`ملحوظة: ${a.tier_warnings} نقل قام على موسوعة مقارنة سندًا وحيدًا؛ يحتاج كل منها أصله من كتب مذهبه قبل الاعتماد.`);
   if ((a.ijma_flags || 0) > 0) L.push(`ملحوظة: ${a.ijma_flags} دعوى إجماع بلا نقل ظاهر من كتب الإجماع؛ حررها من إجماع ابن المنذر أو مراتب ابن حزم أو خففها إلى «الجمهور».`);
@@ -2818,7 +2834,7 @@ function downloadResearchReport(idx) {
   L.push('رابعًا: بدائل عملية مرتبة');
   let altN = 0;
   failed.forEach(n => { altN++; L.push(`${altN}. لوكيل «${n}»: ${_agentFixText(n)}`); });
-  if (ratio !== null && ratio < 65) { altN++; L.push(`${altN}. أعد توليد البحث بعد تضييق شواهد وكلاء المسح إلى كتب الطبقات أولًا، وقارن نسبة الثبوت الجديدة بهذه.`); }
+  if (ratio !== null && ratio < 65 && !stampCollapsed) { altN++; L.push(`${altN}. أعد توليد البحث بعد تضييق شواهد وكلاء المسح إلى كتب الطبقات أولًا، وقارن نسبة الثبوت الجديدة بهذه.`); }
   if ((a.ijma_unattributed || 0) > 0 || (a.ijma_flags || 0) > 0) { altN++; L.push(`${altN}. أضف لبطاقة وكيل الإجماع إلزام التصريح بمصدر كل دعوى اتفاق أو تخفيفها إلى «الجمهور».`); }
   if (!altN) L.push('لا بدائل مطلوبة: مؤشرات هذا البحث ضمن العتبات؛ يحفظ مرجعًا للمقارنة بالإصدارات القادمة.');
   if (it.audit_record) {
