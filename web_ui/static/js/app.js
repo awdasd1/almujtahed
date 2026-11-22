@@ -2795,7 +2795,7 @@ function researchReportLens(entry) {
     riskMemo: !!L.report_risk_memo && length === 'long',
     plan: length === 'long',
     hadithish,
-    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 3 : length === 'medium' ? 4 : 5))
+    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 3 : length === 'medium' ? 4 : 6))
   };
 }
 

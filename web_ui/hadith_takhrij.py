@@ -5,12 +5,14 @@
 1) إن كان الحديث في البخاري ومسلم أو في أحدهما فهذا أهم تخريج ويُكتفى به.
 2) وإلا من بقية الكتب الستة (أبو داود والترمذي والنسائي وابن ماجه).
 3) فإن لم يكن في الستة: صحيح ابن خزيمة ثم صحيح ابن حبان ثم مستدرك الحاكم.
-4) ثم السنن والمسانيد (أحمد ومالك والدارمي والدارقطني والبيهقي).
-5) ثم المعاجم (معاجم الطبراني الثلاثة)، ثم المصنفات والآثار.
+4) ثم السنن والمسانيد (أحمد والدارمي والدارقطني والبيهقي).
+5) ثم المعاجم (معاجم الطبراني الثلاثة).
+6) ثم المصنفات والآثار: الموطأ، ومصنف ابن أبي شيبة، ومصنف عبد الرزاق،
+   وشرح معاني الآثار ومشكل الآثار للطحاوي — حتى تستوعب كتب السنة الشهيرة.
    الحديث قد لا يكون في الستة فلا يُترك سلّم ما بعدها.
 
-وكتب الإرشاد إلى المواضع والمدار (تحفة الأشراف، المعجم المفهرس، التلخيص
-الحبير، نصب الراية، إرواء الغليل) تُبحث دلالةً لا تخريجًا أصليًا.
+وكتب الأطراف والمعاجم تُفتح أولًا دلالةً سريعة على الموضع لا عزوًا بدل الأصل:
+تحفة الأشراف للمزي، وإتحاف المهرة، والمعجم المفهرس لألفاظ الحديث النبوي.
 
 لا تبعية على الخادم: يُستورد جسر الشاملة كسولًا من مجلد هذا الملف، وتُحلّ
 طبعات كل عمل بمحلّل هوية الكتب (book_identity) فيُبحث في طبعة رئيسة واحدة
@@ -73,7 +75,6 @@ TIERS: List[tuple] = [
     ]),
     ("السنن والمسانيد", [
         ("مسند أحمد", "أحمد"),
-        ("موطأ مالك", "مالك"),
         ("مسند الدارمي", "الدارمي"),
         ("سنن الدارقطني", "الدارقطني"),
         ("السنن الكبرى للبيهقي", "البيهقي"),
@@ -84,17 +85,23 @@ TIERS: List[tuple] = [
         ("المعجم الصغير للطبراني", "الطبراني في الصغير"),
     ]),
     ("المصنفات والآثار", [
-        ("مصنف عبد الرزاق", "عبد الرزاق"),
+        ("موطأ مالك", "مالك"),
         ("مصنف ابن أبي شيبة", "ابن أبي شيبة"),
+        ("مصنف عبد الرزاق", "عبد الرزاق"),
         ("شرح معاني الآثار", "الطحاوي"),
+        ("شرح مشكل الآثار", "الطحاوي في المشكل"),
     ]),
 ]
 LADDER_TIERS = tuple(name for name, _w in TIERS)
 
-# كتب الإرشاد إلى المواضع والمدار: تُفتح أولًا اختصارًا للبحث.
+# أطراف ومعاجم للدلالة السريعة على الموضع (لا تخريجًا أصليًا).
 GUIDE_BOOKS = [
     (4255, "تحفة الأشراف بمعرفة الأطراف"),
+    (6238, "إتحاف المهرة بالفوائد المبتكرة من أطراف العشرة"),
     (3903, "المعجم المفهرس لألفاظ الحديث"),
+]
+# كتب أحكام لاحقة: تُستشار بعد الدلالة إن لزم، لا قبل الأصول.
+GUIDE_GRADING = [
     (5765, "التلخيص الحبير"),
     (4276, "نصب الراية"),
     (5927, "إرواء الغليل"),
@@ -329,19 +336,57 @@ def _search_work(work_name: str, famous: str, quote: str,
     return None
 
 
-def takhrij(text: str, db_path: str, guides: bool = False) -> Dict[str, Any]:
-    """تخريج متدرج بنص الحديث: يطبق سياسة الاكتفاء طبقة طبقة.
+def _guide_editions(db_path: str) -> List[Dict[str, Any]]:
+    """طبعات الأطراف والمعاجم: الرقم المعروف ثم ما يحسمه محلّل الهوية."""
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for bid, title in GUIDE_BOOKS:
+        if bid and bid not in seen:
+            out.append({"book_id": int(bid), "title": title})
+            seen.add(int(bid))
+        for ed in editions_for_work(title, db_path):
+            try:
+                n = int(ed.get("book_id") or 0)
+            except Exception:
+                n = 0
+            if n and n not in seen:
+                out.append({"book_id": n, "title": ed.get("title") or title})
+                seen.add(n)
+    return out
 
-    الرجوع: {in_sahih: [...], found: [...], tier: اسم الطبقة التي وُجد فيها
-    أولًا أو None, sufficient: وُجد في الصحيحين أو أحدهما, note: خلاصة}.
+
+def _hinted_works_from_guides(guides: List[Dict[str, Any]]) -> List[tuple]:
+    """أسماء الأصول التي سمّتها الأطراف/المعاجم في مقتطفاتها."""
+    blob = " ".join(str(g.get("snippet") or "") + " " + str(g.get("title") or "")
+                    for g in (guides or []))
+    if not blob:
+        return []
+    hinted: List[tuple] = []
+    seen = set()
+    for _tier, works in TIERS:
+        for work_name, famous in works:
+            if work_name in seen:
+                continue
+            if famous in blob or work_name in blob:
+                hinted.append((work_name, famous))
+                seen.add(work_name)
+    return hinted
+
+
+def takhrij(text: str, db_path: str, guides: bool = True) -> Dict[str, Any]:
+    """تخريج متدرج بنص الحديث: الأطراف دلالةً ثم سلّم الأصول طبقة طبقة.
+
+    الرجوع: {in_sahih, found, tier, sufficient, note, guides}.
     """
     result: Dict[str, Any] = {"in_sahih": [], "found": [], "tier": None,
-                              "sufficient": False, "note": ""}
+                              "sufficient": False, "note": "", "guides": []}
     quote = " ".join(str(text or "").split())
     if len(quote) < 14:
         result["note"] = "نص أقصر من أن يُبحث عنه"
         return result
     try:
+        if guides:
+            result["guides"] = guide_hits(quote, db_path=db_path)
         for tier_name, works in TIERS:
             tier_hits = []
             for work_name, famous in works:
@@ -361,31 +406,49 @@ def takhrij(text: str, db_path: str, guides: bool = False) -> Dict[str, Any]:
                     result["note"] = f"أول وجود في طبقة: {tier_name}"
                 break
         if not result["found"]:
+            for work_name, famous in _hinted_works_from_guides(result.get("guides") or []):
+                hit = _search_work(work_name, famous, quote, db_path)
+                if hit:
+                    hit["tier"] = "دلالة الأطراف"
+                    result["found"] = [hit]
+                    result["tier"] = "دلالة الأطراف"
+                    result["note"] = f"دلّت الأطراف على «{famous}» وثُبت المتن على صفحته"
+                    break
+        if not result["found"]:
             result["note"] = "لم يوجد في طبقات التخريج المعتمدة كلها"
-        if guides:
-            result["guides"] = guide_hits(quote)
+            if result.get("guides"):
+                result["note"] += "؛ ووُجدت دلالة في الأطراف/المعاجم تُراجع للأصل"
     except Exception as exc:  # خط الرجعة: فشل المحرك لا يكسر ما عداه
         result["note"] = f"تعذر التخريج الآلي: {exc}"
     return result
 
 
-def guide_hits(text: str, limit: int = 2) -> List[Dict[str, Any]]:
-    """إشارات كتب الإرشاد (أطراف ومدار وتخريجات الأئمة) إلى الحديث."""
+def guide_hits(text: str, db_path: str = "", limit: int = 2) -> List[Dict[str, Any]]:
+    """دلالة سريعة من الأطراف والمعاجم على موضع الحديث، لا عزوًا بدل الأصل."""
     out: List[Dict[str, Any]] = []
     try:
         search = _search()
         words = [w for w in re.findall(r"[\u0600-\u06FF]{3,}", fold(text))]
-        if len(words) < 4:
+        if len(words) < 3:
             return out
         probe = " ".join(words[:7])
-        for bid, title in GUIDE_BOOKS:
+        editions = _guide_editions(db_path) if db_path else [
+            {"book_id": bid, "title": title} for bid, title in GUIDE_BOOKS]
+        for ed in editions:
+            bid = ed.get("book_id")
+            title = ed.get("title") or ""
+            if not bid:
+                continue
             try:
-                r = search.search(probe, mode="phrase", book_ids=[bid], limit=limit)
+                r = search.search(probe, mode="phrase", book_ids=[int(bid)], limit=limit)
+                if not (r.get("results") or []):
+                    r = search.search(probe, mode="words", book_ids=[int(bid)], limit=limit)
                 for h in (r.get("results") or [])[:limit]:
-                    out.append({"book_id": bid, "title": title,
+                    out.append({"book_id": int(bid), "title": title,
                                 "part": str(h.get("part") or ""),
                                 "page": h.get("page_num"),
-                                "snippet": " ".join(str(h.get("snippet") or "").split())[:200]})
+                                "snippet": " ".join(str(h.get("snippet") or "").split())[:280],
+                                "guide": True})
             except Exception:
                 continue
     except Exception:
