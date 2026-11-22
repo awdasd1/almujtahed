@@ -9537,7 +9537,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.838"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.839"},
         },
     })
     if opened.get("error"):
@@ -27440,9 +27440,9 @@ async def tool_architect_plan_endpoint(req: ToolArchitectPlanRequest, request: R
         "في ready_web املأ library_url وinit_script وmock_data من الوثائق المسترجعة فقط، ولا تخترع روابط.\n"
         "رتّب في candidates كل أداة مناسبة وجدها البحث مع رابطها وسبب ملاءمتها وحدودها، ورشّح واحدة صراحة في rationale.\n"
         "أضف memory_candidates من معرفتك أنت حتى لو غاب البحث: من 2 إلى 4 مكتبات حديثة تناسب الفكرة، من PyPI لبايثون أو من npm للعرض. لكل واحدة الحقول name وregistry بقيمة pypi أو npm وurl وreason وsource بقيمة memory. الرابط يكون الصفحة الرسمية التي تعرفها، مثل https://pypi.org/project/الاسم أو https://www.npmjs.com/package/الاسم. إن لم تثق بالرابط فاترك url فارغاً ولا تخترع مساراً.\n"
-        "إذا كان البناء من الصفر أنسب، اختر coding_model بمعرفه الحرفي من قائمة أقوى نماذج OpenRouter التالية، واذكر coding_model_reason. لا تخترع معرفاً خارج القائمة.\n"
+        "إذا كان البناء من الصفر أنسب، اختر coding_model بمعرفه الحرفي من قائمة نماذج OpenRouter التالية (الأسرع أولًا؛ ممنوع fable و astro)، واذكر coding_model_reason. لا تخترع معرفاً خارج القائمة.\n"
         "أعد JSON فقط بالحقول: mode, tool_name, tool_id, description, rationale, candidates, memory_candidates, library_url, init_script, mock_data, build_prompt, coding_model, coding_model_reason, sources.\n\n"
-        f"أقوى نماذج OpenRouter المتاحة:\n{_architect_model_roster()}\n\n"
+        f"نماذج OpenRouter المتاحة (السرعة أولًا، بلا fable/astro):\n{_architect_model_roster()}\n\n"
         f"المواصفات:\n{json.dumps(req.spec or {}, ensure_ascii=False)}\n\n"
         f"البحث:\n{json.dumps(req.research or {}, ensure_ascii=False)[:14000]}"
     )
@@ -30339,7 +30339,7 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
         '  "director": {\n'
         '    "name": "اسم مدير المشروع",\n'
         '    "model": "النموذج المقترح من أوبن راوتر",\n'
-        '    "thinking": "high",\n'
+        '    "thinking": "low",\n'
         '    "system_prompt": "التوجيه الحرفي الصارم لمدير المشروع قيادة وتنسيقاً وتحقيقاً مع الصلاحية لإعادة البحث حتى 3 مرات، وإلزاماً حتمياً بأن يضع في ختام ونهاية تقرير المشروع جدولاً توثيقياً شاملاً بعنوان: «📚 ثبت المصادر والمراجع المعتمدة في المشروع» متضمناً كافة البيانات الببليوغرافية للكتب والمصادر التي نقلت منها المعلومات بأعمدتها الكاملة (م | اسم الكتاب | المصنف وسنة وفاته | المحقق أو الشارح | رقم الطبعة وسنتها | دار النشر والناشر | بلد النشر | رقم الكتاب بالشاملة إن وجد)"\n'
         '  },\n'
         '  "subagents_group": {\n'
@@ -30382,6 +30382,7 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
         '    "academic_pdf": true\n'
         '  }\n'
         "}\n\n"
+        "اختيار النماذج: الأصل الأسرع بتفكير low، ويُرفع التفكير عند التدقيق، والنموذج الأقوى عند التفريع والمناظرة فقط. ممنوع fable و astro على المهندس؛ الباحث يغيّر إليهما يدويًا بعد الاعتماد إن شاء.\n"
         "ولازم في \"agents\": وكيل واحد «مدير الأدوات — جامع الشواهد الموثقة» بحقل \"role\": \"tools_manager\" و\"kind\": \"tools_manager\"، نموذجه google/gemini-3.8-flash، وتوجيهه: جلب حزم الشواهد الموثقة بأدوات المغني الداخلية المركّبة والتوثيقية وحده (بحث مغلق وقراءة ومطابقة) وإعادتها بعزوها وحالة مطابقتها، بلا تحليل ولا ترجيح ولا نقل إلا MATCH_EXACT أو MATCH_NORMALIZED.\n"
         "ولازم أيضًا: وكيل واحد «وكيل خطة البحث ومراجعته وفهرسته» بحقل \"role\": \"planner\" و\"kind\": \"planner\"، نموذجه ~anthropic/claude-sonnet-latest، وتوجيهه: وضع خطة البحث الأكاديمية من سجل الأدلة (مقدمة بموضوعها وأهميتها ومشكلتها ومنهجها، وصلب بفصوله ومباحثه، وخاتمة بأهم النتائج والتوصيات) ومراجعة المسودة عليها وفهرستها؛ لا يجمع شواهد ولا يكتب متنًا.\n\n"
         "بعد كتلة الـ JSON، اكتب شرحاً تفصيلياً تحليلياً باللغة العربية الفصحى للباحث يبيّن خطة السير خطوة بخطوة، والمسوغات العلمية لاختيار الكتب وتوزيع الوكلاء."
@@ -30447,6 +30448,8 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
                 parsed_blueprint = json.loads(json_match.group(1))
             except Exception:
                 pass
+        if isinstance(parsed_blueprint, dict):
+            _scrub_architect_banned_models(parsed_blueprint)
 
         return {
             "status": "ok",
@@ -30463,7 +30466,7 @@ async def plan_project_architecture(req: PlanRequest, request: Request):
             "director": {
                 "name": "مدير المشروع العام",
                 "model": "google/gemini-2.5-flash",
-                "thinking": "high",
+                "thinking": "low",
                 "system_prompt": "أنت مدير هذا المشروع البحثي، تشرف على استقصاء الوكلاء ومقارنة النتائج وصياغة الجداول."
             },
             "subagents_group": {
@@ -31328,33 +31331,110 @@ def _search_similar_research(query: str, tavily_key: str, max_results: int = 5) 
         })
     return {"answer": (data.get("answer") or "")[:800], "results": results}
 
+_ARCHITECT_FALLBACK_MODEL = "google/gemini-3.8-flash"
+_ARCHITECT_FAST_RE = re.compile(r"flash|haiku|mini|lite|nano|fast", re.I)
+_ARCHITECT_STRONG_RE = re.compile(r"opus|sonnet|argon|pro(?:[-._]|$)|o3|o1|reason", re.I)
+
+
+def _is_architect_banned_model(mid: str) -> bool:
+    """fable و astro محظوران على المهندس؛ الباحث يختارهما بيده إن شاء."""
+    s = str(mid or "").strip().lower()
+    if not s:
+        return False
+    if "fable" in s:
+        return True
+    return bool(re.search(r"(?:^|[/\-~._])astro(?:[-._]|$)", s))
+
+
+def _architect_model_band(model: dict) -> int:
+    blob = f"{model.get('id') or ''} {model.get('name') or ''}"
+    if _ARCHITECT_FAST_RE.search(blob):
+        return 0
+    if _ARCHITECT_STRONG_RE.search(blob):
+        return 2
+    return 1
+
+
+def _architect_model_price(model: dict) -> float:
+    try:
+        return float(((model.get("pricing") or {}).get("prompt_per_1m")) or 9999)
+    except (TypeError, ValueError):
+        return 9999.0
+
+
+def _scrub_architect_banned_models(bp: dict) -> list:
+    """يستبدل fable/astro في مخطط المهندس بنموذج سريع؛ لا يمس اختيار الباحث اليدوي."""
+    replaced = []
+    if not isinstance(bp, dict):
+        return replaced
+
+    def one(obj, where):
+        if not isinstance(obj, dict):
+            return
+        mid = str(obj.get("model") or "")
+        if not _is_architect_banned_model(mid):
+            return
+        replaced.append(f"{where}: {mid}")
+        obj["model"] = _ARCHITECT_FALLBACK_MODEL
+        obj["thinking"] = "low"
+
+    director = bp.get("director")
+    if isinstance(director, dict):
+        one(director, str(director.get("name") or "مدير المشروع"))
+    for i, ag in enumerate(((bp.get("subagents_group") or {}).get("agents")) or []):
+        if isinstance(ag, dict):
+            one(ag, str(ag.get("name") or f"وكيل {i + 1}"))
+    for i, dm in enumerate(bp.get("directors") or []):
+        if isinstance(dm, dict):
+            one(dm, str(dm.get("name") or f"مدير {i + 1}"))
+    return replaced
+
+
 def _architect_model_roster() -> str:
     models = ((openrouter_cache.get("data") or {}).get("models") or [])
-    ranked = sorted(
-        models,
-        key=lambda model: ((model.get("benchmarks") or {}).get("intelligence_index") or 0),
-        reverse=True
-    )
-    lines = []
-    for model in ranked:
+    usable = []
+    for model in models:
         outputs = model.get("output_modalities") or ["text"]
         if "text" not in outputs:
             continue
-        if len(lines) >= 24:
-            break
-        intel = (model.get("benchmarks") or {}).get("intelligence_index")
-        if not intel and len(lines) >= 12:
+        mid = str(model.get("id") or "")
+        if _is_architect_banned_model(mid) or _is_architect_banned_model(str(model.get("name") or "")):
             continue
+        usable.append(model)
+    usable.sort(key=lambda m: (_architect_model_band(m), _architect_model_price(m),
+                               -((m.get("benchmarks") or {}).get("intelligence_index") or 0)))
+    bands = {0: [], 1: [], 2: []}
+    for model in usable:
+        band = _architect_model_band(model)
+        if len(bands[band]) >= 8:
+            continue
+        intel = (model.get("benchmarks") or {}).get("intelligence_index")
         reasoning = model.get("reasoning") or {}
         efforts = reasoning.get("supported_efforts") if isinstance(reasoning, dict) else None
         price = (model.get("pricing") or {}).get("prompt_per_1m")
-        lines.append(
+        bands[band].append(
             f"- {model.get('id')} | {model.get('name')} | مؤشر الذكاء: {intel if intel is not None else 'غير منشور'} | "
             f"السياق: {model.get('context_length') or 0} | الإدخال لكل مليون: {price} | التفكير المقبول: {efforts or 'بلا تفكير داخلي'}"
         )
-    if not lines:
-        return "لم يُحمَّل فهرس النماذج بعد. لا تخترع معرفاً. استخدم فقط: google/gemini-2.5-flash، google/gemini-3.8-flash، google/gemini-4-argon، ~anthropic/claude-opus-latest، ~anthropic/claude-sonnet-latest، ~openai/gpt-sol-latest، openai/gpt-4o."
-    return "\n".join(lines)
+    parts = [
+        "⛔ محظور على المهندس حظرًا مطلقًا: أي نموذج fable أو astro (مثل ~anthropic/claude-fable-latest). "
+        "مكلفان ومرهقان للميزانية والوقت. لا تضعهما لمدير ولا لوكيل. الباحث وحده يغيّر إليهما يدويًا بعد الاعتماد إن شاء.",
+        "سلّم الاختيار: الأسرع بتفكير low أولًا. للتدقيق ارفع التفكير إلى medium ثم high على النموذج نفسه. "
+        "للتفريع والمناظرة والنقاش فقط انتقل إلى الطبقة القوية (بدون fable/astro).",
+    ]
+    labels = ((0, "طبقة السرعة — الأصل للمدير وجمع النصوص والإخراج"),
+              (1, "طبقة وسطى — للتدقيق والتحرير التخصصي عند الحاجة"),
+              (2, "طبقة القوة — للمناظرة والتفريع والنقاش فقط، لا افتراضيًا"))
+    for key, title in labels:
+        if bands[key]:
+            parts.append(f"{title}:\n" + "\n".join(bands[key]))
+    if not any(bands.values()):
+        return (
+            "لم يُحمَّل فهرس النماذج بعد. لا تخترع معرفاً. الأصل السريع: google/gemini-2.5-flash، google/gemini-3.8-flash. "
+            "للمناظرة عند الحاجة: google/gemini-4-argon، ~anthropic/claude-sonnet-latest، ~openai/gpt-sol-latest. "
+            "ممنوع: fable و astro."
+        )
+    return "\n".join(parts)
 
 def _architect_fiqh_discipline_section() -> str:
     """ضبط الفقه المقارن لمهندس المشاريع: فهرس طبقات المذاهب الخمسة ومصطلحاتها
@@ -31421,20 +31501,24 @@ def _architect_fiqh_discipline_section() -> str:
 
 
 def _architect_agent_tuning_section() -> str:
-    """ضبط اختيار النماذج وإعدادات الوكلاء بحسب طبيعة المهمة: لا اختيار عشوائيًا،
-    فلكل نمط مهمة نموذجه وعمق تفكيره وعدد شواهد وسياقه — والبطاقة تسوّغ ذلك."""
+    """ضبط اختيار النماذج وإعدادات الوكلاء: الأسرع أولًا، ويُرفع التفكير ثم النموذج عند الحاجة فقط."""
     return (
-        "\n\n【ضبط اختيار النماذج وإعدادات كل وكيل بحسب طبيعة مهمته — لا اختيار عشوائيًا】\n"
-        "صنّف مهمة كل وكيل أولًا إلى نمط من الأنماط الآتية، ثم اختر نموذجه وإعداداته على مقتضى نمطه من جدول «أقوى نماذج OpenRouter» (الأعلى مؤشر ذكاء في الأعلى)، وسوّغ في بطاقة كل وكيل بجملة واحدة: نمط مهمته ← سبب اختيار النموذج ومستوى التفكير وعدد الشواهد. وكل إعداد تضعه يسري تنفيذيًا حرفيًا (النموذج، thinking، search_mode، extract_count، context_tokens)، فلا تضع رقمًا لا تقصده.\n"
-        "1. نمط الجمع والمسح والفرز الأولي (وكلاء جمع النصوص، الرصد الواسع، حصر المظان): نماذج سريعة اقتصادية من النماذج الخفيفة في الجدول (نحو Gemini Flash)، thinking: low أو بلا تفكير، extract_count واسع 150-300، search_mode: hybrid، context_tokens واسع بقدر المادة، max_tokens متوسط. يُمنع مهنيًا إحراق نموذج قوي مكلف على مهمة جمع لا تحتاج عمقًا.\n"
-        "2. نمط التحرير والتحقيق التخصصي (وكلاء المذاهب والفنون): نماذج قوية أو متوسطة عليا، thinking: medium إلى high، extract_count 80-150 مركزة في كتبه، فهؤلاء يقرؤون النصوص ويحررون النسبة لا يجمعون فقط.\n"
-        "3. نمط العمق المعرفي والتفريع (استخراج علل الأحاديث وترتيبها منطقيًا، تخريج الطرق ومداراتها، نقد الأسانيد، تحرير محل النزاع): أقوى النماذج معرفيًا وتحليليًا في الجدول، thinking: high أو max، extract_count ضيقة دقيقة 40-80 منتقاة، context_tokens واسع لأن مادته مترابطة ومتفرعة، max_tokens كبير. هنا العمق لا الاتساع.\n"
-        "4. نمط المناظرة والحجاج (المُثبِت، النافي، الحَكَم المحرِّر): أقوى نماذج التحليل والمنطق وقلب الحجج في الجدول، مادتها قليلة ودقيقة جدًا فلا تحتاج كثرة نصوص: extract_count 30-60 منتقاة بعناية، thinking: high أو max، max_tokens كبير متسع لبناء الحجة ونقضها، وسياقها مركز لا واسع. الحَكَم المحرِّر أشدها احتياجًا لقوة المنطق.\n"
-        "5. نمط الحكم والترجيح والقيادة (الحَكَم المحرِّر، مدير المشروع، محرر الخلاصة): أعلى نماذج الجدول تقييمًا، thinking: high أو max، extract_count 80-150، لأن خطأه يعم البحث كله.\n"
-        "6. نمط الإخراج والطباعة والفهرسة والتنسيق: نماذج سريعة متوسطة، thinking: low، فمهارتها صياغة وتنسيق لا استدلال.\n"
-        "7. نمط الاستشارة والتفكير (مجلس المستشارين): قرارك أنت بحسب تعقيد المسألة وطولها، لا قالبًا ثابتًا. إن اقتضى البحث مستشارين فالروستر المعتمد: `google/gemini-4-argon` و`~anthropic/claude-sonnet-latest` و`meta/muse-wonder` و`openai/gpt-6.1-terra`، thinking: max، extract_count: 0، books: []، `kind`: advisor. لا تُسرف: تخريج مختصر أو خلاصة لا يستدعي مجلسًا؛ وأصول الفقه أو مسألة فقهية طويلة معقّدة قد تستدعي عددًا من المستشارين والمتناظرين معًا لحوكمة النتيجة. أسماؤهم محايدة، والمدير يسند كتبهم الموثقة إلى المتخصصين.\n"
-        "قواعد عامة: لا نموذجَ قويًا لمهمة جمع، ولا نموذجَ سريعًا رخيصًا لمهمة علل أو مناظرة أو ترجيح؛ ومستوى التفكير لا يتجاوز «التفكير المقبول» لذلك النموذج في الجدول؛ وعدد الشواهد والسياق بحسب طبيعة المادة (اتساع للمسح، تركيز للمناظرة والعلل)؛ ودرجة الحرارة منخفضة (0.1-0.3) في التوثيق والتخريج والعلل.\n"
-        "وقبل إخراج المخطط افحص بنفسك كل معرف نموذج اخترته مقابل جدول نماذج OpenRouter المعروض عليك في هذا التوجيه فحصًا حرفيًا: المعرف غير الموجود في الجدول بعينه ممنوع ولو ظننته موجودًا، وستتحقق المنظومة آليًا من معرفات مخططك عند خروجه وتعلن كل معرف غير متحقق.\n"
+        "\n\n【ضبط اختيار النماذج وإعدادات كل وكيل — دقة بلا هدر】\n"
+        "السلّم ملزم للمدير ولكل وكيل، بهذا الترتيب ولا يُقفز عنه:\n"
+        "أ) الأصل: أسرع نموذج مناسب للمهمة (طبقة السرعة: Flash/Haiku/Mini) مع thinking: low.\n"
+        "ب) إن احتاج تدقيقًا أو نسبة أقوال أو تحقيقًا: ارفع التفكير إلى medium ثم high على النموذج نفسه قبل أن تغيّر النموذج.\n"
+        "ج) إن احتجت تفريعًا أو مناظرة أو نقاشًا أو قلب حجج: عندئذٍ فقط انتقل إلى طبقة القوة (Sonnet/Argon/Sol وأشباهها) بتفكير medium فـ high. لا تبدأ بها.\n"
+        "⛔ ممنوع على المهندس حظرًا مطلقًا اختيار fable أو astro لأي مدير أو وكيل أو مستشار أو مناظر. مكلفان جدًا ومرهقان للميزانية والوقت. الباحث بعد اعتماد المخطط حرّ أن يغيّر النموذج يدويًا إليهما إن شاء.\n"
+        "صنّف مهمة كل وكيل ثم اختر من الجدول المعروض (السرعة أولًا)، وسوّغ بجملة: النمط ← النموذج ← مستوى التفكير. كل إعداد يسري حرفيًا.\n"
+        "1. الجمع والمسح والفرز (جمع النصوص، الرصد، حصر المظان، مدير الأدوات): طبقة السرعة، thinking: low، extract_count 150-300. يُمنع إحراق نموذج قوي على جمع.\n"
+        "2. التحرير التخصصي (وكلاء المذاهب والفنون): ابدأ بطبقة السرعة وتفكير low؛ إن كانت النسبة دقيقة فارفع إلى medium. لا تقفز إلى طبقة القوة إلا إذا عجز السريع عن التحرير.\n"
+        "3. العمق والتفريع (علل، طرق، نقد أسانيد، محل نزاع): ارفع التفكير أولًا (medium/high) على نموذج سريع أو أوسط؛ وإن تفرّع النقاش فطبقة القوة بدون fable/astro، extract_count 40-80.\n"
+        "4. المناظرة والحجاج (مثبت، نافٍ، حكَم): هنا طبقة القوة جائزة، thinking medium ثم high، extract_count 30-60. لا fable ولا astro.\n"
+        "5. القيادة (مدير المشروع، محرر الخلاصة): الأصل Flash بتفكير low؛ للتدقيق medium؛ ولا تُجعل القيادة Opus/Fable افتراضيًا. خطؤه يعم البحث إن أُحرق على نموذج باهظ بلا حاجة.\n"
+        "6. الإخراج والطباعة والفهرسة: طبقة السرعة، thinking: low.\n"
+        "7. مجلس المستشارين: إن اقتضاه التعقيد فالروستر `google/gemini-4-argon` و`~anthropic/claude-sonnet-latest` و`meta/muse-wonder` و`openai/gpt-6.1-terra` — بلا fable/astro — thinking: medium (max فقط إن تعقّدت المسألة)، extract_count: 0، books: []، `kind`: advisor.\n"
+        "قواعد: لا نموذج قوي لمهمة جمع، ولا تفكير max افتراضيًا، ولا fable/astro من المهندس. التفكير لا يتجاوز «التفكير المقبول» للنموذج. الحرارة 0.1-0.3 في التوثيق والتخريج.\n"
+        "افحص كل معرف مقابل الجدول حرفًا: غير الموجود ممنوع، وfable/astro ممنوعان ولو وُجدا في الفهرس.\n"
     )
 
 
@@ -31664,6 +31748,22 @@ def _audit_architect_blueprint(bp: dict) -> dict:
     director_p = str((bp.get("director") or {}).get("system_prompt") or "")
     if concise and re.search(r"الفصل الأول|خطة العرض", director_p):
         out["warnings"].append("المخرج مصنّف مختصرًا وتوجيه المدير يجرّ إلى فصول مطوّلة؛ اجعل القالب جدولًا أو بطاقة.")
+    banned_hits = []
+    def check_model(obj, where):
+        if not isinstance(obj, dict):
+            return
+        mid = str(obj.get("model") or "")
+        if _is_architect_banned_model(mid):
+            banned_hits.append(f"{where}: {mid}")
+    check_model(bp.get("director") or {}, "مدير المشروع")
+    for i, a in enumerate(agents):
+        check_model(a, str((a or {}).get("name") or f"وكيل {i + 1}"))
+    for i, dm in enumerate(bp.get("directors") or []):
+        check_model(dm, str((dm or {}).get("name") or f"مدير {i + 1}"))
+    if banned_hits:
+        out["blocking"].append(
+            "نماذج fable/astro محظورة على المهندس: " + "؛ ".join(banned_hits[:8])
+            + ". استبدل بنموذج سريع؛ الباحث يغيّر إليهما يدويًا بعد الاعتماد إن شاء.")
     return out
 
 
@@ -31779,7 +31879,7 @@ def _architect_manuscripts_system_prompt(tools_catalog_desc: str, books_catalog_
         "1) انسخ الهيكل الثابت أعلاه؛ لا تحذف reader3 ولا تغيّر نموذجه عن google/gemini-3.1-flash-lite.\n"
         "2) خصّص system_prompt لكل وكيل بحسب إجابات المحقق (حدود التخريج/التراجم/اللغة/الحاشية).\n"
         "3) رشّح كتب الشاملة عبر search_books_catalog وget_category_core_books بحسب الفن، واذكر كل كتاب بصيغته الكاملة «#رقمه اسم الكتاب الكامل كما هو في الفهرس» (مثال: «#3974 سير أعلام النبلاء») — يُمنع منعًا باتًا ذكر رقم مجرد بلا اسم في أي بطاقة وكيل أو قائمة كتب، فالرقم وحده لا يعرف به المحقق كتابه.\n"
-        "4) عيّن النماذج من جدول أقوى النماذج أدناه فقط، بمعرفها الحرفي.\n"
+        "4) عيّن النماذج من جدول النماذج أدناه فقط، بمعرفها الحرفي. الأصل الأسرع بتفكير low؛ للتدقيق ارفع التفكير؛ للتفريع والمناظرة الطبقة القوية. ممنوع fable و astro على المهندس؛ المحقق يغيّر إليهما يدويًا بعد الاعتماد إن شاء.\n"
         "4.أ) ضبط جودة القراءة إلزامي في توجيه كل قارئ ومدقق (reader1/reader2/reader3/approver): وسم تعذّر القراءة سببيًا حصرًا "
         "([غير مقروء: طمس/رطوبة/شطب/قصّ في التصوير/خفاء الحبر/تلف الورق]) على قدر الكلمة المتعذرة وحدها دون تعميم على الأسطر، "
         "ومنع إسقاط كلمة يمكن ترجيحها من الرسم والسياق، وأن كل موضع تعذّر يتحول في هامش التحقيق إلى عبارة «كلام لم تتم قراءته بسبب …» — "
@@ -31801,7 +31901,7 @@ def _architect_manuscripts_system_prompt(tools_catalog_desc: str, books_catalog_
         '    "hadith_scope": "عزو فقط|عزو ودرجة|موسّع",\n'
         '    "footnote_style": "مختصرة|موسّعة"\n'
         "  },\n"
-        '  "director": {"name":"مدير التحقيق","model":"google/gemini-4-hydrogen","thinking":"high","ms_key":"leader","system_prompt":"..."},\n'
+        '  "director": {"name":"مدير التحقيق","model":"google/gemini-4-hydrogen","thinking":"low","ms_key":"leader","system_prompt":"..."},\n'
         '  "subagents_group": {\n'
         '    "name": "اسم المجموعة",\n'
         '    "desc": "وصفها",\n'
@@ -31815,7 +31915,7 @@ def _architect_manuscripts_system_prompt(tools_catalog_desc: str, books_catalog_
         "  }\n"
         "}\n"
         "كل وكيل يجب أن يحمل ms_key من القائمة الثابتة. القارئ الثالث إلزامي بالنموذج أعلاه.\n\n"
-        "【أقوى نماذج OpenRouter】\n"
+        "【نماذج OpenRouter — السرعة أولًا، وfable/astro محظوران على المهندس】\n"
         + model_roster + "\n\n"
         "【الأدوات】 لديك search_books_catalog وget_library_categories وget_category_core_books "
         "وget_book_bibliography وsearch_similar_research.\n"
@@ -31923,7 +32023,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "1. فكّك المسألة أولاً من ذاكرتك: صوّرها، وحرّر محل النزاع، وسمِّ الفنون الداخلة، واذكر ما تعرفه عن المظانّ. وسم هذه الخطوة [من الذاكرة] ولا تنسب منها نصاً ولا جزءاً ولا صفحة.\n"
         "2. بعد التفكيك وقبل ترشيح الكتب سل الباحث في ```choices عن سقف سنة وفاة المؤلفين (بلا سقف / إلى 400 / 600 / 800 / 1000 / 1200هـ). ثم استعن بفهرس الشاملة: استدعِ search_books_catalog بـ death_before إن حُدّد السقف، وget_category_core_books، ورشّح الكتب بصيغة «#رقمها اسمها الكامل كما في الفهرس». لا كتاب بعد سنة السقف، ولا رقم مجرد بلا اسم.\n"
         "3. استدعِ search_similar_research للويب: أصول البحوث المقاربة، ودقتها، ومصادرها، ومراجعها، والمراجعات المشابهة. إن غاب مفتاح الويب فصرّح بذلك ولا تختلق دراسات.\n"
-        "4. عيّن لكل مدير ولكل وكيل نموذجاً من جدول «أقوى نماذج OpenRouter» أدناه، بمعرفه الحرفي. اختر الأعلى تقييماً والأنسب للمهمة، واكتب في البطاقة مستوى التفكير: low أو medium أو high أو max، بشرط أن يكون ضمن «التفكير المقبول» لذلك النموذج. التحرير العميق high أو max، والمسح السريع low أو medium.\n"
+        "4. عيّن لكل مدير ولكل وكيل نموذجاً من جدول النماذج أدناه بمعرفه الحرفي. الأصل الأسرع بتفكير low. للتدقيق ارفع التفكير (medium ثم high) على النموذج نفسه. للتفريع والمناظرة فقط انتقل إلى الطبقة القوية. ممنوع fable و astro على المهندس حظرًا مطلقًا؛ الباحث يغيّر إليهما يدويًا بعد الاعتماد إن شاء. التفكير ضمن «التفكير المقبول» لذلك النموذج.\n"
         "5. الهيكل: مدير جامع واحد هو الأصل، لأن التنفيذ يُدمج تحت قيادة واحدة. لا تُعدّد المدراء إلا إذا انقسم المشروع إلى فنون لا يجمعها تحرير واحد، مثل الفقه مع علل الحديث مع الرصد التاريخي. عندئذ أضف `directors` وكل مدير فن ووكلاؤه، واذكر سبب الانقسام، وأبقِ `director` للمدير الجامع.\n"
         "6. حدّد في كل بطاقة `extract_count`: عدد النصوص التي يستخرجها صاحبها من الشاملة. المسح الواسع 150 إلى 300، والتحقيق الضيق 40 إلى 80، ومدير الدمج 80 إلى 150. لا تجعل العدد واحداً للجميع.\n"
         "7. حدّد في كل بطاقة `search_mode`: hybrid إذا كانت المهمة ألفاظاً وأعلاماً ومتوناً، وsemantic إذا كانت معاني ومسائل تختلف صياغتها. الهجين هو الأصل في التوثيق الحرفي.\n"
@@ -31932,7 +32032,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "```choices\n"
         '{"questions":[{"id":"scope","prompt":"ما نطاق المشروع؟","multiple":false,"options":["مذهب واحد","مقارنة المذاهب","رصد تاريخي"]},{"id":"death_max","prompt":"هل تحدد آخر سنة وفاة للمؤلفين تدخل كتبهم؟","multiple":false,"options":["بلا سقف زمني","إلى 400هـ","إلى 600هـ","إلى 800هـ","إلى 1000هـ","إلى 1200هـ"]},{"id":"counsel","prompt":"هل يحتاج هذا البحث مستشارين أو مناظرة؟","multiple":false,"options":["لا مستشارين ولا مناظرة","مستشارون فقط","مناظرة فقط","مستشارون ومناظرة"]}]}\n'
         "```\n\n"
-        "【أقوى نماذج OpenRouter بحسب مؤشر الذكاء المتاح، ولا تخترع معرفاً خارجها】\n"
+        "【نماذج OpenRouter — السرعة أولًا، وfable/astro محظوران على المهندس】\n"
         + _architect_model_roster() + "\n\n"
         "【ثانياً: المبادئ الحاكمة (تعلو على كل تعليمات لاحقة)】\n"
         "1. مصدر المعرفة الوحيد: مستودع النصوص (Qdrant) وقاعدة كتب الشاملة هو المصدر الوحيد المعتمد للنصوص والإحالات. ذاكرة النموذج تُستعمل للاهتداء فقط (لاقتراح المظانّ والمصطلحات وصياغة الاستعلامات)، ولا يُؤخذ منها نص ولا إحالة قطعية.\n"
@@ -31991,7 +32091,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         "【سادساً: هندسة الفريق】\n"
         "تعيّن الفريق بحسب طبيعة المشروع. لكل وكيل بطاقة تكليف وتوجيه مستقل:\n"
         "── (1) مدير المشروع [م-01]: يقود التنفيذ، وله الصلاحية العلمية الكاملة لإعادة البحث والتخريج حتى 3 مرات، ومُلزم حتماً بإفراد جدول «📚 ثبت المصادر والمراجع المعتمدة في المشروع» الببليوغرافي الكامل في نهاية التقرير النهائي. وفي توجيهه حرفيًا ميثاق الحوكمة الأكاديمية: حراسة الواسطة (جلب الأصل بطلب-كتاب أو طلب-وكيل أو طلب-وكيل-مؤقت قبل الإسقاط)، ومنع هيمنة الوسيط، واقتراح إضافة الأصول الغائبة، وختام كل جولة بالنواقص المنهجية المفتوحة.\n"
-        "── (1-ب) مجلس المستشارين [س-xx]: خيارك لا ركنًا مفروضًا بعدد ثابت. إن قررت أن البحث يحتاج مستشارين — لتعقيد المسألة أو طولها أو حاجة الحوكمة — فاستعمل من الروستر بقدر الحاجة (`google/gemini-4-argon` و`~anthropic/claude-sonnet-latest` و`meta/muse-wonder` و`openai/gpt-6.1-terra`) thinking: max، بلا كتب، `kind`: `advisor`. لا تُسرف في طلبهم على بحث قصير، ولا تبخل إن اقتضت الجودة مجلسًا. أسماؤهم محايدة، والمنظومة توحّد مكررهم، والمدير يسند الكتب إلى المتخصصين. الوكيل الذهبي لا يُصمَّم في المخطط؛ تنشئه المنظومة وقت التنفيذ إن وُجد مجلس.\n"
+        "── (1-ب) مجلس المستشارين [س-xx]: خيارك لا ركنًا مفروضًا بعدد ثابت. إن قررت أن البحث يحتاج مستشارين — لتعقيد المسألة أو طولها أو حاجة الحوكمة — فاستعمل من الروستر بقدر الحاجة (`google/gemini-4-argon` و`~anthropic/claude-sonnet-latest` و`meta/muse-wonder` و`openai/gpt-6.1-terra`) بلا fable/astro، thinking: medium (max إن تعقّدت)، بلا كتب، `kind`: `advisor`. لا تُسرف في طلبهم على بحث قصير، ولا تبخل إن اقتضت الجودة مجلسًا. أسماؤهم محايدة، والمنظومة توحّد مكررهم، والمدير يسند الكتب إلى المتخصصين. الوكيل الذهبي لا يُصمَّم في المخطط؛ تنشئه المنظومة وقت التنفيذ إن وُجد مجلس.\n"
         "── (2) الخبراء المتخصصون [خ-xx]: (الفقيه المقارن لكل مذهب، الأصولي، المحدّث، خبير الرجال، المؤرخ، خبير الفلك، المفسر، اللغوي، خبير التحقيق).\n"
         "── (3) هيئة المناظرة [ن-xx] — خيارك في المسائل الخلافية والمعقّدة (أصول، فقه طويل، نزاع يحتاج ترجيحًا محكومًا). لا تفرضها على كل مختصر، ولا تحذفها حيث تكون الجودة والحوكمة تقتضيها:\n"
         "• المُثبِت [ن-01]: ينصر القول الأول بكل ما أوتي من أدلة ونقول.\n"
@@ -32084,8 +32184,8 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '  ],\n'
         '  "director": {\n'
         '    "name": "اسم مدير المشروع التخصصي",\n'
-        '    "model": "معرّف حرفي من جدول أقوى النماذج",\n'
-        '    "thinking": "high",\n'
+        '    "model": "معرّف حرفي من جدول النماذج — الأسرع أولًا بلا fable/astro",\n'
+        '    "thinking": "low",\n'
         '    "search_mode": "hybrid",\n'
         '    "extract_count": 120,\n'
         '    "context_tokens": 1048576,\n'
@@ -32099,8 +32199,8 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '      {\n'
         '        "name": "اسم الوكيل المتخصص 1",\n'
         '        "desc": "دوره",\n'
-        '        "model": "معرّف حرفي من جدول أقوى النماذج",\n'
-        '        "thinking": "high",\n'
+        '        "model": "معرّف حرفي من جدول النماذج — الأسرع أولًا بلا fable/astro",\n'
+        '        "thinking": "low",\n'
         '        "search_mode": "hybrid",\n'
         '        "extract_count": 80,\n'
         '        "context_tokens": 262144,\n'
@@ -32115,7 +32215,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '        "role": "tools_manager",\n'
         '        "kind": "tools_manager",\n'
         '        "model": "google/gemini-3.8-flash",\n'
-        '        "thinking": "high",\n'
+        '        "thinking": "low",\n'
         '        "search_mode": "hybrid",\n'
         '        "extract_count": 40,\n'
         '        "context_tokens": 262144,\n'
@@ -32129,7 +32229,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '        "desc": "عضو مجلس يصله السؤال كاملًا كإخوانه: تفكير للمدير فقط في أهم كتب مظانّ المسألة ومراسي البحث التراثية، بلا تقسيم فنون بين الأعضاء",\n'
         '        "kind": "advisor",\n'
         '        "model": "google/gemini-4-argon",\n'
-        '        "thinking": "max",\n'
+        '        "thinking": "medium",\n'
         '        "extract_count": 0,\n'
         '        "books": [],\n'
         '        "system_prompt": "أنت عضو في مجلس مستشارين للمدير: تصلك المسألة كاملة كإخوانك بلا تقسيم فنون، ففكّر في مظانّها ومراسيها من جميع جوانبها ولا تستخرج نصوصًا."\n'
@@ -32373,6 +32473,18 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
 
         # استخراج الـ Blueprint إن وُجد بدقة ودون قص أو تشويه للأقواس
         parsed_blueprint = extract_json_blueprint(reply_text)
+
+        banned_replaced = []
+        if isinstance(parsed_blueprint, dict):
+            banned_replaced = _scrub_architect_banned_models(parsed_blueprint)
+            if banned_replaced:
+                reply_text += (
+                    "\n\n⛔ استُبعد fable/astro من اختيار المهندس (مكلفان ومرهقان للوقت والميزانية) "
+                    "وأُبدلا بنموذج سريع: " + "؛ ".join(banned_replaced)
+                    + f" → {_ARCHITECT_FALLBACK_MODEL} بتفكير low. "
+                    "لك بعد الاعتماد أن تغيّر أي بطاقة إليهما يدويًا إن شئت."
+                )
+                print(f"⛔ [Architect Ban] استبدال fable/astro: {banned_replaced}", flush=True)
 
         # فحص معرفات نماذج المخطط على فهرس OpenRouter الحي: كل معرف غير
         # موجود حرفيًا يُعلن للباحث في الرد نفسه قبل اعتماد البطاقات.
