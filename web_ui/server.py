@@ -9691,7 +9691,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.842"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.843"},
         },
     })
     if opened.get("error"):
@@ -13537,8 +13537,11 @@ _TRIVIAL_RESEARCH_RE = re.compile(
 
 
 def _named_hadith_needs_depth(query: str) -> bool:
-    """سؤال عن العلل أو الطرق: لا يُغلق بقاطع الاكتفاء."""
-    return bool(_HADITH_DEPTH_RE.search(query or ""))
+    """سؤال عن العلل أو الطرق: لا يُغلق بقاطع الاكتفاء.
+    النفي المقصود («دون الدخول في العلل») ليس طلب عمق فتُحذف عبارته أولًا."""
+    q = str(query or "")
+    q = re.sub(r"(?:دون|بلا|من غير|لا نريد|لا تدخل|لا تتوسع)[^،.؛\n]{0,48}", " ", q)
+    return bool(_HADITH_DEPTH_RE.search(q))
 
 
 _DISC_CANON = (

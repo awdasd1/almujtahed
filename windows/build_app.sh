@@ -3,6 +3,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# بوابة منهجية الضبط (docs/13): لا يُبنى إصدار إن كسرت حالة ذهبية واحدة.
+if [ ! -x "$ROOT/.venv/bin/python" ]; then
+  echo "يلزم $ROOT/.venv/bin/python لتشغيل اختبارات منهجية الضبط قبل البناء" >&2
+  exit 1
+fi
+"$ROOT/.venv/bin/python" -m unittest discover -s "$ROOT/tests"
+
 if [ -x "$HOME/.dotnet/dotnet" ]; then
   export DOTNET_ROOT="$HOME/.dotnet"
   export PATH="$HOME/.dotnet:$PATH"
