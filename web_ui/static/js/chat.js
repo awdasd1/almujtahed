@@ -5273,7 +5273,7 @@ function researchReportLens(entry) {
     plan: (!!L.report_plan || length === 'long'),
     packages: !!L.report_packages && length === 'long',
     hadithish,
-    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 3 : length === 'medium' ? 4 : 6))
+    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 3 : length === 'medium' ? 4 : 7))
   };
 }
 
@@ -5411,7 +5411,7 @@ async function downloadChatResearchReport(idx) {
     const coreGaps = lens.skipHadithCore ? [] : (a.hadith_core_gaps || []).filter(g => Number(g.ring || 99) <= lens.hadithCoreMaxRing);
     if (coreGaps.length) {
       L.push('### فجوات أصول الحديث', '', '| العمل | الحلقة |', '|---|---|');
-      coreGaps.forEach(g => L.push(`| ${cell(g.work)} | ${g.ring === 1 ? 'الصحيحان' : g.ring === 2 ? 'الكتب الستة' : g.ring === 3 ? 'ابن خزيمة وابن حبان والحاكم' : g.ring === 4 ? 'السنن والمسانيد' : g.ring === 5 ? 'المعاجم' : 'المصنفات والآثار'} |`));
+      coreGaps.forEach(g => L.push(`| ${cell(g.work)} | ${g.ring === 1 ? 'الصحيحان' : g.ring === 2 ? 'الكتب الستة' : g.ring === 3 ? 'ابن خزيمة وابن حبان والحاكم' : g.ring === 4 ? 'السنن والمسانيد' : g.ring === 5 ? 'المعاجم' : g.ring === 6 ? 'المصنفات والآثار' : 'الأذكار والمختصات'} |`));
       L.push('');
     }
     if ((a.takhrij_sahihayn_missed || []).length && (lens.hadithish || !lens.skipHadithCore)) {
