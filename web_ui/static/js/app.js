@@ -2855,6 +2855,14 @@ function downloadResearchReport(idx) {
   L.push('');
   L.push('> **الحكم:** ' + verdict);
   L.push('');
+  const ident = a.hadith_identity || {};
+  if (ident.work || ident.famous) {
+    const num = ident.number ? `، حديث رقم (${ident.number})` : '';
+    const loc = (ident.part && ident.page) ? ` (${ident.part}-${ident.page})` : (ident.page ? ` ص (${ident.page})` : '');
+    L.push('## تعريف الحديث', '');
+    L.push(`أخرجه **${cell(ident.famous || ident.work)}**${num}${loc}` + (ident.tier ? ` — طبقة: ${cell(ident.tier)}` : '') + '.');
+    L.push('');
+  }
   if (stampCollapsed) L.push('> انخفاض الثبوت الآلي من انهيار ربط الحواشي؛ لا يُجعل حكمًا بضعف المادة.', '');
   L.push('## الفريق', '');
   L.push(`المرسلون: ${it.agents_total ?? '—'} · الساقطون: ${failed.length}${failed.length ? ' (' + failed.join('، ') + ')' : ''}`);

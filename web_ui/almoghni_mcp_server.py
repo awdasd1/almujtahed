@@ -26,28 +26,14 @@ SERVER_NAME = "almoghni"
 SERVER_VERSION = "1.0.0"
 PROTOCOL_VERSION = "2025-03-26"
 
-GUIDE = """ترتيب العمل في المغني (إلزامي):
-0. لمسألة فقهية مقارنة: ابدأ بـ fiqh_topic_locations إن كان موضوعها في شجرة الفقه (fiqh_topics لاكتشاف الموضوعات)، أو fiqh_dossier لملف بالنصوص، أو dossier_topic (طبقات زمنية × مذاهب أهل السنة، وخلايا صفرية موثقة)، ثم اقرأ خلاياه وطابق.
-   آية: ayah_loci وملفها الطبقي ayah_dossier؛ من قال أولًا: attestations؛ حديث: hadith_loci وملفه hadith_dossier؛ قاعدة: qawaid_search؛ عقيدة: creed_search ومسألة مفهرسة creed_issue؛ تاريخ: tarikh_search؛ لغة: lugha_search؛ ضبط مذهب (المعتمد والمقرر والاصطلاح): madhhab_authorities؛ إجماع وأسباب خلاف وخلاف عال: authority_books بأقسامها ijma/asbab/khilaf؛ قبل التسليم: verify_batch؛ لإثبات غياب: get_book_coverage.
-1. ابدأ بـ almoghni_guide مرة واحدة في الجلسة.
-2. حلّ كل كتاب برقمه: resolve_book. الرقم هو المفتاح الوحيد، والعنوان للعرض.
-3. ابحث داخل النطاق المغلق فقط: search_passages أو search_books_scoped بقائمة أرقام كتب.
-   إن مرّت قائمة كتب لم يخرج البحث عنها، ولا يوجد بحث مفتوح في المكتبة.
-4. النتائج مرشحات غير قابلة للنقل. اقرأ الصفحة كاملة: get_page أو get_page_range،
-   واستكمل سياقها بـ get_surrounding_context، واعرف بابها بـ get_issue_heading.
-5. لا تنقل حرفاً واحداً قبل verify_quote. حالة NOT_FOUND تمنع النقل منعاً باتاً.
-6. الحديث: لفظه من trace_hadith في كتب الحديث، ولا ينقل من كتاب فقه.
-   حكمه من كتب التخريج بعد قراءة صفحاتها، ولا يبحث عن درجة ما في الصحيحين.
-   عند تعدد طبعات الكتاب اكتفِ بأول طبعة تلتقطها (لا نقل من طبعتين لعمل واحد)،
-   والصحيحان مقدمان على المسانيد والسنن. وفي قول كل مذهب مثّل طبقاته:
-   متقدمًا ومتوسطًا ومتأخرًا ما وجدت نصوصها، لا طبقة واحدة.
-7. إن خلت النتيجة فأعد البحث بمراسٍ من لغة المصنفين داخل الكتب نفسها، حتى ثلاث جولات،
-   ثم صرّح أن النطاق لم يرجع شيئاً. لا تكمل من الذاكرة.
-8. للمسائل المعاصرة (ألفاظ حديثة كالباروكة والعملات الرقمية ونقل الأعضاء): ابدأ بـ
-   anchor_lookup لترجمتها إلى عبارات من لسان التراث قبل 1000هـ بشواهد موثقة، ثم ابحث
-   بتلك العبارات. المقابل التراثي لا لفظ السؤال الحديث هو مفتاح النتائج.
-العزو: «انظر» للنقل الحرفي و«ينظر» للنقل بالمعنى، واسم الكتاب ومؤلفه وجزؤه وصفحته
-من كائن الإحالة الموثق حصراً."""
+GUIDE = """ضبط المغني: دقة واستيعاب بلا تشتت. لا تستدعِ almoghni_guide أولًا.
+1. الفهرس قبل النص: حديث مسمّى → hadith_dossier (يعرّف الحديث ثم مواضعه). آية → ayah_loci / ayah_dossier. فقه → fiqh_topics ثم fiqh_topic_locations أو fiqh_dossier. عقيدة → creed_issue وإلا creed_search. لفظ → lugha_search / word_dossier. قاعدة → qawaid_search. تاريخ → tarikh_search. معاصر → anchor_lookup. مذهب/إجماع → madhhab_authorities وauthority_books.
+2. search_library لعبارة من كلمتين فأكثر لسد فجوة الفهرس فقط وبقيد كتاب أو تصنيف. كلمة واحدة تُرفض.
+3. إن خلا الفهرس غيّر الأداة أو صرّح بالخلو. لا تقلّب الصفحات ولا تُكمل من الذاكرة.
+4. resolve_book ثم get_page: المتن في body، والحاشية في footnotes ليست قول المؤلف. كائن الإحالة في الصفحة هو العزو.
+5. لا تنقل قبل verify_quote. قبل التسليم verify_batch. NOT_FOUND يمنع النقل. MATCH_FOOTNOTE حاشية محقق.
+6. حديث: متنه من أصوله بعد تعريفه، وحكمه من كتب التخريج على صفحاتها. الصحيحان مقدمان. طبعة واحدة للعمل.
+العزو: «انظر» للحرفي و«ينظر» للمعنى، مرتبًا بالوفيات، مع التصريح بما لم تجد."""
 
 
 def _tool(name: str, description: str, properties: Dict[str, Any], required: List[str]) -> Dict[str, Any]:
@@ -59,11 +45,11 @@ def _tool(name: str, description: str, properties: Dict[str, Any], required: Lis
 
 
 TOOLS = [
-    _tool("almoghni_guide", "دليل ترتيب العمل في خادم المغني: النطاق، القراءة، المطابقة، والعزو. يُستدعى مرة واحدة أول الجلسة.", {}, []),
+    _tool("almoghni_guide", "خريطة الفهارس إن لم يتضح أي أداة تناسب السؤال. لا يُستدعى أول الجلسة.", {}, []),
     _tool("resolve_book", "حلّ كتاب إلى رقمه المعياري ومؤلفه وتصنيفه ومساره.", {"book": {"type": "string"}}, ["book"]),
     _tool("get_book_card", "بطاقة الكتاب: المحقق والطبعة والناشر ومدينة النشر وسنة الطبع.", {"book": {"type": "string"}}, ["book"]),
     _tool("get_book_toc", "فهرس أبواب الكتاب وعناوينه.", {"book": {"type": "string"}}, ["book"]),
-    _tool("get_page", "قراءة صفحة واحدة بنصها وهوامشها من ملف الكتاب. مصدر النقل الوحيد.", {"book": {"type": "string"}, "page_num": {"type": "integer"}, "part": {"type": "string"}}, ["book", "page_num"]),
+    _tool("get_page", "قراءة صفحة: المتن في body، حاشية المحقق في footnotes (ليست قول المؤلف)، وكائن الإحالة جاهز في citation.", {"book": {"type": "string"}, "page_num": {"type": "integer"}, "part": {"type": "string"}}, ["book", "page_num"]),
     _tool("get_page_range", "قراءة صفحات متتالية كاملة بنصها وهوامشها.", {"book": {"type": "string"}, "start_page": {"type": "integer"}, "end_page": {"type": "integer"}, "part": {"type": "string"}}, ["book", "start_page", "end_page"]),
     _tool("get_surrounding_context", "الصفحات المحيطة بصفحة لاستيفاء سياقها.", {"book": {"type": "string"}, "page_num": {"type": "integer"}, "part": {"type": "string"}, "before_pages": {"type": "integer"}, "after_pages": {"type": "integer"}}, ["book", "page_num"]),
     _tool("get_issue_heading", "عنوان الباب أو المسألة الحاكم لصفحة.", {"book": {"type": "string"}, "page_num": {"type": "integer"}, "part": {"type": "string"}}, ["book", "page_num"]),
@@ -72,20 +58,20 @@ TOOLS = [
     _tool("anchor_lookup", "جدول المراسي التراثية: يطابق مسألة معاصرة بعبارات من لسان التراث قبل 1000هـ مع شاهد موثق لكل عبارة (كتاب/جزء/صفحة). ابدأ بها في المسائل المعاصرة.", {"query": {"type": "string"}, "limit_entries": {"type": "integer"}}, ["query"]),
     _tool("anchor_search", "بحث الطبقات بالمراسي: مطابقة الجدول ثم بحث لفظي بعباراته في كتب التراث مع نصوص الصفحات. مرر book_ids لإغلاق النطاق.", {"query": {"type": "string"}, "book_ids": {"type": "array", "items": {"type": "string"}}, "limit": {"type": "integer"}}, ["query"]),
     _tool("search_passages", "بحث داخل نطاق مغلق: لفظي في هذا الخادم المستقل، وهجين دلالي عند تشغيله داخل التطبيق. مرشحات غير قابلة للنقل.", {"query": {"type": "string"}, "book_ids": {"type": "array", "items": {"type": "string"}}, "anchors": {"type": "array", "items": {"type": "string"}}, "limit": {"type": "integer"}}, ["query", "book_ids"]),
-    _tool("verify_quote", "مطابقة اقتباس على صفحات كتابه: MATCH_EXACT أو MATCH_NORMALIZED أو NOT_FOUND مع أقرب موضع.", {"book": {"type": "string"}, "quote_text": {"type": "string"}, "page_hint": {"type": "integer"}, "part": {"type": "string"}}, ["book", "quote_text"]),
+    _tool("verify_quote", "مطابقة اقتباس: MATCH_EXACT / MATCH_NORMALIZED / MATCH_FOOTNOTE (حاشية محقق) / NOT_FOUND. لا نقل من NOT_FOUND ولا نسبة حاشية إلى المؤلف.", {"book": {"type": "string"}, "quote_text": {"type": "string"}, "page_hint": {"type": "integer"}, "part": {"type": "string"}}, ["book", "quote_text"]),
     _tool("trace_hadith", "تتبع ألفاظ حديث في كتب الحديث: أصول وشروح وتخريج. لا نقل من كتب الفقه.", {"text": {"type": "string"}, "limit_books": {"type": "integer"}}, ["text"]),
     _tool("research_evidence", "حزمة شواهد: بحث منغلق بمراسٍ حتى ثلاث جولات، ثم قراءة الصفحات ومطابقة مقتطفاتها، مع سجل بحث يثبت النطاقات الصفرية.", {"query": {"type": "string"}, "book_ids": {"type": "array", "items": {"type": "string"}}, "anchors": {"type": "array", "items": {"type": "string"}}, "limit": {"type": "integer"}}, ["query", "book_ids"]),
-    _tool("search_library", "بحث فوري في نصوص المكتبة كلها عبر الفهرس (٨٥٨٩ كتابًا، أجزاء ثانية). mode: phrase/words/any/boolean. death_max سقف وفاة يختاره الباحث، categories تصنيفات، book_ids نطاق وكيل. النتائج مرشحات: اقرأ وطابق قبل النقل.", {"query": {"type": "string"}, "mode": {"type": "string", "enum": ["phrase", "words", "any", "boolean"]}, "death_max": {"type": "integer"}, "death_min": {"type": "integer"}, "categories": {"type": "array", "items": {"type": "string"}}, "book_ids": {"type": "array", "items": {"type": "integer"}}, "include_alive": {"type": "boolean"}, "limit": {"type": "integer"}}, ["query"]),
+    _tool("search_library", "بحث عبارة من كلمتين فأكثر لسد فجوة الفهرس، وبقيد كتاب أو تصنيف. كلمة واحدة تُرفض. النتائج مرشحات: اقرأ وطابق قبل النقل.", {"query": {"type": "string"}, "mode": {"type": "string", "enum": ["phrase", "words", "any", "boolean"]}, "death_max": {"type": "integer"}, "death_min": {"type": "integer"}, "categories": {"type": "array", "items": {"type": "string"}}, "book_ids": {"type": "array", "items": {"type": "integer"}}, "include_alive": {"type": "boolean"}, "limit": {"type": "integer"}}, ["query"]),
     _tool("search_headings", "بحث في عناوين الأبواب والفصول (٤ ملايين عنوان) لبلوغ فصل المسألة قبل المتون، بنفس المرشحات.", {"query": {"type": "string"}, "mode": {"type": "string", "enum": ["phrase", "words", "any"]}, "death_max": {"type": "integer"}, "categories": {"type": "array", "items": {"type": "string"}}, "book_ids": {"type": "array", "items": {"type": "integer"}}, "limit": {"type": "integer"}}, ["query"]),
     _tool("search_batch", "حتى ٢٤ بحثًا في استدعاء واحد بنفس المرشحات، مدموجة ومنزوعة التكرار — لمراسي اللجنة دفعة واحدة.", {"queries": {"type": "array", "items": {"type": "string"}}, "mode": {"type": "string", "enum": ["phrase", "words", "any"]}, "death_max": {"type": "integer"}, "categories": {"type": "array", "items": {"type": "string"}}, "book_ids": {"type": "array", "items": {"type": "integer"}}, "limit_per_query": {"type": "integer"}}, ["queries"]),
     _tool("survey_topic", "مسح إحصائي قبل الحفر: صفحات المصطلح موزعة بحسب التصنيف والقرن وأغزر الكتب.", {"term": {"type": "string"}, "death_max": {"type": "integer"}, "categories": {"type": "array", "items": {"type": "string"}}}, ["term"]),
     _tool("dossier_topic", "ملف موضوع فقهي مركّب قبل الحفر: مداخل الموسوعات الفقهية وعناوين أبواب وقائمة قراءة بأربع طبقات زمنية × مذاهب أهل السنة (حنفي/مالكي/شافعي/حنبلي/ظاهري)، مع توثيق الخلايا الصفرية. ابدأ به في الفقه المقارن ثم اقرأ وطابق.", {"topic": {"type": "string"}, "per_cell": {"type": "integer"}, "death_max": {"type": "integer"}}, ["topic"]),
     _tool("ayah_loci", "مواضع آية (سورة/رقم) في التفاسير مرتبة بوفاة المفسر من فهرس مراسي ﴿﴾، مع استشهاداتها وسطر تغطية.", {"surah": {"type": "integer"}, "ayah": {"type": "integer"}, "kind": {"type": "string", "enum": ["all", "tafsir", "citation"]}, "limit": {"type": "integer"}}, ["surah", "ayah"]),
     _tool("attestations", "نسب عبارة: أقدم قائليها بترتيب وفيات المؤلفين مع طي الطبعات وتوزيع القرون.", {"phrases": {"type": "array", "items": {"type": "string"}}, "limit_works": {"type": "integer"}}, ["phrases"]),
-    _tool("hadith_loci", "مواضع متن حديث في الأصول والشروح وكتب التخريج والعلل من الفهرس، مرتبة بالوفيات داخل كل صنف.", {"text": {"type": "string"}, "limit": {"type": "integer"}}, ["text"]),
+    _tool("hadith_loci", "يعرّف الحديث من سلّم الأصول ثم مواضعه في الشروح والتخريج. ابدأ به أو بـhadith_dossier لا ببحث مفتوح.", {"text": {"type": "string"}, "limit": {"type": "integer"}}, ["text"]),
     _tool("qawaid_search", "قاعدة فقهية/أصولية: عناوين كتب القواعد والأشباه والفروق الحاملة لها وأقدم شاهد على صياغتها.", {"query": {"type": "string"}, "limit": {"type": "integer"}}, ["query"]),
     _tool("ayah_dossier", "ملف آية طبقي: مواضعها في التفاسير مطوية بحسب الكتاب على أربع طبقات عصر، بمقتطف من كل مصدر وقائلي السلف آليًا. brief لمقتطفات أقصر.", {"surah": {"type": "integer"}, "ayah": {"type": "integer"}, "per_era": {"type": "integer"}, "brief": {"type": "boolean"}}, ["surah", "ayah"]),
-    _tool("hadith_dossier", "ملف حديث: مواضع المتن مجمعة (أصول/شروح/تخريج) مع نصوص مرفقة من صفحات الأصول والتخريج الأصلية لنقل المتن من كتابه، وأحكام مستخرجة آليًا تُقرأ بسياقها. brief لمخرجات نحيفة.", {"text": {"type": "string"}, "limit": {"type": "integer"}, "brief": {"type": "boolean"}}, ["text"]),
+    _tool("hadith_dossier", "ملف حديث: يعرّف الحديث (identity) ثم يرفق نصوص أصوله. ابدأ به لكل حديث مسمّى.", {"text": {"type": "string"}, "limit": {"type": "integer"}, "brief": {"type": "boolean"}}, ["text"]),
     _tool("word_dossier", "ملف لفظ بالنصوص: مواد المعاجم والغريب بالوفيات مع نص مادة كل مصدر. brief لنصوص أقل.", {"word": {"type": "string"}, "limit": {"type": "integer"}, "brief": {"type": "boolean"}}, ["word"]),
     _tool("fiqh_dossier", "ملف موضوع فقهي بالنصوص: طبقات × مذاهب مع نصوص الموسوعات وأوائل الخلايا. brief لمخرجات نحيفة سريعة.", {"topic": {"type": "string"}, "per_cell": {"type": "integer"}, "death_max": {"type": "integer"}, "brief": {"type": "boolean"}}, ["topic"]),
     _tool("verify_batch", "سجل مطابقة: حتى ٤٠ نقلًا تُطابق دفعة على صفحاتها بالتوازي مع تسريع بالفهرس، مع إعادة تحديد في طبعات أخرى عند الفشل.", {"citations": {"type": "array", "items": {"type": "object"}}}, ["citations"]),

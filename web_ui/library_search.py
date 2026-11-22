@@ -199,6 +199,29 @@ _LEX_CATS = {"الغريب والمعاجم", "كتب اللغة", "النحو �
 _HEADING_BOOST_PREFIX = ("باب", "فصل", "مساله", "كتاب", "حكم", "في", "ذكر", "حديث", "قوله")
 
 
+_CONTENT_WORD = re.compile(r"[\u0600-\u06FF]{2,}")
+
+
+def _content_words(query: str) -> list:
+    return _CONTENT_WORD.findall(query or "")
+
+
+def _too_broad_library(query: str, book_ids=None, categories=None) -> bool:
+    """كلمة واحدة في المكتبة كلها ضجيج؛ يُباح داخل كتاب أو تصنيف."""
+    if len(_content_words(query)) >= 2:
+        return False
+    if book_ids or categories:
+        return False
+    return True
+
+
+_TOO_BROAD_MSG = (
+    "كلمة واحدة في المكتبة كلها ضجيج لا بحث. للفظ: lugha_search أو word_dossier. "
+    "لحديث: hadith_dossier. لآية: ayah_loci. لمسألة فقه: fiqh_topic_locations. "
+    "لعقيدة: creed_issue. لبحث داخل كتاب بعينه مرّر book_ids."
+)
+
+
 def _match_expr(query: str, mode: str) -> str:
     q = _normalize(query or "")
     if not q:
@@ -316,6 +339,9 @@ class LibraryIndex:
     # ---------- الأدوات ----------
     def search(self, query, mode="phrase", death_max=None, death_min=None, categories=None,
                book_ids=None, include_alive=False, limit=10):
+        if _too_broad_library(query, book_ids, categories):
+            return {"status": "too_broad", "query": query, "mode": mode, "count": 0,
+                    "results": [], "message": _TOO_BROAD_MSG}
         match = _match_expr(query, mode)
         if not match:
             return {"status": "error", "message": "empty query"}
@@ -548,7 +574,34 @@ class LibraryIndex:
                 ("تخريج", ["التخريج والأطراف", "العلل والسؤالات الحديثية"])]
         groups, seen = {}, set()
         collapsed = 0
+        identity = {}
+        # تعريف الحديث من سلّم الأصول قبل أي بحث نصي في التصنيفات
+        try:
+            import hadith_takhrij as _ht
+            tr = _ht.takhrij(text, META_DB, guides=True)
+            identity = tr.get("identity") or {}
+            ladder_rows = []
+            for hit in (tr.get("found") or []):
+                bid = hit.get("book_id")
+                m = self.meta.get(int(bid), {}) if bid else {}
+                stem = re.split(r"\s+-\s+|\s+ت\s+|\s+ط\s+",
+                                str(hit.get("title") or hit.get("work") or ""))[0].strip()
+                row = {
+                    "book_id": bid, "title": hit.get("title") or m.get("title"),
+                    "author": m.get("author"), "author_death_hijri": m.get("death"),
+                    "part": hit.get("part"), "page_num": hit.get("page"),
+                    "page_id": None, "from_ladder": True, "number": hit.get("number"),
+                    "work": hit.get("work"), "snippet": "",
+                }
+                ladder_rows.append(row)
+                seen.add((bid, hit.get("page")))
+            if ladder_rows:
+                groups["أصول"] = ladder_rows
+        except Exception:
+            identity = identity or {}
         for label, cs in cats:
+            if label == "أصول" and groups.get("أصول"):
+                continue  # السلّم عرّف الأصول؛ لا تخلط معها ضجيج FTS
             r = self.search(text, mode="phrase", categories=cs, limit=int(limit or 20))
             if not r.get("results"):
                 r = self.search(text, mode="words", categories=cs, limit=int(limit or 20))
@@ -574,9 +627,14 @@ class LibraryIndex:
             else:
                 rows.sort(key=lambda h: (h["author_death_hijri"] if h["author_death_hijri"] and h["author_death_hijri"] != 99999 else 99998))
             groups[label] = rows
-        return {"status": "ok", "text": text, "groups": groups,
-                "editions_collapsed": collapsed,
-                "note": "مرشحات نصية لا حكم على الحديث؛ الدرجة من كتب التخريج مقروءة على صفحاتها. طُويت طبعات العمل الواحد إلى أول طبعة ملتقطة، والصحيحان مقدمان في الأصول."}
+        note = ("تعريف الحديث من سلّم الأصول ثم مواضع الشروح والتخريج. "
+                "مرشحات لا حكم؛ الدرجة من كتب التخريج مقروءة على صفحاتها.")
+        if identity.get("famous") or identity.get("work"):
+            note = (f"عُرّف الحديث في {identity.get('famous') or identity.get('work')}"
+                    + (f" رقم ({identity['number']})" if identity.get("number") else "")
+                    + f" — طبقة «{identity.get('tier') or ''}». " + note)
+        return {"status": "ok", "text": text, "identity": identity, "groups": groups,
+                "editions_collapsed": collapsed, "note": note}
 
     # ---------- فهرس قواعد وأشباه (عناوين) ----------
     def qawaid_search(self, query, limit=15):
@@ -1195,7 +1253,7 @@ def get_index():
 
 LIBRARY_MCP_TOOLS_SPEC = [
     {"name": "search_library",
-     "description": "بحث فوري في نصوص المكتبة كلها (٨٥٨٩ كتابًا) عبر الفهرس. mode: phrase عبارة حرفية متتابعة (الأقوى للشواهد)، words كل الكلمات في الصفحة، any أي كلمة، boolean منطقي. death_max سقف وفاة المؤلف هجريًا يختاره الباحث (٥٠٠/١٠٠٠/١٣٠٠...) أو اتركه بلا سقف. categories تصنيفات بعينها، book_ids نطاق كتب وكيل.",
+     "description": "بحث عبارة من كلمتين فأكثر لسد فجوة الفهرس، وبقيد كتاب أو تصنيف. كلمة واحدة في المكتبة كلها تُرفض. للحديث والآية والفقه والعقيدة واللفظ استخدم فهارسها أولًا.",
      "inputSchema": {"type": "object", "properties": {
          "query": {"type": "string"}, "mode": {"type": "string", "enum": ["phrase", "words", "any", "boolean"]},
          "death_max": {"type": "integer"}, "death_min": {"type": "integer"},
@@ -1236,7 +1294,7 @@ LIBRARY_MCP_TOOLS_SPEC = [
          "phrases": {"type": "array", "items": {"type": "string"}},
          "limit_works": {"type": "integer"}}, "required": ["phrases"]}},
     {"name": "hadith_loci",
-     "description": "مواضع متن حديث في كتب الحديث مصنفة: أصول (كتب السنة) وشروح وتخريج وعلل، مرتبة داخل كل صنف بوفاة المؤلف — أسرع من trace_hadith ومن الفهرس مباشرة. مرشحات لا حكم؛ الدرجة من كتب التخريج مقروءة.",
+     "description": "يعرّف الحديث من سلّم الأصول ثم مواضع الشروح والتخريج. ابدأ به أو بـhadith_dossier لا ببحث مفتوح لمتنه.",
      "inputSchema": {"type": "object", "properties": {
          "text": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["text"]}},
     {"name": "qawaid_search",

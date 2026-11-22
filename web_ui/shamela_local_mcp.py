@@ -724,7 +724,9 @@ def verify_quote(book: Any, quote_text: str, part: Optional[str] = None, page_hi
                 if line:
                     data = json.loads(line.decode("utf-8"))
                     body = data.get("body", "")
+                    footnotes = data.get("footnotes") or ""
                     clean_b = clean_arabic_text(body)
+                    clean_fn = clean_arabic_text(footnotes) if footnotes else ""
                     if q_words:
                         overlap = len(q_words & set(clean_b.split())) / len(q_words)
                         if best is None or overlap > best["score"]:
@@ -732,22 +734,32 @@ def verify_quote(book: Any, quote_text: str, part: Optional[str] = None, page_hi
                             plain = re.sub(r"\s+", " ", plain).strip()
                             best = {"score": round(overlap, 3), "part": entry["part"], "page_num": entry["page_num"], "snippet": plain[:400], "seq": entry.get("seq")}
 
-                    matched = clean_target in clean_b or clean_target_np in _strip_parens(clean_b)
-                    if not matched and target_word_set:
-                        # بوابة رخيصة قبل مطابقة التتابع: توكنة الصفحة كاملة
-                        # ومطابقة التتابع غاليتان، فلا تُشغَّلان إلا في صفحة
-                        # تحوي أغلب كلمات النقل أصلًا (بتجريد علامات الترقيم).
-                        cheap = {w.strip(_PUNCT) for w in clean_b.split()}
-                        if len(target_word_set & cheap) / len(target_word_set) >= 0.6:
-                            matched = _seq_match(_words(clean_b), target_words)
+                    def _match_blob(clean_text, raw_text):
+                        hit = clean_target in clean_text or clean_target_np in _strip_parens(clean_text)
+                        if not hit and target_word_set:
+                            cheap = {w.strip(_PUNCT) for w in clean_text.split()}
+                            if len(target_word_set & cheap) / len(target_word_set) >= 0.6:
+                                hit = _seq_match(_words(clean_text), target_words)
+                        return hit
+
+                    matched_body = _match_blob(clean_b, body)
+                    matched_fn = False if matched_body else bool(clean_fn and _match_blob(clean_fn, footnotes))
+                    matched = matched_body or matched_fn
                     if matched:
-                        plain = re.sub(r"<[^>]+>", " ", body)
+                        src = footnotes if matched_fn else body
+                        clean_src = clean_fn if matched_fn else clean_b
+                        plain = re.sub(r"<[^>]+>", " ", src)
                         plain = re.sub(r"\s+", " ", plain).strip()
-                        pos = clean_b.find(clean_target)
+                        pos = clean_src.find(clean_target)
                         exact = quote_text.strip() in plain
+                        if matched_fn:
+                            status = "MATCH_FOOTNOTE"
+                        else:
+                            status = "MATCH_EXACT" if exact else "MATCH_NORMALIZED"
                         matches.append({
                             "verified": True,
-                            "match_status": "MATCH_EXACT" if exact else "MATCH_NORMALIZED",
+                            "match_status": status,
+                            "in_footnote": bool(matched_fn),
                             "part": entry["part"],
                             "page_num": entry["page_num"],
                             "seq": entry["seq"],
@@ -834,7 +846,13 @@ def verify_quote(book: Any, quote_text: str, part: Optional[str] = None, page_hi
         "matches": matches,
         "closest": None if found else best,
         "quote_checked": quote_text,
-        "note": "لا يُنقل اقتباس حالته NOT_FOUND." if not found else "المطابقة على نص الصفحة من الملف، بعد توحيد الرسم والتشكيل عند الحاجة."
+        "in_footnote": bool(found and matches[0].get("in_footnote")),
+        "note": (
+            "لا يُنقل اقتباس حالته NOT_FOUND." if not found
+            else ("النص في حاشية المحقق لا في متن المؤلف؛ لا يُنسب إلى صاحب الكتاب."
+                  if matches[0].get("in_footnote")
+                  else "المطابقة على متن الصفحة من الملف، بعد توحيد الرسم والتشكيل عند الحاجة.")
+        )
     }
 
 
@@ -869,6 +887,7 @@ def verify_batch(citations: List[Dict[str, Any]]) -> Dict[str, Any]:
                          page_hint=c.get("page_hint") or c.get("page_num"))
         status = r.get("match_status") or "NOT_FOUND"
         entry = {"book": book, "quote_checked": quote, "match_status": status,
+                 "in_footnote": bool(r.get("in_footnote")),
                  "matches": r.get("matches"), "book_title": r.get("book_title")}
         if status == "NOT_FOUND":
             for sib in _edition_siblings(book):
@@ -888,11 +907,12 @@ def verify_batch(citations: List[Dict[str, Any]]) -> Dict[str, Any]:
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=6) as ex:
             items = list(ex.map(_one, cites))
-    counts = {"MATCH_EXACT": 0, "MATCH_NORMALIZED": 0, "RELOCATED": 0, "NOT_FOUND": 0}
+    counts = {"MATCH_EXACT": 0, "MATCH_NORMALIZED": 0, "RELOCATED": 0,
+              "MATCH_FOOTNOTE": 0, "NOT_FOUND": 0}
     for e in items:
         counts[e["match_status"]] = counts.get(e["match_status"], 0) + 1
     return {"status": "ok", "ledger": counts, "items": items,
-            "note": "سجل مطابقة: لا يُعتمد في الجواب إلا MATCH_EXACT/MATCH_NORMALIZED/RELOCATED بعد قراءة صفحته."}
+            "note": "سجل مطابقة: يُعتمد MATCH_EXACT/MATCH_NORMALIZED/RELOCATED بعد قراءة صفحته. MATCH_FOOTNOTE حاشية محقق لا قول المؤلف. NOT_FOUND يمنع النقل."}
 
 
 def get_book_coverage(book: Any) -> Dict[str, Any]:
@@ -1014,7 +1034,7 @@ def ayah_dossier(surah: int, ayah: int, per_era: int = 5, per_source_chars: int 
                 continue
             gp = get_page(h["book_id"], h["page_num"], h["part"]) if h.get("page_num") else {}
             page = gp.get("page") or {}
-            body = (page.get("body") or "") + "\n" + (page.get("footnotes") or "")
+            body = page.get("body") or ""
             if era_name == "حتى 400هـ":
                 for m in _SAYER_RE.finditer(clean_arabic_text(body)):
                     nm = m.group(1).strip()
@@ -1042,7 +1062,7 @@ def ayah_dossier(surah: int, ayah: int, per_era: int = 5, per_source_chars: int 
             "ayah_text": _ayah_text(surah, ayah), "layers": layers,
             "salaf_sayers_auto": [{"name": n, "mentions": c} for n, c in top_sayers],
             "coverage": {**loc.get("coverage", {}), "tafsir_books_deduped": len(books)},
-            "note": "ملف طبقي من فهرسنا: المواضع مطوية بحسب الكتاب وموزعة بالوفيات؛ قائلو السلف استخراج آلي من صفحات الطبقة الأولى يُتحقق منه بالقراءة، والمقتطفات للمعاينة لا للنقل."}
+            "note": "ملف طبقي من فهرس الآيات: المقتطفات من متن الصفحة لا من حاشية المحقق؛ قائلو السلف استخراج آلي يُتحقق منه بالقراءة."}
     _attach_quotes(_res, [w for w in re.split(r"\s+", re.sub(r"[﴿﴾]", " ", anchor or "")) if len(w) >= 3][:6])
     return _res
 
@@ -1139,19 +1159,29 @@ def hadith_dossier(text: str, limit: int = 8, brief: bool = False) -> Dict[str, 
             seen_books[h["book_id"]] = 1
             gp = get_page(h["book_id"], h["page_num"], h["part"])
             page = gp.get("page") or {}
-            body = (page.get("body") or "") + "\n" + (page.get("footnotes") or "")
-            for sent in re.split(r"[.\n؛]", body):
-                s = sent.strip()
-                if 12 <= len(s) <= 240 and _GRADING_RE.search(s):
-                    key = clean_arabic_text(s)[:80]
-                    if key in seen_sent:
-                        continue
-                    seen_sent.add(key)
-                    gradings.append({"grading_excerpt": s, **_grader_of(s, h.get("author") or "", h.get("title") or ""),
-                                     "book_id": h["book_id"], "title": h["title"],
-                                     "author_death_hijri": h["author_death_hijri"],
-                                     "part": h["part"], "page_num": h["page_num"], "page_id": h["page_id"]})
+            found_grade = False
+            for blob, in_fn in ((page.get("body") or "", False),
+                                (page.get("footnotes") or "", True)):
+                if found_grade:
                     break
+                for sent in re.split(r"[.\n؛]", blob):
+                    s = sent.strip()
+                    if 12 <= len(s) <= 240 and _GRADING_RE.search(s):
+                        key = clean_arabic_text(s)[:80]
+                        if key in seen_sent:
+                            continue
+                        seen_sent.add(key)
+                        gradings.append({
+                            "grading_excerpt": s,
+                            **_grader_of(s, h.get("author") or "", h.get("title") or ""),
+                            "in_footnote": in_fn,
+                            "book_id": h["book_id"], "title": h["title"],
+                            "author_death_hijri": h["author_death_hijri"],
+                            "part": h["part"], "page_num": h["page_num"],
+                            "page_id": h["page_id"],
+                        })
+                        found_grade = True
+                        break
     # إرفاق نص الأصل: متن الحديث يُنقل من كتابه (السنن/المسند) لا من كتب الفقه،
     # فنرفق نص صفحات أوائل مواضع «أصول» و«تخريج» ليُنقل المتن والحكم من مصدريهما
     attached = 0
@@ -1189,11 +1219,12 @@ def hadith_dossier(text: str, limit: int = 8, brief: bool = False) -> Dict[str, 
                 h["text"] = _full_text_around(body, clean_arabic_text(text), budget)
                 h["text_from_original"] = True
                 attached += 1
-    _res = {"status": "ok", "text": text, "loci_groups": groups,
+    _res = {"status": "ok", "text": text, "identity": loci.get("identity") or {},
+            "loci_groups": groups,
             "original_texts_attached": attached,
             "gradings_auto": gradings,
             "gradings_index": "hadith_gradings.db" if os.path.exists(gdb) else "unavailable (تعدين مباشر)",
-            "note": "انقل متن الحديث من نصوص مجموعة «أصول» المرفقة (أو get_page على مواضعها) ومن كتابه الأصلي بعزو جزئه وصفحته، والحكم من كتب التخريج؛ ولا تنقل متن حديث من كتاب فقه إلا عند تعذر بلوغ الأصل مع التصريح بذلك في جوابك. الأحكام الآلية قد تخص حديثًا جارًا في الصفحة؛ لا يُعتمد حكم حتى يُقرأ في سياقه من كتابه."}
+            "note": "انقل متن الحديث من نصوص مجموعة «أصول» المرفقة بعد تعريفه (identity). حاشية المحقق ليست قول المؤلف. الأحكام الآلية تُقرأ في سياقها."}
     _attach_quotes(_res, [w for w in re.split(r"\s+", clean_arabic_text(text)) if len(w) >= 4][:6])
     return _res
 
@@ -1576,7 +1607,7 @@ SHAMELA_MCP_TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "verify_quote",
-            "description": "مطابقة نص الاقتباس الحرفي داخل صفحات الكتاب والتأكد من وروده بنصه دون أي تصرف أو اختلاق من النموذج.",
+            "description": "مطابقة اقتباس: MATCH_EXACT / MATCH_NORMALIZED / MATCH_FOOTNOTE (حاشية محقق لا تُنسب إلى المؤلف) / NOT_FOUND يمنع النقل.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1654,7 +1685,7 @@ SHAMELA_MCP_TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "get_page",
-            "description": "قراءة صفحة واحدة بعينها بنصها وهوامشها من ملف الكتاب. هي وحدها مصدر النقل.",
+            "description": "قراءة صفحة: المتن في body، حاشية المحقق في footnotes ليست قول المؤلف، وكائن الإحالة في citation هو العزو.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1749,7 +1780,7 @@ SHAMELA_MCP_TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "search_library",
-            "description": "بحث فوري في نصوص المكتبة كلها (٨٥٨٩ كتابًا) عبر الفهرس في أجزاء الثانية. mode: phrase عبارة حرفية متتابعة (الأقوى للشواهد)، words كل الكلمات في صفحة واحدة، any أي كلمة، boolean منطقي (AND/OR/NOT). death_max سقف وفاة المؤلف بالهجري يختاره الباحث (٥٠٠ أو ١٠٠٠ أو ١٣٠٠...) وبدونه لا سقف. categories لتصنيفات بعينها، book_ids لإغلاق النطاق على كتب وكيل. النتائج مرشحات بمقتطفات: اقرأ الصفحة كاملة بـget_page وطابق بـverify_quote قبل النقل.",
+            "description": "بحث عبارة من كلمتين فأكثر لسد فجوة الفهرس فقط، وبقيد كتاب أو تصنيف. كلمة واحدة تُرفض لأنها ضجيج. للحديث والآية والفقه والعقيدة واللفظ استخدم فهارسها أولًا. النتائج مرشحات: اقرأ وطابق قبل النقل.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1890,7 +1921,7 @@ SHAMELA_MCP_TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "hadith_dossier",
-            "description": "ملف حديث: مواضع المتن مجمعة (أصول/شروح/تخريج وعلل) مع نصوص مرفقة من الأصول والتخريج وأحكام مستخرجة آليًا تُقرأ في سياقها قبل اعتمادها. brief لمخرجات نحيفة سريعة.",
+            "description": "ملف حديث: يعرّف الحديث (identity) من سلّم الأصول ثم يرفق نصوصه. ابدأ به لكل حديث مسمّى لا ببحث مفتوح.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1983,7 +2014,7 @@ SHAMELA_MCP_TOOLS_SPEC = [
         "type": "function",
         "function": {
             "name": "hadith_loci",
-            "description": "مواضع متن حديث في كتب السنة وشروحها وكتب التخريج والعلل من الفهرس مباشرة، مرتبة بالوفيات داخل كل صنف. أسرع من trace_hadith للمواضع الأولية.",
+            "description": "يعرّف الحديث من سلّم الأصول ثم مواضع الشروح والتخريج. لا تخلط معه بحثًا مفتوحًا لمتنه.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2390,6 +2421,41 @@ def resolve_book(book: Any) -> Dict[str, Any]:
     return out
 
 
+def _citation_payload(card: Dict[str, Any], page: Dict[str, Any]) -> Dict[str, Any]:
+    """كائن إحالة جاهز من بطاقة الكتاب ورقم الصفحة — مصدر العزو لا ذاكرته."""
+    title = str((card or {}).get("title") or "").strip()
+    author = str((card or {}).get("author") or "").strip()
+    death = (card or {}).get("death_year")
+    part = (page or {}).get("part")
+    page_num = (page or {}).get("page_num")
+    if part not in (None, "", "None") and str(part).strip() and page_num not in (None, ""):
+        locator = f"({part}-{page_num})"
+    elif page_num not in (None, ""):
+        locator = f"ص ({page_num})"
+    else:
+        locator = ""
+    death_ok = death not in (None, "", "None", 99999, "99999")
+    death_s = f" (ت {death}هـ)" if death_ok else ""
+    if not author:
+        who = ""
+    elif author.startswith("ال"):
+        who = " لل" + author[2:]
+    else:
+        who = f" ل{author}"
+    label = f"{title}{who}{death_s} {locator}".strip()
+    return {
+        "book_id": (card or {}).get("book_id"),
+        "title": title,
+        "author": author,
+        "author_death_hijri": death if death_ok else None,
+        "part": part,
+        "page_num": page_num,
+        "locator": locator,
+        "label": label,
+        "source": "body",
+    }
+
+
 def get_book_card(book: Any) -> Dict[str, Any]:
     """بطاقة الكتاب الببليوغرافية من قاعدة الكتب."""
     base = resolve_book(book)
@@ -2468,7 +2534,10 @@ def get_page(book: Any, page_num: int, part: Optional[str] = None) -> Dict[str, 
         "seq": matches[0]["seq"], "body": body, "footnotes": footnotes,
         "chunks": len(pages),
     }
-    return {"status": "ok", "book": resolve_book(book), "page": page}
+    card = resolve_book(book)
+    return {"status": "ok", "book": card, "page": page,
+            "citation": _citation_payload(card, page),
+            "note": "متن المؤلف في page.body. page.footnotes حاشية المحقق لا تُنسب إلى المؤلف. انقل بعد المطابقة من المتن."}
 
 
 def get_issue_heading(book: Any, page_num: int, part: Optional[str] = None) -> Dict[str, Any]:

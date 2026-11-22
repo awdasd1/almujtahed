@@ -388,7 +388,8 @@ def takhrij(text: str, db_path: str, guides: bool = True) -> Dict[str, Any]:
     الرجوع: {in_sahih, found, tier, sufficient, note, guides}.
     """
     result: Dict[str, Any] = {"in_sahih": [], "found": [], "tier": None,
-                              "sufficient": False, "note": "", "guides": []}
+                              "sufficient": False, "note": "", "guides": [],
+                              "identity": {}}
     quote = " ".join(str(text or "").split())
     if len(quote) < 14:
         result["note"] = "نص أقصر من أن يُبحث عنه"
@@ -406,6 +407,14 @@ def takhrij(text: str, db_path: str, guides: bool = True) -> Dict[str, Any]:
             if tier_hits:
                 result["found"] = tier_hits
                 result["tier"] = tier_name
+                top = tier_hits[0]
+                result["identity"] = {
+                    "work": top.get("work"), "famous": top.get("famous"),
+                    "book_id": top.get("book_id"), "title": top.get("title"),
+                    "part": top.get("part"), "page": top.get("page"),
+                    "number": top.get("number"), "tier": tier_name,
+                    "occurrences": top.get("occurrences"),
+                }
                 if tier_name == "الصحيحان":
                     result["in_sahih"] = tier_hits
                     result["sufficient"] = True
@@ -421,6 +430,13 @@ def takhrij(text: str, db_path: str, guides: bool = True) -> Dict[str, Any]:
                     hit["tier"] = "دلالة الأطراف"
                     result["found"] = [hit]
                     result["tier"] = "دلالة الأطراف"
+                    result["identity"] = {
+                        "work": hit.get("work"), "famous": hit.get("famous"),
+                        "book_id": hit.get("book_id"), "title": hit.get("title"),
+                        "part": hit.get("part"), "page": hit.get("page"),
+                        "number": hit.get("number"), "tier": "دلالة الأطراف",
+                        "occurrences": hit.get("occurrences"),
+                    }
                     result["note"] = f"دلّت الأطراف على «{famous}» وثُبت المتن على صفحته"
                     break
         if not result["found"]:
