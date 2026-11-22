@@ -1933,6 +1933,7 @@ CITATION_FORMAT_RULE = """
 1. اسم الكتاب يُنسخ حرفياً كما هو في سطر «الإحالة المعتمدة» المعدّ بصيغة الحواشي المحكّمة: عنوان بلا طبعة ولا تحقيق، ومؤلف باسمه المشهور وحده بلا أوصاف (الشاطبي لا الشاطبي الأصولي النحوي). يُمنع اختصاره أو تغيير حرف فيه أو إضافة طبعة من عندك.
 1ب. سطر «الإحالة المعتمدة» يبدأ برقم الشاملة الفريد على صورة #ID. في الحاشية وحدها انسخ #ID قبل اسم الكتاب كما هو تماماً، مثل: #1220 سنن الترمذي - ط الرسالة للترمذي (2-123). هذا الرقم علامة ربط آلية بقاعدة الكتب وسيُحذف من العرض، فلا تحذفه ولا تغيّره ولا تستبدله، ولا تضعه في المتن ولا في قائمة المصادر والمراجع، ولا تكتبه بين معقوفين مثل [#1220].
 1ج. الحاشية شهادة نقل: لا تكتب حاشية ولا إحالة إلا لكتاب ورد نصه في الشواهد المعطاة ونقلتَ منه في الفقرة المرتبطة بها نصاً أو معنى فعلاً. ما لم تنقل منه لا تذكره في حاشية ولو كنت تعرفه أو كان مشهوراً في الباب، ولا تجمع مراجع للزينة أو للاستكثار.
+1د. هوية الإحالة هي اسم الكتاب المذكور معها: #ID والموضع والتصفح لذلك الكتاب وحده. يُمنع أن يُذكر مسند أحمد ويُربط موضع أبي يعلى، أو يُذكر البزار ويُربط موضع الحاكم، أو يُذكر المعجم الأوسط ويُربط الكبير. إن تعارض الاسم مع #ID فأعد النسخ من سطر الإحالة المعتمدة للكتاب المذكور باسمه، ولا تخلط شواهد كتابين في جملة واحدة بغير فاصل يعيّن كل مصدر.
 2. الحاشية الظاهرة تتبع الإخراج القياسي الآتي لا غير: اسم الكتاب للمؤلف (جزء-صفحة) بأرقام لاتينية بين قوسين إنجليزيين، مثل: مجموع الفتاوى لابن تيمية (2-368). لا يُزاد داخل القوسين شيء بعد الصفحة (لا «ترجمة» ولا رقم ترجمة ولا تعليق). فإن كان الكتاب جزءًا واحدًا لا أجزاء له: اسم الكتاب للمؤلف ص (صفحة)، مثل: التدمرية لابن تيمية ص (217). ويُصدَّر النقل الحرفي بـ«انظر:» والنقل بالمعنى بـ«ينظر:»، ولا يوضع أحدهما مكان الآخر. مثال الحرفي: انظر: مجموع الفتاوى لابن تيمية (2-368). ومثال المعنوي: ينظر: مجموع الفتاوى لابن تيمية (2-368). وفي الحاشية الواحدة متعددة المصادر لا يتكرر «انظر/ينظر» عند كل مصدر: يُصدَّر أول مصدر وحده به ثم تُعطف بقية المصادر بالواو مجردة، مثل: ينظر: مجموع الفتاوى لابن تيمية (2-368)؛ والموافقات للشاطبي (2-413)؛ والمحلى لابن حزم (2-187).
 3. قبل اسم الكتاب في الحاشية وحدها ضع #ID من سطر الإحالة المعتمدة، مثل: #1220 مجموع الفتاوى لابن تيمية (2-368). الرقم علامة ربط ويُحذف من العرض.
 4. تخريج الأحاديث والآثار له قالباه لا ثالث لهما، وبعدهما درجة الحديث إن كان في غير الصحيحين:
@@ -2144,6 +2145,11 @@ def _display_title(title: Any) -> str:
 
 
 _TAKHRIJ_BOOKS = [
+    ("المعجم الأوسط", "المعجم الأوسط للطبراني"),
+    ("المعجم الصغير", "المعجم الصغير للطبراني"),
+    ("المعجم الكبير", "المعجم الكبير للطبراني"),
+    ("أبي يعلى", "مسند أبي يعلى"), ("أبو يعلى", "مسند أبي يعلى"),
+    ("البزار", "مسند البزار"),
     ("البخاري", "صحيح البخاري"), ("مسلم", "صحيح مسلم"),
     ("أحمد", "مسند أحمد - ط الرسالة"), ("أبي داود", "سنن أبي داود"),
     ("أبو داود", "سنن أبي داود"), ("الترمذي", "سنن الترمذي"),
@@ -2152,11 +2158,128 @@ _TAKHRIJ_BOOKS = [
     ("ابن حبان", "صحيح ابن حبان"), ("الحاكم", "المستدرك على الصحيحين"),
     ("البيهقي", "السنن الكبرى للبيهقي"), ("الطبراني", "المعجم الكبير للطبراني"),
     ("عبد الرزاق", "مصنف عبد الرزاق"), ("ابن أبي شيبة", "مصنف ابن أبي شيبة"),
-    ("أبي يعلى", "مسند أبي يعلى"), ("البزار", "مسند البزار"),
     ("ابن خزيمة", "صحيح ابن خزيمة"), ("الطحاوي", "شرح مشكل الآثار"),
     ("ابن السني", "عمل اليوم والليلة لابن السني"),
     ("أبي الشيخ", "العظمة لأبي الشيخ"), ("أبو الشيخ", "العظمة لأبي الشيخ"),
 ]
+
+
+def _fold_mukhrij(text: str) -> str:
+    t = _fold_book_text(text)
+    return re.sub(r"\bابي\b", "ابو", t)
+
+
+def _pick_takhrij_hit(segment: str) -> Optional[Tuple[str, str]]:
+    """المخرِّج الأقرب للموضع في الجملة: أبو يعلى لا أحمد إن ورد الاسمان،
+    والمعجم الأوسط لا الكبير إن صُرِّح بالأوسط."""
+    s = segment or ""
+    hits: List[Tuple[int, int, str, str]] = []
+    for alias, canon in _TAKHRIJ_BOOKS:
+        idx = s.rfind(alias)
+        if idx < 0:
+            continue
+        hits.append((idx + len(alias), len(alias), alias, canon))
+    if not hits:
+        return None
+    hits.sort(key=lambda x: (x[0], x[1]))
+    return hits[-1][2], hits[-1][3]
+
+
+def _citation_fits_named(title: str, author: str = "", canonical: str = "",
+                         alias: str = "") -> bool:
+    """هل عنوان الكتاب المختوم هو الكتاب المذكور باسمه في الحاشية."""
+    blob = _fold_mukhrij(f"{title or ''} {author or ''}")
+    if not blob.strip():
+        return False
+    if alias:
+        a = _fold_mukhrij(alias)
+        parts = [w for w in a.split() if len(w) >= 3]
+        if a and len(a) >= 3 and a in blob:
+            return True
+        if parts and parts[-1] in blob:
+            return True
+    if canonical:
+        c = _fold_mukhrij(canonical)
+        words = [w for w in c.split()
+                 if len(w) >= 3 and w not in _STAMP_GENERIC_WORDS]
+        if words and all(w in blob for w in words[:2]):
+            return True
+        if words and words[0] in blob:
+            return True
+    return False
+
+
+def _cit_src_attr_map(tag: str) -> Dict[str, str]:
+    return {mm.group(1).lower(): html.unescape(mm.group(2))
+            for mm in re.finditer(r'data-([a-z-]+)="([^"]*)"', tag or "", re.I)}
+
+
+def _realign_citation_stamps(text: str) -> str:
+    """إن ذكرت الحاشية أحمد فلا يبقى ختم أبي يعلى، وإن ذكرت الأوسط فلا يبقى الكبير."""
+    if not text or "cit-src" not in text:
+        return text
+    spans = list(re.finditer(r'<span class="cit-src"([^>]*)>(.*?)</span>', text, re.S))
+    if not spans:
+        return text
+    edits: List[Tuple[int, int, str]] = []
+    prev_attrs: Optional[Dict[str, str]] = None
+    for m in spans:
+        attrs = _cit_src_attr_map(m.group(1))
+        inner = re.sub(r"<[^>]+>", " ", m.group(2) or "")
+        prefix = text[max(0, m.start() - 220):m.start()]
+        prefix = re.sub(r'<span class="cit-src"[^>]*>.*?</span>', " ", prefix, flags=re.S)
+        prefix = re.sub(r"<[^>]+>", " ", prefix)
+        clause = re.sub(r"\s+", " ", prefix + " " + inner)
+        hit = _pick_takhrij_hit(clause)
+        title = attrs.get("book") or ""
+        bid = attrs.get("book-id") or ""
+        part, page = attrs.get("part") or "", attrs.get("page") or ""
+        new_row = None
+        if (prev_attrs and str(prev_attrs.get("part") or "") == str(part)
+                and str(prev_attrs.get("page") or "") == str(page)
+                and prev_attrs.get("book-id")
+                and (not hit or _citation_fits_named(
+                    prev_attrs.get("book") or "", "", hit[1], hit[0]))):
+            if str(prev_attrs.get("book-id")) != str(bid):
+                meta = _book_meta_by_id(prev_attrs.get("book-id"))
+                if meta:
+                    new_row = meta
+                    new_row["book_id"] = prev_attrs.get("book-id")
+        elif hit and not _citation_fits_named(title, "", hit[1], hit[0]):
+            try:
+                r = shamela_local_mcp.resolve_book(hit[1])
+            except Exception:
+                r = None
+            if r and r.get("status") == "ok" and r.get("book_id"):
+                if _citation_fits_named(r.get("title") or "", r.get("author") or "", hit[1], hit[0]):
+                    new_row = r
+        if new_row:
+            q = ""
+            loc_inner = inner
+            if _STAMP_LOCATOR.search(inner or "") and len(re.sub(r"\s+", "", _STAMP_LOCATOR.sub("", inner or ""))) <= 4:
+                loc_inner = inner
+            else:
+                loc_inner = canonical_locator(part, page) or inner
+            _sep = "، " if (inner or "").lstrip().startswith("،") else ""
+            if _sep and not str(loc_inner).startswith("،"):
+                loc_inner = _sep + str(loc_inner).lstrip("، ").strip()
+            new = (
+                '<span class="cit-src" '
+                f'data-book="{html.escape(str(new_row.get("title") or title), quote=True)}" '
+                f'data-rel-path="{html.escape(str(new_row.get("rel_path") or attrs.get("rel-path") or ""), quote=True)}" '
+                f'data-book-id="{html.escape(str(new_row.get("book_id") or bid), quote=True)}" '
+                f'data-part="{html.escape(str(part), quote=True)}" '
+                f'data-page="{html.escape(str(page), quote=True)}" '
+                f'data-quote="{html.escape(q, quote=True)}">'
+                f'{html.escape(loc_inner)}</span>'
+            )
+            edits.append((m.start(), m.end(), new))
+            prev_attrs = _cit_src_attr_map(new)
+        else:
+            prev_attrs = attrs
+    for s, e, new in reversed(edits):
+        text = text[:s] + new + text[e:]
+    return text
 
 
 def _part_plausible(row: Any, part: Any) -> bool:
@@ -2416,7 +2539,7 @@ def public_chat_witnesses(citations: List[dict], limit: int = 200) -> List[dict]
     return rows
 
 
-_STAMP_GENERIC_WORDS = {"التفسير", "الحديث", "الفقه", "الشرح", "الكتاب", "الصحيح", "السنن", "التاريخ", "مجموع", "شرح", "كتاب", "الرساله", "رساله", "طبعه", "الطبعه"}
+_STAMP_GENERIC_WORDS = {"التفسير", "الحديث", "الفقه", "الشرح", "الكتاب", "الصحيح", "السنن", "التاريخ", "مجموع", "شرح", "كتاب", "الرساله", "رساله", "طبعه", "الطبعه", "المسند", "مسند", "المصنف", "المعجم"}
 _STAMP_EDITION_WORDS = {"ط", "ت", "طبعه", "الطبعه", "تحقيق", "بتحقيق"}
 _STAMP_LOCATOR = re.compile(
     r"(?:\(\s*(?P<part>[0-9٠-٩۰-۹]{1,3})\s*[-–—]\s*(?P<page>[0-9٠-٩۰-۹]{1,4})(?:\s*[،,;؛]\s*[^)]{0,60})?\s*\)"
@@ -2462,7 +2585,7 @@ def _locator_parts(m) -> Tuple[str, str]:
                                  or g.get("spage") or g.get("ponly") or "")
     return part, page
 _STAMP_LEAD = re.compile(
-    r"^(?:و\s*)?(?:انظر|ينظر|راجع|قال في|جاء في|ذكره|نقله|رواه|اخرجه|كتاب|المصدر|المرجع|في|من|عند|ثم|او)\s*[:：]?\s*"
+    r"^(?:و\s*)?(?:انظر|ينظر|راجع|قال في|جاء في|ذكره|نقله|رواه|اخرجه|أخرجه|كتاب|المصدر|المرجع|في|من|عند|ثم|او)\s*[:：]?\s*"
 )
 
 
@@ -2952,11 +3075,11 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
                              (ident["candidates"][0].get("book_ids") or [])]
         for _bid in _cand_ids[:6]:
             _r = _resolve(f"#{_bid}")
-            if _r:
+            if _r and _citation_fits_named(_r.get("title") or "", _r.get("author") or "", canonical, ""):
                 rows.append(_r)
         if not rows:
             _r = _resolve(canonical)
-            if _r:
+            if _r and _citation_fits_named(_r.get("title") or "", _r.get("author") or "", canonical, ""):
                 rows.append(_r)
         if not rows:
             return None
@@ -3005,6 +3128,9 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
                 attempts.append(_tail)
         row = None
         for attempt in attempts:
+            _ak = _stamp_title_key(attempt)
+            if _ak in ("المسند", "السنن", "الصحيح", "المصنف", "المعجم", "المستدرك"):
+                continue
             try:
                 r = shamela_local_mcp.resolve_book(attempt)
             except Exception:
@@ -3056,16 +3182,40 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             # الرقم الصريح يُبحث في كامل المقطع السابق للموضع: فالأقواس التوضيحية
             # «(شرح صحيح البخاري)» تقطع استخراج العنوان وتُسقط الرقم منه.
             id_match = _SHAMELA_ID_TOKEN.search(segment)
+            _tk_hit = _pick_takhrij_hit(segment) if _is_takhrij_context(segment) else None
+            _prior_src = None
+            for _sm in re.finditer(r'<span class="cit-src"[^>]*>', "".join(out) + chunk[pos:match.start()]):
+                _prior_src = _sm
+            if _prior_src:
+                _pattr = {mm.group(1).lower(): html.unescape(mm.group(2))
+                          for mm in re.finditer(r'data-([a-z-]+)="([^"]*)"', _prior_src.group(0), re.I)}
+                if (str(_pattr.get("part") or "") == str(part or "")
+                        and str(_pattr.get("page") or "") == str(page or "")
+                        and _pattr.get("book-id")):
+                    if not _tk_hit or _citation_fits_named(
+                            _pattr.get("book") or "", "", _tk_hit[1], _tk_hit[0]):
+                        _trow = _resolve(f"#{_pattr['book-id']}")
+                        if _trow:
+                            _attrs = (
+                                f'data-book="{html.escape(str(_trow.get("title") or ""), quote=True)}" '
+                                f'data-rel-path="{html.escape(str(_trow.get("rel_path") or ""), quote=True)}" '
+                                f'data-book-id="{html.escape(str(_trow.get("book_id") or ""), quote=True)}" '
+                                f'data-part="{html.escape(part, quote=True)}" '
+                                f'data-page="{html.escape(str(page or ""), quote=True)}" '
+                                f'data-quote="{html.escape(_page_quote(_trow, part, page), quote=True)}"'
+                            )
+                            _sep = "، " if match.group(0).startswith("،") else ""
+                            out.append(chunk[pos:match.start()])
+                            out.append(f'<span class="cit-src" {_attrs}>{html.escape(_sep + canonical_locator(part, page))}</span>')
+                            pos = match.end()
+                            continue
             if not id_match and _is_takhrij_context(segment):
-                # قالب التخريج سطحُه هو: يُحلّ المخرِّج باسمه المشهور إلى
+                # قالب التخريج سطحُه هو: يُحلّ المخرِّج الأقرب للموضع إلى
                 # كتابه، ويُختم الموضع وحده فيبقى القالب كما كُتب وعلى ذيله
                 # أيقونة التصفح في الأصل.
                 _trow = None
-                for _cn, _cb in _TAKHRIJ_BOOKS:
-                    if _cn in segment:
-                        _trow = _resolve_takhrij(_cb, segment, part, page)
-                        if _trow:
-                            break
+                if _tk_hit:
+                    _trow = _resolve_takhrij(_tk_hit[1], segment, part, page)
                 if _trow:
                     _attrs = (
                         f'data-book="{html.escape(str(_trow.get("title") or ""), quote=True)}" '
@@ -3085,6 +3235,10 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             prefix_end = None
             if id_match:
                 row = _resolve(f"#{id_match.group(1)}")
+                if row and _tk_hit and not _citation_fits_named(
+                        row.get("title") or "", row.get("author") or "",
+                        _tk_hit[1], _tk_hit[0]):
+                    row = _resolve_takhrij(_tk_hit[1], segment, part, page)
                 after_id = segment[id_match.end():]
                 title_start = pos + id_match.end() + (len(after_id) - len(after_id.lstrip()))
                 prefix_end = pos + id_match.start()
@@ -3175,7 +3329,7 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             out_parts.append(part)
         else:
             out_parts.append(enrich_chunk(part))
-    return "".join(out_parts), _unresolved[0]
+    return _realign_citation_stamps("".join(out_parts)), _unresolved[0]
 
 _FOOTNOTE_ITEM = re.compile(
     r"<li\b(?P<attrs>[^>]*\bid\s*=\s*[\"']fn(?P<num>[0-9٠-٩۰-۹]{1,3})[\"'][^>]*)>(?P<body>.*?)</li>",
@@ -9537,7 +9691,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.841"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.842"},
         },
     })
     if opened.get("error"):
@@ -24404,6 +24558,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     reply_text, _gate_stats = _documentation_gate(
                         reply_text, witness_rows, api_key=api_key_to_use,
                         lens=_research_lens)
+                    reply_text = _realign_citation_stamps(reply_text)
                     try:
                         _pkg_ledger = _tools_package_ledger(subagents_dossiers)
                         _attach_package_audit(_gate_stats, _pkg_ledger, reply_text)
