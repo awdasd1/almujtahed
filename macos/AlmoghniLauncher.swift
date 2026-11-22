@@ -408,6 +408,15 @@ final class AppWindow: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
             NSWorkspace.shared.open(url)
             return nil
         }
+        if readingWindows.count >= 8 {
+            if let last = readingWindows.last {
+                if let request = navigationAction.request.url.map({ URLRequest(url: $0) }) {
+                    last.webView.load(request)
+                }
+                last.show()
+            }
+            return readingWindows.last?.webView
+        }
         let reader = ReadingWindow(configuration: configuration)
         reader.openPopup = { [weak self] configuration, action in
             self?.makeReadingWindow(configuration: configuration, navigationAction: action)
@@ -613,12 +622,35 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var relocating = false
     private var quitConfirmed = false
 
+    private func sameAppLocation(_ a: URL, _ b: URL) -> Bool {
+        let pa = a.resolvingSymlinksInPath().standardizedFileURL.path
+        let pb = b.resolvingSymlinksInPath().standardizedFileURL.path
+        if pa.compare(pb, options: .caseInsensitive) == .orderedSame { return true }
+        let ida = (try? a.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier
+        let idb = (try? b.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier
+        if let ida, let idb { return ida.isEqual(idb) }
+        return false
+    }
+
+    private func applicationsDirectories() -> [String] {
+        let homeApps = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path
+        return ["/Applications", homeApps]
+    }
+
+    private func isInsideApplications(_ bundle: URL) -> Bool {
+        let path = bundle.resolvingSymlinksInPath().standardizedFileURL.path.lowercased()
+        return applicationsDirectories().contains { dir in
+            path.hasPrefix(dir.lowercased() + "/")
+        }
+    }
+
     private func removeLegacyBundles(in appsDir: String) {
         let fm = FileManager.default
-        let running = Bundle.main.bundleURL.standardizedFileURL.path
-        for name in ["amoghni.app", "المغني.app"] {
-            let legacy = URL(fileURLWithPath: appsDir).appendingPathComponent(name).standardizedFileURL
-            if legacy.path == running { continue }
+        let running = Bundle.main.bundleURL
+        for name in ["amoghni.app", "المغني.app", "Almoghni.app"] {
+            let legacy = URL(fileURLWithPath: appsDir).appendingPathComponent(name)
+            guard fm.fileExists(atPath: legacy.path) else { continue }
+            if sameAppLocation(legacy, running) { continue }
             if Bundle(url: legacy)?.bundleIdentifier == "com.almoghni.desktop" {
                 try? fm.removeItem(at: legacy)
             }
@@ -629,12 +661,30 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if ProcessInfo.processInfo.environment["ALMOGHNI_NO_RELOCATE"] == "1" { return false }
         let fm = FileManager.default
         let bundle = Bundle.main.bundleURL
-        let homeApps = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path
-        let appsDirs = ["/Applications", homeApps]
+        let appsDirs = applicationsDirectories()
         let myVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        // إن كنا أصلًا داخل التطبيقات فلا نُطلق نسخة ثانية: مقارنة الاسم
+        // حرفيًا كانت تعدّ Almoghni.app غير almoghni.app على قرص بلا تمييز حالة،
+        // فيُستدعى open -n على نفس الحزمة بلا توقف حتى يتجمد الجهاز.
+        if isInsideApplications(bundle) {
+            for dir in appsDirs { removeLegacyBundles(in: dir) }
+            return false
+        }
+        func recentlyRelocated() -> Bool {
+            try? fm.createDirectory(at: support, withIntermediateDirectories: true)
+            let stamp = support.appendingPathComponent("relocate.stamp")
+            if let t = (try? stamp.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+               Date().timeIntervalSince(t) < 20 {
+                return true
+            }
+            try? "\(ProcessInfo.processInfo.processIdentifier)".write(to: stamp, atomically: true, encoding: .utf8)
+            return false
+        }
         // LaunchServices قد يرسل «إعادة فتح» لنسختنا الجارية بدل تشغيل المنقولة
         // (نفس معرّف الحزمة)، لذا نطلق المنقولة قسريًا كعملية جديدة ثم نخرج.
         func launchRelocated(_ dest: URL) -> Bool {
+            if sameAppLocation(bundle, dest) { return false }
+            if recentlyRelocated() { return false }
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
             proc.arguments = ["-n", dest.path]
@@ -645,7 +695,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         func install(into appsDir: String) -> Bool {
             let dest = URL(fileURLWithPath: appsDir).appendingPathComponent("almoghni.app")
-            if bundle.standardizedFileURL.path == dest.standardizedFileURL.path {
+            if sameAppLocation(bundle, dest) {
                 for dir in appsDirs { removeLegacyBundles(in: dir) }
                 return false
             }
@@ -664,9 +714,6 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             } catch {
                 return false
             }
-        }
-        if let appsDir = appsDirs.first(where: { bundle.path.hasPrefix($0 + "/") }) {
-            return install(into: appsDir)
         }
         for appsDir in appsDirs {
             if install(into: appsDir) { return true }
