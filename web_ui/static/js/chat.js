@@ -5273,7 +5273,7 @@ function researchReportLens(entry) {
     plan: (!!L.report_plan || length === 'long'),
     packages: !!L.report_packages && length === 'long',
     hadithish,
-    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 1 : length === 'medium' ? 2 : 4))
+    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 3 : length === 'medium' ? 4 : 5))
   };
 }
 
@@ -5290,8 +5290,10 @@ function researchReportVerdict(a, failed) {
   const weak = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
   const ok = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
   if (lens.hadithish) {
-    if (a.takhrij_sufficient) return { verdict: sahihaynMissed ? weak : 'قوي', stampCollapsed, ratio };
-    if (sahihaynGap || sahihaynMissed) return { verdict: weak, stampCollapsed, ratio };
+    if (sahihaynMissed) return { verdict: weak, stampCollapsed, ratio };
+    if (a.takhrij_sufficient) return { verdict: 'قوي', stampCollapsed, ratio };
+    const laterTier = a.takhrij_tier && a.takhrij_tier !== 'الصحيحان';
+    if (sahihaynGap && !laterTier) return { verdict: weak, stampCollapsed, ratio };
     if (failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
     if (failed.length === 2) return { verdict: ok, stampCollapsed, ratio };
     return { verdict: 'قوي', stampCollapsed, ratio };
@@ -5409,7 +5411,7 @@ async function downloadChatResearchReport(idx) {
     const coreGaps = lens.skipHadithCore ? [] : (a.hadith_core_gaps || []).filter(g => Number(g.ring || 99) <= lens.hadithCoreMaxRing);
     if (coreGaps.length) {
       L.push('### فجوات أصول الحديث', '', '| العمل | الحلقة |', '|---|---|');
-      coreGaps.forEach(g => L.push(`| ${cell(g.work)} | ${g.ring === 1 ? 'الصحيحان' : g.ring === 2 ? 'السنن الأربعة' : 'أصول أخرى'} |`));
+      coreGaps.forEach(g => L.push(`| ${cell(g.work)} | ${g.ring === 1 ? 'الصحيحان' : g.ring === 2 ? 'الكتب الستة' : g.ring === 3 ? 'ابن خزيمة وابن حبان والحاكم' : g.ring === 4 ? 'السنن والمسانيد' : 'المعاجم'} |`));
       L.push('');
     }
     if ((a.takhrij_sahihayn_missed || []).length && (lens.hadithish || !lens.skipHadithCore)) {

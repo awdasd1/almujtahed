@@ -2795,7 +2795,7 @@ function researchReportLens(entry) {
     riskMemo: !!L.report_risk_memo && length === 'long',
     plan: length === 'long',
     hadithish,
-    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 1 : 2))
+    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 3 : length === 'medium' ? 4 : 5))
   };
 }
 
@@ -2812,8 +2812,10 @@ function researchReportVerdict(a, failed) {
   const weak = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
   const ok = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
   if (lens.hadithish) {
-    if (a.takhrij_sufficient) return { verdict: sahihaynMissed ? weak : 'قوي', stampCollapsed, ratio };
-    if (sahihaynGap || sahihaynMissed) return { verdict: weak, stampCollapsed, ratio };
+    if (sahihaynMissed) return { verdict: weak, stampCollapsed, ratio };
+    if (a.takhrij_sufficient) return { verdict: 'قوي', stampCollapsed, ratio };
+    const laterTier = a.takhrij_tier && a.takhrij_tier !== 'الصحيحان';
+    if (sahihaynGap && !laterTier) return { verdict: weak, stampCollapsed, ratio };
     if (failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
     if (failed.length === 2) return { verdict: ok, stampCollapsed, ratio };
     return { verdict: 'قوي', stampCollapsed, ratio };
