@@ -2768,6 +2768,37 @@ function _agentFixText(name) {
   return s + ' — يعدَّل من بطاقة الوكيل في مجموعته ثم يعاد البحث.';
 }
 
+function researchReportLens(entry) {
+  if (typeof window.researchReportLens === 'function' && window.researchReportLens !== researchReportLens) {
+    return window.researchReportLens(entry);
+  }
+  const a = (entry && entry.audit) || {};
+  const L = a.research_lens || (entry && entry.research_lens) || {};
+  let disc = L.discipline || '';
+  if (!disc) {
+    const g = String((entry && entry.group) || '');
+    if (/محدث|تخريج|حديث/.test(g) || a.takhrij_sufficient) disc = 'hadith';
+    else if (/فقه|فتوى/.test(g)) disc = 'fiqh';
+  }
+  const length = L.length || 'medium';
+  const ar = { hadith: 'حديث', fiqh: 'فقه', usul: 'أصول', tafsir: 'تفسير', aqidah: 'عقيدة', history: 'تاريخ', lugha: 'لغة', qawaid: 'قواعد', maqasid: 'مقاصد', shuruh: 'شروح', general: 'عام' };
+  const lar = { concise: 'مختصر', medium: 'متوسط', long: 'مطوّل' };
+  const hadithish = disc === 'hadith' || !!a.takhrij_sufficient;
+  return {
+    discipline: disc, disciplineAr: L.discipline_ar || ar[disc] || 'عام',
+    length, lengthAr: L.length_ar || lar[length] || 'متوسط',
+    skipMadhhab: L.skip_madhhab_coverage !== false && disc !== 'fiqh',
+    skipHadithCore: !!L.skip_hadith_core || !hadithish,
+    skipImam: !!L.skip_imam_primary || disc !== 'fiqh',
+    skipIjma: !!L.skip_ijma || hadithish,
+    charts: !!L.report_charts || length === 'long',
+    riskMemo: !!L.report_risk_memo && length === 'long',
+    plan: length === 'long',
+    hadithish,
+    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 1 : 2))
+  };
+}
+
 function researchReportVerdict(a, failed) {
   a = a || {};
   failed = failed || [];
@@ -2775,13 +2806,25 @@ function researchReportVerdict(a, failed) {
   const verifiedOnly = Number(a.verified || 0);
   const ratio = checked ? Math.round(100 * (verifiedOnly + Number(a.relocated || 0)) / checked) : null;
   const stampCollapsed = !!a.collapsed || (checked >= 8 && verifiedOnly * 10 < checked);
-  const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
-  const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
+  const lens = researchReportLens({ audit: a });
+  const sahihaynGap = lens.hadithish && (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
+  const sahihaynMissed = lens.hadithish && (a.takhrij_sahihayn_missed || []).length > 0;
   const weak = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
   const ok = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
-  if (a.takhrij_sufficient) return { verdict: sahihaynMissed ? weak : 'قوي', stampCollapsed, ratio };
-  if (sahihaynGap || sahihaynMissed || failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
-  if (failed.length === 2 || (a.ijma_unattributed || 0) > 0) return { verdict: ok, stampCollapsed, ratio };
+  if (lens.hadithish) {
+    if (a.takhrij_sufficient) return { verdict: sahihaynMissed ? weak : 'قوي', stampCollapsed, ratio };
+    if (sahihaynGap || sahihaynMissed) return { verdict: weak, stampCollapsed, ratio };
+    if (failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
+    if (failed.length === 2) return { verdict: ok, stampCollapsed, ratio };
+    return { verdict: 'قوي', stampCollapsed, ratio };
+  }
+  if (lens.discipline === 'fiqh') {
+    const madhhabHard = (a.madhhab_coverage_gaps || []).some(g => g.single_book);
+    if (failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
+    if (madhhabHard || (a.takhrij_sahihayn_missed || []).length) return { verdict: ok, stampCollapsed, ratio };
+  }
+  if (failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
+  if (failed.length === 2 || ((a.ijma_unattributed || 0) > 0 && !lens.skipIjma)) return { verdict: ok, stampCollapsed, ratio };
   if (ratio !== null && ratio < 50 && !stampCollapsed) return { verdict: weak, stampCollapsed, ratio };
   if (ratio !== null && ratio < 65 && !stampCollapsed) return { verdict: ok, stampCollapsed, ratio };
   return { verdict: 'قوي', stampCollapsed, ratio };
@@ -2792,85 +2835,63 @@ function downloadResearchReport(idx) {
   const it = items[idx];
   if (!it) return;
   const a = it.audit || {};
-  const linkRatio = a.checked && a.linked != null ? Math.round(100 * a.linked / a.checked) : null;
   const failed = it.agents_failed || [];
-  const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
-  const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
-  const { verdict, stampCollapsed, ratio } = researchReportVerdict(a, failed);
+  const lensFn = (typeof window.researchReportLens === 'function') ? window.researchReportLens : researchReportLens;
+  const verdictFn = (typeof window.researchReportVerdict === 'function') ? window.researchReportVerdict : researchReportVerdict;
+  const lens = lensFn(it);
+  const { verdict, stampCollapsed, ratio } = verdictFn(a, failed);
+  const cell = s => String(s ?? '—').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 160);
   const L = [];
-  L.push('# 📏 تقرير بحث خاص — سجل قياس البحوث في المغني');
+  L.push('# تقرير بحث — المغني');
   L.push('');
-  L.push(`البحث: ${it.question || '—'}`);
-  L.push(`التاريخ: ${it.ts || '—'} · المجموعة: ${it.group || '—'} · نموذج المدير: ${it.manager_model || '—'}`);
-  L.push(`المدة: ${it.duration_s ? Math.round(it.duration_s / 60 * 10) / 10 + ' دقيقة' : '—'} · حروف الجواب: ${it.answer_chars ?? '—'} · الشواهد المعروضة على المدير: ${it.witnesses ?? '—'} · المجمعة من الوكلاء: ${it.citations_collected ?? '—'}`);
+  L.push('| البند | القيمة |', '|---|---|');
+  L.push(`| البحث | ${cell(it.question)} |`);
+  L.push(`| الفن / الطول | ${lens.disciplineAr} · ${lens.lengthAr} |`);
+  L.push(`| المجموعة | ${cell(it.group)} |`);
+  L.push(`| المدة | ${it.duration_s ? Math.round(it.duration_s / 60 * 10) / 10 + ' دقيقة' : '—'} |`);
+  L.push(`| الحجم | ${it.answer_chars ?? '—'} حرفًا · ${it.witnesses ?? '—'} شاهدًا |`);
   L.push('');
-  L.push('الحكم العام: ' + verdict);
+  L.push('> **الحكم:** ' + verdict);
   L.push('');
-  if (stampCollapsed) L.push('انخفاض الثبوت الآلي هنا من انهيار ربط الحواشي بصيغة الختم، لا من غياب الأصل في المكتبة؛ لا يُجعل وحده حكمًا بضعف التخريج.');
-  L.push('أولًا: اكتمال الفريق');
-  L.push(`الوكلاء المرسلون: ${it.agents_total ?? '—'} · الساقطون: ${failed.length}${failed.length ? ' (' + failed.join('، ') + ')' : ''}`);
-  if (!failed.length) L.push('لا سقوط: تقارير الفريق كلها حاضرة، والأقسام مبنية على تحرير وكلائها أنفسهم.');
+  if (stampCollapsed) L.push('> انخفاض الثبوت الآلي من انهيار ربط الحواشي؛ لا يُجعل حكمًا بضعف المادة.', '');
+  L.push('## الفريق', '');
+  L.push(`المرسلون: ${it.agents_total ?? '—'} · الساقطون: ${failed.length}${failed.length ? ' (' + failed.join('، ') + ')' : ''}`);
   const disabledByUser = it.agents_disabled || [];
-  if (disabledByUser.length) L.push(`معطّلون قصدًا بقرار المستخدم (${disabledByUser.length}): ${disabledByUser.join('، ')} — لم يُطلب منهم شيء ولم يُعوّض دورهم، وبُني البحث على النطاق المقلّص بقرار الباحث؛ فلا يُعدّ غيابهم قصورًا في التنفيذ.`);
-  failed.forEach(n => {
-    L.push(`- «${n}»: سقط تقريره رغم إعادة المحاولة بنموذج بديل؛ قسمه في البحث مبني على بطاقات شواهده وبطاقات الخلاف والمقارنة لا على تقريره.`);
-    L.push('  البديل والمعالجة: ' + _agentFixText(n));
-  });
+  if (disabledByUser.length) L.push(`معطّلون بقرارك: ${disabledByUser.join('، ')}`);
   L.push('');
-  L.push('ثانيًا: التدقيق التوثيقي');
-  L.push(`نقول دخلت الفحص: ${a.checked ?? '—'} · مربوطة بحواشيها: ${a.linked ?? '—'}${linkRatio !== null ? ' (' + linkRatio + '٪)' : ''} · ثابتة في كتب إحالتها: ${a.verified ?? '—'} · ثابتة في غير موضعها: ${a.relocated ?? '—'} · غير ثابتة آليًا: ${a.unverified ?? '—'} · نسبة الثبوت: ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪)`);
-  if (ratio !== null && ratio < 65 && !stampCollapsed) L.push('ملحوظة: الثبوت دون العتبة؛ راجع يدويًا النقول غير الثابتة المؤثرة المذكورة في «سجل التدقيق» ذيل الجواب قبل اعتماد البحث أكاديميًا، وقلّل شواهد وكلاء المسح الواسع لصالح شواهد أضيق منتقاة من كتب الطبقات.');
-  else if (stampCollapsed) L.push('ملحوظة: التدقيق الآلي انهار على ربط الحواشي فلا تُقرأ نسبته حكمًا على مادة التخريج.');
-  if (linkRatio !== null && linkRatio < 80) L.push('ملحوظة: ربط الحواشي دون ٨٠٪؛ أكثر النقول خارج عين التدقيق لا محكوم عليها. المعالجة: طلب إحالات مرقمة ملاصقة لكل نقل في توجيه المدير قبل إعادة التوليد.');
-  if ((a.tier_warnings || 0) > 0) L.push(`ملحوظة: ${a.tier_warnings} نقل قام على موسوعة مقارنة سندًا وحيدًا؛ يحتاج كل منها أصله من كتب مذهبه قبل الاعتماد.`);
-  if ((a.ijma_flags || 0) > 0) L.push(`ملحوظة: ${a.ijma_flags} دعوى إجماع بلا نقل ظاهر من كتب الإجماع؛ حررها من إجماع ابن المنذر أو مراتب ابن حزم أو خففها إلى «الجمهور».`);
-  if ((a.ijma_unattributed || 0) > 0) L.push(`ملحوظة: ${a.ijma_unattributed} دعوى اتفاق مطلقة بلا نسبة لقائل؛ انسبها لقائلها الموثق أو خففها إلى «الجمهور».`);
-  if ((a.cited_books || 0) > 0) L.push(`الكتب المحال إليها فعلًا في الحواشي: ${a.cited_books} كتابًا${it.witnesses ? ' من ' + it.witnesses + ' شاهدًا معروضًا' : ''}.`);
-  L.push('');
-  L.push('ثالثًا: ملحوظات الحجم والمدة');
-  if (it.duration_s > 1800) L.push(`المدة ${Math.round(it.duration_s / 60)} دقيقة فوق المعتاد؛ قلّل extract_count لوكلاء الجمع والمسح إلى ١٥٠ وأبق العمق لوكلاء التحرير والمناظرة.`);
-  else L.push('المدة والحجم ضمن المعتاد لبحوث الوكلاء الموسوعية، ما لم يكن المطلوب مختصرًا فيقارن بطول الطلب لا بهذا المعتاد.');
-  L.push('');
-  L.push('رابعًا: بدائل عملية مرتبة');
-  let altN = 0;
-  failed.forEach(n => { altN++; L.push(`${altN}. لوكيل «${n}»: ${_agentFixText(n)}`); });
-  if (ratio !== null && ratio < 65 && !stampCollapsed) { altN++; L.push(`${altN}. أعد توليد البحث بعد تضييق شواهد وكلاء المسح إلى كتب الطبقات أولًا، وقارن نسبة الثبوت الجديدة بهذه.`); }
-  if ((a.ijma_unattributed || 0) > 0 || (a.ijma_flags || 0) > 0) { altN++; L.push(`${altN}. أضف لبطاقة وكيل الإجماع إلزام التصريح بمصدر كل دعوى اتفاق أو تخفيفها إلى «الجمهور».`); }
-  if (!altN) L.push('لا بدائل مطلوبة: مؤشرات هذا البحث ضمن العتبات؛ يحفظ مرجعًا للمقارنة بالإصدارات القادمة.');
-  if (it.audit_record) {
+  if (!lens.hadithish || lens.length !== 'concise') {
+    L.push('## التوثيق', '');
+    L.push(`نقول: ${a.checked ?? '—'} · ثابتة: ${a.verified ?? '—'} · غير ثابتة: ${a.unverified ?? '—'}`
+      + (ratio !== null && !stampCollapsed ? ` · النسبة: ${ratio}٪` : ''));
     L.push('');
-    L.push('خامسًا: سجل التدقيق الآلي الكامل (كما خرج من المنظومة)');
-    L.push('--------------------------------------------------');
-    L.push(it.audit_record);
   }
-  if (it.risk_memo) {
+  const madhhabGaps = lens.skipMadhhab ? [] : (a.madhhab_coverage_gaps || []);
+  if (madhhabGaps.length) {
+    L.push('### قصور استغراق المذاهب');
+    madhhabGaps.forEach(g => L.push(`- ${g.madhhab}: ${g.books} كتابًا / ${g.layers} طبقة`));
     L.push('');
-    L.push('سادسًا: 🏛 مذكرة إدارة المخاطر إلى صاحب البحث (مسؤول المخاطر: ' + (it.risk_officer || '—') + (it.risk_verdict ? ' · الحكم: ' + it.risk_verdict : '') + ')');
-    L.push('--------------------------------------------------');
-    L.push(it.risk_memo);
-    if ((it.excluded_items || []).length) {
-      const rows = (typeof formatExcludedReportMd === 'function')
-        ? formatExcludedReportMd(it.excluded_items)
-        : [];
-      if (rows.length) rows.forEach(line => L.push(line));
-      else {
-        L.push('');
-        L.push('النقول المستبعدة من الحواشي:');
-        it.excluded_items.slice(0, 26).forEach(x => {
-          const book = x.label || (x.title ? ('«' + x.title + '»' + (x.author ? ' ل' + x.author : '')) : '');
-          L.push('- «' + (x.quote || '').slice(0, 90) + '»'
-            + (book ? ' — ' + book : '')
-            + (x.verdict ? ' — ' + x.verdict : ''));
-        });
-      }
-    }
   }
-  L.push('');
-  L.push('## 📊 الرسوم البيانية');
-  L.push('');
-  L.push('<div id="rrDashMount"></div>');
-  L.push('');
-  L.push('تنبيه: هذا التقرير بوصلة تنبيه من مؤشرات آلية، لا بديل عن قراءة متن البحث.');
+  const coreGaps = lens.skipHadithCore ? [] : (a.hadith_core_gaps || []).filter(g => Number(g.ring || 99) <= (lens.hadithCoreMaxRing || 1));
+  if (coreGaps.length) {
+    L.push('### فجوات أصول الحديث');
+    coreGaps.forEach(g => L.push(`- ${g.work}`));
+    L.push('');
+  }
+  if (lens.hadithish && (a.takhrij_sahihayn_missed || []).length) {
+    L.push('### تخريج ناقص من الصحيحين');
+    a.takhrij_sahihayn_missed.slice(0, 8).forEach(x => L.push(`- ${x.book || ''} ${x.part || ''}-${x.page || ''}`));
+    L.push('');
+  }
+  if (typeof buildRiskRegisterMd === 'function') {
+    L.push(buildRiskRegisterMd(it.risk_events || [], {
+      verdict: it.risk_verdict, officer: it.risk_officer, dropLow: true, openOnly: true
+    }));
+  }
+  if (lens.charts) {
+    L.push('', '## الرسوم', '', '<div id="rrDashMount"></div>', '');
+  }
+  if (lens.plan && it.research_plan) L.push('', '## خطة البحث', '', it.research_plan);
+  L.push('', '> التقرير بوصلة تنبيه آلية، لا بديل عن قراءة متن البحث.');
   if (typeof showMarkdownReport === 'function') {
     showMarkdownReport(L.join('\n'), 'تقرير-بحث-' + (it.chat_id || idx) + '.md', it);
     return;

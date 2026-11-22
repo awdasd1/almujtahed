@@ -4429,30 +4429,28 @@ function buildRiskRegisterMd(events, opts) {
   const icons = { 'عالية': '🔴', 'متوسطة': '🟡', 'منخفضة': '⚪' };
   const cell = s => String(s || '').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 180);
   const done = e => /^(مُغلق|عولج آليًا|موثق)/.test(e.status || '');
-  const L = ['# 🏛 سجل مخاطر إدارة المخاطر', ''];
+  const classes = opts.dropLow ? ['عالية', 'متوسطة'] : ['عالية', 'متوسطة', 'منخفضة'];
+  const L = ['## مخاطر مفتوحة', ''];
   const meta = [];
-  if (opts.verdict) meta.push('**الحكم العام:** ' + opts.verdict);
-  if (opts.officer) meta.push('**مسؤول المخاطر:** ' + opts.officer);
+  if (opts.verdict) meta.push('**الحكم:** ' + opts.verdict);
+  if (opts.officer) meta.push('**المسؤول:** ' + opts.officer);
   if (meta.length) L.push(meta.join(' · '), '');
-  L.push('## 📊 ملخص السجل', '', '| الخطورة | البنود | مفتوحة | أُغلقت / عولجت |', '|---|---|---|---|');
-  ['عالية', 'متوسطة', 'منخفضة'].forEach(cls => {
-    const grp = ev.filter(e => e.cls === cls);
-    if (!grp.length) return;
-    const d = grp.filter(done).length;
-    L.push(`| ${icons[cls]} ${cls} | ${grp.length} | ${grp.length - d} | ${d} |`);
+  const openEv = ev.filter(e => !done(e) && classes.includes(e.cls));
+  if (!openEv.length) {
+    L.push('لا مخاطر مفتوحة عالية أو متوسطة في عدسة هذا البحث.');
+    return L.join('\n');
+  }
+  L.push('| الخطورة | مفتوحة |', '|---|---|');
+  classes.forEach(cls => {
+    const n = openEv.filter(e => e.cls === cls).length;
+    if (n) L.push(`| ${icons[cls] || ''} ${cls} | ${n} |`);
   });
-  ['عالية', 'متوسطة', 'منخفضة'].forEach(cls => {
-    const grp = ev.filter(e => e.cls === cls && !done(e));
+  classes.forEach(cls => {
+    const grp = openEv.filter(e => e.cls === cls);
     if (!grp.length) return;
-    L.push('', `## ${icons[cls]} مخاطر ${cls} مفتوحة (${grp.length})`, '', '| # | الخطر | الدليل | الإجراء المطلوب |', '|---|---|---|---|');
+    L.push('', `### ${icons[cls] || ''} ${cls} (${grp.length})`, '', '| # | الخطر | الدليل | الإجراء |', '|---|---|---|---|');
     grp.forEach((e, i) => L.push(`| ${i + 1} | ${cell(e.title)}${e._dup ? ' (×' + e._dup + ')' : ''} | ${cell(e.evidence)} | ${cell(e.action)} |`));
   });
-  const doneAll = ev.filter(done);
-  if (doneAll.length) {
-    L.push('', `## ✅ عولجت آليًا أو وُثّقت بقرار (${doneAll.length}) — لا إجراء`, '', '| الخطر | الخطورة | ما تم |', '|---|---|---|');
-    doneAll.forEach(e => L.push(`| ${cell(e.title)} | ${icons[e.cls] || ''} ${cell(e.cls)} | ${cell(e.status)} |`));
-  }
-  if (!ev.length) L.push('لم يُرصد حدث مخاطرة في هذا البحث ضمن الحدود المعتمدة.');
   return L.join('\n');
 }
 
@@ -5234,26 +5232,50 @@ function showMarkdownReport(md, filename, entry) {
     URL.revokeObjectURL(dl.href);
   };
   if (entry) {
-    let mount = body.querySelector('#rrDashMount');
-    if (!mount) {
-      const h = Array.from(body.querySelectorAll('h2')).find(el => /الرسوم البيانية/.test(el.textContent || ''));
-      if (h) {
-        mount = document.createElement('div');
-        h.insertAdjacentElement('afterend', mount);
-      }
+    const mount = body.querySelector('#rrDashMount');
+    if (mount) {
+      renderResearchReportDashboard(mount, entry);
+      requestAnimationFrame(() => (ov._rrCharts || []).forEach(ch => { try { ch.resize(); } catch (e) {} }));
     }
-    if (!mount) {
-      mount = document.createElement('div');
-      const md = body.querySelector('.md-report');
-      (md || body).insertBefore(mount, (md || body).firstChild);
-    }
-    renderResearchReportDashboard(mount, entry);
-    requestAnimationFrame(() => (ov._rrCharts || []).forEach(ch => { try { ch.resize(); } catch (e) {} }));
   }
 }
 window.formatExcludedReportMd = formatExcludedReportMd;
 window.showMarkdownReport = showMarkdownReport;
 window.renderResearchReportDashboard = renderResearchReportDashboard;
+window.researchReportLens = researchReportLens;
+window.researchReportVerdict = researchReportVerdict;
+window.buildRiskRegisterMd = buildRiskRegisterMd;
+
+function researchReportLens(entry) {
+  const a = (entry && entry.audit) || {};
+  const L = a.research_lens || (entry && entry.research_lens) || {};
+  let disc = L.discipline || '';
+  if (!disc) {
+    const g = String((entry && entry.group) || '');
+    if (/محدث|تخريج|حديث/.test(g) || a.takhrij_sufficient) disc = 'hadith';
+    else if (/فقه|فتوى/.test(g)) disc = 'fiqh';
+  }
+  const length = L.length || 'medium';
+  const ar = { hadith: 'حديث', fiqh: 'فقه', usul: 'أصول', tafsir: 'تفسير', aqidah: 'عقيدة', history: 'تاريخ', lugha: 'لغة', qawaid: 'قواعد', maqasid: 'مقاصد', shuruh: 'شروح', general: 'عام' };
+  const lar = { concise: 'مختصر', medium: 'متوسط', long: 'مطوّل' };
+  const hadithish = disc === 'hadith' || !!a.takhrij_sufficient;
+  return {
+    discipline: disc,
+    disciplineAr: L.discipline_ar || ar[disc] || 'عام',
+    length,
+    lengthAr: L.length_ar || lar[length] || 'متوسط',
+    skipMadhhab: L.skip_madhhab_coverage !== false && disc !== 'fiqh',
+    skipHadithCore: !!L.skip_hadith_core || !hadithish,
+    skipImam: !!L.skip_imam_primary || disc !== 'fiqh',
+    skipIjma: !!L.skip_ijma || hadithish || disc === 'lugha' || disc === 'history',
+    charts: !!L.report_charts || length === 'long',
+    riskMemo: !!L.report_risk_memo && length === 'long',
+    plan: (!!L.report_plan || length === 'long'),
+    packages: !!L.report_packages && length === 'long',
+    hadithish,
+    hadithCoreMaxRing: Number(L.hadith_core_max_ring != null ? L.hadith_core_max_ring : (length === 'concise' ? 1 : length === 'medium' ? 2 : 4))
+  };
+}
 
 function researchReportVerdict(a, failed) {
   a = a || {};
@@ -5262,13 +5284,25 @@ function researchReportVerdict(a, failed) {
   const verifiedOnly = Number(a.verified || 0);
   const ratio = checked ? Math.round(100 * (verifiedOnly + Number(a.relocated || 0)) / checked) : null;
   const stampCollapsed = !!a.collapsed || (checked >= 8 && verifiedOnly * 10 < checked);
-  const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
-  const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
+  const lens = researchReportLens({ audit: a });
+  const sahihaynGap = lens.hadithish && (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
+  const sahihaynMissed = (lens.hadithish || !lens.skipHadithCore) && (a.takhrij_sahihayn_missed || []).length > 0;
   const weak = 'ضعيف — يعاد توليده ولا يعتمد مرجعًا';
   const ok = 'مقبول بتنبيه — يعتمد مسودة وتحرر مواضعه المنبهة';
-  if (a.takhrij_sufficient) return { verdict: sahihaynMissed ? weak : 'قوي', stampCollapsed, ratio };
-  if (sahihaynGap || sahihaynMissed || failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
-  if (failed.length === 2 || (a.ijma_unattributed || 0) > 0) return { verdict: ok, stampCollapsed, ratio };
+  if (lens.hadithish) {
+    if (a.takhrij_sufficient) return { verdict: sahihaynMissed ? weak : 'قوي', stampCollapsed, ratio };
+    if (sahihaynGap || sahihaynMissed) return { verdict: weak, stampCollapsed, ratio };
+    if (failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
+    if (failed.length === 2) return { verdict: ok, stampCollapsed, ratio };
+    return { verdict: 'قوي', stampCollapsed, ratio };
+  }
+  if (lens.discipline === 'fiqh') {
+    const madhhabHard = (a.madhhab_coverage_gaps || []).some(g => g.single_book);
+    if (failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
+    if (madhhabHard || (a.takhrij_sahihayn_missed || []).length) return { verdict: ok, stampCollapsed, ratio };
+  }
+  if (failed.length >= 3) return { verdict: weak, stampCollapsed, ratio };
+  if (failed.length === 2 || ((a.ijma_unattributed || 0) > 0 && !lens.skipIjma)) return { verdict: ok, stampCollapsed, ratio };
   if (ratio !== null && ratio < 50 && !stampCollapsed) return { verdict: weak, stampCollapsed, ratio };
   if (ratio !== null && ratio < 65 && !stampCollapsed) return { verdict: ok, stampCollapsed, ratio };
   return { verdict: 'قوي', stampCollapsed, ratio };
@@ -5322,93 +5356,97 @@ async function downloadChatResearchReport(idx) {
   }
   const cell = s => String(s ?? '—').replace(/\s+/g, ' ').replace(/\|/g, '¦').slice(0, 160);
   const L = [];
-  L.push('# 📏 تقرير بحث — المغني');
+  L.push('# تقرير بحث — المغني');
   L.push('');
   if (entry) {
     const a = entry.audit || {};
     const failed = entry.agents_failed || [];
     const disabled = entry.agents_disabled || [];
-    const sahihaynGap = (a.hadith_core_gaps || []).some(g => Number(g.ring) === 1);
-    const sahihaynMissed = (a.takhrij_sahihayn_missed || []).length > 0;
+    const lens = researchReportLens(entry);
     const { verdict, stampCollapsed, ratio } = researchReportVerdict(a, failed);
     L.push('| البند | القيمة |', '|---|---|');
     L.push(`| البحث | ${cell(entry.question)} |`);
-    L.push(`| التاريخ | ${cell(entry.ts)} |`);
+    L.push(`| الفن / الطول | ${lens.disciplineAr} · ${lens.lengthAr} |`);
     L.push(`| المجموعة | ${cell(entry.group)} |`);
-    L.push(`| نموذج المدير | ${cell(entry.manager_model)} |`);
     L.push(`| المدة | ${entry.duration_s ? Math.round(entry.duration_s / 60 * 10) / 10 + ' دقيقة' : '—'} |`);
-    L.push(`| حجم الجواب | ${entry.answer_chars ?? '—'} حرفًا · ${entry.witnesses ?? '—'} شاهدًا |`);
+    L.push(`| الحجم | ${entry.answer_chars ?? '—'} حرفًا · ${entry.witnesses ?? '—'} شاهدًا |`);
     L.push('');
-    L.push('> ## الحكم العام: ' + verdict);
+    L.push('> **الحكم:** ' + verdict);
     L.push('');
     if (stampCollapsed) {
-      L.push('> انخفاض الثبوت الآلي هنا من انهيار ربط الحواشي بصيغة الختم، لا من غياب الأصل في المكتبة؛ لا يُجعل وحده حكمًا بضعف التخريج.');
+      L.push('> انخفاض الثبوت الآلي من انهيار ربط الحواشي، لا من غياب الأصل؛ لا يُجعل حكمًا بضعف المادة.');
       L.push('');
     }
-    L.push('## 👥 أولًا: اكتمال الفريق');
+    L.push('## الفريق');
     L.push('');
     L.push('| المؤشر | العدد |', '|---|---|');
-    L.push(`| الوكلاء المرسلون | ${entry.agents_total ?? '—'} |`);
-    L.push(`| الساقطون تقنيًا | ${failed.length}${failed.length ? ' (' + cell(failed.join('، ')) + ')' : ''} |`);
-    L.push(`| المعطّلون بقرار المستخدم | ${disabled.length}${disabled.length ? ' (' + cell(disabled.join('، ')) + ')' : ''} |`);
-    if (failed.length) L.push('', '> الساقطون بُنيت أقسامهم على بطاقات شواهدهم وبطاقات الخلاف والمقارنة.');
-    if (disabled.length) L.push('', '> المعطّلون قرارك أنت: البحث مبني على النطاق المقلّص بقرارك.');
+    L.push(`| المرسلون | ${entry.agents_total ?? '—'} |`);
+    if (failed.length) L.push(`| الساقطون | ${failed.length} (${cell(failed.join('، '))}) |`);
+    if (disabled.length) L.push(`| معطّلون بقرارك | ${disabled.length} (${cell(disabled.join('، '))}) |`);
     L.push('');
-    L.push('## 🔎 ثانيًا: مؤشرات التدقيق التوثيقي');
-    L.push('');
-    L.push('| المؤشر | القيمة |', '|---|---|');
-    L.push(`| نقول مفحوصة | ${a.checked ?? '—'} (مربوطة بحواشيها: ${a.linked ?? '—'}) |`);
-    L.push(`| ثابتة في كتب إحالتها | ${a.verified ?? '—'} |`);
-    L.push(`| ثابتة في غير موضعها | ${a.relocated ?? '—'} |`);
-    L.push(`| غير ثابتة آليًا | ${a.unverified ?? '—'} |`);
-    L.push(`| نسبة الثبوت | ${ratio !== null ? ratio + '٪' : '—'} (عتبة الاعتماد ٦٥٪${stampCollapsed ? ' — لا تُعتمد عند انهيار الربط' : ''}) |`);
-    L.push(`| تنبيهات وسيط وحيد | ${a.tier_warnings ?? 0}${a.tier_resolved ? ` (و${a.tier_resolved} وسيط وجد له أصل فعولج)` : ''} |`);
-    L.push(`| دعاوى إجماع / اتفاق بلا نسبة | ${a.ijma_flags ?? 0} / ${a.ijma_unattributed ?? 0} |`);
-    L.push(`| حزم مدير الأدوات | ${a.packages_present ? ((a.packages_count ?? 0) + ' حزمة · توثيق ' + (a.packages_verified_mentions ?? 0) + ' · نقول خارج الحزم ' + (a.draft_quotes_unbundled_n ?? 0)) : 'لم يعمل في هذه الجولة'} |`);
-    if ((a.madhhab_coverage_gaps || []).length) {
-      L.push('', '### قصور استغراق المذاهب', '', '| المذهب | كتب مستعملة | طبقات | المفقود |', '|---|---|---|---|');
-      a.madhhab_coverage_gaps.forEach(g => L.push(`| ${cell(g.madhhab)} | ${g.books} | ${g.layers} | ${cell((g.missing_layers || []).join('، '))} |`));
+    const stampRows = [];
+    if (!lens.hadithish || lens.length !== 'concise') {
+      stampRows.push(`| نقول مفحوصة | ${a.checked ?? '—'} · ثابتة ${a.verified ?? '—'} · غير ثابتة ${a.unverified ?? '—'} |`);
+      if (ratio !== null && !stampCollapsed) stampRows.push(`| نسبة الثبوت | ${ratio}٪ |`);
     }
-    if ((a.hadith_core_gaps || []).length) {
-      L.push('', '### فجوات أصول معلنة (لا بطاقة ولا تصريح خلو)', '', '| العمل | النوع | الحلقة |', '|---|---|---|');
-      a.hadith_core_gaps.forEach(g => L.push(`| ${cell(g.work)} | ${cell(g.kind)} | ${g.ring === 1 ? 'الصحيحان' : g.ring === 2 ? 'السنن الأربعة' : g.ring === 3 ? 'تمام التسعة' : 'شروح'} |`));
+    if (!lens.skipIjma && ((a.ijma_flags || 0) || (a.ijma_unattributed || 0))) {
+      stampRows.push(`| دعاوى إجماع بلا نسبة | ${a.ijma_flags ?? 0} / ${a.ijma_unattributed ?? 0} |`);
     }
-    if ((a.takhrij_sahihayn_missed || []).length) {
-      L.push('', '### تخريج ناقص: الحديث في الصحيحين ولم يُعزَ إليهما', '', '| الكتاب | الموضع | رقم الحديث |', '|---|---|---|');
-      a.takhrij_sahihayn_missed.slice(0, 8).forEach(x => L.push(`| ${cell(x.book)} | ${cell((x.part || '') + '-' + (x.page || ''))} | ${x.number ?? '—'} |`));
+    if (lens.packages && a.packages_present) {
+      stampRows.push(`| حزم الأدوات | ${(a.packages_count ?? 0)} |`);
     }
-    if ((a.imam_primary_gaps || []).length) {
-      L.push('', '### أقوال أئمة بواسطة (لا مصدر أول حاضر)', '', '| الإمام | مصادره الأولى الغائبة |', '|---|---|');
-      a.imam_primary_gaps.forEach(g => L.push(`| ${cell(g.imam)} | ${cell((g.sources || []).join('، '))} |`));
+    if (stampRows.length) {
+      L.push('## التوثيق', '', '| المؤشر | القيمة |', '|---|---|');
+      stampRows.forEach(r => L.push(r));
+      L.push('');
     }
-    if ((a.takhrij_locator_fixed || []).length) {
-      L.push('', `### ضبط تخريج صُحّح آليًا (${a.takhrij_locator_fixed.length})`, '', '| الحاشية | من | إلى | رقم الحديث |', '|---|---|---|---|');
-      a.takhrij_locator_fixed.slice(0, 10).forEach(x => L.push(`| ${x.num ?? '—'} | ${cell(x.from)} | ${cell(x.to)} | ${x.number ?? '—'} |`));
+    const madhhabGaps = lens.skipMadhhab ? [] : (a.madhhab_coverage_gaps || []);
+    if (madhhabGaps.length) {
+      L.push('### قصور استغراق المذاهب', '', '| المذهب | كتب | طبقات | المفقود |', '|---|---|---|---|');
+      madhhabGaps.forEach(g => L.push(`| ${cell(g.madhhab)} | ${g.books} | ${g.layers} | ${cell((g.missing_layers || []).join('، '))} |`));
+      L.push('');
+    }
+    const coreGaps = lens.skipHadithCore ? [] : (a.hadith_core_gaps || []).filter(g => Number(g.ring || 99) <= lens.hadithCoreMaxRing);
+    if (coreGaps.length) {
+      L.push('### فجوات أصول الحديث', '', '| العمل | الحلقة |', '|---|---|');
+      coreGaps.forEach(g => L.push(`| ${cell(g.work)} | ${g.ring === 1 ? 'الصحيحان' : g.ring === 2 ? 'السنن الأربعة' : 'أصول أخرى'} |`));
+      L.push('');
+    }
+    if ((a.takhrij_sahihayn_missed || []).length && (lens.hadithish || !lens.skipHadithCore)) {
+      L.push('### تخريج ناقص: الحديث في الصحيحين ولم يُعزَ إليهما', '', '| الكتاب | الموضع |', '|---|---|');
+      a.takhrij_sahihayn_missed.slice(0, 8).forEach(x => L.push(`| ${cell(x.book)} | ${cell((x.part || '') + '-' + (x.page || ''))} |`));
+      L.push('');
+    }
+    const imamGaps = lens.skipImam ? [] : (a.imam_primary_gaps || []);
+    if (imamGaps.length) {
+      L.push('### أقوال أئمة بواسطة', '', '| الإمام | مصادره الأولى |', '|---|---|');
+      imamGaps.forEach(g => L.push(`| ${cell(g.imam)} | ${cell((g.sources || []).join('، '))} |`));
+      L.push('');
+    }
+    if ((a.takhrij_locator_fixed || []).length && lens.hadithish) {
+      L.push(`### ضبط تخريج آلي (${a.takhrij_locator_fixed.length})`);
+      L.push('');
     }
     if ((entry.audit_failures || []).length) {
-      L.push('', '### مواضع منبّهة للمراجعة البشرية', '', '| النقل | رقم الحاشية | سبب التنبيه |', '|---|---|---|');
-      entry.audit_failures.slice(0, 16).forEach(f => L.push(`| «${cell((f.quote || '').slice(0, 90))}» | ${f.num ?? '—'} | ${cell(f.reason)} |`));
+      L.push('### مواضع للمراجعة', '', '| النقل | السبب |', '|---|---|');
+      entry.audit_failures.slice(0, 8).forEach(f => L.push(`| «${cell((f.quote || '').slice(0, 70))}» | ${cell(f.reason)} |`));
+      L.push('');
     }
     formatExcludedReportMd(entry.excluded_items).forEach(line => L.push(line));
-    L.push('');
-    L.push('## 📊 الرسوم البيانية');
-    L.push('');
-    L.push('<div id="rrDashMount"></div>');
-    L.push('');
-    L.push('> القيودات والمنحنيات تُعرض في نافذة التقرير: حروف الجواب، الشواهد، المستبعدات، السواقط، اكتمال الفريق، التدقيق، والمخاطر.');
-    L.push('');
-    L.push(buildRiskRegisterMd(entry.risk_events || [], { verdict: entry.risk_verdict, officer: entry.risk_officer }));
-    if (entry.risk_memo) {
-      L.push('', '## 🏛 مذكرة مسؤول المخاطر', '', entry.risk_memo);
+    if (lens.charts) {
+      L.push('', '## الرسوم', '', '<div id="rrDashMount"></div>', '');
     }
-    if (entry.research_plan) {
-      L.push('', '## 🗺 خطة البحث المعتمدة', '', entry.research_plan);
+    L.push(buildRiskRegisterMd(entry.risk_events || [], {
+      verdict: entry.risk_verdict, officer: entry.risk_officer, dropLow: true, openOnly: true
+    }));
+    if (lens.riskMemo && entry.risk_memo && lens.length === 'long') {
+      L.push('', '## مذكرة المخاطر', '', entry.risk_memo);
     }
-    if (entry.plan_review) {
-      L.push('', '## 🗺 مراجعة المسودة على الخطة', '', entry.plan_review);
+    if (lens.plan && entry.research_plan) {
+      L.push('', '## خطة البحث', '', entry.research_plan);
     }
-    if (entry.audit_record) {
-      L.push('', '## 📜 سجل التدقيق الآلي الكامل', '', entry.audit_record);
+    if (lens.plan && entry.plan_review) {
+      L.push('', '## مراجعة المسودة', '', entry.plan_review);
     }
   } else {
     L.push('لا سجل قياس محفوظ لهذه الإجابة: إما أنها أُنجزت قبل نظام التقرير المنفصل، أو أنها ليست بحث وكلاء موثقًا.');

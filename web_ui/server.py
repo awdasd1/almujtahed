@@ -3635,7 +3635,8 @@ def _footnote_icon_sweep(text: str):
 
 
 def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
-                        judge_model: str = "google/gemini-3.8-flash"):
+                        judge_model: str = "google/gemini-3.8-flash",
+                        lens: Optional[dict] = None):
     """يطابق كل نقل منقول على كتاب إحالته، ويُصلح مواضع الإحالات، ويستبعد
     ما كان مصدره خارج المكتبة.
 
@@ -3646,6 +3647,18 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
              "cut_tier": 0, "unverified": 0, "relocated": 0, "tier_warnings": 0,
              "ijma_flags": 0, "tier_footnotes": 0, "cited_book_ids": [],
              "failures": []}
+    if isinstance(lens, dict) and lens:
+        stats["research_lens"] = {k: lens.get(k) for k in (
+            "discipline", "discipline_ar", "length", "length_ar",
+            "skip_madhhab_coverage", "skip_hadith_core", "hadith_core_max_ring",
+            "skip_sahihayn_missed", "skip_imam_primary", "skip_ijma",
+            "sufficiency_eligible", "report_charts", "report_risk_memo",
+            "report_plan", "report_audit_dump", "report_packages")}
+        stats["skip_madhhab_coverage"] = bool(lens.get("skip_madhhab_coverage"))
+        stats["skip_hadith_core"] = bool(lens.get("skip_hadith_core"))
+        stats["skip_imam_primary"] = bool(lens.get("skip_imam_primary"))
+        stats["skip_ijma"] = bool(lens.get("skip_ijma"))
+        stats["skip_sahihayn_missed"] = bool(lens.get("skip_sahihayn_missed"))
     if not text:
         return text, stats
     defs = _footnote_defs(text)
@@ -4942,7 +4955,7 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
         except Exception:
             has_ijma_source = False
     claims = len(_IJMA_CLAIM_RE.findall(body_plain))
-    if claims and not has_ijma_source:
+    if claims and not has_ijma_source and not stats.get("skip_ijma"):
         stats["ijma_flags"] = claims
     # دعاوى اتفاق مطلقة بلا نسبة لقائل ولا كتاب إجماع في جملتها: وجود كتب
     # إجماع في الشواهد لا يبيح إطلاق «اتفقوا/باتفاق المذاهب» حكمًا من عند
@@ -4951,12 +4964,13 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
         r"(اتفقوا على|اتفق العلماء|اتفق الفقهاء|باتفاق المذاهب|باتفاق العلماء|بإجماع العلماء|أجمعوا على|لا خلاف بين العلماء|لا نزاع بين الفقهاء)")
     _ATTRIBUTION_HINTS = ("نقل", "قال ", "قائل", "حكى", "حكاه", "ذكر ", "ينظر", "انظر", "في كتاب", "عند ")
     _unattributed = []
-    for _sent in re.split(r"[.\n؛]", body_plain):
-        if _ABSOLUTE_CLAIM_RE.search(_sent) and not any(h in _sent for h in _ATTRIBUTION_HINTS):
-            _unattributed.append(_sent.strip()[:110])
-    if _unattributed:
-        stats["ijma_unattributed"] = _unattributed[:6]
-        print(f"🚧 [Documentation Audit] دعاوى اتفاق مطلقة بلا نسبة: {len(_unattributed)}", flush=True)
+    if not stats.get("skip_ijma"):
+        for _sent in re.split(r"[.\n؛]", body_plain):
+            if _ABSOLUTE_CLAIM_RE.search(_sent) and not any(h in _sent for h in _ATTRIBUTION_HINTS):
+                _unattributed.append(_sent.strip()[:110])
+        if _unattributed:
+            stats["ijma_unattributed"] = _unattributed[:6]
+            print(f"🚧 [Documentation Audit] دعاوى اتفاق مطلقة بلا نسبة: {len(_unattributed)}", flush=True)
     cited = []
     cited_titles = []
     for d in _footnote_defs(text):
@@ -4971,17 +4985,34 @@ def _documentation_gate(text: str, witness_rows: List[dict], api_key: str = "",
     stats["cited_titles"] = cited_titles
     if not stats.get("skip_madhhab_coverage"):
         stats["madhhab_coverage_gaps"] = _madhhab_coverage_gaps(cited, cited_titles)
+    else:
+        stats["madhhab_coverage_gaps"] = []
     # ——— فجوات الأصول المعلنة: غياب يُصرَّح به لا سكوت يُبنى عليه ———
     # بطاقة قد تغيب لأن الوكيل لم يبحث، أو بحث فلم يجد، أو وجد فلم يُبلّغ؛
     # والباحث لا يفرّق بينها من النص وحده. هذان فحصان حتميان على ما حضر
     # فعلًا (شواهد وإحالات) يعلنان الغياب باسمه بدل أن يمرّ صامتًا.
     try:
         _present_ids = set(cited) | {str(w) for w in witness_ids}
-        stats["hadith_core_gaps"] = _hadith_core_coverage(_present_ids, body_plain)
-        stats["imam_primary_gaps"] = _imam_primary_gaps(body_plain, _present_ids)
+        if stats.get("skip_hadith_core"):
+            stats["hadith_core_gaps"] = []
+        else:
+            _max_ring = 4
+            try:
+                _max_ring = int((stats.get("research_lens") or {}).get("hadith_core_max_ring") or 4)
+            except (TypeError, ValueError):
+                _max_ring = 4
+            stats["hadith_core_gaps"] = [
+                g for g in _hadith_core_coverage(_present_ids, body_plain)
+                if int(g.get("ring") or 99) <= _max_ring
+            ]
+        stats["imam_primary_gaps"] = (
+            [] if stats.get("skip_imam_primary")
+            else _imam_primary_gaps(body_plain, _present_ids))
     except Exception:
         stats.setdefault("hadith_core_gaps", [])
         stats.setdefault("imam_primary_gaps", [])
+    if stats.get("skip_sahihayn_missed"):
+        stats["takhrij_sahihayn_missed"] = []
     if stats.get("judge_healed"):
         print(f"🧭 [Citation Judge] شُفيت {stats['judge_healed']} إحالة بحكم النموذج بين مرشحين", flush=True)
     if stats.get("inherited_healed"):
@@ -5258,9 +5289,9 @@ def _documentation_record(stats: dict) -> str:
         lines.append(
             f"تنبيه تخريج ناقص: {len(_tm)} حديث ثابت في الصحيحين لم يُخرَّج منه في حاشيته "
             f"({_samples})؛ على سياسة الاكتفاء يُقدَّم تخريج الصحيحين على ما دونهما.")
-    if stats.get("ijma_flags"):
+    if stats.get("ijma_flags") and not stats.get("skip_ijma"):
         lines.append(f"تنبيه: ورد ادعاء إجماع أو اتفاق في {stats['ijma_flags']} موضعًا بلا نقل ظاهر من كتب الإجماع (كإجماع ابن المنذر ومراتب ابن حزم والاستذكار والتمهيد) في الشواهد، فليُحرَّر قبل الاعتماد.")
-    if stats.get("ijma_unattributed"):
+    if stats.get("ijma_unattributed") and not stats.get("skip_ijma"):
         lines.append(f"تنبيه اتفاق مطلق: {len(stats['ijma_unattributed'])} دعوى اتفاق/إجماع مطلقة بلا نسبة لقائل أو كتاب إجماع في جملتها (نحو: «{stats['ijma_unattributed'][0]}…»)؛ الأثبت تحريرها بنقل من كتب الإجماع أو تخفيفها إلى «الجمهور» قبل الاعتماد.")
     if stats.get("packages_present"):
         lines.append(
@@ -9481,7 +9512,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.833"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.834"},
         },
     })
     if opened.get("error"):
@@ -13125,7 +13156,9 @@ def _anchor_cluster_key(a: str) -> str:
 _NAMED_HADITH_WRAP = re.compile(
     r"^(?:طلب\s+)?(?:تخريج\s+)?(?:حديث|الحديث)\s*[:：]?\s*",
 )
-_NOT_HADITH_MATN = re.compile(r"باب |كتاب |حكم |مسألة |الواردة في|الأحاديث")
+_NOT_HADITH_MATN = re.compile(
+    r"باب |كتاب |حكم |مسألة |الواردة في|الأحاديث|تفسير |فقه |أصول |عقيدة |معنى |تاريخ "
+)
 _SCATTER_CHAPTER_RE = re.compile(r"بدء الوحي|غار حراء|بدء الخلق")
 _SITTA_WORK_NAMES = (
     "صحيح البخاري", "صحيح مسلم",
@@ -13145,7 +13178,7 @@ def _named_hadith_matn(query: str) -> Optional[str]:
         rest = _NAMED_HADITH_WRAP.sub("", q).strip(" :،.-")
         if rest != q or re.search(r"حديث|تخريج", q):
             core = rest
-        elif (4 <= len(q.split()) <= 14
+        elif (3 <= len(q.split()) <= 14
               and not re.search(r"[؟?]|حكم |هل |ما قول|اشرح", q)):
             core = q
         else:
@@ -13301,6 +13334,100 @@ _TRIVIAL_RESEARCH_RE = re.compile(
 def _named_hadith_needs_depth(query: str) -> bool:
     """سؤال عن العلل أو الطرق: لا يُغلق بقاطع الاكتفاء."""
     return bool(_HADITH_DEPTH_RE.search(query or ""))
+
+
+_DISC_CANON = (
+    ("qawaid", r"قواعد", "قواعد"),
+    ("maqasid", r"مقاصد", "مقاصد"),
+    ("usul", r"أصول|اصول", "أصول"),
+    ("tafsir", r"تفسير", "تفسير"),
+    ("aqidah", r"عقيدة|كلام|توحيد", "عقيدة"),
+    ("history", r"تاريخ|سير|تراجم|حوليات", "تاريخ"),
+    ("lugha", r"لغة|نحو|معجم|بلاغة", "لغة"),
+    ("shuruh", r"شروح", "شروح"),
+    ("hadith", r"حديث|تخريج|علل|رجال", "حديث"),
+    ("fiqh", r"فقه|فتوى|مذهب", "فقه"),
+)
+_DISC_AR = {k: ar for k, _p, ar in _DISC_CANON}
+_DISC_AR["general"] = "عام"
+_LEN_AR = {"concise": "مختصر", "medium": "متوسط", "long": "مطوّل"}
+
+
+def _canonical_discipline(text: str) -> str:
+    t = str(text or "")
+    for key, pat, _ar in _DISC_CANON:
+        if re.search(pat, t):
+            return key
+    return "general"
+
+
+def _canonical_length(text: str) -> str:
+    t = str(text or "")
+    if re.search(r"مختصر|خلاصة|قصير|بطاقة|تنفيذي", t):
+        return "concise"
+    if re.search(r"مطوّل|مطول|موسوع|طويل|محكّم|محكم|دراسات عليا|ماجستير|دكتوراه|موسع", t):
+        return "long"
+    return "medium"
+
+
+def _research_runtime_lens(profile=None, group_name: str = "", query: str = "",
+                           agents=None) -> Dict[str, Any]:
+    """عدسة التنفيذ والتقرير من تصنيف مهندس المشروع: الفن × الطول.
+
+    طبقات المذاهب لفقه الفروع فقط؛ قاطع الاكتفاء للحديث المسمّى في فن الحديث
+    أو في المختصر؛ تقرير التخريج لا يقاس بمسند أحمد ولا فتح الباري."""
+    prof = profile if isinstance(profile, dict) else {}
+    names = ""
+    if agents:
+        names = " ".join(
+            str(a.get("name") or "") + " " + str(a.get("desc") or "")
+            for a in agents if isinstance(a, dict))
+    primary = str(prof.get("discipline") or "").strip()
+    blob = " ".join([primary, str(prof.get("purpose") or ""),
+                     str(prof.get("output_structure") or ""),
+                     group_name or "", names, query or ""])
+    disc = _canonical_discipline(primary) if primary else _canonical_discipline(blob)
+    if disc == "general":
+        disc = _canonical_discipline(blob)
+    length = _canonical_length(" ".join(
+        str(prof.get(k) or "") for k in ("length", "purpose", "depth", "output_structure")))
+    fiqhish = disc == "fiqh"
+    hadithish = disc == "hadith"
+    q = query or ""
+    named = bool(_named_hadith_matn(q))
+    if not named and disc == "hadith":
+        named = bool(_named_hadith_matn("حديث " + q.strip()))
+    needs_depth = _named_hadith_needs_depth(q)
+    has_team = bool(agents)
+    sufficiency_eligible = bool(
+        named and not needs_depth and (hadithish or length == "concise" or not has_team))
+    skip_hadith_core = not hadithish
+    if length == "concise":
+        hadith_core_max_ring = 1
+    elif length == "medium":
+        hadith_core_max_ring = 2
+    else:
+        hadith_core_max_ring = 4
+    if skip_hadith_core:
+        hadith_core_max_ring = 0
+    return {
+        "discipline": disc,
+        "discipline_ar": _DISC_AR.get(disc, "عام"),
+        "length": length,
+        "length_ar": _LEN_AR.get(length, "متوسط"),
+        "skip_madhhab_coverage": not fiqhish,
+        "skip_hadith_core": skip_hadith_core,
+        "hadith_core_max_ring": hadith_core_max_ring,
+        "skip_sahihayn_missed": not (hadithish or named),
+        "skip_imam_primary": not fiqhish,
+        "skip_ijma": disc in ("hadith", "lugha", "history", "shuruh", "tafsir"),
+        "sufficiency_eligible": sufficiency_eligible,
+        "report_charts": length == "long",
+        "report_risk_memo": length == "long",
+        "report_plan": length == "long",
+        "report_audit_dump": False,
+        "report_packages": length == "long" and disc != "hadith",
+    }
 
 
 def _is_trivial_followup(text: str) -> bool:
@@ -15572,6 +15699,10 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
     from collections import Counter as _Counter
     ev = []
     gs = gate_stats or {}
+    lens = gs.get("research_lens") if isinstance(gs.get("research_lens"), dict) else {}
+    skip_madhhab = bool(gs.get("skip_madhhab_coverage") or lens.get("skip_madhhab_coverage"))
+    stamp_collapsed = bool(gs.get("collapsed"))
+    concise_run = lens.get("length") == "concise"
     # — انهيار التوليف (من بوابة التوليف المنقذة)
     if synthesis_rescue and synthesis_rescue.get("orig_chars"):
         if synthesis_rescue.get("by"):
@@ -15600,7 +15731,7 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
                 "عولج آليًا بسلم الإنقاذ", "لا إجراء؛ يُرصد للتكرار"))
     reps = [(str(d.get("name") or ""), len(d.get("report") or ""))
             for d in (dossiers or []) if not d.get("failed")]
-    if len(reps) >= 3:
+    if (not concise_run) and len(reps) >= 3:
         _lens = sorted(n for _, n in reps)
         _med = _lens[len(_lens) // 2] or 1
         for _nm, _n in reps:
@@ -15611,22 +15742,24 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
                     "مفتوح: دخل البحث ناقص التحرير من هذا الفن",
                     "راجع نطاق الوكيل وشواهده وتفكيره؛ وإن تكرر فقصور بطاقة أو نطاق"))
     # — الاسترجاع الموجه للمذاهب
-    for _md, _info in (targeted_map or {}).items():
-        if int(_info.get("count") or 0) < _RISK_TARGETED_MIN:
-            ev.append(_risk_event(
-                "targeted_weak", "متوسطة", f"ضعف الاسترجاع الموجه: {_md}",
-                f"{_info.get('count')} صفحة طبقات فقط من {len(_info.get('books') or [])} كتابًا لوكيل «{_info.get('agent', '')}»",
-                "مفتوح: تغطية المذهب من الاسترجاع العام أكثر منها من كتب طبقاته",
-                "راجع مراسي المسألة وكتب طبقات المذهب في madhhab_authority"))
+    if not skip_madhhab:
+        for _md, _info in (targeted_map or {}).items():
+            if int(_info.get("count") or 0) < _RISK_TARGETED_MIN:
+                ev.append(_risk_event(
+                    "targeted_weak", "متوسطة", f"ضعف الاسترجاع الموجه: {_md}",
+                    f"{_info.get('count')} صفحة طبقات فقط من {len(_info.get('books') or [])} كتابًا لوكيل «{_info.get('agent', '')}»",
+                    "مفتوح: تغطية المذهب من الاسترجاع العام أكثر منها من كتب طبقاته",
+                    "راجع مراسي المسألة وكتب طبقات المذهب في madhhab_authority"))
     # — قصور استغراق المذاهب في البحث النهائي (كتاب واحد أو طبقة واحدة)
-    for _g in (gs.get("madhhab_coverage_gaps") or []):
-        ev.append(_risk_event(
-            "madhhab_coverage_gap", "عالية" if _g.get("single_book") else "متوسطة",
-            f"قصور استغراق: المذهب {_g.get('madhhab')}",
-            f"اكتفى البحث بـ{_g.get('books')} كتابًا من كتب طبقات المذهب في {_g.get('layers')} طبقة اعتماد"
-            + (f"؛ المفقود: {'، '.join((_g.get('missing_layers') or [])[:3])}" if _g.get("missing_layers") else ""),
-            "مفتوح: تحرير المذهب في البحث ناقص الاستغراق",
-            "يُستكمل من كتب الطبقات المفقودة عبر وكيل تدقيق الاستغراق قبل الاعتماد، ولا يُقبل اكتفاء بكتاب أو طبقة"))
+    if not skip_madhhab:
+        for _g in (gs.get("madhhab_coverage_gaps") or []):
+            ev.append(_risk_event(
+                "madhhab_coverage_gap", "عالية" if _g.get("single_book") else "متوسطة",
+                f"قصور استغراق: المذهب {_g.get('madhhab')}",
+                f"اكتفى البحث بـ{_g.get('books')} كتابًا من كتب طبقات المذهب في {_g.get('layers')} طبقة اعتماد"
+                + (f"؛ المفقود: {'، '.join((_g.get('missing_layers') or [])[:3])}" if _g.get("missing_layers") else ""),
+                "مفتوح: تحرير المذهب في البحث ناقص الاستغراق",
+                "يُستكمل من كتب الطبقات المفقودة عبر وكيل تدقيق الاستغراق قبل الاعتماد، ولا يُقبل اكتفاء بكتاب أو طبقة"))
     # — نقول خارج المكتبة (قاعدة المكتبة الحاكمة)
     _ex = int(gs.get("excluded_outside") or 0)
     if _ex:
@@ -15635,10 +15768,10 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
             f"استُبعد {_ex} نقلًا لا كتاب له في المكتبة البتة (قائمتها في ذيل المذكرة)",
             "عولج آليًا: قُطعت من المتن بحواشيها فورًا",
             "راجع القائمة: خارجية حقًا أم كتب مكتبة بصياغة اسم لا تطابق الكتالوج (عيب فهرسة يُصلح)"))
-    # — ثبوت النقول وربطها
+    # — ثبوت النقول وربطها (انهيار ربط الحواشي ليس ضعف مادة)
     _checked = int(gs.get("checked") or 0)
     _ver = int(gs.get("verified") or 0) + int(gs.get("relocated") or 0)
-    if _checked >= 5:
+    if (not stamp_collapsed) and _checked >= 5:
         _r = _ver / _checked
         if _r < 0.50:
             ev.append(_risk_event(
@@ -15650,7 +15783,7 @@ def _compile_risk_events(*, gate_stats, dossiers, failed_agents,
                 "verified_ratio", "متوسطة", "نسبة ثبوت النقول دون حد الاعتماد",
                 f"ثبت في كتب إحالتها {_ver} من {_checked} ({round(_r * 100)}٪) وحد الاعتماد {_RISK_MIN_VERIFIED_RATIO * 100:.0f}٪",
                 "مفتوح", "راجع المنبهات في سجل التدقيق قبل الاعتماد الأكاديمي"))
-    if int(gs.get("unverified") or 0):
+    if (not stamp_collapsed) and int(gs.get("unverified") or 0):
         ev.append(_risk_event(
             "unverified_kept", "متوسطة", "نقول بقيت في المتن بلا ثبوت آلي",
             f"{gs.get('unverified')} نقل لم يثبت في كتاب إحالته ولا في كتب الشواهد وأُبقي للمراجعة",
@@ -21687,6 +21820,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     _failed_agents = []
     _gate_stats = None
     _audit_record_text = ""
+    _research_lens: Dict[str, Any] = {}
     
     # 4. فحص طلبات استعراض وقراءة صفحات محددة من كتاب تراثي (Direct Page Reading)
     page_req = None if req.reading_assistant else detect_book_page_request(last_user_msg)
@@ -21842,10 +21976,20 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             print(f"🧭 [Advisors] {len(_advisor_agents)} مستشارًا متفرغًا للتفكير قبل إرسال المتخصصين: "
                   + "، ".join(str(a.get("name") or "") for a in _advisor_agents), flush=True)
         _gname = str((req.agent_group or {}).get("name") or "")
-        _hadith_project = ("المحدث" in _gname) or (
-            any("حديث" in str(a.get("name") or "") or "تخريج" in str(a.get("name") or "") for a in active_agents)
-            and not any("فقه" in str(a.get("name") or "") for a in active_agents)
-        )
+        _rp_lens = (req.agent_group or {}).get("research_profile")
+        if not isinstance(_rp_lens, dict):
+            _rp_lens = {}
+        _research_lens = _research_runtime_lens(
+            _rp_lens, group_name=_gname,
+            query=search_query or last_user_msg,
+            agents=_all_group_agents)
+        _hadith_project = _research_lens.get("discipline") == "hadith"
+        print(
+            f"🧭 [Research Lens] فن={_research_lens.get('discipline_ar')} "
+            f"طول={_research_lens.get('length_ar')} "
+            f"مذاهب={'لا' if _research_lens.get('skip_madhhab_coverage') else 'نعم'} "
+            f"قاطع={_research_lens.get('sufficiency_eligible')}",
+            flush=True)
         # الاستقلال التام (المرحلة ٢): بحث بمجموعة وكلاء لا يمسّ أي خادم
         # MCP خارجي — لا الوكلاء ولا نموذج التوليف. أدوات المغني الداخلية
         # وحدها، وبيد مدير الأدوات في المجموعة إن وُجد.
@@ -21875,11 +22019,19 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         print(f"🗣️ [Director Discussion] جلسة مناقشة ({_discussion}) مع قائد الفريق حول الحزمة المغلقة {req.chat_id}", flush=True)
 
     # قاطع اكتفاء التخريج المسمّى: الصحيحان ثم الستة ثم توقف — بلا لجنة ولا وكلاء.
+    # يُشغَّل من عدسة ملف الطلب: حديث، أو مختصر سُمّي متنه، لا فقه مطوّل عرضًا.
+    if not _research_lens:
+        _research_lens = _research_runtime_lens(
+            {}, query=search_query or last_user_msg)
     _sufficiency_hit: Dict[str, Any] = {}
     _sufficiency_short = False
-    _named_matn = _named_hadith_matn(search_query or last_user_msg)
+    _named_q = search_query or last_user_msg
+    _named_matn = _named_hadith_matn(_named_q)
+    if not _named_matn and _research_lens.get("discipline") == "hadith":
+        _named_matn = _named_hadith_matn("حديث " + str(_named_q or "").strip())
     if (
         _named_matn
+        and _research_lens.get("sufficiency_eligible")
         and not _reuse_package
         and not is_direct_page_reading
         and not req.graph_only
@@ -24120,7 +24272,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 # تنبيه ختامي ظاهر، بلا حذف ولا جولة إصلاح تستبدل البحث.
                 try:
                     reply_text, _gate_stats = _documentation_gate(
-                        reply_text, witness_rows, api_key=api_key_to_use)
+                        reply_text, witness_rows, api_key=api_key_to_use,
+                        lens=_research_lens)
                     try:
                         _pkg_ledger = _tools_package_ledger(subagents_dossiers)
                         _attach_package_audit(_gate_stats, _pkg_ledger, reply_text)
@@ -24140,8 +24293,14 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                             else:
                                 reply_text = _toc + reply_text
                             print("🗺 [TOC] أُدرج فهرس البحث في صدر الجواب", flush=True)
-                    if locals().get("_hadith_project"):
+                    if _research_lens.get("skip_madhhab_coverage") or locals().get("_hadith_project"):
                         _gate_stats["skip_madhhab_coverage"] = True
+                        _gate_stats["madhhab_coverage_gaps"] = []
+                    if _research_lens.get("skip_hadith_core"):
+                        _gate_stats["hadith_core_gaps"] = []
+                    if _research_lens.get("skip_imam_primary"):
+                        _gate_stats["imam_primary_gaps"] = []
+                    _gate_stats["research_lens"] = _research_lens
                     if _sufficiency_short:
                         _gate_stats["skip_madhhab_coverage"] = True
                         _gate_stats["takhrij_sufficient"] = bool(_sufficiency_hit.get("sufficient"))
@@ -24258,6 +24417,15 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                     "## الحكم العام\nاكتفاء بصفحات الأصول المثبتة بلفظ المتن؛ بلا لجنة مراسٍ ولا وكلاء.\n\n"
                     f"{_sufficiency_hit.get('note') or ''}"
                 )
+            elif _research_lens.get("length") == "concise":
+                _risk_officer = "عدسة المختصر"
+                _open_n = sum(
+                    1 for e in _risk_events
+                    if not _risk_is_done(e) and e.get("cls") in ("عالية", "متوسطة"))
+                _risk_memo = (
+                    f"عدسة {_research_lens.get('discipline_ar') or 'البحث'} المختصرة: "
+                    f"{_open_n} خطرًا مفتوحًا متوسطًا أو عاليًا."
+                )
             else:
                 _risk_memo, _risk_officer = _risk_officer_memo(
                     _risk_events, question=(last_user_msg or "")[:200],
@@ -24274,6 +24442,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "ledger": locals().get("_evidence_ledger") or "",
                 "research_plan": locals().get("_research_plan") or "",
                 "plan_review": locals().get("_plan_review") or "",
+                "research_lens": _research_lens,
                 "dossiers": [
                     {"name": d.get("name", ""), "model": d.get("model", ""),
                      "report": d.get("report") or "",
@@ -24318,6 +24487,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
             "ledger_chars": len(_evidence_ledger or ""),
             "research_plan": locals().get("_research_plan") or "",
             "plan_review": locals().get("_plan_review") or "",
+            "research_lens": _research_lens,
             "audit_record": _audit_record_text,
             "audit_failures": [
                 {"quote": f.get("quote", ""), "reason": f.get("reason", ""),
@@ -24352,6 +24522,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "takhrij_sufficient": bool(_gs.get("takhrij_sufficient")),
                 "takhrij_tier": _gs.get("takhrij_tier") or "",
                 "collapsed": bool(_gs.get("collapsed")),
+                "research_lens": _gs.get("research_lens") or _research_lens,
                 "madhhab_coverage_gaps": _gs.get("madhhab_coverage_gaps") or [],
                 "hadith_core_gaps": _gs.get("hadith_core_gaps") or [],
                 "imam_primary_gaps": _gs.get("imam_primary_gaps") or [],
@@ -31178,7 +31349,13 @@ def _architect_adaptive_profile_section() -> str:
         "— المحور الثالث: العمق والطول. مختصر جدًا: فريق صغير (مدير + متخصص أو اثنان + مدير أدوات) ومخرج جدول أو بطاقة، ولا تُسرف في المستشارين والمتناظرين إن لم يقتضِ التعقيد. متوسط ومطوّل: تتسع الأدوار. أصول الفقه والمسائل الفقهية الطويلة المعقّدة تحتاج غالبًا عددًا من المستشارين والمتناظرين لحوكمة الترجيح وجودة النتيجة — هذا قرارك أنت لا قالبًا يمنعك. الكتب تبقى بـ#رقم في كل طول. لا تُسقط #الرقم بحجة الاختصار، ولا تُحرم البحث من مستشار أو مناظر إن كانت الحوكمة والجودة تقتضيه.\n"
         "— المحور الرابع: الجمهور. متخصصون: مصطلحات الفن بلا شرح، ونقد صريح. طلاب علم: شرح المصطلح عند أول ورود وتدرج. عامة: لغة ميسّرة وأمثلة وتجنب الخلاف الدقيق إلا بقدر الحاجة. والجمهور يُنص عليه في توجيه المدير ووكيل الإخراج.\n"
         "— المحور الخامس: المنهج. وصفي استقرائي: مسح واسع وتصنيف. مقارن: وكلاء متوازون لكل طرف وجداول مقابلة وحَكَم. نقدي تحليلي: ناقد منهجي قوي وشواهد دقيقة. تاريخي: تسلسل زمني وطبقات مصادر ونقد روايات. تأصيلي فقهي: بطاقات أدلة وتحرير نسبة وترجيح بقواعد الفن.\n"
-        "الختم الإلزامي: ضع في المخطط حقل research_profile وفيه discipline وpurpose وdepth وlength وaudience وmethod وdebate (full|mini|none) وcounsel (none|advisors|debate|both) وoutput_structure وdeath_max (سنة وفاة هجرية حدًّا أعلى، أو null بلا سقف). افتتح توجيه المدير بـ«ملف الطلب: ...» وذكر سقف الوفاة وقرار المستشارين/المناظرة. وستفحص المنظومة التصنيف وسقف الوفاة وأرقام الكتب؛ وعدد المستشارين والمتناظرين قرارك المسوَّغ لا سقفًا آليًا يمنع الجودة.\n"
+        "الختم الإلزامي: ضع في المخطط حقل research_profile وفيه discipline (حديث|فقه|أصول|تفسير|عقيدة|تاريخ|لغة|قواعد|مقاصد|شروح|مختلط) وpurpose وdepth وlength (مختصر|متوسط|مطول) وaudience وmethod وdebate (full|mini|none) وcounsel (none|advisors|debate|both) وoutput_structure وdeath_max (سنة وفاة هجرية حدًّا أعلى، أو null بلا سقف). افتتح توجيه المدير بـ«ملف الطلب: ...» وذكر سقف الوفاة وقرار المستشارين/المناظرة. وستفحص المنظومة التصنيف وسقف الوفاة وأرقام الكتب؛ وعدد المستشارين والمتناظرين قرارك المسوَّغ لا سقفًا آليًا يمنع الجودة.\n"
+        "عدسة التنفيذ والتقرير آلية من هذا التصنيف، لا حقلًا تكتبه أنت ولا قالب تقرير واحد لكل الفنون:\n"
+        "• حديث/تخريج: قاطع الاكتفاء إن سُمّي المتن ولم يُطلب علل أو طرق؛ التقرير حكم + الصحيحان؛ بلا طبقات مذاهب ولا فجوات مسند أحمد أو فتح الباري في المختصر.\n"
+        "• فقه: طبقات المذاهب في التقرير؛ تخريج الصحيحين إن استُشهد بحديث مسمّى، لا قاطع يوقف فريق الفقه المطوّل.\n"
+        "• أصول وقواعد ومقاصد: أدلة ومدارس، لا طبقات فروع المذاهب.\n"
+        "• تفسير وتاريخ ولغة وعقيدة وشروح: ثبوت النقول والفريق؛ لا مذاهب ولا أصول حديث إلا إن سُمّي حديث في المختصر.\n"
+        "• المختصر: تقرير قصير بلا سجل تدقيق مكرر ولا مذكرة مخاطر مطوّلة. المطوّل: خطة ومخاطر مفتوحة عالية فقط.\n"
     )
 
 
@@ -31239,6 +31416,7 @@ def _architect_design_floors_section() -> str:
         "   • حديث متوسط/مطوّل: أربعة متخصصين منفصلين إن اتسع البحث: طرق، رجال، علل، تخريج تطبيقي/درجة.\n"
         "   • فقه مقارن مطوّل: وكيل مستقل لكل مذهب مطلوب. أصول الفقه والمسائل المعقّدة: لا تحذف المستشارين والمتناظرين بحجة الاقتصاد.\n"
         "   • تفسير/عقيدة/تاريخ/لغة: متخصصون بقدر الفن والطول، وكتبهم بـ#رقم.\n"
+        "   • لا تزرع وكلاء مذاهب فقهية في مخطط تخريج حديث؛ عدسة التقرير لن تقيس طبقات المذاهب عليه.\n"
         "هـ) سقف وفاة المؤلفين سؤال إلزامي في أول دفعة ```choices قبل ترشيح الكتب: بلا سقف / إلى 400 / 600 / 800 / 1000 / 1200هـ. "
         "اكتبه في research_profile.death_max رقمًا أو null. عند التحديد مرّر death_before في search_books_catalog.\n"
         "و) في توجيه المدير: «ملف الطلب» يصرّح بالطول وبنية المخرج وسقف الوفاة وقرار المستشارين/المناظرة.\n"
@@ -31341,6 +31519,12 @@ def _audit_architect_blueprint(bp: dict) -> dict:
     hadithish = bool(re.search(r"حديث|تخريج|علل|رجال", disc + " " + names))
     fiqhish = bool(re.search(r"فقه|مذهب|فتوى", disc + " " + names))
     if hadithish and not fiqhish:
+        madhhab_agents = sum(1 for a in specialists if re.search(
+            r"حنفي|مالكي|شافعي|حنبلي|ظاهري",
+            str(a.get("name") or "") + str(a.get("desc") or "")))
+        if madhhab_agents:
+            out["warnings"].append(
+                "فن الحديث بوكلاء مذاهب فقهية؛ طبقات المذاهب ليست عدسة تخريج ولا تُزرع في مخططه.")
         if concise:
             if len(specialists) < 2:
                 out["blocking"].append(
@@ -31788,7 +31972,7 @@ async def architect_dialog_endpoint(req: ArchitectDialogRequest, request: Reques
         '  "title": "عنوان المشروع المبتكر والدقيق",\n'
         '  "desc": "وصف علمي محرر للمشروع وأهدافه",\n'
         '  "extraction_capacity": 150,\n'
-        '  "research_profile": {"discipline": "فن البحث", "purpose": "الغرض (محكّم/دراسات عليا/تدريس/مختصر/موسوعة/فتوى/مقال)", "depth": "العمق", "length": "الطول المستهدف", "audience": "الجمهور", "method": "المنهج", "debate": "full|mini|none", "counsel": "none|advisors|debate|both", "output_structure": "بنية المخرج بسطر واحد", "death_max": null},\n'
+        '  "research_profile": {"discipline": "حديث|فقه|أصول|تفسير|عقيدة|تاريخ|لغة|قواعد|مقاصد|شروح", "purpose": "الغرض (محكّم/دراسات عليا/تدريس/مختصر/موسوعة/فتوى/مقال)", "depth": "العمق", "length": "مختصر|متوسط|مطول", "audience": "الجمهور", "method": "المنهج", "debate": "full|mini|none", "counsel": "none|advisors|debate|both", "output_structure": "بنية المخرج بسطر واحد", "death_max": null},\n'
         '  "retrieval_anchors": [\n'
         '    "متن الحديث أو عبارة المسألة كما كتبها الباحث",\n'
         '    "ما يدور في فلك المطلوب (سبب ورود أو أعلام المدار) لا باب كتاب أجنبي",\n'
