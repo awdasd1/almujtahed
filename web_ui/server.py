@@ -2292,18 +2292,116 @@ def _realign_citation_stamps(text: str) -> str:
 def _part_plausible(row: Any, part: Any) -> bool:
     """موضع يستحيل في الكتاب لا يُختم: مدى صفحات كتبه النموذج (186-187)
     قد يُقرأ جزءًا وصفحة، فيختم كتابًا من مجلد أو مجلدين بختم كاذب أخطر
-    من وسم ⚠؛ فالجزء لا يتجاوز مجلدات الكتاب المعروفة إلا بواحد."""
+    من وسم ⚠؛ فالجزء لا يتجاوز مجلدات الكتاب المعروفة إلا بواحد.
+    وعدد مجلدات صفر في فهرس المكتبة ليس «مجهولًا» بل «بلا أجزاء في
+    بيانات المكتبة نفسها» (كتاب من جزء واحد): فأي جزء فوق الواحد فيه
+    مستحيل — بهذا الباب تسرّب كتاب أدبي من ٤٥٢ صفحة بلا أجزاء إلى
+    تخريج حديث بأختام (36-281) و(5-161)."""
     if not row or part is None or not str(part).strip().isdigit():
         return True
     if int(part) > 100:
         return False
     vols = None
     if isinstance(row, dict):
-        vols = row.get("volumes") or row.get("volume_count")
+        vols = row.get("volumes")
+        if vols is None:
+            vols = row.get("volume_count")
+        if vols is None:
+            vols = row.get("volume_count_observed")
+    if vols is None:
+        return True
     try:
-        return not vols or int(part) <= int(vols) + 1
+        vols = int(vols)
     except Exception:
         return True
+    if vols <= 0:
+        return int(part) <= 1
+    return int(part) <= vols + 1
+
+
+_BOOK_LOCATOR_FACTS: Dict[int, tuple] = {}
+
+
+def _book_locator_facts(book_id) -> tuple:
+    """(عدد الأجزاء المشاهدة، عدد الصفحات المعلن) من فهرس المكتبة، أو
+    (None, None). حقائق الفهرس لا بيانات النموذج: عليها يُبنى استحالة
+    الموضع، فلا يُختم كتاب بجزء لا يملكه ولا بصفحة فوق صفحاته."""
+    try:
+        bid = int(str(book_id or "").strip())
+    except Exception:
+        return (None, None)
+    if bid in _BOOK_LOCATOR_FACTS:
+        return _BOOK_LOCATOR_FACTS[bid]
+    vols = pages = None
+    try:
+        db = get_db()
+        if db is not None:
+            row = db.execute(
+                "SELECT volume_count_observed, betaka_text FROM books "
+                "WHERE book_id = ? LIMIT 1", (bid,)).fetchone()
+            if row is not None:
+                try:
+                    vols = int(row[0])
+                except Exception:
+                    vols = None
+                m = re.search(r"عدد الصفحات[:：]?\s*([0-9٠-٩۰-۹]+)",
+                              str(row[1] or ""))
+                if m:
+                    pages = int(m.group(1).translate(_EASTERN_DIGITS))
+    except Exception:
+        vols = pages = None
+    _BOOK_LOCATOR_FACTS[bid] = (vols, pages)
+    return (vols, pages)
+
+
+def _locator_impossible(book_id, part, page) -> bool:
+    """الموضع مستحيل فيزيائيًا في كتابه بحقائق الفهرس: جزء فوق أجزائه
+    المشاهدة (وصفر أجزاء يعني بلا أجزاء)، أو صفحة فوق عدد صفحاته المعلن."""
+    vols, pages = _book_locator_facts(book_id)
+    try:
+        p = int(str(part).strip()) if str(part or "").strip().isdigit() else None
+    except Exception:
+        p = None
+    try:
+        pg = int(str(page).strip()) if str(page or "").strip().isdigit() else None
+    except Exception:
+        pg = None
+    if p is not None and vols is not None:
+        if vols <= 0:
+            if p > 1:
+                return True
+        elif p > vols + 1:
+            return True
+    if pg is not None and pages is not None and pg > pages:
+        return True
+    return False
+
+
+def _validate_citation_stamps(text: str) -> str:
+    """الحارس الأخير قبل التسليم: كل ختم cit-src يُفحص موضعه بحقائق
+    فهرس المكتبة، فما استحال (كتاب بلا أجزاء يُختم بالجزء ٣٦، أو صفحة
+    فوق صفحات الكتاب) نزل إلى ⚠ ظاهر بنصه كما هو — لا حذف ولا بقاء
+    ختم كاذب يفتح صفحة غير موجودة. يُستدعى بعد كل مراحل الختم لأي
+    مسار، فيقبض ما أفلت من حراس المراحل الأولى كلها."""
+    if not text or "cit-src" not in text:
+        return text
+
+    def _downgrade(m: "re.Match") -> str:
+        attrs = _cit_src_attr_map(m.group(1))
+        bid = attrs.get("book-id") or ""
+        if not bid or not _locator_impossible(
+                bid, attrs.get("part"), attrs.get("page")):
+            return m.group(0)
+        inner = m.group(2)
+        visible = re.sub(r"<[^>]+>", "", inner or "").strip()
+        return ('<span class="cit-unresolved" '
+                'style="color:#b45309;text-decoration:underline dashed" '
+                'title="موضع مستحيل في كتابه في فهرس المكتبة — أُنزل من '
+                'ختم موثّق إلى تنبيه على ذمة النموذج">⚠ '
+                + html.escape(visible) + "</span>")
+
+    return re.sub(r'<span class="cit-src"([^>]*)>(.*?)</span>',
+                  _downgrade, text, flags=re.S)
 
 
 def _is_takhrij_context(text: str) -> bool:
@@ -3336,7 +3434,8 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             out_parts.append(part)
         else:
             out_parts.append(enrich_chunk(part))
-    return _realign_citation_stamps("".join(out_parts)), _unresolved[0]
+    return _validate_citation_stamps(
+        _realign_citation_stamps("".join(out_parts))), _unresolved[0]
 
 _FOOTNOTE_ITEM = re.compile(
     r"<li\b(?P<attrs>[^>]*\bid\s*=\s*[\"']fn(?P<num>[0-9٠-٩۰-۹]{1,3})[\"'][^>]*)>(?P<body>.*?)</li>",
@@ -9698,7 +9797,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.844"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.845"},
         },
     })
     if opened.get("error"):
@@ -24670,6 +24769,17 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                         f" ({_sweep_stats.get('unresolved_book')} منها بزر تصفح كتابها للتحقق اليدوي).")
             except Exception as _sweep_err:
                 print(f"🧹 [Footnote Sweep] {_sweep_err}", flush=True)
+            # الحارس الأخير: لا ختم بموضع مستحيل في كتابه يصل الباحث —
+            # ما أفلت من حراس المراحل يُنزَل هنا إلى ⚠ بنصه (حادثة ختم
+            # كتاب أدبي بلا أجزاء بمواضع حديثية مستحيلة فيه).
+            try:
+                _before_validate = reply_text
+                reply_text = _validate_citation_stamps(reply_text)
+                if reply_text != _before_validate:
+                    print("⛔ [Stamp Validator] أُنزل ختم/أختام بمواضع مستحيلة "
+                          "في كتبها إلى ⚠ بدل تسليمها موثّقة", flush=True)
+            except Exception as _val_err:
+                print(f"⛔ [Stamp Validator] {_val_err}", flush=True)
     elif retrieved_citations:
         prefix_tag = f"### [معالجة واستنباط عبر: {group_name}]\n\n" if group_name else ""
         reason_line = f"\nسبب الرفض كما أرجعه المزود: {live_error}" if live_error else ""

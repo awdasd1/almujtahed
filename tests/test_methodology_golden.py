@@ -147,6 +147,47 @@ class RealignBoundaryTests(unittest.TestCase):
         self.assertNotIn('id="fn10"', out)
 
 
+class ImpossibleLocatorTests(unittest.TestCase):
+    """موضع مستحيل في كتابه لا يُختم ولو حلّه الحلّال ضبابيًا.
+
+    حادثة بحث ٠٠:٥٨: كتاب «جولة في كتابي (الأغاني) و(السيف اليماني)»
+    لمحمد المجذوب — مقالات أدبية من مجلة، ٤٥٢ صفحة بلا أجزاء في
+    المكتبة (صفحاته ٤١٧-٤٥٢) — خُتم بمواضع (36-281) و(1-454) و(5-161)
+    لأن حارس الجزء كان يمرّر كل شيء إذا كان عدد المجلدات صفرًا/مجهولًا،
+    ولا فحص أصلًا أن الصفحة موجودة في الكتاب."""
+
+    def test_part_plausible_partless_and_bounds(self):
+        self.assertFalse(server._part_plausible({"volumes": 0}, "5"))
+        self.assertFalse(server._part_plausible({"volumes": 0}, "36"))
+        self.assertTrue(server._part_plausible({"volumes": 0}, "1"))
+        self.assertFalse(server._part_plausible({"volumes": 8}, "36"))
+        self.assertTrue(server._part_plausible({"volumes": 8}, "9"))
+        self.assertTrue(server._part_plausible({}, "36"))
+
+    def test_majzoub_never_stamped_at_impossible_locators(self):
+        out, _ = server.enrich_unstamped_citations(
+            "انظر: جولة في كتابي (الأغاني) و (السيف اليماني) لمحمد المجذوب (5-161). "
+            "وانظر: جولة في كتابي (الأغاني) و (السيف اليماني) لمحمد المجذوب (1-454).")
+        for row in stamps(out):
+            self.assertNotEqual(str(row.get("book-id")), "3707",
+                                "خُتم كتاب المجذوب بموضع مستحيل فيه")
+
+    def test_validator_downgrades_impossible_keeps_possible(self):
+        text = (
+            'انظر: <span class="cit-src" data-book="جولة في كتابي (الأغاني) و (السيف اليماني)" '
+            'data-rel-path="32__الأدب/3707__x" data-book-id="3707" data-part="36" data-page="281" '
+            'data-quote="">جولة في كتابي (الأغاني) و (السيف اليماني) لمحمد المجذوب (36-281)</span>. '
+            'وانظر: <span class="cit-src" data-book="صحيح البخاري - ط السلطانية" '
+            'data-rel-path="06__كتب-السنة/1458__x" data-book-id="1458" data-part="9" data-page="63" '
+            'data-quote="">صحيح البخاري (9-63)</span>.')
+        out = server._validate_citation_stamps(text)
+        for row in stamps(out):
+            self.assertNotEqual(str(row.get("book-id")), "3707")
+        rows = stamped(out, 9, 63)
+        self.assertTrue(rows and str(rows[0].get("book-id")) == "1458",
+                        "ختم البخاري الصحيح يجب أن يبقى")
+
+
 class RuntimeLensTests(unittest.TestCase):
     """قاطع الاكتفاء لمحادثة بلا فريق فقط، والفريق لا يُتجاوز."""
 
