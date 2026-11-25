@@ -6250,6 +6250,32 @@ def _locate_reader_entry(entries: list, part: Optional[str], page_num: Optional[
         target_idx = next((i for i, e in enumerate(entries) if e["part"] == p_str), 0)
     return target_idx, entries[target_idx]
 
+_RE_IDX_PART = re.compile(rb'"part"\s*:\s*"?([^",}]*)"?')
+_RE_IDX_PNUM = re.compile(rb'"page_num"\s*:\s*(\d+|null)')
+_RE_IDX_SEQ = re.compile(rb'"sequence_num"\s*:\s*(\d+)')
+_RE_IDX_VOL = re.compile(rb'"volume"\s*:\s*"?([^",}]*)"?')
+_RE_IDX_PID = re.compile(rb'"page_id"\s*:\s*(\d+)')
+
+
+def _fast_page_index_fields(line: bytes):
+    """استخراج (part, page_num, sequence_num) من رأس سطر الصفحة دون
+    تحليل JSON كاملًا — أسرع ~8 مرات، وهو الفارق بين ثوانٍ ولحظة عند
+    أول فتح لكتاب ضخم على أقراص بطيئة. عند أي شك يعود لتحليل JSON."""
+    cut = line.find(b'"body"')
+    head = line[:cut] if 0 <= cut <= 800 else line[:800]
+    mp = _RE_IDX_PART.search(head)
+    mn = _RE_IDX_PNUM.search(head)
+    if mp is None or mn is None:
+        data = json.loads(line)
+        return (str(data.get("part") or ""),
+                data.get("page_num"), data.get("sequence_num"))
+    ms = _RE_IDX_SEQ.search(head)
+    part = mp.group(1).decode("utf-8", "ignore").strip()
+    pnum = None if mn.group(1) == b"null" else int(mn.group(1))
+    seq = int(ms.group(1)) if ms else None
+    return part, pnum, seq
+
+
 def get_or_build_book_index(rel_path: str, pages_file: Path) -> dict:
     """
     بناء فهرس سريع في الذاكرة لتنقل فوري بين الصفحات والأجزاء (أقل من 1 مللي ثانية)
@@ -6277,7 +6303,12 @@ def get_or_build_book_index(rel_path: str, pages_file: Path) -> dict:
                 _saved = json.loads(_sidecar.read_text(encoding="utf-8"))
                 if (_saved.get("size") == _stat.st_size
                         and _saved.get("mtime") == int(_stat.st_mtime)):
-                    entries = _saved.get("entries") or []
+                    _raw = _saved.get("entries") or []
+                    entries = [
+                        ({"seq": e[0], "part": e[1], "page_num": e[2],
+                          "offset": e[3]} if isinstance(e, list) else e)
+                        for e in _raw
+                    ]
                     parts_ordered = _saved.get("parts") or []
                     parts_set = set(parts_ordered)
                     _loaded = True
@@ -6288,18 +6319,17 @@ def get_or_build_book_index(rel_path: str, pages_file: Path) -> dict:
     if not _loaded:
         try:
             with open(pages_file, "rb") as f:
+                offset = 0
                 while True:
-                    offset = f.tell()
                     line = f.readline()
                     if not line:
                         break
                     try:
-                        data = json.loads(line)
-                        part = str(data.get("part") or "")
+                        part, pnum, seq_f = _fast_page_index_fields(line)
+                        part = str(part or "")
                         if part == "None":
                             part = ""
-                        pnum = data.get("page_num")
-                        seq = data.get("sequence_num") or (len(entries) + 1)
+                        seq = seq_f or (len(entries) + 1)
 
                         if part and part not in parts_set:
                             parts_set.add(part)
@@ -6313,13 +6343,16 @@ def get_or_build_book_index(rel_path: str, pages_file: Path) -> dict:
                         })
                     except Exception:
                         continue
+                    offset += len(line)
         except Exception as e:
             print(f"Error indexing book {rel_path}: {e}")
         if _stat is not None:
             try:
                 _sidecar.write_text(json.dumps(
                     {"size": _stat.st_size, "mtime": int(_stat.st_mtime),
-                     "entries": entries, "parts": parts_ordered},
+                     "entries": [[e["seq"], e["part"], e["page_num"], e["offset"]]
+                                 for e in entries],
+                     "parts": parts_ordered},
                     ensure_ascii=False), encoding="utf-8")
             except Exception:
                 pass
@@ -9869,7 +9902,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.847"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.848"},
         },
     })
     if opened.get("error"):

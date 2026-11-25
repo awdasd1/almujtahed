@@ -299,29 +299,64 @@ def get_book_index(book_dir: Path) -> Dict[str, Any]:
             saved = json.loads(sidecar.read_text(encoding="utf-8"))
             if (saved.get("size") == stat.st_size
                     and saved.get("mtime") == int(stat.st_mtime)):
-                entries = saved.get("entries") or []
+                entries = [
+                    ({"seq": e[0], "part": e[1], "page_num": e[2],
+                      "page_id": e[3], "offset": e[4]}
+                     if isinstance(e, list) else e)
+                    for e in (saved.get("entries") or [])
+                ]
                 loaded = True
     except Exception:
         entries = []
         loaded = False
 
     if not loaded:
+        import re as _re
+        _rp = _re.compile(rb'"part"\s*:\s*"?([^",}]*)"?')
+        _rv = _re.compile(rb'"volume"\s*:\s*"?([^",}]*)"?')
+        _rn = _re.compile(rb'"page_num"\s*:\s*(\d+|null)')
+        _ri = _re.compile(rb'"page_id"\s*:\s*(\d+)')
         try:
             with open(pages_file, "rb") as f:
                 offset = 0
                 seq = 1
                 for line in f:
                     try:
-                        d = json.loads(line.decode("utf-8"))
-                        part = str(d.get("volume") or d.get("part") or "").strip()
+                        # استخراج سريع من رأس السطر دون تحليل JSON كامل
+                        cut = line.find(b'"body"')
+                        head = line[:cut] if 0 <= cut <= 800 else line[:800]
+                        mv = _rv.search(head)
+                        mp = _rp.search(head)
+                        mn = _rn.search(head)
+                        if mn is None or (mv is None and mp is None):
+                            raise ValueError("fast parse miss")
+                        raw_part = ((mv.group(1) if mv else b"")
+                                    or (mp.group(1) if mp else b""))
+                        part = raw_part.decode("utf-8", "ignore").strip()
+                        mi = _ri.search(head)
                         entries.append({
                             "seq": seq,
                             "part": part,
-                            "page_num": d.get("page_num"),
-                            "page_id": d.get("page_id"),
+                            "page_num": (None if mn.group(1) == b"null"
+                                         else int(mn.group(1))),
+                            "page_id": int(mi.group(1)) if mi else None,
                             "offset": offset
                         })
                         seq += 1
+                    except ValueError:
+                        try:
+                            d = json.loads(line.decode("utf-8"))
+                            entries.append({
+                                "seq": seq,
+                                "part": str(d.get("volume") or d.get("part")
+                                            or "").strip(),
+                                "page_num": d.get("page_num"),
+                                "page_id": d.get("page_id"),
+                                "offset": offset
+                            })
+                            seq += 1
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                     offset += len(line)
@@ -330,7 +365,9 @@ def get_book_index(book_dir: Path) -> Dict[str, Any]:
         try:
             sidecar.write_text(json.dumps(
                 {"size": stat.st_size, "mtime": int(stat.st_mtime),
-                 "entries": entries}, ensure_ascii=False), encoding="utf-8")
+                 "entries": [[e["seq"], e["part"], e["page_num"],
+                              e["page_id"], e["offset"]] for e in entries]},
+                ensure_ascii=False), encoding="utf-8")
         except Exception:
             pass
 
