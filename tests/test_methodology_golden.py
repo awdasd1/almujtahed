@@ -188,6 +188,40 @@ class ImpossibleLocatorTests(unittest.TestCase):
                         "ختم البخاري الصحيح يجب أن يبقى")
 
 
+class GenericPhraseTests(unittest.TestCase):
+    """عبارة عامة ليست اسم كتاب: لا تُحلّ ضبابيًا إلى كتاب يشاركها لفظًا.
+
+    من فحص فعلي: «في الكبير» خُتمت الحاوي الكبير، و«في الشرح» الشرح
+    الكبير على المقنع، و«في الرياض» الرياض النضرة، و«في الصحيحين»
+    المستدرك على الصحيحين — مواضع ممكنة فيزيائيًا فلا يكفي حارس
+    الاستحالة؛ الرفض هنا عند الحلّ نفسه، ويبقى ⚠ على ذمة النموذج."""
+
+    GENERIC = ("في الكبير", "في الشرح", "في التفسير", "في الفتاوى",
+               "في الرياض", "في الصحيحين", "في الجامع", "في التاريخ",
+               "في الطبقات", "في الأوسط", "الشرح", "الكبير")
+
+    def test_generic_phrases_get_no_stamp(self):
+        for phrase in self.GENERIC:
+            out, _ = server.enrich_unstamped_citations(
+                f"انظر: {phrase} (3-100).")
+            self.assertEqual(stamps(out), [],
+                             f"العبارة العامة «{phrase}» خُتمت كتابًا")
+
+    def test_distinctive_titles_still_stamp(self):
+        cases = [
+            ("انظر: المجموع للنووي (3-100).", "المجموع"),
+            ("انظر: المغني لابن قدامة (3-100).", "المغني"),
+            ("انظر: السنن الكبرى للبيهقي (3-100).", "السنن الكبرى"),
+            ("انظر: تفسير ابن كثير (3-100).", "تفسير ابن كثير"),
+            ("انظر: فتح الباري لابن حجر (13-242).", "فتح الباري"),
+        ]
+        for text, must in cases:
+            out, _ = server.enrich_unstamped_citations(text)
+            rows = stamps(out)
+            self.assertTrue(rows, f"لا ختم في: {text}")
+            self.assertIn(must, rows[0].get("book") or "")
+
+
 class RuntimeLensTests(unittest.TestCase):
     """قاطع الاكتفاء لمحادثة بلا فريق فقط، والفريق لا يُتجاوز."""
 

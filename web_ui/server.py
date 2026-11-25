@@ -3115,6 +3115,23 @@ def stamp_citation_sources(text: str, rows: List[dict]) -> str:
     return stamped
 
 
+_GENERIC_TITLE_KEYS: Optional[frozenset] = None
+
+
+def _generic_title_keys() -> frozenset:
+    """مفاتيح عبارات عامة ليست أسماء كتب (تُطبَّع بميزان العناوين نفسه،
+    وتُبنى كسولًا لأن مطوّعها يُعرَّف لاحقًا في هذا الملف)."""
+    global _GENERIC_TITLE_KEYS
+    if _GENERIC_TITLE_KEYS is None:
+        _GENERIC_TITLE_KEYS = frozenset(_stamp_title_key(_w) for _w in (
+            "المسند", "السنن", "الصحيح", "المصنف", "المعجم", "المستدرك",
+            "الشرح", "التفسير", "الكبير", "الصغير", "الجامع", "الفتاوى",
+            "الرياض", "الصحيحين", "التاريخ", "الطبقات", "الأوسط", "الحديث",
+            "الفقه", "الكتاب", "الرسالة", "السيرة", "الأعلام", "التراجم",
+        ))
+    return _GENERIC_TITLE_KEYS
+
+
 def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
     """ختم الإحالات التي لم يطابقها شاهد مستخرج: تُحلّ من قاعدة الشاملة
     بطبعتها المذكورة في النص نفسه (فالموضع المطبوع موضع تلك الطبعة)، ليكون
@@ -3225,6 +3242,14 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
             _d = _possessive_detached(_a)
             if _d != _a and _d not in attempts:
                 attempts.append(_d)
+        # صيغة الإحالة القياسية نفسها «الكتاب للمؤلف» («فتح الباري لابن
+        # حجر»): رأس العنوان قبل لام النسبة مرشح قائم بنفسه، وإلا سقطت
+        # أشهر صيغة توثيق عند الباحثين في ⚠ بلا ختم.
+        _pm = re.search(r"\s+ل(?=[\u0600-\u06FF])", key)
+        if _pm:
+            _head = key[:_pm.start()].strip(" ،,")
+            if _head and _head not in attempts:
+                attempts.append(_head)
         # صيغة «قال ابن حزم في المحلى»: العنوان بعد آخر «في» مرشح قائم
         # بنفسه، وإلا غلبت رموز المؤلف فحلّت كتابًا آخر له («الإحكام»).
         if " في " in key:
@@ -3234,7 +3259,11 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
         row = None
         for attempt in attempts:
             _ak = _stamp_title_key(attempt)
-            if _ak in ("المسند", "السنن", "الصحيح", "المصنف", "المعجم", "المستدرك"):
+            # عبارة عامة ليست اسم كتاب: لا تُحلّ ضبابيًا إلى كتاب يشاركها
+            # لفظًا («في الكبير» ← الحاوي الكبير، «في الرياض» ← الرياض
+            # النضرة)؛ فمواضعها في الغلط ممكنة فيزيائيًا ولا يكفي لها
+            # حارس الاستحالة — الرفض عند الحلّ نفسه، وتبقى ⚠.
+            if _ak in _generic_title_keys():
                 continue
             try:
                 r = shamela_local_mcp.resolve_book(attempt)
@@ -9797,7 +9826,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.845"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.846"},
         },
     })
     if opened.get("error"):
@@ -24847,6 +24876,9 @@ async def chat_endpoint(req: ChatRequest, request: Request):
                 "risk_verdict": _risk_verdict(_risk_events),
                 "risk_events": _risk_events, "risk_memo": _risk_memo,
                 "ledger": locals().get("_evidence_ledger") or "",
+                # مسودة التوليف كما خرجت من النموذج قبل أي ختم: مرجع
+                # المحاسبة عند أي تسرب إحالة، تُثبت أي مرحلة ربطت ماذا.
+                "raw_synthesis": (live_reply or "")[:80000],
                 "research_plan": locals().get("_research_plan") or "",
                 "plan_review": locals().get("_plan_review") or "",
                 "research_lens": _research_lens,
