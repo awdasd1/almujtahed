@@ -62,8 +62,15 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _session_token(self):
+        import hashlib
+        pw_hash = os.environ.get("ALMOGHNI_ADMIN_PASSWORD_SHA256") or ""
+        if not pw_hash:
+            return ""
+        return hashlib.sha256((pw_hash + ":almoghni-session").encode()).hexdigest()
+
     def _admin_ok(self):
-        want = os.environ.get("ALMOGHNI_ADMIN_TOKEN") or ""
+        want = self._session_token()
         got = self.headers.get("X-Admin-Token") or ""
         return bool(want) and got == want
 
@@ -128,6 +135,15 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 pass
             self._json({"ok": True})
+        elif path == "/api/login":
+            import hashlib
+            pw_hash = os.environ.get("ALMOGHNI_ADMIN_PASSWORD_SHA256") or ""
+            given = hashlib.sha256(
+                str(self._body().get("password") or "").encode()).hexdigest()
+            if pw_hash and given == pw_hash:
+                self._json({"ok": True, "token": self._session_token()})
+            else:
+                self._json({"ok": False, "error": "bad password"}, 401)
         elif path == "/api/visit":
             d = _counts()
             d["visits"] += 1

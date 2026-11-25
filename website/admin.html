@@ -39,10 +39,10 @@
     <h3>دخول الإدارة</h3>
     <p class="muted">هذه الصفحة لصاحب الموقع فقط. أدخل رمز القراءة لعرض رسائل الزوار.</p>
     <form id="loginForm">
-      <label class="form-label" for="tokenInput">رمز القراءة</label>
-      <input class="form-input" id="tokenInput" type="password" required autocomplete="off" placeholder="الرمز الذي زوّدك به المغني">
+      <label class="form-label" for="tokenInput">كلمة المرور</label>
+      <input class="form-input" id="tokenInput" type="password" required autocomplete="current-password" placeholder="كلمة مرور صفحة القراءة">
       <button class="btn" type="submit" style="margin-top:12px">عرض الرسائل</button>
-      <p class="small" id="loginError" style="color:#b91c1c" hidden>الرمز غير صحيح — أعد المحاولة.</p>
+      <p class="small" id="loginError" style="color:#b91c1c" hidden>كلمة المرور غير صحيحة — أعد المحاولة.</p>
     </form>
   </div>
 
@@ -137,9 +137,19 @@
   }
   $("loginForm").addEventListener("submit", function (e) {
     e.preventDefault();
-    token = $("tokenInput").value.trim();
-    sessionStorage.setItem("almoghni_admin_token", token);
-    load().catch(function () { $("loginError").hidden = false; });
+    fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: $("tokenInput").value })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("bad");
+      return r.json();
+    }).then(function (d) {
+      token = d.token || "";
+      sessionStorage.setItem("almoghni_admin_token", token);
+      $("loginError").hidden = true;
+      return load();
+    }).catch(function () { $("loginError").hidden = false; });
   });
   document.querySelectorAll(".chip[data-type]").forEach(function (chip) {
     chip.addEventListener("click", function () {
