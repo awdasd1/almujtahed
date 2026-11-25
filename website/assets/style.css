@@ -54,7 +54,8 @@ body {
   display: flex;
   flex-direction: column;
 }
-main { flex: 1 0 auto; width: 100%; }
+.page-body { flex: 1 0 auto; display: flex; flex-direction: column; }
+main { flex: 1 0 auto; width: 100%; max-width: none; margin: 0; padding: 0; }
 .site-footer { flex-shrink: 0; }
 /* طبقة صورة الخلفية كما في التطبيق: ثابتة، وسط، بحجم 100% وشفافية 8% */
 body::before {
@@ -69,7 +70,9 @@ body::before {
   background-size: 100%;
   opacity: 0.08;
 }
-.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+.wrap, .column { max-width: 1080px; margin: 0 auto; padding: 0 20px; width: 100%; }
+/* التبويبات والمحتوى في عمود واحد: الحاوية بعرض الحاويات الوسطى تمامًا */
+.column { box-sizing: border-box; }
 h1, h2, h3 { font-family: var(--font-amiri); color: var(--color-heading); margin: 0 0 8px; }
 a { color: var(--accent-emerald); }
 .muted { color: var(--color-tabs); }
@@ -94,7 +97,7 @@ a { color: var(--accent-emerald); }
   opacity: 0.08;
 }
 .header-in {
-  position: relative;
+  position: relative; z-index: 2;
   display: flex; justify-content: space-between; align-items: center;
   gap: 16px; padding-top: 18px; padding-bottom: 18px; flex-wrap: wrap;
 }
@@ -116,7 +119,7 @@ a { color: var(--accent-emerald); }
 }
 /* أزرار أيقونات الترويسة كما في التطبيق */
 .icon-btn {
-  background: var(--dark-surface);
+  background: transparent;
   border: 1px solid var(--surface-border);
   color: var(--color-tabs);
   width: 38px; height: 38px;
@@ -124,6 +127,7 @@ a { color: var(--accent-emerald); }
   cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
   text-decoration: none; font-size: 15px;
+  position: relative; z-index: 3;
 }
 .icon-btn:hover { background: var(--bg-mid); color: var(--color-heading); }
 .icon-btn svg { width: 18px; height: 18px; }
@@ -132,7 +136,7 @@ a { color: var(--accent-emerald); }
    متوسّط، خلفيته الوسطى وحدّه الأخضر من قالب «المزخرف» */
 .tabs {
   display: flex; align-items: center; justify-content: center;
-  gap: 3px; width: 100%;
+  gap: 3px; width: 100%; box-sizing: border-box;
   background: var(--bg-mid);
   border: 1px solid var(--mid-border);
   border-radius: var(--radius);
@@ -218,7 +222,7 @@ td.num { white-space: nowrap; }
 
 /* النوافذ (تواصل / أنماط) */
 .modal-veil {
-  position: fixed; inset: 0; z-index: 60;
+  position: fixed; inset: 0; z-index: 80;
   background: rgba(28, 22, 17, 0.45);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 60px 16px 16px;

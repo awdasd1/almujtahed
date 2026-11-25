@@ -130,7 +130,7 @@
   function renderReleases() {
     if (!state.releases || !state.releases.length) return;
     var latest = state.releases[0];
-    $("latestVersion").textContent = "آخر إصدار: " + latest.version + " (نسخة تجريبية)";
+    if ($("latestVersion")) $("latestVersion").textContent = "آخر إصدار: " + latest.version + " (نسخة تجريبية)";
     if ($("appVersionLabel")) $("appVersionLabel").textContent = "إصدار رقم " + latest.version + " (نسخة تجريبية)";
     $("statVersion").textContent = latest.version;
     var wn = $("whatsNew");
