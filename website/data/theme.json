@@ -1,0 +1,26 @@
+{
+  "name": "المزخرف",
+  "source": "القالب المحفوظ المشغَّل فعليًا في تطبيق المغني (saved:mwpgtqvj) فوق الأساس الرملي — ثُبّت نسخةً افتراضية للموقع بأمر صاحب التطبيق 2026-11-25",
+  "basePreset": "sand",
+  "fonts": {"heading": "Amiri", "subheading": "Amiri", "tabs": "Amiri", "app": "Amiri", "reading": "Amiri"},
+  "background": {
+    "mode": "gradient",
+    "angle": 279,
+    "stops": [
+      {"color": "#fff2d5", "alpha": 38, "at": 0},
+      {"color": "#d6c3a6", "alpha": 61, "at": 50},
+      {"color": "#d6c3a6", "alpha": 66, "at": 100}
+    ],
+    "image": "assets/background.jpg",
+    "imageOpacity": 8,
+    "imageFit": "scale",
+    "imageSize": 100
+  },
+  "buttons": {"fill": "#6c4706", "text": "#ffffff", "secondaryFill": "#aa7942", "secondaryText": "#ffffff", "secondaryBorder": "#d6cbb8"},
+  "containers": {
+    "light": {"fill": "#e2d6c2", "border": "#6c4705", "borderAlpha": 62},
+    "mid": {"fill": "#e7dccb", "fillAlpha": 57, "border": "#38571a"},
+    "dark": {"fill": "#fbf7f0", "border": "#d6cbb8"}
+  },
+  "fontColors": {"tabs": "#6a5c4d", "heading": "#1c1611", "subheading": "#2a221a", "reading": "#583400"}
+}
