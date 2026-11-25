@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>المغني — الموقع الرسمي</title>
+<meta name="description" content="المغني: مساعد الباحث في التراث الإسلامي. تنزيل التطبيق لماك وويندوز، ومشاريع ومحادثات ومخطوطات ووكلاء وأدوات جاهزة للتشغيل داخله.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-in">
+    <div class="brand">
+      <div class="brand-mark">م</div>
+      <div>
+        <h1>المغني</h1>
+        <p>مساعد الباحث في التراث الإسلامي</p>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span class="pill" id="latestVersion">آخر إصدار: —</span>
+      <span class="pill pill-soft">زوار الموقع: <b id="visitorCount">—</b></span>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs wrap" id="tabs" role="tablist">
+  <button class="tab active" data-tab="about">عن المغني</button>
+  <button class="tab" data-tab="downloads">التنزيلات</button>
+  <button class="tab" data-tab="projects">المشاريع</button>
+  <button class="tab" data-tab="chats">المحادثات</button>
+  <button class="tab" data-tab="manuscripts">المخطوطات</button>
+  <button class="tab" data-tab="agents">الوكلاء</button>
+  <button class="tab" data-tab="reading">قراءة وتحليل</button>
+  <button class="tab" data-tab="tools">الأدوات</button>
+  <button class="tab" data-tab="patterns">الأنماط</button>
+</nav>
+
+<main class="wrap">
+  <!-- عن المغني -->
+  <section class="panel active" id="panel-about">
+    <div class="hero">
+      <h2>رفيقك في البحث التراثي</h2>
+      <p>«المغني» تطبيق بحثي يعمل على جهازك، يصل مكتبة الشاملة المحلية بنماذج ذكاء اصطناعي عبر فرق وكلاء متخصصة ومشاريع بحثية موثّقة الإحالات: كل نقل بختم يفتح صفحه في مصدره، وكل إحالة لم تثبت منبّهٌ عليها لا مخفية.</p>
+      <div class="hero-actions">
+        <a class="btn btn-clay" href="#" data-goto="downloads">تنزيل التطبيق</a>
+        <a class="btn btn-ghost" href="#" data-goto="projects">تصفح المشاريع الجاهزة</a>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="statVersion">—</b><span>آخر إصدار</span></div>
+        <div class="stat"><b id="statDownloads">—</b><span>مجموع التحميلات</span></div>
+        <div class="stat"><b id="statVisitors">—</b><span>زوار الموقع</span></div>
+        <div class="stat"><b id="statItems">—</b><span>ملفًا متاحًا</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>ما الجديد في آخر إصدار؟</h3>
+      <div id="whatsNew"><p class="muted">جارٍ التحميل…</p></div>
+    </div>
+    <div class="card">
+      <h3>أقسام الموقع</h3>
+      <ul class="plain">
+        <li><b>التنزيلات:</b> نسختا ويندوز وماك من التطبيق وسجل الإصدارات.</li>
+        <li><b>المشاريع والمحادثات والمخطوطات والوكلاء والأدوات والأنماط:</b> ملفات جاهزة تُنزّل وتُستورد في التطبيق لتعمل كما أُعدّت.</li>
+        <li><b>قراءة وتحليل:</b> حزم مضغوطة (zip) لمواد القراءة والتحليل.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- التنزيلات -->
+  <section class="panel" id="panel-downloads">
+    <div class="dl-grid">
+      <div class="dl-card">
+        <h3>نسخة ويندوز</h3>
+        <p class="muted" id="winMeta">—</p>
+        <a class="btn btn-clay" id="winBtn" href="files/downloads/almoghni.exe" download>تحميل نسخة ويندوز</a>
+        <p class="small">التحميلات: <b id="winCount">—</b></p>
+      </div>
+      <div class="dl-card">
+        <h3>نسخة ماك</h3>
+        <p class="muted" id="macMeta">—</p>
+        <a class="btn btn-emerald" id="macBtn" href="files/downloads/almoghni.dmg" download>تحميل نسخة ماك</a>
+        <p class="small">التحميلات: <b id="macCount">—</b></p>
+      </div>
+    </div>
+    <div class="card">
+      <h3>سجل الإصدارات</h3>
+      <div id="releases"><p class="muted">جارٍ التحميل…</p></div>
+    </div>
+  </section>
+
+  <!-- أقسام الملفات -->
+  <section class="panel" id="panel-files">
+    <div class="card">
+      <div class="files-head">
+        <h3 id="filesTitle">الملفات</h3>
+        <input type="search" id="filesSearch" placeholder="ابحث بالاسم أو الوصف…">
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>الاسم</th><th>الوصف</th><th>الحجم</th><th>التاريخ</th><th>التحميلات</th><th>التحميل</th></tr>
+          </thead>
+          <tbody id="filesBody"></tbody>
+        </table>
+      </div>
+      <p class="muted small" id="filesEmpty" hidden>لا ملفات بعد في هذا القسم — تُضاف قريبًا.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>المغني — موقع التعريف والتحديثات والتنزيلات.</span>
+    <span>زوار الموقع: <b id="footVisitors">—</b> · مجموع التحميلات: <b id="footDownloads">—</b></span>
+  </div>
+</footer>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

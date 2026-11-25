@@ -1,0 +1,31 @@
+{
+  "installers": [
+    {
+      "key": "win",
+      "name": "المغني لويندوز",
+      "file": "files/downloads/almoghni.exe",
+      "version": "1.10.846",
+      "size": "",
+      "date": "",
+      "downloads": 0
+    },
+    {
+      "key": "mac",
+      "name": "المغني لماك",
+      "file": "files/downloads/almoghni.dmg",
+      "version": "1.10.846",
+      "size": "",
+      "date": "",
+      "downloads": 0
+    }
+  ],
+  "categories": {
+    "projects": [],
+    "chats": [],
+    "manuscripts": [],
+    "agents": [],
+    "reading": [],
+    "tools": [],
+    "patterns": []
+  }
+}
