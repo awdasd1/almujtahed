@@ -1,0 +1,16 @@
+[Unit]
+Description=Almoghni website API (messages and counters)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Environment=ALMOGHNI_SITE_DATA=/var/lib/almoghni-site
+ExecStart=/usr/bin/python3 /opt/almoghni-site/site_api.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
