@@ -190,6 +190,61 @@
     });
   }
 
+  /* ---------- النوافذ والأنماط ---------- */
+  var SITE_THEMES = [
+    { id: "muzakhraf", label: "المزخرف (افتراضي الموقع)", dot: "#aa7942" },
+    { id: "sand", label: "الرملي", dot: "#B56A4C" },
+    { id: "ink", label: "الحبر", dot: "#1E4D78" },
+    { id: "oasis", label: "الواحة", dot: "#1E6A49" },
+    { id: "silk", label: "الحرير", dot: "#C4A15A" },
+    { id: "charcoal", label: "الفحمي", dot: "#D6B56A" },
+    { id: "marine", label: "البحري", dot: "#C56B45" },
+    { id: "north-sand", label: "رمال الشمال", dot: "#F0C93A" },
+    { id: "lilac", label: "ليلك", dot: "#7B5CFA" },
+    { id: "marshmallow", label: "مارشملو", dot: "#6B4DFF" }
+  ];
+  function applySiteTheme(id) {
+    var root = document.documentElement;
+    if (!id || id === "muzakhraf") root.removeAttribute("data-site-theme");
+    else root.setAttribute("data-site-theme", id);
+    localStorage.setItem("almoghni_site_theme", id || "muzakhraf");
+    document.querySelectorAll(".theme-item").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.themeId === (id || "muzakhraf"));
+    });
+  }
+  function buildThemeList() {
+    var list = $("themeList");
+    if (!list) return;
+    SITE_THEMES.forEach(function (t) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "theme-item";
+      b.dataset.themeId = t.id;
+      var dot = document.createElement("span");
+      dot.className = "theme-dot";
+      dot.style.background = t.dot;
+      b.appendChild(dot);
+      b.appendChild(document.createTextNode(t.label));
+      b.addEventListener("click", function () {
+        applySiteTheme(t.id);
+        closeModal($("themeModal"));
+      });
+      list.appendChild(b);
+    });
+    applySiteTheme(localStorage.getItem("almoghni_site_theme") || "muzakhraf");
+  }
+  function openModal(m) { if (m) m.hidden = false; }
+  function closeModal(m) { if (m) m.hidden = true; }
+  if ($("socialBtn")) $("socialBtn").addEventListener("click", function () { openModal($("socialModal")); });
+  if ($("themeBtn")) $("themeBtn").addEventListener("click", function () { openModal($("themeModal")); });
+  document.querySelectorAll(".modal-veil").forEach(function (veil) {
+    veil.addEventListener("click", function (e) { if (e.target === veil) closeModal(veil); });
+    veil.querySelectorAll("[data-close]").forEach(function (b) {
+      b.addEventListener("click", function () { closeModal(veil); });
+    });
+  });
+  buildThemeList();
+
   /* ---------- الإقلاع ---------- */
   Promise.all([
     fetch("data/catalog.json").then(function (r) { return r.json(); }),

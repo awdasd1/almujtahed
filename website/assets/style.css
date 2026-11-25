@@ -50,7 +50,12 @@ body {
   font-family: var(--font-amiri);
   font-size: 17px;
   line-height: 1.9;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
+main { flex: 1 0 auto; width: 100%; }
+.site-footer { flex-shrink: 0; }
 /* طبقة صورة الخلفية كما في التطبيق: ثابتة، وسط، بحجم 100% وشفافية 8% */
 body::before {
   content: "";
@@ -109,6 +114,19 @@ a { color: var(--accent-emerald); }
   border: 1px solid var(--surface-border); border-radius: var(--radius);
   padding: 4px 12px; font-size: 14px;
 }
+/* أزرار أيقونات الترويسة كما في التطبيق */
+.icon-btn {
+  background: var(--dark-surface);
+  border: 1px solid var(--surface-border);
+  color: var(--color-tabs);
+  width: 38px; height: 38px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  text-decoration: none; font-size: 15px;
+}
+.icon-btn:hover { background: var(--bg-mid); color: var(--color-heading); }
+.icon-btn svg { width: 18px; height: 18px; }
 
 /* حاوية التبويبات كما في التطبيق تمامًا: شريط بعرض كامل، محتواه
    متوسّط، خلفيته الوسطى وحدّه الأخضر من قالب «المزخرف» */
@@ -197,4 +215,70 @@ td.num { white-space: nowrap; }
   background: var(--bg-surface); color: var(--color-tabs);
   font-size: 14px; padding: 16px 0 26px;
 }
+
+/* النوافذ (تواصل / أنماط) */
+.modal-veil {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(28, 22, 17, 0.45);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 60px 16px 16px;
+}
+.modal-veil[hidden] { display: none; }
+.modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius);
+  padding: 20px 24px; width: min(480px, 94vw);
+  color: var(--color-reading);
+}
+.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.modal-head h3 { margin: 0; font-size: 22px; }
+.social-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.social-list a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; text-decoration: none;
+  background: var(--dark-surface); color: var(--color-sub);
+  border: 1px solid var(--surface-border); border-radius: var(--radius);
+  font-family: var(--font-amiri); font-weight: 700;
+}
+.social-list a:hover { background: var(--bg-mid); }
+.social-list svg { width: 20px; height: 20px; flex-shrink: 0; }
+.theme-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.theme-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; cursor: pointer; text-align: right;
+  background: var(--dark-surface); color: var(--color-sub);
+  border: 1px solid var(--surface-border); border-radius: var(--radius);
+  font-family: var(--font-amiri); font-size: 16px; font-weight: 700;
+}
+.theme-item:hover { background: var(--bg-mid); }
+.theme-item.active { outline: 2px solid var(--lab-btn-fill); }
+.theme-dot { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--surface-border); flex-shrink: 0; }
+
+/* أنماط التطبيق الجاهزة (تُطبَّق على الموقع كما تُطبَّق فيه) */
+[data-site-theme] body { background: var(--site-canvas); }
+[data-site-theme] body::before, [data-site-theme] .site-header::before { opacity: 0; }
+[data-site-theme] .site-header { background: var(--bg-surface); }
+[data-site-theme] {
+  --lab-page-bg: var(--site-canvas);
+  --bg-mid: var(--site-muted);
+  --surface-border: var(--site-border);
+  --mid-border: var(--site-border);
+  --dark-border: var(--site-border);
+  --lab-btn-fill: var(--site-accent);
+  --lab-btn2-fill: var(--site-accent2);
+  --color-tabs: var(--site-muted-text);
+  --color-heading: var(--site-text);
+  --color-sub: var(--site-text);
+  --color-reading: var(--site-text);
+}
+[data-site-theme="sand"] { --site-canvas:#F1E9DC; --site-text:#2A221A; --bg-surface:#FBF7F0; --dark-surface:#FBF7F0; --site-muted:#E7DCCB; --site-border:#D6CBB8; --site-accent:#B56A4C; --site-accent2:#2F6F5E; --site-muted-text:#6A5C4D; }
+[data-site-theme="ink"] { --site-canvas:#F3F5F7; --site-text:#1A2430; --bg-surface:#FFFFFF; --dark-surface:#FFFFFF; --site-muted:#E5EBF1; --site-border:#CDD5DE; --site-accent:#1E4D78; --site-accent2:#8C5A2B; --site-muted-text:#5A6A7A; }
+[data-site-theme="oasis"] { --site-canvas:#E6F0E3; --site-text:#1C2A22; --bg-surface:#F6FBF4; --dark-surface:#F6FBF4; --site-muted:#D5E6D0; --site-border:#C0D6B8; --site-accent:#1E6A49; --site-accent2:#A47A2A; --site-muted-text:#4C6355; }
+[data-site-theme="silk"] { --site-canvas:#F6F1E6; --site-text:#17302E; --bg-surface:#FFFCF6; --dark-surface:#FFFCF6; --site-muted:#EBE3D2; --site-border:#E2D4B4; --site-accent:#C4A15A; --site-accent2:#0E7F7A; --site-muted-text:#5C6B68; }
+[data-site-theme="charcoal"] { --site-canvas:#121212; --site-text:#F6F0E4; --bg-surface:#1B1B1B; --dark-surface:#1B1B1B; --site-muted:#202020; --site-border:#34302A; --site-accent:#D6B56A; --site-accent2:#E7D3A1; --site-muted-text:#C2B8A8; }
+[data-site-theme="marine"] { --site-canvas:#0C2740; --site-text:#F6EFE8; --bg-surface:#13314E; --dark-surface:#13314E; --site-muted:#10283F; --site-border:#2C4C68; --site-accent:#C56B45; --site-accent2:#E4C2AE; --site-muted-text:#C5D2DE; }
+[data-site-theme="north-sand"] { --site-canvas:#F4F0E4; --site-text:#2A2A28; --bg-surface:#FBF8F1; --dark-surface:#FBF8F1; --site-muted:#EFE8D6; --site-border:#E6DCC4; --site-accent:#F0C93A; --site-accent2:#2C2C2C; --site-muted-text:#8C8678; }
+[data-site-theme="lilac"] { --site-canvas:#F3F4F8; --site-text:#17171C; --bg-surface:#FFFFFF; --dark-surface:#FFFFFF; --site-muted:#EEF0F5; --site-border:#E4E6EE; --site-accent:#7B5CFA; --site-accent2:#1C1C22; --site-muted-text:#6E7380; }
+[data-site-theme="marshmallow"] { --site-canvas:#F7F1FB; --site-text:#241833; --bg-surface:#FFFFFF; --dark-surface:#FFFFFF; --site-muted:#F3EDF8; --site-border:#E7E0F2; --site-accent:#6B4DFF; --site-accent2:#3B2A78; --site-muted-text:#6E6582; }
 .site-footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

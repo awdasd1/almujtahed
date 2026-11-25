@@ -17,11 +17,20 @@
     <div class="header-meta">
       <span class="pill" id="latestVersion">آخر إصدار: —</span>
       <span class="pill pill-soft">زوار الموقع: <b id="visitorCount">—</b></span>
+      <a class="icon-btn" href="https://www.youtube.com" target="_blank" rel="noopener" title="قناتنا على يوتيوب" aria-label="يوتيوب">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/><path d="m10 15 5-3-5-3z"/></svg>
+      </a>
+      <button class="icon-btn" id="socialBtn" type="button" title="مواقعنا على التواصل" aria-label="مواقع التواصل">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" type="button" title="تغيير نمط الموقع" aria-label="تغيير النمط">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".8"/><circle cx="17.5" cy="10.5" r=".8"/><circle cx="8.5" cy="7.5" r=".8"/><circle cx="6.5" cy="12.5" r=".8"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.43-.15-.83-.4-1.14-.24-.3-.38-.68-.38-1.1A1.68 1.68 0 0 1 14.56 8h2.03A5.42 5.42 0 0 0 22 12c0-5.5-4.5-10-10-10z"/></svg>
+      </button>
     </div>
   </div>
 </header>
 
-<nav class="tabs wrap" id="tabs" role="tablist">
+<div class="wrap"><nav class="tabs" id="tabs" role="tablist">
   <button class="tab active" data-tab="about">عن المغني</button>
   <button class="tab" data-tab="downloads">التنزيلات</button>
   <button class="tab" data-tab="projects">المشاريع</button>
@@ -31,7 +40,7 @@
   <button class="tab" data-tab="reading">قراءة وتحليل</button>
   <button class="tab" data-tab="tools">الأدوات</button>
   <button class="tab" data-tab="patterns">الأنماط</button>
-</nav>
+</nav></div>
 
 <main class="wrap">
   <!-- عن المغني -->
@@ -112,6 +121,36 @@
     <span>زوار الموقع: <b id="footVisitors">—</b> · مجموع التحميلات: <b id="footDownloads">—</b></span>
   </div>
 </footer>
+
+<!-- نافذة مواقع التواصل -->
+<div class="modal-veil" id="socialModal" hidden>
+  <div class="modal" role="dialog" aria-label="مواقعنا على التواصل">
+    <div class="modal-head">
+      <h3>مواقعنا على التواصل</h3>
+      <button class="icon-btn" type="button" data-close aria-label="إغلاق">✕</button>
+    </div>
+    <div class="social-list">
+      <a href="#" title="منصة X"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 2H22l-6.8 7.8L23.3 22h-6.3l-4.9-6.4L6.5 22H3.4l7.3-8.3L2.7 2h6.4l4.4 5.9L18.9 2zm-1.1 18h1.7L7.1 3.9H5.3L17.8 20z"/></svg><span>منصة X</span></a>
+      <a href="#" title="تيك توك"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 3c.4 2.1 1.8 3.6 4 3.9v3c-1.6 0-3-.5-4-1.3v6.3c0 3.5-2.6 5.9-6 5.9A5.8 5.8 0 0 1 4.7 15c0-3.3 2.7-5.9 6.1-5.7v3.1c-1.6-.3-3 .8-3 2.4 0 1.4 1.1 2.5 2.5 2.5 1.5 0 2.6-1.1 2.6-2.7V3h3.7z"/></svg><span>تيك توك</span></a>
+      <a href="#" title="تيليغرام"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg><span>تيليغرام</span></a>
+      <a href="#" title="واتساب"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.13.96.36 1.9.7 2.8a2 2 0 0 1-.45 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.45c.9.34 1.84.57 2.8.7A2 2 0 0 1 22 16.9z"/></svg><span>واتساب</span></a>
+      <a href="mailto:" title="البريد"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg><span>البريد</span></a>
+      <a href="tel:" title="الجوال"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M12 18h.01"/></svg><span>الجوال</span></a>
+    </div>
+    <p class="small muted">تُربط بالحسابات الرسمية عند رفع الموقع.</p>
+  </div>
+</div>
+
+<!-- قائمة أنماط الموقع (أنماط التطبيق نفسها) -->
+<div class="modal-veil" id="themeModal" hidden>
+  <div class="modal" role="dialog" aria-label="تغيير نمط الموقع">
+    <div class="modal-head">
+      <h3>نمط الموقع</h3>
+      <button class="icon-btn" type="button" data-close aria-label="إغلاق">✕</button>
+    </div>
+    <div class="theme-list" id="themeList"></div>
+  </div>
+</div>
 
 <script src="assets/app.js"></script>
 </body>
