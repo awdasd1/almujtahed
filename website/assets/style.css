@@ -142,6 +142,7 @@ a { color: var(--accent-emerald); }
   padding: 8px 14px;
   display: flex; align-items: center; gap: 7px;
 }
+.tab svg { width: 17px; height: 17px; flex: none; }
 .tab:hover { color: var(--color-sub); background: rgba(251, 247, 240, 0.65); }
 .tab.active { background: var(--bg-surface); color: var(--color-tabs); }
 
