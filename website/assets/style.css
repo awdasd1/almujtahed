@@ -251,7 +251,7 @@ td.num { white-space: nowrap; }
 
 /* أنماط التطبيق الجاهزة (تُطبَّق على الموقع كما تُطبَّق فيه) */
 [data-site-theme] body { background: var(--site-canvas); }
-[data-site-theme] body::before, [data-site-theme] .site-header::before { opacity: 0; }
+[data-site-theme] body::before { opacity: 0; }
 [data-site-theme] .site-header { background: var(--bg-surface); }
 [data-site-theme] {
   --lab-page-bg: var(--site-canvas);
