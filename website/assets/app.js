@@ -77,7 +77,8 @@
       b.classList.toggle("active", b.dataset.tab === tab);
     });
     document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
-    if (tab === "about") $("panel-about").classList.add("active");
+    if (tab === "news") $("panel-news").classList.add("active");
+    else if (tab === "about") $("panel-about").classList.add("active");
     else if (tab === "downloads") $("panel-downloads").classList.add("active");
     else { $("panel-files").classList.add("active"); renderFiles(); }
   }
@@ -171,6 +172,54 @@
     });
   }
 
+  function renderNews() {
+    var box = $("newsList");
+    if (!box || !state.releases) return;
+    box.innerHTML = "";
+    state.releases.slice(0, 8).forEach(function (r, i) {
+      var div = document.createElement("div");
+      div.className = "news-item";
+      var head = document.createElement("h4");
+      head.textContent = "إصدار " + r.version + " ";
+      if (i === 0) {
+        var tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = "الأحدث";
+        head.appendChild(tag);
+      }
+      var list = document.createElement("ul");
+      (r.notes || []).forEach(function (n) {
+        var li = document.createElement("li");
+        li.textContent = n;
+        list.appendChild(li);
+      });
+      div.appendChild(head); div.appendChild(list);
+      box.appendChild(div);
+    });
+  }
+
+  function initContactForm() {
+    var form = $("contactForm");
+    if (!form) return;
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var msg = {
+        name: $("contactName").value.trim(),
+        type: $("contactType").value,
+        body: $("contactBody").value.trim(),
+        at: new Date().toISOString()
+      };
+      if (!msg.name || !msg.body) return;
+      try {
+        var all = JSON.parse(localStorage.getItem("almoghni_site_messages") || "[]");
+        all.push(msg);
+        localStorage.setItem("almoghni_site_messages", JSON.stringify(all));
+      } catch (err) { /* حفظ محلي فقط */ }
+      form.reset();
+      $("contactDone").hidden = false;
+    });
+  }
+
   function renderInstallers() {
     if (!state.catalog) return;
     (state.catalog.installers || []).forEach(function (it) {
@@ -253,6 +302,8 @@
     state.catalog = res[0];
     state.releases = res[1].releases || [];
     renderReleases();
+    renderNews();
+    initContactForm();
     renderInstallers();
     renderCounts();
   }).catch(function () {
