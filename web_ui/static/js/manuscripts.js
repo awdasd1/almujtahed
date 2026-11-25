@@ -103,6 +103,8 @@ function msProject(id) { return msProjects.find(p => p.id === id) || null; }
 function msCopy(project, copyId) { return project ? (project.copies || []).find(c => c.id === copyId) || null : null; }
 function msFolio(copy, folioId) { return copy ? (copy.folios || []).find(f => f.id === folioId) || null : null; }
 
+async function msReloadProjects() { msLoaded = false; await initManuscriptsTab(); }
+
 async function initManuscriptsTab() {
   if (msLoaded) { renderMsProjects(); renderMsGroup(); return; }
   try {

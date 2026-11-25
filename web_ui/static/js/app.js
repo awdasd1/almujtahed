@@ -90,8 +90,66 @@ const DEFAULT_SETTINGS = {
 
 let currentSettings = { ...DEFAULT_SETTINGS };
 
+// ===== بوابة مجلد الحفظ الآمن عند أول تنصيب =====
+async function checkWorkspaceGate() {
+  try {
+    const res = await fetch('/api/workspace/status');
+    const data = await res.json();
+    if (data && data.required) {
+      const gate = document.getElementById('workspaceGate');
+      if (gate) gate.style.display = 'flex';
+    }
+  } catch (e) { /* خادم قديم بلا هذه الخاصية */ }
+}
+
+async function _workspaceSaved(data) {
+  const msg = document.getElementById('workspaceGateMsg');
+  if (msg) { msg.style.color = '#166534'; msg.textContent = 'حُفظ المجلد. يُعاد تشغيل المغني الآن...'; }
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 750));
+    try {
+      const res = await fetch('/api/workspace/status');
+      const st = await res.json();
+      if (st && st.configured) { location.reload(); return; }
+    } catch (e) { /* يُعاد التشغيل */ }
+  }
+  location.reload();
+}
+
+async function pickWorkspaceFolder() {
+  const msg = document.getElementById('workspaceGateMsg');
+  if (msg) msg.textContent = '';
+  try {
+    const res = await fetch('/api/workspace/pick', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر اختيار المجلد');
+    await _workspaceSaved(data);
+  } catch (err) {
+    if (msg) { msg.style.color = '#991b1b'; msg.textContent = err.message; }
+  }
+}
+
+async function setWorkspaceFolderManual() {
+  const input = document.getElementById('workspacePathInput');
+  const msg = document.getElementById('workspaceGateMsg');
+  const path = (input?.value || '').trim();
+  if (!path) { if (msg) msg.textContent = 'اكتب مسار المجلد أولًا'; return; }
+  try {
+    const res = await fetch('/api/workspace/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر حفظ المجلد');
+    await _workspaceSaved(data);
+  } catch (err) {
+    if (msg) { msg.style.color = '#991b1b'; msg.textContent = err.message; }
+  }
+}
+
 // تهيئة التطبيق عند اكتمال تحميل الصفحة
 document.addEventListener('DOMContentLoaded', () => {
+  checkWorkspaceGate();
   loadSettings();
   initTheme();
   applyVisualLab();

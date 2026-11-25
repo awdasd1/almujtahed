@@ -1,0 +1,480 @@
+{
+ "themePreset": "sand",
+ "activeThemeId": "saved:mwwb4e7u",
+ "savedVisualThemes": [
+  {
+   "id": "saved:mwpgtqvj",
+   "name": "المزخرف",
+   "themePreset": "sand",
+   "visualLab": {
+    "schema": 2,
+    "buttons": {
+     "fill": "#6c4706",
+     "fillAlpha": 100,
+     "text": "#ffffff",
+     "textAlpha": 100,
+     "secondaryFill": "#aa7942",
+     "secondaryFillAlpha": 100,
+     "secondaryText": "#ffffff",
+     "secondaryTextAlpha": 100,
+     "secondaryBorder": "#d6cbb8",
+     "secondaryBorderAlpha": 100,
+     "secondaryWidth": 0
+    },
+    "background": {
+     "mode": "gradient",
+     "color": "#aa7942",
+     "alpha": 52,
+     "angle": 279,
+     "count": 3,
+     "colors": [
+      "#fff2d5",
+      "#d6c3a6",
+      "#d6c3a6",
+      "#aa7942",
+      "#7a4a00"
+     ],
+     "alphas": [
+      38,
+      61,
+      66,
+      18,
+      62
+     ],
+     "imageUrl": "/visual-background/background.jpg?v=1794767636",
+     "imageOpacity": 8,
+     "imageFit": "scale",
+     "imageSize": 100,
+     "imageBlur": 0
+    },
+    "containers": {
+     "light": {
+      "fill": "#e2d6c2",
+      "fillAlpha": 100,
+      "border": "#6c4705",
+      "borderAlpha": 62,
+      "width": 1
+     },
+     "mid": {
+      "fill": "#e7dccb",
+      "fillAlpha": 57,
+      "border": "#38571a",
+      "borderAlpha": 100,
+      "width": 1
+     },
+     "dark": {
+      "fill": "#fbf7f0",
+      "fillAlpha": 100,
+      "border": "#d6cbb8",
+      "borderAlpha": 100,
+      "width": 1
+     },
+     "header": {
+      "fill": "#ffffff",
+      "fillAlpha": 11
+     },
+     "chat": {
+      "fill": "#d0c0a5",
+      "fillAlpha": 66
+     }
+    },
+    "fontColors": {
+     "tabs": {
+      "color": "#6a5c4d",
+      "alpha": 100
+     },
+     "heading": {
+      "color": "#1c1611",
+      "alpha": 100
+     },
+     "subheading": {
+      "color": "#2a221a",
+      "alpha": 100
+     },
+     "reading": {
+      "color": "#583400",
+      "alpha": 100
+     }
+    }
+   },
+   "fonts": {
+    "heading": "google:Amiri",
+    "subheading": "google:Amiri",
+    "tabs": "google:Amiri",
+    "app": "google:Amiri",
+    "reading": "google:Amiri"
+   },
+   "textSize": 19
+  },
+  {
+   "id": "saved:mwph1fzw",
+   "name": "اسود",
+   "themePreset": "charcoal",
+   "visualLab": {
+    "schema": 2,
+    "buttons": {
+     "fill": "#d6b56a",
+     "fillAlpha": 100,
+     "text": "#ffffff",
+     "textAlpha": 100,
+     "secondaryFill": "#1b1b1b",
+     "secondaryFillAlpha": 100,
+     "secondaryText": "#f6f0e4",
+     "secondaryTextAlpha": 100,
+     "secondaryBorder": "#34302a",
+     "secondaryBorderAlpha": 100,
+     "secondaryWidth": 1
+    },
+    "background": {
+     "mode": "gradient",
+     "color": "#121212",
+     "alpha": 100,
+     "angle": 163,
+     "count": 5,
+     "colors": [
+      "#121212",
+      "#202020",
+      "#1b1b1b",
+      "#34302a",
+      "#d6b56a"
+     ],
+     "alphas": [
+      94,
+      98,
+      100,
+      81,
+      96
+     ],
+     "imageUrl": "",
+     "imageOpacity": 100,
+     "imageFit": "cover",
+     "imageSize": 100,
+     "imageBlur": 0
+    },
+    "containers": {
+     "light": {
+      "fill": "#1b1b1b",
+      "fillAlpha": 100,
+      "border": "#34302a",
+      "borderAlpha": 100,
+      "width": 0
+     },
+     "mid": {
+      "fill": "#202020",
+      "fillAlpha": 42,
+      "border": "#ff6a00",
+      "borderAlpha": 29,
+      "width": 1
+     },
+     "dark": {
+      "fill": "#121212",
+      "fillAlpha": 100,
+      "border": "#34302a",
+      "borderAlpha": 100,
+      "width": 1
+     },
+     "header": {
+      "fill": "#121212",
+      "fillAlpha": 10
+     },
+     "chat": {
+      "fill": "#1b1b1b",
+      "fillAlpha": 68
+     }
+    },
+    "fontColors": {
+     "tabs": {
+      "color": "#6a5c4d",
+      "alpha": 100
+     },
+     "heading": {
+      "color": "#1c1611",
+      "alpha": 100
+     },
+     "subheading": {
+      "color": "#2a221a",
+      "alpha": 100
+     },
+     "reading": {
+      "color": "#583400",
+      "alpha": 100
+     }
+    }
+   },
+   "fonts": {
+    "heading": "google:Amiri",
+    "subheading": "google:Amiri",
+    "tabs": "google:Amiri",
+    "app": "google:Amiri",
+    "reading": "google:Amiri"
+   },
+   "textSize": 19
+  },
+  {
+   "id": "saved:mwwb4e7u",
+   "name": "الافتراضي",
+   "themePreset": "sand",
+   "visualLab": {
+    "schema": 2,
+    "buttons": {
+     "fill": "#6c4706",
+     "fillAlpha": 100,
+     "text": "#ffffff",
+     "textAlpha": 100,
+     "secondaryFill": "#aa7942",
+     "secondaryFillAlpha": 100,
+     "secondaryText": "#ffffff",
+     "secondaryTextAlpha": 100,
+     "secondaryBorder": "#d6cbb8",
+     "secondaryBorderAlpha": 100,
+     "secondaryWidth": 0
+    },
+    "background": {
+     "mode": "gradient",
+     "color": "#aa7942",
+     "alpha": 52,
+     "angle": 279,
+     "count": 3,
+     "colors": [
+      "#fff2d5",
+      "#d6c3a6",
+      "#d6c3a6",
+      "#aa7942",
+      "#7a4a00"
+     ],
+     "alphas": [
+      38,
+      61,
+      66,
+      18,
+      62
+     ],
+     "imageUrl": "/visual-background/background.jpg?v=1794767636",
+     "imageOpacity": 9,
+     "imageFit": "scale",
+     "imageSize": 100,
+     "imageBlur": 0
+    },
+    "containers": {
+     "light": {
+      "fill": "#e2d6c2",
+      "fillAlpha": 100,
+      "border": "#6c4705",
+      "borderAlpha": 62,
+      "width": 1
+     },
+     "mid": {
+      "fill": "#e7dccb",
+      "fillAlpha": 57,
+      "border": "#38571a",
+      "borderAlpha": 100,
+      "width": 1
+     },
+     "dark": {
+      "fill": "#fbf7f0",
+      "fillAlpha": 100,
+      "border": "#d6cbb8",
+      "borderAlpha": 100,
+      "width": 1
+     },
+     "header": {
+      "fill": "#ffffff",
+      "fillAlpha": 10
+     },
+     "chat": {
+      "fill": "#d0c0a5",
+      "fillAlpha": 66
+     }
+    },
+    "fontColors": {
+     "tabs": {
+      "color": "#6a5c4d",
+      "alpha": 100
+     },
+     "heading": {
+      "color": "#1c1611",
+      "alpha": 100
+     },
+     "subheading": {
+      "color": "#2a221a",
+      "alpha": 100
+     },
+     "reading": {
+      "color": "#583400",
+      "alpha": 100
+     }
+    }
+   },
+   "fonts": {
+    "heading": "google:Amiri",
+    "subheading": "google:Amiri",
+    "tabs": "google:Amiri",
+    "app": "google:Amiri",
+    "reading": "google:Amiri"
+   },
+   "textSize": 19
+  }
+ ],
+ "fontFamily": "'Amiri', 'Noto Naskh Arabic', 'Lotus Linotype', serif",
+ "fontHeading": "google:Amiri",
+ "fontSubheading": "google:Amiri",
+ "fontTabs": "google:Amiri",
+ "fontApp": "google:Amiri",
+ "fontReading": "google:Amiri",
+ "printH1Font": "google:Amiri",
+ "printH1Size": 25,
+ "printH1Weight": 700,
+ "printH1Color": "",
+ "printH2Font": "google:Amiri",
+ "printH2Size": 19,
+ "printH2Weight": 700,
+ "printH2Color": "",
+ "printBodyFont": "google:Amiri",
+ "printBodySize": 18,
+ "printBodyWeight": 400,
+ "printBodyColor": "",
+ "printFnFont": "google:Amiri",
+ "printFnSize": 11.5,
+ "printFnWeight": 400,
+ "printFnColor": "",
+ "printQuranFont": "google:Amiri",
+ "printQuranSize": 19,
+ "printQuranWeight": 700,
+ "printQuranColor": "",
+ "printHadithFont": "google:Amiri",
+ "printHadithSize": 18,
+ "printHadithWeight": 600,
+ "printHadithColor": "",
+ "printQuoteFont": "google:Amiri",
+ "printQuoteSize": 18,
+ "printQuoteWeight": 400,
+ "printQuoteColor": "",
+ "printSepWidth": 30,
+ "printBgUrl": "",
+ "printBgMode": "cover",
+ "printBgSize": 100,
+ "printBgOpacity": 15,
+ "msBgUrl": "",
+ "msBgMode": "cover",
+ "msBgSize": 100,
+ "msBgOpacity": 20,
+ "msBgBlur": 0,
+ "msCardColor": "#d7ccb9",
+ "msCardOpacity": 75,
+ "msBorderColor": "#aa7942",
+ "msBorderOpacity": 55,
+ "msTitleFont": "google:Kufam",
+ "msTitleSize": 19,
+ "msTitleColor": "#583400",
+ "msTextFont": "",
+ "msTextSize": 15,
+ "msTextColor": "",
+ "textSize": 19,
+ "providers": {
+  "claude": "",
+  "google": "",
+  "deepseek": "",
+  "openai": "",
+  "openrouter": ""
+ },
+ "modelParams": {
+  "systemPrompt": "أنت \"المغني\"، باحث تراثي وعالم فقهي رقمي دقيق متصل بالمكتبة الشاملة الكاملة. استند بدقة إلى النصوص الموثقة من كتب التراث، واذكر اسم الكتاب، والمؤلف، والجزء والصفحة بدقة مع الالتزام بالحياد العلمي والأمانة في النقل.",
+  "temperature": 0.2,
+  "topK": 40,
+  "repPenalty": 1.1,
+  "maxTokens": 65536,
+  "contextTokens": 1048576,
+  "customGeneration": false
+ },
+ "visualLab": {
+  "schema": 2,
+  "buttons": {
+   "fill": "#6c4706",
+   "fillAlpha": 100,
+   "text": "#ffffff",
+   "textAlpha": 100,
+   "secondaryFill": "#aa7942",
+   "secondaryFillAlpha": 100,
+   "secondaryText": "#ffffff",
+   "secondaryTextAlpha": 100,
+   "secondaryBorder": "#d6cbb8",
+   "secondaryBorderAlpha": 100,
+   "secondaryWidth": 0
+  },
+  "background": {
+   "mode": "gradient",
+   "color": "#aa7942",
+   "alpha": 52,
+   "angle": 279,
+   "count": 3,
+   "colors": [
+    "#fff2d5",
+    "#d6c3a6",
+    "#d6c3a6",
+    "#aa7942",
+    "#7a4a00"
+   ],
+   "alphas": [
+    38,
+    61,
+    66,
+    18,
+    62
+   ],
+   "imageUrl": "/visual-background/background.jpg?v=1794767636",
+   "imageOpacity": 9,
+   "imageFit": "scale",
+   "imageSize": 100,
+   "imageBlur": 0
+  },
+  "containers": {
+   "light": {
+    "fill": "#e2d6c2",
+    "fillAlpha": 100,
+    "border": "#6c4705",
+    "borderAlpha": 62,
+    "width": 1
+   },
+   "mid": {
+    "fill": "#e7dccb",
+    "fillAlpha": 57,
+    "border": "#38571a",
+    "borderAlpha": 100,
+    "width": 1
+   },
+   "dark": {
+    "fill": "#fbf7f0",
+    "fillAlpha": 100,
+    "border": "#d6cbb8",
+    "borderAlpha": 100,
+    "width": 1
+   },
+   "header": {
+    "fill": "#ffffff",
+    "fillAlpha": 10
+   },
+   "chat": {
+    "fill": "#d0c0a5",
+    "fillAlpha": 66
+   }
+  },
+  "fontColors": {
+   "tabs": {
+    "color": "#6a5c4d",
+    "alpha": 100
+   },
+   "heading": {
+    "color": "#1c1611",
+    "alpha": 100
+   },
+   "subheading": {
+    "color": "#2a221a",
+    "alpha": 100
+   },
+   "reading": {
+    "color": "#583400",
+    "alpha": 100
+   }
+  }
+ }
+}

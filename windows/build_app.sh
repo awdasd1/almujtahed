@@ -91,68 +91,10 @@ cp "$ROOT/windows/launch.ps1" "$BUNDLE/launch.ps1"
 cp "$ROOT/windows/python_setup.ps1" "$BUNDLE/python_setup.ps1"
 cp "$ROOT/web_ui/static/fonts/Almarai-Regular.ttf" "$ROOT/web_ui/static/fonts/Almarai-Bold.ttf" "$BUNDLE/fonts/"
 cp -R "$STAGE/source/." "$BUNDLE/source/"
-
-# ——— بذرة الحالة الراهنة (تُولّد وقت البناء فقط ولا تُودع في Git) ———
-# قاعدة ذاكرة التطبيق الحية كما هي (وكلاء ٢٠ وبحوث ومشاريع وحزم مخاطر
-# وقياسات) معقّمة من الأسرار: مفاتيح المزودين تُفرّغ، وجداول الأعضاء
-# الفارغة تُحذف. المشغّل يعتمدها عند غياب قاعدة حية فقط (تثبيت نظيف).
-SEED_SRC_DB="${ALMOGHNI_SEED_DB:-$HOME/Library/Application Support/Almoghni/runtime/web_ui/app_memory.db}"
-if [ -f "$SEED_SRC_DB" ]; then
-  python3 - "$SEED_SRC_DB" "$BUNDLE/source/web_ui/seed_app_memory.db" <<'PY'
-import json, sqlite3, sys
-src, dst = sys.argv[1], sys.argv[2]
-con = sqlite3.connect(src)
-bak = sqlite3.connect(dst)
-con.backup(bak)
-con.close()
-try:
-    row = bak.execute("SELECT payload FROM kv_documents WHERE key LIKE 'providers:%'").fetchall()
-    for (payload,) in row:
-        try:
-            data = json.loads(payload)
-            if isinstance(data, dict):
-                data = {k: "" for k in data}
-            bak.execute("UPDATE kv_documents SET payload=? WHERE key LIKE 'providers:%'",
-                        (json.dumps(data, ensure_ascii=False),))
-        except Exception:
-            bak.execute("DELETE FROM kv_documents WHERE key LIKE 'providers:%'")
-    for table in ("member_shares", "share_invites"):
-        try:
-            bak.execute(f"DELETE FROM {table}")
-        except Exception:
-            pass
-    bak.commit()
-    bak.execute("VACUUM")
-    bak.commit()
-finally:
-    bak.close()
-print("seed db ready")
-PY
-else
-  echo "تنبيه: لا قاعدة حية للبذرة في $SEED_SRC_DB — تُبنى النسخة بلا بذرة ذاكرة" >&2
-fi
-# ضبط الخطوط والألوان والصور الحالي (من تصدير إعدادات التطبيق المحفوظة).
-SEED_SETTINGS="${ALMOGHNI_SEED_SETTINGS:-/tmp/current_settings.json}"
-if [ -f "$SEED_SETTINGS" ]; then
-  python3 - "$SEED_SETTINGS" "$BUNDLE/source/web_ui/static/default_settings.json" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-data.pop("providers", None)
-json.dump(data, open(sys.argv[2], "w", encoding="utf-8"), ensure_ascii=False)
-print("seed settings ready")
-PY
-fi
-# خلفيات الواجهة والطباعة والمخطوطات ومرفقات المشاريع من التشغيل الحالي.
-SEED_RT="$(dirname "$SEED_SRC_DB")"
-for bg in visual_background print_background ms_background; do
-  if [ -d "$SEED_RT/$bg" ]; then
-    mkdir -p "$BUNDLE/source/web_ui/seed_backgrounds"
-    cp -R "$SEED_RT/$bg" "$BUNDLE/source/web_ui/seed_backgrounds/"
-  fi
-done
-if [ -d "$SEED_RT/uploads" ]; then
-  cp -R "$SEED_RT/uploads" "$BUNDLE/source/web_ui/seed_uploads"
-fi
+# نسخة خام: لا بذور شخصية إطلاقًا — لا قاعدة ولا محادثات ولا مشاريع
+# ولا وكلاء ولا مرفقات. الشكل الافتراضي الحالي مشحون داخل المستودع
+# (web_ui/static/default_settings.json وخطوط static/fonts وخلفيات
+# web_ui/visual_background وstatic/img) ويُزرع عند أول تشغيل فقط.
 
 python3 - "$BUNDLE" "$STAGE/payload.zip" <<'PY'
 import sys, zipfile

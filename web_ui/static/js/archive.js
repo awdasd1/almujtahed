@@ -2,7 +2,9 @@ const ARCHIVE_SCOPE_NAMES = {
   chats: 'المحادثات',
   projects: 'المشاريع',
   agents: 'الوكلاء',
-  tools: 'الإضافات'
+  tools: 'الإضافات',
+  manuscripts: 'المخطوطات',
+  reading: 'القراءة والتحليل'
 };
 
 function archiveScopeBoxes() {
@@ -144,6 +146,8 @@ async function createSelectedArchive() {
       if (typeof loadAgentGroups === 'function') await loadAgentGroups();
     }
     if (scopes.includes('tools') && typeof loadToolsList === 'function') await loadToolsList();
+    if (scopes.includes('manuscripts') && typeof msReloadProjects === 'function') await msReloadProjects();
+    if (scopes.includes('reading') && typeof initReadingTab === 'function') await initReadingTab();
     const noteBox = document.getElementById('archiveNote');
     if (noteBox) noteBox.value = '';
     await loadArchiveList();
@@ -177,6 +181,8 @@ async function restoreArchiveCopy(archiveId) {
     if (data.restored_agents && typeof loadAgentGroups === 'function') await loadAgentGroups();
     else if (data.restored_projects && typeof renderGroupsTable === 'function') renderGroupsTable();
     if (data.restored_tools && typeof loadToolsList === 'function') await loadToolsList();
+    if (typeof msReloadProjects === 'function') await msReloadProjects();
+    if (typeof initReadingTab === 'function') await initReadingTab();
     showToast('تمت استعادة النسخة المؤرشفة');
   } catch (err) {
     showToast(err.message);

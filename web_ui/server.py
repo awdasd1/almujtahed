@@ -69,6 +69,89 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 PACKAGE_ROOT = BASE_DIR.parent
 SYSTEM_ROOT = PACKAGE_ROOT.parent
 
+# ===== مجلد الحفظ الآمن: مساحة عمل المستخدم خارج مجلد التطبيق =====
+# عند أول تنصيب يختار المستخدم مجلدًا آمنًا تُحفظ فيه قاعدة أعماله
+# ومرفقاته وأرشيفه؛ فلو أُزيل التطبيق أو تعطّل، يكفي عند التنصيب
+# الجديد تحديد المجلد نفسه لتعود الأعمال كلها كما كانت.
+WORKSPACE_SUBFOLDERS = [
+    "المحادثات", "المشاريع", "الأدوات", "الوكلاء",
+    "المخطوطات", "القراءة والتحليل", "الأرشفة", "صور النشر",
+]
+
+
+def _support_dir() -> Path:
+    env = os.getenv("ALMOGHNI_SUPPORT_DIR", "").strip()
+    if env:
+        return Path(env).expanduser()
+    if BASE_DIR.name == "web_ui" and BASE_DIR.parent.name == "runtime":
+        return BASE_DIR.parent.parent
+    return BASE_DIR
+
+
+SUPPORT_DIR = _support_dir()
+_WORKSPACE_POINTER = SUPPORT_DIR / "workspace.json"
+
+
+def _legacy_data_exists() -> bool:
+    db = BASE_DIR / "app_memory.db"
+    if not db.exists() or db.stat().st_size < 8192:
+        return False
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+        try:
+            for table in ("chat_sessions", "kv_documents"):
+                try:
+                    if conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]:
+                        return True
+                except Exception:
+                    continue
+        finally:
+            conn.close()
+    except Exception:
+        return False
+    return False
+
+
+def _read_workspace_pointer() -> Optional[Path]:
+    try:
+        data = json.loads(_WORKSPACE_POINTER.read_text(encoding="utf-8"))
+        raw = str(data.get("path") or "").strip()
+        if raw and Path(raw).is_dir():
+            return Path(raw)
+    except Exception:
+        pass
+    return None
+
+
+_WORKSPACE_FROM_POINTER = _read_workspace_pointer()
+if _WORKSPACE_FROM_POINTER is not None:
+    WORKSPACE_PATH: Optional[Path] = _WORKSPACE_FROM_POINTER
+elif _legacy_data_exists():
+    WORKSPACE_PATH = BASE_DIR
+else:
+    WORKSPACE_PATH = None
+WORKSPACE_REQUIRED = WORKSPACE_PATH is None
+DATA_ROOT = WORKSPACE_PATH or BASE_DIR
+
+
+def _ensure_workspace_folders(root: Path) -> None:
+    for name in WORKSPACE_SUBFOLDERS:
+        (root / name).mkdir(parents=True, exist_ok=True)
+    (root / "uploads").mkdir(parents=True, exist_ok=True)
+
+
+if _WORKSPACE_FROM_POINTER is not None:
+    try:
+        _ensure_workspace_folders(_WORKSPACE_FROM_POINTER)
+    except Exception:
+        pass
+
+
+def _backups_root() -> Path:
+    if _WORKSPACE_FROM_POINTER is not None:
+        return _WORKSPACE_FROM_POINTER / "الأرشفة"
+    return BASE_DIR / "backups"
+
 # تحميل البيئة الافتراضية (.env)
 ENV_FILE_PATH = PACKAGE_ROOT / ".env"
 if ENV_FILE_PATH.exists():
@@ -539,7 +622,7 @@ async def disable_ui_cache(request: Request, call_next):
     return response
 
 # مجلد تخزين وحفظ مرفقات الشات (Bucket)
-UPLOADS_BUCKET_DIR = BASE_DIR / "uploads"
+UPLOADS_BUCKET_DIR = DATA_ROOT / "uploads"
 UPLOADS_BUCKET_DIR.mkdir(parents=True, exist_ok=True)
 
 if STATIC_DIR.exists():
@@ -9902,7 +9985,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.848"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.849"},
         },
     })
     if opened.get("error"):
@@ -25923,7 +26006,7 @@ DEFAULT_PROJECTS = []
 
 AGENT_GROUPS_FILE = os.path.join(os.path.dirname(__file__), "agent_groups_data.json")
 
-APP_MEMORY_DB = BASE_DIR / "app_memory.db"
+APP_MEMORY_DB = DATA_ROOT / "app_memory.db"
 MEMORY_WIPE_PHRASE = "امسح المحفوظات"
 _BOOK_INDEX_PATHS = (
     PACKAGE_ROOT / "shamela_index.db",
@@ -29880,7 +29963,7 @@ async def system_repair_endpoint(request: Request):
     actions_taken = []
     
     # 1. إنشاء نسخة احتياطية آمنة في مجلد backups
-    backup_dir = os.path.join(BASE_DIR, "backups", time.strftime("backup_%Y%m%d_%H%M%S"))
+    backup_dir = os.path.join(_backups_root(), time.strftime("backup_%Y%m%d_%H%M%S"))
     os.makedirs(backup_dir, exist_ok=True)
     
     data_files = [
@@ -29993,7 +30076,7 @@ async def system_repair_endpoint(request: Request):
 def _archive_user_memory() -> Dict[str, Any]:
     """نسخ محفوظات المستخدم فقط. فهرس الكتب ونصوص الشاملة ومخزن المتجهات خارج النسخة."""
     stamp = time.strftime("archive_%Y%m%d_%H%M%S")
-    archive_dir = os.path.join(BASE_DIR, "backups", stamp)
+    archive_dir = os.path.join(_backups_root(), stamp)
     os.makedirs(archive_dir, exist_ok=True)
     copied = []
 
@@ -30206,7 +30289,7 @@ def _copy_uploads_to(dest_dir: str) -> bool:
     return True
 
 def list_user_archives(owner_id: str) -> List[dict]:
-    backups_dir = BASE_DIR / "backups"
+    backups_dir = _backups_root()
     if not backups_dir.exists():
         return []
     entries = []
@@ -30269,10 +30352,10 @@ class ArchiveRestoreRequest(BaseModel):
     archive_id: str
 
 def _normalize_archive_scopes(req: ArchiveCreateRequest) -> List[str]:
-    allowed = ["chats", "projects", "agents", "tools"]
+    allowed = ["chats", "projects", "agents", "tools", "manuscripts", "reading"]
     raw = req.scopes if req.scopes else []
     if not raw and req.scope:
-        raw = ["chats", "projects", "agents", "tools"] if req.scope == "all" else [req.scope]
+        raw = list(allowed) if req.scope == "all" else [req.scope]
     scopes = []
     for item in raw:
         name = str(item or "").strip().lower()
@@ -30286,11 +30369,109 @@ def _label_for_scopes(scopes: List[str]) -> str:
         "projects": "المشاريع",
         "agents": "الوكلاء",
         "tools": "الإضافات",
+        "manuscripts": "المخطوطات",
+        "reading": "القراءة والتحليل",
     }
-    ordered = [names[name] for name in ["chats", "projects", "agents", "tools"] if name in scopes]
-    if len(ordered) == 4:
+    order = ["chats", "projects", "agents", "tools", "manuscripts", "reading"]
+    ordered = [names[name] for name in order if name in scopes]
+    if len(ordered) == len(order):
         return "الجميع"
     return " و".join(ordered) or "أرشيف"
+
+class WorkspaceSetRequest(BaseModel):
+    path: str
+
+
+def _restart_self() -> None:
+    try:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception:
+        pass
+
+
+def _set_workspace(folder: Path) -> Dict[str, Any]:
+    folder = folder.expanduser()
+    folder.mkdir(parents=True, exist_ok=True)
+    _ensure_workspace_folders(folder)
+    # ترحيل أي بيانات قائمة في الموقع القديم إن كان الهدف جديدًا عليها
+    migrated = False
+    old_db = BASE_DIR / "app_memory.db"
+    new_db = folder / "app_memory.db"
+    if old_db.resolve() != new_db.resolve() and _legacy_data_exists() \
+            and not new_db.exists():
+        try:
+            shutil.copy2(old_db, new_db)
+            old_uploads = BASE_DIR / "uploads"
+            if old_uploads.exists():
+                shutil.copytree(old_uploads, folder / "uploads",
+                                dirs_exist_ok=True)
+            migrated = True
+        except Exception:
+            pass
+    SUPPORT_DIR.mkdir(parents=True, exist_ok=True)
+    _WORKSPACE_POINTER.write_text(
+        json.dumps({"path": str(folder)}, ensure_ascii=False),
+        encoding="utf-8")
+    return {"status": "ok", "path": str(folder), "migrated": migrated,
+            "restarting": True}
+
+
+def _native_pick_folder() -> Optional[str]:
+    import subprocess
+    try:
+        if sys.platform == "darwin":
+            script = ('POSIX path of (choose folder with prompt '
+                      '"اختر مجلد الحفظ الآمن لأعمال المغني")')
+            out = subprocess.run(["osascript", "-e", script],
+                                 capture_output=True, text=True, timeout=600)
+            return out.stdout.strip() or None
+        if sys.platform.startswith("win"):
+            ps = (
+                "Add-Type -AssemblyName System.Windows.Forms;"
+                "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+                "$d.Description = 'اختر مجلد الحفظ الآمن لأعمال المغني';"
+                "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }"
+            )
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-STA", "-Command", ps],
+                capture_output=True, text=True, timeout=600)
+            return out.stdout.strip() or None
+    except Exception:
+        return None
+    return None
+
+
+@app.get("/api/workspace/status")
+async def workspace_status(request: Request):
+    return {
+        "configured": not WORKSPACE_REQUIRED,
+        "required": WORKSPACE_REQUIRED,
+        "path": str(WORKSPACE_PATH) if WORKSPACE_PATH else "",
+    }
+
+
+@app.post("/api/workspace/pick")
+async def workspace_pick(request: Request):
+    require_admin(request)
+    picked = _native_pick_folder()
+    if not picked:
+        raise HTTPException(status_code=400,
+                            detail="أُلغي الاختيار أو تعذّر فتح نافذة المجلدات")
+    result = _set_workspace(Path(picked))
+    threading.Timer(0.8, _restart_self).start()
+    return result
+
+
+@app.post("/api/workspace/set")
+async def workspace_set(req: WorkspaceSetRequest, request: Request):
+    require_admin(request)
+    raw = (req.path or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="اكتب مسار المجلد")
+    result = _set_workspace(Path(raw))
+    threading.Timer(0.8, _restart_self).start()
+    return result
+
 
 @app.get("/api/archives")
 async def get_archives(request: Request):
@@ -30318,17 +30499,23 @@ async def create_archive(req: ArchiveCreateRequest, request: Request):
     tools = load_stored_tools(owner_id)
     if not isinstance(tools, list):
         tools = []
+    manuscripts = _load_owned_list(owner_id, "manuscripts") or []
+    reading_bundle = _rd_load_bundle(owner_id)
+    reading_has = any(reading_bundle.get(k) for k in
+                      ("projects", "assistants", "readers"))
     available = {
         "chats": bool(chats),
         "projects": bool(projects),
         "agents": bool(groups),
         "tools": bool(tools),
+        "manuscripts": bool(manuscripts),
+        "reading": bool(reading_has),
     }
     if not any(available[name] for name in scopes):
         raise HTTPException(status_code=400, detail="لا توجد بيانات في العناصر المحددة لأرشفتها")
 
     archive_id = time.strftime("archive_%Y%m%d_%H%M%S")
-    archive_dir = os.path.join(BASE_DIR, "backups", archive_id)
+    archive_dir = os.path.join(_backups_root(), archive_id)
     os.makedirs(archive_dir, exist_ok=True)
     created_at = time.strftime("%Y/%m/%d — %H:%M:%S")
     counts: Dict[str, Any] = {}
@@ -30358,6 +30545,24 @@ async def create_archive(req: ArchiveCreateRequest, request: Request):
             json.dump(tools, f, ensure_ascii=False, indent=2)
         counts["tools"] = len(tools)
         saved_scopes.append("tools")
+    if "manuscripts" in scopes and manuscripts:
+        with open(os.path.join(archive_dir, "manuscripts.json"), "w", encoding="utf-8") as f:
+            json.dump(manuscripts, f, ensure_ascii=False, indent=2)
+        counts["manuscripts"] = len(manuscripts)
+        saved_scopes.append("manuscripts")
+        ms_uploads = UPLOADS_BUCKET_DIR / owner_id / "manuscripts"
+        if ms_uploads.exists() and any(ms_uploads.iterdir()):
+            shutil.copytree(ms_uploads, os.path.join(archive_dir, "manuscripts_files"), dirs_exist_ok=True)
+            counts["manuscripts_files"] = True
+    if "reading" in scopes and reading_has:
+        with open(os.path.join(archive_dir, "reading.json"), "w", encoding="utf-8") as f:
+            json.dump(reading_bundle, f, ensure_ascii=False, indent=2)
+        counts["reading"] = len(reading_bundle.get("projects") or [])
+        saved_scopes.append("reading")
+        rd_uploads = UPLOADS_BUCKET_DIR / owner_id / "reading"
+        if rd_uploads.exists() and any(rd_uploads.iterdir()):
+            shutil.copytree(rd_uploads, os.path.join(archive_dir, "reading_files"), dirs_exist_ok=True)
+            counts["reading_files"] = True
 
     scope_label = _label_for_scopes(saved_scopes)
     manifest = {
@@ -30384,6 +30589,17 @@ async def create_archive(req: ArchiveCreateRequest, request: Request):
         save_stored_agent_groups([], owner_id)
     if "tools" in saved_scopes:
         save_stored_tools([], owner_id)
+    if "manuscripts" in saved_scopes:
+        _save_owned_list(owner_id, "manuscripts", [])
+        ms_uploads = UPLOADS_BUCKET_DIR / owner_id / "manuscripts"
+        if ms_uploads.exists():
+            shutil.rmtree(ms_uploads)
+    if "reading" in saved_scopes:
+        _save_owned_json(owner_id, "reading",
+                         {"projects": [], "assistants": [], "readers": []})
+        rd_uploads = UPLOADS_BUCKET_DIR / owner_id / "reading"
+        if rd_uploads.exists():
+            shutil.rmtree(rd_uploads)
 
     after = _assert_book_index_stable(before)
     return {
@@ -30401,7 +30617,7 @@ async def create_archive(req: ArchiveCreateRequest, request: Request):
 def _restore_user_archive(archive_id: str, owner_id: str) -> Dict[str, Any]:
     if not re.fullmatch(r"archive_\d{8}_\d{6}", archive_id or ""):
         raise HTTPException(status_code=400, detail="معرّف الأرشيف غير صالح")
-    archive_dir = os.path.join(BASE_DIR, "backups", archive_id)
+    archive_dir = os.path.join(_backups_root(), archive_id)
     if not os.path.isdir(archive_dir):
         raise HTTPException(status_code=404, detail="الأرشيف غير موجود")
     before = _book_index_status()
@@ -30473,6 +30689,32 @@ def _restore_user_archive(archive_id: str, owner_id: str) -> Dict[str, Any]:
                     save_stored_tools(tools, owner_id)
                     restored.append("tools")
                     restored_tools = True
+        if "manuscripts" in scopes:
+            ms_path = os.path.join(archive_dir, "manuscripts.json")
+            if os.path.exists(ms_path):
+                with open(ms_path, "r", encoding="utf-8") as f:
+                    ms_items = json.load(f)
+                if isinstance(ms_items, list):
+                    _save_owned_list(owner_id, "manuscripts", ms_items)
+                    restored.append("manuscripts")
+            ms_files = os.path.join(archive_dir, "manuscripts_files")
+            if os.path.isdir(ms_files):
+                dest = UPLOADS_BUCKET_DIR / owner_id / "manuscripts"
+                dest.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(ms_files, dest, dirs_exist_ok=True)
+        if "reading" in scopes:
+            rd_path = os.path.join(archive_dir, "reading.json")
+            if os.path.exists(rd_path):
+                with open(rd_path, "r", encoding="utf-8") as f:
+                    rd_bundle = json.load(f)
+                if isinstance(rd_bundle, (dict, list)):
+                    _save_owned_json(owner_id, "reading", rd_bundle)
+                    restored.append("reading")
+            rd_files = os.path.join(archive_dir, "reading_files")
+            if os.path.isdir(rd_files):
+                dest = UPLOADS_BUCKET_DIR / owner_id / "reading"
+                dest.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(rd_files, dest, dirs_exist_ok=True)
     else:
         if owner_id != ADMIN_OWNER_ID:
             raise HTTPException(status_code=403, detail="هذا الأرشيف خاص بالمشرف")
@@ -30522,7 +30764,7 @@ def _restore_user_archive(archive_id: str, owner_id: str) -> Dict[str, Any]:
 def _archive_folder(archive_id: str) -> str:
     if not re.fullmatch(r"archive_\d{8}_\d{6}", archive_id or ""):
         raise HTTPException(status_code=400, detail="معرّف الأرشيف غير صالح")
-    backups_dir = (BASE_DIR / "backups").resolve()
+    backups_dir = _backups_root().resolve()
     target = (backups_dir / archive_id).resolve()
     if backups_dir not in target.parents or not target.is_dir():
         raise HTTPException(status_code=404, detail="الأرشيف غير موجود")
@@ -30551,7 +30793,7 @@ async def delete_archive(archive_id: str, request: Request):
 @app.delete("/api/archives")
 async def delete_all_archives(request: Request):
     owner_id = current_owner_id(request)
-    backups_dir = BASE_DIR / "backups"
+    backups_dir = _backups_root()
     removed = []
     if backups_dir.exists():
         for path in list(backups_dir.iterdir()):
@@ -30576,7 +30818,7 @@ class RestoreBackupRequest(BaseModel):
 @app.get("/api/system/backups")
 async def list_system_backups_endpoint():
     """عرض قائمة النسخ الاحتياطية المتوفرة مرتبة تنازلياً بحيث تكون الأحدث أولاً"""
-    backups_dir = os.path.join(BASE_DIR, "backups")
+    backups_dir = os.path.join(_backups_root())
     if not os.path.exists(backups_dir):
         return {"backups": [], "count": 0}
     
@@ -30643,7 +30885,7 @@ async def restore_system_backup_endpoint(req: RestoreBackupRequest, request: Req
     if not backup_id or not re.match(r'^[a-zA-Z0-9_]+$', backup_id):
         raise HTTPException(status_code=400, detail="معرّف النسخة الاحتياطية غير صالح أو غير آمن")
     
-    target_backup_dir = os.path.join(BASE_DIR, "backups", backup_id)
+    target_backup_dir = os.path.join(_backups_root(), backup_id)
     if not os.path.isdir(target_backup_dir):
         raise HTTPException(status_code=404, detail="مجلد النسخة الاحتياطية المحدد غير موجود")
     if backup_id.startswith("archive_"):
@@ -30655,7 +30897,7 @@ async def restore_system_backup_endpoint(req: RestoreBackupRequest, request: Req
         return restored
 
     # أمان إضافي: حفظ نسخة أمان سريعة قبل الاسترجاع Pre-Restore Snapshot
-    pre_snap_dir = os.path.join(BASE_DIR, "backups", time.strftime("pre_restore_%Y%m%d_%H%M%S"))
+    pre_snap_dir = os.path.join(_backups_root(), time.strftime("pre_restore_%Y%m%d_%H%M%S"))
     os.makedirs(pre_snap_dir, exist_ok=True)
     for fn in ["projects_data.json", "tools_data.json", "agent_groups_data.json", "providers_data.json"]:
         src = os.path.join(BASE_DIR, fn)

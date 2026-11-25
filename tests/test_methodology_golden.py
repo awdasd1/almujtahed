@@ -252,6 +252,41 @@ class RuntimeLensTests(unittest.TestCase):
         self.assertIsNone(server._named_hadith_matn("حديث النية"))
 
 
+class WorkspaceAndArchiveTests(unittest.TestCase):
+    """مجلد الحفظ الآمن يُنشأ بمجلداته الفرعية الثمانية، والأرشفة
+    تشمل المخطوطات والقراءة والتحليل، وبذور النسخة المشحونة خام."""
+
+    def test_workspace_folders_created(self):
+        import pathlib
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            server._ensure_workspace_folders(pathlib.Path(td))
+            for name in ("المحادثات", "المشاريع", "الأدوات", "الوكلاء",
+                         "المخطوطات", "القراءة والتحليل", "الأرشفة",
+                         "صور النشر", "uploads"):
+                self.assertTrue((pathlib.Path(td) / name).is_dir(), name)
+
+    def test_archive_scopes_include_manuscripts_reading(self):
+        scopes = server._normalize_archive_scopes(
+            server.ArchiveCreateRequest(scopes=["manuscripts", "reading"]))
+        self.assertEqual(scopes, ["manuscripts", "reading"])
+        self.assertIn("المخطوطات", server._label_for_scopes(scopes))
+
+    def test_shipped_seeds_are_raw(self):
+        import json as _json
+        import pathlib
+        base = pathlib.Path(server.__file__).parent
+        for name in ("default_chats.json", "default_projects.json",
+                     "default_agent_groups.json"):
+            self.assertEqual(_json.loads((base / name).read_text(
+                encoding="utf-8")), [], name)
+        seed = _json.loads((base / "static" / "default_settings.json")
+                           .read_text(encoding="utf-8"))
+        themes = {t.get("name") for t in seed.get("savedVisualThemes") or []}
+        self.assertIn("الافتراضي", themes)
+        self.assertFalse(any(seed.get("providers", {}).values()))
+
+
 class BookOpenPerformanceTests(unittest.TestCase):
     """فتح إحالة لا يعيد تحليل ملف صفحات الكتاب كله عند كل جلسة،
     وموضعه يُجلب من قاموس مباشر — بطء ويندوز الفادح عند فتح الكتب

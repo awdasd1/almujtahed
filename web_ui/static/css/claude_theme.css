@@ -7,6 +7,14 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap');
 
+/* خطوط مشحونة داخل النسخة: تعمل بلا إنترنت حتى لا يتغير الشكل الافتراضي */
+@font-face { font-family: 'Amiri'; src: url('/static/fonts/Amiri-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Amiri'; src: url('/static/fonts/Amiri-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Kufam'; src: url('/static/fonts/Kufam.ttf') format('truetype'); font-weight: 400 900; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Noto Naskh Arabic'; src: url('/static/fonts/NotoNaskhArabic.ttf') format('truetype'); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Almarai'; src: url('/static/fonts/Almarai-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Almarai'; src: url('/static/fonts/Almarai-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
+
 :root {
   /* ثلاثية الهوية: رملي · طيني · زمردي */
   --bg-canvas: #F1E9DC;
