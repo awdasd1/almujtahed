@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>رسائل زوار موقع المغني — قراءة</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="assets/style.css?v=8">
+<style>
+  .admin-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+  .msg-card { background: var(--bg-surface); border:1px solid var(--surface-border); border-radius: var(--radius); padding:16px 20px; margin-top:12px; color: var(--color-reading); }
+  .msg-head { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; }
+  .msg-name { font-family: var(--font-amiri); font-weight:700; font-size:19px; color: var(--color-heading); }
+  .msg-type { background: var(--lab-btn2-fill); color:#fff; border-radius: var(--radius); padding:1px 12px; font-size:14px; font-family: var(--font-amiri); }
+  .msg-meta { font-size:13px; color: var(--color-tabs); }
+  .msg-body { white-space: pre-wrap; margin-top:8px; line-height:1.9; }
+  .chip { cursor:pointer; font-family: var(--font-amiri); font-weight:700; font-size:15px; padding:4px 16px; border-radius: var(--radius); border:1px solid var(--surface-border); background: var(--dark-surface); color: var(--color-sub); }
+  .chip.active { background: var(--lab-btn-fill); color:#fff; }
+  .danger { background: transparent; border:1px solid #b91c1c; color:#b91c1c; }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-in">
+    <div class="brand">
+      <img class="brand-logo" src="assets/brand-mark.png" alt="المغني — من الفكرة إلى النشر">
+      <span class="brand-version">صفحة قراءة رسائل الزوار</span>
+    </div>
+    <div class="header-meta">
+      <a class="icon-btn" href="index.html" title="عودة للموقع" aria-label="عودة للموقع">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main class="column page-body" style="padding-top:6px">
+  <div class="card" id="loginCard">
+    <h3>دخول الإدارة</h3>
+    <p class="muted">هذه الصفحة لصاحب الموقع فقط. أدخل رمز القراءة لعرض رسائل الزوار.</p>
+    <form id="loginForm">
+      <label class="form-label" for="tokenInput">رمز القراءة</label>
+      <input class="form-input" id="tokenInput" type="password" required autocomplete="off" placeholder="الرمز الذي زوّدك به المغني">
+      <button class="btn" type="submit" style="margin-top:12px">عرض الرسائل</button>
+      <p class="small" id="loginError" style="color:#b91c1c" hidden>الرمز غير صحيح — أعد المحاولة.</p>
+    </form>
+  </div>
+
+  <div id="inbox" hidden>
+    <div class="admin-bar">
+      <button class="chip active" data-type="">الكل</button>
+      <button class="chip" data-type="اقتراح">اقتراح</button>
+      <button class="chip" data-type="ملحوظات">ملحوظات</button>
+      <button class="chip" data-type="تنبيه">تنبيه</button>
+      <button class="chip" data-type="انضمام للفريق">انضمام للفريق</button>
+      <button class="chip" data-type="أخرى">أخرى</button>
+      <input class="form-input" id="searchBox" type="search" placeholder="ابحث في الاسم أو الرسالة…" style="max-width:280px">
+      <button class="chip" id="refreshBtn" type="button">تحديث</button>
+      <button class="chip danger" id="logoutBtn" type="button">خروج</button>
+    </div>
+    <p class="muted" id="inboxStats"></p>
+    <div id="msgList"></div>
+    <p class="muted" id="emptyMsg" hidden>لا رسائل بعد — ستظهر هنا رسائل الزوار فور وصولها.</p>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>المغني — إدارة الموقع.</span>
+    <span>صفحة خاصة لا تُنشر روابطها.</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var token = sessionStorage.getItem("almoghni_admin_token") || "";
+  var messages = [];
+  var typeFilter = "";
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmtDate(iso) {
+    try {
+      return new Date(iso).toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" });
+    } catch (e) { return iso || ""; }
+  }
+  function load() {
+    return fetch("/api/messages", { headers: { "X-Admin-Token": token } })
+      .then(function (r) {
+        if (r.status === 401) throw new Error("unauthorized");
+        if (!r.ok) throw new Error(r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        messages = (d.messages || []).slice().reverse();
+        $("loginCard").hidden = true;
+        $("inbox").hidden = false;
+        render();
+      });
+  }
+  function render() {
+    var q = ($("searchBox").value || "").trim();
+    var rows = messages.filter(function (m) {
+      if (typeFilter && m.type !== typeFilter) return false;
+      if (q && (String(m.name) + " " + String(m.body)).indexOf(q) < 0) return false;
+      return true;
+    });
+    $("inboxStats").textContent = "مجموع الرسائل: " + messages.length + " · المعروض: " + rows.length;
+    $("emptyMsg").hidden = messages.length > 0;
+    var box = $("msgList");
+    box.innerHTML = "";
+    rows.forEach(function (m) {
+      var card = document.createElement("div");
+      card.className = "msg-card";
+      card.innerHTML =
+        '<div class="msg-head"><span class="msg-name"></span><span class="msg-type"></span></div>' +
+        '<div class="msg-meta"></div><div class="msg-body"></div>' +
+        '<div style="margin-top:10px"><button class="chip danger" type="button">حذف الرسالة</button></div>';
+      card.querySelector(".msg-name").textContent = m.name || "";
+      card.querySelector(".msg-type").textContent = m.type || "";
+      card.querySelector(".msg-meta").textContent = fmtDate(m.at) + (m.ip ? " · " + m.ip : "");
+      card.querySelector(".msg-body").textContent = m.body || "";
+      card.querySelector(".danger").addEventListener("click", function () {
+        if (!confirm("حذف هذه الرسالة نهائيًا من الخادم؟")) return;
+        fetch("/api/messages/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Admin-Token": token },
+          body: JSON.stringify({ at: m.at })
+        }).then(function () { load(); });
+      });
+      box.appendChild(card);
+    });
+  }
+  $("loginForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    token = $("tokenInput").value.trim();
+    sessionStorage.setItem("almoghni_admin_token", token);
+    load().catch(function () { $("loginError").hidden = false; });
+  });
+  document.querySelectorAll(".chip[data-type]").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      document.querySelectorAll(".chip[data-type]").forEach(function (c) { c.classList.remove("active"); });
+      chip.classList.add("active");
+      typeFilter = chip.dataset.type || "";
+      render();
+    });
+  });
+  $("searchBox").addEventListener("input", render);
+  $("refreshBtn").addEventListener("click", function () { load(); });
+  $("logoutBtn").addEventListener("click", function () {
+    sessionStorage.removeItem("almoghni_admin_token");
+    location.reload();
+  });
+  if (token) load().catch(function () { sessionStorage.removeItem("almoghni_admin_token"); });
+})();
+</script>
+</body>
+</html>

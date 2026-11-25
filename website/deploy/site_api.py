@@ -62,9 +62,32 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _admin_ok(self):
+        want = os.environ.get("ALMOGHNI_ADMIN_TOKEN") or ""
+        got = self.headers.get("X-Admin-Token") or ""
+        return bool(want) and got == want
+
     def do_GET(self):
-        if self.path.rstrip("/") == "/api/stats":
+        path = self.path.rstrip("/")
+        if path == "/api/stats":
             self._json(_counts())
+        elif path == "/api/messages":
+            if not self._admin_ok():
+                self._json({"error": "unauthorized"}, 401)
+                return
+            rows = []
+            try:
+                with open(MESSAGES, encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line:
+                            try:
+                                rows.append(json.loads(line))
+                            except Exception:
+                                pass
+            except FileNotFoundError:
+                rows = []
+            self._json({"messages": rows})
         else:
             self._json({"error": "not found"}, 404)
 
@@ -83,6 +106,27 @@ class Handler(BaseHTTPRequestHandler):
                    "ip": self.headers.get("X-Forwarded-For", self.client_address[0])}
             with open(MESSAGES, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            self._json({"ok": True})
+        elif path == "/api/messages/delete":
+            if not self._admin_ok():
+                self._json({"error": "unauthorized"}, 401)
+                return
+            at = str(self._body().get("at") or "")
+            kept = []
+            try:
+                with open(MESSAGES, encoding="utf-8") as fh:
+                    for line in fh:
+                        try:
+                            rec = json.loads(line)
+                        except Exception:
+                            kept.append(line)
+                            continue
+                        if str(rec.get("at") or "") != at:
+                            kept.append(line)
+                with open(MESSAGES, "w", encoding="utf-8") as fh:
+                    fh.writelines(kept)
+            except FileNotFoundError:
+                pass
             self._json({"ok": True})
         elif path == "/api/visit":
             d = _counts()
