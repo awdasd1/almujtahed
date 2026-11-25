@@ -80,21 +80,11 @@ a { color: var(--accent-emerald); }
 
 /* الترويسة بدرع التدرج المعتم كما في ترويسة التطبيق */
 .site-header {
-  background: var(--lab-page-shield);
+  /* شفافة: خلفية الموقع الواحدة (تدرج الصفحة وطبقة صورتها الثابتة)
+     تظهر في الأعلى والوسط متصلة بلا تكرار ولا فاصل */
+  background: transparent;
   border-bottom: 1px solid var(--dark-border);
   position: relative;
-  overflow: hidden;
-}
-.site-header::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: url('background.jpg');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100%;
-  opacity: 0.08;
 }
 .header-in {
   position: relative; z-index: 2;
@@ -119,7 +109,7 @@ a { color: var(--accent-emerald); }
 }
 /* أزرار أيقونات الترويسة كما في التطبيق */
 .icon-btn {
-  background: transparent;
+  background: #F1E9DC;
   border: 1px solid var(--surface-border);
   color: var(--color-tabs);
   width: 38px; height: 38px;
