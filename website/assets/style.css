@@ -110,22 +110,28 @@ a { color: var(--accent-emerald); }
   padding: 4px 12px; font-size: 14px;
 }
 
+/* حاوية التبويبات كما في التطبيق تمامًا: شريط بعرض كامل، محتواه
+   متوسّط، خلفيته الوسطى وحدّه الأخضر من قالب «المزخرف» */
 .tabs {
-  display: flex; gap: 6px; flex-wrap: wrap;
-  padding-top: 16px; padding-bottom: 0;
+  display: flex; align-items: center; justify-content: center;
+  gap: 3px; width: 100%;
+  background: var(--bg-mid);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--radius);
+  padding: 4px; margin-top: 16px;
+  overflow-x: auto; scrollbar-width: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
-  font-family: var(--font-amiri); font-size: 17px; cursor: pointer;
+  font-family: var(--font-amiri); font-size: 15.5px; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
   background: transparent; color: var(--color-tabs);
-  border: 1px solid transparent; border-bottom: none;
-  border-radius: var(--radius) var(--radius) 0 0;
-  padding: 8px 18px;
+  border: none; border-radius: var(--radius);
+  padding: 8px 14px;
+  display: flex; align-items: center; gap: 7px;
 }
-.tab:hover { color: var(--color-heading); background: var(--bg-mid); }
-.tab.active {
-  background: var(--bg-surface); color: var(--color-reading);
-  border-color: var(--surface-border); font-weight: 700;
-}
+.tab:hover { color: var(--color-sub); background: rgba(251, 247, 240, 0.65); }
+.tab.active { background: var(--bg-surface); color: var(--color-tabs); }
 
 main { padding-bottom: 40px; }
 .panel { display: none; }
