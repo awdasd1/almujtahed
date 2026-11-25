@@ -35,6 +35,7 @@ MAX_BODY = 64 * 1024
 MAX_UPLOAD = 400 * 1024 * 1024
 CATEGORIES = ("projects", "chats", "manuscripts", "agents",
               "reading", "tools", "patterns")
+UPLOAD_CATEGORIES = CATEGORIES + ("newsimg",)
 
 
 def _db():
@@ -43,6 +44,9 @@ def _db():
     con.execute("""CREATE TABLE IF NOT EXISTS news(
         id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, body TEXT,
         created_at TEXT)""")
+    cols = [r[1] for r in con.execute("PRAGMA table_info(news)")]
+    if "image" not in cols:
+        con.execute("ALTER TABLE news ADD COLUMN image TEXT DEFAULT ''")
     con.execute("""CREATE TABLE IF NOT EXISTS releases(
         id INTEGER PRIMARY KEY AUTOINCREMENT, version TEXT, notes TEXT,
         created_at TEXT)""")
@@ -122,7 +126,8 @@ class Handler(BaseHTTPRequestHandler):
             counts = _counts().get("downloads") or {}
             con = _db()
             news = [dict(r) for r in con.execute(
-                "SELECT id,title,body,created_at FROM news ORDER BY id DESC")]
+                "SELECT id,title,body,image,created_at FROM news "
+                "ORDER BY id DESC")]
             releases = []
             for r in con.execute(
                     "SELECT id,version,notes,created_at FROM releases "
@@ -209,7 +214,7 @@ class Handler(BaseHTTPRequestHandler):
             cat = (q.get("category") or [""])[0]
             fname = os.path.basename((q.get("filename") or ["file"])[0])
             fname = re.sub(r"[^\w.\-]+", "_", fname, flags=re.UNICODE) or "file"
-            if cat not in CATEGORIES:
+            if cat not in UPLOAD_CATEGORIES:
                 self._json({"ok": False, "error": "bad category"}, 400)
                 return
             try:
@@ -219,7 +224,8 @@ class Handler(BaseHTTPRequestHandler):
             if n <= 0 or n > MAX_UPLOAD:
                 self._json({"ok": False, "error": "bad size"}, 400)
                 return
-            dest_dir = os.path.join(SITE_ROOT, "files", cat)
+            dest_dir = os.path.join(
+                SITE_ROOT, "files", "news" if cat == "newsimg" else cat)
             os.makedirs(dest_dir, exist_ok=True)
             dest = os.path.join(dest_dir, fname)
             with open(dest, "wb") as fh:
@@ -236,7 +242,8 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             size_mb = n / (1024 * 1024)
             size = f"{size_mb:.1f} MB" if size_mb >= 0.1 else f"{max(1, n // 1024)} KB"
-            self._json({"ok": True, "file": f"files/{cat}/{fname}",
+            shown_dir = "news" if cat == "newsimg" else cat
+            self._json({"ok": True, "file": f"files/{shown_dir}/{fname}",
                         "size": size})
         elif path.startswith("/api/news") or path.startswith("/api/items") \
                 or path.startswith("/api/releases"):
@@ -271,14 +278,17 @@ class Handler(BaseHTTPRequestHandler):
         con = _db()
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if path == "/api/news":
-            con.execute("INSERT INTO news(title,body,created_at) "
-                        "VALUES(?,?,?)",
-                        (str(b.get("title") or "")[:300],
-                         str(b.get("body") or "")[:20000], _now()))
-        elif path == "/api/news/update":
-            con.execute("UPDATE news SET title=?, body=? WHERE id=?",
+            con.execute("INSERT INTO news(title,body,image,created_at) "
+                        "VALUES(?,?,?,?)",
                         (str(b.get("title") or "")[:300],
                          str(b.get("body") or "")[:20000],
+                         str(b.get("image") or "")[:400], _now()))
+        elif path == "/api/news/update":
+            con.execute("UPDATE news SET title=?, body=?, image=? "
+                        "WHERE id=?",
+                        (str(b.get("title") or "")[:300],
+                         str(b.get("body") or "")[:20000],
+                         str(b.get("image") or "")[:400],
                          int(b.get("id") or 0)))
         elif path == "/api/news/delete":
             con.execute("DELETE FROM news WHERE id=?",

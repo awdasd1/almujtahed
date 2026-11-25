@@ -201,6 +201,13 @@
       div.className = "news-item";
       var head = document.createElement("h4");
       head.textContent = n.title || "";
+      var img = null;
+      if (n.image) {
+        img = document.createElement("img");
+        img.src = n.image;
+        img.alt = n.title || "";
+        img.style.cssText = "width:100%;max-height:320px;object-fit:cover;border-radius:6px;margin:8px 0";
+      }
       var body = document.createElement("div");
       String(n.body || "").split(/\n+/).forEach(function (p) {
         if (!p.trim()) return;
@@ -208,7 +215,9 @@
         par.textContent = p;
         body.appendChild(par);
       });
-      div.appendChild(head); div.appendChild(body);
+      div.appendChild(head);
+      if (img) div.appendChild(img);
+      div.appendChild(body);
       box.appendChild(div);
     });
     if (!state.releases) return;
