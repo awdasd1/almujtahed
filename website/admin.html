@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>رسائل زوار موقع المغني — قراءة</title>
+<title>لوحة تحكم موقع المغني</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="stylesheet" href="assets/style.css?v=8">
 <style>
   .admin-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:14px; }
-  .msg-card { background: var(--bg-surface); border:1px solid var(--surface-border); border-radius: var(--radius); padding:16px 20px; margin-top:12px; color: var(--color-reading); }
+  .card-x { background: var(--bg-surface); border:1px solid var(--surface-border); border-radius: var(--radius); padding:16px 20px; margin-top:12px; color: var(--color-reading); }
   .msg-head { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; }
   .msg-name { font-family: var(--font-amiri); font-weight:700; font-size:19px; color: var(--color-heading); }
   .msg-type { background: var(--lab-btn2-fill); color:#fff; border-radius: var(--radius); padding:1px 12px; font-size:14px; font-family: var(--font-amiri); }
@@ -16,7 +16,8 @@
   .msg-body { white-space: pre-wrap; margin-top:8px; line-height:1.9; }
   .chip { cursor:pointer; font-family: var(--font-amiri); font-weight:700; font-size:15px; padding:4px 16px; border-radius: var(--radius); border:1px solid var(--surface-border); background: var(--dark-surface); color: var(--color-sub); }
   .chip.active { background: var(--lab-btn-fill); color:#fff; }
-  .danger { background: transparent; border:1px solid #b91c1c; color:#b91c1c; }
+  .danger { border-color:#b91c1c !important; color:#b91c1c !important; background:transparent !important; }
+  .ok-note { color: var(--accent-emerald); font-size:14px; }
 </style>
 </head>
 <body>
@@ -24,7 +25,7 @@
   <div class="wrap header-in">
     <div class="brand">
       <img class="brand-logo" src="assets/brand-mark.png" alt="المغني — من الفكرة إلى النشر">
-      <span class="brand-version">صفحة قراءة رسائل الزوار</span>
+      <span class="brand-version">لوحة تحكم الموقع</span>
     </div>
     <div class="header-meta">
       <a class="icon-btn" href="index.html" title="عودة للموقع" aria-label="عودة للموقع">
@@ -36,37 +37,128 @@
 
 <main class="column page-body" style="padding-top:6px">
   <div class="card" id="loginCard">
-    <h3>دخول الإدارة</h3>
-    <p class="muted">هذه الصفحة لصاحب الموقع فقط. أدخل رمز القراءة لعرض رسائل الزوار.</p>
+    <h3>دخول لوحة التحكم</h3>
+    <p class="muted">هذه الصفحة لصاحب الموقع فقط. أدخل كلمة المرور.</p>
     <form id="loginForm">
       <label class="form-label" for="tokenInput">كلمة المرور</label>
-      <input class="form-input" id="tokenInput" type="password" required autocomplete="current-password" placeholder="كلمة مرور صفحة القراءة">
-      <button class="btn" type="submit" style="margin-top:12px">عرض الرسائل</button>
+      <input class="form-input" id="tokenInput" type="password" required autocomplete="current-password" placeholder="كلمة مرور اللوحة">
+      <button class="btn" type="submit" style="margin-top:12px">دخول</button>
       <p class="small" id="loginError" style="color:#b91c1c" hidden>كلمة المرور غير صحيحة — أعد المحاولة.</p>
     </form>
   </div>
 
-  <div id="inbox" hidden>
-    <div class="admin-bar">
-      <button class="chip active" data-type="">الكل</button>
-      <button class="chip" data-type="اقتراح">اقتراح</button>
-      <button class="chip" data-type="ملحوظات">ملحوظات</button>
-      <button class="chip" data-type="تنبيه">تنبيه</button>
-      <button class="chip" data-type="انضمام للفريق">انضمام للفريق</button>
-      <button class="chip" data-type="أخرى">أخرى</button>
-      <input class="form-input" id="searchBox" type="search" placeholder="ابحث في الاسم أو الرسالة…" style="max-width:280px">
+  <div id="panel" hidden>
+    <div class="admin-bar" id="panelTabs">
+      <button class="chip active" data-ptab="messages">رسائل الزوار</button>
+      <button class="chip" data-ptab="news">الأخبار</button>
+      <button class="chip" data-ptab="items">الأقسام والملفات</button>
+      <button class="chip" data-ptab="releases">الإصدارات</button>
       <button class="chip" id="refreshBtn" type="button">تحديث</button>
       <button class="chip danger" id="logoutBtn" type="button">خروج</button>
     </div>
-    <p class="muted" id="inboxStats"></p>
-    <div id="msgList"></div>
-    <p class="muted" id="emptyMsg" hidden>لا رسائل بعد — ستظهر هنا رسائل الزوار فور وصولها.</p>
+
+    <!-- الرسائل -->
+    <section id="pt-messages">
+      <div class="admin-bar">
+        <button class="chip active" data-type="">الكل</button>
+        <button class="chip" data-type="اقتراح">اقتراح</button>
+        <button class="chip" data-type="ملحوظات">ملحوظات</button>
+        <button class="chip" data-type="تنبيه">تنبيه</button>
+        <button class="chip" data-type="انضمام للفريق">انضمام للفريق</button>
+        <button class="chip" data-type="أخرى">أخرى</button>
+        <input class="form-input" id="searchBox" type="search" placeholder="ابحث في الاسم أو الرسالة…" style="max-width:280px">
+      </div>
+      <p class="muted" id="inboxStats"></p>
+      <div id="msgList"></div>
+      <p class="muted" id="emptyMsg" hidden>لا رسائل بعد.</p>
+    </section>
+
+    <!-- الأخبار -->
+    <section id="pt-news" hidden>
+      <div class="card-x">
+        <h3 id="newsFormTitle">إضافة خبر</h3>
+        <form id="newsForm">
+          <input type="hidden" id="newsId">
+          <label class="form-label" for="newsTitle">عنوان الخبر</label>
+          <input class="form-input" id="newsTitle" required placeholder="مثال: إطلاق قسم المشاريع الجاهزة">
+          <label class="form-label" for="newsBody">نص الخبر</label>
+          <textarea class="form-input" id="newsBody" rows="4" required placeholder="تفاصيل الخبر…"></textarea>
+          <button class="btn" type="submit" style="margin-top:12px">حفظ الخبر</button>
+          <button class="btn btn-ghost" type="button" id="newsCancel" hidden>إلغاء التعديل</button>
+          <span class="ok-note" id="newsDone" hidden>تم الحفظ ✓</span>
+        </form>
+      </div>
+      <div id="newsListAdmin"></div>
+    </section>
+
+    <!-- الأقسام والملفات -->
+    <section id="pt-items" hidden>
+      <div class="card-x">
+        <h3 id="itemFormTitle">إضافة ملف لقسم</h3>
+        <form id="itemForm">
+          <input type="hidden" id="itemId">
+          <label class="form-label" for="itemCat">القسم</label>
+          <select class="form-input" id="itemCat">
+            <option value="projects">المشاريع</option>
+            <option value="chats">المحادثات</option>
+            <option value="manuscripts">المخطوطات</option>
+            <option value="agents">الوكلاء</option>
+            <option value="reading">قراءة وتحليل</option>
+            <option value="tools">الأدوات</option>
+            <option value="patterns">الأنماط</option>
+          </select>
+          <label class="form-label" for="itemName">اسم الملف/العنصر</label>
+          <input class="form-input" id="itemName" required placeholder="الاسم الظاهر في الجدول">
+          <label class="form-label" for="itemDesc">الوصف</label>
+          <textarea class="form-input" id="itemDesc" rows="2" placeholder="وصف مختصر…"></textarea>
+          <label class="form-label" for="itemUpload">رفع ملف (أو اتركه والصق مسارًا أسفله)</label>
+          <input class="form-input" id="itemUpload" type="file">
+          <label class="form-label" for="itemFile">مسار الملف على الموقع</label>
+          <input class="form-input" id="itemFile" placeholder="files/projects/example.zip">
+          <label class="form-label" for="itemSize">الحجم (يُملأ تلقائيًا عند الرفع)</label>
+          <input class="form-input" id="itemSize" placeholder="مثال: 2.4 MB">
+          <button class="btn" type="submit" style="margin-top:12px">حفظ</button>
+          <button class="btn btn-ghost" type="button" id="itemCancel" hidden>إلغاء التعديل</button>
+          <span class="ok-note" id="itemDone" hidden>تم الحفظ ✓</span>
+          <span class="ok-note" id="uploadNote" hidden>جارٍ رفع الملف…</span>
+        </form>
+      </div>
+      <div class="admin-bar">
+        <label for="listCat" style="font-family:var(--font-amiri);font-weight:700">عرض قسم:</label>
+        <select class="form-input" id="listCat" style="max-width:240px">
+          <option value="projects">المشاريع</option>
+          <option value="chats">المحادثات</option>
+          <option value="manuscripts">المخطوطات</option>
+          <option value="agents">الوكلاء</option>
+          <option value="reading">قراءة وتحليل</option>
+          <option value="tools">الأدوات</option>
+          <option value="patterns">الأنماط</option>
+        </select>
+      </div>
+      <div id="itemListAdmin"></div>
+    </section>
+
+    <!-- الإصدارات -->
+    <section id="pt-releases" hidden>
+      <div class="card-x">
+        <h3>إضافة إصدار (يتصدر صفحة التنزيلات والأخبار)</h3>
+        <form id="releaseForm">
+          <label class="form-label" for="relVersion">رقم الإصدار</label>
+          <input class="form-input" id="relVersion" required placeholder="مثال: 1.10.847">
+          <label class="form-label" for="relNotes">ما الجديد (سطر لكل نقطة)</label>
+          <textarea class="form-input" id="relNotes" rows="4" required placeholder="نقطة في كل سطر…"></textarea>
+          <button class="btn" type="submit" style="margin-top:12px">نشر الإصدار</button>
+          <span class="ok-note" id="relDone" hidden>تم النشر ✓</span>
+        </form>
+      </div>
+      <div id="releaseListAdmin"></div>
+    </section>
   </div>
 </main>
 
 <footer class="site-footer">
   <div class="wrap">
-    <span>المغني — إدارة الموقع.</span>
+    <span>المغني — لوحة تحكم الموقع.</span>
     <span>صفحة خاصة لا تُنشر روابطها.</span>
   </div>
 </footer>
@@ -75,34 +167,36 @@
 (function () {
   "use strict";
   var token = sessionStorage.getItem("almoghni_admin_token") || "";
-  var messages = [];
+  var messages = [], content = { news: [], releases: [], categories: {} };
   var typeFilter = "";
   function $(id) { return document.getElementById(id); }
-  function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  function fmtDate(iso) {
+    try { return new Date(iso).toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" }); }
+    catch (e) { return iso || ""; }
+  }
+  function api(path, body) {
+    var opt = { method: body ? "POST" : "GET",
+      headers: { "Content-Type": "application/json", "X-Admin-Token": token } };
+    if (body) opt.body = JSON.stringify(body);
+    return fetch(path, opt).then(function (r) {
+      if (r.status === 401) throw new Error("unauthorized");
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
     });
   }
-  function fmtDate(iso) {
-    try {
-      return new Date(iso).toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" });
-    } catch (e) { return iso || ""; }
+  function loadAll() {
+    return Promise.all([
+      api("/api/messages").then(function (d) { messages = (d.messages || []).slice().reverse(); }),
+      fetch("/api/content").then(function (r) { return r.json(); }).then(function (d) { content = d; })
+    ]).then(function () {
+      $("loginCard").hidden = true;
+      $("panel").hidden = false;
+      renderMessages(); renderNewsAdmin(); renderItemsAdmin(); renderReleasesAdmin();
+    });
   }
-  function load() {
-    return fetch("/api/messages", { headers: { "X-Admin-Token": token } })
-      .then(function (r) {
-        if (r.status === 401) throw new Error("unauthorized");
-        if (!r.ok) throw new Error(r.status);
-        return r.json();
-      })
-      .then(function (d) {
-        messages = (d.messages || []).slice().reverse();
-        $("loginCard").hidden = true;
-        $("inbox").hidden = false;
-        render();
-      });
-  }
-  function render() {
+
+  /* الرسائل */
+  function renderMessages() {
     var q = ($("searchBox").value || "").trim();
     var rows = messages.filter(function (m) {
       if (typeFilter && m.type !== typeFilter) return false;
@@ -115,7 +209,7 @@
     box.innerHTML = "";
     rows.forEach(function (m) {
       var card = document.createElement("div");
-      card.className = "msg-card";
+      card.className = "card-x";
       card.innerHTML =
         '<div class="msg-head"><span class="msg-name"></span><span class="msg-type"></span></div>' +
         '<div class="msg-meta"></div><div class="msg-body"></div>' +
@@ -126,15 +220,200 @@
       card.querySelector(".msg-body").textContent = m.body || "";
       card.querySelector(".danger").addEventListener("click", function () {
         if (!confirm("حذف هذه الرسالة نهائيًا من الخادم؟")) return;
-        fetch("/api/messages/delete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Admin-Token": token },
-          body: JSON.stringify({ at: m.at })
-        }).then(function () { load(); });
+        api("/api/messages/delete", { at: m.at }).then(loadAll);
       });
       box.appendChild(card);
     });
   }
+
+  /* الأخبار */
+  function renderNewsAdmin() {
+    var box = $("newsListAdmin");
+    box.innerHTML = "";
+    (content.news || []).forEach(function (n) {
+      var card = document.createElement("div");
+      card.className = "card-x";
+      card.innerHTML =
+        '<div class="msg-head"><span class="msg-name"></span><span class="msg-meta"></span></div>' +
+        '<div class="msg-body"></div>' +
+        '<div style="margin-top:10px"><button class="chip edit" type="button">تعديل</button> ' +
+        '<button class="chip danger" type="button">حذف</button></div>';
+      card.querySelector(".msg-name").textContent = n.title || "";
+      card.querySelector(".msg-meta").textContent = fmtDate(n.created_at);
+      card.querySelector(".msg-body").textContent = n.body || "";
+      card.querySelector(".edit").addEventListener("click", function () {
+        $("newsId").value = n.id;
+        $("newsTitle").value = n.title || "";
+        $("newsBody").value = n.body || "";
+        $("newsFormTitle").textContent = "تعديل خبر";
+        $("newsCancel").hidden = false;
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+      card.querySelector(".danger").addEventListener("click", function () {
+        if (!confirm("حذف هذا الخبر؟")) return;
+        api("/api/news/delete", { id: n.id }).then(loadAll);
+      });
+      box.appendChild(card);
+    });
+  }
+  $("newsForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var payload = { title: $("newsTitle").value.trim(), body: $("newsBody").value.trim() };
+    var id = $("newsId").value;
+    var call = id ? api("/api/news/update", Object.assign({ id: Number(id) }, payload))
+                  : api("/api/news", payload);
+    call.then(function () {
+      $("newsForm").reset(); $("newsId").value = "";
+      $("newsFormTitle").textContent = "إضافة خبر";
+      $("newsCancel").hidden = true; $("newsDone").hidden = false;
+      loadAll();
+    });
+  });
+  $("newsCancel").addEventListener("click", function () {
+    $("newsForm").reset(); $("newsId").value = "";
+    $("newsFormTitle").textContent = "إضافة خبر";
+    $("newsCancel").hidden = true;
+  });
+
+  /* الأقسام */
+  function renderItemsAdmin() {
+    var cat = $("listCat").value;
+    var box = $("itemListAdmin");
+    box.innerHTML = "";
+    ((content.categories || {})[cat] || []).forEach(function (it) {
+      var card = document.createElement("div");
+      card.className = "card-x";
+      card.innerHTML =
+        '<div class="msg-head"><span class="msg-name"></span><span class="msg-meta"></span></div>' +
+        '<div class="msg-body"></div><div class="msg-meta file-line"></div>' +
+        '<div style="margin-top:10px"><button class="chip edit" type="button">تعديل</button> ' +
+        '<button class="chip danger" type="button">حذف (مع ملفه)</button></div>';
+      card.querySelector(".msg-name").textContent = it.name || "";
+      card.querySelector(".msg-meta").textContent =
+        "تحميلات: " + (it.downloads || 0) + (it.date ? " · " + it.date : "");
+      card.querySelector(".msg-body").textContent = it.desc || "";
+      card.querySelector(".file-line").textContent = (it.file || "") + (it.size ? " · " + it.size : "");
+      card.querySelector(".edit").addEventListener("click", function () {
+        $("itemId").value = it.id;
+        $("itemCat").value = it.category;
+        $("itemName").value = it.name || "";
+        $("itemDesc").value = it.desc || "";
+        $("itemFile").value = it.file || "";
+        $("itemSize").value = it.size || "";
+        $("itemFormTitle").textContent = "تعديل عنصر";
+        $("itemCancel").hidden = false;
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+      card.querySelector(".danger").addEventListener("click", function () {
+        if (!confirm("حذف هذا العنصر وملفه من الخادم؟")) return;
+        api("/api/items/delete", { id: it.id }).then(loadAll);
+      });
+      box.appendChild(card);
+    });
+  }
+  $("listCat").addEventListener("change", renderItemsAdmin);
+  $("itemForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    function save() {
+      var payload = {
+        category: $("itemCat").value, name: $("itemName").value.trim(),
+        desc: $("itemDesc").value.trim(), file: $("itemFile").value.trim(),
+        size: $("itemSize").value.trim()
+      };
+      var id = $("itemId").value;
+      var call = id ? api("/api/items/update", Object.assign({ id: Number(id) }, payload))
+                    : api("/api/items", payload);
+      call.then(function () {
+        $("itemForm").reset(); $("itemId").value = "";
+        $("itemFormTitle").textContent = "إضافة ملف لقسم";
+        $("itemCancel").hidden = true; $("itemDone").hidden = false;
+        $("uploadNote").hidden = true;
+        loadAll();
+      });
+    }
+    var f = $("itemUpload").files[0];
+    if (f) {
+      $("uploadNote").hidden = false;
+      fetch("/api/upload?category=" + encodeURIComponent($("itemCat").value) +
+            "&filename=" + encodeURIComponent(f.name), {
+        method: "POST",
+        headers: { "X-Admin-Token": token, "Content-Type": "application/octet-stream" },
+        body: f
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) throw new Error("upload");
+        $("itemFile").value = d.file;
+        $("itemSize").value = d.size;
+        save();
+      }).catch(function () {
+        $("uploadNote").textContent = "تعذّر رفع الملف — تحقق من الحجم والاتصال.";
+      });
+    } else {
+      save();
+    }
+  });
+  $("itemCancel").addEventListener("click", function () {
+    $("itemForm").reset(); $("itemId").value = "";
+    $("itemFormTitle").textContent = "إضافة ملف لقسم";
+    $("itemCancel").hidden = true;
+  });
+
+  /* الإصدارات */
+  function renderReleasesAdmin() {
+    var box = $("releaseListAdmin");
+    box.innerHTML = "";
+    (content.releases || []).forEach(function (r) {
+      var card = document.createElement("div");
+      card.className = "card-x";
+      card.innerHTML =
+        '<div class="msg-head"><span class="msg-name"></span>' +
+        '<button class="chip danger" type="button">حذف</button></div>' +
+        '<div class="msg-body"></div>';
+      card.querySelector(".msg-name").textContent = "إصدار " + (r.version || "");
+      card.querySelector(".msg-body").textContent =
+        (r.notes || []).join("\n");
+      card.querySelector(".danger").addEventListener("click", function () {
+        if (!confirm("حذف هذا الإصدار من قائمة الموقع؟ (لا يؤثر في سجل التطبيق)")) return;
+        api("/api/releases/delete", { id: r.id }).then(loadAll);
+      });
+      box.appendChild(card);
+    });
+  }
+  $("releaseForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    api("/api/releases", {
+      version: $("relVersion").value.trim(),
+      notes: $("relNotes").value.trim()
+    }).then(function () {
+      $("releaseForm").reset();
+      $("relDone").hidden = false;
+      loadAll();
+    });
+  });
+
+  /* عام */
+  document.querySelectorAll("#panelTabs .chip[data-ptab]").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      document.querySelectorAll("#panelTabs .chip[data-ptab]").forEach(function (c) { c.classList.remove("active"); });
+      chip.classList.add("active");
+      ["messages", "news", "items", "releases"].forEach(function (k) {
+        $("pt-" + k).hidden = k !== chip.dataset.ptab;
+      });
+    });
+  });
+  document.querySelectorAll(".chip[data-type]").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      document.querySelectorAll(".chip[data-type]").forEach(function (c) { c.classList.remove("active"); });
+      chip.classList.add("active");
+      typeFilter = chip.dataset.type || "";
+      renderMessages();
+    });
+  });
+  $("searchBox").addEventListener("input", renderMessages);
+  $("refreshBtn").addEventListener("click", loadAll);
+  $("logoutBtn").addEventListener("click", function () {
+    sessionStorage.removeItem("almoghni_admin_token");
+    location.reload();
+  });
   $("loginForm").addEventListener("submit", function (e) {
     e.preventDefault();
     fetch("/api/login", {
@@ -148,24 +427,10 @@
       token = d.token || "";
       sessionStorage.setItem("almoghni_admin_token", token);
       $("loginError").hidden = true;
-      return load();
+      return loadAll();
     }).catch(function () { $("loginError").hidden = false; });
   });
-  document.querySelectorAll(".chip[data-type]").forEach(function (chip) {
-    chip.addEventListener("click", function () {
-      document.querySelectorAll(".chip[data-type]").forEach(function (c) { c.classList.remove("active"); });
-      chip.classList.add("active");
-      typeFilter = chip.dataset.type || "";
-      render();
-    });
-  });
-  $("searchBox").addEventListener("input", render);
-  $("refreshBtn").addEventListener("click", function () { load(); });
-  $("logoutBtn").addEventListener("click", function () {
-    sessionStorage.removeItem("almoghni_admin_token");
-    location.reload();
-  });
-  if (token) load().catch(function () { sessionStorage.removeItem("almoghni_admin_token"); });
+  if (token) loadAll().catch(function () { sessionStorage.removeItem("almoghni_admin_token"); });
 })();
 </script>
 </body>

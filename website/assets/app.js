@@ -38,7 +38,9 @@
   function localDownloads() {
     try { return JSON.parse(localStorage.getItem(LS_D) || "{}"); } catch (e) { return {}; }
   }
+  var sessionBumps = {};
   function bumpDownload(key) {
+    sessionBumps[key] = (sessionBumps[key] || 0) + 1;
     if (serverStats) {
       serverStats.downloads[key] = (serverStats.downloads[key] || 0) + 1;
       renderCounts();
@@ -51,6 +53,10 @@
     renderCounts();
   }
   function downloadsOf(item) {
+    // بنود اللوحة تحمل مجموع تحميلاتها من الخادم أصلًا
+    if (String(item.key || "").indexOf("item-") === 0) {
+      return (item.downloads || 0) + (sessionBumps[item.key] || 0);
+    }
     if (serverStats) return (item.downloads || 0) + ((serverStats.downloads || {})[item.key] || 0);
     return (item.downloads || 0) + (localDownloads()[item.key] || 0);
   }
@@ -188,8 +194,24 @@
 
   function renderNews() {
     var box = $("newsList");
-    if (!box || !state.releases) return;
+    if (!box) return;
     box.innerHTML = "";
+    (state.news || []).forEach(function (n) {
+      var div = document.createElement("div");
+      div.className = "news-item";
+      var head = document.createElement("h4");
+      head.textContent = n.title || "";
+      var body = document.createElement("div");
+      String(n.body || "").split(/\n+/).forEach(function (p) {
+        if (!p.trim()) return;
+        var par = document.createElement("p");
+        par.textContent = p;
+        body.appendChild(par);
+      });
+      div.appendChild(head); div.appendChild(body);
+      box.appendChild(div);
+    });
+    if (!state.releases) return;
     state.releases.slice(0, 8).forEach(function (r, i) {
       var div = document.createElement("div");
       div.className = "news-item";
@@ -322,10 +344,24 @@
   }).catch(function () { serverStats = null; }).then(function () { renderCounts(); });
   Promise.all([
     fetch("data/catalog.json").then(function (r) { return r.json(); }),
-    fetch("data/changelog.json").then(function (r) { return r.json(); })
+    fetch("data/changelog.json").then(function (r) { return r.json(); }),
+    fetch("/api/content").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }).catch(function () { return null; })
   ]).then(function (res) {
     state.catalog = res[0];
     state.releases = res[1].releases || [];
+    var content = res[2];
+    if (content) {
+      // محتوى لوحة التحكم مصدر الحقيقة عند توفره
+      if (content.categories) state.catalog.categories = content.categories;
+      state.news = content.news || [];
+      if (content.releases && content.releases.length) {
+        var seen = {};
+        var merged = [];
+        content.releases.forEach(function (r) { seen[r.version] = 1; merged.push(r); });
+        state.releases.forEach(function (r) { if (!seen[r.version]) merged.push(r); });
+        state.releases = merged;
+      }
+    }
     renderReleases();
     renderNews();
     initContactForm();
