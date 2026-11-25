@@ -17,9 +17,16 @@
   function $(id) { return document.getElementById(id); }
   function fmt(n) { return Number(n || 0).toLocaleString("ar-EG"); }
 
-  /* ---------- العدّادات المحلية ---------- */
+  /* ---------- العدّادات: خادمية عند توفر الخدمة، محلية احتياطيًا ---------- */
   var LS_V = "almoghni_site_visits", LS_D = "almoghni_site_downloads";
+  var serverStats = null;
+  function api(path, body) {
+    var opt = { method: body ? "POST" : "GET", headers: { "Content-Type": "application/json" } };
+    if (body) opt.body = JSON.stringify(body);
+    return fetch(path, opt).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+  }
   function visits() {
+    if (serverStats) return serverStats.visits || 0;
     var v = parseInt(localStorage.getItem(LS_V) || "0", 10);
     if (!sessionStorage.getItem("almoghni_counted")) {
       v += 1;
@@ -32,12 +39,19 @@
     try { return JSON.parse(localStorage.getItem(LS_D) || "{}"); } catch (e) { return {}; }
   }
   function bumpDownload(key) {
+    if (serverStats) {
+      serverStats.downloads[key] = (serverStats.downloads[key] || 0) + 1;
+      renderCounts();
+      api("/api/download", { key: key }).catch(function () {});
+      return;
+    }
     var d = localDownloads();
     d[key] = (d[key] || 0) + 1;
     localStorage.setItem(LS_D, JSON.stringify(d));
     renderCounts();
   }
   function downloadsOf(item) {
+    if (serverStats) return (item.downloads || 0) + ((serverStats.downloads || {})[item.key] || 0);
     return (item.downloads || 0) + (localDownloads()[item.key] || 0);
   }
   function totalDownloads() {
@@ -210,13 +224,15 @@
         at: new Date().toISOString()
       };
       if (!msg.name || !msg.body) return;
-      try {
-        var all = JSON.parse(localStorage.getItem("almoghni_site_messages") || "[]");
-        all.push(msg);
-        localStorage.setItem("almoghni_site_messages", JSON.stringify(all));
-      } catch (err) { /* حفظ محلي فقط */ }
-      form.reset();
-      $("contactDone").hidden = false;
+      function done() { form.reset(); $("contactDone").hidden = false; }
+      api("/api/message", msg).then(done).catch(function () {
+        try {
+          var all = JSON.parse(localStorage.getItem("almoghni_site_messages") || "[]");
+          all.push(msg);
+          localStorage.setItem("almoghni_site_messages", JSON.stringify(all));
+        } catch (err) { /* حفظ محلي فقط */ }
+        done();
+      });
     });
   }
 
@@ -295,6 +311,15 @@
   buildThemeList();
 
   /* ---------- الإقلاع ---------- */
+  api("/api/stats").then(function (s) {
+    serverStats = { visits: s.visits || 0, downloads: s.downloads || {} };
+    if (!sessionStorage.getItem("almoghni_counted")) {
+      sessionStorage.setItem("almoghni_counted", "1");
+      return api("/api/visit", {}).then(function (r) {
+        if (r && r.visits) serverStats.visits = r.visits;
+      });
+    }
+  }).catch(function () { serverStats = null; }).then(function () { renderCounts(); });
   Promise.all([
     fetch("data/catalog.json").then(function (r) { return r.json(); }),
     fetch("data/changelog.json").then(function (r) { return r.json(); })
