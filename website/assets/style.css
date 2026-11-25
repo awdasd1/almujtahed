@@ -93,15 +93,16 @@ a { color: var(--accent-emerald); }
   display: flex; justify-content: space-between; align-items: center;
   gap: 16px; padding-top: 18px; padding-bottom: 18px; flex-wrap: wrap;
 }
-.brand { display: flex; align-items: center; gap: 14px; }
-.brand-mark {
-  width: 52px; height: 52px; border-radius: var(--radius);
-  background: var(--lab-btn-fill); color: var(--lab-btn-text);
-  font-family: var(--font-amiri); font-size: 30px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
+.brand { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.brand-logo {
+  height: 108px; width: auto; max-width: min(460px, 58vw);
+  display: block; object-fit: contain; object-position: center;
 }
-.brand h1 { font-size: 30px; line-height: 1.2; }
-.brand p { margin: 0; color: var(--color-tabs); font-size: 15px; }
+.brand-version {
+  width: 100%; text-align: center;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.15px;
+  color: var(--accent-clay);
+}
 .header-meta { display: flex; gap: 8px; flex-wrap: wrap; }
 .pill {
   background: var(--bg-surface); color: var(--color-reading);
