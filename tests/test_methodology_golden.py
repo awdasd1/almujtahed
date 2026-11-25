@@ -252,6 +252,41 @@ class RuntimeLensTests(unittest.TestCase):
         self.assertIsNone(server._named_hadith_matn("حديث النية"))
 
 
+class BookOpenPerformanceTests(unittest.TestCase):
+    """فتح إحالة لا يعيد تحليل ملف صفحات الكتاب كله عند كل جلسة،
+    وموضعه يُجلب من قاموس مباشر — بطء ويندوز الفادح عند فتح الكتب
+    الضخمة كان من بناء الفهرس سطرًا سطرًا في كل عملية."""
+
+    def test_page_index_sidecar_and_lookup(self):
+        import json as _json
+        import tempfile
+        import shamela_local_mcp as mcp
+        with tempfile.TemporaryDirectory() as td:
+            import pathlib
+            d = pathlib.Path(td)
+            rows = [
+                {"part": "2", "page_num": 57, "page_id": 10,
+                 "body": "نص الصفحة المطلوبة", "footnotes": ""},
+                {"part": "2", "page_num": 58, "page_id": 11,
+                 "body": "صفحة تالية", "footnotes": ""},
+            ]
+            (d / "pages.jsonl").write_text(
+                "\n".join(_json.dumps(r, ensure_ascii=False) for r in rows),
+                encoding="utf-8")
+            (d / "book_metadata.json").write_text(
+                _json.dumps({"book_id": 999001, "title_ar": "كتاب اختبار",
+                             "authors": [], "rel_path": "x"}),
+                encoding="utf-8")
+            mcp._BOOK_INDEX_CACHE.clear()
+            idx = mcp.get_book_index(d)
+            self.assertTrue((d / "pages.idx.json").exists(),
+                            "لم يُحفظ فهرس الصفحات قرصيًا")
+            self.assertIn("2|57", idx["by_loc"])
+            mcp._BOOK_INDEX_CACHE.clear()
+            idx2 = mcp.get_book_index(d)
+            self.assertEqual(idx2["by_loc"]["2|57"][0]["page_id"], 10)
+
+
 class MethodologyContractTests(unittest.TestCase):
     """حراس نصية لعقود المنهجية حتى لا تُسقطها طبقة لاحقة بصمت."""
 

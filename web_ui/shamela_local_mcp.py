@@ -261,20 +261,25 @@ def _lazy_extract_and_resolve(book_id_or_title) -> Optional[Path]:
 
 
 def get_book_index(book_dir: Path) -> Dict[str, Any]:
-    """بناء أو جلب فهرس أوفست الصفحات للكتاب لقراءته لحظياً عبر seek"""
+    """بناء أو جلب فهرس أوفست الصفحات للكتاب لقراءته لحظياً عبر seek.
+
+    الفهرس يُبنى مرة ثم يُحفظ قرصيًا (pages.idx.json) ويُعاد استعماله
+    ما دام ملف الصفحات لم يتغير؛ ففتح إحالة في كتاب ضخم لا يعيد تحليل
+    ملف صفحاته سطرًا سطرًا عند كل جلسة — كان هذا وحده ثوانيَ طويلة
+    على أقراص ويندوز ومضادات الفيروسات. والبحث بالموضع قاموس مباشر."""
     cache_key = str(book_dir)
     if cache_key in _BOOK_INDEX_CACHE:
         return _BOOK_INDEX_CACHE[cache_key]
 
     pages_file = book_dir / "pages.jsonl"
     if not pages_file.exists():
-        return {"entries": [], "meta": {}}
+        return {"entries": [], "meta": {}, "by_loc": {}}
     try:
         with open(pages_file, "rb") as probe:
             if probe.read(64).startswith(b"version https://git-lfs"):
-                return {"entries": [], "meta": {}}
+                return {"entries": [], "meta": {}, "by_loc": {}}
     except OSError:
-        return {"entries": [], "meta": {}}
+        return {"entries": [], "meta": {}, "by_loc": {}}
 
     entries = []
     meta = {}
@@ -286,31 +291,55 @@ def get_book_index(book_dir: Path) -> Dict[str, Any]:
         except Exception:
             pass
 
+    stat = pages_file.stat()
+    sidecar = book_dir / "pages.idx.json"
+    loaded = False
     try:
-        with open(pages_file, "rb") as f:
-            offset = 0
-            seq = 1
-            for line in f:
-                try:
-                    d = json.loads(line.decode("utf-8"))
-                    part = str(d.get("volume") or d.get("part") or "").strip()
-                    p_num = d.get("page_num")
-                    page_id = d.get("page_id")
-                    entries.append({
-                        "seq": seq,
-                        "part": part,
-                        "page_num": p_num,
-                        "page_id": page_id,
-                        "offset": offset
-                    })
-                    seq += 1
-                except Exception:
-                    pass
-                offset += len(line)
-    except Exception as e:
-        print(f"Error indexing pages for {book_dir.name}: {e}")
+        if sidecar.exists():
+            saved = json.loads(sidecar.read_text(encoding="utf-8"))
+            if (saved.get("size") == stat.st_size
+                    and saved.get("mtime") == int(stat.st_mtime)):
+                entries = saved.get("entries") or []
+                loaded = True
+    except Exception:
+        entries = []
+        loaded = False
 
-    result = {"entries": entries, "meta": meta, "book_dir": book_dir}
+    if not loaded:
+        try:
+            with open(pages_file, "rb") as f:
+                offset = 0
+                seq = 1
+                for line in f:
+                    try:
+                        d = json.loads(line.decode("utf-8"))
+                        part = str(d.get("volume") or d.get("part") or "").strip()
+                        entries.append({
+                            "seq": seq,
+                            "part": part,
+                            "page_num": d.get("page_num"),
+                            "page_id": d.get("page_id"),
+                            "offset": offset
+                        })
+                        seq += 1
+                    except Exception:
+                        pass
+                    offset += len(line)
+        except Exception as e:
+            print(f"Error indexing pages for {book_dir.name}: {e}")
+        try:
+            sidecar.write_text(json.dumps(
+                {"size": stat.st_size, "mtime": int(stat.st_mtime),
+                 "entries": entries}, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    by_loc: Dict[str, list] = {}
+    for e in entries:
+        if e.get("page_num") is not None:
+            by_loc.setdefault(f"{e.get('part') or ''}|{e['page_num']}", []).append(e)
+    result = {"entries": entries, "meta": meta, "book_dir": book_dir,
+              "by_loc": by_loc}
     _BOOK_INDEX_CACHE[cache_key] = result
     return result
 
@@ -2491,33 +2520,25 @@ def get_page(book: Any, page_num: int, part: Optional[str] = None) -> Dict[str, 
         return _error("BOOK_NOT_FOUND", f"تعذر العثور على ملفات الكتاب: {book}")
     idx = get_book_index(b_dir)
     p_str = str(part).strip() if part and str(part).strip() != "None" else None
-    matches = [
-        e for e in idx["entries"]
-        if (not p_str or e["part"] == p_str)
-        and e.get("page_num") is not None and int(e["page_num"]) == int(page_num)
-    ]
+    by_loc = idx.get("by_loc") or {}
+    if p_str:
+        matches = list(by_loc.get(f"{p_str}|{page_num}") or [])
+    else:
+        matches = []
+        for _k, _v in by_loc.items():
+            if _k.endswith(f"|{page_num}"):
+                matches = list(_v)
+                break
     if not matches and p_str == "1":
         # الكتب أحادية الجزء تُحفظ بجزء فارغ في ملفاتها، بينما تُكتب إحالتها
         # «ج1» في الحواشي: مطابقة بديلة عند فشل الحرفية فقط (1.10.268).
-        matches = [
-            e for e in idx["entries"]
-            if e["part"] == ""
-            and e.get("page_num") is not None and int(e["page_num"]) == int(page_num)
-        ]
+        matches = list(by_loc.get(f"|{page_num}") or [])
     if not matches and p_str:
         # الصفحة موجودة في جزء واحد آخر فقط (رسالة داخل مجموع كُتبت إحالتها
         # بجزء غير جزئها): تُفتح منه؛ فلا غموض ما دامت وحيدة الموضع.
-        _parts = {
-            e["part"] for e in idx["entries"]
-            if e.get("page_num") is not None and int(e["page_num"]) == int(page_num)
-        }
-        if len(_parts) == 1:
-            _only = next(iter(_parts))
-            matches = [
-                e for e in idx["entries"]
-                if e["part"] == _only
-                and e.get("page_num") is not None and int(e["page_num"]) == int(page_num)
-            ]
+        _cands = [v for k, v in by_loc.items() if k.endswith(f"|{page_num}")]
+        if len(_cands) == 1:
+            matches = list(_cands[0])
     if not matches:
         return _error("PAGE_NOT_FOUND", f"الصفحة {page_num} غير موجودة في هذا الكتاب/الجزء.")
     if not p_str:

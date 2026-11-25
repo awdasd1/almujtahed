@@ -157,9 +157,15 @@ def _ensure_reader():
         try:
             import jpype  # type: ignore
         except ImportError:
-            import subprocess
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "jpype1"])
-            import jpype  # type: ignore
+            # لا تثبيت من الإنترنت وقت التشغيل أبدًا: كان كل عامل جسر على
+            # ويندوز (حيث غابت jpype1 عن حزمة المتطلبات) يحاول تثبيتها
+            # عند كل بحث فيتعلّق دقائق ثم يموت. تُشحن مع التطبيق، وغيابها
+            # يُشخَّص فورًا في bridge_diagnostics بدل التعليق الصامت.
+            _LAST_ERROR.update({
+                "message": "jpype1 غير مثبّتة في بيئة التشغيل — جسر الشاملة "
+                           "متوقف (أعد تثبيت التطبيق أو ثبّتها في بيئته)",
+                "at": __import__("time").time()})
+            return None
         jvm, jars = SL._find_jvm_and_jars(app_root)
         root = app_root
         if not jvm or not jars:
@@ -247,6 +253,7 @@ import subprocess as _subprocess
 import tempfile as _tempfile
 
 _POOL = {"workers": [], "lock": threading.Lock(), "started": False}
+_POOL_FAIL = {"n": 0, "until": 0.0}
 try:
     # افتراضي واعٍ بالذاكرة: 3 عمال، و2 فقط على أجهزة ≤9.5GB؛ ومتغير
     # البيئة ALMOGHNI_BRIDGE_WORKERS يتجاوز الافتراضي متى ضُبط صراحة.
@@ -648,7 +655,12 @@ def search(query, mode="phrase", death_max=None, death_min=None, categories=None
             _RESULT_CACHE.move_to_end(_ckey)
             return {**_hit_cache, "results": [dict(r) for r in _hit_cache["results"]]}
     result = None
-    if os.environ.get("ALMOGHNI_BRIDGE_WORKER") != "1" and _POOL_N > 0:
+    # قاطع أمان: انهيارات جسر متتالية (JVM لا يُقلع على الجهاز) لا يجوز
+    # أن يدفع كل بحث لاحق ثمن إعادة المحاولة؛ راحة دقيقتين ثم محاولة.
+    import time as _tmod
+    if _tmod.time() < _POOL_FAIL["until"]:
+        result = None
+    elif os.environ.get("ALMOGHNI_BRIDGE_WORKER") != "1" and _POOL_N > 0:
         if not _POOL["started"]:
             _pool_start()
         if _POOL["workers"]:
@@ -660,8 +672,17 @@ def search(query, mode="phrase", death_max=None, death_min=None, categories=None
                     "include_alive": bool(include_alive), "limit": int(limit)})
                 if not result or result.get("status") != "ok":
                     result = None
+                    raise RuntimeError("bridge not ok")
+                _POOL_FAIL["n"] = 0
             except Exception:
                 result = None  # سقوط صامت للمسار المحلي الاحتياطي
+                _POOL_FAIL["n"] += 1
+                if _POOL_FAIL["n"] >= 3:
+                    _POOL_FAIL["until"] = _tmod.time() + 120
+                    _POOL_FAIL["n"] = 0
+                    print("🌉 [Bridge Pool] قاطع الأمان: الجسر سقط 3 مرات "
+                          "متتالية — راحة 120 ثانية (انظر bridge_diagnostics)",
+                          flush=True)
     if result is None:
         result = _search_local(query, mode=mode, death_max=death_max,
                                death_min=death_min, categories=categories,

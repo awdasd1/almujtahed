@@ -6261,35 +6261,68 @@ def get_or_build_book_index(rel_path: str, pages_file: Path) -> dict:
     parts_set = set()
     parts_ordered = []
 
+    # فهرس محفوظ قرصيًا بجانب ملف الصفحات: بناء مرة واحدة ثم تحميل
+    # فوري في الجلسات التالية ما دام الملف لم يتغير (شرط سرعة فتح
+    # الإحالات على أقراص ويندوز البطيئة ومضادات فيروساتها).
+    _stat = None
     try:
-        with open(pages_file, "rb") as f:
-            while True:
-                offset = f.tell()
-                line = f.readline()
-                if not line:
-                    break
-                try:
-                    data = json.loads(line)
-                    part = str(data.get("part") or "")
-                    if part == "None":
-                        part = ""
-                    pnum = data.get("page_num")
-                    seq = data.get("sequence_num") or (len(entries) + 1)
+        _stat = pages_file.stat()
+    except Exception:
+        pass
+    _sidecar = pages_file.with_name(pages_file.name + ".srvidx.json")
+    _loaded = False
+    if _stat is not None:
+        try:
+            if _sidecar.exists():
+                _saved = json.loads(_sidecar.read_text(encoding="utf-8"))
+                if (_saved.get("size") == _stat.st_size
+                        and _saved.get("mtime") == int(_stat.st_mtime)):
+                    entries = _saved.get("entries") or []
+                    parts_ordered = _saved.get("parts") or []
+                    parts_set = set(parts_ordered)
+                    _loaded = True
+        except Exception:
+            entries, parts_ordered, parts_set = [], [], set()
+            _loaded = False
 
-                    if part and part not in parts_set:
-                        parts_set.add(part)
-                        parts_ordered.append(part)
+    if not _loaded:
+        try:
+            with open(pages_file, "rb") as f:
+                while True:
+                    offset = f.tell()
+                    line = f.readline()
+                    if not line:
+                        break
+                    try:
+                        data = json.loads(line)
+                        part = str(data.get("part") or "")
+                        if part == "None":
+                            part = ""
+                        pnum = data.get("page_num")
+                        seq = data.get("sequence_num") or (len(entries) + 1)
 
-                    entries.append({
-                        "seq": seq,
-                        "part": part,
-                        "page_num": pnum,
-                        "offset": offset
-                    })
-                except Exception:
-                    continue
-    except Exception as e:
-        print(f"Error indexing book {rel_path}: {e}")
+                        if part and part not in parts_set:
+                            parts_set.add(part)
+                            parts_ordered.append(part)
+
+                        entries.append({
+                            "seq": seq,
+                            "part": part,
+                            "page_num": pnum,
+                            "offset": offset
+                        })
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"Error indexing book {rel_path}: {e}")
+        if _stat is not None:
+            try:
+                _sidecar.write_text(json.dumps(
+                    {"size": _stat.st_size, "mtime": int(_stat.st_mtime),
+                     "entries": entries, "parts": parts_ordered},
+                    ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
 
     # جلب بطاقة الكتاب الكاملة من SQLite
     meta = {}
@@ -6310,12 +6343,17 @@ def get_or_build_book_index(rel_path: str, pages_file: Path) -> dict:
         except Exception:
             pass
 
+    by_loc = {}
+    for _i, _e in enumerate(entries):
+        if _e.get("page_num") is not None:
+            by_loc.setdefault(f"{_e.get('part') or ''}|{_e['page_num']}", _i)
     idx_data = {
         "file_path": pages_file,
         "entries": entries,
         "parts": parts_ordered,
         "total_pages": len(entries),
-        "meta": meta
+        "meta": meta,
+        "by_loc": by_loc
     }
     BOOK_PAGE_INDEX_CACHE[rel_path] = idx_data
     return idx_data
@@ -9140,11 +9178,16 @@ async def get_book_page(
         if p_str == "None":
             p_str = ""
         found = False
-        for i, e in enumerate(entries):
-            if e["part"] == p_str and _page_nums_equal(e["page_num"], page_num):
-                target_idx = i
-                found = True
-                break
+        _hit = (idx.get("by_loc") or {}).get(f"{p_str}|{page_num}")
+        if _hit is not None:
+            target_idx = _hit
+            found = True
+        else:
+            for i, e in enumerate(entries):
+                if e["part"] == p_str and _page_nums_equal(e["page_num"], page_num):
+                    target_idx = i
+                    found = True
+                    break
         if not found and strict_mode:
             meta = idx["meta"]
             return {
@@ -9826,7 +9869,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.846"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.847"},
         },
     })
     if opened.get("error"):
