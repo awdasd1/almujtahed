@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.858 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.859 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -3192,6 +3192,27 @@
                     </div>
                     <div id="archiveList" style="display: flex; flex-direction: column; gap: 10px; padding-top: 8px;">
                         <div style="color: var(--text-muted); font-size: 13.5px;">جارٍ تحميل النسخ المؤرشفة...</div>
+                    </div>
+                    <div style="border-top: 1px solid var(--border-color, #e5ddd0); margin-top: 16px; padding-top: 16px;">
+                        <div style="font-weight: 800; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="folder-open" class="icon" aria-hidden="true"></i>
+                            <span>استرجاع من مجلد آخر</span>
+                        </div>
+                        <p style="margin: 8px 0 12px; font-size: 13px; line-height: 1.8; color: var(--text-muted);">
+                            نسخة مؤرشفة محفوظة في أي مكان — قرص خارجي أو مجلد آخر أو نسخة منقولة من جهاز آخر: حدّد مجلد النسخة نفسه (الذي يحتوي ملف وصفها) وسيعاينها المغني ثم يسترجعها إلى التطبيق.
+                        </p>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                            <input type="text" id="externalArchivePath" dir="ltr" placeholder="مسار مجلد النسخة المؤرشفة" style="flex: 1 1 280px; text-align: left;">
+                            <button type="button" class="btn-secondary-action" onclick="pickExternalArchiveFolder()" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700;">
+                                <i data-lucide="folder-search" class="icon" aria-hidden="true"></i>
+                                <span>تحديد المجلد</span>
+                            </button>
+                            <button type="button" class="btn-primary-gradient" onclick="restoreExternalArchive()" style="padding: 9px 16px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px;">
+                                <i data-lucide="archive-restore" class="icon" aria-hidden="true"></i>
+                                <span>معاينة واسترجاع</span>
+                            </button>
+                        </div>
+                        <div id="externalArchiveMsg" style="font-size: 13px; margin-top: 8px; min-height: 18px;"></div>
                     </div>
                 </div>
             </div>

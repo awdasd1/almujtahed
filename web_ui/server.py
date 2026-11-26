@@ -10013,7 +10013,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.858"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.859"},
         },
     })
     if opened.get("error"):
@@ -30721,12 +30721,9 @@ async def create_archive(req: ArchiveCreateRequest, request: Request):
         "message": "نُقلت العناصر المحددة إلى الأرشيف ومُسحت من التطبيق.",
     }
 
-def _restore_user_archive(archive_id: str, owner_id: str) -> Dict[str, Any]:
-    if not re.fullmatch(r"archive_\d{8}_\d{6}", archive_id or ""):
-        raise HTTPException(status_code=400, detail="معرّف الأرشيف غير صالح")
-    archive_dir = os.path.join(_backups_root(), archive_id)
-    if not os.path.isdir(archive_dir):
-        raise HTTPException(status_code=404, detail="الأرشيف غير موجود")
+def _restore_archive_dir(archive_dir: str, owner_id: str) -> Dict[str, Any]:
+    """استرجاع نسخة مؤرشفة من مجلدها أينما كان: مجلد الأرشفة الداخلي
+    أو أي مجلد خارجي حدّده المستخدم (قرص خارجي/نسخة منقولة)."""
     before = _book_index_status()
     if before.get("books", 0) <= 0:
         raise HTTPException(status_code=409, detail="فهرس الكتب غير متاح. أُوقف الاسترجاع.")
@@ -30858,7 +30855,7 @@ def _restore_user_archive(archive_id: str, owner_id: str) -> Dict[str, Any]:
     after = _assert_book_index_stable(before)
     return {
         "status": "restored",
-        "archive_id": archive_id,
+        "archive_id": os.path.basename(os.path.normpath(archive_dir)),
         "restored": restored,
         "restored_chats": restored_chats,
         "restored_projects": restored_projects,
@@ -30867,6 +30864,81 @@ def _restore_user_archive(archive_id: str, owner_id: str) -> Dict[str, Any]:
         "book_index": after,
         "message": "عادت النسخة المؤرشفة إلى التطبيق.",
     }
+
+def _restore_user_archive(archive_id: str, owner_id: str) -> Dict[str, Any]:
+    if not re.fullmatch(r"archive_\d{8}_\d{6}", archive_id or ""):
+        raise HTTPException(status_code=400, detail="معرّف الأرشيف غير صالح")
+    archive_dir = os.path.join(_backups_root(), archive_id)
+    if not os.path.isdir(archive_dir):
+        raise HTTPException(status_code=404, detail="الأرشيف غير موجود")
+    return _restore_archive_dir(archive_dir, owner_id)
+
+
+def _inspect_archive_dir(raw_path: str) -> Dict[str, Any]:
+    """فحص مجلد حدّده المستخدم: هل هو نسخة مؤرشفة من المغني؟ وماذا
+    فيها؟ يُستخدم للمعاينة قبل الاسترجاع من أي مجلد خارجي."""
+    raw = (raw_path or "").strip().strip('"')
+    if not raw:
+        raise HTTPException(status_code=400, detail="اكتب مسار مجلد النسخة المؤرشفة")
+    folder = Path(raw).expanduser()
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail="المجلد غير موجود على هذا الجهاز")
+    manifest_path = folder / "manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            raise HTTPException(status_code=400,
+                                detail="ملف وصف الأرشيف (manifest.json) تالف")
+        counts = manifest.get("counts") or {}
+        scopes = manifest.get("scopes")
+        if not isinstance(scopes, list) or not scopes:
+            scope = manifest.get("scope") or ""
+            scopes = (["chats", "projects", "agents"] if scope == "all"
+                      else [p for p in str(scope).split("+") if p])
+        bits = []
+        if "chats" in counts:
+            bits.append(f"{counts['chats']} محادثة")
+        if "projects" in counts:
+            bits.append(f"{counts['projects']} مشروع")
+        if "agents" in counts:
+            bits.append(f"{counts['agents']} مجموعة وكلاء")
+        if "tools" in counts:
+            bits.append(f"{counts['tools']} إضافة")
+        if "manuscripts" in counts:
+            bits.append(f"{counts['manuscripts']} مخطوطة")
+        if "reading" in counts:
+            bits.append("القراءة والتحليل")
+        if counts.get("uploads"):
+            bits.append("مع المرفقات")
+        return {
+            "path": str(folder),
+            "note": str(manifest.get("note") or "").strip(),
+            "created_at": manifest.get("created_at") or "",
+            "scope_label": manifest.get("scope_label")
+                or _archive_scope_label(manifest.get("scope") or ""),
+            "summary": " · ".join(bits) or "نسخة محفوظة",
+            "scopes": scopes,
+            "counts": counts,
+            "owner_id": str(manifest.get("owner_id") or ADMIN_OWNER_ID),
+        }
+    if (folder / "app_memory.db").exists() \
+            or (folder / "agent_groups_data.json").exists():
+        return {
+            "path": str(folder),
+            "note": "",
+            "created_at": _format_archive_stamp(folder.name),
+            "scope_label": "نسخة قديمة (محادثات ومشاريع ووكلاء)",
+            "summary": "نسخة أرشيفية قديمة بلا ملف وصف",
+            "scopes": ["chats", "projects", "agents"],
+            "counts": {},
+            "owner_id": ADMIN_OWNER_ID,
+        }
+    raise HTTPException(
+        status_code=400,
+        detail="هذا المجلد لا يحتوي نسخة مؤرشفة من المغني "
+               "(حدّد مجلد النسخة نفسه الذي يحتوي manifest.json)")
+
 
 def _archive_folder(archive_id: str) -> str:
     if not re.fullmatch(r"archive_\d{8}_\d{6}", archive_id or ""):
@@ -30880,6 +30952,32 @@ def _archive_folder(archive_id: str) -> str:
 @app.post("/api/archives/restore")
 async def restore_archive(req: ArchiveRestoreRequest, request: Request):
     return _restore_user_archive(req.archive_id, current_owner_id(request))
+
+
+class ArchiveRestorePathRequest(BaseModel):
+    path: str
+
+
+@app.post("/api/archives/restore-path/preview")
+async def preview_archive_from_path(req: ArchiveRestorePathRequest,
+                                    request: Request):
+    """معاينة نسخة مؤرشفة في أي مجلد يحدّده المستخدم قبل استرجاعها."""
+    require_admin(request)
+    owner_id = current_owner_id(request)
+    info = _inspect_archive_dir(req.path)
+    if info.pop("owner_id") != owner_id:
+        raise HTTPException(status_code=403, detail="هذا الأرشيف خاص بعضو آخر")
+    return info
+
+
+@app.post("/api/archives/restore-path")
+async def restore_archive_from_path(req: ArchiveRestorePathRequest,
+                                    request: Request):
+    """استرجاع نسخة مؤرشفة من أي مجلد على الجهاز (خارج مجلد الأرشفة)."""
+    require_admin(request)
+    owner_id = current_owner_id(request)
+    info = _inspect_archive_dir(req.path)
+    return _restore_archive_dir(info["path"], owner_id)
 
 @app.delete("/api/archives/{archive_id}")
 async def delete_archive(archive_id: str, request: Request):

@@ -445,6 +445,73 @@ class WorkspaceAndArchiveTests(unittest.TestCase):
         self.assertFalse(any(seed.get("providers", {}).values()))
 
 
+class ExternalArchiveRestoreTests(unittest.TestCase):
+    """استرجاع نسخة مؤرشفة من أي مجلد خارجي: فحص يقرأ وصفها ويرفض
+    المجلدات الغريبة، واسترجاع يستخدم منطق الأرشيف الداخلي نفسه."""
+
+    def _make_archive(self, root):
+        import json as _json
+        import pathlib
+        folder = pathlib.Path(root) / "archive_20260101_120000"
+        folder.mkdir(parents=True)
+        (folder / "manifest.json").write_text(_json.dumps({
+            "owner_id": server.ADMIN_OWNER_ID,
+            "scopes": ["projects"],
+            "counts": {"projects": 2},
+            "note": "نسخة تجريبية",
+            "created_at": "2026-01-01 12:00",
+        }), encoding="utf-8")
+        (folder / "projects_data.json").write_text(
+            _json.dumps([{"id": "p1"}, {"id": "p2"}]), encoding="utf-8")
+        return folder
+
+    def test_inspect_and_restore_from_any_folder(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            folder = self._make_archive(td)
+            info = server._inspect_archive_dir(str(folder))
+            self.assertEqual(info["note"], "نسخة تجريبية")
+            self.assertEqual(info["scopes"], ["projects"])
+            self.assertIn("2 مشروع", info["summary"])
+
+            saved = {}
+            orig_status = server._book_index_status
+            orig_assert = server._assert_book_index_stable
+            orig_save = server.save_stored_projects
+            try:
+                server._book_index_status = lambda: {"books": 5}
+                server._assert_book_index_stable = lambda b: {"books": 5}
+                server.save_stored_projects = lambda items, owner: \
+                    saved.update(items=items, owner=owner)
+                out = server._restore_archive_dir(str(folder), "admin")
+            finally:
+                server._book_index_status = orig_status
+                server._assert_book_index_stable = orig_assert
+                server.save_stored_projects = orig_save
+            self.assertTrue(out["restored_projects"])
+            self.assertEqual(len(saved["items"]), 2)
+
+    def test_inspect_rejects_foreign_folder(self):
+        import tempfile
+        from fastapi import HTTPException
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(HTTPException):
+                server._inspect_archive_dir(td)
+
+    def test_endpoints_and_ui_exist(self):
+        import pathlib
+        root = pathlib.Path(server.__file__).resolve().parent.parent
+        src = pathlib.Path(server.__file__).read_text(encoding="utf-8")
+        self.assertIn("/api/archives/restore-path/preview", src)
+        self.assertIn("/api/archives/restore-path", src)
+        js = (root / "web_ui" / "static" / "js" / "archive.js").read_text(
+            encoding="utf-8")
+        self.assertIn("restoreExternalArchive", js)
+        html = (root / "web_ui" / "templates" / "index.html").read_text(
+            encoding="utf-8")
+        self.assertIn("externalArchivePath", html)
+
+
 class BookOpenPerformanceTests(unittest.TestCase):
     """فتح إحالة لا يعيد تحليل ملف صفحات الكتاب كله عند كل جلسة،
     وموضعه يُجلب من قاموس مباشر — بطء ويندوز الفادح عند فتح الكتب

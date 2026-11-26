@@ -159,6 +159,16 @@ async function createSelectedArchive() {
   }
 }
 
+async function _afterArchiveRestore(data) {
+  if (data.restored_chats && typeof initChatHistory === 'function') await initChatHistory();
+  if (data.restored_projects && typeof loadProjectsData === 'function') await loadProjectsData();
+  if (data.restored_agents && typeof loadAgentGroups === 'function') await loadAgentGroups();
+  else if (data.restored_projects && typeof renderGroupsTable === 'function') renderGroupsTable();
+  if (data.restored_tools && typeof loadToolsList === 'function') await loadToolsList();
+  if (typeof msReloadProjects === 'function') await msReloadProjects();
+  if (typeof initReadingTab === 'function') await initReadingTab();
+}
+
 async function restoreArchiveCopy(archiveId) {
   const confirmed = await showConfirmDialog({
     title: 'استرجاع الأرشفة',
@@ -176,16 +186,86 @@ async function restoreArchiveCopy(archiveId) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'تعذر الاسترجاع');
-    if (data.restored_chats && typeof initChatHistory === 'function') await initChatHistory();
-    if (data.restored_projects && typeof loadProjectsData === 'function') await loadProjectsData();
-    if (data.restored_agents && typeof loadAgentGroups === 'function') await loadAgentGroups();
-    else if (data.restored_projects && typeof renderGroupsTable === 'function') renderGroupsTable();
-    if (data.restored_tools && typeof loadToolsList === 'function') await loadToolsList();
-    if (typeof msReloadProjects === 'function') await msReloadProjects();
-    if (typeof initReadingTab === 'function') await initReadingTab();
+    await _afterArchiveRestore(data);
     showToast('تمت استعادة النسخة المؤرشفة');
   } catch (err) {
     showToast(err.message);
+  }
+}
+
+async function pickExternalArchiveFolder() {
+  const input = document.getElementById('externalArchivePath');
+  const msg = document.getElementById('externalArchiveMsg');
+  try {
+    let picked = null;
+    if (typeof _pickFolderViaHost === 'function') {
+      picked = await _pickFolderViaHost('اختر مجلد النسخة المؤرشفة (الذي يحتوي ملف وصفها)');
+    }
+    if (picked === null) {
+      const res = await fetch('/api/workspace/pick', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'تعذر اختيار المجلد');
+      picked = data.path || '';
+    }
+    if (picked) {
+      if (input) input.value = picked;
+      if (msg) { msg.style.color = '#166534'; msg.textContent = `المجلد المحدد: ${picked} — اضغط «معاينة واسترجاع».`; }
+    }
+  } catch (err) {
+    if (msg) { msg.style.color = '#991b1b'; msg.textContent = err.message; }
+  }
+}
+
+async function restoreExternalArchive() {
+  const input = document.getElementById('externalArchivePath');
+  const msg = document.getElementById('externalArchiveMsg');
+  const path = (input?.value || '').trim();
+  if (!path) {
+    if (msg) { msg.style.color = '#991b1b'; msg.textContent = 'حدّد مجلد النسخة المؤرشفة أولًا أو اكتب مساره.'; }
+    input?.focus();
+    return;
+  }
+  const say = (text, ok) => {
+    if (msg) { msg.style.color = ok ? '#166534' : '#991b1b'; msg.textContent = text; }
+  };
+  try {
+    say('جارٍ فحص المجلد...', true);
+    const pv = await fetch('/api/archives/restore-path/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    const info = await pv.json().catch(() => ({}));
+    if (!pv.ok) throw new Error(info.detail || 'تعذّر فحص المجلد');
+    say('', true);
+    const lines = [
+      info.note ? `الوصف: ${info.note}` : '',
+      info.scope_label ? `المحتوى: ${info.scope_label}` : '',
+      info.summary ? `التفاصيل: ${info.summary}` : '',
+      info.created_at ? `تاريخ الأرشفة: ${info.created_at}` : ''
+    ].filter(Boolean).join('\n');
+    const confirmed = await showConfirmDialog({
+      title: 'استرجاع نسخة من مجلد خارجي',
+      message: `${lines}\n\nسيعود هذا المحتوى إلى التطبيق مكان البيانات الحالية من النوع نفسه.`,
+      confirmText: 'استرجاع النسخة',
+      cancelText: 'إلغاء',
+      icon: 'archive-restore'
+    });
+    if (!confirmed) return;
+    say('جارٍ الاسترجاع...', true);
+    const res = await fetch('/api/archives/restore-path', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر الاسترجاع');
+    await _afterArchiveRestore(data);
+    await loadArchiveList();
+    say(`تمت استعادة النسخة من: ${path}`, true);
+    showToast('تمت استعادة النسخة المؤرشفة من المجلد الخارجي');
+  } catch (err) {
+    say(err.message, false);
   }
 }
 
