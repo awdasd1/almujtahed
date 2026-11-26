@@ -9998,7 +9998,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.854"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.855"},
         },
     })
     if opened.get("error"):
@@ -30504,12 +30504,16 @@ def _native_pick_folder() -> Optional[str]:
     return None
 
 
+_BOOT_ID = f"{os.getpid()}:{int(time.time())}"
+
+
 @app.get("/api/workspace/status")
 async def workspace_status(request: Request):
     return {
         "configured": not WORKSPACE_REQUIRED,
         "required": WORKSPACE_REQUIRED,
         "path": str(WORKSPACE_PATH) if WORKSPACE_PATH else "",
+        "boot": _BOOT_ID,
     }
 
 

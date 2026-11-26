@@ -116,15 +116,30 @@ async function _workspaceSaved(data) {
   const input = document.getElementById('workspacePathInput');
   if (input && data && data.path) input.value = data.path;
   if (msg) { msg.style.color = '#166534'; msg.textContent = `حُفظ المجلد: ${data?.path || ''} — يُعاد تشغيل المغني الآن...`; }
-  for (let i = 0; i < 40; i++) {
+  // لا تُعد التحميل إلا من خادم جديد فعلًا (بصمة إقلاع مختلفة وبالمسار
+  // المحفوظ نفسه)؛ قراءة الجاهزية من الخادم القديم قبل موته كانت تحمل
+  // الصفحة في فجوة إعادة التشغيل فتعلق على شاشة الانتظار.
+  const bootBefore = window.__workspaceBootBefore || '';
+  for (let i = 0; i < 60; i++) {
     await new Promise(r => setTimeout(r, 750));
     try {
       const res = await fetch('/api/workspace/status');
       const st = await res.json();
-      if (st && st.configured) { location.reload(); return; }
+      if (st && st.configured && st.boot && st.boot !== bootBefore
+          && (!data?.path || st.path === data.path)) {
+        location.reload();
+        return;
+      }
     } catch (e) { /* يُعاد التشغيل */ }
   }
   location.reload();
+}
+
+async function _captureBootBefore() {
+  try {
+    const st = await (await fetch('/api/workspace/status')).json();
+    window.__workspaceBootBefore = st.boot || '';
+  } catch (e) { window.__workspaceBootBefore = ''; }
 }
 
 async function pickWorkspaceFolder() {
@@ -154,6 +169,7 @@ async function setWorkspaceFolderManual() {
   const msg = document.getElementById('workspaceGateMsg');
   const path = (input?.value || '').trim();
   if (!path) { if (msg) msg.textContent = 'اكتب مسار المجلد أولًا'; return; }
+  await _captureBootBefore();
   _workspaceBusy(true, 'جارٍ حفظ المجلد...');
   try {
     const res = await fetch('/api/workspace/set', {

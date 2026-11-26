@@ -1186,7 +1186,27 @@ sealed class AppForm : Form
     Microsoft.Web.WebView2.Core.CoreWebView2Environment? environment;
     bool wired;
     string? pendingUrl;
+    bool navRetrying;
     public bool PageReady { get; private set; }
+
+    async Task RetryNavigateLater(Microsoft.Web.WebView2.Core.CoreWebView2 web)
+    {
+        if (navRetrying) return;
+        navRetrying = true;
+        try
+        {
+            while (!PageReady && !IsDisposed)
+            {
+                await Task.Delay(3000);
+                if (PageReady || IsDisposed) break;
+                var url = string.IsNullOrEmpty(pendingUrl) ? "http://127.0.0.1:8085/" : pendingUrl;
+                try { web.Navigate(url); } catch { }
+                await Task.Delay(2000);
+            }
+        }
+        catch { }
+        finally { navRetrying = false; }
+    }
 
     internal const string HideScrollbarsScript = @"
 (() => {
@@ -1356,6 +1376,10 @@ sealed class AppForm : Form
                     PageReady = false;
                     web.CoreWebView2.NavigateToString(
                         "<html dir='rtl'><body style='margin:0;background:#f1e9dc;color:#2a221a;font-family:Segoe UI,Tahoma,sans-serif;display:flex;height:100vh;align-items:center;justify-content:center;font-size:22px'>جاري فتح التطبيق</body></html>");
+                    // إعادة محاولة دورية: صفحة الانتظار الجامدة كانت قبرًا
+                    // عند أي إعادة تشغيل للخادم (كمجلد الحفظ) — تُبحر من
+                    // جديد كل ثوانٍ حتى يقوم الخادم فتعود الواجهة وحدها.
+                    _ = RetryNavigateLater(web.CoreWebView2);
                 };
             }
             if (!Visible)

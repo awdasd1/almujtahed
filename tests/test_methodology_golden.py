@@ -252,6 +252,19 @@ class RuntimeLensTests(unittest.TestCase):
         self.assertIsNone(server._named_hadith_matn("حديث النية"))
 
 
+class WorkspaceBootIdTests(unittest.TestCase):
+    """حالة مساحة العمل تحمل بصمة إقلاع العملية حتى لا تقرأ الواجهة
+    جاهزية خادم قديم يموت أثناء إعادة التشغيل بعد حفظ المجلد."""
+
+    def test_status_has_boot_id(self):
+        import asyncio
+        from starlette.requests import Request
+        req = Request({"type": "http", "method": "GET",
+                       "path": "/api/workspace/status", "headers": []})
+        out = asyncio.run(server.workspace_status(req))
+        self.assertTrue(out.get("boot"))
+
+
 class WorkspacePickConfirmTests(unittest.TestCase):
     """اختيار مجلد الحفظ لا يحفظ ولا ينشئ شيئًا وحده؛ الحفظ بضغطة
     «حفظ المجلد» تأكيدًا فقط."""
