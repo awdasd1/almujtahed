@@ -169,9 +169,46 @@ async function setWorkspaceFolderManual() {
   }
 }
 
+async function refreshWorkspacePathLabel() {
+  const el = document.getElementById('workspaceCurrentPath');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/workspace/status');
+    const data = await res.json();
+    el.textContent = data.path || 'غير محدد بعد';
+  } catch (e) { el.textContent = ''; }
+}
+
+async function changeWorkspaceFolder() {
+  const confirmed = await showConfirmDialog({
+    title: 'تغيير مجلد الحفظ الآمن',
+    message: 'سيُعاد تشغيل المغني ثم يطلب منك تحديد مجلد الحفظ من جديد. بيانات المجلد الحالي لا تُحذف، وإن أعدت تحديده عادت أعماله كاملة.',
+    confirmText: 'نعم، تغيير المجلد',
+    cancelText: 'إلغاء',
+    icon: 'folder-open'
+  });
+  if (!confirmed) return;
+  try {
+    const res = await fetch('/api/workspace/reset', { method: 'POST' });
+    if (!res.ok) throw new Error('تعذر بدء التغيير');
+    showToast('يُعاد التشغيل الآن لتحديد المجلد الجديد');
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 750));
+      try {
+        const st = await (await fetch('/api/workspace/status')).json();
+        if (st && st.required) { location.reload(); return; }
+      } catch (e) { /* يُعاد التشغيل */ }
+    }
+    location.reload();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
 // تهيئة التطبيق عند اكتمال تحميل الصفحة
 document.addEventListener('DOMContentLoaded', () => {
   checkWorkspaceGate();
+  refreshWorkspacePathLabel();
   loadSettings();
   initTheme();
   applyVisualLab();

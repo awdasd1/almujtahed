@@ -9998,7 +9998,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.853"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.854"},
         },
     })
     if opened.get("error"):
@@ -30527,6 +30527,20 @@ async def workspace_pick(request: Request):
         raise HTTPException(status_code=400,
                             detail="أُلغي الاختيار أو تعذّر فتح نافذة المجلدات")
     return {"status": "picked", "path": picked}
+
+
+@app.post("/api/workspace/reset")
+async def workspace_reset(request: Request):
+    """نسيان مجلد الحفظ الحالي وإعادة سؤال المستخدم عند الإقلاع التالي.
+
+    بيانات المجلد القديم لا تُحذف؛ إن أعاد تحديده عاد كل شيء."""
+    require_admin(request)
+    try:
+        _WORKSPACE_POINTER.unlink(missing_ok=True)
+    except Exception:
+        pass
+    threading.Timer(0.8, _restart_self).start()
+    return {"status": "ok", "restarting": True}
 
 
 @app.post("/api/workspace/set")
