@@ -231,6 +231,7 @@ sealed class InstallerForm : Form
     bool openedApp;
     bool ready;
     bool checking;
+    int downProbes;
     int engineRestarts;
     DateTime lastSampleAt = DateTime.Now;
     long lastSampleBytes;
@@ -1055,10 +1056,23 @@ sealed class InstallerForm : Form
 
     async Task ProbeInterface()
     {
-        if (checking || ready) return;
+        if (checking || quitting) return;
         checking = true;
         try
         {
+            if (ready)
+            {
+                // إحياء ذاتي: خادم ميت ومحرك ميت معًا لا يتركان
+                // التطبيق على شاشة انتظار أبدية؛ يُعاد تشغيل المحرك.
+                // أثناء إعادة تشغيل مقصودة يبقى المحرك حيًا (حلقة
+                // المشرف) فلا يتدخل هذا الصمام أبدًا.
+                if (await InterfaceIsUp()) { downProbes = 0; return; }
+                if (++downProbes < 3) return;
+                downProbes = 0;
+                if (engine == null || engine.HasExited)
+                    StartEngine();
+                return;
+            }
             if (!await InterfaceIsUp()) return;
             openButton.Active = true;
             engineRestarts = 0;
@@ -1331,7 +1345,9 @@ sealed class AppForm : Form
                                 Description = string.IsNullOrWhiteSpace(prompt)
                                     ? "اختر مجلد المكتبة الشاملة (الذي يحتوي مجلد database)"
                                     : prompt,
-                                ShowNewFolderButton = false
+                                // مجلد الحفظ الآمن قد يكون جديدًا ينشئه
+                                // المستخدم من الحوار نفسه.
+                                ShowNewFolderButton = true
                             })
                             {
                                 if (dialog.ShowDialog(this) == DialogResult.OK)

@@ -142,22 +142,60 @@ async function _captureBootBefore() {
   } catch (e) { window.__workspaceBootBefore = ''; }
 }
 
-async function pickWorkspaceFolder() {
+function _pickFolderViaHost(promptText) {
+  // حوار نظامي تملكه نافذة التطبيق نفسها (ويندوز WebView2 / ماك
+  // WKWebView): يظهر أمامها فورًا وبتركيز صحيح. يعيد null عند غياب
+  // الجسر (متصفح عادي) فيُستخدم منتقي الخادم احتياطًا، و'' عند
+  // إلغاء المستخدم. منتقي الخادم القديم (عملية Tk فرعية بلا نافذة
+  // مالكة) كان ينفتح خلف نافذة التطبيق فيُحسب تعليقًا.
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.almoghni) {
+    return chooseNativeFolder(promptText);
+  }
+  if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+    return new Promise((resolve) => {
+      const handler = (e) => {
+        try {
+          const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+          if (d && 'almoghniFolder' in d) {
+            window.chrome.webview.removeEventListener('message', handler);
+            resolve(d.almoghniFolder || '');
+          }
+        } catch (_) { /* رسائل أخرى */ }
+      };
+      window.chrome.webview.addEventListener('message', handler);
+      window.chrome.webview.postMessage(JSON.stringify({ action: 'chooseFolder', prompt: promptText }));
+    });
+  }
+  return Promise.resolve(null);
+}
+
+function _workspacePicked(path) {
   const msg = document.getElementById('workspaceGateMsg');
   const input = document.getElementById('workspacePathInput');
+  // اختيار فقط: لا حفظ ولا إنشاء قبل تأكيد المستخدم صراحة
+  if (input && path) input.value = path;
+  _workspaceBusy(false);
+  if (msg) {
+    msg.style.color = '#166534';
+    msg.textContent = `المجلد المختار: ${path} — راجعه ثم اضغط «حفظ المجلد» للتأكيد. لن يُنشأ أي مجلد ولن يُحفظ شيء قبل التأكيد.`;
+  }
+  document.getElementById('workspaceSetBtn')?.focus();
+}
+
+async function pickWorkspaceFolder() {
+  const msg = document.getElementById('workspaceGateMsg');
   _workspaceBusy(true, 'افتح نافذة اختيار المجلد الظاهرة أمامك وحدّد المجلد ثم اضغط موافق...');
   try {
+    const hosted = await _pickFolderViaHost('اختر مجلد الحفظ الآمن لأعمال المغني');
+    if (hosted !== null) {
+      if (!hosted) throw new Error('أُلغي الاختيار أو تعذّر فتح نافذة المجلدات');
+      _workspacePicked(hosted);
+      return;
+    }
     const res = await fetch('/api/workspace/pick', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذر اختيار المجلد');
-    // اختيار فقط: لا حفظ ولا إنشاء قبل تأكيد المستخدم صراحة
-    if (input && data.path) input.value = data.path;
-    _workspaceBusy(false);
-    if (msg) {
-      msg.style.color = '#166534';
-      msg.textContent = `المجلد المختار: ${data.path} — راجعه ثم اضغط «حفظ المجلد» للتأكيد. لن يُنشأ أي مجلد ولن يُحفظ شيء قبل التأكيد.`;
-    }
-    document.getElementById('workspaceSetBtn')?.focus();
+    _workspacePicked(data.path);
   } catch (err) {
     _workspaceBusy(false);
     if (msg) { msg.style.color = '#991b1b'; msg.textContent = err.message; }

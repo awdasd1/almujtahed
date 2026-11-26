@@ -242,13 +242,22 @@ $runner = Join-Path $Runtime '.venv\Scripts\pythonw.exe'
 if (-not (Test-Path -LiteralPath $runner)) { $runner = $venvPython }
 $env:ALMOGHNI_LOG_FILE = $LogFile
 $ErrorActionPreference = 'Continue'
-$proc = New-Object System.Diagnostics.Process
-$proc.StartInfo.FileName = $runner
-$proc.StartInfo.Arguments = "-X utf8 -u `"$script`""
-$proc.StartInfo.WorkingDirectory = $Runtime
-$proc.StartInfo.UseShellExecute = $false
-$proc.StartInfo.CreateNoWindow = $true
-$proc.StartInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-[void]$proc.Start()
-$proc.WaitForExit()
-exit $proc.ExitCode
+# حلقة المشرف: خروج الخادم بالرمز 17 يعني «أعد تشغيلي» (بعد حفظ مجلد
+# الحفظ مثلًا) فيُعاد إقلاعه من هنا عبر start_local.py كاملًا — نفس
+# طبقة الإقلاع الأول بسجلّها وبيئتها. كان الخادم يولّد نسخة منفصلة
+# بلا مجارٍ إخراج فتموت فورًا بصمت ولا يعيدها أحد.
+$restartCode = 17
+while ($true) {
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo.FileName = $runner
+    $proc.StartInfo.Arguments = "-X utf8 -u `"$script`""
+    $proc.StartInfo.WorkingDirectory = $Runtime
+    $proc.StartInfo.UseShellExecute = $false
+    $proc.StartInfo.CreateNoWindow = $true
+    $proc.StartInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    [void]$proc.Start()
+    $proc.WaitForExit()
+    if ($proc.ExitCode -ne $restartCode) { exit $proc.ExitCode }
+    Add-Content -LiteralPath $LogFile -Value 'restart requested by server (exit 17) - relaunching' -Encoding UTF8
+    Start-Sleep -Seconds 1
+}

@@ -10013,7 +10013,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.856"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.857"},
         },
     })
     if opened.get("error"):
@@ -30410,19 +30410,20 @@ class WorkspaceSetRequest(BaseModel):
     path: str
 
 
+# رمز خروج «أعد تشغيلي»: في ويندوز يلتقطه launch.ps1 فيعيد إقلاع
+# التطبيق عبر start_local.py كاملًا. لا توليد ذاتي أبدًا: التوليد
+# المباشر السابق ([pythonw, "server.py"] منفصلًا بلا مجارٍ إخراج)
+# كان يموت فورًا عند أول طباعة لأن pythonw المنفصل لا يملك
+# stdout/stderr صالحَين، وبصمت تام — فيتوقف السيرفر ولا يعيده أحد.
+_RESTART_EXIT_CODE = 17
+
+
 def _restart_self() -> None:
     if sys.platform.startswith("win"):
-        # ويندوز: لا exec حقيقي؛ عملية جديدة منفصلة ثم خروج الحالية،
-        # وبادئ التشغيل يقتل أي خادم قديم على المنفذ عند إقلاعه.
-        try:
-            import subprocess
-            flags = getattr(subprocess, "DETACHED_PROCESS", 0) | \
-                getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            subprocess.Popen([sys.executable] + sys.argv,
-                             creationflags=flags, close_fds=True)
-        except Exception:
-            pass
-        threading.Timer(1.0, lambda: os._exit(0)).start()
+        # خروج برمز إعادة التشغيل، والمشرف (launch.ps1 تحت نافذة
+        # التطبيق) يعيد الإقلاع من الطبقة نفسها التي ربطت السجل
+        # والمجلد والبيئة أول مرة — إقلاع مطابق للأول دائمًا.
+        threading.Timer(1.0, lambda: os._exit(_RESTART_EXIT_CODE)).start()
         return
     try:
         os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -30484,7 +30485,7 @@ def _native_pick_folder() -> Optional[str]:
                 "r.withdraw()\n"
                 "r.attributes('-topmost', True)\n"
                 "r.update()\n"
-                f"p = filedialog.askdirectory(title='اختر مجلد الحفظ الآمن لأعمال المغني', initialdir='{home}', mustexist=False)\n"
+                f"p = filedialog.askdirectory(title='اختر مجلد الحفظ الآمن لأعمال المغني', initialdir='{home}', mustexist=False, parent=r)\n"
                 "r.destroy()\n"
                 "print(p or '')\n"
             )

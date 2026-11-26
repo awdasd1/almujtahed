@@ -323,6 +323,56 @@ class WorkspacePickConfirmTests(unittest.TestCase):
             server.require_admin = orig_admin
 
 
+class SupervisorRestartContractTests(unittest.TestCase):
+    """إعادة تشغيل ويندوز بيد المشرف لا بتوليد ذاتي: الخادم يخرج برمز
+    إعادة التشغيل وlaunch.ps1 يعيد إقلاعه عبر start_local كاملًا.
+    التوليد المنفصل السابق ([pythonw, server.py] بلا مجارٍ إخراج)
+    كان يموت عند أول طباعة بصمت فيتوقف السيرفر نهائيًا."""
+
+    def test_windows_restart_exits_with_supervisor_code(self):
+        import os
+        import sys
+        from unittest import mock
+        captured = []
+
+        class FakeTimer:
+            def __init__(self, interval, fn):
+                self.fn = fn
+
+            def start(self):
+                self.fn()
+
+        def no_spawn(*a, **k):
+            raise AssertionError("توليد ذاتي ممنوع: الإعادة بيد المشرف")
+
+        with mock.patch.object(sys, "platform", "win32"), \
+                mock.patch.object(server.threading, "Timer", FakeTimer), \
+                mock.patch.object(os, "_exit",
+                                  side_effect=lambda c: captured.append(c)), \
+                mock.patch("subprocess.Popen", no_spawn):
+            server._restart_self()
+        self.assertEqual(captured, [server._RESTART_EXIT_CODE])
+
+    def test_launcher_loop_uses_same_code(self):
+        import pathlib
+        root = pathlib.Path(server.__file__).resolve().parent.parent
+        ps1 = (root / "windows" / "launch.ps1").read_text(encoding="utf-8")
+        self.assertIn(f"$restartCode = {server._RESTART_EXIT_CODE}", ps1)
+        self.assertIn("while ($true)", ps1)
+        src = pathlib.Path(server.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("Popen([sys.executable] + sys.argv", src)
+
+    def test_workspace_pick_prefers_host_bridge(self):
+        import pathlib
+        root = pathlib.Path(server.__file__).resolve().parent.parent
+        js = (root / "web_ui" / "static" / "js" / "app.js").read_text(
+            encoding="utf-8")
+        self.assertIn("_pickFolderViaHost", js)
+        self.assertIn("almoghniFolder", js)
+        self.assertLess(js.index("await _pickFolderViaHost"),
+                        js.index("fetch('/api/workspace/pick'"))
+
+
 class GpuProbeCacheTests(unittest.TestCase):
     """فحص كرت الشاشة/المحركات يُحسب مرة واحدة في عمر العملية؛ تكراره
     عند كل طلب موارد خنق خادم ويندوز عشرات الثواني لكل طلب."""
