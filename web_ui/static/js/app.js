@@ -102,9 +102,20 @@ async function checkWorkspaceGate() {
   } catch (e) { /* خادم قديم بلا هذه الخاصية */ }
 }
 
+function _workspaceBusy(busy, text) {
+  const pick = document.getElementById('workspacePickBtn');
+  const set = document.getElementById('workspaceSetBtn');
+  const msg = document.getElementById('workspaceGateMsg');
+  if (pick) { pick.disabled = busy; pick.style.opacity = busy ? .55 : ''; }
+  if (set) { set.disabled = busy; set.style.opacity = busy ? .55 : ''; }
+  if (msg && text !== undefined) { msg.style.color = '#5b4a2f'; msg.textContent = text; }
+}
+
 async function _workspaceSaved(data) {
   const msg = document.getElementById('workspaceGateMsg');
-  if (msg) { msg.style.color = '#166534'; msg.textContent = 'حُفظ المجلد. يُعاد تشغيل المغني الآن...'; }
+  const input = document.getElementById('workspacePathInput');
+  if (input && data && data.path) input.value = data.path;
+  if (msg) { msg.style.color = '#166534'; msg.textContent = `حُفظ المجلد: ${data?.path || ''} — يُعاد تشغيل المغني الآن...`; }
   for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 750));
     try {
@@ -118,13 +129,14 @@ async function _workspaceSaved(data) {
 
 async function pickWorkspaceFolder() {
   const msg = document.getElementById('workspaceGateMsg');
-  if (msg) msg.textContent = '';
+  _workspaceBusy(true, 'افتح نافذة اختيار المجلد الظاهرة أمامك وحدّد المجلد ثم اضغط موافق...');
   try {
     const res = await fetch('/api/workspace/pick', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذر اختيار المجلد');
     await _workspaceSaved(data);
   } catch (err) {
+    _workspaceBusy(false);
     if (msg) { msg.style.color = '#991b1b'; msg.textContent = err.message; }
   }
 }
@@ -134,6 +146,7 @@ async function setWorkspaceFolderManual() {
   const msg = document.getElementById('workspaceGateMsg');
   const path = (input?.value || '').trim();
   if (!path) { if (msg) msg.textContent = 'اكتب مسار المجلد أولًا'; return; }
+  _workspaceBusy(true, 'جارٍ حفظ المجلد...');
   try {
     const res = await fetch('/api/workspace/set', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -143,6 +156,7 @@ async function setWorkspaceFolderManual() {
     if (!res.ok) throw new Error(data.detail || 'تعذر حفظ المجلد');
     await _workspaceSaved(data);
   } catch (err) {
+    _workspaceBusy(false);
     if (msg) { msg.style.color = '#991b1b'; msg.textContent = err.message; }
   }
 }

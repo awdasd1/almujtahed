@@ -9998,7 +9998,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.850"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.851"},
         },
     })
     if opened.get("error"):
@@ -30396,6 +30396,19 @@ class WorkspaceSetRequest(BaseModel):
 
 
 def _restart_self() -> None:
+    if sys.platform.startswith("win"):
+        # ويندوز: لا exec حقيقي؛ عملية جديدة منفصلة ثم خروج الحالية،
+        # وبادئ التشغيل يقتل أي خادم قديم على المنفذ عند إقلاعه.
+        try:
+            import subprocess
+            flags = getattr(subprocess, "DETACHED_PROCESS", 0) | \
+                getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            subprocess.Popen([sys.executable] + sys.argv,
+                             creationflags=flags, close_fds=True)
+        except Exception:
+            pass
+        threading.Timer(1.0, lambda: os._exit(0)).start()
+        return
     try:
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception:
@@ -30430,6 +30443,11 @@ def _set_workspace(folder: Path) -> Dict[str, Any]:
 
 
 def _native_pick_folder() -> Optional[str]:
+    """نافذة اختيار مجلد نظامية في المقدمة دائمًا وبلا أي نافذة طرفية.
+
+    ويندوز: حوار Tkinter من عملية pythonw فرعية (لا كونسول إطلاقًا)
+    بنافذة أمّ مخفية في المقدمة؛ وكان حوار PowerShell قبله يفتح نافذة
+    طرفية ويختفي خلف نافذة التطبيق فيظنه المستخدم تجمّدًا."""
     import subprocess
     try:
         if sys.platform == "darwin":
@@ -30439,16 +30457,48 @@ def _native_pick_folder() -> Optional[str]:
                                  capture_output=True, text=True, timeout=600)
             return out.stdout.strip() or None
         if sys.platform.startswith("win"):
-            ps = (
-                "Add-Type -AssemblyName System.Windows.Forms;"
-                "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
-                "$d.Description = 'اختر مجلد الحفظ الآمن لأعمال المغني';"
-                "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }"
+            home = str(Path.home()).replace("\\", "\\\\")
+            code = (
+                "import tkinter as tk\n"
+                "from tkinter import filedialog\n"
+                "r = tk.Tk()\n"
+                "r.withdraw()\n"
+                "r.attributes('-topmost', True)\n"
+                "r.update()\n"
+                f"p = filedialog.askdirectory(title='اختر مجلد الحفظ الآمن لأعمال المغني', initialdir='{home}', mustexist=False)\n"
+                "r.destroy()\n"
+                "print(p or '')\n"
             )
-            out = subprocess.run(
-                ["powershell", "-NoProfile", "-STA", "-Command", ps],
-                capture_output=True, text=True, timeout=600)
-            return out.stdout.strip() or None
+            exe = Path(sys.executable)
+            pythonw = exe.with_name("pythonw.exe")
+            runner = str(pythonw) if pythonw.exists() else str(exe)
+            no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            try:
+                out = subprocess.run(
+                    [runner, "-c", code], capture_output=True, text=True,
+                    timeout=900, creationflags=no_window)
+                picked = (out.stdout or "").strip().splitlines()
+                if picked and picked[-1].strip():
+                    return picked[-1].strip()
+                if out.returncode == 0:
+                    return None  # ألغى المستخدم الاختيار
+                raise RuntimeError("tk picker failed")
+            except Exception:
+                ps = (
+                    "Add-Type -AssemblyName System.Windows.Forms;"
+                    "$f = New-Object System.Windows.Forms.Form;"
+                    "$f.TopMost = $true; $f.ShowInTaskbar = $false;"
+                    "$f.WindowState = 'Minimized'; $f.Opacity = 0; $f.Show();"
+                    "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+                    "$d.Description = 'اختر مجلد الحفظ الآمن لأعمال المغني';"
+                    "if ($d.ShowDialog($f) -eq 'OK') { $d.SelectedPath };"
+                    "$f.Close()"
+                )
+                out = subprocess.run(
+                    ["powershell", "-NoProfile", "-STA", "-Command", ps],
+                    capture_output=True, text=True, timeout=900,
+                    creationflags=no_window)
+                return (out.stdout or "").strip() or None
     except Exception:
         return None
     return None
@@ -30466,11 +30516,12 @@ async def workspace_status(request: Request):
 @app.post("/api/workspace/pick")
 async def workspace_pick(request: Request):
     require_admin(request)
-    picked = _native_pick_folder()
+    # في خيط مستقل: انتظار اختيار المستخدم لا يجمد خادم الواجهة
+    picked = await asyncio.to_thread(_native_pick_folder)
     if not picked:
         raise HTTPException(status_code=400,
                             detail="أُلغي الاختيار أو تعذّر فتح نافذة المجلدات")
-    result = _set_workspace(Path(picked))
+    result = await asyncio.to_thread(_set_workspace, Path(picked))
     threading.Timer(0.8, _restart_self).start()
     return result
 
@@ -30481,7 +30532,7 @@ async def workspace_set(req: WorkspaceSetRequest, request: Request):
     raw = (req.path or "").strip()
     if not raw:
         raise HTTPException(status_code=400, detail="اكتب مسار المجلد")
-    result = _set_workspace(Path(raw))
+    result = await asyncio.to_thread(_set_workspace, Path(raw))
     threading.Timer(0.8, _restart_self).start()
     return result
 
