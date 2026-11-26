@@ -4185,6 +4185,29 @@ input:checked+.slider-toggle:before {
   cursor: pointer;
 }
 
+.reader-lens-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface-elevated, #f6f1e7);
+}
+.reader-lens-input { flex: 1 1 260px; }
+.reader-lens-count { font-size: 12.5px; color: var(--text-muted); min-width: 90px; }
+mark.reader-lens-mark {
+  background: #ffe58a;
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(184, 137, 46, .35);
+}
+mark.reader-lens-mark.active {
+  background: #ffb703;
+  box-shadow: 0 0 0 2px rgba(184, 110, 10, .65);
+}
+
 .pdf-crop-box {
   position: absolute;
   border: 2px dashed #1971c2;
@@ -4304,13 +4327,6 @@ input:checked+.slider-toggle:before {
   text-align: justify;
 }
 
-.reader-highlight {
-  background-color: var(--accent-light);
-  color: var(--accent-clay);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-weight: 600;
-}
 
 .reader-footnotes-container {
   margin-top: 40px;
@@ -11763,7 +11779,6 @@ body::-webkit-scrollbar,
 #bookReaderModal { z-index: 100500; }
 #pdfViewerModal { z-index: 100600; }
 .ms-occ-snippet { font-size: 11.5px; opacity: .78; line-height: 1.8; margin: 2px 4px 6px; white-space: normal; }
-.reader-highlight { background: #ffe58a; color: inherit; padding: 0 2px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(184,137,46,.35); }
 .ms-ok-check { color: #2e9e5b; font-weight: 800; font-size: 13px; }
 .ms-auto-check { color: #b8860b; font-weight: 800; font-size: 13px; }
 .ms-enh-modal { width: min(1120px, 97vw); }

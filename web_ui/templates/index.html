@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.864 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.865 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -5611,9 +5611,25 @@
                         title="استيفاء السياق بعدد الصفحات السابقة واللاحقة الذي تختاره">
                         استيفاء السياق 🔄
                     </button>
+                    <button class="btn-flat-secondary reader-tool-btn" id="btnReaderLensSearch" onclick="toggleReaderLensSearch()"
+                        title="ابحث بنفسك عن عبارة الشاهد في الصفحة المعروضة">
+                        بحث بمنظار 🔍
+                    </button>
                 </div>
 
                 <span class="reader-select-hint">حدد نصاً لمدارسته</span>
+            </div>
+
+            <!-- شريط البحث بمنظار: بحث المستخدم بنفسه عن عبارة في المعروض -->
+            <div id="readerLensBar" class="reader-lens-bar" style="display: none;">
+                <input type="text" id="readerLensInput" class="filter-input reader-lens-input"
+                    placeholder="اكتب عبارة الشاهد للبحث عنها في الصفحة المعروضة…"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();runReaderLensSearch(true);}">
+                <button class="btn-flat-primary reader-tool-btn" onclick="runReaderLensSearch(true)">بحث</button>
+                <button class="btn-flat-secondary reader-tool-btn" onclick="readerLensNav(-1)">السابق</button>
+                <button class="btn-flat-secondary reader-tool-btn" onclick="readerLensNav(1)">التالي</button>
+                <span id="readerLensCount" class="reader-lens-count"></span>
+                <button class="btn-flat-secondary reader-tool-btn" onclick="toggleReaderLensSearch(false)">إغلاق</button>
             </div>
 
             <!-- لوحة بطاقة الكتاب المنبثقة (قابلة للطي) -->

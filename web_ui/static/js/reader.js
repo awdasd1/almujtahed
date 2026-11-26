@@ -654,14 +654,11 @@ function renderReaderBodyText() {
   // تحويل فواصل الأسطر والفقرات إلى فقرات منسقة
   const paragraphs = text.split(/\r?\n\r?\n/).map(p => p.trim()).filter(Boolean);
   let html = paragraphs.map(p => {
-    let pEscaped = escapeHtml(p);
-    // إبراز الشاهد المتصل وتظليله إذا كان مفتوحاً من نتيجة بحث
-    if (readerState.highlightText) pEscaped = highlightReaderPhrase(pEscaped, readerState.highlightText);
+    const pEscaped = escapeHtml(p);
     return `<p class="reader-paragraph">${pEscaped.replace(/\r?\n/g, '<br>')}</p>`;
   }).join('');
 
   bodyContainer.innerHTML = html || '<p style="color: var(--text-muted); text-align: center;">صفحة فارغة أو عنوان</p>';
-  scrollReaderToHighlight(bodyContainer);
 
   // عرض الحواشي إن وجدت
   if (readerState.footnotes) {
@@ -903,11 +900,8 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// تظليل الشاهد: مطابقة العبارة المتصلة أولًا (مع تجاوز الحركات داخل
-// الكلمات) والتمرير إليها، ولا نلجأ لكلمات متفرقة إلا عند غياب الشاهد.
-// نص الشاهد المقصود بحرفه: المنقول بين علامتي تنصيص، أو متن الحديث بعد
-// قال رسول الله، أو العبارة كما هي. الشاهد المعنوي لا يُستخرج منه شيء
-// فيُترك بلا تظليل مطلقًا في النص والمصوّرة.
+// نص الشاهد المقصود بحرفه لنقله إلى المحادثة: المنقول بين علامتي
+// تنصيص، أو متن الحديث بعد قال رسول الله، أو العبارة كما هي.
 function extractWitnessTarget(phrase) {
   const raw = String(phrase || '').replace(/\s+/g, ' ').trim();
   if (!raw) return '';
@@ -923,58 +917,127 @@ function extractWitnessTarget(phrase) {
   return raw.replace(/\s*\([^)]*\)\s*$/, '').trim() || raw;
 }
 
-function highlightReaderPhrase(escaped, phrase) {
-  const raw = String(phrase || '').replace(/\s+/g, ' ').trim();
-  if (!raw) return escaped;
-  // صياغة سؤال ليست شاهدًا فلا تظليل لها وإن وافقت ألفاظ العناوين
-  if (!/«[^»]{8,}»/.test(raw) && (/^(ما|ماذا|هل|متى|أين|كيف|لماذا|من|ما حكم|ما معنى)\b/.test(raw) || /[؟?]$/.test(raw))) return escaped;
-  const targets = [];
-  const target = extractWitnessTarget(raw);
-  if (target) targets.push(target);
-  if (target !== raw) targets.push(raw);
-  const charPat = ch => {
-    if ('يىئ'.includes(ch)) return '[يىئ]';
-    if ('اأإآٱ'.includes(ch)) return '[اأإآٱ]';
-    if ('وؤ'.includes(ch)) return '[وؤ]';
-    if ('ةه'.includes(ch)) return '[ةه]';
-    return escapeRegex(ch);
-  };
-  const tryWords = (words) => {
-    if (words.length < 2) return null;
-    const flexible = words.map(w => [...w].map(ch => charPat(ch) + '[\\u064B-\\u065F\\u0670\\u0640]*').join('')).join('\\s+');
-    try {
-      const exact = new RegExp(`(${flexible})`, 'g');
-      if (exact.test(escaped)) {
-        exact.lastIndex = 0;
-        return escaped.replace(exact, '<mark class="reader-highlight">$1</mark>');
-      }
-    } catch (e) { /* لا مطابقة حرفية */ }
-    return null;
-  };
-  for (const cand of targets) {
-    const wanted = readerState.showTashkeel ? cand : removeTashkeel(cand);
-    const hit = tryWords(wanted.split(/\s+/).filter(Boolean));
-    if (hit) return hit;
-  }
-  // شاهد طويل (مقطع حول المطابقة): يُظلَّل أول مقطع منطوق بحرفه منه في
-  // موضعه من الصفحة، فإن لم يوجد مقطع حرفي فلا تظليل (شاهد معنوي)
-  const base = readerState.showTashkeel ? target : removeTashkeel(target);
-  const allWords = base.split(/\s+/).filter(Boolean);
-  for (const size of [8, 5]) {
-    for (let off = 0; off + size <= allWords.length; off += 2) {
-      const hit = tryWords(allWords.slice(off, off + size));
-      if (hit) return hit;
-    }
-  }
-  return escaped;
+// =============================================================================
+// بحث بمنظار: المستخدم يبحث بنفسه عن عبارة في الصفحة المعروضة (وما
+// استُوفي من باقة الصفحات)، فتُظلَّل مواضعها ويُتنقَّل بينها. لا تحديد
+// تلقائي لأي شاهد — البحث بيد القارئ وحده.
+// =============================================================================
+
+let readerLensIdx = -1;
+
+function _lensCharPat(ch) {
+  if ('يىئ'.includes(ch)) return '[يىئ]';
+  if ('اأإآٱ'.includes(ch)) return '[اأإآٱ]';
+  if ('وؤ'.includes(ch)) return '[وؤ]';
+  if ('ةه'.includes(ch)) return '[ةه]';
+  return escapeRegex(ch);
 }
 
-function scrollReaderToHighlight(container) {
-  if (!container) return;
-  setTimeout(() => {
-    const mark = container.querySelector('mark.reader-highlight');
-    if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, 180);
+function _lensRegex(phrase) {
+  const words = String(phrase || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  if (!words.length) return null;
+  const src = words.map(w =>
+    [...w].map(ch => _lensCharPat(ch) + '[\\u064B-\\u065F\\u0670\\u0640]*').join('')
+  ).join('\\s+');
+  try { return new RegExp(src, 'g'); } catch (e) { return null; }
+}
+
+function _lensMarks() {
+  const body = document.getElementById('readerPageBody');
+  return body ? [...body.querySelectorAll('mark.reader-lens-mark')] : [];
+}
+
+function clearReaderLensMarks() {
+  const body = document.getElementById('readerPageBody');
+  if (body) {
+    body.querySelectorAll('mark.reader-lens-mark').forEach(m => {
+      m.replaceWith(document.createTextNode(m.textContent));
+    });
+    body.normalize();
+  }
+  readerLensIdx = -1;
+  const count = document.getElementById('readerLensCount');
+  if (count) count.textContent = '';
+}
+
+function toggleReaderLensSearch(force) {
+  const bar = document.getElementById('readerLensBar');
+  if (!bar) return;
+  const show = typeof force === 'boolean' ? force : bar.style.display === 'none';
+  bar.style.display = show ? 'flex' : 'none';
+  const btn = document.getElementById('btnReaderLensSearch');
+  if (btn) btn.classList.toggle('active', show);
+  if (!show) { clearReaderLensMarks(); return; }
+  const input = document.getElementById('readerLensInput');
+  if (input) {
+    if (!input.value.trim() && readerState.highlightText) {
+      input.value = extractWitnessTarget(readerState.highlightText);
+      if (input.value.trim()) { runReaderLensSearch(true); return; }
+    }
+    input.focus();
+    input.select();
+  }
+}
+
+function _lensGoTo(idx) {
+  const marks = _lensMarks();
+  if (!marks.length) return;
+  readerLensIdx = ((idx % marks.length) + marks.length) % marks.length;
+  marks.forEach((m, i) => m.classList.toggle('active', i === readerLensIdx));
+  marks[readerLensIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const count = document.getElementById('readerLensCount');
+  if (count) count.textContent = `${readerLensIdx + 1} من ${marks.length}`;
+}
+
+function runReaderLensSearch(reset) {
+  const input = document.getElementById('readerLensInput');
+  const body = document.getElementById('readerPageBody');
+  const count = document.getElementById('readerLensCount');
+  if (!input || !body) return;
+  const phrase = input.value.trim();
+  clearReaderLensMarks();
+  if (!phrase) { showToast('اكتب عبارة الشاهد أولاً'); return; }
+  const re = _lensRegex(phrase);
+  if (!re) { showToast('عبارة بحث غير صالحة'); return; }
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.nodeValue && n.nodeValue.trim() &&
+      !n.parentElement.closest('mark, script, style'))
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  let hits = 0;
+  for (const node of nodes) {
+    const text = node.nodeValue;
+    re.lastIndex = 0;
+    if (!re.test(text)) continue;
+    re.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      const mark = document.createElement('mark');
+      mark.className = 'reader-lens-mark';
+      mark.textContent = m[0];
+      frag.appendChild(mark);
+      hits++;
+      last = m.index + m[0].length;
+      if (!m[0].length) re.lastIndex++;
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    node.replaceWith(frag);
+  }
+  if (!hits) {
+    if (count) count.textContent = 'لا مواضع في المعروض';
+    showToast('لا مواضع لهذه العبارة في الصفحة المعروضة — وسّع باستيفاء السياق أو جرّب عبارة أقصر');
+    return;
+  }
+  _lensGoTo(0);
+}
+
+function readerLensNav(dir) {
+  if (!_lensMarks().length) { runReaderLensSearch(true); return; }
+  _lensGoTo(readerLensIdx + (dir || 1));
 }
 
 // =============================================================================
@@ -1163,8 +1226,7 @@ async function loadSurroundingPagesView() {
 
       const pParas = text.split(/\r?\n\r?\n/).map(pr => pr.trim()).filter(Boolean);
       let pBodyHtml = pParas.map(pr => {
-        let esc = escapeHtml(pr);
-        if (isTarget && readerState.highlightText) esc = highlightReaderPhrase(esc, readerState.highlightText);
+        const esc = escapeHtml(pr);
         return `<p class="reader-paragraph">${esc.replace(/\r?\n/g, '<br>')}</p>`;
       }).join('');
 
@@ -1199,10 +1261,8 @@ async function loadSurroundingPagesView() {
 
     bodyContainer.innerHTML = html;
 
-    // التمرير التلقائي للشاهد المظلل، ثم للصفحة المستهدفة عند غيابه
-    scrollReaderToHighlight(bodyContainer);
+    // التمرير التلقائي للصفحة المستهدفة
     setTimeout(() => {
-      if (bodyContainer.querySelector('mark.reader-highlight')) return;
       const targetEl = bodyContainer.querySelector('.surrounding-page-card.target-page');
       if (targetEl) {
         targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });

@@ -810,6 +810,16 @@ class RemovedFeaturesTests(unittest.TestCase):
         self.assertTrue(hasattr(shamela_pdf, "ocr_region_text"),
                         "قصاصة OCR بقيت — ليست هي المزالة")
 
+    def test_no_auto_highlight_on_text_and_lens_search_exists(self):
+        reader = self._read("web_ui/static/js/reader.js")
+        self.assertNotIn("highlightReaderPhrase", reader,
+                         "تحديد الشاهد التلقائي على الكتاب النصي مُزال")
+        index = self._read("web_ui/templates/index.html")
+        self.assertIn("btnReaderLensSearch", index)
+        self.assertIn("readerLensInput", index)
+        self.assertIn("runReaderLensSearch", reader)
+        self.assertIn("readerLensNav", reader)
+
 
 class MethodologyContractTests(unittest.TestCase):
     """حراس نصية لعقود المنهجية حتى لا تُسقطها طبقة لاحقة بصمت."""
