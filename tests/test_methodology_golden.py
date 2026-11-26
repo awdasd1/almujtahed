@@ -666,6 +666,40 @@ class VirtualBookTests(unittest.TestCase):
                 server.BOOK_PAGE_INDEX_CACHE.pop(rel, None)
 
 
+class VirtualResolveTests(unittest.TestCase):
+    """حلّ القراءة لكتاب غير مستخرج يحتفظ بمسار الكتالوج ويصل الافتراضي
+    (كان مسار الكتالوج يضيع لأن باحث ملف الصفحات يعيد None مزدوجًا)."""
+
+    def test_resolve_keeps_catalog_rel_for_virtual(self):
+        class FakeCursor:
+            def execute(self, *a):
+                pass
+
+            def fetchone(self):
+                return {"rel_path": "shamela4_data/01__x/8586__y"}
+
+        class FakeDB:
+            def cursor(self):
+                return FakeCursor()
+
+        saved = {}
+        for name in ("get_db", "_pages_file_for_rel", "_virtual_index"):
+            saved[name] = getattr(server, name)
+        try:
+            server.get_db = lambda: FakeDB()
+            server._pages_file_for_rel = lambda r: (None, None)
+            sentinel = {"virtual": True, "entries": []}
+            server._virtual_index = lambda rel, bid=None: sentinel
+            rel, pages, virt = server._resolve_book_for_reading(
+                None, None, 8586)
+            self.assertEqual(rel, "01__x/8586__y")
+            self.assertIsNone(pages)
+            self.assertIs(virt, sentinel)
+        finally:
+            for name, value in saved.items():
+                setattr(server, name, value)
+
+
 class BookOpenPerformanceTests(unittest.TestCase):
     """فتح إحالة لا يعيد تحليل ملف صفحات الكتاب كله عند كل جلسة،
     وموضعه يُجلب من قاموس مباشر — بطء ويندوز الفادح عند فتح الكتب

@@ -6572,12 +6572,19 @@ def _resolve_book_for_reading(rel_path, book_title, book_id):
                         row["rel_path"])
                     if pages_file:
                         return resolved_rel, pages_file, None
+                    # غير مستخرج: احتفظ بمسار الكتالوج للمحاولة الافتراضية
+                    # (_pages_file_for_rel يعيد None للمسارين معًا).
+                    resolved_rel = str(row["rel_path"]).replace(
+                        "\\", "/").replace("shamela4_data/", "").strip("/")
             except Exception:
                 pass
     r2, p2 = resolve_book_path(rel_path, book_title, None)
     if p2:
         return r2, p2, None
     resolved_rel = resolved_rel or r2
+    if not resolved_rel and rel_path:
+        resolved_rel = str(rel_path).replace(
+            "\\", "/").replace("shamela4_data/", "").strip("/")
     if resolved_rel:
         virt = _virtual_index(resolved_rel, bid)
         if virt is not None:
@@ -10230,7 +10237,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.861"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.862"},
         },
     })
     if opened.get("error"):
