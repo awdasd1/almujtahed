@@ -1162,21 +1162,30 @@ def _os_label():
     return pretty, ubuntu
 
 
+_GPU_ENGINE_CACHE: Dict[str, Any] = {}
+
+
 def _llama_supports_gpu() -> bool:
-    try:
-        from llama_cpp import llama_cpp
-        fn = getattr(llama_cpp, "llama_supports_gpu_offload", None)
-        return bool(fn()) if fn else False
-    except Exception:
-        return False
+    # تُحسب مرة واحدة في العمر: استيراد المحركات عند كل طلب موارد كان
+    # يخنق خادم ويندوز عشرات الثواني (فحص torch غير المثبّتة أصلًا).
+    if "llama" not in _GPU_ENGINE_CACHE:
+        try:
+            from llama_cpp import llama_cpp
+            fn = getattr(llama_cpp, "llama_supports_gpu_offload", None)
+            _GPU_ENGINE_CACHE["llama"] = bool(fn()) if fn else False
+        except Exception:
+            _GPU_ENGINE_CACHE["llama"] = False
+    return _GPU_ENGINE_CACHE["llama"]
 
 
 def _torch_cuda_ready() -> bool:
-    try:
-        import torch
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
+    if "torch" not in _GPU_ENGINE_CACHE:
+        try:
+            import torch
+            _GPU_ENGINE_CACHE["torch"] = bool(torch.cuda.is_available())
+        except Exception:
+            _GPU_ENGINE_CACHE["torch"] = False
+    return _GPU_ENGINE_CACHE["torch"]
 
 
 def _pick_torch_device() -> str:
@@ -1184,14 +1193,15 @@ def _pick_torch_device() -> str:
         return "cpu"
     if _torch_cuda_ready():
         return "cuda"
-    try:
-        import torch
-        mps = getattr(torch.backends, "mps", None)
-        if mps and torch.backends.mps.is_available():
-            return "mps"
-    except Exception:
-        return "cpu"
-    return "cpu"
+    if "mps" not in _GPU_ENGINE_CACHE:
+        try:
+            import torch
+            mps = getattr(torch.backends, "mps", None)
+            _GPU_ENGINE_CACHE["mps"] = bool(
+                mps and torch.backends.mps.is_available())
+        except Exception:
+            _GPU_ENGINE_CACHE["mps"] = False
+    return "mps" if _GPU_ENGINE_CACHE["mps"] else "cpu"
 
 
 def _desired_gpu_layers() -> int:
@@ -1208,14 +1218,17 @@ def _mark_llama_runtime(model, layers: int):
 
 
 def _engine_can_use_gpu() -> bool:
-    if _llama_supports_gpu() or _torch_cuda_ready():
-        return True
-    try:
-        import torch
-        mps = getattr(torch.backends, "mps", None)
-        return bool(mps and torch.backends.mps.is_available())
-    except Exception:
-        return False
+    if "engine" not in _GPU_ENGINE_CACHE:
+        ready = _llama_supports_gpu() or _torch_cuda_ready()
+        if not ready:
+            try:
+                import torch
+                mps = getattr(torch.backends, "mps", None)
+                ready = bool(mps and torch.backends.mps.is_available())
+            except Exception:
+                ready = False
+        _GPU_ENGINE_CACHE["engine"] = ready
+    return _GPU_ENGINE_CACHE["engine"]
 
 
 def _parse_nvidia_smi(text: str):
@@ -9985,7 +9998,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.849"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.850"},
         },
     })
     if opened.get("error"):

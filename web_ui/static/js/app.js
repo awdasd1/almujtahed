@@ -1885,14 +1885,30 @@ function loadSettings() {
   }
   applyMsVisual();
   // بذرة الضبط المشحونة مع النسخة الافتراضية (خطوط وألوان وصور): تُزرع
-  // مرة واحدة عند أول تشغيل بلا ضبط محفوظ، ولا تعلو على ضبط المستخدم.
-  if (!stored && !window.__almoghniSeedSettingsTried) {
+  // عند أول تشغيل بلا ضبط محفوظ، وتُرقّي مظهر التنصيبات القائمة التي
+  // سبقتها (seedVersion أقدم أو بلا نمط «الافتراضي») — المظهر فقط،
+  // فالمفاتيح ومعلمات النموذج وضبط المستخدم اللاحق لا تُمسّ.
+  if (!window.__almoghniSeedSettingsTried) {
     window.__almoghniSeedSettingsTried = true;
     fetch('/static/default_settings.json').then(r => (r.ok ? r.json() : null)).then(seed => {
-      if (!seed || localStorage.getItem(STORAGE_KEYS.SETTINGS)) return;
-      delete seed.providers;
+      if (!seed) return;
       if (seed.visualLab && seed.visualLab.schema !== 2) delete seed.visualLab;
-      currentSettings = { ...DEFAULT_SETTINGS, ...seed, providers: {} };
+      const seedVer = seed.seedVersion || 0;
+      let storedNow = null;
+      try { storedNow = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || 'null'); } catch (e) { }
+      if (!storedNow) {
+        delete seed.providers;
+        currentSettings = { ...DEFAULT_SETTINGS, ...seed, providers: {} };
+      } else {
+        const hasDefaultTheme = (storedNow.savedVisualThemes || []).some(t => t && t.name === 'الافتراضي');
+        if ((storedNow.seedVersion || 0) >= seedVer && hasDefaultTheme) return;
+        const merged = { ...storedNow };
+        Object.keys(seed).forEach(k => {
+          if (k !== 'providers' && k !== 'modelParams') merged[k] = seed[k];
+        });
+        merged.seedVersion = seedVer;
+        currentSettings = { ...DEFAULT_SETTINGS, ...merged, providers: {} };
+      }
       try { localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(currentSettings)); } catch (e) { }
       applyMsVisual();
       if (typeof applyVisualLab === 'function') applyVisualLab();

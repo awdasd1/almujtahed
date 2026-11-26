@@ -252,6 +252,17 @@ class RuntimeLensTests(unittest.TestCase):
         self.assertIsNone(server._named_hadith_matn("حديث النية"))
 
 
+class GpuProbeCacheTests(unittest.TestCase):
+    """فحص كرت الشاشة/المحركات يُحسب مرة واحدة في عمر العملية؛ تكراره
+    عند كل طلب موارد خنق خادم ويندوز عشرات الثواني لكل طلب."""
+
+    def test_engine_probe_cached(self):
+        server._GPU_ENGINE_CACHE.clear()
+        first = server._engine_can_use_gpu()
+        self.assertIn("engine", server._GPU_ENGINE_CACHE)
+        self.assertEqual(server._engine_can_use_gpu(), first)
+
+
 class WorkspaceAndArchiveTests(unittest.TestCase):
     """مجلد الحفظ الآمن يُنشأ بمجلداته الفرعية الثمانية، والأرشفة
     تشمل المخطوطات والقراءة والتحليل، وبذور النسخة المشحونة خام."""

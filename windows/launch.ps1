@@ -84,7 +84,19 @@ foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath $destDir)) {
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     }
-    Copy-Item -LiteralPath $file.FullName -Destination $dest -Force
+    # نسخ المتغيّر فقط: مقارنة الحجم ووقت التعديل تختصر إقلاع كل مرة
+    # من نسخ آلاف الملفات (وبطء Defender معها) إلى ثوانٍ.
+    $unchanged = $false
+    if (Test-Path -LiteralPath $dest) {
+        $dstInfo = Get-Item -LiteralPath $dest
+        if ($dstInfo.Length -eq $file.Length -and
+            $dstInfo.LastWriteTimeUtc -ge $file.LastWriteTimeUtc) {
+            $unchanged = $true
+        }
+    }
+    if (-not $unchanged) {
+        Copy-Item -LiteralPath $file.FullName -Destination $dest -Force
+    }
     $copied++
     if ($files.Count -gt 0 -and ($copied % 20 -eq 0 -or $copied -eq $files.Count)) {
         Set-SetupProgress (2 + [int](16.0 * $copied / $files.Count))
@@ -129,12 +141,29 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
 }
 
 Set-Location -LiteralPath $Runtime
+# ختم المكتبات: إن لم تتغير قائمة المتطلبات منذ آخر فحص ناجح، لا فحص
+# ولا تثبيت — كان الفحص/التثبيت يعاد عند كل إقلاع فيطيل التحميل جدًا.
+$depsReq = Join-Path $Runtime 'requirements-desktop.txt'
+if (-not (Test-Path -LiteralPath $depsReq)) { $depsReq = Join-Path $Runtime 'requirements.txt' }
+$depsStamp = Join-Path $Support 'deps-ok.txt'
+$depsHash = ''
+if (Test-Path -LiteralPath $depsReq) {
+    $depsHash = (Get-FileHash -LiteralPath $depsReq -Algorithm SHA256).Hash
+}
+$depsOk = $false
+if ($depsHash -and (Test-Path -LiteralPath $depsStamp)) {
+    $depsOk = ((Get-Content -LiteralPath $depsStamp -Raw).Trim() -eq $depsHash)
+}
 $importOut = Join-Path $LogDir 'import-check.log'
 $importErr = Join-Path $LogDir 'import-check.err'
-Remove-Item -LiteralPath $importOut, $importErr -Force -ErrorAction SilentlyContinue
-$importProc = Start-QuietProcess $venvPython @('-c', 'import fastapi, uvicorn, huggingface_hub, dotenv, llama_cpp') $Runtime $importOut $importErr
-$importProc.WaitForExit()
-$importExit = $importProc.ExitCode
+if ($depsOk) {
+    $importExit = 0
+} else {
+    Remove-Item -LiteralPath $importOut, $importErr -Force -ErrorAction SilentlyContinue
+    $importProc = Start-QuietProcess $venvPython @('-c', 'import fastapi, uvicorn, huggingface_hub, dotenv, llama_cpp, jpype') $Runtime $importOut $importErr
+    $importProc.WaitForExit()
+    $importExit = $importProc.ExitCode
+}
 if ($importExit -ne 0) {
     Set-Status 'جاري تثبيت المكتبات'
     Set-SetupProgress 32
@@ -204,6 +233,9 @@ if ($importExit -ne 0) {
     Set-SetupProgress 90
 }
 
+if ($depsHash) {
+    try { [System.IO.File]::WriteAllText($depsStamp, $depsHash) } catch { }
+}
 Set-SetupProgress 91
 $script = Join-Path $Runtime 'start_local.py'
 $runner = Join-Path $Runtime '.venv\Scripts\pythonw.exe'
