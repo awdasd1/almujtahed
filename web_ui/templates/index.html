@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.859 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.860 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -3120,6 +3120,12 @@
                         <button type="button" class="btn-secondary-action" onclick="changeWorkspaceFolder()" style="font-size:12.5px; padding:6px 12px; font-weight:700;">تغيير المجلد</button>
                     </div>
                     <p style="margin:8px 0 0; font-size:12.5px; color:var(--text-muted); line-height:1.8;">كل أعمالك تسكن هذا المجلد. تغييره لا يحذف القديم؛ إن حدّدت مجلدًا سابقًا عادت أعماله.</p>
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px; border-top:1px solid var(--border-color, #e5ddd0); padding-top:12px;">
+                        <span class="book-title-tag">المرآة المقروءة</span>
+                        <span id="mirrorStatus" style="font-size:12.5px; color:var(--text-secondary);">...</span>
+                        <button type="button" class="btn-secondary-action" onclick="syncWorkspaceMirror()" style="font-size:12.5px; padding:6px 12px; font-weight:700;">تحديث المرآة الآن</button>
+                    </div>
+                    <p style="margin:8px 0 0; font-size:12.5px; color:var(--text-muted); line-height:1.8;">في مجلدات مجلد الحفظ المسماة (المحادثات، المشاريع، الأدوات، الوكلاء، المخطوطات، القراءة والتحليل، صور النشر) نسخة بشرية مقروءة من أعمالك تُحدَّث تلقائيًا عند كل حفظ — تصفّحها من مستكشف الملفات دون فتح التطبيق. التطبيق يدير ملفات المرآة وحده؛ ملفات تضعها بنفسك في هذه المجلدات لا تُمسّ.</p>
                 </div>
 
                 <div class="result-card provider-main-card" style="margin-bottom: 18px;">

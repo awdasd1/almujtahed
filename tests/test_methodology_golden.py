@@ -512,6 +512,91 @@ class ExternalArchiveRestoreTests(unittest.TestCase):
         self.assertIn("externalArchivePath", html)
 
 
+class WorkspaceMirrorTests(unittest.TestCase):
+    """المرآة المقروءة: ملفات بشرية من الأعمال داخل المجلدات المسماة،
+    تُحدَّث وتُحذف المستهلَكة، ولا تمسّ ملفًا وضعه المستخدم بيده."""
+
+    def test_mirror_writes_readable_files(self):
+        import pathlib
+        import tempfile
+
+        class FakeConn:
+            def execute(self, *a):
+                return iter([])
+
+            def close(self):
+                pass
+
+        chat = {"id": "chat123456", "title": "بحث في السهو",
+                "createdAt": "2026-01-01",
+                "messages": [{"role": "user", "content": "سؤالي"},
+                             {"role": "assistant", "content": "الجواب"}]}
+        proj = {"id": "proj123456", "name": "مشروع الفقه",
+                "query": "سؤال المشروع"}
+        tool = {"id": "tool123456", "name": "أداة تجريبية",
+                "python_code": "print('x')"}
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td) / "ws"
+            root.mkdir()
+            uploads = pathlib.Path(td) / "uploads"
+            design = uploads / "admin" / "designs"
+            design.mkdir(parents=True)
+            (design / "a.png").write_bytes(b"\x89PNG")
+            saved = {}
+            names = ("_WORKSPACE_FROM_POINTER", "_ensure_app_memory",
+                     "_read_chat_sessions", "load_stored_projects",
+                     "load_stored_agent_groups", "load_stored_tools",
+                     "_load_owned_list", "_rd_load_bundle",
+                     "UPLOADS_BUCKET_DIR")
+            for name in names:
+                saved[name] = getattr(server, name)
+            try:
+                server._WORKSPACE_FROM_POINTER = root
+                server._ensure_app_memory = lambda: FakeConn()
+                server._read_chat_sessions = lambda c, o: [chat]
+                server.load_stored_projects = lambda o: [proj]
+                server.load_stored_agent_groups = lambda o: []
+                server.load_stored_tools = lambda o: [tool]
+                server._load_owned_list = lambda o, k: []
+                server._rd_load_bundle = lambda o: {
+                    "projects": [], "assistants": [], "readers": []}
+                server.UPLOADS_BUCKET_DIR = uploads
+                out = server._sync_workspace_mirror()
+                self.assertTrue(out["enabled"], out)
+                chat_files = list((root / "المحادثات").glob("*.md"))
+                self.assertEqual(len(chat_files), 1)
+                text = chat_files[0].read_text(encoding="utf-8")
+                self.assertIn("## أنت", text)
+                self.assertIn("الجواب", text)
+                self.assertTrue(
+                    list((root / "المشاريع").glob("*.md")))
+                self.assertTrue(
+                    (root / "صور النشر" / "a.png").exists())
+                # ملف المستخدم الأجنبي يبقى، والمحادثة المحذوفة تُزال
+                mine = root / "المحادثات" / "ملفي الخاص.txt"
+                mine.write_text("لي", encoding="utf-8")
+                server._read_chat_sessions = lambda c, o: []
+                server._sync_workspace_mirror()
+                self.assertTrue(mine.exists())
+                self.assertEqual(
+                    list((root / "المحادثات").glob("*.md")), [])
+            finally:
+                for name, value in saved.items():
+                    setattr(server, name, value)
+
+    def test_mirror_endpoints_and_ui_exist(self):
+        import pathlib
+        root = pathlib.Path(server.__file__).resolve().parent.parent
+        src = pathlib.Path(server.__file__).read_text(encoding="utf-8")
+        self.assertIn("/api/workspace/mirror", src)
+        js = (root / "web_ui" / "static" / "js" / "archive.js").read_text(
+            encoding="utf-8")
+        self.assertIn("syncWorkspaceMirror", js)
+        html = (root / "web_ui" / "templates" / "index.html").read_text(
+            encoding="utf-8")
+        self.assertIn("mirrorStatus", html)
+
+
 class BookOpenPerformanceTests(unittest.TestCase):
     """فتح إحالة لا يعيد تحليل ملف صفحات الكتاب كله عند كل جلسة،
     وموضعه يُجلب من قاموس مباشر — بطء ويندوز الفادح عند فتح الكتب

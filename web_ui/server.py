@@ -1453,6 +1453,11 @@ def load_models_and_db():
 def on_startup():
     load_models_and_db()
     try:
+        threading.Thread(target=_sync_workspace_mirror,
+                         daemon=True).start()
+    except Exception:
+        pass
+    try:
         import library_search
         library_search.ensure_index_async()
         library_search.warm_index_async()
@@ -10013,7 +10018,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.859"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.860"},
         },
     })
     if opened.get("error"):
@@ -26075,6 +26080,7 @@ def _save_owned_json(owner_id: str, kind: str, data) -> None:
         conn.commit()
     finally:
         conn.close()
+    request_workspace_mirror_sync()
 
 def _load_owned_json(owner_id: str, kind: str):
     conn = _ensure_app_memory()
@@ -26105,6 +26111,7 @@ def _save_owned_list(owner_id: str, kind: str, items: list) -> None:
         conn.commit()
     finally:
         conn.close()
+    request_workspace_mirror_sync()
 
 def _migrate_owner_scope(conn: sqlite3.Connection) -> None:
     columns = [row[1] for row in conn.execute("PRAGMA table_info(chat_sessions)")]
@@ -30265,6 +30272,7 @@ def _replace_chat_sessions(sessions: list, owner_id: str) -> int:
         raise
     finally:
         conn.close()
+    request_workspace_mirror_sync()
     return kept
 
 def _read_agent_groups_file() -> list:
@@ -30580,6 +30588,282 @@ async def workspace_set(req: WorkspaceSetRequest, request: Request):
     return result
 
 
+# ===== مرآة مقروءة داخل مجلد الحفظ الآمن =====
+# المجلدات المسماة (المحادثات/المشاريع/...) مرآة بشرية مقروءة من
+# أعمال المستخدم تُحدَّث تلقائيًا: يتصفح أعماله من مستكشف الملفات
+# دون فتح التطبيق، وينسخها أي أداة نسخ احتياطي. المرآة تملك ملفاتها
+# فقط (قائمتها في .mirror.json) ولا تمسّ ملفًا وضعه المستخدم بيده.
+_MIRROR_MANIFEST = ".mirror.json"
+_MIRROR_STATE: Dict[str, Any] = {"running": False, "last_at": "",
+                                 "files": 0, "error": ""}
+_MIRROR_LOCK = threading.Lock()
+_MIRROR_TIMER: Optional[threading.Timer] = None
+
+
+def _mirror_owners() -> List[str]:
+    owners = [ADMIN_OWNER_ID]
+    try:
+        conn = _ensure_app_memory()
+        try:
+            for (key,) in conn.execute("SELECT key FROM kv_documents"):
+                owner = str(key).rsplit(":", 1)[-1].strip()
+                if owner and owner not in owners:
+                    owners.append(owner)
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return owners
+
+
+def _mirror_name(title: Any, ident: Any, ext: str = ".md") -> str:
+    base = re.sub(r'[\\/:*?"<>|\x00-\x1f]', " ", str(title or "")).strip()
+    base = re.sub(r"\s+", " ", base)[:80].strip(" .") or "بلا عنوان"
+    suffix = re.sub(r"[^A-Za-z0-9_-]", "", str(ident or ""))[:10]
+    return f"{base}--{suffix}{ext}" if suffix else f"{base}{ext}"
+
+
+def _mirror_doc(item: Dict[str, Any], title: str,
+                fields: List[tuple]) -> str:
+    lines = [f"# {title}", ""]
+    for label, key in fields:
+        value = item.get(key)
+        if value not in (None, "", [], {}):
+            lines.append(f"**{label}:** {value}")
+    if len(lines) > 2:
+        lines.append("")
+    lines.append("## البيانات الكاملة")
+    lines.append("")
+    lines.append("```json")
+    try:
+        lines.append(json.dumps(item, ensure_ascii=False, indent=1,
+                                default=str))
+    except Exception:
+        lines.append(str(item))
+    lines.append("```")
+    return "\n".join(lines)
+
+
+def _collect_mirror_files() -> Dict[str, tuple]:
+    """{مسار نسبي داخل المجلد: ("text", محتوى) | ("copy", مصدر)}."""
+    desired: Dict[str, tuple] = {}
+    for owner in _mirror_owners():
+        try:
+            conn = _ensure_app_memory()
+            try:
+                chats = _read_chat_sessions(conn, owner)
+            finally:
+                conn.close()
+        except Exception:
+            chats = []
+        for chat in chats if isinstance(chats, list) else []:
+            if not isinstance(chat, dict):
+                continue
+            title = str(chat.get("title") or "محادثة بلا عنوان")
+            lines = [f"# {title}", ""]
+            if chat.get("createdAt"):
+                lines += [f"التاريخ: {chat['createdAt']}", ""]
+            for msg in chat.get("messages") or []:
+                if not isinstance(msg, dict):
+                    continue
+                who = {"user": "أنت", "assistant": "المغني"}.get(
+                    str(msg.get("role") or ""), str(msg.get("role") or ""))
+                lines += [f"## {who}", "", str(msg.get("content") or ""), ""]
+            desired[f"المحادثات/{_mirror_name(title, chat.get('id'))}"] = \
+                ("text", "\n".join(lines))
+        try:
+            projects = load_stored_projects(owner) or []
+        except Exception:
+            projects = []
+        for proj in projects if isinstance(projects, list) else []:
+            if not isinstance(proj, dict):
+                continue
+            title = str(proj.get("name") or proj.get("title")
+                        or proj.get("query") or "مشروع بلا عنوان")
+            body = _mirror_doc(proj, title, [
+                ("سؤال البحث", "query"), ("الوصف", "description"),
+                ("الحالة", "status"), ("أُنشئ", "created_at"),
+                ("حُدّث", "updated_at")])
+            sections = proj.get("sections")
+            if isinstance(sections, list) and sections:
+                extra = ["", "## الأقسام", ""]
+                for sec in sections:
+                    if isinstance(sec, dict):
+                        extra += [f"### {sec.get('title') or ''}", "",
+                                  str(sec.get("content")
+                                      or sec.get("text") or ""), ""]
+                body += "\n" + "\n".join(extra)
+            desired[f"المشاريع/{_mirror_name(title, proj.get('id'))}"] = \
+                ("text", body)
+        try:
+            groups = load_stored_agent_groups(owner) or []
+        except Exception:
+            groups = []
+        for group in groups if isinstance(groups, list) else []:
+            if not isinstance(group, dict):
+                continue
+            title = str(group.get("name") or "مجموعة بلا اسم")
+            body = _mirror_doc(group, title, [
+                ("الوصف", "description"), ("الغرض", "purpose")])
+            agents = group.get("agents")
+            if isinstance(agents, list) and agents:
+                extra = ["", "## الوكلاء", ""]
+                for agent in agents:
+                    if isinstance(agent, dict):
+                        extra.append(
+                            f"- {agent.get('name') or ''}"
+                            f" — {agent.get('role') or agent.get('model') or ''}")
+                body += "\n" + "\n".join(extra)
+            desired[f"الوكلاء/{_mirror_name(title, group.get('id'))}"] = \
+                ("text", body)
+        try:
+            tools = load_stored_tools(owner) or []
+        except Exception:
+            tools = []
+        for tool in tools if isinstance(tools, list) else []:
+            if not isinstance(tool, dict):
+                continue
+            title = str(tool.get("name") or "أداة بلا اسم")
+            body = _mirror_doc(tool, title, [
+                ("الوصف", "description"), ("التصنيف", "category"),
+                ("الحالة", "status")])
+            code = tool.get("python_code") or tool.get("code")
+            if code:
+                body += ("\n\n## الشيفرة\n\n```python\n"
+                         f"{code}\n```")
+            desired[f"الأدوات/{_mirror_name(title, tool.get('id'))}"] = \
+                ("text", body)
+        manuscripts = _load_owned_list(owner, "manuscripts") or []
+        for ms in manuscripts if isinstance(manuscripts, list) else []:
+            if not isinstance(ms, dict):
+                continue
+            title = str(ms.get("title") or ms.get("name")
+                        or "مخطوطة بلا عنوان")
+            body = _mirror_doc(ms, title, [
+                ("المؤلف", "author"), ("الوصف", "description"),
+                ("عدد الصفحات", "pages"), ("الحالة", "status")])
+            desired[f"المخطوطات/{_mirror_name(title, ms.get('id'))}"] = \
+                ("text", body)
+        try:
+            bundle = _rd_load_bundle(owner)
+        except Exception:
+            bundle = {"projects": [], "assistants": [], "readers": []}
+        for proj in bundle.get("projects") or []:
+            if not isinstance(proj, dict):
+                continue
+            title = str(proj.get("title") or proj.get("name")
+                        or "مشروع قراءة بلا عنوان")
+            body = _mirror_doc(proj, title, [
+                ("الكتاب", "book"), ("الوصف", "description"),
+                ("الحالة", "status")])
+            desired[f"القراءة والتحليل/{_mirror_name(title, proj.get('id'))}"] = \
+                ("text", body)
+        if bundle.get("assistants") or bundle.get("readers"):
+            body = _mirror_doc(bundle, "حزمة القراءة والتحليل", [])
+            desired["القراءة والتحليل/حزمة القراءة والتحليل--حزمة.md"] = \
+                ("text", body)
+        designs = UPLOADS_BUCKET_DIR / owner / "designs"
+        try:
+            if designs.is_dir():
+                for f in designs.iterdir():
+                    if f.is_file():
+                        desired[f"صور النشر/{f.name}"] = ("copy", f)
+        except Exception:
+            pass
+    return desired
+
+
+def _sync_workspace_mirror() -> Dict[str, Any]:
+    root = _WORKSPACE_FROM_POINTER
+    if root is None:
+        return {"enabled": False}
+    with _MIRROR_LOCK:
+        if _MIRROR_STATE["running"]:
+            return {"enabled": True, "running": True}
+        _MIRROR_STATE["running"] = True
+    try:
+        desired = _collect_mirror_files()
+        manifest_path = root / _MIRROR_MANIFEST
+        old = set()
+        if manifest_path.exists():
+            try:
+                old = set(json.loads(
+                    manifest_path.read_text(encoding="utf-8")).get("files")
+                    or [])
+            except Exception:
+                old = set()
+        written = 0
+        for rel, (kind, payload) in desired.items():
+            dest = root / rel
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if kind == "text":
+                    data = str(payload).encode("utf-8")
+                    if not dest.exists() or dest.read_bytes() != data:
+                        dest.write_bytes(data)
+                        written += 1
+                else:
+                    src = Path(payload)
+                    if not dest.exists() \
+                            or dest.stat().st_size != src.stat().st_size:
+                        shutil.copy2(src, dest)
+                        written += 1
+            except Exception:
+                continue
+        removed = 0
+        for rel in old - set(desired):
+            try:
+                (root / rel).unlink()
+                removed += 1
+            except Exception:
+                pass
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        manifest_path.write_text(json.dumps(
+            {"files": sorted(desired), "synced_at": now},
+            ensure_ascii=False), encoding="utf-8")
+        _MIRROR_STATE.update({"last_at": now, "files": len(desired),
+                              "error": ""})
+        return {"enabled": True, "files": len(desired),
+                "written": written, "removed": removed, "last_at": now}
+    except Exception as ex:
+        _MIRROR_STATE["error"] = str(ex)[:200]
+        return {"enabled": True, "error": _MIRROR_STATE["error"]}
+    finally:
+        _MIRROR_STATE["running"] = False
+
+
+def request_workspace_mirror_sync() -> None:
+    """طلب تحديث مؤجل مدمج: الحفظات المتتالية تنفجر في مزامنة واحدة."""
+    global _MIRROR_TIMER
+    if _WORKSPACE_FROM_POINTER is None:
+        return
+
+    def fire():
+        threading.Thread(target=_sync_workspace_mirror,
+                         daemon=True).start()
+
+    with _MIRROR_LOCK:
+        if _MIRROR_TIMER is not None:
+            _MIRROR_TIMER.cancel()
+        _MIRROR_TIMER = threading.Timer(3.0, fire)
+        _MIRROR_TIMER.daemon = True
+        _MIRROR_TIMER.start()
+
+
+@app.get("/api/workspace/mirror")
+async def workspace_mirror_status(request: Request):
+    return {"enabled": _WORKSPACE_FROM_POINTER is not None,
+            "path": str(_WORKSPACE_FROM_POINTER)
+            if _WORKSPACE_FROM_POINTER else "",
+            **_MIRROR_STATE}
+
+
+@app.post("/api/workspace/mirror/sync")
+async def workspace_mirror_sync(request: Request):
+    require_admin(request)
+    return await asyncio.to_thread(_sync_workspace_mirror)
+
+
 @app.get("/api/archives")
 async def get_archives(request: Request):
     return {"archives": list_user_archives(current_owner_id(request))}
@@ -30709,6 +30993,7 @@ async def create_archive(req: ArchiveCreateRequest, request: Request):
             shutil.rmtree(rd_uploads)
 
     after = _assert_book_index_stable(before)
+    request_workspace_mirror_sync()
     return {
         "status": "archived",
         "archive_id": archive_id,
@@ -30853,6 +31138,7 @@ def _restore_archive_dir(archive_dir: str, owner_id: str) -> Dict[str, Any]:
                 restored.append("agents")
 
     after = _assert_book_index_stable(before)
+    request_workspace_mirror_sync()
     return {
         "status": "restored",
         "archive_id": os.path.basename(os.path.normpath(archive_dir)),

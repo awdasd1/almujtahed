@@ -52,7 +52,36 @@ function partsCount() {
 function loadArchiveCenter() {
   updateArchiveButtonLabel();
   loadArchiveList();
+  loadMirrorStatus();
   if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+}
+
+async function loadMirrorStatus() {
+  const el = document.getElementById('mirrorStatus');
+  if (!el) return;
+  try {
+    const data = await (await fetch('/api/workspace/mirror')).json();
+    if (!data.enabled) { el.textContent = 'غير مفعّلة (لا مجلد حفظ محدد)'; return; }
+    el.textContent = data.last_at
+      ? `آخر تحديث: ${data.last_at} · ${data.files || 0} ملفًا`
+      : 'لم تُحدَّث بعد — تُحدَّث تلقائيًا مع أول حفظ';
+    if (data.error) el.textContent += ` · تعذر آخر تحديث: ${data.error}`;
+  } catch (e) { el.textContent = ''; }
+}
+
+async function syncWorkspaceMirror() {
+  const el = document.getElementById('mirrorStatus');
+  if (el) el.textContent = 'جارٍ تحديث المرآة...';
+  try {
+    const res = await fetch('/api/workspace/mirror/sync', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذر تحديث المرآة');
+    if (data.error) throw new Error(data.error);
+    showToast(`حُدّثت المرآة المقروءة: ${data.files || 0} ملفًا في مجلد الحفظ`);
+  } catch (err) {
+    showToast(err.message);
+  }
+  loadMirrorStatus();
 }
 
 function archiveActionButtons(archiveId) {
