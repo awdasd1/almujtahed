@@ -9541,7 +9541,6 @@ async def get_book_page(
                 "total_pages": len(entries),
                 "parts": idx["parts"],
                 "annalistic_year": None,
-                "fiqh_issue": None,
                 "body": "",
                 "footnotes": "",
                 "prev_page": None,
@@ -9645,15 +9644,11 @@ async def get_book_page(
         nxt = entries[target_idx + 1]
         next_p = {"seq": target_idx + 2, "part": nxt["part"], "page_num": nxt["page_num"]}
 
-    # كشف رأس الحولية أو المسألة الفقهية الحاكمة
+    # كشف رأس الحولية التاريخية الحاكمة
     try:
         annalistic = find_annalistic_year_backtrack(resolved_rel, title, entry["part"], entry["page_num"], max_back=40)
     except Exception:
         annalistic = None
-    try:
-        fiqh = find_fiqh_issue_backtrack(resolved_rel, title, entry["part"], entry["page_num"], max_back=15)
-    except Exception:
-        fiqh = None
 
     return {
         "book_title": title,
@@ -9668,7 +9663,6 @@ async def get_book_page(
         "total_pages": len(entries),
         "parts": idx["parts"],
         "annalistic_year": annalistic,
-        "fiqh_issue": fiqh,
         "body": clean_body,
         "footnotes": footnotes,
         "prev_page": prev_p,
@@ -9706,16 +9700,6 @@ async def book_pdf_image(book_id: Optional[int] = None, rel_path: Optional[str] 
     except Exception as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return Response(content=raw, media_type="image/png")
-
-
-@app.get("/api/book/pdf-locate")
-async def book_pdf_locate(book_id: Optional[int] = None, rel_path: Optional[str] = None,
-                          part: Optional[str] = None, page_num: Optional[int] = None,
-                          pdf_page: Optional[int] = None, phrase: Optional[str] = None):
-    """موضع الشاهد ملونًا على صفحة المصوّرة بالتعرف البصري، ونصه المقروء."""
-    import shamela_pdf
-    return await asyncio.to_thread(
-        shamela_pdf.locate_witness, book_id, rel_path or "", part, page_num, pdf_page, phrase or "")
 
 
 @app.post("/api/book/pdf-crop-text")
@@ -10120,11 +10104,6 @@ async def get_book_surrounding_pages(
         annalistic = find_annalistic_year_backtrack(resolved_rel, b_title, p_str, p_int, max_back=40)
     except Exception:
         annalistic = None
-    try:
-        fiqh = find_fiqh_issue_backtrack(resolved_rel, b_title, p_str, p_int, max_back=15)
-    except Exception:
-        fiqh = None
-
     return {
         "book_title": b_title,
         "author": b_author,
@@ -10133,7 +10112,6 @@ async def get_book_surrounding_pages(
         "target_part": p_str or entries[target_idx].get("part"),
         "target_page": p_int,
         "annalistic_year": annalistic,
-        "fiqh_issue": fiqh,
         "pages_count": len(pages),
         "pages": pages
     }
@@ -10237,7 +10215,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.863"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.864"},
         },
     })
     if opened.get("error"):

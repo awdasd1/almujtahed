@@ -4185,22 +4185,6 @@ input:checked+.slider-toggle:before {
   cursor: pointer;
 }
 
-.pdf-witness-layer,
-#pdfWitnessBox {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 3;
-}
-
-.pdf-witness-box {
-  position: absolute;
-  border: 2px solid #e8590c;
-  background: rgba(232, 89, 12, 0.22);
-  border-radius: 3px;
-  pointer-events: none;
-}
-
 .pdf-crop-box {
   position: absolute;
   border: 2px dashed #1971c2;

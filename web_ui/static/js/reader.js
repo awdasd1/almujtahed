@@ -21,7 +21,6 @@ let readerState = {
   footnotes: '',
   betakaText: '',
   annalisticYear: null,
-  fiqhIssue: null,
   isSurroundingView: false,
   showTashkeel: true,
   showBetaka: false,
@@ -188,7 +187,6 @@ async function loadReaderPage(params) {
     readerState.footnotes = data.footnotes || '';
     readerState.betakaText = data.betaka_text || '';
     readerState.annalisticYear = data.annalistic_year || null;
-    readerState.fiqhIssue = data.fiqh_issue || null;
     readerState.isSurroundingView = false;
     readerState.prevPage = data.prev_page;
     readerState.nextPage = data.next_page;
@@ -252,7 +250,7 @@ function renderReaderView() {
   document.getElementById('readerModalAuthor').textContent = authorStr;
   document.getElementById('readerModalCategory').textContent = readerState.category || 'عام';
 
-  // عرض بانر رأس الحولية التاريخية أو رأس المسألة الفقهية الحاكمة
+  // عرض بانر رأس الحولية التاريخية الحاكمة
   const banner = document.getElementById('readerContextBanner');
   const bannerText = document.getElementById('readerContextText');
   const bannerIcon = document.getElementById('readerContextIcon');
@@ -261,10 +259,6 @@ function renderReaderView() {
       banner.style.display = 'flex';
       if (bannerIcon) bannerIcon.textContent = '📅';
       bannerText.textContent = `رأس الحولية التاريخية الحاكمة: ${readerState.annalisticYear}`;
-    } else if (readerState.fiqhIssue) {
-      banner.style.display = 'flex';
-      if (bannerIcon) bannerIcon.textContent = '⚖️';
-      bannerText.textContent = `رأس المسألة الفقهية الحاكمة: ${readerState.fiqhIssue}`;
     } else {
       banner.style.display = 'none';
     }
@@ -363,7 +357,7 @@ function closeReaderPdfPanel() {
 
 // نافذة النسخة المصوّرة المستقلة
 const pdfView = {
-  zoom: 1, lens: false, cropMode: false, cropRect: null, witnessText: ''
+  zoom: 1, lens: false, cropMode: false, cropRect: null
 };
 
 function pdfQuery(pdfPage) {
@@ -392,9 +386,7 @@ function toggleReaderPdf() {
   document.getElementById('pdfPageInput').value = readerState.pageNum || '';
   bindPdfPageInteractions();
   pdfView.cropRect = null;
-  pdfView.witnessText = '';
   renderReaderPdfPage();
-  if (readerState.highlightText) locatePdfWitness(false);
 }
 
 function closePdfViewer() {
@@ -418,7 +410,6 @@ function renderReaderPdfPage() {
   if (slider) { slider.max = info.pdf_pages || 1; slider.value = readerState.pdfPage; }
   const lensImg = document.getElementById('pdfLensImg');
   if (lensImg) lensImg.src = img.src;
-  hidePdfWitnessBox();
   clearPdfCrop();
   applyPdfZoom();
   if (info.pdf_pages && readerState.pdfPage < info.pdf_pages) {
@@ -552,54 +543,9 @@ function downloadPdfCrop() {
   a.click();
 }
 
-function hidePdfWitnessBox() {
-  const box = document.getElementById('pdfWitnessBox');
-  if (!box) return;
-  box.style.display = 'none';
-  box.innerHTML = '';
-}
-
-async function locatePdfWitness(manual) {
-  const phrase = (readerState.highlightText || '').trim();
-  const btn = document.getElementById('btnPdfWitness');
-  if (!phrase) {
-    if (manual) showToast('افتح الكتاب من نتيجة بحث ليكون الشاهد محددًا');
-    return;
-  }
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ يحدد الشاهد…'; }
-  try {
-    const q = pdfQuery(readerState.pdfPage);
-    q.set('phrase', phrase);
-    const res = await fetch(`/api/book/pdf-locate?${q.toString()}`);
-    const data = await res.json();
-    if (!data.found) {
-      if (manual) showToast(data.reason || 'لم يُعثر على الشاهد في هذه الصفحة', 6000);
-      return;
-    }
-    pdfView.witnessText = data.text || '';
-    const box = document.getElementById('pdfWitnessBox');
-    const rects = (data.rects && data.rects.length) ? data.rects : (data.rect ? [data.rect] : []);
-    if (!box || !rects.length) return;
-    box.style.display = 'block';
-    box.style.left = '0';
-    box.style.top = '0';
-    box.style.width = '100%';
-    box.style.height = '100%';
-    box.innerHTML = rects.map((r) =>
-      `<span class="pdf-witness-box" style="left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%"></span>`
-    ).join('');
-    const first = box.querySelector('.pdf-witness-box');
-    if (first) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  } catch (e) {
-    if (manual) showToast('تعذر تحديد موضع الشاهد');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🎯 تحديد الشاهد'; }
-  }
-}
-
 // نقل الشاهد وحده نصيًا (لا الصفحة كلها) إلى محادثة جديدة
 function sendWitnessToChat() {
-  const passage = (pdfView.witnessText || extractWitnessTarget(readerState.highlightText) || '').trim();
+  const passage = (extractWitnessTarget(readerState.highlightText) || '').trim();
   if (!passage) {
     showToast('لا شاهد محددًا — افتح الكتاب من نتيجة بحث أولاً');
     return;
@@ -1187,22 +1133,15 @@ async function loadSurroundingPagesView() {
       return;
     }
 
-    // تحديث رأس الحولية أو المسألة الفقهية إذا كشفها استعلام باقة الصفحات
+    // تحديث رأس الحولية إذا كشفه استعلام باقة الصفحات
     if (data.annalistic_year) readerState.annalisticYear = data.annalistic_year;
-    if (data.fiqh_issue) readerState.fiqhIssue = data.fiqh_issue;
     const banner = document.getElementById('readerContextBanner');
     const bannerText = document.getElementById('readerContextText');
     const bannerIcon = document.getElementById('readerContextIcon');
-    if (banner && bannerText) {
-      if (readerState.annalisticYear) {
-        banner.style.display = 'flex';
-        if (bannerIcon) bannerIcon.textContent = '📅';
-        bannerText.textContent = `رأس الحولية التاريخية الحاكمة: ${readerState.annalisticYear}`;
-      } else if (readerState.fiqhIssue) {
-        banner.style.display = 'flex';
-        if (bannerIcon) bannerIcon.textContent = '⚖️';
-        bannerText.textContent = `رأس المسألة الفقهية الحاكمة: ${readerState.fiqhIssue}`;
-      }
+    if (banner && bannerText && readerState.annalisticYear) {
+      banner.style.display = 'flex';
+      if (bannerIcon) bannerIcon.textContent = '📅';
+      bannerText.textContent = `رأس الحولية التاريخية الحاكمة: ${readerState.annalisticYear}`;
     }
 
     let html = `

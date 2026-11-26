@@ -21,7 +21,6 @@ let rdEditingAsstId = null;
 let rdAnalysis = null; // {id, discussion} المناقشة المفتوحة
 let rdAnalysisAbort = null;
 let rdMediaAction = null; // 'share' | 'publish'
-let rdSearchHitMark = null; // { filePage, rects } تمييز مؤقت لكل ألفاظ البحث على المصوّرة
 let rdLastSearchQuery = '';
 let rdNotebookBoundPage = null;
 let rdNotebookNavLock = false;
@@ -1407,7 +1406,6 @@ function rdLoadPage(n) {
   if (!p || !p.book) { rdRenderAnnotations(); return; }
   rdNotebookSaveCurrent();
   n = Math.max(1, Math.min(p.book.pages || 1, Number(n) || 1));
-  if (rdSearchHitMark && rdSearchHitMark.filePage !== n) rdSearchHitMark = null;
   p.page = n;
   rdRememberPage(p, n);
   rdUpdateBookUI();
@@ -1434,7 +1432,7 @@ function rdLoadPage(n) {
     return;
   }
   rdNotebookBoundPage = null;
-  img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); rdScrollToSearchMark(); };
+  img.onload = () => { rdFitCanvas(); rdRenderAnnotations(); };
   img.onerror = () => { rdToast('تعذر عرض هذه الصفحة'); };
   img.src = rdBookPageUrl(n);
   rdSaveSoon();
@@ -1918,20 +1916,6 @@ function rdRenderAnnotations() {
     handleRect = rdActiveSel.rect;
   }
   if (handleRect) rdDrawCropHandles(ctx, handleRect, W, H);
-  const hitRects = (rdSearchHitMark && rdSearchHitMark.filePage === (rdCurrent.page || 1))
-    ? (rdSearchHitMark.rects || (rdSearchHitMark.rect ? [rdSearchHitMark.rect] : []))
-    : [];
-  if (hitRects.length) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(232, 89, 12, 0.22)';
-    ctx.strokeStyle = '#e8590c';
-    ctx.lineWidth = Math.max(2, W / 320);
-    hitRects.forEach((r) => {
-      ctx.fillRect(r.x * W, r.y * H, r.w * W, r.h * H);
-      ctx.strokeRect(r.x * W, r.y * H, r.w * W, r.h * H);
-    });
-    ctx.restore();
-  }
   rdRenderNotes();
   rdRenderCropsBar();
   rdSyncPageSumBadge();
@@ -3223,57 +3207,11 @@ function rdSearchPhrase(h) {
   if (snip.length >= 8) return snip.slice(0, 140);
   return q || snip;
 }
-function rdScrollToSearchMark() {
-  const mark = rdSearchHitMark;
-  const rects = (mark && (mark.rects || (mark.rect ? [mark.rect] : []))) || [];
-  if (!mark || !rects.length || !rdCurrent || mark.filePage !== (rdCurrent.page || 1)) return;
-  const a4 = document.getElementById('rdA4');
-  const sc = document.getElementById('rdPageScroll');
-  if (!a4 || !sc) return;
-  const top = rects.reduce((a, b) => (a.y <= b.y ? a : b));
-  sc.scrollTop = Math.max(0, top.y * a4.offsetHeight - 90);
-}
-async function rdLocateSearchHit(h, filePage, partIdx) {
-  const p = rdCurrent;
-  if (!h || !p || !p.book) return;
-  const phrase = rdSearchPhrase(h);
-  if (!phrase || phrase.length < 3) return;
-  const parts = rdPartsOf(p);
-  const part = (Number.isInteger(partIdx) && partIdx >= 0) ? parts[partIdx] : (rdPartInfoAt(p.book, filePage).part);
-  if (!part || part.source !== 'shamela' || !part.book_id) return;
-  const start = (Number.isInteger(partIdx) && partIdx >= 0) ? rdPartStartPage(p.book, partIdx) : rdPartInfoAt(p.book, filePage).start;
-  const localPdf = filePage - start + 1;
-  const q = new URLSearchParams();
-  q.set('book_id', String(part.book_id));
-  const partName = rdShamelaPartName(part) || String(h.part || '');
-  if (partName) q.set('part', partName);
-  if (h.page !== '' && h.page != null) q.set('page_num', String(h.page));
-  q.set('pdf_page', String(localPdf));
-  q.set('phrase', phrase);
-  rdToast('جارٍ تمييز الموضع على المصوّرة…');
-  try {
-    const res = await fetch(`/api/book/pdf-locate?${q.toString()}`);
-    const data = await res.json().catch(() => ({}));
-    if (!rdCurrent || (rdCurrent.page || 1) !== filePage) return;
-    const rects = (data.rects && data.rects.length) ? data.rects : (data.rect ? [data.rect] : []);
-    if (!data.found || !rects.length) {
-      rdToast(data.reason || 'فُتحت الصفحة ولم يُميَّز موضع الشاهد على الصورة');
-      return;
-    }
-    rdSearchHitMark = { filePage, rects };
-    rdRenderAnnotations();
-    rdScrollToSearchMark();
-    rdToast(`✔ مُيِّز ${rects.length} موضعًا لألفاظ المطلوب على الصفحة`);
-  } catch (e) {
-    /* الصفحة فُتحت ولو تعذر التمييز البصري */
-  }
-}
 function rdGotoSearchHit(i) {
   const h = rdSearchHitsData[i];
   const p = rdCurrent;
   if (!h || !p || !p.book) return;
   rdCloseModal('rdSearchResultModal');
-  rdSearchHitMark = null;
   if (h.notebook && h.filePage) {
     rdLoadPage(h.filePage);
     return;
@@ -3283,7 +3221,6 @@ function rdGotoSearchHit(i) {
     ? rdFilePageFromPartShown(p.book, idx, h.page)
     : rdFileFromShown(h.page, p.book);
   rdLoadPage(filePage);
-  rdLocateSearchHit(h, filePage, idx);
 }
 window.rdGotoSearchHit = rdGotoSearchHit;
 function rdToggleSumRange() {

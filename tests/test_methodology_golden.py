@@ -786,6 +786,31 @@ class ShamelaPdfMappingTests(unittest.TestCase):
         self.assertEqual(entry["name"], "41557.pdf")
 
 
+class RemovedFeaturesTests(unittest.TestCase):
+    """مُزالان بقرار المستخدم فلا يرجعان بصمت: بانر «رأس المسألة
+    الفقهية الحاكمة» في نافذة تصفح الكتاب (كان يظهر [object Object])،
+    وتحديد موضع الشاهد بصريًا على المصوّرة (غير منضبط)."""
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_no_fiqh_banner_in_reader(self):
+        reader = self._read("web_ui/static/js/reader.js")
+        self.assertNotIn("fiqhIssue", reader)
+        self.assertNotIn("رأس المسألة الفقهية الحاكمة: ${", reader)
+
+    def test_no_witness_locate_anywhere(self):
+        self.assertNotIn("locatePdfWitness",
+                         self._read("web_ui/templates/index.html"))
+        self.assertNotIn("pdf-locate", self._read("web_ui/static/js/reader.js"))
+        self.assertNotIn("pdf-locate", self._read("web_ui/static/js/reading.js"))
+        import shamela_pdf
+        self.assertFalse(hasattr(shamela_pdf, "locate_witness"))
+        self.assertTrue(hasattr(shamela_pdf, "ocr_region_text"),
+                        "قصاصة OCR بقيت — ليست هي المزالة")
+
+
 class MethodologyContractTests(unittest.TestCase):
     """حراس نصية لعقود المنهجية حتى لا تُسقطها طبقة لاحقة بصمت."""
 

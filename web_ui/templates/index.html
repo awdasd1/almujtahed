@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.863 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.864 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -5553,7 +5553,7 @@
                 </button>
             </div>
 
-            <!-- بانر رأس الحولية التاريخية أو رأس المسألة الفقهية الحاكمة -->
+            <!-- بانر رأس الحولية التاريخية الحاكمة -->
             <div id="readerContextBanner" class="reader-context-banner" style="display: none;">
                 <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
                     <span id="readerContextIcon" style="font-size: 16px;">📅</span>
@@ -5950,7 +5950,6 @@
                         <button class="btn-flat-secondary reader-tool-btn" id="btnPdfCrop" onclick="togglePdfCrop()">✂️ قص الشاهد</button>
                         <button class="btn-flat-secondary reader-tool-btn" id="btnPdfCropGet" onclick="downloadPdfCrop()" style="display: none;">تنزيل القصاصة</button>
                         <button class="btn-flat-primary reader-tool-btn" id="btnPdfCropSend" onclick="sendPdfCropToChat()" style="display: none;">نقل هذا النص إلى المحادثة</button>
-                        <button class="btn-flat-secondary reader-tool-btn" id="btnPdfWitness" onclick="locatePdfWitness(true)">🎯 تحديد الشاهد</button>
                         <button class="btn-flat-secondary reader-tool-btn" onclick="sendWitnessToChat()">نقل الشاهد نصيًا</button>
                     </div>
                 </div>
@@ -5963,7 +5962,6 @@
             <div class="pdf-stage" id="pdfStage">
                 <div class="pdf-page-wrap" id="pdfPageWrap">
                     <img id="pdfViewerImg" class="pdf-viewer-img" alt="صفحة النسخة المصوّرة">
-                    <div id="pdfWitnessBox" class="pdf-witness-layer" style="display: none;"></div>
                     <div id="pdfCropBox" class="pdf-crop-box" style="display: none;"></div>
                     <div id="pdfLens" class="pdf-lens" style="display: none;"><img id="pdfLensImg" alt=""></div>
                 </div>
