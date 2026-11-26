@@ -407,7 +407,10 @@ static class Installer
         body.AppendLine("  Get-CimInstance Win32_Process | ForEach-Object {");
         body.AppendLine("    if ($exclude.ContainsKey([int]$_.ProcessId)) { return }");
         body.AppendLine("    $exe = [string]$_.ExecutablePath");
-        body.AppendLine("    if ($exe -and (Test-Under $exe)) { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }");
+        body.AppendLine("    $cmd = [string]$_.CommandLine");
+        body.AppendLine("    $under = $exe -and (Test-Under $exe)");
+        body.AppendLine("    $runtimeProc = $cmd -and ($cmd -match 'Almoghni\\\\runtime' -or $cmd -match 'Al-Mujtahed\\\\runtime')");
+        body.AppendLine("    if ($under -or $runtimeProc) { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }");
         body.AppendLine("  }");
         body.AppendLine("  $alive = $false");
         body.AppendLine("  foreach ($folder in $folders) {");
@@ -591,6 +594,14 @@ sealed class SetupForm : Form
 
 sealed class UninstallForm : Form
 {
+    readonly CheckBox wipeData = new()
+    {
+        Text = "احذف أيضًا بيانات التطبيق على هذا الجهاز (بيئة التشغيل المخفية في AppData — مئات الميغات). مجلد الحفظ الآمن الذي اخترته لأعمالك لا يُحذف أبدًا.",
+        AutoSize = false,
+        Location = new Point(24, 82),
+        Size = new Size(412, 44),
+    };
+
     public UninstallForm()
     {
         Text = "إلغاء تثبيت المغني";
@@ -598,23 +609,31 @@ sealed class UninstallForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(460, 150);
+        ClientSize = new Size(460, 196);
         RightToLeft = RightToLeft.Yes;
         RightToLeftLayout = true;
         Font = new Font("Segoe UI", 12);
         BackColor = Color.FromArgb(241, 233, 220);
         var label = new Label
         {
-            Text = "سيُحذف تطبيق المغني واختصاراته من هذا الجهاز. بيانات التطبيق في AppData تُحذف أيضًا من داخل التطبيق نفسه (زر حذف التطبيق) إن أردتها.",
+            Text = "سيُحذف تطبيق المغني واختصاراته وقيد التثبيت من هذا الجهاز.",
             AutoSize = false,
-            Location = new Point(24, 20),
-            Size = new Size(412, 56),
+            Location = new Point(24, 18),
+            Size = new Size(412, 30),
             ForeColor = Color.FromArgb(42, 34, 26)
         };
-        var ok = new Button { Text = "إلغاء التثبيت", Location = new Point(24, 92), Size = new Size(140, 38) };
-        var cancel = new Button { Text = "تراجع", Location = new Point(176, 92), Size = new Size(110, 38), DialogResult = DialogResult.Cancel };
+        var hint = new Label
+        {
+            Text = "بلا الخيار أسفله تبقى بيئة التشغيل في AppData (~٦٥٠م.ب) ليعود كل شيء كما كان عند إعادة التثبيت.",
+            AutoSize = false,
+            Location = new Point(24, 46),
+            Size = new Size(412, 30),
+            ForeColor = Color.FromArgb(106, 92, 77)
+        };
+        var ok = new Button { Text = "إلغاء التثبيت", Location = new Point(24, 138), Size = new Size(140, 38) };
+        var cancel = new Button { Text = "تراجع", Location = new Point(176, 138), Size = new Size(110, 38), DialogResult = DialogResult.Cancel };
         ok.Click += (_, _) => DoUninstall();
-        Controls.AddRange(new Control[] { label, ok, cancel });
+        Controls.AddRange(new Control[] { label, hint, wipeData, ok, cancel });
         CancelButton = cancel;
     }
 
@@ -625,9 +644,18 @@ sealed class UninstallForm : Form
         folders.Add(Installer.DefaultFolder);
         folders.Add(Installer.MisspelledFolder);
         folders.Add(Installer.LegacyFolder);
+        var wipe = wipeData.Checked;
+        if (wipe)
+        {
+            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            folders.Add(Path.Combine(local, "Almoghni"));
+            folders.Add(Path.Combine(local, "Al-Mujtahed"));
+        }
         Installer.RemoveShortcuts(folders);
         Installer.UnregisterUninstallEntry();
-        MessageBox.Show(this, "تم إلغاء تثبيت المغني.", "المغني", MessageBoxButtons.OK, MessageBoxIcon.Information,
+        MessageBox.Show(this, wipe
+            ? "تم إلغاء تثبيت المغني، وتُحذف بيانات التطبيق على هذا الجهاز خلال ثوانٍ. مجلد الحفظ الآمن لم يُمسّ."
+            : "تم إلغاء تثبيت المغني. بقيت بيئة التشغيل في AppData لتعود بياناتك عند إعادة التثبيت.", "المغني", MessageBoxButtons.OK, MessageBoxIcon.Information,
             MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
         Installer.ScheduleFolderDeletes(folders);
         Close();

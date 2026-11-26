@@ -23,9 +23,13 @@ fi
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
+# رقم الإصدار من سجل التغييرات نفسه حتى لا يتجمد قيد «التطبيقات المثبتة»
+APP_VERSION="$(grep -m1 '^## ' "$ROOT/changes.md" | sed 's/^## \([0-9.]*\).*/\1/')"
+[ -n "$APP_VERSION" ] || APP_VERSION="1.0.0"
+
 BUNDLE="$STAGE/app"
 dotnet publish "$ROOT/windows/Almoghni.csproj" -c Release -r win-x64 --self-contained true \
-  -p:DebugType=None -o "$BUNDLE"
+  -p:DebugType=None -p:Version="$APP_VERSION" -p:InformationalVersion="$APP_VERSION" -o "$BUNDLE"
 
 mkdir -p "$STAGE/source"
 git -C "$ROOT" archive --format=tar HEAD | tar -xf - -C "$STAGE/source"
@@ -108,7 +112,7 @@ with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compressleve
 PY
 
 dotnet publish "$ROOT/windows/AlmoghniSetup.csproj" -c Release -r win-x64 --self-contained true \
-  -p:DebugType=None -p:PayloadZip="$STAGE/payload.zip" -o "$STAGE/setup"
+  -p:DebugType=None -p:Version="$APP_VERSION" -p:InformationalVersion="$APP_VERSION" -p:PayloadZip="$STAGE/payload.zip" -o "$STAGE/setup"
 
 EXE="${1:-$HOME/Downloads/almoghni.exe}"
 rm -f "$EXE"
