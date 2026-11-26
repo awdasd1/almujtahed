@@ -9998,7 +9998,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.852"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.853"},
         },
     })
     if opened.get("error"):
@@ -30515,15 +30515,18 @@ async def workspace_status(request: Request):
 
 @app.post("/api/workspace/pick")
 async def workspace_pick(request: Request):
+    """اختيار فقط: يعيد المسار ولا ينشئ مجلدًا ولا يحفظ شيئًا.
+
+    الحفظ والإنشاء لا يحدثان إلا بضغط المستخدم «حفظ المجلد» تأكيدًا؛
+    كان الاختيار وحده ينفّذ فورًا فيمتلئ أي مجلد يُستكشف بالمجلدات
+    الفرعية قبل أن يقصده المستخدم أصلًا."""
     require_admin(request)
     # في خيط مستقل: انتظار اختيار المستخدم لا يجمد خادم الواجهة
     picked = await asyncio.to_thread(_native_pick_folder)
     if not picked:
         raise HTTPException(status_code=400,
                             detail="أُلغي الاختيار أو تعذّر فتح نافذة المجلدات")
-    result = await asyncio.to_thread(_set_workspace, Path(picked))
-    threading.Timer(0.8, _restart_self).start()
-    return result
+    return {"status": "picked", "path": picked}
 
 
 @app.post("/api/workspace/set")

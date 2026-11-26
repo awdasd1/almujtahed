@@ -252,6 +252,34 @@ class RuntimeLensTests(unittest.TestCase):
         self.assertIsNone(server._named_hadith_matn("حديث النية"))
 
 
+class WorkspacePickConfirmTests(unittest.TestCase):
+    """اختيار مجلد الحفظ لا يحفظ ولا ينشئ شيئًا وحده؛ الحفظ بضغطة
+    «حفظ المجلد» تأكيدًا فقط."""
+
+    def test_pick_returns_path_without_saving(self):
+        import asyncio
+        from starlette.requests import Request
+        calls = {"set": 0}
+        orig_pick = server._native_pick_folder
+        orig_set = server._set_workspace
+        orig_admin = server.require_admin
+        try:
+            server.require_admin = lambda req: "admin"
+            server._native_pick_folder = lambda: "/tmp/picked/folder"
+            server._set_workspace = lambda p: calls.__setitem__(
+                "set", calls["set"] + 1) or {}
+            req = Request({"type": "http", "method": "POST",
+                           "path": "/api/workspace/pick", "headers": []})
+            out = asyncio.run(server.workspace_pick(req))
+            self.assertEqual(out["path"], "/tmp/picked/folder")
+            self.assertEqual(calls["set"], 0,
+                             "الاختيار وحده نفّذ حفظًا قبل تأكيد المستخدم")
+        finally:
+            server._native_pick_folder = orig_pick
+            server._set_workspace = orig_set
+            server.require_admin = orig_admin
+
+
 class GpuProbeCacheTests(unittest.TestCase):
     """فحص كرت الشاشة/المحركات يُحسب مرة واحدة في عمر العملية؛ تكراره
     عند كل طلب موارد خنق خادم ويندوز عشرات الثواني لكل طلب."""

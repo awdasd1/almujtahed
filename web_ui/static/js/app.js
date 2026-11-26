@@ -129,12 +129,20 @@ async function _workspaceSaved(data) {
 
 async function pickWorkspaceFolder() {
   const msg = document.getElementById('workspaceGateMsg');
+  const input = document.getElementById('workspacePathInput');
   _workspaceBusy(true, 'افتح نافذة اختيار المجلد الظاهرة أمامك وحدّد المجلد ثم اضغط موافق...');
   try {
     const res = await fetch('/api/workspace/pick', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'تعذر اختيار المجلد');
-    await _workspaceSaved(data);
+    // اختيار فقط: لا حفظ ولا إنشاء قبل تأكيد المستخدم صراحة
+    if (input && data.path) input.value = data.path;
+    _workspaceBusy(false);
+    if (msg) {
+      msg.style.color = '#166534';
+      msg.textContent = `المجلد المختار: ${data.path} — راجعه ثم اضغط «حفظ المجلد» للتأكيد. لن يُنشأ أي مجلد ولن يُحفظ شيء قبل التأكيد.`;
+    }
+    document.getElementById('workspaceSetBtn')?.focus();
   } catch (err) {
     _workspaceBusy(false);
     if (msg) { msg.style.color = '#991b1b'; msg.textContent = err.message; }
