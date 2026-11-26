@@ -816,8 +816,11 @@ class RemovedFeaturesTests(unittest.TestCase):
                          "تحديد الشاهد التلقائي على الكتاب النصي مُزال")
         index = self._read("web_ui/templates/index.html")
         self.assertIn("btnReaderLensSearch", index)
+        self.assertNotIn("بمنظار", index, "عبارة «بمنظار» مُزالة من الواجهة")
         self.assertNotIn("readerLensBar", index,
-                         "شريط البحث بمنظار القديم مُزال — نافذة لا شريط")
+                         "شريط البحث القديم مُزال — نافذة لا شريط")
+        self.assertIn("z-index:100600", reader,
+                      "نافذة البحث فوق طبقة نافذة الكتاب (100500) لا تحتها")
         # النافذة مستنسخة من «بحث في الإجابة»: فتح وتحديد تلقائي وسابق/تالٍ
         for fn in ("openReaderSearch", "closeReaderSearch", "runReaderSearch",
                    "jumpToReaderMark", "stepReaderSearch",

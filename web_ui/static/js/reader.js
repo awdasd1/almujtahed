@@ -947,7 +947,9 @@ function _ensureReaderSearchModal() {
   document.head.appendChild(st);
   const d = document.createElement('div');
   d.id = 'readerSearchModal';
-  d.style.cssText = 'display:none;position:fixed;inset:0;z-index:10001;background:transparent;direction:rtl;pointer-events:none;';
+  // فوق طبقة نافذة الكتاب نفسها (#bookReaderModal ‏z-index:100500) وإلا
+  // حجبتها طبقة القارئ وبقيت التظليلات بلا نافذة تحكّم مرئية
+  d.style.cssText = 'display:none;position:fixed;inset:0;z-index:100600;background:transparent;direction:rtl;pointer-events:none;';
   d.innerHTML = `
     <div id="readerSearchPanel" style="pointer-events:auto;position:absolute;top:7vh;left:50%;transform:translateX(-50%);width:min(640px,94vw);background:var(--bg-surface,#fff);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,0.35);padding:16px 18px;max-height:84vh;display:flex;flex-direction:column;">
       <div id="readerSearchDragHandle" title="اسحب من هذا الشريط لتحريك النافذة ومشاهدة التظليل في نص الكتاب" style="display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:move;touch-action:none;user-select:none;-webkit-user-select:none;">
