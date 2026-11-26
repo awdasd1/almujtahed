@@ -1,12 +1,16 @@
 """النسخة المصوّرة من الشاملة: ربط صفحة النص بصفحة الـ PDF الممسوح.
 
-المصدر: تطبيق الشاملة نفسه — كتالوجه master.db فيه لكل كتاب pdf_links
-(قائمة ملفات المصوّرة ووسم الجزء لكل ملف)، والملفات منزّلة عنده تحت
-pdf/<المؤلف>/<الكتاب>/. القاعدة المثبتة بالفحص على كتب مفردة ومتعددة
-الأجزاء: رقم صفحة المصوّرة داخل ملف جزئها يساوي رقم الصفحة المطبوعة
-(page_num) نفسه. إن ضم الملف أجزاء عدة استأنف كل منها ترقيمه فالموضع
-هو الترقيم المطبوع داخل جزئه لا عدد قيود النص. التغطية جزئية
-(~خُمس المكتبة)، فغياب الملف جواب مشروع.
+الطريقة هي طريقة تطبيق الشاملة نفسه حرفيًا (فُكّكت من شيفرته وقورنت
+ببياناته): كتالوجه master.db فيه لكل كتاب pdf_links، وكل قيد ملف فيها
+يُقرأ هكذا — مفتاح الجزء ابتداءً هو أول رقم في اسم الملف (وصفر يعني
+«@@»: غلاف/واجهة لا متن)، ثم قطع «|» اللاحقة تُلغي وتضيف: القطعة
+الفارغة «@@»، و«#N» إصدار الملف، و«@N» فرق الترقيم (difference)،
+و«fN» اسم مستعار لمجلد، وأي قطعة أخرى هي اسم الجزء بعينه. وعرض
+الصفحة عندهم: رقم صفحة المصوّرة = الرقم المطبوع (page من جدول صفحات
+الكتاب عندهم) + فرق ملف جزئها، وجزء الصفحة إن غاب من خريطتهم سقط
+إلى مفتاح «0». لا تخمين عندنا بعد اليوم: ما لا تحسمه خريطتهم لا
+يُخترع له مقابل (إلا ملفًا وحيدًا لا ثاني له فهو الكتاب كله بيقين).
+التغطية جزئية (~خُمس المكتبة)، فغياب الملف جواب مشروع.
 """
 from __future__ import annotations
 
@@ -139,101 +143,115 @@ def _printed_span(mn, mx, count=0) -> int:
     return max(1, span) if (span or count) else 0
 
 
-def _seq_within(their_id: int, ranges: list, part: str, page_num: int, covered: list):
-    """موضع الصفحة داخل ملف يضم أجزاء عدة: بالترقيم المطبوع لا بعدد قيود النص."""
-    offset = 0
-    try:
-        page_num = int(page_num or 0)
-    except (TypeError, ValueError):
-        page_num = 0
-    for name, count, mn, mx in ranges:
-        if name not in covered:
-            continue
-        span = _printed_span(mn, mx, count)
-        if name == part:
-            local = page_num
-            try:
-                start = int(mn or 0)
-            except (TypeError, ValueError):
-                start = 0
-            if start and local >= start:
-                local = local - start + 1
-            return offset + max(1, local)
-        offset += span
-    return None
-
-
 def _is_intro(part: str) -> bool:
     return any(w in (part or "") for w in ("مقدمة", "مقدمه", "تقديم"))
 
 
+def _val(text: str) -> int:
+    """أول عدد في النص (دالة val عند الشاملة)، و0 عند غيابه."""
+    try:
+        return int(re.findall(r"\d+|$", str(text or ""))[0])
+    except Exception:
+        return 0
+
+
+_AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+
+
+def _norm_part_key(part) -> str:
+    key = str(part or "").strip().translate(_AR_DIGITS)
+    return "" if key in ("None", "null") else key
+
+
 def _parse_entries(pdf_links: str) -> list:
+    """قيود ملفات المصوّرة كما يقرؤها تطبيق الشاملة (CoreDb.getMeta):
+    {name, part, difference, version} — مفتاح الجزء من أول رقم في اسم
+    الملف (0 يصير «@@»)، وقطع «|» من بعده: فارغة «@@»، و«#N» إصدار،
+    و«@N» فرق ترقيم، و«fN» مجلد مستعار يُهمل هنا، وغيرها اسم الجزء."""
     try:
         data = json.loads(pdf_links or "{}")
     except Exception:
         return []
     entries = []
     for raw in data.get("files") or []:
-        seg = str(raw).split("|")
-        name = Path(seg[0].strip()).name
-        tag = seg[1].strip() if len(seg) > 1 else ""
+        if isinstance(raw, dict):
+            raw = str(raw.get("file") or raw.get("name") or "")
+        raw = str(raw or "")
+        if not raw:
+            continue
+        base = raw[raw.rfind("/") + 1:] if "/" in raw else raw
+        part = str(_val(base))
+        if part == "0":
+            part = "@@"
+        difference, version = 0, 1
+        pieces = base.split("|")
+        if len(pieces) > 1:
+            base = pieces[0]
+            for piece in pieces[1:]:
+                if not piece:
+                    part = "@@"
+                    continue
+                head, rest = piece[0], piece[1:]
+                if head == "#":
+                    try:
+                        version = int(rest)
+                    except ValueError:
+                        pass
+                elif head == "@":
+                    try:
+                        difference = int(rest)
+                    except ValueError:
+                        pass
+                elif head == "f":
+                    continue
+                else:
+                    part = piece.strip()
+        name = Path(base.strip()).name
         if name:
-            entries.append({"name": name, "tag": tag})
+            entries.append({"name": name, "part": part,
+                            "difference": difference, "version": version})
     return entries
 
 
-def _assign_files(entries: list, parts: list) -> dict:
-    """{الجزء: اسم ملف المصوّرة} بأعراف الشاملة نفسها:
-    وسم صريح، ثم لاحقة p للمقدمة وi للفهارس، ثم الرقم أول الاسم هو رقم
-    الجزء المرقّم (و00 غلاف لا جزء)، ثم الباقي بترتيب القائمة."""
-    intro_parts = [p for p in parts if _is_intro(p)]
-    numbered = [p for p in parts if p not in intro_parts]
-    assigned = {}
-    deferred = []
-    front = None
+def _pdf_map(entries: list) -> dict:
+    """{مفتاح الجزء: قيد ملفه} — القيد الأخير يغلب كما في قاموسهم."""
+    out = {}
     for entry in entries:
-        name, tag = entry["name"], entry["tag"]
-        stem = name[:-4] if name.lower().endswith(".pdf") else name
-        if tag and not tag.startswith("#"):
-            if tag in parts:
-                assigned.setdefault(tag, name)
-                continue
-            if _is_intro(tag) or tag.startswith("مقدمة"):
-                assigned.setdefault(intro_parts[0] if intro_parts else tag, name)
-                continue
-            if tag == "0":
-                for part in numbered:
-                    assigned.setdefault(part, name)
-                continue
-            if tag.isdigit() and 1 <= int(tag) <= len(numbered):
-                assigned.setdefault(numbered[int(tag) - 1], name)
-                continue
-        if re.search(r"\d(ps|p)$", stem) and intro_parts:
-            assigned.setdefault(intro_parts[0], name)
-            continue
-        if re.search(r"^\d+i$", stem):
-            continue  # ملف فهارس لا متن
-        m = re.match(r"^(\d+)", name)
-        if m:
-            num = int(m.group(1))
-            if num == 0:
-                front = front or name
-                continue
-            if num <= len(numbered):
-                assigned.setdefault(numbered[num - 1], name)
-                continue
-        deferred.append(name)
-    rest = [p for p in numbered if p not in assigned]
-    for name, part in zip(deferred, rest):
-        assigned[part] = name
-    if intro_parts and intro_parts[0] not in assigned and front:
-        assigned[intro_parts[0]] = front
-    distinct = set(assigned.values()) | set(deferred)
-    if len(distinct) == 1 and parts:
-        only = next(iter(distinct))
-        for part in parts:
-            assigned.setdefault(part, only)
-    return assigned
+        out[str(entry.get("part") or "")] = entry
+    return out
+
+
+def _select_entry(pdf_map: dict, want_part, parts: list):
+    """قيد ملف جزء بعينه باختيار الشاملة (DisplayBook.currentPdf):
+    جزء الصفحة نفسه (أو «0» لكتاب بلا أجزاء)، والساقط منه يرجع إلى
+    «0». من بعدها لا اجتهاد إلا في يقينين: مقدمة بمفتاح مقدمة وحيد،
+    أو كتاب لا ملف له إلا واحد فهو لكل أجزائه."""
+    if not pdf_map:
+        return None, ""
+    has_parts = bool([p for p in (parts or []) if str(p or "").strip()])
+    key = _norm_part_key(want_part) if has_parts else "0"
+    if has_parts and not key:
+        key = _norm_part_key(parts[0])
+    entry = pdf_map.get(key)
+    if entry is None and key.isdigit():
+        entry = pdf_map.get(str(int(key)))
+        if entry is not None:
+            key = str(int(key))
+    if entry is None:
+        entry = pdf_map.get("0")
+        if entry is not None:
+            key = "0"
+    if entry is None and _is_intro(key):
+        intros = [k for k in pdf_map if _is_intro(k)]
+        if len(intros) == 1:
+            key = intros[0]
+            entry = pdf_map[key]
+    if entry is None:
+        distinct = {e.get("name") for e in pdf_map.values()}
+        if len(distinct) == 1:
+            entry = next(iter(pdf_map.values()))
+            key = next(k for k, e in pdf_map.items() if e is entry)
+    return entry, key
 
 
 def _pdf_pages(path: Path) -> int:
@@ -275,26 +293,12 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
     index = _file_index(root)
     ranges = _part_ranges(their_id)
     parts = [r[0] for r in ranges]
-    want_part = str(part or "").strip()
-    if want_part == "None":
-        want_part = ""
-    if parts and want_part not in parts:
-        # جزءنا برقمه قد يقابل جزءهم بموضعه بين الأجزاء المرقّمة
-        numbered = [p for p in parts if not _is_intro(p)]
-        intros = [p for p in parts if _is_intro(p)]
-        if _is_intro(want_part) and intros:
-            want_part = intros[0]
-        elif want_part.isdigit() and 1 <= int(want_part) <= len(numbered):
-            want_part = numbered[int(want_part) - 1]
-        elif not want_part and numbered:
-            want_part = numbered[0]
-    assigned = _assign_files(entries, parts or [want_part])
-    file_name = assigned.get(want_part)
-    if not file_name and entries:
-        file_name = entries[0]["name"]
-    if not file_name:
+    pdf_map = _pdf_map(entries)
+    entry, map_key = _select_entry(pdf_map, part, parts)
+    if entry is None:
         out["reason"] = "لا ملف مصوّرة لهذا الجزء"
         return out
+    file_name = entry["name"]
     candidates = index.get(file_name) or []
     if not candidates:
         out["reason"] = "النسخة المصوّرة غير منزّلة على هذا الجهاز"
@@ -303,45 +307,28 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
     path = next((p for p in candidates if p.parent.name == book_name), candidates[0])
     total = _pdf_pages(path)
     try:
-        page = int(page_num or 0)
+        printed = int(page_num or 0)
     except (TypeError, ValueError):
-        page = 0
-    if page <= 0:
-        page = 1
+        printed = 0
+    if printed <= 0:
+        printed = 1
+    # صيغة الشاملة نفسها: صفحة المصوّرة = المطبوعة + فرق ترقيم ملف الجزء
+    page = printed + int(entry.get("difference") or 0)
     clamped = False
-    covered = [p for p, f in assigned.items() if f == file_name]
-    if total and len(covered) > 1:
-        # ملف واحد لأجزاء عدة: إن كانت مطبوعاتها متصلة فالرقم المطبوع يكفي،
-        # وإن استأنف كل جزء ترقيمه فالموضع التسلسلي داخل الملف هو الصواب
-        covered_ranges = [r for r in ranges if r[0] in covered]
-        restarts = any(
-            covered_ranges[i][2] <= covered_ranges[i - 1][3]
-            for i in range(1, len(covered_ranges))
-        )
-        if restarts:
-            seq = _seq_within(their_id, ranges, want_part, page, covered)
-            if seq:
-                page = seq
+    if page < 1:
+        page, clamped = 1, True
     if total and page > total:
-        seq = _seq_within(their_id, ranges, want_part, page, covered)
-        if seq and 1 <= seq <= total:
-            page = seq
-        else:
-            page = total
-            clamped = True
+        page, clamped = total, True
     volumes = []
-    offset = 0
-    for name, count, _mn, _mx in ranges:
-        fn = assigned.get(name)
-        if fn != file_name:
+    for name, count, mn, _mx in ranges:
+        e2, _k2 = _select_entry(pdf_map, name, parts)
+        if not e2 or e2.get("name") != file_name:
             continue
-        span = _printed_span(_mn, _mx, count)
         volumes.append({
             "name": name,
-            "pages": span,
-            "pdf_start": offset + 1,
+            "pages": _printed_span(mn, _mx, count),
+            "pdf_start": max(1, int(mn or 1) + int(e2.get("difference") or 0)),
         })
-        offset += span
     out.update({
         "available": True,
         "file_name": file_name,
@@ -350,6 +337,8 @@ def resolve_pdf(book_id=None, rel_path: str = "", part=None, page_num=None) -> d
         "pdf_pages": total,
         "book_name": book_name,
         "clamped": clamped,
+        "difference": int(entry.get("difference") or 0),
+        "part_key": map_key,
         "volumes": volumes,
     })
     return out
@@ -377,11 +366,12 @@ def list_volumes(book_id=None, rel_path: str = "") -> dict:
     index = _file_index(root) if root else {}
     ranges = _part_ranges(their_id)
     parts = [r[0] for r in ranges]
-    assigned = _assign_files(entries, parts or [""])
+    pdf_map = _pdf_map(entries)
     volumes = []
     if ranges:
         for name, count, _mn, _mx in ranges:
-            fn = assigned.get(name)
+            entry, _k = _select_entry(pdf_map, name, parts)
+            fn = entry.get("name") if entry else None
             cands = index.get(fn) if fn else None
             volumes.append({
                 "name": str(name or "").strip() or "1",
@@ -393,7 +383,7 @@ def list_volumes(book_id=None, rel_path: str = "") -> dict:
         for i, entry in enumerate(entries):
             fn = entry["name"]
             volumes.append({
-                "name": str(entry.get("tag") or "").strip() or str(i + 1),
+                "name": str(entry.get("part") or "").strip() or str(i + 1),
                 "pages": 0,
                 "file_name": fn,
                 "available": bool(index.get(fn)),

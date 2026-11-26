@@ -735,6 +735,57 @@ class BookOpenPerformanceTests(unittest.TestCase):
             self.assertEqual(idx2["by_loc"]["2|57"][0]["page_id"], 10)
 
 
+class ShamelaPdfMappingTests(unittest.TestCase):
+    """مقابلة النصي بالمصوّر بطريقة الشاملة حرفيًا: مفتاح الجزء من أول
+    رقم في اسم الملف (00 غلاف «@@» لا متن)، وقطع «|» تلغي وتضيف
+    («@N» فرق الترقيم)، وصفحة المصوّرة = المطبوعة + فرق ملف الجزء.
+    الخلل الذي وقع: «الطبقات الكبرى» جُعل غلافُها (tisaad00، صفحة
+    واحدة) مصوّرةَ جزئها الأول فانزاحت كل الأجزاء ملفًا كاملًا."""
+
+    LINKS = ('{"files": ["tisaad00.pdf", "tisaad01p.pdf|المقدمة",'
+             ' "tisaad01.pdf", "tisaad02.pdf|@-2", "book9.pdf|#3",'
+             ' "one.pdf|7"]}')
+
+    def _map(self):
+        import shamela_pdf as sp
+        return sp, sp._pdf_map(sp._parse_entries(self.LINKS))
+
+    def test_parse_shamela_pieces(self):
+        sp, _m = self._map()
+        by_name = {e["name"]: e for e in sp._parse_entries(self.LINKS)}
+        self.assertEqual(by_name["tisaad00.pdf"]["part"], "@@")
+        self.assertEqual(by_name["tisaad01p.pdf"]["part"], "المقدمة")
+        self.assertEqual(by_name["tisaad01.pdf"]["part"], "1")
+        self.assertEqual(by_name["tisaad02.pdf"]["difference"], -2)
+        self.assertEqual(by_name["book9.pdf"]["version"], 3)
+        self.assertEqual(by_name["book9.pdf"]["part"], "9")
+        self.assertEqual(by_name["one.pdf"]["part"], "7")
+
+    def test_part_one_is_not_the_cover(self):
+        sp, m = self._map()
+        parts = ["المقدمة", "1", "2"]
+        entry, key = sp._select_entry(m, "1", parts)
+        self.assertEqual(entry["name"], "tisaad01.pdf")
+        entry, key = sp._select_entry(m, "المقدمة", parts)
+        self.assertEqual(entry["name"], "tisaad01p.pdf")
+        # صفحة المصوّرة = المطبوعة + الفرق (هنا ‎-2)
+        entry, key = sp._select_entry(m, "2", parts)
+        self.assertEqual(50 + entry["difference"], 48)
+
+    def test_missing_part_falls_to_zero_then_nothing(self):
+        sp, m = self._map()
+        entry, _k = sp._select_entry(m, "99", ["1", "2"])
+        self.assertIsNone(entry, "جزء لا مقابل له عند الشاملة لا يُخترع له ملف")
+        entry, _k = sp._select_entry({"0": m["1"]}, "99", ["1"])
+        self.assertEqual(entry["name"], "tisaad01.pdf")
+
+    def test_single_file_book_is_whole_book(self):
+        sp, m = self._map()
+        one = sp._pdf_map(sp._parse_entries('{"files": ["/1/41557.pdf"]}'))
+        entry, _k = sp._select_entry(one, "", [])
+        self.assertEqual(entry["name"], "41557.pdf")
+
+
 class MethodologyContractTests(unittest.TestCase):
     """حراس نصية لعقود المنهجية حتى لا تُسقطها طبقة لاحقة بصمت."""
 
