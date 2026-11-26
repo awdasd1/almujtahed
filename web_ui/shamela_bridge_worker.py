@@ -54,6 +54,9 @@ def main():
             continue
         if req.get("ping"):
             resp = {"status": "ok", "pong": True, "results": []}
+        elif req.get("op") == "pages":
+            resp = SS._fetch_pages_local(
+                int(req.get("tid") or 0), req.get("seqs") or [])
         else:
             try:
                 resp = SS._search_local(

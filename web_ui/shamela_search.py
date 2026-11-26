@@ -116,6 +116,97 @@ def _page_table(tid: int) -> dict:
     return tab
 
 
+_DOC_INDEX_CACHE: dict = {}
+
+
+def _doc_indexes_for_book(jpype, reader, tid: int) -> dict:
+    """{seq: docIndex} لكتاب واحد بقفزة بادئة في مصطلحات id — بلا مسح."""
+    cached = _DOC_INDEX_CACHE.get(tid)
+    if cached is not None:
+        return cached
+    docs = {}
+    BytesRef = jpype.JClass("org.apache.lucene.util.BytesRef")
+    JByte = jpype.JByte
+    JArray = jpype.JArray
+    prefix = f"{int(tid)}-"
+    target = BytesRef(JArray(JByte)(prefix.encode("utf-8")))
+    for leaf_ctx in reader.leaves():
+        leaf = leaf_ctx.reader()
+        terms = leaf.terms("id")
+        if terms is None:
+            continue
+        it = terms.iterator()
+        base = int(leaf_ctx.docBase)
+        it.seekCeil(target)
+        term = it.term()
+        while term is not None:
+            s = term.utf8ToString()
+            if not s.startswith(prefix):
+                break
+            try:
+                seq = int(s[len(prefix):])
+            except ValueError:
+                term = it.next()
+                continue
+            postings = it.postings(None)
+            while True:
+                d = int(postings.nextDoc())
+                if d == 2147483647:
+                    break
+                docs[seq] = base + d
+            term = it.next()
+    if len(_DOC_INDEX_CACHE) >= 6:
+        _DOC_INDEX_CACHE.pop(next(iter(_DOC_INDEX_CACHE)), None)
+    _DOC_INDEX_CACHE[tid] = docs
+    return docs
+
+
+def _fetch_pages_local(tid: int, seqs) -> dict:
+    """نصوص صفحات بعينها من مخزن الشاملة: أساس الكتب الافتراضية —
+    تُقرأ الصفحة من فهرسهم عند اللمس فلا استخراج ولا تكرار نصوص."""
+    try:
+        reader = _ensure_reader()
+        if reader is None:
+            return {"status": "error", "message": "جسر الشاملة غير جاهز",
+                    "pages": {}}
+        jpype = _STATE["jpype"]
+        sf = _STATE["sf"]
+        docs = _doc_indexes_for_book(jpype, reader, int(tid))
+        out = {}
+        for seq in seqs or []:
+            di = docs.get(int(seq))
+            if di is None:
+                continue
+            doc = sf.document(di)
+            foot = doc.get("foot")
+            out[str(int(seq))] = {
+                "body": str(doc.get("body") or ""),
+                "footnotes": str(foot) if foot else None,
+            }
+        return {"status": "ok", "pages": out}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)[:200], "pages": {}}
+
+
+def fetch_pages(tid: int, seqs) -> dict:
+    """جلب صفحات كتاب عبر حوض الجسور إن قام، وإلا محليًا."""
+    seqs = [int(s) for s in (seqs or [])][:200]
+    if not seqs:
+        return {"status": "ok", "pages": {}}
+    if os.environ.get("ALMOGHNI_BRIDGE_WORKER") != "1" and _POOL_N > 0:
+        if not _POOL["started"]:
+            _pool_start()
+        if _POOL["workers"]:
+            try:
+                r = _pool_route({"op": "pages", "tid": int(tid),
+                                 "seqs": seqs})
+                if r and r.get("status") == "ok":
+                    return r
+            except Exception:
+                pass
+    return _fetch_pages_local(int(tid), seqs)
+
+
 def _attach():
     import jpype
     if not jpype.isJVMStarted():

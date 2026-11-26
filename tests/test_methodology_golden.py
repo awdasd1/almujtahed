@@ -597,6 +597,75 @@ class WorkspaceMirrorTests(unittest.TestCase):
         self.assertIn("mirrorStatus", html)
 
 
+class VirtualBookTests(unittest.TestCase):
+    """كتب افتراضية: فتح كتاب غير مستخرج يبني فهرس مواضع فقط من قاعدة
+    كتاب الشاملة ويجلب الصفحة عبر الجسر — لا استخراج نصوص بالجملة."""
+
+    def test_fetch_pages_empty_is_free(self):
+        import shamela_search
+        self.assertEqual(shamela_search.fetch_pages(1, []),
+                         {"status": "ok", "pages": {}})
+
+    def test_virtual_index_from_page_table(self):
+        import pathlib
+        import tempfile
+        import shamela_search
+        rel = "اختبار/1__كتاب افتراضي"
+        saved = {}
+        for name in ("_their_id_for_book", "_virtual_book_dir",
+                     "_book_meta_for_rel"):
+            saved[name] = getattr(server, name)
+        orig_table = shamela_search._page_table
+        server.BOOK_PAGE_INDEX_CACHE.pop(rel, None)
+        with tempfile.TemporaryDirectory() as td:
+            bdir = pathlib.Path(td) / "book"
+            try:
+                server._their_id_for_book = lambda r, b=None: 4242
+                server._virtual_book_dir = lambda r: bdir
+                server._book_meta_for_rel = lambda r: {}
+                shamela_search._page_table = lambda tid: {
+                    3: ("2", 7), 1: ("", 1), 2: ("1", 4)}
+                idx = server._virtual_index(rel)
+                self.assertIsNotNone(idx)
+                self.assertTrue(idx["virtual"])
+                self.assertEqual([e["seq"] for e in idx["entries"]],
+                                 [1, 2, 3])
+                self.assertEqual(idx["parts"], ["1", "2"])
+                self.assertEqual(idx["by_loc"]["2|7"], 2)
+                self.assertTrue((bdir / "virtual_index.json").exists())
+                # صفحات افتراضية: تُجلب مرة ثم تُقرأ من المخزن المحلي
+                calls = {"n": 0}
+
+                def fake_fetch(tid, seqs):
+                    calls["n"] += 1
+                    return {"status": "ok", "pages": {
+                        str(s): {"body": "نص الصفحة",
+                                 "footnotes": "حاشية"} for s in seqs}}
+
+                orig_fetch = shamela_search.fetch_pages
+                shamela_search.fetch_pages = fake_fetch
+                try:
+                    got = server._virtual_pages(idx, [2])
+                    self.assertEqual(got[2]["body"], "نص الصفحة")
+                    got = server._virtual_pages(idx, [2])
+                    self.assertEqual(calls["n"], 1)
+                finally:
+                    shamela_search.fetch_pages = orig_fetch
+                # كتاب صار مستخرجًا لا يعود افتراضيًا من ذاكرة قديمة
+                (bdir / "pages.jsonl").write_text(
+                    '{"part": "1", "page_num": 1, "body": "x"}\n',
+                    encoding="utf-8")
+                server.BOOK_PAGE_INDEX_CACHE[rel] = dict(idx)
+                rebuilt = server.get_or_build_book_index(
+                    rel, bdir / "pages.jsonl")
+                self.assertFalse(rebuilt.get("virtual"))
+            finally:
+                for name, value in saved.items():
+                    setattr(server, name, value)
+                shamela_search._page_table = orig_table
+                server.BOOK_PAGE_INDEX_CACHE.pop(rel, None)
+
+
 class BookOpenPerformanceTests(unittest.TestCase):
     """فتح إحالة لا يعيد تحليل ملف صفحات الكتاب كله عند كل جلسة،
     وموضعه يُجلب من قاموس مباشر — بطء ويندوز الفادح عند فتح الكتب

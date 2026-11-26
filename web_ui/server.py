@@ -6392,12 +6392,208 @@ def _fast_page_index_fields(line: bytes):
     return part, pnum, seq
 
 
+def _book_meta_for_rel(rel_path: str) -> dict:
+    """بطاقة الكتاب من كتالوج SQLite بمساره النسبي."""
+    meta = {}
+    db = get_db()
+    if db:
+        try:
+            cursor = db.cursor()
+            folder_name = rel_path.split("/")[-1] if "/" in rel_path else rel_path
+            cursor.execute("""
+                SELECT title_ar, main_author_name_ar, main_author_death_hijri, category_name_ar, betaka_text, volume_count_observed
+                FROM books
+                WHERE rel_path = ? OR rel_path = ? OR rel_path LIKE '%/' || ?
+                LIMIT 1
+            """, (rel_path, f"shamela4_data/{rel_path}", folder_name))
+            row = cursor.fetchone()
+            if row:
+                meta = dict(row)
+        except Exception:
+            pass
+    return meta
+
+
+def _their_id_for_book(rel_path: Optional[str],
+                       book_id: Any = None) -> Optional[int]:
+    """رقم الكتاب في الشاملة (من الكتالوج) أو None."""
+    db = get_db()
+    if not db:
+        return None
+    try:
+        cursor = db.cursor()
+        if book_id:
+            cursor.execute(
+                "SELECT shamela_id FROM books WHERE book_id = ? "
+                "AND shamela_id IS NOT NULL LIMIT 1", (int(book_id),))
+        else:
+            folder = str(rel_path or "").split("/")[-1]
+            cursor.execute(
+                "SELECT shamela_id FROM books WHERE (rel_path = ? "
+                "OR rel_path = ? OR rel_path LIKE '%/' || ?) "
+                "AND shamela_id IS NOT NULL LIMIT 1",
+                (rel_path, f"shamela4_data/{rel_path}", folder))
+        row = cursor.fetchone()
+        if row and row["shamela_id"]:
+            return int(row["shamela_id"])
+    except Exception:
+        pass
+    return None
+
+
+def _virtual_book_dir(rel_path: str) -> Optional[Path]:
+    try:
+        import shamela_link
+        rel = str(rel_path or "").replace("\\", "/")
+        if rel.startswith("shamela4_data/"):
+            rel = rel[len("shamela4_data/"):]
+        return shamela_link.import_dir() / rel
+    except Exception:
+        return None
+
+
+def _virtual_index(rel_path: str, book_id: Any = None) -> Optional[dict]:
+    """فهرس مواضع كتاب افتراضي: (تسلسل → جزء/صفحة) من قاعدة كتاب
+    الشاملة الصغيرة، محفوظ جانبيًا بلا أي نص — بضع مئات الكيلوبايتات
+    لأضخم كتاب بدل عشرات الميغات استخراجًا. None إن تعذّر."""
+    if not rel_path:
+        return None
+    bdir = _virtual_book_dir(rel_path)
+    if bdir is not None and (bdir / "pages.jsonl").exists():
+        return None  # صار مستخرجًا: المسار العادي أولى
+    cached = BOOK_PAGE_INDEX_CACHE.get(rel_path)
+    if cached and cached.get("virtual"):
+        return cached
+    tid = _their_id_for_book(rel_path, book_id)
+    if not tid:
+        return None
+    entries = None
+    parts: List[str] = []
+    loc_file = bdir / "virtual_index.json" if bdir else None
+    if loc_file is not None and loc_file.exists():
+        try:
+            saved = json.loads(loc_file.read_text(encoding="utf-8"))
+            if saved.get("tid") == tid:
+                entries = [{"seq": e[0], "part": e[1], "page_num": e[2],
+                            "offset": -1} for e in saved.get("entries") or []]
+                parts = saved.get("parts") or []
+        except Exception:
+            entries = None
+    if entries is None:
+        try:
+            import shamela_search
+            table = shamela_search._page_table(tid)
+        except Exception:
+            table = {}
+        if not table:
+            return None
+        entries = []
+        for seq in sorted(table):
+            part, pnum = table[seq]
+            part = str(part or "")
+            if part and part not in parts:
+                parts.append(part)
+            entries.append({"seq": int(seq), "part": part,
+                            "page_num": int(pnum or 0), "offset": -1})
+        if loc_file is not None:
+            try:
+                loc_file.parent.mkdir(parents=True, exist_ok=True)
+                loc_file.write_text(json.dumps(
+                    {"tid": tid,
+                     "entries": [[e["seq"], e["part"], e["page_num"]]
+                                 for e in entries],
+                     "parts": parts}, ensure_ascii=False),
+                    encoding="utf-8")
+            except Exception:
+                pass
+    by_loc = {}
+    for _i, _e in enumerate(entries):
+        if _e.get("page_num") is not None:
+            by_loc.setdefault(f"{_e.get('part') or ''}|{_e['page_num']}", _i)
+    idx = {"file_path": None, "entries": entries, "parts": parts,
+           "total_pages": len(entries), "meta": _book_meta_for_rel(rel_path),
+           "by_loc": by_loc, "virtual": True, "tid": tid,
+           "bdir": str(bdir) if bdir else ""}
+    BOOK_PAGE_INDEX_CACHE[rel_path] = idx
+    return idx
+
+
+def _virtual_pages(idx: dict, seqs) -> Dict[int, dict]:
+    """نصوص صفحات افتراضية: من مخزن محلي صغير للصفحات المفتوحة فعلًا،
+    وما نقص يُجلب من الشاملة عبر الجسر ويُحفظ — القراءة لا تستخرج."""
+    want = [int(s) for s in seqs or []]
+    bdir = Path(idx["bdir"]) if idx.get("bdir") else None
+    cache_file = bdir / "virtual_pages.json" if bdir else None
+    cache: Dict[str, list] = {}
+    if cache_file is not None and cache_file.exists():
+        try:
+            cache = json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception:
+            cache = {}
+    missing = [s for s in want if str(s) not in cache]
+    if missing:
+        try:
+            import shamela_search
+            got = shamela_search.fetch_pages(idx["tid"], missing)
+            for key, val in (got.get("pages") or {}).items():
+                cache[str(key)] = [val.get("body") or "",
+                                   val.get("footnotes") or ""]
+            if cache_file is not None:
+                cache_file.parent.mkdir(parents=True, exist_ok=True)
+                tmp = cache_file.with_name("virtual_pages.tmp")
+                tmp.write_text(json.dumps(cache, ensure_ascii=False),
+                               encoding="utf-8")
+                os.replace(tmp, cache_file)
+        except Exception:
+            pass
+    out = {}
+    for s in want:
+        body, foot = (cache.get(str(s)) or ["", ""])
+        out[s] = {"body": body or "", "footnotes": foot or ""}
+    return out
+
+
+def _resolve_book_for_reading(rel_path, book_title, book_id):
+    """(مسار، ملف صفحات، فهرس افتراضي): المستخرج أولًا، فالافتراضي.
+    القراءة لا تُشغّل استخراجًا كسولًا بعد اليوم: أول فتح افتراضي."""
+    bid = _book_id_value(book_id)
+    resolved_rel = None
+    if bid:
+        db = get_db()
+        if db:
+            try:
+                cursor = db.cursor()
+                cursor.execute(
+                    "SELECT rel_path FROM books WHERE book_id = ? "
+                    "AND rel_path IS NOT NULL LIMIT 1", (bid,))
+                row = cursor.fetchone()
+                if row and row["rel_path"]:
+                    resolved_rel, pages_file = _pages_file_for_rel(
+                        row["rel_path"])
+                    if pages_file:
+                        return resolved_rel, pages_file, None
+            except Exception:
+                pass
+    r2, p2 = resolve_book_path(rel_path, book_title, None)
+    if p2:
+        return r2, p2, None
+    resolved_rel = resolved_rel or r2
+    if resolved_rel:
+        virt = _virtual_index(resolved_rel, bid)
+        if virt is not None:
+            return resolved_rel, None, virt
+    return resolved_rel, None, None
+
+
 def get_or_build_book_index(rel_path: str, pages_file: Path) -> dict:
     """
     بناء فهرس سريع في الذاكرة لتنقل فوري بين الصفحات والأجزاء (أقل من 1 مللي ثانية)
     """
     if rel_path in BOOK_PAGE_INDEX_CACHE:
-        return BOOK_PAGE_INDEX_CACHE[rel_path]
+        _cached_idx = BOOK_PAGE_INDEX_CACHE[rel_path]
+        if not _cached_idx.get("virtual"):
+            return _cached_idx
+        # فهرس افتراضي قديم في الذاكرة وكتاب صار مستخرجًا: إعادة بناء
 
     entries = []
     parts_set = set()
@@ -6473,24 +6669,7 @@ def get_or_build_book_index(rel_path: str, pages_file: Path) -> dict:
             except Exception:
                 pass
 
-    # جلب بطاقة الكتاب الكاملة من SQLite
-    meta = {}
-    db = get_db()
-    if db:
-        try:
-            cursor = db.cursor()
-            folder_name = rel_path.split("/")[-1] if "/" in rel_path else rel_path
-            cursor.execute("""
-                SELECT title_ar, main_author_name_ar, main_author_death_hijri, category_name_ar, betaka_text, volume_count_observed 
-                FROM books 
-                WHERE rel_path = ? OR rel_path = ? OR rel_path LIKE '%/' || ?
-                LIMIT 1
-            """, (rel_path, f"shamela4_data/{rel_path}", folder_name))
-            row = cursor.fetchone()
-            if row:
-                meta = dict(row)
-        except Exception:
-            pass
+    meta = _book_meta_for_rel(rel_path)
 
     by_loc = {}
     for _i, _e in enumerate(entries):
@@ -9307,11 +9486,14 @@ async def get_book_page(
     """
     جلب صفحة محددة من الكتاب الأصلي مع نصوص الحواشي ومعلومات الأجزاء والتنقل
     """
-    resolved_rel, pages_file = resolve_book_path(rel_path, book_title, book_id)
-    if not pages_file or not pages_file.exists():
+    resolved_rel, pages_file, virtual_idx = _resolve_book_for_reading(
+        rel_path, book_title, book_id)
+    if virtual_idx is not None:
+        idx = virtual_idx
+    elif not pages_file or not pages_file.exists():
         raise HTTPException(status_code=404, detail=_book_notfound_detail(book_id, rel_path, book_title))
-
-    idx = get_or_build_book_index(resolved_rel, pages_file)
+    else:
+        idx = get_or_build_book_index(resolved_rel, pages_file)
     entries = idx["entries"]
     if not entries:
         raise HTTPException(status_code=404, detail="الكتاب لا يحتوي صفحات صالحة للقراءة")
@@ -9378,21 +9560,42 @@ async def get_book_page(
 
     entry = entries[target_idx]
 
-    # قراءة بيانات الصفحة فورياً عبر seek
+    # قراءة بيانات الصفحة: افتراضيًا من الشاملة عبر الجسر، وإلا seek فوري
     page_data = {}
-    try:
-        with open(pages_file, "rb") as f:
-            f.seek(entry["offset"])
-            line = f.readline()
-            if line:
-                page_data = json.loads(line.decode("utf-8"))
-    except Exception as e:
-        print(f"Error reading page offset: {e}")
+    if idx.get("virtual"):
+        page_data = _virtual_pages(idx, [entry["seq"]]).get(
+            entry["seq"], {})
+    else:
+        try:
+            with open(pages_file, "rb") as f:
+                f.seek(entry["offset"])
+                line = f.readline()
+                if line:
+                    page_data = json.loads(line.decode("utf-8"))
+        except Exception as e:
+            print(f"Error reading page offset: {e}")
 
     raw_body = page_data.get("body", "")
     clean_body = re.sub(r"<[^>]+>", "", raw_body).strip()
     quote_words = _quote_words(highlight or "")
-    if quote_words and page_num is not None and not _body_matches_quote(clean_body, quote_words):
+    if quote_words and page_num is not None and not _body_matches_quote(clean_body, quote_words) and idx.get("virtual"):
+        _cand = [i for i, c in enumerate(entries)
+                 if i != target_idx
+                 and _page_nums_equal(c["page_num"], page_num)]
+        _fetched = _virtual_pages(idx, [entries[i]["seq"] for i in _cand])
+        for i in _cand:
+            _cp = _fetched.get(entries[i]["seq"], {})
+            _cb = _cp.get("body", "")
+            if not _body_matches_quote(
+                    re.sub(r"<[^>]+>", "", _cb).strip(), quote_words):
+                continue
+            target_idx = i
+            entry = entries[i]
+            page_data = _cp
+            raw_body = _cb
+            clean_body = re.sub(r"<[^>]+>", "", raw_body).strip()
+            break
+    elif quote_words and page_num is not None and not _body_matches_quote(clean_body, quote_words):
         try:
             with open(pages_file, "rb") as handle:
                 for i, candidate in enumerate(entries):
@@ -9804,17 +10007,14 @@ async def get_book_surrounding_pages(
     جلب باقة الصفحات السابقة واللاحقة للصفحة المستهدفة من الأصل التراثي
     مع كشف رأس الحولية التاريخية ومطلع المسألة الفقهية وبيان الهوامش الموثقة.
     """
-    resolved_rel, pages_file = resolve_book_path(rel_path, book_title, book_id)
-    if not pages_file or not pages_file.exists():
-        # محاولة البحث في MCP المعياري
-        p_res = shamela_local_mcp.resolve_book_files(book_id or book_title or rel_path)
-        if p_res and (p_res / "pages.jsonl").exists():
-            pages_file = p_res / "pages.jsonl"
-            resolved_rel = str(p_res.relative_to(SHAMELA_DATA_PATH.parent)) if SHAMELA_DATA_PATH.parent in p_res.parents else p_res.name
-        else:
-            raise HTTPException(status_code=404, detail=_book_notfound_detail(book_id, rel_path, book_title))
-
-    idx = get_or_build_book_index(resolved_rel, pages_file)
+    resolved_rel, pages_file, virtual_idx = _resolve_book_for_reading(
+        rel_path, book_title, book_id)
+    if virtual_idx is not None:
+        idx = virtual_idx
+    elif not pages_file or not pages_file.exists():
+        raise HTTPException(status_code=404, detail=_book_notfound_detail(book_id, rel_path, book_title))
+    else:
+        idx = get_or_build_book_index(resolved_rel, pages_file)
     entries = idx["entries"]
     if not entries:
         raise HTTPException(status_code=404, detail="الكتاب لا يحتوي صفحات صالحة للقراءة")
@@ -9845,14 +10045,23 @@ async def get_book_surrounding_pages(
 
     pages = []
     try:
-        with open(pages_file, "rb") as f:
+        _virtual_batch = None
+        if idx.get("virtual"):
+            _virtual_batch = _virtual_pages(
+                idx, [entries[i]["seq"]
+                      for i in range(start_i, end_i + 1)])
+        _pages_handle = None if idx.get("virtual") else open(pages_file, "rb")
+        try:
             for cur_i in range(start_i, end_i + 1):
                 e = entries[cur_i]
-                f.seek(e["offset"])
-                line = f.readline()
-                if not line:
-                    continue
-                d = json.loads(line.decode("utf-8"))
+                if idx.get("virtual"):
+                    d = _virtual_batch.get(e["seq"], {})
+                else:
+                    _pages_handle.seek(e["offset"])
+                    line = _pages_handle.readline()
+                    if not line:
+                        continue
+                    d = json.loads(line.decode("utf-8"))
                 raw_b = d.get("body", "")
                 clean_b = re.sub(r"<[^>]+>", "", raw_b).strip()
                 fn = d.get("footnotes") or ""
@@ -9872,6 +10081,9 @@ async def get_book_surrounding_pages(
                     "body": clean_b,
                     "footnotes": fn
                 })
+        finally:
+            if _pages_handle is not None:
+                _pages_handle.close()
     except Exception as ex:
         print(f"Error reading surrounding pages: {ex}")
 
@@ -10018,7 +10230,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.860"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.861"},
         },
     })
     if opened.get("error"):
