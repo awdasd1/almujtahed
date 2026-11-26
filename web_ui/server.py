@@ -3345,6 +3345,25 @@ def enrich_unstamped_citations(text: str) -> Tuple[str, int]:
         key = (candidate or "").strip()
         if key in _cache:
             return _cache[key]
+        # بوابة هوية قبل أي ختم: الاسم المشترك بين مؤلفين («فتح الباري»)
+        # لا يُختم صامتًا أبدًا — يبقى ⚠. المؤلف المصرّح به أو اسم لا
+        # منافس له يمضي إلى الحلّ العادي. فشل الهوية لا يعيق شيئًا.
+        try:
+            _idc = _book_identity_resolve(key)
+            if _idc.get("status") == "candidates" and _idc.get("candidates"):
+                _c0 = _idc["candidates"][0] or {}
+                _top_score = float(_c0.get("confidence") or _c0.get("score") or 0)
+                if _top_score >= 0.85:
+                    _cache[key] = None
+                    return None
+            elif (_idc.get("status") == "resolved" and _idc.get("book_ids")
+                    and float(_idc.get("confidence") or 0) >= 0.95):
+                _r = shamela_local_mcp.resolve_book(f"#{int(_idc['book_ids'][0])}")
+                if _r and _r.get("status") == "ok" and _r.get("book_id"):
+                    _cache[key] = _r
+                    return _r
+        except Exception:
+            pass
         # المرشح يصل ملصوقًا به المؤلف غالبًا («الموافقات، الشاطبي»): والمؤلف
         # يضلّل المطابقة الضبابية فتُرجع كتابًا آخر يضم اللفظين في عنوانه.
         # تُجرَّب الصورة الكاملة أولًا، ثم بفصل آخر مقطع (المؤلف) تباعًا.
@@ -10215,7 +10234,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.865"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.866"},
         },
     })
     if opened.get("error"):

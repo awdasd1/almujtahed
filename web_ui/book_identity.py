@@ -190,6 +190,12 @@ def _score_card(q_norm: str, q_tokens: set, q_grams: set, card: dict, explicit_a
         elif variant.startswith(q_norm) or q_norm.startswith(variant):
             ratio = min(len(q_norm), len(variant)) / max(1, max(len(q_norm), len(variant)))
             s, ev = 0.86 + 0.10 * ratio, "احتواء اسمي (اسم مشهور/مختصر)"
+            if q_norm.startswith(variant):
+                # سؤال أطول من صيغة قصيرة: رموزه الزائدة مميِّزة لكتاب آخر
+                # («فتح الباري شرح صحيح البخاري» ليس «فتح الباري» لابن رجب)
+                extra = q_tokens - vt
+                if extra:
+                    s = max(0.0, s - 0.07 * len(extra))
         elif q_tokens and (q_tokens <= vt or (vt <= q_tokens and len(vt) >= 3)):
             s, ev = 0.88, "احتواء كلمات العنوان"
         else:
@@ -298,6 +304,33 @@ def resolve_book(query: str, db_path: str, author_hint: str = "", limit: int = 5
             scored.append((s, card, ev))
     if not scored:
         return base
+    if explicit_author:
+        # المؤلف المذكور في الطلب مرشّح حاسم لا علاوة نقاط (قاعدة
+        # الشاملة: الهوية اسمٌ ومؤلف معًا). من وافقه بقي، ومن خالفه
+        # خرج؛ فإن لم يوافقه أحد لم يُحسم الاسم لأحد وبقي مرشحين.
+        def _author_hit(card):
+            toks = _distinctive(card["author_tokens"])
+            for ts in card["token_sets"]:
+                toks |= _distinctive(ts)
+            strip = {(t[2:] if t.startswith("ال") and len(t) > 4 else t)
+                     for t in toks}
+            want = {(t[2:] if t.startswith("ال") and len(t) > 4 else t)
+                    for t in explicit_author}
+            return bool(want & strip)
+
+        matched = [x for x in scored if _author_hit(x[1])]
+        if matched:
+            scored = matched
+        else:
+            base["status"] = "candidates"
+            scored.sort(key=lambda x: (-x[0], -x[1]["volumes"], x[1]["book_id"]))
+            base["candidates"] = [{
+                "work_id": c["work_id"], "book_id": c["book_id"],
+                "book_ids": [c["book_id"]], "title": c["title"],
+                "author": c["author"], "confidence": round(float(s), 3),
+                "evidence": ev, "editions": 1,
+            } for s, c, ev in scored[: max(1, limit)]]
+            return base
     scored.sort(key=lambda x: (-x[0], -x[1]["volumes"], x[1]["book_id"]))
 
     # تجميع الطبعات: بطاقتان عملٌ واحد إن اشتركتا في صيغة اسم ووافق المؤلف المميز،
@@ -307,11 +340,22 @@ def resolve_book(query: str, db_path: str, author_hint: str = "", limit: int = 5
         placed = None
         card_vars = set(card["variants"])
         card_auth = _distinctive(card["author_tokens"])
+        card_title_toks = set()
+        for ts in card["token_sets"]:
+            card_title_toks |= _distinctive(ts)
         for cl in clusters:
             head = cl["card"]
             shared = card_vars & set(head["variants"])
             head_auth = _distinctive(head["author_tokens"])
-            if shared and (not card_auth or not head_auth or card_auth & head_auth):
+            head_title_toks = set()
+            for ts in head["token_sets"]:
+                head_title_toks |= _distinctive(ts)
+            # طبعة بحاشية/تحقيق على العمل: مؤلفها المسجل صاحب الحاشية،
+            # لكن مؤلف الأصل في عنوانها — فهي من عمله لا عملًا منافسًا
+            author_cross = bool((card_auth & head_title_toks)
+                                or (head_auth & card_title_toks))
+            if shared and (not card_auth or not head_auth
+                           or card_auth & head_auth or author_cross):
                 placed = cl
                 break
         if placed is None:
@@ -323,7 +367,13 @@ def resolve_book(query: str, db_path: str, author_hint: str = "", limit: int = 5
         placed["editions"].append(card)
     ordered = sorted(clusters, key=lambda g: (-g["score"], -len(g["editions"]), -g["card"]["volumes"], g["card"]["book_id"]))
     for g in ordered:
-        g["editions"].sort(key=lambda c: (-c["volumes"], c["book_id"]))
+        # رأس طبعات العمل طبعة مؤلفه الأصلي (الأغلب بين الطبعات)، لا
+        # طبعة بحاشية/تحقيق ولو كثرت أجزاؤها — فهي مرجع الترقيم الأول
+        from collections import Counter
+        dominant = Counter(c["author_norm"] for c in g["editions"]).most_common(1)
+        dom_author = dominant[0][0] if dominant else ""
+        g["editions"].sort(key=lambda c: (c["author_norm"] != dom_author,
+                                          -c["volumes"], c["book_id"]))
 
     cands = []
     for g in ordered[: max(1, limit)]:
@@ -340,15 +390,37 @@ def resolve_book(query: str, db_path: str, author_hint: str = "", limit: int = 5
         })
     base["candidates"] = cands
     top = ordered[0]
-    second = ordered[1]["score"] if len(ordered) > 1 else 0.0
-    margin = float(top["score"]) - float(second)
+
+    # المنافس عملٌ يفتتح اسمه بالاسم المطلوب نفسه، لا عمل مشتق عليه
+    # (شرح/تخريج/مختصر على الكتاب) فذاك ليس بديلًا عنه ولا ملتبسًا به
+    def _opens_with_query(cl) -> bool:
+        for c in cl["editions"]:
+            for v in c["variants"]:
+                if v == q_norm or v.startswith(q_norm + " "):
+                    return True
+        return False
+
+    # الفاصل الحاسم من أقرب عمل منافس فقط؛ المشتقات لا تُضعف الحسم
+    rival_second = 0.0
+    for cl in ordered[1:]:
+        if _opens_with_query(cl):
+            rival_second = float(cl["score"])
+            break
+    margin = float(top["score"]) - rival_second
     if len(ordered) > 1 and not explicit_author:
-        # اسم مشهور واحد لعملين مختلفين (فتح الباري لابن حجر/لابن رجب):
-        # بلا مؤلف في الطلب لا يُحسم، بل يبقى مرشحين موثقين
-        second_exact = any(
-            q_norm in c["variants"] for c in ordered[1]["editions"]
-        )
-        if second_exact and second >= 0.88 and margin < 0.15:
+        # اسم مشهور واحد لعملين مختلفين (فتح الباري لابن حجر/لابن رجب،
+        # المجموع للنووي/المجموع اللفيف): بلا مؤلف في الطلب لا يُحسم
+        # لأحدهما مهما تقاربت الدرجات، بل يبقى مرشحين موثقين — فالحسم
+        # الصامت هنا هو أصل الخلط بين الكتب.
+        if rival_second >= 0.84 and margin < 0.13:
+            base["status"] = "candidates"
+            base["work_id"] = top["card"]["work_id"]
+            return base
+    if len(ordered) > 1 and not explicit_author:
+        # كلمة عامة وحدها («الكبير»، «في التاريخ») تحتويها عناوين كثيرة
+        # بدرجة واحدة: لا «أقرب» هنا بل التباس، فلا حسم من احتواء كلمات.
+        _second_any = float(ordered[1]["score"])
+        if _second_any >= 0.84 and float(top["score"]) - _second_any < 0.05:
             base["status"] = "candidates"
             base["work_id"] = top["card"]["work_id"]
             return base

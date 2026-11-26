@@ -2305,6 +2305,21 @@ def _tok_stems(s: Any) -> List[str]:
     return stems
 
 
+def _explicit_author_stem(text: str) -> str:
+    """رمز المؤلف المصرّح به في صيغة «... لابن حجر / لأبي عبيد / للنووي»،
+    أو «» عند غيابه. المؤلف المذكور مرشّح حاسم للهوية لا مجرد نقاط:
+    به تفرّق الشاملة نفسها بين كتابين باسم واحد (فتح الباري لابن رجب
+    وفتح الباري لابن حجر كتابان برقمين ومؤلفين لا كتاب واحد)."""
+    raw = str(text or "")
+    m = re.search(r"(?:لابن|لأبي|لابي|لابى)\s+([\u0600-\u06FF]+)", raw)
+    if not m:
+        m = re.search(r"(?:^|[\s،,])لل([\u0600-\u06FF]{3,})", raw)
+    if not m:
+        return ""
+    stems = _tok_stems(m.group(1))
+    return stems[0] if stems else ""
+
+
 def _best_book_row(cur, text: str) -> Optional[Dict[str, Any]]:
     """مطابقة رمزية موزونة عند فشل التطابق الحرفي: درجة التطابق أولًا
     (رموز العنوان ×2 + المؤلف + مكافأة الاحتواء الكامل لرموز السؤال)،
@@ -2361,6 +2376,27 @@ def _best_book_row(cur, text: str) -> Optional[Dict[str, Any]]:
         scored.append((key, d, score))
     if not scored:
         return None
+    # مؤلف مصرّح به في الطلب يحسم بين متماثلي الاسم: من خالفه خرج
+    # مهما علا تطابق عنوانه («السيرة النبوية لابن هشام» ليست سيرة ابن
+    # حبان وإن شاركتها أكثر الرموز).
+    _author_stem = _explicit_author_stem(text)
+    if _author_stem:
+        _matching = [x for x in scored
+                     if _author_stem in _tok_stems(x[1].get("main_author_name_ar"))
+                     or _author_stem in _tok_stems(x[1].get("title_ar"))]
+        if _matching:
+            scored = _matching
+        # وبوابة رأس العنوان: رموز الاسم قبل عبارة المؤلف يجب أن توجد
+        # في عنوان المختار نفسه، فلا يكفي اشتراك المؤلف وحده («الشرح
+        # الكبير لابن قدامة» لا يجعل «المغني لابن قدامة» جوابًا).
+        _head = re.split(r"\s+(?:لابن|لأبي|لابي)\s+", str(text or ""))[0]
+        _head_stems = [t for t in _tok_stems(_head) if len(t) >= 3]
+        if _head_stems:
+            _titled = [x for x in scored
+                       if set(_head_stems) & set(_tok_stems(x[1].get("title_ar")))]
+            scored = _titled
+        if not scored:
+            return None
     scored.sort(key=lambda x: x[0], reverse=True)
     best, best_score = scored[0][1], scored[0][2]
     if best_score < 5:

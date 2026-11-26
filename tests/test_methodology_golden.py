@@ -821,6 +821,52 @@ class RemovedFeaturesTests(unittest.TestCase):
         self.assertIn("readerLensNav", reader)
 
 
+class BookIdentityProbesTests(unittest.TestCase):
+    """هوية الكتاب على منهج الشاملة: (اسم العمل + المؤلف) لا الرقم وحده
+    ولا ضبابية الاسم. الاسم المشترك بلا مؤلف لا يُحسم لأحد الطرفين أبدًا
+    («فتح الباري» ليس ابن حجر ولا ابن رجب حتى يُذكر المؤلف)، والمؤلف
+    المصرّح به مرشّح حاسم، والختم الصامت على الملتبس ممنوع."""
+
+    @classmethod
+    def setUpClass(cls):
+        import book_identity
+        cls.bi = book_identity
+        cls.db = str(server.DB_INDEX_PATH)
+
+    def _ids(self, query):
+        r = self.bi.resolve_book(query, self.db)
+        return r.get("status"), set(r.get("book_ids") or [])
+
+    def test_shared_name_without_author_never_resolves(self):
+        for q in ("فتح الباري", "المجموع", "المغني", "الموطأ"):
+            status, _ = self._ids(q)
+            self.assertEqual(status, "candidates", q)
+
+    def test_explicit_author_decides_namesakes(self):
+        self.assertEqual(self._ids("فتح الباري لابن حجر")[1], {1455})
+        self.assertEqual(self._ids("فتح الباري لابن رجب")[1], {128})
+        self.assertEqual(self._ids("المجموع للنووي")[1], {1618})
+        self.assertEqual(self._ids("السيرة النبوية لابن هشام")[1], {6180, 2621})
+
+    def test_editions_group_under_one_work(self):
+        status, ids = self._ids("صحيح البخاري")
+        self.assertEqual(status, "resolved")
+        self.assertIn(1458, ids)  # ط السلطانية رأس العمل
+
+    def test_mcp_author_filter_and_head_gate(self):
+        import shamela_local_mcp as mcp
+        self.assertIn(mcp.resolve_book("السيرة النبوية لابن هشام").get("book_id"),
+                      (6180, 2621))
+        self.assertIsNone(mcp.resolve_book("الشرح الكبير لابن قدامة").get("book_id"))
+        self.assertTrue(mcp.resolve_book("فتح الباري").get("ambiguous"))
+
+    def test_stamp_gate_blocks_bare_ambiguous(self):
+        out, _ = server.enrich_unstamped_citations("انظر: فتح الباري (3/45)")
+        self.assertIn("cit-unresolved", out)
+        out, _ = server.enrich_unstamped_citations("انظر: فتح الباري لابن رجب (3/45)")
+        self.assertIn('data-book-id="128"', out)
+
+
 class MethodologyContractTests(unittest.TestCase):
     """حراس نصية لعقود المنهجية حتى لا تُسقطها طبقة لاحقة بصمت."""
 
