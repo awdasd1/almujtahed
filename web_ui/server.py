@@ -123,13 +123,28 @@ def _read_workspace_pointer() -> Optional[Path]:
     return None
 
 
-_WORKSPACE_FROM_POINTER = _read_workspace_pointer()
-if _WORKSPACE_FROM_POINTER is not None:
-    WORKSPACE_PATH: Optional[Path] = _WORKSPACE_FROM_POINTER
-elif _legacy_data_exists():
-    WORKSPACE_PATH = BASE_DIR
-else:
-    WORKSPACE_PATH = None
+_WORKSPACE_PENDING_FLAG = SUPPORT_DIR / "workspace-pending.flag"
+
+
+def _workspace_decision():
+    """قرار مصدر البيانات عند الإقلاع: مؤشر صريح، ثم علَم انتظار
+    (طُلب تغيير المجلد فلا تبتلع البوابةَ قاعدةٌ مؤقتة مزروعة في
+    مجلد التشغيل)، ثم بيانات قديمة قائمة، وإلا سؤال المستخدم."""
+    pointed = _read_workspace_pointer()
+    if pointed is not None:
+        return pointed, True
+    try:
+        if _WORKSPACE_PENDING_FLAG.exists():
+            return None, False
+    except Exception:
+        pass
+    if _legacy_data_exists():
+        return BASE_DIR, False
+    return None, False
+
+
+WORKSPACE_PATH, _WORKSPACE_FROM_POINTER = _workspace_decision()
+_WORKSPACE_FROM_POINTER = WORKSPACE_PATH if _WORKSPACE_FROM_POINTER else None
 WORKSPACE_REQUIRED = WORKSPACE_PATH is None
 DATA_ROOT = WORKSPACE_PATH or BASE_DIR
 
@@ -9998,7 +10013,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.855"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.856"},
         },
     })
     if opened.get("error"):
@@ -30438,6 +30453,10 @@ def _set_workspace(folder: Path) -> Dict[str, Any]:
     _WORKSPACE_POINTER.write_text(
         json.dumps({"path": str(folder)}, ensure_ascii=False),
         encoding="utf-8")
+    try:
+        _WORKSPACE_PENDING_FLAG.unlink(missing_ok=True)
+    except Exception:
+        pass
     return {"status": "ok", "path": str(folder), "migrated": migrated,
             "restarting": True}
 
@@ -30541,6 +30560,8 @@ async def workspace_reset(request: Request):
     require_admin(request)
     try:
         _WORKSPACE_POINTER.unlink(missing_ok=True)
+        SUPPORT_DIR.mkdir(parents=True, exist_ok=True)
+        _WORKSPACE_PENDING_FLAG.write_text("1", encoding="utf-8")
     except Exception:
         pass
     threading.Timer(0.8, _restart_self).start()

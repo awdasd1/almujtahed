@@ -252,6 +252,36 @@ class RuntimeLensTests(unittest.TestCase):
         self.assertIsNone(server._named_hadith_matn("حديث النية"))
 
 
+class WorkspacePendingFlagTests(unittest.TestCase):
+    """طلب تغيير المجلد يفرض سؤال المستخدم عند الإقلاع التالي حتى لو
+    وُجدت قاعدة مؤقتة مزروعة في مجلد التشغيل."""
+
+    def test_pending_flag_forces_question(self):
+        import pathlib
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            flag = root / "workspace-pending.flag"
+            orig_flag = server._WORKSPACE_PENDING_FLAG
+            orig_pointer = server._WORKSPACE_POINTER
+            orig_legacy = server._legacy_data_exists
+            try:
+                server._WORKSPACE_PENDING_FLAG = flag
+                server._WORKSPACE_POINTER = root / "workspace.json"
+                server._legacy_data_exists = lambda: True
+                flag.write_text("1", encoding="utf-8")
+                path, from_ptr = server._workspace_decision()
+                self.assertIsNone(path)
+                self.assertFalse(from_ptr)
+                flag.unlink()
+                path, from_ptr = server._workspace_decision()
+                self.assertEqual(path, server.BASE_DIR)
+            finally:
+                server._WORKSPACE_PENDING_FLAG = orig_flag
+                server._WORKSPACE_POINTER = orig_pointer
+                server._legacy_data_exists = orig_legacy
+
+
 class WorkspaceBootIdTests(unittest.TestCase):
     """حالة مساحة العمل تحمل بصمة إقلاع العملية حتى لا تقرأ الواجهة
     جاهزية خادم قديم يموت أثناء إعادة التشغيل بعد حفظ المجلد."""
