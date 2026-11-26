@@ -10013,7 +10013,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.857"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.858"},
         },
     })
     if opened.get("error"):
@@ -34058,6 +34058,13 @@ async def export_project_docx_endpoint(req: ExportDocxRequest):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8085))
+    try:
+        _t0 = float(os.environ.get("ALMOGHNI_T0") or 0)
+        if _t0:
+            print(f"⏱ [إقلاع] اكتمل استيراد الخادم بعد "
+                  f"{time.time() - _t0:.0f}ث من بدء المشغّل")
+    except Exception:
+        pass
     print(f"🚀 تشغيل منظومة المغني الحية على المنفذ: http://localhost:{port}")
     _bump_setup_progress(96)
     uvicorn.run(app, host="127.0.0.1", port=port)

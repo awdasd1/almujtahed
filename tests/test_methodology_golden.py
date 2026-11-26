@@ -373,6 +373,32 @@ class SupervisorRestartContractTests(unittest.TestCase):
                         js.index("fetch('/api/workspace/pick'"))
 
 
+class WorkspaceRestartPatienceTests(unittest.TestCase):
+    """إعادة إقلاع بعد حفظ المجلد قد تطول دقائق (استيراد + إحماء جسر):
+    الواجهة تصبر وتطارد الخادم الجديد ولا تستسلم بتحميل في الفراغ ولا
+    برسالة خطأ إنجليزية خام، والمشرف يعيد الإقلاع سريعًا بلا تعداد."""
+
+    def test_frontend_waits_minutes_not_seconds(self):
+        import pathlib
+        root = pathlib.Path(server.__file__).resolve().parent.parent
+        js = (root / "web_ui" / "static" / "js" / "app.js").read_text(
+            encoding="utf-8")
+        self.assertIn("i < 240", js)
+        self.assertIn("_watchWorkspaceGate", js)
+        self.assertIn("تعذّر الاتصال بخادم المغني", js)
+        # ضياع رد الحفظ نفسه يُطارد ولا يُحكم عليه بالفشل فورًا
+        self.assertIn("await _workspaceSaved({ path })", js)
+
+    def test_supervisor_relaunch_is_fast(self):
+        import pathlib
+        root = pathlib.Path(server.__file__).resolve().parent.parent
+        ps1 = (root / "windows" / "launch.ps1").read_text(encoding="utf-8")
+        start = (root / "start_local.py").read_text(encoding="utf-8")
+        self.assertIn("ALMOGHNI_FAST_RESTART", ps1)
+        self.assertIn('os.environ.get("ALMOGHNI_FAST_RESTART")', start)
+        self.assertIn("ALMOGHNI_T0", start)
+
+
 class GpuProbeCacheTests(unittest.TestCase):
     """فحص كرت الشاشة/المحركات يُحسب مرة واحدة في عمر العملية؛ تكراره
     عند كل طلب موارد خنق خادم ويندوز عشرات الثواني لكل طلب."""

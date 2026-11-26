@@ -98,8 +98,25 @@ async function checkWorkspaceGate() {
     if (data && data.required) {
       const gate = document.getElementById('workspaceGate');
       if (gate) gate.style.display = 'flex';
+      _watchWorkspaceGate();
     }
   } catch (e) { /* خادم قديم بلا هذه الخاصية */ }
+}
+
+function _watchWorkspaceGate() {
+  // بوابة ظاهرة على صفحة قديمة (خادم أُعيد تشغيله وقام مُهيأً أثناء
+  // الانتظار) لا تبقى ميتة: متى قام الخادم بالمجلد المحفوظ أعدنا
+  // التحميل من أنفسنا إلى التطبيق الكامل.
+  if (window.__wsGateWatch) return;
+  window.__wsGateWatch = setInterval(async () => {
+    try {
+      const st = await (await fetch('/api/workspace/status')).json();
+      if (st && st.configured) {
+        clearInterval(window.__wsGateWatch);
+        location.reload();
+      }
+    } catch (e) { /* خادم ما زال يعيد التشغيل */ }
+  }, 5000);
 }
 
 function _workspaceBusy(busy, text) {
@@ -118,21 +135,32 @@ async function _workspaceSaved(data) {
   if (msg) { msg.style.color = '#166534'; msg.textContent = `حُفظ المجلد: ${data?.path || ''} — يُعاد تشغيل المغني الآن...`; }
   // لا تُعد التحميل إلا من خادم جديد فعلًا (بصمة إقلاع مختلفة وبالمسار
   // المحفوظ نفسه)؛ قراءة الجاهزية من الخادم القديم قبل موته كانت تحمل
-  // الصفحة في فجوة إعادة التشغيل فتعلق على شاشة الانتظار.
+  // الصفحة في فجوة إعادة التشغيل فتعلق على شاشة الانتظار. الصبر هنا
+  // مقصود: أول إقلاع بعد حفظ المجلد قد يطول دقائق (استيراد المكتبات
+  // وإحماء جسر الشاملة)، فلا استسلام مبكر ولا إعادة تحميل في الفراغ.
   const bootBefore = window.__workspaceBootBefore || '';
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 750));
+  for (let i = 0; i < 240; i++) {
+    await new Promise(r => setTimeout(r, 1000));
     try {
       const res = await fetch('/api/workspace/status');
       const st = await res.json();
       if (st && st.configured && st.boot && st.boot !== bootBefore
           && (!data?.path || st.path === data.path)) {
         location.reload();
-        return;
+        return true;
       }
     } catch (e) { /* يُعاد التشغيل */ }
+    if (msg && i > 0 && i % 20 === 0) {
+      msg.style.color = '#5b4a2f';
+      msg.textContent = `حُفظ المجلد: ${data?.path || ''} — ما زال المغني يُعيد الإقلاع (${i} ثانية)... أول إقلاع قد يستغرق بضع دقائق، لا تغلق التطبيق.`;
+    }
   }
-  location.reload();
+  _workspaceBusy(false);
+  if (msg) {
+    msg.style.color = '#991b1b';
+    msg.textContent = 'تأخرت عودة المغني أكثر من المعتاد. مجلدك محفوظ؛ أغلق التطبيق وافتحه من جديد وستدخل عليه مباشرة.';
+  }
+  return false;
 }
 
 async function _captureBootBefore() {
@@ -209,18 +237,32 @@ async function setWorkspaceFolderManual() {
   if (!path) { if (msg) msg.textContent = 'اكتب مسار المجلد أولًا'; return; }
   await _captureBootBefore();
   _workspaceBusy(true, 'جارٍ حفظ المجلد...');
+  let data = null;
   try {
     const res = await fetch('/api/workspace/set', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path })
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || 'تعذر حفظ المجلد');
-    await _workspaceSaved(data);
+    data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'تعذّر حفظ المجلد');
   } catch (err) {
+    if (data === null) {
+      // ضاع الاتصال في لحظة إعادة التشغيل نفسها: الحفظ قد يكون وصل
+      // الخادم وردّه لم يصلنا. لا نحكم بالفشل قبل مطاردة الخادم
+      // الجديد بالمسار نفسه حتى يقوم أو تنفد المهلة.
+      await _workspaceSaved({ path });
+      return;
+    }
     _workspaceBusy(false);
-    if (msg) { msg.style.color = '#991b1b'; msg.textContent = err.message; }
+    if (msg) {
+      msg.style.color = '#991b1b';
+      msg.textContent = (err && err.name === 'TypeError')
+        ? 'تعذّر الاتصال بخادم المغني في هذه اللحظة — انتظر ثواني ثم حاول مجددًا.'
+        : (err.message || 'تعذّر حفظ المجلد');
+    }
+    return;
   }
+  await _workspaceSaved(data);
 }
 
 async function refreshWorkspacePathLabel() {
@@ -242,18 +284,24 @@ async function changeWorkspaceFolder() {
     icon: 'folder-open'
   });
   if (!confirmed) return;
+  await _captureBootBefore();
   try {
     const res = await fetch('/api/workspace/reset', { method: 'POST' });
     if (!res.ok) throw new Error('تعذر بدء التغيير');
-    showToast('يُعاد التشغيل الآن لتحديد المجلد الجديد');
-    for (let i = 0; i < 40; i++) {
-      await new Promise(r => setTimeout(r, 750));
+    showToast('يُعاد التشغيل الآن لتحديد المجلد الجديد — قد يستغرق أول إقلاع بضع دقائق');
+    // صبر حتى خادم جديد فعلًا يطلب التحديد؛ لا إعادة تحميل في الفراغ.
+    for (let i = 0; i < 240; i++) {
+      await new Promise(r => setTimeout(r, 1000));
       try {
         const st = await (await fetch('/api/workspace/status')).json();
-        if (st && st.required) { location.reload(); return; }
+        if (st && st.required && st.boot
+            && st.boot !== window.__workspaceBootBefore) {
+          location.reload();
+          return;
+        }
       } catch (e) { /* يُعاد التشغيل */ }
     }
-    location.reload();
+    showToast('تأخرت عودة المغني؛ أغلق التطبيق وافتحه وسيطلب منك تحديد المجلد');
   } catch (err) {
     showToast(err.message);
   }

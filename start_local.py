@@ -208,19 +208,28 @@ def main():
     if sys.version_info < (3, 10):
         raise SystemExit("يلزم بايثون 3.10 أو أحدث.")
     attach_log()
+    os.environ.setdefault("ALMOGHNI_T0", str(time.time()))
     log("تشغيل المغني على الجهاز المحلي")
     prepare_env()
-    try:
-        apply_local_source()
-    except Exception as ex:
-        log(f"تعذر النسخ من المجلد المحلي: {ex}")
+    # إعادة تشغيل بطلب المشرف (بعد حفظ مجلد الحفظ مثلًا): المصادر
+    # والشاملة لم يتغيرا منذ الإقلاع الأول، فلا تعداد ولا فحص من
+    # جديد — مباشرة إلى الخادم. الفحص الكامل كان يضيف دقائق عبثًا
+    # عند كل تبديل مجلد.
+    fast = os.environ.get("ALMOGHNI_FAST_RESTART") == "1"
+    if fast:
+        log("إعادة تشغيل سريعة: تخطي فحص المصادر والشاملة")
+    else:
         try:
-            import local_bundle
-            local_bundle._write_bootstrap(ROOT, "error", "تعذر النسخ من المجلد المحلي", 0, 0)
-        except Exception:
-            pass
-        raise SystemExit(1)
-    if not shamela_ready():
+            apply_local_source()
+        except Exception as ex:
+            log(f"تعذر النسخ من المجلد المحلي: {ex}")
+            try:
+                import local_bundle
+                local_bundle._write_bootstrap(ROOT, "error", "تعذر النسخ من المجلد المحلي", 0, 0)
+            except Exception:
+                pass
+            raise SystemExit(1)
+    if not fast and not shamela_ready():
         # سياسة المنتج: لا سحب بيانات من أي مصدر خارجي إطلاقًا.
         # المكتبة = تطبيق الشاملة عند المستخدم: بحث في فهرسها مباشرة
         # واستخراج عند اللمس. لا شاملة → إرشاد، لا تنزيل صامت.

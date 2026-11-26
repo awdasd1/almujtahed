@@ -259,5 +259,7 @@ while ($true) {
     $proc.WaitForExit()
     if ($proc.ExitCode -ne $restartCode) { exit $proc.ExitCode }
     Add-Content -LiteralPath $LogFile -Value 'restart requested by server (exit 17) - relaunching' -Encoding UTF8
+    # إقلاع لاحق سريع: لا تعداد شاملة ولا فحص مصادر من جديد.
+    $env:ALMOGHNI_FAST_RESTART = '1'
     Start-Sleep -Seconds 1
 }
