@@ -672,6 +672,9 @@ function renderReaderBodyText() {
 
   // التمرير لأعلى الصفحة
   bodyContainer.scrollTop = 0;
+
+  // نافذة البحث بمنظار مفتوحة: إعادة التحديد على الصفحة الجديدة تلقائيًا
+  refreshReaderSearchIfOpen();
 }
 
 // تبديل إظهار وإخفاء التشكيل
@@ -885,6 +888,7 @@ function closeBookReader() {
   document.body.style.overflow = '';
   readerState.isOpen = false;
   readerState.highlightText = '';
+  if (document.getElementById('readerSearchModal')) closeReaderSearch();
   clearReaderBookFilter();
   const tooltip = document.getElementById('readerSelectionTooltip');
   if (tooltip) tooltip.style.display = 'none';
@@ -918,129 +922,217 @@ function extractWitnessTarget(phrase) {
 }
 
 // =============================================================================
-// بحث بمنظار: المستخدم يبحث بنفسه عن عبارة في الصفحة المعروضة (وما
-// استُوفي من باقة الصفحات)، فتُظلَّل مواضعها ويُتنقَّل بينها. لا تحديد
-// تلقائي لأي شاهد — البحث بيد القارئ وحده.
+// 🔭 بحث بمنظار في نص الكتاب المعروض: نسخة مطابقة لنافذة «بحث في الإجابة»
+// — نافذة عائمة قابلة للسحب، تظليل تلقائي فوري أثناء الكتابة، عدّادات
+// (مرات الورود وكلمات العبارة والجمل الحاوية)، وقائمة جمل يقفز منها
+// القارئ إلى الموضع بعينه، مع تنقّل سابق/تالٍ بين المواضع.
 // =============================================================================
+let _readerSearch = { marks: [], current: -1 };
 
-let readerLensIdx = -1;
+function _rdNormChar(ch) {
+  if (/[\u064B-\u0652\u0670\u0640]/.test(ch)) return '';
+  if ('إأآٱ'.includes(ch)) return 'ا';
+  if (ch === 'ى') return 'ي';
+  if (ch === 'ة') return 'ه';
+  if (ch === 'ؤ') return 'و';
+  if (ch === 'ئ') return 'ي';
+  return ch;
+}
+function _rdNormalize(s) { return (s || '').split('').map(_rdNormChar).join(''); }
 
-function _lensCharPat(ch) {
-  if ('يىئ'.includes(ch)) return '[يىئ]';
-  if ('اأإآٱ'.includes(ch)) return '[اأإآٱ]';
-  if ('وؤ'.includes(ch)) return '[وؤ]';
-  if ('ةه'.includes(ch)) return '[ةه]';
-  return escapeRegex(ch);
+function _ensureReaderSearchModal() {
+  if (document.getElementById('readerSearchModal')) return;
+  const st = document.createElement('style');
+  st.textContent = 'mark.rd-hit{background:#ffe58a;color:inherit;padding:0 1px;border-radius:3px;} mark.rd-hit.rd-current{background:#ff9d45;outline:2px solid #e07b1f;}';
+  document.head.appendChild(st);
+  const d = document.createElement('div');
+  d.id = 'readerSearchModal';
+  d.style.cssText = 'display:none;position:fixed;inset:0;z-index:10001;background:transparent;direction:rtl;pointer-events:none;';
+  d.innerHTML = `
+    <div id="readerSearchPanel" style="pointer-events:auto;position:absolute;top:7vh;left:50%;transform:translateX(-50%);width:min(640px,94vw);background:var(--bg-surface,#fff);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,0.35);padding:16px 18px;max-height:84vh;display:flex;flex-direction:column;">
+      <div id="readerSearchDragHandle" title="اسحب من هذا الشريط لتحريك النافذة ومشاهدة التظليل في نص الكتاب" style="display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:move;touch-action:none;user-select:none;-webkit-user-select:none;">
+        <strong style="font-size:15px;">🔭 بحث في نص الكتاب <span style="font-size:11px;opacity:0.65;font-weight:400;">(قابلة للسحب ⠿)</span></strong>
+        <button type="button" class="btn-msg-export" onclick="closeReaderSearch()">إغلاق ✕</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        <input id="readerSearchInput" type="text" placeholder="اكتب حرفًا أو كلمة أو جملة للبحث داخل المعروض من الكتاب..." style="flex:1;min-width:220px;padding:9px 12px;border:1px solid var(--border-subtle,#ccc);border-radius:9px;font-size:14px;" oninput="runReaderSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();stepReaderSearch(1);}">
+        <button type="button" class="btn-msg-export" onclick="stepReaderSearch(-1)">▲ السابق</button>
+        <button type="button" class="btn-msg-export" onclick="stepReaderSearch(1)">▼ التالي</button>
+      </div>
+      <label style="margin-top:8px;font-size:12.5px;display:flex;gap:6px;align-items:center;cursor:pointer;">
+        <input id="readerSearchFlex" type="checkbox" checked onchange="runReaderSearch()">
+        بحث مرن: تجاهل التشكيل والهمزات والألف المقصورة والتاء المربوطة
+      </label>
+      <div id="readerSearchStats" style="margin-top:9px;font-size:13px;line-height:1.9;color:var(--accent-gold,#9a6b1f);background:rgba(184,115,51,0.07);border:1px solid var(--border-subtle,#e2d8c3);border-radius:9px;padding:7px 11px;">اكتب عبارة البحث وستُظلَّل مواضعها في نص الكتاب تلقائيًا مع عدّاداتها هنا.</div>
+      <div id="readerSearchResults" style="margin-top:10px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+    </div>`;
+  document.body.appendChild(d);
+  // سحب النافذة من شريط رأسها (ماوس ولمس) ليبقى نص الكتاب وتظليلاته مرئية
+  const panel = d.querySelector('#readerSearchPanel');
+  const handle = d.querySelector('#readerSearchDragHandle');
+  if (panel && handle) {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      const rect = panel.getBoundingClientRect();
+      panel.style.left = rect.left + 'px';
+      panel.style.top = rect.top + 'px';
+      panel.style.transform = 'none';
+      const offX = e.clientX - rect.left, offY = e.clientY - rect.top;
+      handle.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const w = panel.offsetWidth, h = panel.offsetHeight;
+        let x = ev.clientX - offX, y = ev.clientY - offY;
+        x = Math.max(-w + 90, Math.min(x, window.innerWidth - 90));
+        y = Math.max(0, Math.min(y, window.innerHeight - 44));
+        panel.style.left = x + 'px';
+        panel.style.top = y + 'px';
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+  }
 }
 
-function _lensRegex(phrase) {
-  const words = String(phrase || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-  if (!words.length) return null;
-  const src = words.map(w =>
-    [...w].map(ch => _lensCharPat(ch) + '[\\u064B-\\u065F\\u0670\\u0640]*').join('')
-  ).join('\\s+');
-  try { return new RegExp(src, 'g'); } catch (e) { return null; }
+function openReaderSearch() {
+  _ensureReaderSearchModal();
+  _clearReaderHighlights();
+  _readerSearch = { marks: [], current: -1 };
+  const m = document.getElementById('readerSearchModal');
+  m.style.display = 'block';
+  const btn = document.getElementById('btnReaderLensSearch');
+  if (btn) btn.classList.add('active');
+  const inp = document.getElementById('readerSearchInput');
+  if (inp) {
+    if (!inp.value.trim() && readerState.highlightText) {
+      inp.value = extractWitnessTarget(readerState.highlightText);
+    }
+    inp.focus();
+    if (inp.value.trim().length >= 2) runReaderSearch();
+  }
 }
-
-function _lensMarks() {
-  const body = document.getElementById('readerPageBody');
-  return body ? [...body.querySelectorAll('mark.reader-lens-mark')] : [];
+function closeReaderSearch() {
+  _clearReaderHighlights();
+  const m = document.getElementById('readerSearchModal');
+  if (m) m.style.display = 'none';
+  const btn = document.getElementById('btnReaderLensSearch');
+  if (btn) btn.classList.remove('active');
+  _readerSearch = { marks: [], current: -1 };
 }
-
-function clearReaderLensMarks() {
+function _clearReaderHighlights() {
   const body = document.getElementById('readerPageBody');
   if (body) {
-    body.querySelectorAll('mark.reader-lens-mark').forEach(m => {
-      m.replaceWith(document.createTextNode(m.textContent));
+    body.querySelectorAll('mark.rd-hit').forEach(mk => {
+      const parent = mk.parentNode;
+      if (parent) { parent.replaceChild(document.createTextNode(mk.textContent), mk); parent.normalize(); }
     });
-    body.normalize();
   }
-  readerLensIdx = -1;
-  const count = document.getElementById('readerLensCount');
-  if (count) count.textContent = '';
+  _readerSearch.marks = []; _readerSearch.current = -1;
 }
+// عند قلب الصفحة أو استيفاء السياق والنافذة مفتوحة: إعادة التحديد تلقائيًا
+function refreshReaderSearchIfOpen() {
+  const m = document.getElementById('readerSearchModal');
+  if (!m || m.style.display === 'none') return;
+  const inp = document.getElementById('readerSearchInput');
+  if (inp && inp.value.trim().length >= 2) runReaderSearch();
+}
+function runReaderSearch() {
+  _clearReaderHighlights();
+  const stats = document.getElementById('readerSearchStats');
+  const results = document.getElementById('readerSearchResults');
+  const q = (document.getElementById('readerSearchInput')?.value || '').trim();
+  const flex = !!document.getElementById('readerSearchFlex')?.checked;
+  if (results) results.innerHTML = '';
+  if (!q || q.length < 2) { if (stats) stats.textContent = 'اكتب حرفين على الأقل للبحث داخل المعروض من الكتاب.'; return; }
+  const content = document.getElementById('readerPageBody');
+  if (!content) { if (stats) stats.textContent = 'تعذر العثور على نص الكتاب المعروض.'; return; }
 
-function toggleReaderLensSearch(force) {
-  const bar = document.getElementById('readerLensBar');
-  if (!bar) return;
-  const show = typeof force === 'boolean' ? force : bar.style.display === 'none';
-  bar.style.display = show ? 'flex' : 'none';
-  const btn = document.getElementById('btnReaderLensSearch');
-  if (btn) btn.classList.toggle('active', show);
-  if (!show) { clearReaderLensMarks(); return; }
-  const input = document.getElementById('readerLensInput');
-  if (input) {
-    if (!input.value.trim() && readerState.highlightText) {
-      input.value = extractWitnessTarget(readerState.highlightText);
-      if (input.value.trim()) { runReaderLensSearch(true); return; }
+  // جمع العقد النصية (عدا الأزرار) ثم تظليل كل مواضع العبارة فيها
+  const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      if (node.parentElement && node.parentElement.closest('button')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
     }
-    input.focus();
-    input.select();
-  }
-}
-
-function _lensGoTo(idx) {
-  const marks = _lensMarks();
-  if (!marks.length) return;
-  readerLensIdx = ((idx % marks.length) + marks.length) % marks.length;
-  marks.forEach((m, i) => m.classList.toggle('active', i === readerLensIdx));
-  marks[readerLensIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
-  const count = document.getElementById('readerLensCount');
-  if (count) count.textContent = `${readerLensIdx + 1} من ${marks.length}`;
-}
-
-function runReaderLensSearch(reset) {
-  const input = document.getElementById('readerLensInput');
-  const body = document.getElementById('readerPageBody');
-  const count = document.getElementById('readerLensCount');
-  if (!input || !body) return;
-  const phrase = input.value.trim();
-  clearReaderLensMarks();
-  if (!phrase) { showToast('اكتب عبارة الشاهد أولاً'); return; }
-  const re = _lensRegex(phrase);
-  if (!re) { showToast('عبارة بحث غير صالحة'); return; }
-  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.nodeValue && n.nodeValue.trim() &&
-      !n.parentElement.closest('mark, script, style'))
-      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
   });
   const nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);
-  let hits = 0;
+  const nq = flex ? _rdNormalize(q) : q;
+  let total = 0;
   for (const node of nodes) {
     const text = node.nodeValue;
-    re.lastIndex = 0;
-    if (!re.test(text)) continue;
-    re.lastIndex = 0;
+    let hay = text, map = null;
+    if (flex) {
+      hay = ''; map = [];
+      for (let i = 0; i < text.length; i++) { const nc = _rdNormChar(text[i]); if (nc) { hay += nc; map.push(i); } }
+    }
+    const spans = [];
+    let pos = 0;
+    while (true) {
+      const hit = hay.indexOf(nq, pos);
+      if (hit < 0) break;
+      const s = flex ? map[hit] : hit;
+      const e = flex ? (map[hit + nq.length - 1] + 1) : (hit + nq.length);
+      spans.push([s, e]); total++;
+      pos = hit + Math.max(nq.length, 1);
+    }
+    if (!spans.length) continue;
     const frag = document.createDocumentFragment();
-    let last = 0, m;
-    while ((m = re.exec(text)) !== null) {
-      if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
-      const mark = document.createElement('mark');
-      mark.className = 'reader-lens-mark';
-      mark.textContent = m[0];
-      frag.appendChild(mark);
-      hits++;
-      last = m.index + m[0].length;
-      if (!m[0].length) re.lastIndex++;
+    let last = 0;
+    for (const [s, e] of spans) {
+      if (s > last) frag.appendChild(document.createTextNode(text.slice(last, s)));
+      const mk = document.createElement('mark');
+      mk.className = 'rd-hit'; mk.textContent = text.slice(s, e);
+      frag.appendChild(mk);
+      last = e;
     }
     if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
-    node.replaceWith(frag);
+    node.parentNode.replaceChild(frag, node);
   }
-  if (!hits) {
-    if (count) count.textContent = 'لا مواضع في المعروض';
-    showToast('لا مواضع لهذه العبارة في الصفحة المعروضة — وسّع باستيفاء السياق أو جرّب عبارة أقصر');
-    return;
+  _readerSearch.marks = Array.from(content.querySelectorAll('mark.rd-hit'));
+
+  // عدّادات: مرات الورود، حروف العبارة وكلماتها، والجمل الحاوية لها
+  const plain = content.textContent || '';
+  const sentences = plain.split(/(?<=[.!؟؛:])\s+|\n+/).map(s => s.trim()).filter(Boolean);
+  let sentHits = [], markCursor = 0;
+  for (const s of sentences) {
+    const ns = flex ? _rdNormalize(s) : s;
+    let c = 0, p = 0;
+    while (true) { const h = ns.indexOf(nq, p); if (h < 0) break; c++; p = h + Math.max(nq.length, 1); }
+    if (c) { sentHits.push({ sentence: s, count: c, firstMark: markCursor }); markCursor += c; }
   }
-  _lensGoTo(0);
+  const wordsCount = q.split(/\s+/).filter(Boolean).length;
+  if (stats) {
+    stats.innerHTML = total
+      ? `وُجدت العبارة <strong>${total}</strong> مرة في المعروض من الكتاب | عبارة البحث: ${q.length} حرفًا و${wordsCount} ${wordsCount === 1 ? 'كلمة' : 'كلمات'} | وردت في <strong>${sentHits.length}</strong> جملة | تنقّل بالسابق/التالي أو اضغط أي جملة للقفز إلى موضعها.`
+      : 'لا مواضع لهذه العبارة في المعروض من الكتاب. جرّب البحث المرن أو عبارة أقصر، أو وسّع المعروض باستيفاء السياق.';
+  }
+  if (results && sentHits.length) {
+    results.innerHTML = sentHits.slice(0, 40).map((h, i) =>
+      `<button type="button" onclick="jumpToReaderMark(${h.firstMark})" style="text-align:right;padding:8px 11px;border:1px solid var(--border-subtle,#ddd);border-radius:9px;background:transparent;cursor:pointer;font-size:12.5px;line-height:1.8;">
+         <span style="color:var(--accent-gold,#9a6b1f);font-weight:700;">${i + 1}.</span> ${escapeHtml(h.sentence.slice(0, 220))}${h.sentence.length > 220 ? '…' : ''} <span style="opacity:0.7;">(${h.count}×)</span>
+       </button>`).join('');
+  }
+  if (_readerSearch.marks.length) jumpToReaderMark(0);
 }
-
-function readerLensNav(dir) {
-  if (!_lensMarks().length) { runReaderLensSearch(true); return; }
-  _lensGoTo(readerLensIdx + (dir || 1));
+function jumpToReaderMark(i) {
+  const content = document.getElementById('readerPageBody');
+  const marks = content ? Array.from(content.querySelectorAll('mark.rd-hit')) : [];
+  _readerSearch.marks = marks;
+  if (!marks.length) return;
+  _readerSearch.current = ((i % marks.length) + marks.length) % marks.length;
+  marks.forEach((mk, j) => mk.classList.toggle('rd-current', j === _readerSearch.current));
+  marks[_readerSearch.current].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const stats = document.getElementById('readerSearchStats');
+  if (stats && marks.length) stats.innerHTML = stats.innerHTML.replace(/\| الموضع الحالي:.*$/, '') + ` | الموضع الحالي: ${_readerSearch.current + 1} من ${marks.length}`;
 }
+function stepReaderSearch(dir) { jumpToReaderMark((_readerSearch.current < 0 ? 0 : _readerSearch.current) + dir); }
 
-// =============================================================================
 // استيفاء وتقليب باقة الصفحات المتتالية (-2 إلى +2) لكشف رأس المسألة أو الحولية
 // =============================================================================
 
@@ -1260,6 +1352,7 @@ async function loadSurroundingPagesView() {
     });
 
     bodyContainer.innerHTML = html;
+    refreshReaderSearchIfOpen();
 
     // التمرير التلقائي للصفحة المستهدفة
     setTimeout(() => {
