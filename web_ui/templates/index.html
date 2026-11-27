@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.873 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.874 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -524,6 +524,21 @@
                         <div id="attachmentsPreview"
                             style="display: none; margin-bottom: 8px; gap: 8px; flex-wrap: wrap;"></div>
 
+                        <!-- شريط التسجيل الصوتي: موجات تهتز وعداد وأزرار إيقاف/إرسال/مسح -->
+                        <div id="voiceRecordBar" class="voice-record-bar" style="display: none;">
+                            <span class="voice-rec-dot" title="جارٍ التسجيل"></span>
+                            <div class="voice-wave" id="voiceWave" aria-hidden="true">
+                                <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                            </div>
+                            <span id="voiceRecordTime" class="voice-record-time">0:00</span>
+                            <span id="voiceRecordStatus" class="voice-record-status">جارٍ التسجيل... تحدث الآن</span>
+                            <div class="voice-record-actions">
+                                <button type="button" class="btn-flat-secondary" id="voiceStopBtn" onclick="stopVoiceRecording(false)" title="إيقاف التسجيل ونسخه إلى نص في حقل المحادثة">⏹ إيقاف</button>
+                                <button type="button" class="btn-flat-primary" id="voiceSendBtn" onclick="stopVoiceRecording(true)" title="إيقاف ونسخ وإرسال للنموذج مباشرة">إرسال ➤</button>
+                                <button type="button" class="btn-flat-secondary" id="voiceDiscardBtn" onclick="discardVoiceRecording()" title="مسح التسجيل دون نسخ">🗑 مسح</button>
+                            </div>
+                        </div>
+
                         <div class="chat-input-box">
                             <textarea id="chatInputText" class="chat-textarea"
                                 placeholder="اسأل المغني في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل..." rows="1"
@@ -550,6 +565,15 @@
                                             <circle cx="12" cy="12" r="10" />
                                             <path d="M12 2a14.5 14.5 0 0 1 0 20 14.5 14.5 0 0 1 0-20" />
                                             <path d="M2 12h20" />
+                                        </svg>
+                                    </button>
+
+                                    <!-- مايك التسجيل الصوتي: يُنسخ بـ Gemini 4 Neon ثم يُرسل للنموذج -->
+                                    <button type="button" class="btn-attachment" id="chatMicBtn" onclick="toggleVoiceRecording()" title="تسجيل صوتي: سجّل سؤالك فيُنسخ إلى نص ويُرسل للنموذج">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                            <line x1="12" y1="19" x2="12" y2="22" />
                                         </svg>
                                     </button>
 

@@ -7238,6 +7238,76 @@ class AudioSummaryRequest(BaseModel):
     api_key: Optional[str] = None
 
 
+class TranscribeRequest(BaseModel):
+    audio_base64: str
+    mime: Optional[str] = None
+    api_key: Optional[str] = None
+
+
+# نسخ التسجيل الصوتي في المحادثة إلى نص: نموذج النسخ المعتمد عند المستخدم
+TRANSCRIBE_MODEL = "google/gemini-4-neon"
+
+
+def _openrouter_transcribe_audio(key: str, b64: str, fmt: str, timeout: int = 300) -> str:
+    payload = {
+        "model": TRANSCRIBE_MODEL,
+        "temperature": 0.0,
+        "max_tokens": 8192,
+        "messages": [
+            {"role": "user", "content": [
+                {"type": "text", "text": (
+                    "انسخ هذا التسجيل الصوتي إلى نص مكتوب حرفيًا كما نُطق تمامًا، "
+                    "باللغة التي نُطق بها (عربية غالبًا)، مع علامات ترقيم طبيعية. "
+                    "أخرج النص المنسوخ وحده: بلا مقدمة ولا شرح ولا أقواس تعليق، "
+                    "وإن تعذّر سماع مقطع فاكتب [غير مسموع] مكانه ولا تخترع كلامًا.")},
+                {"type": "input_audio", "input_audio": {"data": b64, "format": fmt}},
+            ]},
+        ],
+    }
+    http_req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8085",
+            "X-Title": "Almoghni Voice Transcribe",
+        },
+        data=json.dumps(payload).encode("utf-8"),
+    )
+    with urllib.request.urlopen(http_req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+
+
+@app.post("/api/chat/transcribe")
+async def chat_transcribe(req: TranscribeRequest, request: Request):
+    """نسخ تسجيل صوتي من مايك المحادثة إلى نص عبر Gemini 4 Neon."""
+    b64 = re.sub(r"^data:[^,]*,", "", (req.audio_base64 or "").strip())
+    if len(b64) < 100:
+        raise HTTPException(status_code=400, detail="التسجيل فارغ أو قصير جدًا")
+    if len(b64) > 35_000_000:
+        raise HTTPException(status_code=400, detail="التسجيل أطول من الحد المسموح للنسخ دفعة واحدة")
+    key = owner_openrouter_key(request, req.api_key) or OPENROUTER_DEFAULT_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
+    mime = (req.mime or "").split(";")[0].strip().lower()
+    fmt = {"audio/webm": "webm", "audio/mp4": "m4a", "audio/mpeg": "mp3",
+           "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg",
+           "audio/aac": "aac", "audio/flac": "flac"}.get(mime, "webm")
+    try:
+        text = await asyncio.to_thread(_openrouter_transcribe_audio, key, b64, fmt)
+    except urllib.error.HTTPError as error:
+        if error.code == 402:
+            raise HTTPException(status_code=402, detail="رصيد OpenRouter غير كافٍ لنسخ التسجيل؛ اشحن رصيدك ثم أعد المحاولة")
+        detail = error.read().decode("utf-8", errors="ignore")[:300] if error.fp else ""
+        raise HTTPException(status_code=502, detail=f"رفض نموذج النسخ الطلب ({error.code}): {detail}")
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"تعذر نسخ التسجيل الصوتي: {error}")
+    if not text:
+        raise HTTPException(status_code=502, detail="لم يُرجع نموذج النسخ نصًا — أعد التسجيل بصوت أوضح")
+    return {"ok": True, "text": text, "model": TRANSCRIBE_MODEL}
+
+
 # الملخص الصوتي للإجابة المعتمدة: اختصار دقيق بـ Gemini Flash ثم نطق بنموذج TTS بصوت Algieba
 AUDIO_SUMMARY_MODELS = ("google/gemini-3.8-flash", "google/gemini-2.5-flash-lite")
 AUDIO_TTS_MODEL = "google/gemini-3.8-flash-lite-tts"
@@ -10234,7 +10304,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.873"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.874"},
         },
     })
     if opened.get("error"):

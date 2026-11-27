@@ -3861,6 +3861,173 @@ function removeAttachment(idx) {
   renderAttachmentsPreview();
 }
 
+// =============================================================================
+// 🎤 تسجيل صوتي في المحادثة: مايك بجانب الكرة الأرضية، موجات تهتز أثناء
+// التسجيل، ثم نسخ عبر Gemini 4 Neon (/api/chat/transcribe) إلى نص يُوضع
+// في الحقل (إيقاف) أو يُرسل للنموذج مباشرة (إرسال)، ومسح يلغي بلا نسخ.
+// =============================================================================
+let _voiceRecorder = null;
+let _voiceStream = null;
+let _voiceChunks = [];
+let _voiceTimer = null;
+let _voiceStartedAt = 0;
+let _voiceSendAfter = false;
+let _voiceDiscarded = false;
+
+function _voiceBar() { return document.getElementById('voiceRecordBar'); }
+
+function _voiceSetStatus(text, transcribing) {
+  const bar = _voiceBar();
+  const status = document.getElementById('voiceRecordStatus');
+  if (status) status.textContent = text;
+  if (bar) bar.classList.toggle('is-transcribing', !!transcribing);
+}
+
+function _voiceTick() {
+  const el = document.getElementById('voiceRecordTime');
+  if (!el) return;
+  const secs = Math.max(0, Math.floor((Date.now() - _voiceStartedAt) / 1000));
+  el.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+}
+
+function _voiceCleanupStream() {
+  if (_voiceTimer) { clearInterval(_voiceTimer); _voiceTimer = null; }
+  if (_voiceStream) {
+    _voiceStream.getTracks().forEach(tr => { try { tr.stop(); } catch (e) {} });
+    _voiceStream = null;
+  }
+  const mic = document.getElementById('chatMicBtn');
+  if (mic) mic.classList.remove('is-recording');
+}
+
+function _voiceHideBar() {
+  const bar = _voiceBar();
+  if (bar) bar.style.display = 'none';
+}
+
+async function toggleVoiceRecording() {
+  if (_voiceRecorder && _voiceRecorder.state === 'recording') {
+    stopVoiceRecording(false);
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+    if (typeof showToast === 'function') showToast('المتصفح/النافذة لا تدعم التسجيل الصوتي من المايك', 3500);
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('تعذر الوصول إلى المايك — اسمح بالوصول من إعدادات النظام ثم أعد المحاولة', 4000);
+    return;
+  }
+  _voiceStream = stream;
+  _voiceChunks = [];
+  _voiceDiscarded = false;
+  _voiceSendAfter = false;
+  const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg']
+    .find(m => { try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; } }) || '';
+  try {
+    _voiceRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  } catch (e) {
+    _voiceCleanupStream();
+    if (typeof showToast === 'function') showToast('تعذر بدء التسجيل في هذه النافذة', 3000);
+    return;
+  }
+  _voiceRecorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) _voiceChunks.push(ev.data); };
+  _voiceRecorder.onstop = _onVoiceRecorderStopped;
+  _voiceRecorder.start(250);
+  _voiceStartedAt = Date.now();
+  _voiceTick();
+  _voiceTimer = setInterval(_voiceTick, 500);
+  const bar = _voiceBar();
+  if (bar) bar.style.display = 'flex';
+  _voiceSetStatus('جارٍ التسجيل... تحدث الآن', false);
+  const mic = document.getElementById('chatMicBtn');
+  if (mic) mic.classList.add('is-recording');
+}
+
+function stopVoiceRecording(sendAfter) {
+  if (!_voiceRecorder || _voiceRecorder.state === 'inactive') return;
+  _voiceSendAfter = !!sendAfter;
+  _voiceSetStatus(sendAfter ? 'جارٍ الإيقاف والنسخ ثم الإرسال...' : 'جارٍ الإيقاف والنسخ...', true);
+  try { _voiceRecorder.stop(); } catch (e) { _onVoiceRecorderStopped(); }
+}
+
+function discardVoiceRecording() {
+  _voiceDiscarded = true;
+  _voiceSendAfter = false;
+  if (_voiceRecorder && _voiceRecorder.state !== 'inactive') {
+    try { _voiceRecorder.stop(); } catch (e) {}
+  }
+  _voiceChunks = [];
+  _voiceCleanupStream();
+  _voiceHideBar();
+  if (typeof showToast === 'function') showToast('مُسح التسجيل', 1500);
+}
+
+async function _onVoiceRecorderStopped() {
+  const chunks = _voiceChunks.slice();
+  _voiceChunks = [];
+  const sendAfter = _voiceSendAfter;
+  _voiceSendAfter = false;
+  const mime = (_voiceRecorder && _voiceRecorder.mimeType) || 'audio/webm';
+  _voiceRecorder = null;
+  _voiceCleanupStream();
+  if (_voiceDiscarded) { _voiceDiscarded = false; _voiceHideBar(); return; }
+  if (!chunks.length) { _voiceHideBar(); return; }
+  const blob = new Blob(chunks, { type: mime });
+  if (blob.size < 1200) {
+    _voiceHideBar();
+    if (typeof showToast === 'function') showToast('التسجيل قصير جدًا — سجّل سؤالك كاملًا ثم أوقف', 3000);
+    return;
+  }
+  _voiceSetStatus('جارٍ نسخ التسجيل عبر Gemini 4 Neon...', true);
+  try {
+    const text = await _transcribeVoiceBlob(blob, mime);
+    _voiceHideBar();
+    if (!text) {
+      if (typeof showToast === 'function') showToast('لم يصل نص من النسخ — أعد التسجيل بصوت أوضح', 3500);
+      return;
+    }
+    const input = document.getElementById('chatInputText');
+    if (input) {
+      const prev = input.value.trim();
+      input.value = prev ? `${prev} ${text}` : text;
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+      input.focus();
+    }
+    if (typeof showToast === 'function') showToast('🎤 نُسخ التسجيل إلى نص', 1800);
+    if (sendAfter) await sendChatMessage();
+  } catch (err) {
+    _voiceHideBar();
+    if (typeof showToast === 'function') showToast(`❌ تعذر نسخ التسجيل: ${err.message || err}`, 4500);
+  }
+}
+
+async function _transcribeVoiceBlob(blob, mime) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+  let apiKey = '';
+  try { apiKey = (readProviderKeys() || {}).openrouter || ''; } catch (e) {}
+  const resp = await fetch('/api/chat/transcribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audio_base64: String(dataUrl), mime: mime, api_key: apiKey })
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.detail || 'فشل النسخ');
+  return (data.text || '').trim();
+}
+window.toggleVoiceRecording = toggleVoiceRecording;
+window.stopVoiceRecording = stopVoiceRecording;
+window.discardVoiceRecording = discardVoiceRecording;
+
 // إرسال رسالة الشات
 async function sendChatMessage() {
   const input = document.getElementById('chatInputText');

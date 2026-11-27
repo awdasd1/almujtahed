@@ -910,6 +910,38 @@ class SearchTabCleanupTests(unittest.TestCase):
         self.assertIn('oninput="runResultsSearch()"', search)
 
 
+class VoiceRecordingTests(unittest.TestCase):
+    """مايك المحادثة: تسجيل بموجات مهتزة وإيقاف/إرسال/مسح، والنسخ
+    عبر Gemini 4 Neon في نقطة خادم واحدة، ثم النص سؤالًا للنموذج."""
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_mic_ui_next_to_globe(self):
+        index = self._read("web_ui/templates/index.html")
+        globe = index.index('id="chatWebSearchBtn"')
+        mic = index.index('id="chatMicBtn"')
+        self.assertGreater(mic, globe, "المايك بجانب الكرة الأرضية")
+        for el in ("voiceRecordBar", "voiceWave", "voiceRecordTime",
+                   "voiceStopBtn", "voiceSendBtn", "voiceDiscardBtn"):
+            self.assertIn(el, index, el)
+        css = self._read("web_ui/static/css/claude_theme.css")
+        self.assertIn("@keyframes voiceWaveDance", css)
+        self.assertIn(".voice-record-bar", css)
+
+    def test_voice_logic_and_endpoint(self):
+        chat = self._read("web_ui/static/js/chat.js")
+        for fn in ("toggleVoiceRecording", "stopVoiceRecording",
+                   "discardVoiceRecording", "_transcribeVoiceBlob"):
+            self.assertIn(fn, chat, fn)
+        self.assertIn("/api/chat/transcribe", chat)
+        srv = self._read("web_ui/server.py")
+        self.assertIn('TRANSCRIBE_MODEL = "google/gemini-4-neon"', srv)
+        self.assertIn('@app.post("/api/chat/transcribe")', srv)
+        self.assertIn('"input_audio"', srv)
+
+
 class CompareChatBoxTests(unittest.TestCase):
     """تبويب المقارنة: لا حاويات قديمة أسفل أعمدة الأجوبة، بل مربع
     حوار المحادثة نفسه، والسؤال/الرفع/اختيار المجموعات يذهب للنموذجين."""
