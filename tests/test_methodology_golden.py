@@ -910,6 +910,36 @@ class SearchTabCleanupTests(unittest.TestCase):
         self.assertIn('oninput="runResultsSearch()"', search)
 
 
+class CompareChatBoxTests(unittest.TestCase):
+    """تبويب المقارنة: لا حاويات قديمة أسفل أعمدة الأجوبة، بل مربع
+    حوار المحادثة نفسه، والسؤال/الرفع/اختيار المجموعات يذهب للنموذجين."""
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_compare_uses_chat_box_clone(self):
+        index = self._read("web_ui/templates/index.html")
+        pane = index[index.index('id="paneCompare"'):index.index('id="paneArchive"')]
+        self.assertNotIn("compare-composer", pane)
+        self.assertNotIn("compareContextSelect", pane)
+        self.assertNotIn("compare-template-row", pane)
+        self.assertIn('id="compareInput" class="chat-textarea"', pane)
+        self.assertIn("compareFileUploadInput", pane)
+        self.assertIn("compareGroupChecklistItems", pane)
+        self.assertIn('id="compareSendBtn" onclick="submitCompareQuestion()"', pane)
+
+    def test_compare_logic_sends_to_both_models(self):
+        src = self._read("web_ui/static/js/compare.js")
+        for fn in ("handleCompareFileSelected", "renderCompareAttachmentsPreview",
+                   "toggleCompareGroupsDropdown", "toggleCompareGroup",
+                   "compareChosenGroups", "compareMergedAgents",
+                   "handleCompareInputKey", "stopCompareGeneration"):
+            self.assertIn(fn, src, fn)
+        self.assertIn("compareAttachments", src)
+        self.assertIn("/api/chat/upload", src)
+
+
 class BridgeSpeedContractTests(unittest.TestCase):
     """سرعة البحث على منهج الشاملة: فهرسهم الجاهز بجسر واحد دائم
     الإحماء حيث الكلفة أغلى من التوازي، وصيغة بحث واحدة ذكية،

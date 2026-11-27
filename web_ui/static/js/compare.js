@@ -164,7 +164,7 @@ function renderCompareMessages(modelId) {
   }
   return compareTurns.map(turn => {
     if (turn.role === 'user') {
-      return `<div class="compare-msg user">${escapeHtml(turn.content)}</div>`;
+      return `<div class="compare-msg user">${escapeHtml(turn.display || turn.content)}</div>`;
     }
     const answer = turn.answers?.[modelId];
     if (!answer) {
@@ -293,24 +293,44 @@ function loadCompareAbout(modelId) {
 }
 
 async function submitCompareQuestion(event) {
-  event.preventDefault();
+  if (event && event.preventDefault) event.preventDefault();
   if (compareBusy) return;
   const input = document.getElementById('compareInput');
   const question = (input?.value || '').trim();
-  if (!question) return;
+  if (compareAttachments.some(a => a.uploading)) {
+    if (typeof showToast === 'function') showToast('يرجى الانتظار ثوانٍ حتى يكتمل حفظ الملف واستخراج محتواه...', 2500);
+    return;
+  }
+  const validAttachments = compareAttachments.filter(a => !a.error && !a.uploading);
+  if (!question && !validAttachments.length) return;
   if (!compareSlots.length || compareSlots.some(slot => !slot.id)) return;
+
+  // المرفقات تذهب للنموذجين معًا بنصها المستخرج كما في المحادثة
+  let fullQuestion = question;
+  let displayQuestion = question;
+  if (validAttachments.length) {
+    const notices = validAttachments.map(a => `📁 [ملف مرفق محفوظ في المجلد: ${a.name} | مساره: ${a.path || a.url || ''}]`).join('\n');
+    displayQuestion = (displayQuestion ? displayQuestion + '\n\n' : '') + notices;
+    const texts = validAttachments
+      .filter(a => (a.extractedText || '').trim())
+      .map(a => `--- نص الملف المرفق «${a.name}» ---\n${String(a.extractedText).slice(0, 12000)}`)
+      .join('\n\n');
+    if (texts) fullQuestion = (fullQuestion ? fullQuestion + '\n\n' : '') + texts;
+    compareAttachments = [];
+    renderCompareAttachmentsPreview();
+  }
 
   const generation = ++compareGeneration;
   const agentPayload = buildCompareAgentPayload();
-  compareTurns.push({ role: 'user', content: question });
+  compareTurns.push({ role: 'user', content: fullQuestion, display: displayQuestion });
   const answerTurn = { role: 'assistant', answers: {}, searching: !!agentPayload };
   compareTurns.push(answerTurn);
   input.value = '';
   compareBusy = true;
   const button = document.getElementById('compareSendBtn');
-  const clearButton = document.getElementById('compareClearBtn');
+  const stopButton = document.getElementById('compareStopBtn');
   if (button) button.disabled = true;
-  if (clearButton) clearButton.disabled = false;
+  if (stopButton) stopButton.disabled = false;
   compareSlots.forEach(slot => {
     compareTimers[slot.id] = { startedAt: Date.now(), elapsedMs: 0, running: true };
   });
@@ -352,6 +372,7 @@ async function submitCompareQuestion(event) {
       renderCompareTab();
       compareBusy = false;
       if (button) button.disabled = false;
+      if (stopButton) stopButton.disabled = true;
       return;
     }
     sharedSystem = prepData.system;
@@ -440,8 +461,36 @@ async function submitCompareQuestion(event) {
   if (generation !== compareGeneration) return;
   compareBusy = false;
   if (button) button.disabled = false;
-  if (clearButton) clearButton.disabled = false;
+  if (stopButton) stopButton.disabled = true;
   refreshCompareTimers();
+}
+
+function handleCompareInputKey(event) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    submitCompareQuestion();
+  }
+}
+
+function stopCompareGeneration() {
+  compareGeneration += 1;
+  compareBusy = false;
+  compareTurns.forEach(turn => {
+    if (!turn.answers) return;
+    Object.keys(turn.answers).forEach(mid => {
+      const a = turn.answers[mid];
+      if (a && a.streaming) turn.answers[mid] = { reply: a.reply || '' };
+    });
+    turn.searching = false;
+  });
+  Object.keys(compareTimers).forEach(mid => {
+    if (compareTimers[mid]) compareTimers[mid].running = false;
+  });
+  const button = document.getElementById('compareSendBtn');
+  const stopButton = document.getElementById('compareStopBtn');
+  if (button) button.disabled = false;
+  if (stopButton) stopButton.disabled = true;
+  renderCompareTab();
 }
 
 function clearCompareAnswers() {
@@ -450,9 +499,9 @@ function clearCompareAnswers() {
   compareTimers = {};
   compareBusy = false;
   const button = document.getElementById('compareSendBtn');
-  const clearButton = document.getElementById('compareClearBtn');
+  const stopButton = document.getElementById('compareStopBtn');
   if (button) button.disabled = false;
-  if (clearButton) clearButton.disabled = false;
+  if (stopButton) stopButton.disabled = true;
   renderCompareTab();
 }
 
@@ -466,34 +515,118 @@ function compareAgentGroups() {
   return groups || [];
 }
 
+function compareChosenGroups() {
+  const groups = compareAgentGroups();
+  let ids = [];
+  try {
+    if (typeof readSelectedChatGroupIds === 'function') ids = readSelectedChatGroupIds(groups);
+  } catch (e) {}
+  if (!ids.length) {
+    const one = localStorage.getItem('almojtahed_chat_selected_group_id');
+    if (one && groups.some(g => g.id === one)) ids = [one];
+  }
+  const chosen = groups.filter(g => ids.includes(g.id));
+  return chosen.length ? chosen : groups.slice(0, 1);
+}
+
+function compareMergedAgents() {
+  const out = [];
+  const seen = new Set();
+  compareChosenGroups().forEach(group => {
+    (group.agents || []).forEach(agent => {
+      if (!agent || seen.has(agent.id)) return;
+      seen.add(agent.id);
+      out.push(agent);
+    });
+  });
+  return out;
+}
+
 function renderCompareAgents() {
-  const select = document.getElementById('compareAgentGroupSelect');
   const checkbox = document.getElementById('compareUseAgentGroupCheckbox');
   const picker = document.getElementById('compareAgentGroupPicker');
-  if (!select || compareAgentsRendering) return;
+  const items = document.getElementById('compareGroupChecklistItems');
+  const label = document.getElementById('compareGroupBtnLabel');
+  const badge = document.getElementById('compareGroupCountBadge');
+  const hiddenSelect = document.getElementById('compareAgentGroupSelect');
+  if (!items || compareAgentsRendering) return;
   compareAgentsRendering = true;
   const groups = compareAgentGroups();
-  const savedGroupId = localStorage.getItem('almojtahed_chat_selected_group_id') || (groups[0] ? groups[0].id : '');
+  const chosen = compareChosenGroups();
+  const chosenIds = new Set(chosen.map(g => g.id));
   const savedEnabled = localStorage.getItem('almojtahed_chat_use_agent_group');
   const isEnabled = savedEnabled === null ? true : (savedEnabled === 'true');
-  select.innerHTML = groups.length
-    ? groups.map(group => `<option value="${escapeHtml(group.id)}" ${group.id === savedGroupId ? 'selected' : ''}>${escapeHtml(group.name)} (${(group.agents || []).length} وكلاء)</option>`).join('')
-    : '<option value="">لا توجد مجموعات وكلاء</option>';
+  items.innerHTML = groups.length
+    ? groups.map(group => `
+      <label class="chat-checklist-item">
+        <input type="checkbox" data-compare-group-id="${escapeHtml(group.id)}" ${chosenIds.has(group.id) ? 'checked' : ''} onchange="toggleCompareGroup('${escapeHtml(group.id)}', this.checked)">
+        <span>${escapeHtml(group.name)} (${(group.agents || []).length} وكلاء)</span>
+      </label>`).join('')
+    : '<div class="chat-checklist-item">لا توجد مجموعات وكلاء</div>';
+  if (label) label.textContent = chosen.length
+    ? (chosen.length === 1 ? chosen[0].name : `${chosen.length} مجموعات محددة`)
+    : 'لا توجد مجموعات';
+  if (badge) badge.textContent = `تم تحديد ${chosen.length} مجموعات`;
+  if (hiddenSelect) {
+    hiddenSelect.innerHTML = chosen.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join('');
+    hiddenSelect.value = chosen[0]?.id || '';
+  }
   if (checkbox) checkbox.checked = isEnabled && !!groups.length;
   if (picker) picker.classList.toggle('active', !!(checkbox && checkbox.checked));
-  renderCompareSubAgents(select.value);
+  renderCompareSubAgents();
   updateCompareDispatchModeUI();
   compareAgentsRendering = false;
 }
 
-function renderCompareSubAgents(groupId) {
+function toggleCompareGroupsDropdown(event) {
+  if (event) { event.preventDefault(); event.stopPropagation(); }
+  const menu = document.getElementById('compareGroupChecklistMenu');
+  if (!menu) return;
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+function closeCompareGroupsDropdown() {
+  const menu = document.getElementById('compareGroupChecklistMenu');
+  if (menu) menu.style.display = 'none';
+}
+
+function toggleCompareGroup(groupId, isChecked) {
+  const groups = compareAgentGroups();
+  let ids = compareChosenGroups().map(g => g.id);
+  if (isChecked) { if (!ids.includes(groupId)) ids.push(groupId); }
+  else ids = ids.filter(id => id !== groupId);
+  try {
+    if (typeof writeSelectedChatGroupIds === 'function') writeSelectedChatGroupIds(ids);
+    else {
+      localStorage.setItem('almojtahed_chat_selected_group_ids', JSON.stringify(ids));
+      localStorage.setItem('almojtahed_chat_selected_group_id', ids[0] || '');
+    }
+  } catch (e) {}
+  localStorage.removeItem('almojtahed_compare_selected_agents');
+  renderCompareAgents();
+  if (typeof populateChatAgentGroupsDropdown === 'function' && !compareAgentsRendering) populateChatAgentGroupsDropdown();
+}
+
+function selectAllCompareGroups(selectAll) {
+  const ids = selectAll ? compareAgentGroups().map(g => g.id) : [];
+  try {
+    if (typeof writeSelectedChatGroupIds === 'function') writeSelectedChatGroupIds(ids);
+    else {
+      localStorage.setItem('almojtahed_chat_selected_group_ids', JSON.stringify(ids));
+      localStorage.setItem('almojtahed_chat_selected_group_id', ids[0] || '');
+    }
+  } catch (e) {}
+  localStorage.removeItem('almojtahed_compare_selected_agents');
+  renderCompareAgents();
+}
+
+function renderCompareSubAgents() {
   const wrap = document.getElementById('compareSubAgentSelectWrap');
   const items = document.getElementById('compareSubAgentChecklistItems');
   const label = document.getElementById('compareSubAgentBtnLabel');
   const badge = document.getElementById('compareChecklistCountBadge');
   if (!wrap || !items) return;
-  const group = compareAgentGroups().find(item => item.id === groupId);
-  const agents = group?.agents || [];
+  const agents = compareMergedAgents();
   if (!agents.length) {
     wrap.style.display = 'none';
     return;
@@ -501,7 +634,7 @@ function renderCompareSubAgents(groupId) {
   wrap.style.display = 'inline-flex';
   let selectedIds = [];
   try {
-    const raw = localStorage.getItem('almojtahed_chat_selected_agents_' + groupId);
+    const raw = localStorage.getItem('almojtahed_compare_selected_agents');
     if (raw) selectedIds = JSON.parse(raw);
   } catch (e) {}
   const selected = new Set(selectedIds);
@@ -525,24 +658,18 @@ function handleCompareAgentToggle() {
 }
 
 function handleCompareAgentGroupChange() {
-  const select = document.getElementById('compareAgentGroupSelect');
-  if (select?.value) localStorage.setItem('almojtahed_chat_selected_group_id', select.value);
-  if (!compareAgentsRendering && typeof populateChatAgentGroupsDropdown === 'function') populateChatAgentGroupsDropdown();
-  renderCompareSubAgents(select?.value || '');
+  renderCompareAgents();
 }
 
 function saveCompareSubAgents() {
-  const select = document.getElementById('compareAgentGroupSelect');
-  const group = compareAgentGroups().find(item => item.id === select?.value);
   const boxes = [...document.querySelectorAll('#compareSubAgentChecklistItems input[type="checkbox"]')];
   const chosen = boxes.filter(box => box.checked).map(box => box.value);
   const all = !boxes.length || chosen.length === boxes.length;
-  localStorage.setItem('almojtahed_chat_selected_agents_' + (select?.value || ''), JSON.stringify(all ? [] : chosen));
+  localStorage.setItem('almojtahed_compare_selected_agents', JSON.stringify(all ? [] : chosen));
   const label = document.getElementById('compareSubAgentBtnLabel');
   const badge = document.getElementById('compareChecklistCountBadge');
   if (label) label.textContent = all ? 'كل وكلاء المجموعة' : `${chosen.length} من الوكلاء`;
   if (badge) badge.textContent = `تم تحديد ${chosen.length} وكيل`;
-  if (typeof populateSubAgentsDropdown === 'function') populateSubAgentsDropdown(select?.value || '');
 }
 
 function selectAllCompareSubAgents(selectAll) {
@@ -578,21 +705,20 @@ function updateCompareDispatchModeUI() {
 
 function buildCompareAgentPayload() {
   const checkbox = document.getElementById('compareUseAgentGroupCheckbox');
-  const select = document.getElementById('compareAgentGroupSelect');
-  if (!checkbox?.checked || !select?.value) return null;
-  const group = compareAgentGroups().find(item => item.id === select.value);
-  if (!group?.agents?.length) return null;
+  if (!checkbox?.checked) return null;
+  const groups = compareChosenGroups();
+  if (!groups.length) return null;
   let selectedIds = [];
   try {
-    const raw = localStorage.getItem('almojtahed_chat_selected_agents_' + group.id);
+    const raw = localStorage.getItem('almojtahed_compare_selected_agents');
     if (raw) selectedIds = JSON.parse(raw);
   } catch (e) {}
-  let agents = group.agents;
+  let agents = compareMergedAgents();
   if (selectedIds.length) {
-    const filtered = group.agents.filter(agent => selectedIds.includes(agent.id));
+    const filtered = agents.filter(agent => selectedIds.includes(agent.id));
     if (filtered.length) agents = filtered;
   }
-  const first = agents[0];
+  if (!agents.length) return null;
   const books = [];
   agents.forEach(agent => {
     const list = (agent.booksScope && Array.isArray(agent.booksScope)) ? agent.booksScope : (agent.scopeBooks || agent.books || []);
@@ -601,11 +727,13 @@ function buildCompareAgentPayload() {
       if (name && !books.includes(name)) books.push(name);
     });
   });
+  const first = agents[0];
   const many = agents.length > 1;
+  const groupNames = groups.map(g => g.name).join(' + ');
   return {
-    id: group.id,
-    name: group.name,
-    desc: group.desc || '',
+    id: groups.map(g => g.id).join(','),
+    name: groupNames,
+    desc: groups.map(g => g.desc || '').filter(Boolean).join(' | '),
     active_agent: {
       id: first.id,
       name: many ? `فريق الوكلاء المختارين (${agents.length})` : first.name,
@@ -685,6 +813,7 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (!event.target.closest('#compareSubAgentSelectWrap')) closeCompareSubAgentsDropdown();
+  if (!event.target.closest('#compareGroupSelectWrap')) closeCompareGroupsDropdown();
   if (!event.target.closest('.compare-slot')) {
     if (compareSlots.some(slot => slot.open)) {
       compareSlots.forEach(slot => { slot.slotOpen = false; slot.open = false; });
@@ -699,6 +828,77 @@ document.addEventListener('input', (event) => {
   filterCompareSlot(Number(slot.dataset.slot), event.target.value);
 });
 
+
+// مرفقات المقارنة: الرفع نفسه في المحادثة، وتذهب للنموذجين معًا
+let compareAttachments = [];
+
+async function handleCompareFileSelected(e) {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  const preview = document.getElementById('compareAttachmentsPreview');
+  if (preview) preview.style.display = 'flex';
+  for (const file of files) {
+    const item = {
+      id: 'upload_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      name: file.name, uploading: true, error: null
+    };
+    compareAttachments.push(item);
+    renderCompareAttachmentsPreview();
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const resp = await fetch('/api/chat/upload', { method: 'POST', body: formData });
+      const data = await resp.json().catch(() => ({}));
+      if (data.success) {
+        item.uploading = false;
+        item.safeName = data.safe_filename;
+        item.url = data.file_url;
+        item.path = data.file_path;
+        item.size = data.file_size;
+        item.type = data.file_type;
+        item.extractedText = data.extracted_text;
+        item.hasImage = data.has_image;
+        item.base64Data = data.base64_data;
+        renderCompareAttachmentsPreview();
+        if (typeof showToast === 'function') showToast(`📁 تم حفظ «${data.filename}» واستخراج نصوصه بنجاح!`, 2500);
+      } else {
+        item.uploading = false;
+        item.error = data.detail || data.error || 'فشل الرفع';
+        renderCompareAttachmentsPreview();
+        if (typeof showToast === 'function') showToast(`❌ فشل حفظ «${file.name}»: ${item.error}`, 3500);
+      }
+    } catch (err) {
+      item.uploading = false;
+      item.error = err.message || 'خطأ في الشبكة';
+      renderCompareAttachmentsPreview();
+    }
+  }
+  e.target.value = '';
+}
+
+function renderCompareAttachmentsPreview() {
+  const preview = document.getElementById('compareAttachmentsPreview');
+  if (!preview) return;
+  preview.innerHTML = compareAttachments.map((att, i) => {
+    if (att.uploading) {
+      return `<span style="font-size: 11.5px; background: rgba(184, 115, 51, 0.08); border: 1px dashed var(--accent-clay); color: var(--accent-clay); padding: 4px 10px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; gap: 6px;"><span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span> جارٍ حفظ <strong>${escapeHtml(att.name)}</strong> واستخراج محتواه...</span>`;
+    }
+    if (att.error) {
+      return `<span style="font-size: 11.5px; background: rgba(220, 53, 69, 0.1); border: 1px solid #dc3545; color: #dc3545; padding: 4px 10px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; gap: 6px;">❌ ${escapeHtml(att.name)} (${escapeHtml(att.error)}) <button onclick="removeCompareAttachment(${i})" style="background: none; border: none; cursor: pointer; color: #dc3545; font-size: 14px;">&times;</button></span>`;
+    }
+    const icon = att.hasImage ? '🖼️' : (att.name.endsWith('.pdf') ? '📕' : (att.name.endsWith('.docx') ? '📝' : '📄'));
+    return `<span style="font-size: 11.5px; background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 4px 10px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);" title="مسار الملف على القرص: ${escapeHtml(att.path || '')}"><span>${icon}</span><span style="font-weight: 600; color: var(--text-main);">${escapeHtml(att.name)}</span><span style="color: var(--accent-clay); font-size: 10px; font-weight: 700;">(محفوظ بالبوكت)</span><button onclick="removeCompareAttachment(${i})" style="background: none; border: none; cursor: pointer; color: var(--text-light); font-size: 15px; line-height: 1;" title="حذف المرفق">&times;</button></span>`;
+  }).join('');
+  preview.style.display = compareAttachments.length ? 'flex' : 'none';
+}
+
+function removeCompareAttachment(idx) {
+  compareAttachments.splice(idx, 1);
+  renderCompareAttachmentsPreview();
+}
+window.handleCompareFileSelected = handleCompareFileSelected;
+window.removeCompareAttachment = removeCompareAttachment;
+
 window.clearCompareAnswers = clearCompareAnswers;
 window.handleCompareAgentToggle = handleCompareAgentToggle;
 window.handleCompareAgentGroupChange = handleCompareAgentGroupChange;
@@ -708,11 +908,18 @@ window.toggleCompareSubAgentsDropdown = toggleCompareSubAgentsDropdown;
 window.closeCompareSubAgentsDropdown = closeCompareSubAgentsDropdown;
 window.toggleCompareDispatchMode = toggleCompareDispatchMode;
 window.renderCompareAgents = renderCompareAgents;
+window.toggleCompareGroupsDropdown = toggleCompareGroupsDropdown;
+window.closeCompareGroupsDropdown = closeCompareGroupsDropdown;
+window.toggleCompareGroup = toggleCompareGroup;
+window.selectAllCompareGroups = selectAllCompareGroups;
+window.handleCompareInputKey = handleCompareInputKey;
+window.stopCompareGeneration = stopCompareGeneration;
+window.submitCompareQuestion = submitCompareQuestion;
 
 document.addEventListener('keydown', (event) => {
   const input = document.getElementById('compareInput');
   if (event.key === 'Enter' && document.activeElement === input && !event.shiftKey) {
     event.preventDefault();
-    document.getElementById('compareComposer')?.requestSubmit();
+    submitCompareQuestion();
   }
 });

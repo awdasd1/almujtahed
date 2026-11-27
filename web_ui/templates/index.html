@@ -27,7 +27,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.871 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.872 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -3044,70 +3044,128 @@
                     <div class="compare-pickers" id="comparePickers"></div>
                 </div>
                 <div class="compare-columns" id="compareColumns"></div>
-                <form class="compare-composer" id="compareComposer" onsubmit="submitCompareQuestion(event)">
-                    <div class="chat-agent-group-picker active" id="compareAgentGroupPicker">
-                        <label class="chat-agent-checkbox-label" title="بحث الوكلاء في الشاملة قبل إجابة كل نموذج">
-                            <input type="checkbox" id="compareUseAgentGroupCheckbox" checked onchange="handleCompareAgentToggle()">
-                            <span class="chat-custom-checkbox"></span>
-                            <span class="chat-checkbox-title">المجموعة:</span>
-                        </label>
-                        <div class="chat-agent-select-wrap">
-                            <select id="compareAgentGroupSelect" class="chat-agent-dropdown" onchange="handleCompareAgentGroupChange()" title="مجموعة الوكلاء للبحث في الشاملة">
-                                <option value="">جارٍ تحميل المجموعات...</option>
-                            </select>
-                        </div>
-                        <div class="chat-agent-select-wrap chat-subagent-select-wrap" id="compareSubAgentSelectWrap" style="position: relative;">
-                            <button type="button" class="chat-agent-dropdown chat-subagent-trigger" id="compareSubAgentDropdownBtn" onclick="toggleCompareSubAgentsDropdown(event)">
-                                <span id="compareSubAgentBtnLabel">كل وكلاء المجموعة</span>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                            </button>
-                            <div class="chat-subagent-checklist-dropdown" id="compareSubAgentChecklistMenu" style="display: none;">
-                                <div class="chat-checklist-header">
-                                    <div class="chat-checklist-title"><span>تحديد الوكلاء</span></div>
-                                    <div class="chat-checklist-actions">
-                                        <button type="button" class="btn-checklist-action" onclick="selectAllCompareSubAgents(true)">تحديد الكل</button>
-                                        <span class="checklist-sep">•</span>
-                                        <button type="button" class="btn-checklist-action" onclick="selectAllCompareSubAgents(false)">إلغاء الكل</button>
+                <div class="chat-input-area" id="compareComposer" style="position: relative;">
+                    <!-- شريط معاينة المرفقات -->
+                    <div id="compareAttachmentsPreview"
+                        style="display: none; margin-bottom: 8px; gap: 8px; flex-wrap: wrap;"></div>
+
+                    <div class="chat-input-box">
+                        <textarea id="compareInput" class="chat-textarea"
+                            placeholder="اسأل المغني في الفقه، الأصول، الحديث، أو ناقش نصوص المسائل..." rows="1"
+                            onkeydown="handleCompareInputKey(event)"></textarea>
+
+                        <div class="chat-input-actions">
+                            <div class="chat-input-left">
+                                <!-- زر رفع الملفات والصور -->
+                                <label class="btn-attachment native-file-btn" title="إرفاق صورة أو مستند">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                        stroke="currentColor" stroke-width="2">
+                                        <path
+                                            d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                                    </svg>
+                                    <input type="file" id="compareFileUploadInput" class="native-file-input" multiple accept="image/*,.pdf,.txt,.docx" onchange="handleCompareFileSelected(event)">
+                                </label>
+
+                                <!-- فاصل عمودي أنيق -->
+                                <span class="chat-input-divider"></span>
+
+                                <!-- ربط المقارنة بمجموعات الوكلاء المساعدين: الاختيار نفسه يذهب للنموذجين -->
+                                <div class="chat-agent-group-picker active" id="compareAgentGroupPicker">
+                                    <label class="chat-agent-checkbox-label"
+                                        title="تفعيل توجيه واستخراج البيانات عبر مجموعة الوكلاء المحددة">
+                                        <input type="checkbox" id="compareUseAgentGroupCheckbox" checked
+                                            onchange="handleCompareAgentToggle()">
+                                        <span class="chat-custom-checkbox"></span>
+                                        <span class="chat-checkbox-title">المجموعات:</span>
+                                    </label>
+
+                                    <div class="chat-agent-select-wrap chat-subagent-select-wrap" id="compareGroupSelectWrap" title="حدد مجموعة أو أكثر للبحث والاستخراج">
+                                        <button type="button" class="chat-agent-dropdown chat-subagent-trigger" id="compareGroupDropdownBtn" onclick="toggleCompareGroupsDropdown(event)">
+                                            <span class="chat-subagent-btn-text" id="compareGroupBtnLabel">جارٍ تحميل المجموعات...</span>
+                                            <svg class="chat-subagent-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        </button>
+                                        <div class="chat-subagent-checklist-dropdown" id="compareGroupChecklistMenu" style="display: none;">
+                                            <div class="chat-checklist-header">
+                                                <div class="chat-checklist-title">
+                                                    <span>تحديد المجموعات</span>
+                                                </div>
+                                                <div class="chat-checklist-actions">
+                                                    <button type="button" class="btn-checklist-action" onclick="selectAllCompareGroups(true)">تحديد الكل</button>
+                                                    <span class="checklist-sep">•</span>
+                                                    <button type="button" class="btn-checklist-action" onclick="selectAllCompareGroups(false)">إلغاء الكل</button>
+                                                </div>
+                                            </div>
+                                            <div class="chat-checklist-items" id="compareGroupChecklistItems"></div>
+                                            <div class="chat-checklist-footer">
+                                                <span id="compareGroupCountBadge" class="chat-checklist-count-badge">تم تحديد 0 مجموعات</span>
+                                                <button type="button" class="btn-checklist-done" onclick="closeCompareGroupsDropdown()">تم الاعتماد ✓</button>
+                                            </div>
+                                        </div>
+                                        <select id="compareAgentGroupSelect" style="display: none;">
+                                            <option value="">جارٍ تحميل المجموعات...</option>
+                                        </select>
                                     </div>
-                                </div>
-                                <div class="chat-checklist-items" id="compareSubAgentChecklistItems"></div>
-                                <div class="chat-checklist-footer">
-                                    <span id="compareChecklistCountBadge" class="chat-checklist-count-badge">تم تحديد 0 وكيل</span>
-                                    <button type="button" class="btn-checklist-done" onclick="closeCompareSubAgentsDropdown()">تم الاعتماد ✓</button>
+
+                                    <!-- اختيار وكيل أو أكثر عبر قائمة تشيك ليست منسدلة داخل المجموعة -->
+                                    <div class="chat-agent-select-wrap chat-subagent-select-wrap"
+                                        id="compareSubAgentSelectWrap"
+                                        style="position: relative;"
+                                        title="حدد وكيلاً واحداً أو عدة وكلاء مساعدين للبحث والاستخراج">
+                                        <button type="button" class="chat-agent-dropdown chat-subagent-trigger"
+                                            id="compareSubAgentDropdownBtn"
+                                            onclick="toggleCompareSubAgentsDropdown(event)">
+                                            <span class="chat-subagent-btn-text" id="compareSubAgentBtnLabel">كل وكلاء المجموعة</span>
+                                            <svg class="chat-subagent-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        </button>
+
+                                        <div class="chat-subagent-checklist-dropdown" id="compareSubAgentChecklistMenu" style="display: none;">
+                                            <div class="chat-checklist-header">
+                                                <div class="chat-checklist-title">
+                                                    <span>👥</span>
+                                                    <span>تحديد الوكلاء وفروع MCP</span>
+                                                </div>
+                                                <div class="chat-checklist-actions">
+                                                    <button type="button" class="btn-checklist-action" onclick="selectAllCompareSubAgents(true)">تحديد الكل</button>
+                                                    <span class="checklist-sep">•</span>
+                                                    <button type="button" class="btn-checklist-action" onclick="selectAllCompareSubAgents(false)">إلغاء الكل</button>
+                                                </div>
+                                            </div>
+
+                                            <div class="chat-checklist-items" id="compareSubAgentChecklistItems"></div>
+
+                                            <div class="chat-checklist-footer">
+                                                <span id="compareChecklistCountBadge" class="chat-checklist-count-badge">تم تحديد 0 وكيل</span>
+                                                <button type="button" class="btn-checklist-done" onclick="closeCompareSubAgentsDropdown()">تم الاعتماد ✓</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                 </div>
                             </div>
-                        </div>
-                        <button type="button" class="chat-dispatch-mode-toggle" id="compareDispatchModeToggleBtn" onclick="toggleCompareDispatchMode()" title="نمط توزيع الوكلاء">
-                            <span id="compareDispatchModeIcon">⚡</span>
-                            <span id="compareDispatchModeText">توزيع متوازي</span>
-                        </button>
-                    </div>
-                    <div class="compare-template-row">
-                        <label for="compareContextSelect" style="font-size: 12px; font-weight: 700; color: var(--text-muted);">سياق الشواهد:</label>
-                        <select id="compareContextSelect" class="chat-template-chip" title="سياق استيعاب الشواهد في المقارنة" onchange="setContextTokens(this.value)">
-                            <option value="131072">128K</option>
-                            <option value="262144">264K</option>
-                            <option value="524288">500K</option>
-                            <option value="1048576" selected>1M</option>
-                            <option value="2097152">2M</option>
-                        </select>
-                        <select class="chat-template-chip highlight-chip graph-kind-select" data-graph-target="compareInput" onchange="insertGraphKind(this)" title="اختر نوع المشجر في المقارنة">
-                            <option value="">🌳 نوع المشجر</option>
-                            <option value="graph_isnad">تشجير إسناد</option>
-                            <option value="graph_ilmi">تشجير خلاف علمي</option>
-                            <option value="graph_istidlal">تشجير استدلال</option>
-                            <option value="graph_munaqasha">تشجير مناقشة</option>
-                            <option value="graph_aam">تشجير خلاف عام</option>
-                        </select>
-                    </div>
-                    <div class="compare-composer-row">
-                        <textarea id="compareInput" rows="2" placeholder="اكتب السؤال هنا، فيجيب كل نموذج في عموده بعد بحث الوكلاء في الشاملة"></textarea>
-                        <div class="compare-send-stack">
-                            <button type="button" class="btn-flat-secondary" id="compareClearBtn" onclick="clearCompareAnswers()">مسح</button>
-                            <button type="submit" class="btn-flat-primary" id="compareSendBtn">إرسال</button>
+
+                            <div class="chat-send-group">
+                                <button type="button" class="btn-stop-chat" id="compareStopBtn" onclick="stopCompareGeneration()"
+                                    title="إيقاف" aria-label="إيقاف" disabled>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                        <rect x="6" y="6" width="12" height="12" rx="1.5" />
+                                    </svg>
+                                </button>
+                                <button type="button" class="btn-send-chat" id="compareSendBtn" onclick="submitCompareQuestion()"
+                                    title="إرسال للنموذجين معًا">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <line x1="22" y1="2" x2="11" y2="13" />
+                                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </form>
+                </div>
             </div>
         </section>
 
