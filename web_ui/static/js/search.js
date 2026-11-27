@@ -292,9 +292,6 @@ function renderSearchResults(results, query, duration, rawData = {}) {
             <button class="btn-flat-secondary" onclick="copyPassageText(${idx})" style="padding: 4px 10px; font-size: 12.5px;">
               نسخ النص
             </button>
-            <button class="btn-flat-secondary" onclick="sendToChat(${idx})" style="padding: 4px 10px; font-size: 12.5px; color: var(--accent-clay);">
-              مناقشة في الشات
-            </button>
           </div>
         </div>
       </article>
@@ -308,6 +305,9 @@ function renderSearchResults(results, query, duration, rawData = {}) {
   }
   // نافذة «بحث في النتائج» مفتوحة: إعادة التحديد على النتائج الجديدة تلقائيًا
   refreshResultsSearchIfOpen();
+  const _selTip = document.getElementById('resultsSelectionTooltip');
+  if (_selTip) _selTip.style.display = 'none';
+  _resultsSelectedText = ''; _resultsSelectedIdx = -1;
 }
 
 // =============================================================================
@@ -1222,11 +1222,53 @@ function copyPassageText(idx) {
   });
 }
 
-// إرسال النص مباشرة إلى نافذة الشات للمناقشة في محادثة مستقلة جديدة لمنع التراكم والتداخل
-function sendToChat(idx) {
-  const item = window._lastSearchResults?.[idx];
-  if (!item) return;
+// رصد التحديد في متون نتائج البحث — نمط نافذة تصفح الكتاب نفسه:
+// ظلّل أي نص في أي نتيجة فتظهر «اضغط للمدارسة» فوق تحديدك.
+let _resultsSelectedText = '';
+let _resultsSelectedIdx = -1;
 
+function onResultsTextSelected() {
+  const selection = window.getSelection();
+  const tooltip = document.getElementById('resultsSelectionTooltip');
+  if (!tooltip) return;
+  if (tooltip.contains(document.activeElement) || tooltip.matches(':hover')) return;
+
+  const selectedStr = selection ? selection.toString().trim() : '';
+  const root = document.getElementById('searchResultsList');
+  const inside = !!(selection && selection.rangeCount && root && (
+    root.contains(selection.anchorNode) || root.contains(selection.focusNode)
+  ));
+
+  if (inside && selectedStr) {
+    _resultsSelectedText = selectedStr;
+    const card = selection.anchorNode && selection.anchorNode.parentElement
+      ? selection.anchorNode.parentElement.closest('.result-card') : null;
+    const m = card && /^resCard_(\d+)$/.exec(card.id || '');
+    _resultsSelectedIdx = m ? parseInt(m[1], 10) : -1;
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect.width || rect.height) {
+      tooltip.style.display = 'flex';
+      tooltip.style.top = `${Math.max(16, rect.top - 8)}px`;
+      tooltip.style.left = `${rect.left + (rect.width / 2)}px`;
+      return;
+    }
+  }
+  if (!selectedStr) { _resultsSelectedText = ''; _resultsSelectedIdx = -1; }
+  tooltip.style.display = 'none';
+}
+window.onResultsTextSelected = onResultsTextSelected;
+
+// نقل النص المظلَّل من النتيجة إلى الشات بتوثيق نتيجته (لا نص البطاقة كله)
+function sendResultSelectionToChat() {
+  const tooltip = document.getElementById('resultsSelectionTooltip');
+  if (tooltip) tooltip.style.display = 'none';
+  const passage = (_resultsSelectedText || '').trim();
+  if (!passage) {
+    showToast('ظلّل نصًا من أي نتيجة أولًا');
+    return;
+  }
+  const item = window._lastSearchResults?.[_resultsSelectedIdx] || {};
   const bookName = (item.book_title || item.book || 'مصدر تراثي').trim();
   const authorName = (item.author || '').trim();
   const locParts = [
@@ -1237,7 +1279,7 @@ function sendToChat(idx) {
   const authorCitation = authorName ? ` للمؤلف: ${authorName}` : '';
   const chapterCitation = item.chapter ? ` (باب: ${item.chapter})` : '';
 
-  const promptMessage = `أرجو شرح وتخريج هذا النص ومقارنة أقوال الفقهاء فيه:\n\n«${item.text || item.content}»\n\n📚 **المصدر:** «${bookName}»${authorCitation}${locCitation}${chapterCitation}`;
+  const promptMessage = `أرجو شرح وتخريج هذا النص ومقارنة أقوال الفقهاء فيه:\n\n«${passage}»\n\n📚 **المصدر:** «${bookName}»${authorCitation}${locCitation}${chapterCitation}`;
   const sessionTitle = `مناقشة: ${bookName.slice(0, 32)}`;
 
   if (typeof startNewChatWithPrompt === 'function') {
@@ -1256,8 +1298,9 @@ function sendToChat(idx) {
     }
   }
 
-  showToast('تم فتح محادثة جديدة ونقل النص إلى الشات 💬');
+  showToast('تم فتح محادثة جديدة ونقل النص المظلَّل إلى الشات 💬');
 }
+window.sendResultSelectionToChat = sendResultSelectionToChat;
 
 // حماية من XSS
 function escapeHtml(str) {
@@ -1275,4 +1318,4 @@ window.openSearchScopeModal = openSearchScopeModal;
 window.closeSearchScopeModal = closeSearchScopeModal;
 window.applySearchScopeSelection = applySearchScopeSelection;
 window.resetSearchScope = resetSearchScope;
-window.sendToChat = sendToChat;
+window.onResultsTextSelected = onResultsTextSelected;

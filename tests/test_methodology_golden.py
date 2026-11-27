@@ -885,10 +885,21 @@ class SearchTabCleanupTests(unittest.TestCase):
         with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
             return fh.read()
 
+    def test_results_selection_tooltip_in_template(self):
+        index = self._read("web_ui/templates/index.html")
+        self.assertIn("resultsSelectionTooltip", index)
+        self.assertIn("sendResultSelectionToChat()", index)
+        self.assertIn('onmouseup="onResultsTextSelected()"', index)
+
     def test_badges_removed_and_results_search_exists(self):
         search = self._read("web_ui/static/js/search.js")
         self.assertNotIn("دلالي مباشر", search)
         self.assertNotIn("تحقق حرفي (MCP)", search)
+        self.assertNotIn("مناقشة في الشات", search)
+        # النقل إلى الشات بنمط القارئ: تظليل ثم «اضغط للمدارسة»
+        self.assertIn("resultsSelectionTooltip", search)
+        self.assertIn("onResultsTextSelected", search)
+        self.assertIn("sendResultSelectionToChat", search)
         index = self._read("web_ui/templates/index.html")
         self.assertIn("btnSearchInResults", index)
         self.assertIn('onclick="openResultsSearch()"', index)
