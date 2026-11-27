@@ -394,11 +394,9 @@ function designImageMode() {
   try { const saved = localStorage.getItem(DESIGN_IMAGE_MODE_KEY); return ['without', 'none'].includes(saved) ? saved : 'with'; } catch (e) { return 'with'; }
 }
 
-const DESIGN_IMAGE_MODEL_KEY = 'almujtahed_designs_imagemodel_v1';
+/* نموذج رسم الصور من «النماذج الافتراضية» في إعدادات المنظومة وحدها */
 function designImageModelChoice() {
-  const sel = document.getElementById('designImageModel');
-  if (sel && ['gpt', 'muse', 'gemini', 'gpt54'].includes(sel.value)) return sel.value;
-  try { const saved = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); return ['muse', 'gemini', 'gpt54'].includes(saved) ? saved : 'gpt'; } catch (e) { return 'gpt'; }
+  return (typeof defaultModel === 'function' ? defaultModel('image') : 'gpt54');
 }
 
 /* 🎨 ألوان التصاميم: ألوان صورة (افتراضية/مخصصة بثلاثة ألوان ونسب سيادة) وألوان خطوط،
@@ -1557,11 +1555,6 @@ function initDesignsTab() {
   if (modeSel) {
     try { const savedMode = localStorage.getItem(DESIGN_IMAGE_MODE_KEY); if (['with', 'without', 'none'].includes(savedMode)) modeSel.value = savedMode; } catch (e) {}
     modeSel.addEventListener('change', () => { try { localStorage.setItem(DESIGN_IMAGE_MODE_KEY, modeSel.value); } catch (e) {} });
-  }
-  const modelSel = document.getElementById('designImageModel');
-  if (modelSel) {
-    try { const savedModel = localStorage.getItem(DESIGN_IMAGE_MODEL_KEY); if (['gpt', 'muse', 'gemini', 'gpt54'].includes(savedModel)) modelSel.value = savedModel; } catch (e) {}
-    modelSel.addEventListener('change', () => { try { localStorage.setItem(DESIGN_IMAGE_MODEL_KEY, modelSel.value); } catch (e) {} });
   }
   const form = document.getElementById('designComposer');
   if (form) form.addEventListener('submit', submitDesignIdea);

@@ -7132,7 +7132,7 @@ async def design_image(req: DesignImageRequest, request: Request):
     if not key:
         raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
     size = {"16:9": "1536x1024", "9:16": "1024x1536", "1:1": "1024x1024"}[aspect]
-    model = DESIGN_IMAGE_MODELS.get((req.image_model or "gpt").strip(), DESIGN_IMAGE_MODEL)
+    model = DESIGN_IMAGE_MODELS.get((req.image_model or "gpt54").strip(), DESIGN_IMAGE_MODELS["gpt54"])
     payload = {
         "model": model,
         "prompt": prompt,
@@ -7236,21 +7236,23 @@ class AudioSummaryRequest(BaseModel):
     text: str
     focus: Optional[str] = None
     api_key: Optional[str] = None
+    tts_model: Optional[str] = None
 
 
 class TranscribeRequest(BaseModel):
     audio_base64: str
     mime: Optional[str] = None
     api_key: Optional[str] = None
+    model: Optional[str] = None
 
 
 # نسخ التسجيل الصوتي في المحادثة إلى نص: نموذج النسخ المعتمد عند المستخدم
 TRANSCRIBE_MODEL = "google/gemini-4-neon"
 
 
-def _openrouter_transcribe_audio(key: str, b64: str, fmt: str, timeout: int = 300) -> str:
+def _openrouter_transcribe_audio(key: str, b64: str, fmt: str, timeout: int = 300, model: Optional[str] = None) -> str:
     payload = {
-        "model": TRANSCRIBE_MODEL,
+        "model": (model or "").strip() or TRANSCRIBE_MODEL,
         "temperature": 0.0,
         "max_tokens": 8192,
         "messages": [
@@ -7294,8 +7296,9 @@ async def chat_transcribe(req: TranscribeRequest, request: Request):
     fmt = {"audio/webm": "webm", "audio/mp4": "m4a", "audio/mpeg": "mp3",
            "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg",
            "audio/aac": "aac", "audio/flac": "flac"}.get(mime, "webm")
+    model = (req.model or "").strip() or TRANSCRIBE_MODEL
     try:
-        text = await asyncio.to_thread(_openrouter_transcribe_audio, key, b64, fmt)
+        text = await asyncio.to_thread(_openrouter_transcribe_audio, key, b64, fmt, 300, model)
     except urllib.error.HTTPError as error:
         if error.code == 402:
             raise HTTPException(status_code=402, detail="رصيد OpenRouter غير كافٍ لنسخ التسجيل؛ اشحن رصيدك ثم أعد المحاولة")
@@ -7305,7 +7308,7 @@ async def chat_transcribe(req: TranscribeRequest, request: Request):
         raise HTTPException(status_code=502, detail=f"تعذر نسخ التسجيل الصوتي: {error}")
     if not text:
         raise HTTPException(status_code=502, detail="لم يُرجع نموذج النسخ نصًا — أعد التسجيل بصوت أوضح")
-    return {"ok": True, "text": text, "model": TRANSCRIBE_MODEL}
+    return {"ok": True, "text": text, "model": model}
 
 
 # الملخص الصوتي للإجابة المعتمدة: اختصار دقيق بـ Gemini Flash ثم نطق بنموذج TTS بصوت Algieba
@@ -7367,9 +7370,9 @@ def _pcm16_to_mp3(pcm: bytes, sample_rate: int = 24000, bit_rate: int = 64) -> O
         return None
 
 
-def _openrouter_tts(key: str, text: str, with_instructions: bool, voice: Optional[str] = None, instructions: Optional[str] = None) -> bytes:
+def _openrouter_tts(key: str, text: str, with_instructions: bool, voice: Optional[str] = None, instructions: Optional[str] = None, model: Optional[str] = None) -> bytes:
     payload = {
-        "model": AUDIO_TTS_MODEL,
+        "model": (model or "").strip() or AUDIO_TTS_MODEL,
         "input": text,
         "voice": voice or AUDIO_TTS_VOICE,
         "response_format": "pcm",
@@ -7474,8 +7477,10 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
     # الملخص الوافي قد يطول: يُنطق على مقاطع متوازية (حدود جمل) ثم تُدمج في ملف واحد
     chunks = _split_tts_chunks(summary)
 
+    tts_model = (req.tts_model or "").strip() or AUDIO_TTS_MODEL
+
     async def _synth(chunk_text: str, with_instructions: bool) -> bytes:
-        return await asyncio.to_thread(_openrouter_tts, key, chunk_text, with_instructions)
+        return await asyncio.to_thread(_openrouter_tts, key, chunk_text, with_instructions, None, None, tts_model)
 
     parts: list = []
     tts_error: Optional[Exception] = None
@@ -7524,7 +7529,7 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
         "audio_url": f"/uploads/{owner_id}/audio/{filename}",
         "summary": summary,
         "voice": AUDIO_TTS_VOICE,
-        "tts_model": AUDIO_TTS_MODEL,
+        "tts_model": tts_model,
     }
 
 
@@ -7533,6 +7538,7 @@ async def chat_audio_summary(req: AudioSummaryRequest, request: Request):
 class PodcastRequest(BaseModel):
     text: str
     api_key: Optional[str] = None
+    tts_model: Optional[str] = None
 
 
 PODCAST_VOICES = {"m": "Iapetus", "i": "Algieba"}
@@ -7616,8 +7622,10 @@ async def chat_podcast(req: PodcastRequest, request: Request):
         for chunk in _split_tts_chunks(turn["t"]):
             synth_jobs.append((PODCAST_VOICES[turn["s"]], PODCAST_INSTRUCTIONS[turn["s"]], chunk))
 
+    tts_model = (req.tts_model or "").strip() or AUDIO_TTS_MODEL
+
     async def _synth(voice: str, instructions: str, chunk_text: str, with_instructions: bool) -> bytes:
-        return await asyncio.to_thread(_openrouter_tts, key, chunk_text, with_instructions, voice, instructions)
+        return await asyncio.to_thread(_openrouter_tts, key, chunk_text, with_instructions, voice, instructions, tts_model)
 
     parts: list = []
     tts_error: Optional[Exception] = None
@@ -7670,7 +7678,7 @@ async def chat_podcast(req: PodcastRequest, request: Request):
             for t in script["turns"]
         ],
         "voices": {"muhammad": PODCAST_VOICES["m"], "ibrahim": PODCAST_VOICES["i"]},
-        "tts_model": AUDIO_TTS_MODEL,
+        "tts_model": tts_model,
     }
 
 
@@ -8228,7 +8236,8 @@ class PresentationRequest(BaseModel):
     proposals: Optional[list] = None
     api_key: Optional[str] = None
     text_mode: Optional[str] = "editable"
-    image_model: Optional[str] = "gpt"
+    image_model: Optional[str] = "gpt54"
+    tts_model: Optional[str] = None
     colors: Optional[dict] = None
     design_mode: Optional[str] = "with"
     slide_count: Optional[int] = None
@@ -8379,7 +8388,7 @@ def _slide_image_prompt(image_prompt: str, options: Optional[dict] = None) -> st
 def _normalize_presentation_options(req: PresentationRequest) -> dict:
     """تطبيع خيارات العرض من نافذة الخيارات: أسلوب النص (مدمج/قابل للتحرير) ونموذج الصورة والألوان."""
     text_mode = "embedded" if (req.text_mode or "") == "embedded" else "editable"
-    image_model_id = DESIGN_IMAGE_MODELS.get((req.image_model or "gpt").strip(), DESIGN_IMAGE_MODEL)
+    image_model_id = DESIGN_IMAGE_MODELS.get((req.image_model or "gpt54").strip(), DESIGN_IMAGE_MODELS["gpt54"])
     colors = req.colors if isinstance(req.colors, dict) else {}
 
     def hexv(value, fallback):
@@ -8399,6 +8408,7 @@ def _normalize_presentation_options(req: PresentationRequest) -> dict:
     return {
         "text_mode": text_mode,
         "image_model_id": image_model_id,
+        "tts_model": (req.tts_model or "").strip() or AUDIO_TTS_MODEL,
         "colors_mode": "custom" if colors.get("mode") == "custom" else "default",
         "img": img,
         "fonts": {
@@ -8497,14 +8507,14 @@ def _slide_explained_prompt(slide_data: dict, options: Optional[dict] = None) ->
     )
 
 
-def _tts_pcm_sync(key: str, text: str) -> bytes:
+def _tts_pcm_sync(key: str, text: str, model: Optional[str] = None) -> bytes:
     """نطق نص كامل (على مقاطع عند الحاجة) وإرجاع الصوت مدمجًا كما أتى (PCM غالبًا)."""
     parts = []
     for chunk in _split_tts_chunks(text):
         try:
-            parts.append(_openrouter_tts(key, chunk, True))
+            parts.append(_openrouter_tts(key, chunk, True, None, None, model))
         except Exception:
-            parts.append(_openrouter_tts(key, chunk, False))
+            parts.append(_openrouter_tts(key, chunk, False, None, None, model))
     if parts and all(p[:4] == b"RIFF" for p in parts):
         parts = [p[44:] for p in parts]
     return b"".join(parts)
@@ -8662,7 +8672,7 @@ async def _run_presentation_job(job_id: str, owner_id: str, key: str, text: str,
             img_path = await asyncio.to_thread(_save_slide_image, img, folder, i)
             aud_path = None
             if options["voiceover"]:
-                raw = await asyncio.to_thread(_tts_pcm_sync, key, slide_data["narration"])
+                raw = await asyncio.to_thread(_tts_pcm_sync, key, slide_data["narration"], options.get("tts_model"))
                 blob, ext = _audio_blob_from_raw(raw)
                 aud_path = folder / f"slide-{i:02d}.{ext}"
                 aud_path.write_bytes(blob)
@@ -8743,7 +8753,7 @@ class TreeImageRequest(BaseModel):
     proposals: list
     material: Optional[str] = ""
     api_key: Optional[str] = None
-    image_model: Optional[str] = "gpt"
+    image_model: Optional[str] = "gpt54"
     explained_style: Optional[str] = "photos"
     colors: Optional[dict] = None
     orientation: Optional[str] = None
@@ -10304,7 +10314,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.877"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.878"},
         },
     })
     if opened.get("error"):

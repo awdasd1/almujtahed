@@ -28,53 +28,18 @@ const MS_MODEL_PRESETS = {
   hard: { primary: 'google/gemini-3.1-pro-preview', checker: 'anthropic/claude-sonnet-5.5', tertiary: 'google/gemini-3.1-flash-lite', auditor: 'google/gemini-3.1-pro-preview' },
 };
 
-// نماذج القراءة من بطاقات القارئ الأول والثاني والمعتمِد في مجموعة
-// «تحقيق المخطوطات» نفسها؛ والاحتياط عند غياب المجموعة هو الضبط المعتمد
+// نماذج قراءة اللوحات والتدقيق من «النماذج الافتراضية» في إعدادات
+// المنظومة وحدها (القارئ الأول والثاني والثالث والمدقق) — لا اختيار
+// نموذج في تبويب المخطوطات ولا في بطاقات مجموعة التحقيق بعد اليوم
 function msModelChoice() {
-  try { localStorage.removeItem('almujtahed_ms_models_v2'); } catch (e) { /* لا شيء */ }
   const std = MS_MODEL_PRESETS.standard;
+  const dm = (key, fallback) => (typeof defaultModel === 'function' ? defaultModel(key) : fallback);
   return {
-    primary: msGroupModel('reader1', std.primary),
-    checker: msGroupModel('reader2', std.checker),
-    tertiary: msGroupModel('reader3', 'google/gemini-3.1-flash-lite'),
-    auditor: msGroupModel('approver', std.auditor),
+    primary: dm('msReader1', std.primary),
+    checker: dm('msReader2', std.checker),
+    tertiary: dm('msReader3', std.tertiary),
+    auditor: dm('msAuditor', std.auditor),
   };
-}
-
-function msFillModelSelects() {
-  const choice = msModelChoice();
-  [['msPrimaryModel', choice.primary], ['msCheckerModel', choice.checker],
-   ['msTertiaryModel', choice.tertiary], ['msAuditorModel', choice.auditor]].forEach(([id, val]) => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const choices = MS_MODEL_CHOICES.some(([v]) => v === val)
-      ? MS_MODEL_CHOICES : [...MS_MODEL_CHOICES, [val, String(val).split('/').pop()]];
-    sel.innerHTML = choices.map(([v, label]) =>
-      `<option value="${v}"${v === val ? ' selected' : ''}>${label}</option>`).join('');
-  });
-}
-
-function msSaveModelChoice() {
-  const primary = document.getElementById('msPrimaryModel')?.value;
-  const checker = document.getElementById('msCheckerModel')?.value;
-  const tertiary = document.getElementById('msTertiaryModel')?.value || MS_READER3_MODEL;
-  const auditor = document.getElementById('msAuditorModel')?.value;
-  if (!(primary && checker && auditor)) return;
-  if (!MS_GROUP) { msToast('مجموعة تحقيق المخطوطات غير محمّلة بعد — أعد فتح التبويب'); return; }
-  [['reader1', primary], ['reader2', checker], ['reader3', tertiary], ['approver', auditor]].forEach(([key, model]) => {
-    const a = msGroupAgent(key);
-    if (a) a.model = model;
-  });
-  msSaveGroup();
-  msToast('حُفظ اختيار نماذج النسخ والتدقيق في بطاقات القراء الثلاثة والمدقق بالمجموعة');
-}
-
-function msPresetModels(name) {
-  const preset = MS_MODEL_PRESETS[name];
-  if (!preset) return;
-  localStorage.setItem('almujtahed_ms_models_v2', JSON.stringify(preset));
-  msFillModelSelects();
-  msToast(name === 'hard' ? 'فُعّل وضع الخطوط الصعبة: قارئان مخصصان للخطوط العسيرة ومدقق' : 'فُعّل الوضع الموحّد المعتمد: قارئان ومدقق على الصورة');
 }
 let msWb = null; // {projectId, copyId, folioId}
 let msSaveTimer = null;
@@ -114,7 +79,6 @@ async function initManuscriptsTab() {
     if (data.models) msModels = data.models;
   } catch (e) { msProjects = []; }
   msLoaded = true;
-  msFillModelSelects();
   renderMsProjects();
   msLoadGroup();
 }
@@ -2453,10 +2417,7 @@ function msApplyGroupModelDefaults() {
   set('msAgentModel', 'hadith');
   set('msAuthorModel', 'authorworks');
   set('msMonitorModel', 'monitor');
-  set('msPrimaryModel', 'reader1');
-  set('msCheckerModel', 'reader2');
-  set('msTertiaryModel', 'reader3');
-  set('msAuditorModel', 'approver');
+  // القراء الثلاثة والمدقق لا يُضبطون هنا — مرجعهم «النماذج الافتراضية»
 }
 
 function msGroupAgent(key) { return MS_GROUP ? (MS_GROUP.agents || []).find(a => a.ms_key === key) || null : null; }

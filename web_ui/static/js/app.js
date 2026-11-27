@@ -69,6 +69,16 @@ const DEFAULT_SETTINGS = {
   msCardColor: '#fdfaf4', msCardOpacity: 12, msBorderColor: '#c9c2b8', msBorderOpacity: 55,
   msTitleFont: 'google:Amiri', msTitleSize: 22, msTitleColor: '',
   msTextFont: '', msTextSize: 15, msTextColor: '',
+  defaultModels: {
+    stt: 'google/gemini-4-neon',
+    tts: 'google/gemini-3.8-flash-lite-tts',
+    msReader1: '~google/gemini-pro-latest',
+    msReader2: 'google/gemini-4-carbon',
+    msReader3: 'google/gemini-3.1-flash-lite',
+    msAuditor: 'google/gemini-4-argon',
+    pageReader: 'google/gemini-4-neon',
+    image: 'gpt54'
+  },
   textSize: 19,
   providers: {
     claude: '',
@@ -1132,6 +1142,156 @@ function handleFontRoleChange(role, value) {
   applyFontRoles();
 }
 
+/* ================= النماذج الافتراضية =================
+   مرجع واحد في «إعدادات المنظومة» تقرأ منه كل المواضع: نسخ الصوت،
+   تحويل النص إلى صوت، قراء المخطوطات والمدقق، قارئ الصفحات المصورة،
+   ورسم الصور — ولا اختيار نموذج في مواضع الاستعمال بعد اليوم. */
+const DEFAULT_MODEL_DEFS = {
+  stt: { def: 'google/gemini-4-neon', label: 'نموذج تحويل الصوت إلى نص', selectId: 'dmSttSelect', descId: 'dmSttDesc' },
+  tts: { def: 'google/gemini-3.8-flash-lite-tts', label: 'نموذج تحويل النص إلى صوت', selectId: 'dmTtsSelect', descId: 'dmTtsDesc' },
+  msReader1: { def: '~google/gemini-pro-latest', label: 'القارئ الأول', selectId: 'dmMsReader1Select', descId: 'dmMsReader1Desc' },
+  msReader2: { def: 'google/gemini-4-carbon', label: 'القارئ الثاني', selectId: 'dmMsReader2Select', descId: 'dmMsReader2Desc' },
+  msReader3: { def: 'google/gemini-3.1-flash-lite', label: 'القارئ الثالث', selectId: 'dmMsReader3Select', descId: 'dmMsReader3Desc' },
+  msAuditor: { def: 'google/gemini-4-argon', label: 'المدقق', selectId: 'dmMsAuditorSelect', descId: 'dmMsAuditorDesc' },
+  pageReader: { def: 'google/gemini-4-neon', label: 'نموذج قراءة الصفحات المصورة', selectId: 'dmPageReaderSelect', descId: 'dmPageReaderDesc' },
+  image: { def: 'gpt54', label: 'نموذج رسم الصور', selectId: 'dmImageSelect', descId: 'dmImageDesc' },
+};
+const DM_IMAGE_OPTIONS = [
+  ['gpt54', '🚀 GPT-5.4 Image 2 — openai/gpt-5.4-image-2'],
+  ['gpt', '🖼️ GPT Image — openai/gpt-image-2.6-sunburst'],
+  ['muse', '✨ Meta Muse Image — meta/muse-image'],
+  ['gemini', '🌟 Gemini 3 Pro Image — google/gemini-3-pro-image-preview'],
+];
+
+function defaultModel(key) {
+  const defs = DEFAULT_MODEL_DEFS[key];
+  if (!defs) return '';
+  const saved = (currentSettings && currentSettings.defaultModels) || {};
+  return String(saved[key] || defs.def);
+}
+window.defaultModel = defaultModel;
+
+function dmModelDisplayName(id) {
+  if (String(id || '').startsWith('~')) {
+    const rec = (window.openrouterModelsList || []).find((m) => m.id === String(id).slice(1));
+    if (rec) return rec.name || rec.id;
+  }
+  const rec = (window.openrouterModelsList || []).find((m) => m.id === id);
+  return rec ? (rec.name || rec.id) : String(id || '');
+}
+
+function dmUpdateDesc(key) {
+  const defs = DEFAULT_MODEL_DEFS[key];
+  const el = document.getElementById(defs.descId);
+  if (!el) return;
+  const id = defaultModel(key);
+  if (key === 'image') {
+    const opt = DM_IMAGE_OPTIONS.find(([v]) => v === id);
+    el.textContent = opt ? opt[1] : id;
+    return;
+  }
+  const rec = (window.openrouterModelsList || []).find((m) => m.id === id || m.id === String(id).replace(/^~/, ''));
+  const plain = (typeof plainModelDescription === 'function') ? plainModelDescription : (t) => String(t || '');
+  const desc = rec ? plain(rec.description || '') : '';
+  el.textContent = desc ? `${dmModelDisplayName(id)} — ${desc}` : `${dmModelDisplayName(id)} (${id})`;
+}
+
+function populateDefaultModelSelects() {
+  Object.keys(DEFAULT_MODEL_DEFS).forEach((key) => {
+    const defs = DEFAULT_MODEL_DEFS[key];
+    const select = document.getElementById(defs.selectId);
+    if (!select) return;
+    const current = defaultModel(key);
+    select.replaceChildren();
+    const defGroup = document.createElement('optgroup');
+    defGroup.label = 'النموذج الافتراضي';
+    const defOpt = document.createElement('option');
+    defOpt.value = defs.def;
+    defOpt.textContent = key === 'image'
+      ? `${(DM_IMAGE_OPTIONS.find(([v]) => v === defs.def) || [])[1] || defs.def} — افتراضي`
+      : `${dmModelDisplayName(defs.def)} — افتراضي`;
+    defGroup.appendChild(defOpt);
+    select.appendChild(defGroup);
+    if (key === 'image') {
+      const group = document.createElement('optgroup');
+      group.label = 'نماذج رسم الصور';
+      DM_IMAGE_OPTIONS.forEach(([value, label]) => {
+        if (value === defs.def) return;
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        group.appendChild(option);
+      });
+      select.appendChild(group);
+    } else {
+      // بقية القائمة مستنسخة من قائمة نماذج المحادثات: مقترحة أولًا ثم الكل
+      let models = Array.isArray(window.openrouterModelsList) ? window.openrouterModelsList : [];
+      if (typeof partitionMediaModels === 'function' && models.length) {
+        models = partitionMediaModels(models).text;
+      }
+      if (typeof modelsWithSuggestedFirst === 'function' && models.length) {
+        models = modelsWithSuggestedFirst(models, true);
+      }
+      const seen = new Set([defs.def]);
+      const group = document.createElement('optgroup');
+      group.label = models.length ? `كافة النماذج (${models.length})` : 'كافة النماذج (تُجلب عند الفتح)';
+      models.forEach((m) => {
+        if (!m || !m.id || seen.has(m.id)) return;
+        seen.add(m.id);
+        const option = document.createElement('option');
+        option.value = m.id;
+        option.textContent = m.name || m.id;
+        group.appendChild(option);
+      });
+      select.appendChild(group);
+      if (current && !seen.has(current)) {
+        const option = document.createElement('option');
+        option.value = current;
+        option.textContent = `${dmModelDisplayName(current)} (المحفوظ حاليًا)`;
+        defGroup.appendChild(option);
+      }
+    }
+    select.value = current;
+    dmUpdateDesc(key);
+  });
+}
+
+async function ensureDefaultModelCatalog() {
+  if (!Array.isArray(window.openrouterModelsList) || !window.openrouterModelsList.length) {
+    try {
+      let apiKey = '';
+      try { apiKey = (readProviderKeys() || {}).openrouter || ''; } catch (e) {}
+      const res = await fetch(`/api/openrouter/models${apiKey ? '?api_key=' + encodeURIComponent(apiKey) : ''}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.models) && data.models.length) window.openrouterModelsList = data.models;
+      }
+    } catch (e) { /* تبقى القوائم بالافتراضي والمحفوظ */ }
+  }
+  populateDefaultModelSelects();
+}
+
+function handleDefaultModelChange(key, value) {
+  if (!DEFAULT_MODEL_DEFS[key] || !value) return;
+  currentSettings.defaultModels = { ...(currentSettings.defaultModels || {}), [key]: value };
+  persistFontSettings();
+  dmUpdateDesc(key);
+}
+
+function resetDefaultModel(key) {
+  const defs = DEFAULT_MODEL_DEFS[key];
+  if (!defs) return;
+  currentSettings.defaultModels = { ...(currentSettings.defaultModels || {}), [key]: defs.def };
+  persistFontSettings();
+  const select = document.getElementById(defs.selectId);
+  if (select) select.value = defs.def;
+  dmUpdateDesc(key);
+  if (typeof showToast === 'function') showToast(`عاد ${defs.label} إلى الافتراضي: ${key === 'image' ? defs.def : dmModelDisplayName(defs.def)}`);
+}
+window.handleDefaultModelChange = handleDefaultModelChange;
+window.resetDefaultModel = resetDefaultModel;
+window.populateDefaultModelSelects = populateDefaultModelSelects;
+
 /* تبويب «الطباعة»: خطوط ورقة الطباعة المقسّمة وعرض خطها الفاصل */
 const PRINT_FONT_FIELDS = {
   h1: { selectId: 'printH1FontSelect', key: 'printH1Font', sizeKey: 'printH1Size', weightKey: 'printH1Weight', styleKey: 'printH1Style', colorKey: 'printH1Color', previewId: 'printH1Preview', label: 'العناوين الرئيسة' },
@@ -2013,6 +2173,7 @@ function switchSettingsTab(tabKey) {
     'providers': { pane: 'setPaneProviders', btn: 'setNavProviders' },
     'modelParams': { pane: 'setPaneModelParams', btn: 'setNavModelParams' },
     'auxiliary': { pane: 'setPaneAuxiliary', btn: 'setNavAuxiliary' },
+    'defaultModels': { pane: 'setPaneDefaultModels', btn: 'setNavDefaultModels' },
     'print': { pane: 'setPanePrint', btn: 'setNavPrint' },
     'msvisual': { pane: 'setPaneMsVisual', btn: 'setNavMsVisual' }
   };
@@ -2024,6 +2185,7 @@ function switchSettingsTab(tabKey) {
     if (pane) pane.style.display = 'flex';
     if (btn) btn.classList.add('active');
   }
+  if (tabKey === 'defaultModels' && typeof ensureDefaultModelCatalog === 'function') ensureDefaultModelCatalog();
   syncSettingsPreview();
 }
 

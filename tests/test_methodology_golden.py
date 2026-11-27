@@ -949,6 +949,56 @@ class ChatBeautifyTests(unittest.TestCase):
         self.assertIn(".math-display", css)
 
 
+class DefaultModelsTabTests(unittest.TestCase):
+    """تبويب «النماذج الافتراضية»: مرجع واحد لنسخ الصوت والصوت المولّد
+    وقراء المخطوطات والمدقق وقارئ الصفحات المصورة ورسم الصور، والاختيارات
+    ملغاة من مواضع الاستعمال وتُقرأ منه وحده."""
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_tab_exists_with_all_sections(self):
+        html = self._read("web_ui/templates/index.html")
+        self.assertIn("switchSettingsTab('defaultModels')", html)
+        self.assertIn('id="setPaneDefaultModels"', html)
+        for sid in ("dmSttSelect", "dmTtsSelect", "dmMsReader1Select", "dmMsReader2Select",
+                    "dmMsReader3Select", "dmMsAuditorSelect", "dmPageReaderSelect", "dmImageSelect"):
+            self.assertIn(f'id="{sid}"', html)
+        self.assertIn("resetDefaultModel('stt')", html)
+        self.assertIn("resetDefaultModel('image')", html)
+
+    def test_defaults_and_consumers(self):
+        app = self._read("web_ui/static/js/app.js")
+        self.assertIn("DEFAULT_MODEL_DEFS", app)
+        self.assertIn("'google/gemini-4-neon'", app)
+        self.assertIn("window.defaultModel = defaultModel", app)
+        chat = self._read("web_ui/static/js/chat.js")
+        self.assertIn("defaultModel('stt')", chat)
+        self.assertIn("defaultModel('tts')", chat)
+        self.assertIn("defaultModel('image')", chat)
+        self.assertNotIn('id="presImageModel"', chat)
+        self.assertNotIn('id="treeImgModel"', chat)
+        ms = self._read("web_ui/static/js/manuscripts.js")
+        self.assertIn("defaultModel('msReader1')", ms) if "defaultModel('msReader1')" in ms else self.assertIn("dm('msReader1'", ms)
+        self.assertNotIn("function msSaveModelChoice", ms)
+        docs = self._read("web_ui/static/js/documents.js")
+        self.assertIn("defaultModel('pageReader')", docs)
+        self.assertNotIn("pickDocOcrModel", docs)
+        designs = self._read("web_ui/static/js/designs.js")
+        self.assertIn("defaultModel('image')", designs)
+        html = self._read("web_ui/templates/index.html")
+        self.assertNotIn('id="designImageModel"', html)
+        self.assertNotIn('id="docOcrModal"', html)
+        self.assertNotIn('id="btnDocOcrPick"', html)
+
+    def test_server_accepts_default_models(self):
+        server = self._read("web_ui/server.py")
+        self.assertIn("tts_model: Optional[str] = None", server)
+        self.assertIn("model: Optional[str] = None", server)
+        self.assertIn('DESIGN_IMAGE_MODELS["gpt54"]', server)
+
+
 class QuranFontsTests(unittest.TestCase):
     """خطوط القرآن الكريم برواياتها مدمجة وتتصدر قوائم الخطوط قبل
     خطوط جوجل بأسمائها العربية، وأوزان كل خط هي ما يعرض عند اختياره."""

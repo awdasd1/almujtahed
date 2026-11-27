@@ -28,7 +28,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.877 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.878 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -3422,13 +3422,7 @@
                         <option value="without">🚫 تصميم بدون صور — بلا أي كائن حي</option>
                         <option value="none">📝 بلا صور مطلقًا — خط عربي ونص فقط</option>
                     </select>
-                    <span class="designs-controls-label">نموذج الصورة:</span>
-                    <select id="designImageModel" class="design-image-mode" title="اختر نموذج توليد الصورة عبر OpenRouter">
-                        <option value="gpt" selected>🖼️ GPT Image — النموذج الحالي</option>
-                        <option value="muse">✨ Meta Muse Image — meta/muse-image</option>
-                        <option value="gemini">🌟 Gemini 3 Pro Image — google/gemini-3-pro-image-preview</option>
-                        <option value="gpt54">🚀 GPT-5.4 Image 2 — openai/gpt-5.4-image-2</option>
-                    </select>
+                    <span class="designs-controls-label" title="يُضبط من «النماذج الافتراضية» في إعدادات المنظومة">نموذج الصورة: من النماذج الافتراضية</span>
                     </div>
                 </div>
                 <div class="designs-stats">
@@ -4047,6 +4041,9 @@
                     </button>
                     <button class="settings-tab-btn" id="setNavAuxiliary" onclick="switchSettingsTab('auxiliary')">
                         النماذج المساعدة
+                    </button>
+                    <button class="settings-tab-btn" id="setNavDefaultModels" onclick="switchSettingsTab('defaultModels')">
+                        النماذج الافتراضية
                     </button>
                     <button class="settings-tab-btn" id="setNavPrint" onclick="switchSettingsTab('print')">
                         الطباعة
@@ -5097,6 +5094,90 @@
                     </div>
 
                     <!-- 4. تبويب النماذج المساعدة -->
+                    <div class="settings-pane" id="setPaneDefaultModels" style="display: none;">
+                        <div class="settings-section-title">النماذج الافتراضية</div>
+                        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+                            مرجع واحد لنماذج الخدمات في المنظومة كلها: ما تختاره هنا يُقرأ في مواضع
+                            الاستعمال (المحادثة والمخطوطات والوثائق والتشجير المصوّر والنشر) ولا اختيار
+                            نموذج في تلك المواضع بعد اليوم. في أعلى كل قائمة النموذج الافتراضي وبجانبه
+                            «افتراضي»، وزر «الافتراضي» يعيد الاختيار إليه متى بدّلت.
+                        </p>
+
+                        <div class="form-group">
+                            <label for="dmSttSelect">🎙️ نموذج تحويل الصوت إلى نص (تسجيل المايك في المحادثة)</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="dmSttSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('stt', this.value)"></select>
+                                <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('stt')">الافتراضي</button>
+                            </div>
+                            <div id="dmSttDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="dmTtsSelect">🔊 نموذج تحويل النص إلى صوت (الملخص الصوتي والبودكاست الحواري)</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="dmTtsSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('tts', this.value)"></select>
+                                <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('tts')">الافتراضي</button>
+                            </div>
+                            <div id="dmTtsDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+                        </div>
+
+                        <div class="settings-section-title" style="margin-top: 18px;">نماذج قراءة المخطوطات</div>
+
+                        <div class="form-group">
+                            <label for="dmMsReader1Select">القارئ الأول</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="dmMsReader1Select" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('msReader1', this.value)"></select>
+                                <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('msReader1')">الافتراضي</button>
+                            </div>
+                            <div id="dmMsReader1Desc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="dmMsReader2Select">القارئ الثاني</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="dmMsReader2Select" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('msReader2', this.value)"></select>
+                                <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('msReader2')">الافتراضي</button>
+                            </div>
+                            <div id="dmMsReader2Desc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="dmMsReader3Select">القارئ الثالث</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="dmMsReader3Select" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('msReader3', this.value)"></select>
+                                <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('msReader3')">الافتراضي</button>
+                            </div>
+                            <div id="dmMsReader3Desc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="dmMsAuditorSelect">المدقق</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="dmMsAuditorSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('msAuditor', this.value)"></select>
+                                <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('msAuditor')">الافتراضي</button>
+                            </div>
+                            <div id="dmMsAuditorDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+                        </div>
+
+                        <div class="form-group" style="margin-top: 18px;">
+                            <label for="dmPageReaderSelect">📄 نموذج قراءة الصفحات المصورة (تحويل الوثائق والكتب المصورة إلى نص)</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="dmPageReaderSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('pageReader', this.value)"></select>
+                                <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('pageReader')">الافتراضي</button>
+                            </div>
+                            <div id="dmPageReaderDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="dmImageSelect">🎨 نموذج رسم الصور (التشجير المصوّر والعروض وتبويب النشر)</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="dmImageSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('image', this.value)"></select>
+                                <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('image')">الافتراضي</button>
+                            </div>
+                            <div id="dmImageDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+                        </div>
+                    </div>
+
                     <div class="settings-pane" id="setPaneAuxiliary" style="display: none;">
                         <div class="settings-section-title">النماذج المساعدة (تقرأ ديناميكياً من الوكلاء المساعدين)
                         </div>
@@ -5818,10 +5899,9 @@
                     </label>
                     <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; flex-wrap: wrap;">
                         <input type="radio" name="docOcrEngine" value="openrouter" onchange="docOcrEngineChanged()"> نموذج من OpenRouter:
-                        <button type="button" class="btn-flat-secondary reader-mini-btn" id="btnDocOcrPick" onclick="openDocOcrPicker()" disabled>اختيار النموذج…</button>
-                        <span id="docOcrModelLabel" style="font-size: 12px; color: var(--accent-clay); font-weight: 600;">لم يُختر نموذج</span>
+                        <span id="docOcrModelLabel" style="font-size: 12px; color: var(--accent-clay); font-weight: 600;"></span>
                     </label>
-                    <span style="display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">على ويندوز لا محرك محليًا فاختر نموذج رؤية من OpenRouter (تُحسب قراءته على مفتاحك)، وكذلك إن كانت قراءة المحلي غير واضحة لمسح رديء. يسري الاختيار على هذا الرفع وعلى إعادة التحويل، ويُحفظ مع الوثيقة.</span>
+                    <span style="display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">على ويندوز لا محرك محليًا فتُقرأ الصفحات بنموذج OpenRouter الافتراضي للقراءة (تُحسب قراءته على مفتاحك)، وكذلك إن كانت قراءة المحلي غير واضحة لمسح رديء. يسري على هذا الرفع وعلى إعادة التحويل، ويُحفظ مع الوثيقة.</span>
                 </fieldset>
                 <div>
                     <button type="button" class="btn-flat-primary" id="btnDocStart" onclick="startDocUpload()">رفع وتحويل إلى نص</button>
@@ -5935,35 +6015,6 @@
                     <button class="btn-flat-secondary" onclick="resolveDocFallback('cancel')">إلغاء</button>
                     <button class="btn-flat-primary" onclick="resolveDocFallback('accept')">قبول</button>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- نافذة اختيار نموذج قراءة OpenRouter: قائمة كاملة ببحث وفلترة وتعريف -->
-    <div class="modal-overlay" id="docOcrModal" style="display: none; z-index: 100700;" role="dialog" aria-modal="true">
-        <div class="modal-window" style="width: min(760px, 96vw); max-height: 92vh; display: flex; flex-direction: column;">
-            <div class="reader-header">
-                <div class="reader-header-info">
-                    <div class="reader-title-row">
-                        <span style="font-size: 20px;">👁️</span>
-                        <h3 class="reader-book-title">نموذج قراءة الصفحات (OpenRouter)</h3>
-                    </div>
-                    <div style="font-size: 12.5px; color: var(--text-muted); margin-top: 4px;">اختر نموذجًا يقرأ صفحات وثيقتك المصوّرة. الأفضل للعربية المطبوعة نماذج الرؤية القوية.</div>
-                </div>
-                <button type="button" class="btn-icon reader-close-btn" onclick="closeDocOcrPicker()" title="إغلاق" aria-label="إغلاق">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-                </button>
-            </div>
-            <div style="padding: 12px 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--border-subtle);">
-                <input type="text" id="docOcrSearch" class="filter-input" placeholder="ابحث باسم النموذج أو معرّفه…" style="flex: 1; min-width: 200px;" oninput="renderDocOcrList()">
-                <label style="font-size: 12.5px; display: flex; align-items: center; gap: 5px;">
-                    <input type="checkbox" id="docOcrVisionOnly" checked onchange="renderDocOcrList()"> تقبل الصور فقط
-                </label>
-                <button type="button" class="btn-flat-secondary reader-mini-btn" onclick="loadDocOcrModels(true)">تحديث ↻</button>
-            </div>
-            <div id="docOcrInfo" style="display: none; margin: 10px 16px 0; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-muted); font-size: 12.5px; line-height: 1.8;"></div>
-            <div id="docOcrList" style="overflow: auto; padding: 10px 16px; flex: 1;">
-                <div style="color: var(--text-muted); font-size: 13px;">تُجلب النماذج…</div>
             </div>
         </div>
     </div>

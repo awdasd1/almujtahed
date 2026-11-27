@@ -3049,7 +3049,7 @@ async function generateAudioSummary(idx, btn) {
     const res = await fetch('/api/chat/audio-summary', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '' }),
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', tts_model: (typeof defaultModel === 'function' ? defaultModel('tts') : '') }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.audio_url) throw new Error(data.detail || 'تعذر تجهيز الملخص الصوتي');
@@ -3156,7 +3156,7 @@ async function generatePodcast(idx, btn) {
     const res = await fetch('/api/chat/podcast', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '' }),
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', tts_model: (typeof defaultModel === 'function' ? defaultModel('tts') : '') }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.audio_url) throw new Error(data.detail || 'تعذر تجهيز البودكاست');
@@ -3307,7 +3307,8 @@ function loadPresentationOptions() {
   const dflt = {
     text_mode: 'editable',
     voiceover: true,
-    image_model: 'gpt',
+    // نموذج الصورة من «النماذج الافتراضية» في إعدادات المنظومة وحدها
+    image_model: (typeof defaultModel === 'function' ? defaultModel('image') : 'gpt54'),
     slides: 'auto',
     design_mode: 'with',
     explained_style: 'photos',
@@ -3315,8 +3316,6 @@ function loadPresentationOptions() {
     colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }], fonts: { title: '#ffffff', body: '#ffffff' } },
   };
   try {
-    const savedModel = localStorage.getItem('almujtahed_designs_imagemodel_v1');
-    if (['muse', 'gemini', 'gpt54'].includes(savedModel)) dflt.image_model = savedModel;
     const savedMode = localStorage.getItem('almujtahed_designs_imagemode_v1');
     if (['without', 'none'].includes(savedMode)) dflt.design_mode = savedMode;
     const dc = JSON.parse(localStorage.getItem('almujtahed_designs_colors_v1') || 'null');
@@ -3331,7 +3330,6 @@ function loadPresentationOptions() {
     if (p) {
       if (p.text_mode === 'embedded') dflt.text_mode = 'embedded';
       if (p.voiceover === false) dflt.voiceover = false;
-      if (['gpt', 'muse', 'gemini', 'gpt54'].includes(p.image_model)) dflt.image_model = p.image_model;
       if (['auto', '6', '8', '10', '12', '14', '16'].includes(String(p.slides))) dflt.slides = String(p.slides);
       if (['without', 'none', 'explained'].includes(p.design_mode)) dflt.design_mode = p.design_mode;
       if (p.explained_style === 'icons') dflt.explained_style = 'icons';
@@ -3369,13 +3367,7 @@ function openPresentationOptions(idx, btn, scanCtx) {
           <div class="pres-opt-label">الشرح الصوتي المصاحب للشرائح</div>
           <label class="pres-radio-card"><input type="radio" name="presVoiceover" value="on"> <span><b>تفعيل</b><small>تعليق صوتي مدمج في كل شريحة يُسمع أثناء العرض</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="presVoiceover" value="off"> <span><b>تعطيل</b><small>شرائح بصرية فقط بلا أصوات — إنشاء أسرع وأرخص، ويبقى نص التعليق في ملاحظات المحاضر</small></span></label>
-          <div class="pres-opt-label">نموذج الصورة</div>
-          <select id="presImageModel" class="pres-select">
-            <option value="gpt">🖼️ GPT Image — النموذج الحالي</option>
-            <option value="muse">✨ Meta Muse Image — meta/muse-image</option>
-            <option value="gemini">🌟 Gemini 3 Pro Image — google/gemini-3-pro-image-preview</option>
-            <option value="gpt54">🚀 GPT-5.4 Image 2 — openai/gpt-5.4-image-2</option>
-          </select>
+          <div class="pres-opt-hint">نموذج رسم الصور يُضبط من «النماذج الافتراضية» في إعدادات المنظومة.</div>
           <div class="pres-opt-label">عدد الشرائح</div>
           <select id="presSlideCount" class="pres-select">
             <option value="auto">تلقائي — بحسب طول الإجابة (٦–١٤)</option>
@@ -3429,7 +3421,6 @@ function openPresentationOptions(idx, btn, scanCtx) {
   modal.querySelector(`input[name="presTextMode"][value="${opts.text_mode}"]`).checked = true;
   modal.querySelector(`input[name="presVoiceover"][value="${opts.voiceover ? 'on' : 'off'}"]`).checked = true;
   modal.querySelector(`input[name="presColorsMode"][value="${opts.colors.mode}"]`).checked = true;
-  modal.querySelector('#presImageModel').value = opts.image_model;
   modal.querySelector('#presSlideCount').value = opts.slides;
   const presOrient = modal.querySelector('#presOrientation');
   if (presOrient) presOrient.value = opts.orientation === 'portrait' ? 'portrait' : 'landscape';
@@ -3479,7 +3470,7 @@ function confirmPresentationOptions() {
   const opts = {
     text_mode: modal.querySelector('input[name="presTextMode"]:checked').value === 'embedded' ? 'embedded' : 'editable',
     voiceover: modal.querySelector('input[name="presVoiceover"]:checked').value === 'on',
-    image_model: modal.querySelector('#presImageModel').value,
+    image_model: (typeof defaultModel === 'function' ? defaultModel('image') : 'gpt54'),
     slides: modal.querySelector('#presSlideCount').value,
     orientation: (modal.querySelector('#presOrientation') || {}).value === 'portrait' ? 'portrait' : 'landscape',
     design_mode: modal.querySelector('#presDesignMode').value,
@@ -3519,7 +3510,7 @@ async function runPresentationJob(idx, btn, options) {
     const res = await fetch('/api/chat/presentation/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, orientation: options.orientation || 'landscape', slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
+      body: JSON.stringify({ text: String(msg.content || ''), api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, tts_model: (typeof defaultModel === 'function' ? defaultModel('tts') : ''), colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, orientation: options.orientation || 'landscape', slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء العرض');
@@ -4018,7 +4009,7 @@ async function _transcribeVoiceBlob(blob, mime) {
   const resp = await fetch('/api/chat/transcribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ audio_base64: String(dataUrl), mime: mime, api_key: apiKey })
+    body: JSON.stringify({ audio_base64: String(dataUrl), mime: mime, api_key: apiKey, model: (typeof defaultModel === 'function' ? defaultModel('stt') : '') })
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(data.detail || 'فشل النسخ');
@@ -8765,7 +8756,7 @@ async function confirmSmartTreeVoice() {
     const res = await fetch('/api/chat/audio-summary', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: _smartTreeMaterial, focus, api_key: keys.openrouter || '' }),
+      body: JSON.stringify({ text: _smartTreeMaterial, focus, api_key: keys.openrouter || '', tts_model: (typeof defaultModel === 'function' ? defaultModel('tts') : '') }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.audio_url) throw new Error(data.detail || 'تعذر تجهيز التعليق الصوتي');
@@ -8803,7 +8794,7 @@ async function runPresentationScanJob(options, scan) {
     const res = await fetch('/api/chat/presentation/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: scan.material, proposals: scan.proposals, api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, orientation: options.orientation || 'landscape', slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
+      body: JSON.stringify({ text: scan.material, proposals: scan.proposals, api_key: keys.openrouter || '', text_mode: options.text_mode, voiceover: options.voiceover, image_model: options.image_model, tts_model: (typeof defaultModel === 'function' ? defaultModel('tts') : ''), colors: options.colors, design_mode: options.design_mode, explained_style: options.explained_style, orientation: options.orientation || 'landscape', slide_count: options.slides === 'auto' ? null : parseInt(options.slides, 10) }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.job_id) throw new Error(data.detail || 'تعذر بدء إنشاء الشرائح');
@@ -9059,11 +9050,10 @@ const TREE_IMG_OPTIONS_KEY = 'almujtahed_tree_image_options_v1';
 let _treeImageSelected = [];
 
 function loadTreeImageOptions() {
-  const dflt = { image_model: 'gpt', explained_style: 'photos', orientation: 'landscape', colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }] } };
+  const dflt = { image_model: (typeof defaultModel === 'function' ? defaultModel('image') : 'gpt54'), explained_style: 'photos', orientation: 'landscape', colors: { mode: 'default', img: [{ hex: '#16324a', pct: 60 }, { hex: '#2e7d74', pct: 25 }, { hex: '#e2725b', pct: 15 }] } };
   try {
     const pres = loadPresentationOptions();
     if (pres) {
-      dflt.image_model = pres.image_model || dflt.image_model;
       dflt.explained_style = pres.explained_style || dflt.explained_style;
       if (pres.orientation === 'portrait') dflt.orientation = 'portrait';
       if (pres.colors) {
@@ -9075,7 +9065,6 @@ function loadTreeImageOptions() {
   try {
     const p = JSON.parse(localStorage.getItem(TREE_IMG_OPTIONS_KEY) || 'null');
     if (p) {
-      if (['gpt', 'muse', 'gemini', 'gpt54'].includes(p.image_model)) dflt.image_model = p.image_model;
       if (p.explained_style === 'icons') dflt.explained_style = 'icons';
       if (p.orientation === 'portrait') dflt.orientation = 'portrait'; else if (p.orientation === 'landscape') dflt.orientation = 'landscape';
       if (p.colors) {
@@ -9107,13 +9096,7 @@ function openTreeImageOptions(selected) {
         <div class="pres-modal-body">
           <div class="pres-opt-label">المسائل التي ستُرسم صورة شرحية لكل منها (<span id="treeImgCount"></span>)</div>
           <div class="pres-opt-hint" id="treeImgTitles"></div>
-          <div class="pres-opt-label">نموذج الصورة</div>
-          <select id="treeImgModel" class="pres-select">
-            <option value="gpt">🖼️ GPT Image — النموذج الحالي</option>
-            <option value="muse">✨ Meta Muse Image — meta/muse-image</option>
-            <option value="gemini">🌟 Gemini 3 Pro Image — google/gemini-3-pro-image-preview</option>
-            <option value="gpt54">🖼️ GPT-5.4 Image 2</option>
-          </select>
+          <div class="pres-opt-hint">نموذج رسم الصور يُضبط من «النماذج الافتراضية» في إعدادات المنظومة.</div>
           <div class="pres-opt-label">أسلوب الرسم الشرحي</div>
           <label class="pres-radio-card"><input type="radio" name="treeImgStyle" value="photos"> <span><b>📷 بصور حقيقية</b><small>صور فوتوغرافية حقيقية مصغرة داخل عقد الرسم الشرحي توضح كل عنصر</small></span></label>
           <label class="pres-radio-card"><input type="radio" name="treeImgStyle" value="icons"> <span><b>🔷 بأيقونات</b><small>أيقونات ورموز مسطحة بسيطة داخل العقد بدل الصور — رسم أنظف وأخف</small></span></label>
@@ -9142,7 +9125,6 @@ function openTreeImageOptions(selected) {
   const opts = loadTreeImageOptions();
   modal.querySelector('#treeImgCount').textContent = String(selected.length);
   modal.querySelector('#treeImgTitles').textContent = selected.map(p => `${p.kind_label || 'تشجير'}: ${p.title}`).join(' • ');
-  modal.querySelector('#treeImgModel').value = opts.image_model;
   const orientSel = modal.querySelector('#treeImgOrientation');
   if (orientSel) orientSel.value = opts.orientation === 'portrait' ? 'portrait' : 'landscape';
   modal.querySelector(`input[name="treeImgStyle"][value="${opts.explained_style}"]`).checked = true;
@@ -9173,7 +9155,7 @@ function confirmTreeImageOptions() {
   if (!modal) return;
   const hex = (v, fb) => (/^#[0-9a-fA-F]{6}$/.test(v || '') ? v : fb);
   const options = {
-    image_model: modal.querySelector('#treeImgModel').value,
+    image_model: (typeof defaultModel === 'function' ? defaultModel('image') : 'gpt54'),
     orientation: (modal.querySelector('#treeImgOrientation') || {}).value === 'portrait' ? 'portrait' : 'landscape',
     explained_style: modal.querySelector('input[name="treeImgStyle"]:checked').value === 'icons' ? 'icons' : 'photos',
     colors: {
