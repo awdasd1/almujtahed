@@ -949,6 +949,23 @@ class ChatBeautifyTests(unittest.TestCase):
         self.assertIn(".math-display", css)
 
 
+class WebRefArrowTests(unittest.TestCase):
+    """مراجع الويب في المحادثة: نص المرجع بلا رابط، والسهم المائل ↗
+    في نهايته وحده هو الرابط، والروابط الداخلية لا تُمس."""
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_web_ref_arrow_wiring(self):
+        chat = self._read("web_ui/static/js/chat.js")
+        self.assertIn("function _webRefArrows", chat)
+        self.assertIn('class="web-ref-arrow"', chat)
+        self.assertIn("webRefs: true", chat)
+        css = self._read("web_ui/static/css/claude_theme.css")
+        self.assertIn(".web-ref-arrow", css)
+
+
 class VoiceRecordingTests(unittest.TestCase):
     """مايك المحادثة: تسجيل بموجات مهتزة وإيقاف/إرسال/مسح، والنسخ
     عبر Gemini 4 Neon في نقطة خادم واحدة، ثم النص سؤالًا للنموذج."""

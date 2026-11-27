@@ -2262,7 +2262,7 @@ function renderSessionMessages(sessionId, options) {
     if (idx === 0 && isStoredOpening(msg)) return '';
     const isUser = msg.role === 'user';
     const avatar = isUser ? 'أنت' : 'مج';
-    const parsedText = formatMarkdown(msg.content, `c${idx}`, { formattingAgent: _msgHasFormattingAgent(msg) });
+    const parsedText = formatMarkdown(msg.content, `c${idx}`, { formattingAgent: _msgHasFormattingAgent(msg), webRefs: true });
     // عنوان نتيجة «تعليق وشرح مختصر» مرقّمًا بترتيب التعليقات في
     // الجلسة، موافقًا لترقيمه في الخط الزمني (تعليق مختصر ١، ٢، ٣)
     let briefTitleHtml = '';
@@ -6759,6 +6759,22 @@ function _scholarQuoteMarkdown(text) {
   }).join('\n\n');
 }
 
+// روابط مراجع الويب في الإجابة: لا رابط فوق نص المرجع — النص عادٍ،
+// وسهم مائل ↗ في نهايته وحده هو الرابط القابل للضغط.
+function _webRefArrows(html) {
+  return String(html || '').replace(/<a\s+[^>]*?href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (m, url, inner) => {
+    const plain = inner.replace(/<[^>]+>/g, '').trim();
+    const isUrlText = !plain || /^https?:\/\//i.test(plain) || /^www\.[\w.-]+\.[a-z]{2,}/i.test(plain);
+    let shown = inner;
+    if (isUrlText) {
+      try { shown = escapeHtml(new URL(url).hostname.replace(/^www\./, '')); }
+      catch (e) { shown = ''; }
+    }
+    return `${shown}<a class="web-ref-arrow" href="${url}" target="_blank" rel="noopener noreferrer" title="فتح المرجع في الويب" aria-label="فتح المرجع في الويب">↗</a>`;
+  });
+}
+window._webRefArrows = _webRefArrows;
+
 function _classScholarQuotes(html) {
   return String(html || '').replace(/<blockquote>([\s\S]*?)<\/blockquote>/g, (m, inner) => {
     const txt = inner.replace(/<[^>]+>/g, ' ');
@@ -6772,13 +6788,18 @@ function _classScholarQuotes(html) {
 function formatMarkdown(text, scope, opts) {
   if (!text) return '';
   const _beautify = !(opts && opts.formattingAgent);
+  const _webRefs = !!(opts && opts.webRefs);
   text = restoreEscapedCitSpans(text);
   text = enforceStandardCitations(text);
   text = stripVisibleShamelaIds(text);
   if (/<p[\s>]|<sup[\s>]|<ol[\s>]/i.test(text)) {
-    if (!_beautify) return attachTableToolbar(renderScholarlyAnswer(text, scope));
+    if (!_beautify) {
+      const _raw = renderScholarlyAnswer(text, scope);
+      return attachTableToolbar(_webRefs ? _webRefArrows(_raw) : _raw);
+    }
     const _pm = _protectMath(text);
-    return attachTableToolbar(_classScholarQuotes(_restoreMath(renderScholarlyAnswer(_pm.text, scope), _pm.store)));
+    const _sch = _classScholarQuotes(_restoreMath(renderScholarlyAnswer(_pm.text, scope), _pm.store));
+    return attachTableToolbar(_webRefs ? _webRefArrows(_sch) : _sch);
   }
   text = chatDisplayText(text, scope);
   const protectedCit = protectCitSpansForMarkdown(text);
@@ -6821,6 +6842,7 @@ function formatMarkdown(text, scope, opts) {
 
   html = restoreProtectedCitSpans(html, protectedCit.store);
   if (_beautify) html = _classScholarQuotes(_restoreMath(html, _mathStore));
+  if (_webRefs) html = _webRefArrows(html);
   return attachTableToolbar(html);
 }
 
