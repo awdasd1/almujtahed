@@ -910,6 +910,45 @@ class SearchTabCleanupTests(unittest.TestCase):
         self.assertIn('oninput="runResultsSearch()"', search)
 
 
+class ChatBeautifyTests(unittest.TestCase):
+    """تجميل المحادثة الافتراضي: KaTeX للرموز الرياضية واقتباس مميز
+    مصنف للآيات والأحاديث وأقوال العلماء — ويتعطل كاملًا إن كان في
+    مجموعة الإجابة وكيل تنسيق وطباعة (يبقى على تعليماته السابقة)."""
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_katex_vendored_and_loaded(self):
+        self.assertTrue(os.path.exists(os.path.join(
+            ROOT, "web_ui", "static", "vendor", "katex", "katex.min.js")))
+        self.assertTrue(os.path.exists(os.path.join(
+            ROOT, "web_ui", "static", "vendor", "katex", "katex.min.css")))
+        self.assertTrue(os.path.exists(os.path.join(
+            ROOT, "web_ui", "static", "vendor", "katex", "fonts",
+            "KaTeX_Main-Regular.woff2")))
+        index = self._read("web_ui/templates/index.html")
+        self.assertIn("/static/vendor/katex/katex.min.css", index)
+        self.assertIn("/static/vendor/katex/katex.min.js", index)
+
+    def test_beautify_logic_and_formatting_gate(self):
+        chat = self._read("web_ui/static/js/chat.js")
+        for fn in ("_protectMath", "_restoreMath", "_scholarQuoteMarkdown",
+                   "_classScholarQuotes", "_groupHasFormattingAgent",
+                   "_msgHasFormattingAgent"):
+            self.assertIn(fn, chat, fn)
+        self.assertIn("formattingAgent: _msgHasFormattingAgent(msg)", chat)
+        self.assertIn("scholar-quote-${kind}", chat)
+        self.assertIn("'quran'", chat)
+        self.assertIn("'hadith'", chat)
+        css2 = self._read("web_ui/static/css/claude_theme.css")
+        self.assertIn(".scholar-quote-quran", css2)
+        self.assertIn(".scholar-quote-hadith", css2)
+        css = self._read("web_ui/static/css/claude_theme.css")
+        self.assertIn(".scholar-quote", css)
+        self.assertIn(".math-display", css)
+
+
 class VoiceRecordingTests(unittest.TestCase):
     """مايك المحادثة: تسجيل بموجات مهتزة وإيقاف/إرسال/مسح، والنسخ
     عبر Gemini 4 Neon في نقطة خادم واحدة، ثم النص سؤالًا للنموذج."""

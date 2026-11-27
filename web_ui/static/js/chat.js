@@ -2262,7 +2262,7 @@ function renderSessionMessages(sessionId, options) {
     if (idx === 0 && isStoredOpening(msg)) return '';
     const isUser = msg.role === 'user';
     const avatar = isUser ? 'أنت' : 'مج';
-    const parsedText = formatMarkdown(msg.content, `c${idx}`);
+    const parsedText = formatMarkdown(msg.content, `c${idx}`, { formattingAgent: _msgHasFormattingAgent(msg) });
     // عنوان نتيجة «تعليق وشرح مختصر» مرقّمًا بترتيب التعليقات في
     // الجلسة، موافقًا لترقيمه في الخط الزمني (تعليق مختصر ١، ٢، ٣)
     let briefTitleHtml = '';
@@ -6693,17 +6693,103 @@ function renderScholarlyAnswer(text, scope) {
   return `<div class="chat-academic">${next}</div>`;
 }
 
-function formatMarkdown(text, scope) {
+// =============================================================================
+// 🎨 تجميل المحادثة الافتراضي (بلا وكيل تنسيق وطباعة): رموز رياضية
+// تُعرض بـ KaTeX مرتبة، ونقول العلماء والأحاديث والآيات في اقتباس
+// مميز مصنف. إن وُجد في مجموعة الإجابة وكيل تنسيق وطباعة بقي العرض
+// على التعليمات السابقة حرفيًا (لا تجميل تلقائي فوق تنسيقه).
+// =============================================================================
+function _groupHasFormattingAgent(groupName) {
+  if (!groupName) return false;
+  try {
+    const groups = readChatAgentGroups();
+    const raw = String(groupName);
+    const group = groups.find(g => raw === g.name || raw.includes(g.name) || String(g.name || '').includes(raw.replace(/^[^\u0600-\u06FF]+/, '').trim()));
+    if (!group) return false;
+    return (group.agents || []).some(a => /تنسيق|طباعة|تنضيد|إخراج\s*فني/.test(
+      [a.name, a.desc, a.systemPrompt, a.system_prompt].filter(Boolean).join(' ')));
+  } catch (e) { return false; }
+}
+function _msgHasFormattingAgent(msg) {
+  return !!(msg && msg.agent_group && _groupHasFormattingAgent(msg.agent_group));
+}
+window._msgHasFormattingAgent = _msgHasFormattingAgent;
+
+function _protectMath(text) {
+  const store = [];
+  const put = (tex, display) => { store.push({ tex, display }); return `\u0001MATH${store.length - 1}\u0001`; };
+  let t = String(text || '');
+  t = t.replace(/\$\$([\s\S]+?)\$\$/g, (m, tex) => put(tex, true));
+  t = t.replace(/\\\[([\s\S]+?)\\\]/g, (m, tex) => put(tex, true));
+  t = t.replace(/\\\(([\s\S]+?)\\\)/g, (m, tex) => put(tex, false));
+  t = t.replace(/(?<![\\\w])\$([^$\n]{1,300}?)\$(?!\w)/g, (m, tex) => put(tex, false));
+  return { text: t, store };
+}
+function _restoreMath(html, store) {
+  if (!store || !store.length) return html;
+  return String(html).replace(/\u0001MATH(\d+)\u0001/g, (m, i) => {
+    const it = store[Number(i)];
+    if (!it) return m;
+    try {
+      if (typeof katex !== 'undefined') {
+        const rendered = katex.renderToString(it.tex, { displayMode: it.display, throwOnError: false, strict: false });
+        return it.display
+          ? `<div class="math-display" dir="ltr">${rendered}</div>`
+          : `<span class="math-inline" dir="ltr">${rendered}</span>`;
+      }
+    } catch (e) {}
+    return it.display
+      ? `<div class="math-display" dir="ltr"><code>${escapeHtml(it.tex)}</code></div>`
+      : `<code dir="ltr">${escapeHtml(it.tex)}</code>`;
+  });
+}
+
+const _SCHOLAR_INTRO_RE = /^(?:قال الله تعالى|قوله تعالى|قال تعالى|يقول الله تعالى|قال جل وعلا|قال رسول الله|قال النبي|قال ﷺ|قال صلى الله عليه وسلم|قال عليه الصلاة والسلام)(?=[\s:：،]|$)/;
+const _SCHOLAR_SAYING_RE = /^قال\s+(?:الإمام\s+|الشيخ\s+|الحافظ\s+|العلامة\s+|شيخ الإسلام\s+)?[\u0600-\u06FF'’][\u0600-\u06FF\s'’]{1,45}?(?:\s+رحمه الله|\s+رحمهم الله)?\s*[:：]/;
+
+function _scholarQuoteMarkdown(text) {
+  return String(text || '').split(/\n{2,}/).map(block => {
+    const trimmed = block.trim();
+    if (!trimmed || trimmed.startsWith('>') || trimmed.startsWith('#') || trimmed.startsWith('```') || /^[-*+]\s/.test(trimmed) || /^\d+[.)]\s/.test(trimmed)) return block;
+    const firstLine = trimmed.split('\n')[0];
+    let quote = _SCHOLAR_INTRO_RE.test(firstLine) || _SCHOLAR_SAYING_RE.test(firstLine);
+    if (!quote && /^[«﴿{"]/.test(trimmed) && trimmed.length >= 30 && /[»﴾}"]\s*$/.test(trimmed)) quote = true;
+    if (!quote) return block;
+    return trimmed.split('\n').map(l => `> ${l}`).join('\n');
+  }).join('\n\n');
+}
+
+function _classScholarQuotes(html) {
+  return String(html || '').replace(/<blockquote>([\s\S]*?)<\/blockquote>/g, (m, inner) => {
+    const txt = inner.replace(/<[^>]+>/g, ' ');
+    let kind = 'saying', label = 'من كلام العلماء';
+    if (/﴿|قال الله|قوله تعالى|قال تعالى|يقول الله/.test(txt)) { kind = 'quran'; label = 'آية كريمة'; }
+    else if (/رسول الله|ﷺ|صلى الله عليه وسلم|قال النبي/.test(txt)) { kind = 'hadith'; label = 'حديث شريف'; }
+    return `<blockquote class="scholar-quote scholar-quote-${kind}"><span class="scholar-quote-label">${label}</span>${inner}</blockquote>`;
+  });
+}
+
+function formatMarkdown(text, scope, opts) {
   if (!text) return '';
+  const _beautify = !(opts && opts.formattingAgent);
   text = restoreEscapedCitSpans(text);
   text = enforceStandardCitations(text);
   text = stripVisibleShamelaIds(text);
   if (/<p[\s>]|<sup[\s>]|<ol[\s>]/i.test(text)) {
-    return attachTableToolbar(renderScholarlyAnswer(text, scope));
+    if (!_beautify) return attachTableToolbar(renderScholarlyAnswer(text, scope));
+    const _pm = _protectMath(text);
+    return attachTableToolbar(_classScholarQuotes(_restoreMath(renderScholarlyAnswer(_pm.text, scope), _pm.store)));
   }
   text = chatDisplayText(text, scope);
   const protectedCit = protectCitSpansForMarkdown(text);
   text = protectedCit.text;
+  let _mathStore = [];
+  if (_beautify) {
+    text = _scholarQuoteMarkdown(text);
+    const _pm = _protectMath(text);
+    text = _pm.text;
+    _mathStore = _pm.store;
+  }
 
   let html = '';
   if (typeof marked !== 'undefined' && (marked.parse || typeof marked === 'function')) {
@@ -6734,6 +6820,7 @@ function formatMarkdown(text, scope) {
   }
 
   html = restoreProtectedCitSpans(html, protectedCit.store);
+  if (_beautify) html = _classScholarQuotes(_restoreMath(html, _mathStore));
   return attachTableToolbar(html);
 }
 

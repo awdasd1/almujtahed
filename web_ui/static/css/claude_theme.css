@@ -2288,6 +2288,63 @@ body:has(#paneChat.active) .main-content {
   margin: 0 auto;
 }
 
+/* اقتباس علمي مميز في المحادثة (بلا وكيل تنسيق وطباعة): آية/حديث/قول عالم */
+.scholar-quote {
+  position: relative;
+  margin: 14px 0;
+  padding: 14px 18px 10px;
+  background: linear-gradient(180deg, rgba(184, 137, 46, 0.07), rgba(184, 137, 46, 0.03));
+  border: 1px solid rgba(184, 137, 46, 0.35);
+  border-inline-start: 5px solid var(--accent-gold, #b87333);
+  border-radius: 12px;
+  font-family: var(--font-reading);
+  font-size: 17.5px;
+  line-height: 2.05;
+  color: var(--text-main);
+}
+.scholar-quote p { margin: 4px 0 8px; }
+.scholar-quote-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 1px 10px;
+  font-family: var(--font-app);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  color: #fff;
+  background: var(--accent-gold, #b87333);
+  border-radius: 999px;
+}
+.scholar-quote-quran {
+  background: linear-gradient(180deg, rgba(24, 101, 74, 0.09), rgba(24, 101, 74, 0.03));
+  border-color: rgba(24, 101, 74, 0.4);
+  border-inline-start-color: #18654a;
+  text-align: center;
+  font-size: 19px;
+}
+.scholar-quote-quran .scholar-quote-label { background: #18654a; }
+.scholar-quote-hadith {
+  background: linear-gradient(180deg, rgba(125, 91, 166, 0.09), rgba(125, 91, 166, 0.03));
+  border-color: rgba(125, 91, 166, 0.4);
+  border-inline-start-color: #7d5ba6;
+}
+.scholar-quote-hadith .scholar-quote-label { background: #7d5ba6; }
+
+/* رموز رياضية معروضة بـ KaTeX داخل المحادثة */
+.math-display {
+  direction: ltr;
+  text-align: center;
+  margin: 12px 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: var(--bg-surface-elevated, #f6f1e7);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  font-size: 17px;
+}
+.math-inline { direction: ltr; unicode-bidi: isolate; font-size: 15.5px; }
+.math-display .katex-display { margin: 0; }
+
 /* شريط التسجيل الصوتي: موجات تهتز مع عدّاد وإيقاف/إرسال/مسح */
 .voice-record-bar {
   align-items: center;
