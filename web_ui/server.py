@@ -10234,7 +10234,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.868"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.869"},
         },
     })
     if opened.get("error"):
@@ -13200,35 +13200,25 @@ def _shamela_bridge_candidates(query, dynamic_anchors, selected_books, top_k, de
     hits, seen = [], set()
     cap = max(top_k, 12)
     for ph in phrases[:6]:
-        _modes = [mode] + (["words", "any"] if mode == "phrase" and len(ph.split()) > 2 else [])
-        found = {"results": []}
-        for _m in _modes:
-            try:
-                found = shamela_search.search(ph, mode=_m, book_ids=book_ids,
-                                              death_max=death_max, categories=categories, limit=cap)
-            except Exception:
-                found = {"results": []}
-            if found.get("results"):
-                break
+        # صيغة واحدة ذكية بدل ثلاث متتابعة: «smart» تجمع الكلمات لازمة
+        # والعبارة مرجِّحة في استعلام واحد عندهم؛ الصيغ الصريحة من
+        # الوكلاء (words/any) تُحترم كما هي.
+        _m = "smart" if mode == "phrase" else mode
+        try:
+            found = shamela_search.search(ph, mode=_m, book_ids=book_ids,
+                                          death_max=death_max, categories=categories, limit=cap)
+        except Exception:
+            found = {"results": []}
         for h in found.get("results") or []:
             key = (str(h.get("book_id")), str(h.get("part") or ""), str(h.get("page_num") or ""))
             if key in seen:
                 continue
             seen.add(key)
-            # لا استخراج كتب في بناء المرشحين: مقطع الجسر شاهد كافٍ، وقراءة
-            # الصفحة الكاملة للوكلاء وحدهم. نص كامل فقط إن كان الكتاب
-            # مستخرجًا سلفًا (فحص ملفات بلا لمس للشاملة).
+            # المقاطع من حقول فهرسهم المخزنة مباشرة كما يعرض تطبيقهم:
+            # لا فتح ملفات صفحات ولا استخراج عند بناء المرشحين إطلاقًا —
+            # قراءة الصفحة الكاملة عند فتحها أو تحقق الوكلاء وحده.
             body = ""
-            try:
-                if h.get("rel_path") and shamela_local_mcp._dir_for_rel(h["rel_path"]):
-                    pg = shamela_local_mcp.get_page(book=h["book_id"], page_num=int(h["page_num"]), part=h.get("part"))
-                    body = ((pg.get("page") or {}).get("body") or "") if pg.get("status") == "ok" else ""
-            except Exception:
-                body = ""
-            if body:
-                _snip, _cen = _centered_snippet(body, ph)
-            else:
-                _snip, _cen = (h.get("snippet") or ""), bool(h.get("snippet"))
+            _snip, _cen = (h.get("snippet") or ""), bool(h.get("snippet"))
             hits.append({"book_id": str(h.get("book_id")), "title": h.get("title") or "",
                          "part": h.get("part"), "page_num": h.get("page_num"), "phrase": ph,
                          "term": None, "text": body,
@@ -13280,19 +13270,13 @@ def _fts_candidates(query: str, dynamic_anchors, selected_books, top_k: int, dea
     seen = set()
     cap = max(top_k, 12)
     for ph in phrases[:6]:
-        # تدرج بحثي صادق: العبارة الحرفية أولًا، فإن عادت فارغة (سؤال بصياغة
-        # حرة لا نص حرفي) فكل الألفاظ مجتمعة، ثم أي لفظ بترتيب الملاءمة.
-        _modes = [mode]
-        if mode == "phrase" and len(ph.split()) > 2:
-            _modes += ["words", "any"]
-        found = {"results": []}
-        for _m in _modes:
-            try:
-                found = idx.search(ph, mode=_m, book_ids=book_ids, death_max=death_max, categories=categories, limit=cap)
-            except Exception:
-                found = {"results": []}
-            if found.get("results"):
-                break
+        # صيغة واحدة: عبارة حرفية للقصير (≤3 كلمات) واجتماع الكلمات
+        # للطويل، بدل ثلاث محاولات متتابعة تدفع كلفتها الأسئلة الحرة.
+        _m = mode if mode != "phrase" else ("phrase" if len(ph.split()) <= 3 else "words")
+        try:
+            found = idx.search(ph, mode=_m, book_ids=book_ids, death_max=death_max, categories=categories, limit=cap)
+        except Exception:
+            found = {"results": []}
         for h in found.get("results") or []:
             key = (str(h.get("book_id")), str(h.get("part") or ""), str(h.get("page_num") or ""))
             if key in seen:

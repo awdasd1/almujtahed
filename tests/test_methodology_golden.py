@@ -876,6 +876,34 @@ class BookIdentityProbesTests(unittest.TestCase):
         self.assertIn('data-book-id="128"', out)
 
 
+class BridgeSpeedContractTests(unittest.TestCase):
+    """سرعة البحث على منهج الشاملة: فهرسهم الجاهز بجسر واحد دائم
+    الإحماء حيث الكلفة أغلى من التوازي، وصيغة بحث واحدة ذكية،
+    ومقاطع من حقول الفهرس المخزنة دون فتح ملفات صفحات."""
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_single_bridge_on_windows_and_low_ram(self):
+        src = self._read("web_ui/shamela_search.py")
+        self.assertIn('os.name == "nt"', src)
+        self.assertIn("ALMOGHNI_BRIDGE_WORKERS", src)
+
+    def test_smart_single_query_mode(self):
+        src = self._read("web_ui/shamela_search.py")
+        self.assertIn('mode == "smart"', src)
+        srv = self._read("web_ui/server.py")
+        self.assertIn('_m = "smart" if mode == "phrase" else mode', srv)
+
+    def test_snippets_from_index_not_page_files(self):
+        srv = self._read("web_ui/server.py")
+        seg = srv[srv.index("def _shamela_bridge_candidates"):srv.index("def _fts_candidates")]
+        self.assertNotIn("get_page", seg,
+                         "بناء المرشحين من الجسر لا يفتح ملفات صفحات")
+        self.assertIn('h.get("snippet")', seg)
+
+
 class MethodologyContractTests(unittest.TestCase):
     """حراس نصية لعقود المنهجية حتى لا تُسقطها طبقة لاحقة بصمت."""
 

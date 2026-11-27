@@ -346,11 +346,14 @@ import tempfile as _tempfile
 _POOL = {"workers": [], "lock": threading.Lock(), "started": False}
 _POOL_FAIL = {"n": 0, "until": 0.0}
 try:
-    # افتراضي واعٍ بالذاكرة: 3 عمال، و2 فقط على أجهزة ≤9.5GB؛ ومتغير
+    # جسر واحد دائم الإحماء حيث الكلفة أغلى من التوازي: ويندوز (إقلاع
+    # JVM وفحص الحماية للملفات) والأجهزة ضعيفة الذاكرة؛ ثلاثة فقط على
+    # ماك/لينكس واسع الذاكرة حيث تتوازى جولات الوكلاء فعلًا. متغير
     # البيئة ALMOGHNI_BRIDGE_WORKERS يتجاوز الافتراضي متى ضُبط صراحة.
-    _POOL_N = int(os.environ.get("ALMOGHNI_BRIDGE_WORKERS") or (2 if _LOW_RAM else 3))
+    _POOL_N = int(os.environ.get("ALMOGHNI_BRIDGE_WORKERS")
+                  or (1 if (os.name == "nt" or _LOW_RAM) else 3))
 except Exception:
-    _POOL_N = 2 if _LOW_RAM else 3
+    _POOL_N = 1 if (os.name == "nt" or _LOW_RAM) else 3
 
 
 class _BridgeWorker:
@@ -604,7 +607,19 @@ def _search_local(query, mode="phrase", death_max=None, death_min=None, categori
 
     def _build(field):
         b = Builder()
-        if mode == "phrase" and len(tokens) > 1:
+        if mode == "smart":
+            # صيغة واحدة لا ثلاث متتابعة: كل الكلمات لازمة (دقة الجمع)
+            # والعبارة الحرفية مرجِّحة ترفع مطابقاتها إلى الصدارة —
+            # استعلام Lucene واحد بدل عبارة ثم كلمات ثم أي كلمة.
+            for t in tokens:
+                b.add(J("org.apache.lucene.search.TermQuery")(Term(field, _bytesref(jpype, t))), Occur.MUST)
+            if len(tokens) > 1:
+                PhraseQuery = J("org.apache.lucene.search.PhraseQuery")
+                pq = PhraseQuery.Builder()
+                for t in tokens:
+                    pq.add(Term(field, _bytesref(jpype, t)))
+                b.add(pq.build(), Occur.SHOULD)
+        elif mode == "phrase" and len(tokens) > 1:
             PhraseQuery = J("org.apache.lucene.search.PhraseQuery")
             pq = PhraseQuery.Builder()
             for t in tokens:
