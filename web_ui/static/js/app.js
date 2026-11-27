@@ -864,6 +864,22 @@ function initThemeSelects() {
   }, true);
 }
 
+/* خطوط القرآن الكريم برواياتها (مجمع الملك فهد KFGQPC) — ملفات مدمجة
+   في التطبيق تحت static/fonts/quran، وتتصدر قوائم الخطوط قبل خطوط
+   جوجل. الاسم الداخلي (family) مأخوذ من جدول الاسم داخل كل ملف،
+   والوزن المتاح فعليًا لكل خط هو ما في حقل weights. */
+const QURAN_FONT_CATALOG = [
+  { family: 'KFGQPC Hafs V3', label: 'حفص عن عاصم', file: 'hafs.ttf', format: 'truetype', weights: '400' },
+  { family: 'KFGQPC Nastaleeq', label: 'حفص عن عاصم – نستعليق', file: 'hafs-nastaliq.otf', format: 'opentype', weights: '400' },
+  { family: 'KFGQPC Warsh V3', label: 'ورش عن نافع المدني', file: 'warsh.ttf', format: 'truetype', weights: '400' },
+  { family: 'KFGQPC Qalun V3', label: 'قالون عن نافع المدني', file: 'qalun.ttf', format: 'truetype', weights: '400' },
+  { family: 'KFGQPC Shubah V3', label: 'شعبة عن عاصم الكوفي', file: 'shubah.ttf', format: 'truetype', weights: '400' },
+  { family: 'KFGQPC Bazzi V3', label: 'البزي عن ابن كثير المكي', file: 'bazzi.ttf', format: 'truetype', weights: '400' },
+  { family: 'KFGQPC Susi V3', label: 'السوسي عن أبي عمرو البصري', file: 'susi.ttf', format: 'truetype', weights: '400' },
+  { family: 'KFGQPC Douri Uthmanic Script', label: 'الدوري عن أبي عمرو البصري', file: 'duri.ttf', format: 'truetype', weights: '400' },
+];
+window.QURAN_FONT_CATALOG = QURAN_FONT_CATALOG;
+
 const GOOGLE_FONT_CATALOG = [
   { family: 'Amiri', label: 'أميري', weights: '400;700', generic: 'serif' },
   { family: 'Amiri Quran', label: 'أميري قرآن', weights: '400', generic: 'serif' },
@@ -917,6 +933,10 @@ function stackForFontChoice(choice) {
     const meta = GOOGLE_FONT_CATALOG.find((font) => font.family === family);
     return `${cssFontFamily(family)}, 'Noto Naskh Arabic', ${meta ? meta.generic : 'serif'}`;
   }
+  if (String(choice).startsWith('quran:')) {
+    const family = String(choice).slice(6);
+    return `${cssFontFamily(family)}, 'Amiri Quran', 'Noto Naskh Arabic', serif`;
+  }
   if (String(choice).startsWith('custom:')) {
     const filename = String(choice).slice(7);
     const font = customFonts.find((item) => item.filename === filename);
@@ -950,6 +970,54 @@ function ensureGoogleFontsStylesheet() {
   link.rel = 'stylesheet';
   link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
   document.head.appendChild(link);
+}
+
+/* تسجيل وجوه خطوط القرآن الكريم المدمجة بكل أوزانها المتاحة */
+function ensureQuranFontFaces() {
+  if (document.getElementById('almoghni-quran-fonts')) return;
+  const style = document.createElement('style');
+  style.id = 'almoghni-quran-fonts';
+  style.textContent = QURAN_FONT_CATALOG.map((font) => {
+    const family = cssFontFamily(font.family);
+    return String(font.weights).split(';').map((w) => {
+      const weight = parseInt(w, 10) || 400;
+      return `@font-face{font-family:${family};src:url('/static/fonts/quran/${font.file}') format('${font.format}');font-weight:${weight};font-style:normal;font-display:swap;}`;
+    }).join('\n');
+  }).join('\n');
+  document.head.appendChild(style);
+}
+
+/* مجموعة «خطوط القرآن الكريم» تتصدر أي قائمة خطوط قبل خطوط جوجل */
+function appendQuranFontGroup(select) {
+  const group = document.createElement('optgroup');
+  group.label = 'خطوط القرآن الكريم';
+  QURAN_FONT_CATALOG.forEach((font) => {
+    const value = `quran:${font.family}`;
+    appendFontOption(group, value, font.label, stackForFontChoice(value));
+  });
+  select.appendChild(group);
+}
+
+/* أوزان أي اختيار خط — حتى تُعرض عند اختياره أوزانه هو لا غير */
+const FONT_WEIGHT_LABELS = { 100: 'نحيف 100', 200: 'خفيف جدًا 200', 300: 'خفيف 300', 400: 'عادي 400', 500: 'متوسط 500', 600: 'شبه عريض 600', 700: 'عريض 700', 800: 'ثقيل 800', 900: 'أسود 900' };
+function fontChoiceWeights(choice) {
+  const value = String(choice || '');
+  if (!value || value === 'system') return [300, 400, 500, 600, 700, 800];
+  if (value.startsWith('google:')) {
+    const meta = GOOGLE_FONT_CATALOG.find((font) => font.family === value.slice(7));
+    return meta ? meta.weights.split(';').map((w) => parseInt(w, 10)).filter(Boolean) : [400, 700];
+  }
+  if (value.startsWith('quran:')) {
+    const meta = QURAN_FONT_CATALOG.find((font) => font.family === value.slice(6));
+    return meta ? meta.weights.split(';').map((w) => parseInt(w, 10)).filter(Boolean) : [400];
+  }
+  if (value.startsWith('custom:')) {
+    const chosen = customFonts.find((font) => font.filename === value.slice(7));
+    if (!chosen) return [400];
+    const weights = [...new Set(customFonts.filter((font) => font.family === chosen.family).map((font) => parseInt(font.weight, 10) || 400))];
+    return weights.sort((a, b) => a - b);
+  }
+  return [400, 700];
 }
 
 function ensureCustomFontFaces() {
@@ -1017,6 +1085,8 @@ function populateFontSelects() {
 
     appendFontOption(select, 'system', 'خط النظام', stackForFontChoice('system'));
 
+    appendQuranFontGroup(select);
+
     const googleGroup = document.createElement('optgroup');
     googleGroup.label = 'خطوط جوجل';
     GOOGLE_FONT_CATALOG.forEach((font) => {
@@ -1073,6 +1143,26 @@ const PRINT_FONT_FIELDS = {
   quote: { selectId: 'printQuoteFontSelect', key: 'printQuoteFont', sizeKey: 'printQuoteSize', weightKey: 'printQuoteWeight', styleKey: 'printQuoteStyle', colorKey: 'printQuoteColor', previewId: 'printQuotePreview', label: 'الأقوال المنقولة نصًا' }
 };
 
+/* قائمة وزن كل قسم طباعة لا تعرض إلا أوزان الخط المختار فيه فعلًا */
+function syncPrintWeightOptions(field) {
+  const weightSelect = document.getElementById(field.weightKey);
+  if (!weightSelect) return;
+  const weights = fontChoiceWeights(currentSettings[field.key]);
+  const current = parseInt(currentSettings[field.weightKey], 10) || 400;
+  weightSelect.replaceChildren();
+  weights.forEach((w) => {
+    const option = document.createElement('option');
+    option.value = String(w);
+    option.textContent = FONT_WEIGHT_LABELS[w] || `وزن ${w}`;
+    weightSelect.appendChild(option);
+  });
+  const effective = weights.includes(current) ? current : (weights.includes(400) ? 400 : weights[0]);
+  weightSelect.value = String(effective);
+  currentSettings[field.weightKey] = effective;
+  const styleSelect = document.getElementById(field.styleKey);
+  if (styleSelect) styleSelect.value = effective >= 600 ? 'bold' : 'normal';
+}
+
 function populatePrintFontSelects() {
   Object.values(PRINT_FONT_FIELDS).forEach((field) => {
     const select = document.getElementById(field.selectId);
@@ -1080,6 +1170,7 @@ function populatePrintFontSelects() {
     const selected = currentSettings[field.key] || select.value;
     select.replaceChildren();
     appendFontOption(select, 'system', 'خط النظام', stackForFontChoice('system'));
+    appendQuranFontGroup(select);
     const googleGroup = document.createElement('optgroup');
     googleGroup.label = 'خطوط جوجل';
     GOOGLE_FONT_CATALOG.forEach((font) => {
@@ -1103,8 +1194,7 @@ function populatePrintFontSelects() {
     select.dispatchEvent(new CustomEvent('theme-select-sync'));
     const sizeInput = document.getElementById(field.sizeKey);
     if (sizeInput) sizeInput.value = currentSettings[field.sizeKey];
-    const weightSelect = document.getElementById(field.weightKey);
-    if (weightSelect) weightSelect.value = String(currentSettings[field.weightKey]);
+    syncPrintWeightOptions(field);
     const styleSelect = document.getElementById(field.styleKey);
     if (styleSelect) styleSelect.value = (parseInt(currentSettings[field.weightKey], 10) >= 600) ? 'bold' : 'normal';
     const colorInput = document.getElementById(field.colorKey);
@@ -1270,6 +1360,7 @@ function fillMsFontSelect(selectId, selected, allowCurrent) {
   select.replaceChildren();
   if (allowCurrent) appendFontOption(select, '', 'خط الواجهة الحالي', 'inherit');
   appendFontOption(select, 'system', 'خط النظام', stackForFontChoice('system'));
+  appendQuranFontGroup(select);
   const googleGroup = document.createElement('optgroup');
   googleGroup.label = 'خطوط جوجل';
   GOOGLE_FONT_CATALOG.forEach((font) => {
@@ -1515,6 +1606,10 @@ function handlePrintFontChange(role, value) {
 function handlePrintSetting(key, value) {
   const numeric = parseFloat(value);
   currentSettings[key] = Number.isFinite(numeric) ? numeric : value;
+  // عند تغيير خط قسم تُعاد بناء قائمة وزنه بأوزان هذا الخط وحده
+  Object.values(PRINT_FONT_FIELDS).forEach((field) => {
+    if (field.key === key) syncPrintWeightOptions(field);
+  });
   // مزامنة «نمط الخط» مع الوزن متى تغيّر الوزن من قائمته
   Object.values(PRINT_FONT_FIELDS).forEach((field) => {
     if (field.weightKey === key) {
@@ -1626,6 +1721,7 @@ async function loadCustomFonts() {
 
 async function initFontSystem() {
   migrateFontSettings(currentSettings);
+  ensureQuranFontFaces();
   ensureGoogleFontsStylesheet();
   applyFontRoles();
   populateFontSelects();

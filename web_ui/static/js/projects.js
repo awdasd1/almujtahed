@@ -7171,6 +7171,17 @@ function paperPrintCss() {
     const meta = (typeof GOOGLE_FONT_CATALOG !== 'undefined') ? GOOGLE_FONT_CATALOG.find((f) => f.family === fam) : null;
     head.push(`<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(fam).replace(/%20/g, '+')}:wght@${meta ? meta.weights : '400;700'}&display=swap">`);
   });
+  const quranSeen = new Set();
+  [s.printH1Font, s.printH2Font, s.printBodyFont, s.printFnFont, s.printQuranFont, s.printHadithFont, s.printQuoteFont].forEach((v) => {
+    if (!v || !String(v).startsWith('quran:') || quranSeen.has(v)) return;
+    quranSeen.add(v);
+    const meta = (typeof QURAN_FONT_CATALOG !== 'undefined') ? QURAN_FONT_CATALOG.find((f) => `quran:${f.family}` === v) : null;
+    if (!meta) return;
+    const url = new URL(`/static/fonts/quran/${meta.file}`, location.origin).href;
+    String(meta.weights).split(';').forEach((w) => {
+      head.push(`<style>@font-face{font-family:'${meta.family}';src:url('${url}') format('${meta.format}');font-weight:${parseInt(w, 10) || 400};font-style:normal;font-display:swap;}</style>`);
+    });
+  });
   const customFns = (typeof customFonts !== 'undefined' && Array.isArray(customFonts)) ? customFonts : [];
   const customSeen = new Set();
   [s.printH1Font, s.printH2Font, s.printBodyFont, s.printFnFont, s.printQuranFont, s.printHadithFont, s.printQuoteFont].forEach((v) => {

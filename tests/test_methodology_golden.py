@@ -949,6 +949,46 @@ class ChatBeautifyTests(unittest.TestCase):
         self.assertIn(".math-display", css)
 
 
+class QuranFontsTests(unittest.TestCase):
+    """خطوط القرآن الكريم برواياتها مدمجة وتتصدر قوائم الخطوط قبل
+    خطوط جوجل بأسمائها العربية، وأوزان كل خط هي ما يعرض عند اختياره."""
+
+    QURAN_FILES = {
+        "hafs.ttf": "KFGQPC Hafs V3",
+        "hafs-nastaliq.otf": "KFGQPC Nastaleeq",
+        "warsh.ttf": "KFGQPC Warsh V3",
+        "qalun.ttf": "KFGQPC Qalun V3",
+        "shubah.ttf": "KFGQPC Shubah V3",
+        "bazzi.ttf": "KFGQPC Bazzi V3",
+        "susi.ttf": "KFGQPC Susi V3",
+        "duri.ttf": "KFGQPC Douri Uthmanic Script",
+    }
+
+    def test_quran_font_files_exist(self):
+        base = os.path.join(ROOT, "web_ui/static/fonts/quran")
+        for name in self.QURAN_FILES:
+            path = os.path.join(base, name)
+            self.assertTrue(os.path.isfile(path), name)
+            self.assertGreater(os.path.getsize(path), 100_000, name)
+
+    def test_quran_catalog_matches_files_and_precedes_google(self):
+        with open(os.path.join(ROOT, "web_ui/static/js/app.js"), encoding="utf-8") as fh:
+            app = fh.read()
+        self.assertIn("const QURAN_FONT_CATALOG", app)
+        self.assertIn("خطوط القرآن الكريم", app)
+        for family in self.QURAN_FILES.values():
+            self.assertIn(family, app)
+        for label in ("حفص عن عاصم", "ورش عن نافع المدني", "قالون عن نافع المدني",
+                      "شعبة عن عاصم الكوفي", "البزي عن ابن كثير المكي",
+                      "السوسي عن أبي عمرو البصري", "الدوري عن أبي عمرو البصري"):
+            self.assertIn(label, app)
+        # المجموعة تُزرع قبل مجموعة جوجل في بانِيات القوائم الثلاث
+        self.assertGreaterEqual(app.count("appendQuranFontGroup(select)"), 3)
+        self.assertIn("quran:", app)
+        self.assertIn("fontChoiceWeights", app)
+        self.assertIn("syncPrintWeightOptions", app)
+
+
 class WebRefArrowTests(unittest.TestCase):
     """مراجع الويب في المحادثة: نص المرجع بلا رابط، والسهم المائل ↗
     في نهايته وحده هو الرابط، والروابط الداخلية لا تُمس."""
