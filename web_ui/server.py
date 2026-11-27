@@ -6949,6 +6949,17 @@ DESIGN_IMAGE_MODELS = {
 }
 
 
+def _design_image_model_id(choice: Optional[str]) -> str:
+    """نموذج رسم الصور: مفتاح مختصر قديم أو معرّف OpenRouter كامل من
+    «النماذج الافتراضية»، والافتراضي GPT-5.4 Image 2."""
+    value = (choice or "").strip()
+    if value in DESIGN_IMAGE_MODELS:
+        return DESIGN_IMAGE_MODELS[value]
+    if "/" in value:
+        return value
+    return DESIGN_IMAGE_MODELS["gpt54"]
+
+
 def _png_decode_rgba(data: bytes):
     """فك PNG (٨-بت، بلا تشابك) إلى بكسلات RGBA — بلا أي مكتبة خارجية."""
     import struct as _struct
@@ -7132,7 +7143,7 @@ async def design_image(req: DesignImageRequest, request: Request):
     if not key:
         raise HTTPException(status_code=400, detail="مفتاح OpenRouter غير مضبوط في الخدمات")
     size = {"16:9": "1536x1024", "9:16": "1024x1536", "1:1": "1024x1024"}[aspect]
-    model = DESIGN_IMAGE_MODELS.get((req.image_model or "gpt54").strip(), DESIGN_IMAGE_MODELS["gpt54"])
+    model = _design_image_model_id(req.image_model)
     payload = {
         "model": model,
         "prompt": prompt,
@@ -8388,7 +8399,7 @@ def _slide_image_prompt(image_prompt: str, options: Optional[dict] = None) -> st
 def _normalize_presentation_options(req: PresentationRequest) -> dict:
     """تطبيع خيارات العرض من نافذة الخيارات: أسلوب النص (مدمج/قابل للتحرير) ونموذج الصورة والألوان."""
     text_mode = "embedded" if (req.text_mode or "") == "embedded" else "editable"
-    image_model_id = DESIGN_IMAGE_MODELS.get((req.image_model or "gpt54").strip(), DESIGN_IMAGE_MODELS["gpt54"])
+    image_model_id = _design_image_model_id(req.image_model)
     colors = req.colors if isinstance(req.colors, dict) else {}
 
     def hexv(value, fallback):
@@ -10314,7 +10325,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.878"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.879"},
         },
     })
     if opened.get("error"):
@@ -25836,6 +25847,20 @@ async def download_local_model(req: LocalModelDownloadRequest, request: Request)
 
 def _openrouter_catalog(key: str, modality: str = "") -> list:
     """كتالوج OpenRouter. بلا modality يرجع نماذج النص؛ image وvideo كتالوجان منفصلان لا يدخلان الافتراضي."""
+    if modality == "embeddings":
+        url = "https://openrouter.ai/api/v1/embeddings/models"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "HTTP-Referer": "http://localhost:8085",
+                "X-Title": "Almoghni Sharia Engine"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+        data = raw.get("data") or []
+        return data if isinstance(data, list) else []
     url = "https://openrouter.ai/api/v1/models"
     if modality:
         url += "?output_modalities=" + urllib.parse.quote(modality)
@@ -25892,7 +25917,7 @@ def _fetch_openrouter_models(key: str) -> dict:
     فإذا تعثّر اتصال الشبكة تجمّدت الواجهة كلها خلفه (منها زر اختبار
     المفتاح) كما حدث في قياس 1.10.618."""
     catalogs = [("", _openrouter_catalog(key))]
-    for modality in ("image", "video"):
+    for modality in ("image", "video", "embeddings"):
         try:
             catalogs.append((modality, _openrouter_catalog(key, modality)))
         except Exception as exc:
@@ -25924,6 +25949,7 @@ def _fetch_openrouter_models(key: str) -> dict:
         "status": "ok",
         "count": len(parsed),
         "image_count": sum(1 for model in parsed if "image" in (model.get("output_modalities") or []) and "text" not in (model.get("output_modalities") or [])),
+        "embedding_count": sum(1 for model in parsed if "embeddings" in (model.get("output_modalities") or [])),
         "video_count": sum(1 for model in parsed if "video" in (model.get("output_modalities") or []) and "text" not in (model.get("output_modalities") or [])),
         "models": parsed,
     }

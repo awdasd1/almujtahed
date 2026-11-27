@@ -323,7 +323,7 @@ async function loadDocumentsList() {
         ${done || d.status === 'cancelled' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'txt')" title="تصدير النص المحوَّل ملفًا نصيًا">تصدير TXT</button>` : ''}
         ${done || d.status === 'cancelled' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="exportDocument('${d.id}', 'docx')" title="تصدير ملف Word بصفحات الوثيقة وحواشيها">تصدير Word</button>` : ''}
         ${done && !d.archived ? `<button class="btn-flat-secondary reader-mini-btn" onclick="openDocAppend('${d.id}', '${nm}')" title="إضافة أجزاء جديدة إلى هذه الوثيقة">إضافة جزء</button>` : ''}
-        ${done && d.rag_status !== 'building' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="buildRag('${d.id}')" title="فهرسة دلالية (RAG): تضمين مقاطع الوثيقة بنموذج baai/bge-m3 عبر OpenRouter ليُبحث فيها بالمعنى مع اللفظ">${d.rag_status === 'done' ? '↻ إعادة الفهرسة الدلالية' : '🧠 فهرسة دلالية'}</button>` : ''}
+        ${done && d.rag_status !== 'building' ? `<button class="btn-flat-secondary reader-mini-btn" onclick="buildRag('${d.id}')" title="فهرسة دلالية (RAG): تضمين مقاطع الوثيقة بنموذج الفهرسة الدلالية الافتراضي المضبوط في إعدادات المنظومة عبر OpenRouter ليُبحث فيها بالمعنى مع اللفظ">${d.rag_status === 'done' ? '↻ إعادة الفهرسة الدلالية' : '🧠 فهرسة دلالية'}</button>` : ''}
         ${d.rag_status === 'building' ? `<div style="flex-basis: 100%; display: flex; align-items: center; gap: 8px; margin-top: 6px;">
           <div style="flex: 1; height: 8px; background: var(--border-subtle); border-radius: 999px; overflow: hidden;"><div style="height: 100%; width: ${d.rag_total ? Math.min(100, Math.max(2, Math.round(100 * (d.rag_done || 0) / d.rag_total))) : 2}%; background: var(--accent-clay); border-radius: 999px; transition: width 0.4s ease;"></div></div>
           <span style="font-size: 11.5px; color: var(--text-muted); white-space: nowrap;">🧠 فهرسة دلالية: ${Number(d.rag_done || 0).toLocaleString('ar-EG')} من ${Number(d.rag_total || 0).toLocaleString('ar-EG')} مقطعًا (${d.rag_total ? Math.round(100 * (d.rag_done || 0) / d.rag_total) : 0}٪)</span>
@@ -364,7 +364,8 @@ let docRagRefreshTimer = null;
 async function buildRag(docId) {
   try {
     const res = await fetch(`/api/documents/${docId}/rag/build`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ model: (typeof defaultModel === 'function' ? defaultModel('embedding') : '') }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { showToast(data.detail || 'تعذرت الفهرسة الدلالية'); return; }

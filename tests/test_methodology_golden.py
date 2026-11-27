@@ -963,10 +963,14 @@ class DefaultModelsTabTests(unittest.TestCase):
         self.assertIn("switchSettingsTab('defaultModels')", html)
         self.assertIn('id="setPaneDefaultModels"', html)
         for sid in ("dmSttSelect", "dmTtsSelect", "dmMsReader1Select", "dmMsReader2Select",
-                    "dmMsReader3Select", "dmMsAuditorSelect", "dmPageReaderSelect", "dmImageSelect"):
+                    "dmMsReader3Select", "dmMsAuditorSelect", "dmPageReaderSelect", "dmImageSelect",
+                    "dmEmbeddingSelect"):
             self.assertIn(f'id="{sid}"', html)
         self.assertIn("resetDefaultModel('stt')", html)
         self.assertIn("resetDefaultModel('image')", html)
+        self.assertIn("resetDefaultModel('embedding')", html)
+        # بطاقة معلومات النموذج عند التمرير كما في قائمة المحادثات
+        self.assertGreaterEqual(html.count('data-model-picker="1"'), 9)
 
     def test_defaults_and_consumers(self):
         app = self._read("web_ui/static/js/app.js")
@@ -997,6 +1001,17 @@ class DefaultModelsTabTests(unittest.TestCase):
         self.assertIn("tts_model: Optional[str] = None", server)
         self.assertIn("model: Optional[str] = None", server)
         self.assertIn('DESIGN_IMAGE_MODELS["gpt54"]', server)
+        self.assertIn("def _design_image_model_id", server)
+        # كتالوج التضمينات يُجلب مع كتالوج النماذج لتصنيف قسم الفهرسة
+        self.assertIn("api/v1/embeddings/models", server)
+
+    def test_catalog_filtering_and_embedding_section(self):
+        app = self._read("web_ui/static/js/app.js")
+        self.assertIn("function dmCatalogModels", app)
+        self.assertIn("embedding: { def: 'baai/bge-m3'", app)
+        self.assertIn("image: { def: 'openai/gpt-5.4-image-2'", app)
+        docs = self._read("web_ui/static/js/documents.js")
+        self.assertIn("defaultModel('embedding')", docs)
 
 
 class QuranFontsTests(unittest.TestCase):

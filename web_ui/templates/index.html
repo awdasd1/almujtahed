@@ -28,7 +28,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.878 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.879 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -5101,12 +5101,15 @@
                             الاستعمال (المحادثة والمخطوطات والوثائق والتشجير المصوّر والنشر) ولا اختيار
                             نموذج في تلك المواضع بعد اليوم. في أعلى كل قائمة النموذج الافتراضي وبجانبه
                             «افتراضي»، وزر «الافتراضي» يعيد الاختيار إليه متى بدّلت.
+                            قائمة كل قسم محصورة بنوعه في كتالوج OpenRouter (التضمين للتضمين، والصور
+                            للصور، والصوت للصوت…)، ومرّر فوق أي نموذج في القائمة فتظهر بطاقة معلوماته
+                            كما في قائمة نماذج المحادثات.
                         </p>
 
                         <div class="form-group">
                             <label for="dmSttSelect">🎙️ نموذج تحويل الصوت إلى نص (تسجيل المايك في المحادثة)</label>
                             <div style="display: flex; gap: 8px; align-items: center;">
-                                <select id="dmSttSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('stt', this.value)"></select>
+                                <select id="dmSttSelect" class="form-select" data-model-picker="1" style="flex: 1;" onchange="handleDefaultModelChange('stt', this.value)"></select>
                                 <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('stt')">الافتراضي</button>
                             </div>
                             <div id="dmSttDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
@@ -5115,7 +5118,7 @@
                         <div class="form-group">
                             <label for="dmTtsSelect">🔊 نموذج تحويل النص إلى صوت (الملخص الصوتي والبودكاست الحواري)</label>
                             <div style="display: flex; gap: 8px; align-items: center;">
-                                <select id="dmTtsSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('tts', this.value)"></select>
+                                <select id="dmTtsSelect" class="form-select" data-model-picker="1" style="flex: 1;" onchange="handleDefaultModelChange('tts', this.value)"></select>
                                 <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('tts')">الافتراضي</button>
                             </div>
                             <div id="dmTtsDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
@@ -5126,7 +5129,7 @@
                         <div class="form-group">
                             <label for="dmMsReader1Select">القارئ الأول</label>
                             <div style="display: flex; gap: 8px; align-items: center;">
-                                <select id="dmMsReader1Select" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('msReader1', this.value)"></select>
+                                <select id="dmMsReader1Select" class="form-select" data-model-picker="1" style="flex: 1;" onchange="handleDefaultModelChange('msReader1', this.value)"></select>
                                 <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('msReader1')">الافتراضي</button>
                             </div>
                             <div id="dmMsReader1Desc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
@@ -5135,7 +5138,7 @@
                         <div class="form-group">
                             <label for="dmMsReader2Select">القارئ الثاني</label>
                             <div style="display: flex; gap: 8px; align-items: center;">
-                                <select id="dmMsReader2Select" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('msReader2', this.value)"></select>
+                                <select id="dmMsReader2Select" class="form-select" data-model-picker="1" style="flex: 1;" onchange="handleDefaultModelChange('msReader2', this.value)"></select>
                                 <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('msReader2')">الافتراضي</button>
                             </div>
                             <div id="dmMsReader2Desc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
@@ -5144,7 +5147,7 @@
                         <div class="form-group">
                             <label for="dmMsReader3Select">القارئ الثالث</label>
                             <div style="display: flex; gap: 8px; align-items: center;">
-                                <select id="dmMsReader3Select" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('msReader3', this.value)"></select>
+                                <select id="dmMsReader3Select" class="form-select" data-model-picker="1" style="flex: 1;" onchange="handleDefaultModelChange('msReader3', this.value)"></select>
                                 <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('msReader3')">الافتراضي</button>
                             </div>
                             <div id="dmMsReader3Desc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
@@ -5153,7 +5156,7 @@
                         <div class="form-group">
                             <label for="dmMsAuditorSelect">المدقق</label>
                             <div style="display: flex; gap: 8px; align-items: center;">
-                                <select id="dmMsAuditorSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('msAuditor', this.value)"></select>
+                                <select id="dmMsAuditorSelect" class="form-select" data-model-picker="1" style="flex: 1;" onchange="handleDefaultModelChange('msAuditor', this.value)"></select>
                                 <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('msAuditor')">الافتراضي</button>
                             </div>
                             <div id="dmMsAuditorDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
@@ -5162,16 +5165,25 @@
                         <div class="form-group" style="margin-top: 18px;">
                             <label for="dmPageReaderSelect">📄 نموذج قراءة الصفحات المصورة (تحويل الوثائق والكتب المصورة إلى نص)</label>
                             <div style="display: flex; gap: 8px; align-items: center;">
-                                <select id="dmPageReaderSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('pageReader', this.value)"></select>
+                                <select id="dmPageReaderSelect" class="form-select" data-model-picker="1" style="flex: 1;" onchange="handleDefaultModelChange('pageReader', this.value)"></select>
                                 <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('pageReader')">الافتراضي</button>
                             </div>
                             <div id="dmPageReaderDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
                         </div>
 
                         <div class="form-group">
+                            <label for="dmEmbeddingSelect">🧠 نموذج الفهرسة الدلالية (تضمين مقاطع الوثائق للبحث بالمعنى RAG)</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <select id="dmEmbeddingSelect" class="form-select" data-model-picker="1" style="flex: 1;" onchange="handleDefaultModelChange('embedding', this.value)"></select>
+                                <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('embedding')">الافتراضي</button>
+                            </div>
+                            <div id="dmEmbeddingDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+                        </div>
+
+                        <div class="form-group">
                             <label for="dmImageSelect">🎨 نموذج رسم الصور (التشجير المصوّر والعروض وتبويب النشر)</label>
                             <div style="display: flex; gap: 8px; align-items: center;">
-                                <select id="dmImageSelect" class="form-select" style="flex: 1;" onchange="handleDefaultModelChange('image', this.value)"></select>
+                                <select id="dmImageSelect" class="form-select" data-model-picker="1" style="flex: 1;" onchange="handleDefaultModelChange('image', this.value)"></select>
                                 <button type="button" class="btn-flat-secondary" onclick="resetDefaultModel('image')">الافتراضي</button>
                             </div>
                             <div id="dmImageDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>

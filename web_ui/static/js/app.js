@@ -77,7 +77,8 @@ const DEFAULT_SETTINGS = {
     msReader3: 'google/gemini-3.1-flash-lite',
     msAuditor: 'google/gemini-4-argon',
     pageReader: 'google/gemini-4-neon',
-    image: 'gpt54'
+    embedding: 'baai/bge-m3',
+    image: 'openai/gpt-5.4-image-2'
   },
   textSize: 19,
   providers: {
@@ -1147,37 +1148,63 @@ function handleFontRoleChange(role, value) {
    تحويل النص إلى صوت، قراء المخطوطات والمدقق، قارئ الصفحات المصورة،
    ورسم الصور — ولا اختيار نموذج في مواضع الاستعمال بعد اليوم. */
 const DEFAULT_MODEL_DEFS = {
-  stt: { def: 'google/gemini-4-neon', label: 'نموذج تحويل الصوت إلى نص', selectId: 'dmSttSelect', descId: 'dmSttDesc' },
-  tts: { def: 'google/gemini-3.8-flash-lite-tts', label: 'نموذج تحويل النص إلى صوت', selectId: 'dmTtsSelect', descId: 'dmTtsDesc' },
-  msReader1: { def: '~google/gemini-pro-latest', label: 'القارئ الأول', selectId: 'dmMsReader1Select', descId: 'dmMsReader1Desc' },
-  msReader2: { def: 'google/gemini-4-carbon', label: 'القارئ الثاني', selectId: 'dmMsReader2Select', descId: 'dmMsReader2Desc' },
-  msReader3: { def: 'google/gemini-3.1-flash-lite', label: 'القارئ الثالث', selectId: 'dmMsReader3Select', descId: 'dmMsReader3Desc' },
-  msAuditor: { def: 'google/gemini-4-argon', label: 'المدقق', selectId: 'dmMsAuditorSelect', descId: 'dmMsAuditorDesc' },
-  pageReader: { def: 'google/gemini-4-neon', label: 'نموذج قراءة الصفحات المصورة', selectId: 'dmPageReaderSelect', descId: 'dmPageReaderDesc' },
-  image: { def: 'gpt54', label: 'نموذج رسم الصور', selectId: 'dmImageSelect', descId: 'dmImageDesc' },
+  stt: { def: 'google/gemini-4-neon', label: 'نموذج تحويل الصوت إلى نص', selectId: 'dmSttSelect', descId: 'dmSttDesc', group: 'نماذج تقبل الصوت وتخرج نصًا فقط' },
+  tts: { def: 'google/gemini-3.8-flash-lite-tts', label: 'نموذج تحويل النص إلى صوت', selectId: 'dmTtsSelect', descId: 'dmTtsDesc', group: 'نماذج تخرج صوتًا فقط' },
+  msReader1: { def: '~google/gemini-pro-latest', label: 'القارئ الأول', selectId: 'dmMsReader1Select', descId: 'dmMsReader1Desc', group: 'نماذج رؤية تقرأ الصور فقط' },
+  msReader2: { def: 'google/gemini-4-carbon', label: 'القارئ الثاني', selectId: 'dmMsReader2Select', descId: 'dmMsReader2Desc', group: 'نماذج رؤية تقرأ الصور فقط' },
+  msReader3: { def: 'google/gemini-3.1-flash-lite', label: 'القارئ الثالث', selectId: 'dmMsReader3Select', descId: 'dmMsReader3Desc', group: 'نماذج رؤية تقرأ الصور فقط' },
+  msAuditor: { def: 'google/gemini-4-argon', label: 'المدقق', selectId: 'dmMsAuditorSelect', descId: 'dmMsAuditorDesc', group: 'نماذج رؤية تقرأ الصور فقط' },
+  pageReader: { def: 'google/gemini-4-neon', label: 'نموذج قراءة الصفحات المصورة', selectId: 'dmPageReaderSelect', descId: 'dmPageReaderDesc', group: 'نماذج رؤية تقرأ الصور فقط' },
+  embedding: { def: 'baai/bge-m3', label: 'نموذج الفهرسة الدلالية', selectId: 'dmEmbeddingSelect', descId: 'dmEmbeddingDesc', group: 'نماذج التضمين (Embeddings) فقط' },
+  image: { def: 'openai/gpt-5.4-image-2', label: 'نموذج رسم الصور', selectId: 'dmImageSelect', descId: 'dmImageDesc', group: 'نماذج تخرج صورًا فقط' },
 };
-const DM_IMAGE_OPTIONS = [
-  ['gpt54', '🚀 GPT-5.4 Image 2 — openai/gpt-5.4-image-2'],
-  ['gpt', '🖼️ GPT Image — openai/gpt-image-2.6-sunburst'],
-  ['muse', '✨ Meta Muse Image — meta/muse-image'],
-  ['gemini', '🌟 Gemini 3 Pro Image — google/gemini-3-pro-image-preview'],
-];
+/* قيم صورة قديمة بمفاتيح مختصرة تُرحَّل إلى معرّفات OpenRouter الكاملة */
+const DM_IMAGE_LEGACY = {
+  gpt: 'openai/gpt-image-2.6-sunburst',
+  muse: 'meta/muse-image',
+  gemini: 'google/gemini-3-pro-image-preview',
+  gpt54: 'openai/gpt-5.4-image-2',
+};
+const DM_FALLBACK_NAMES = {
+  'openai/gpt-5.4-image-2': 'GPT-5.4 Image 2',
+  'openai/gpt-image-2.6-sunburst': 'GPT Image',
+  'meta/muse-image': 'Meta Muse Image',
+  'google/gemini-3-pro-image-preview': 'Gemini 3 Pro Image',
+  'baai/bge-m3': 'BAAI BGE-M3',
+  'google/gemini-4-neon': 'Gemini 4 Neon',
+  'google/gemini-3.8-flash-lite-tts': 'Gemini 3.8 Flash Lite TTS',
+};
 
 function defaultModel(key) {
   const defs = DEFAULT_MODEL_DEFS[key];
   if (!defs) return '';
   const saved = (currentSettings && currentSettings.defaultModels) || {};
-  return String(saved[key] || defs.def);
+  let value = String(saved[key] || defs.def);
+  if (key === 'image' && DM_IMAGE_LEGACY[value]) value = DM_IMAGE_LEGACY[value];
+  return value;
 }
 window.defaultModel = defaultModel;
 
 function dmModelDisplayName(id) {
-  if (String(id || '').startsWith('~')) {
-    const rec = (window.openrouterModelsList || []).find((m) => m.id === String(id).slice(1));
-    if (rec) return rec.name || rec.id;
+  const clean = String(id || '').replace(/^~/, '');
+  const rec = (window.openrouterModelsList || []).find((m) => m.id === clean);
+  if (rec) return rec.name || rec.id;
+  return DM_FALLBACK_NAMES[clean] || String(id || '');
+}
+
+/* حصر قائمة كل قسم بنوعه في كتالوج OpenRouter (مدخلات/مخرجات النموذج) */
+function dmCatalogModels(key) {
+  const all = (Array.isArray(window.openrouterModelsList) ? window.openrouterModelsList : []).filter((m) => m && m.id);
+  const outs = (m) => (Array.isArray(m.output_modalities) && m.output_modalities.length ? m.output_modalities : ['text']);
+  const ins = (m) => (Array.isArray(m.input_modalities) && m.input_modalities.length ? m.input_modalities : ['text']);
+  if (key === 'embedding') return all.filter((m) => outs(m).includes('embeddings') || /(^|\/)[^/]*embed|bge|e5-|voyage|instructor|embedding/i.test(m.id));
+  if (key === 'image') return all.filter((m) => outs(m).includes('image') && !outs(m).includes('text'));
+  if (key === 'tts') return all.filter((m) => outs(m).includes('audio'));
+  if (key === 'stt') return all.filter((m) => ins(m).includes('audio') && outs(m).includes('text'));
+  if (key === 'msReader1' || key === 'msReader2' || key === 'msReader3' || key === 'msAuditor' || key === 'pageReader') {
+    return all.filter((m) => ins(m).includes('image') && outs(m).includes('text'));
   }
-  const rec = (window.openrouterModelsList || []).find((m) => m.id === id);
-  return rec ? (rec.name || rec.id) : String(id || '');
+  return all.filter((m) => outs(m).includes('text'));
 }
 
 function dmUpdateDesc(key) {
@@ -1185,12 +1212,7 @@ function dmUpdateDesc(key) {
   const el = document.getElementById(defs.descId);
   if (!el) return;
   const id = defaultModel(key);
-  if (key === 'image') {
-    const opt = DM_IMAGE_OPTIONS.find(([v]) => v === id);
-    el.textContent = opt ? opt[1] : id;
-    return;
-  }
-  const rec = (window.openrouterModelsList || []).find((m) => m.id === id || m.id === String(id).replace(/^~/, ''));
+  const rec = (window.openrouterModelsList || []).find((m) => m.id === String(id).replace(/^~/, ''));
   const plain = (typeof plainModelDescription === 'function') ? plainModelDescription : (t) => String(t || '');
   const desc = rec ? plain(rec.description || '') : '';
   el.textContent = desc ? `${dmModelDisplayName(id)} — ${desc}` : `${dmModelDisplayName(id)} (${id})`;
@@ -1207,49 +1229,30 @@ function populateDefaultModelSelects() {
     defGroup.label = 'النموذج الافتراضي';
     const defOpt = document.createElement('option');
     defOpt.value = defs.def;
-    defOpt.textContent = key === 'image'
-      ? `${(DM_IMAGE_OPTIONS.find(([v]) => v === defs.def) || [])[1] || defs.def} — افتراضي`
-      : `${dmModelDisplayName(defs.def)} — افتراضي`;
+    defOpt.textContent = `${dmModelDisplayName(defs.def)} — افتراضي`;
     defGroup.appendChild(defOpt);
     select.appendChild(defGroup);
-    if (key === 'image') {
-      const group = document.createElement('optgroup');
-      group.label = 'نماذج رسم الصور';
-      DM_IMAGE_OPTIONS.forEach(([value, label]) => {
-        if (value === defs.def) return;
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = label;
-        group.appendChild(option);
-      });
-      select.appendChild(group);
-    } else {
-      // بقية القائمة مستنسخة من قائمة نماذج المحادثات: مقترحة أولًا ثم الكل
-      let models = Array.isArray(window.openrouterModelsList) ? window.openrouterModelsList : [];
-      if (typeof partitionMediaModels === 'function' && models.length) {
-        models = partitionMediaModels(models).text;
-      }
-      if (typeof modelsWithSuggestedFirst === 'function' && models.length) {
-        models = modelsWithSuggestedFirst(models, true);
-      }
-      const seen = new Set([defs.def]);
-      const group = document.createElement('optgroup');
-      group.label = models.length ? `كافة النماذج (${models.length})` : 'كافة النماذج (تُجلب عند الفتح)';
-      models.forEach((m) => {
-        if (!m || !m.id || seen.has(m.id)) return;
-        seen.add(m.id);
-        const option = document.createElement('option');
-        option.value = m.id;
-        option.textContent = m.name || m.id;
-        group.appendChild(option);
-      });
-      select.appendChild(group);
-      if (current && !seen.has(current)) {
-        const option = document.createElement('option');
-        option.value = current;
-        option.textContent = `${dmModelDisplayName(current)} (المحفوظ حاليًا)`;
-        defGroup.appendChild(option);
-      }
+    let models = dmCatalogModels(key);
+    if (key !== 'embedding' && key !== 'image' && typeof modelsWithSuggestedFirst === 'function' && models.length) {
+      models = modelsWithSuggestedFirst(models, false);
+    }
+    const seen = new Set([defs.def]);
+    const group = document.createElement('optgroup');
+    group.label = models.length ? `${defs.group} (${models.length})` : `${defs.group} (تُجلب من كتالوج OpenRouter عند فتح التبويب)`;
+    models.forEach((m) => {
+      if (seen.has(m.id)) return;
+      seen.add(m.id);
+      const option = document.createElement('option');
+      option.value = m.id;
+      option.textContent = m.name || m.id;
+      group.appendChild(option);
+    });
+    select.appendChild(group);
+    if (current && !seen.has(current)) {
+      const option = document.createElement('option');
+      option.value = current;
+      option.textContent = `${dmModelDisplayName(current)} (المحفوظ حاليًا)`;
+      defGroup.appendChild(option);
     }
     select.value = current;
     dmUpdateDesc(key);
