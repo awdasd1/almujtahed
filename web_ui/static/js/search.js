@@ -274,7 +274,6 @@ function renderSearchResults(results, query, duration, rawData = {}) {
               <span style="font-size: 11.5px; background: var(--bg-muted); padding: 2px 8px; border-radius: var(--radius-sm); color: var(--text-muted);">${escapeHtml(category)}</span>
             </div>
           </div>
-          ${score ? `<span class="score-badge" style="background: rgba(37, 99, 235, 0.08); color: #2563eb; border: 1px solid rgba(37, 99, 235, 0.2);">${isReranked ? 'هجين (متجه + BM25): ' : 'دلالي مباشر: '}${score}</span>` : ''}
         </div>
 
         ${chapter ? `<div class="result-chapter"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-left: 4px;"><path d="m9 18 6-6-6-6"/></svg>${escapeHtml(chapter)}</div>` : ''}
@@ -289,9 +288,6 @@ function renderSearchResults(results, query, duration, rawData = {}) {
           <div style="display: flex; gap: 8px;">
             <button class="btn-flat-secondary" onclick="openBookReaderFromSearch(${idx})" style="padding: 4px 10px; font-size: 12.5px; color: var(--text-dark);">
               تصفح في الكتاب الأصلي 📖
-            </button>
-            <button class="btn-flat-secondary" onclick="verifySearchResultQuote(${idx})" style="padding: 4px 10px; font-size: 12.5px; color: #16a34a;" title="تحقق من مطابقة النص الحرفي في صفحات الشاملة الأصلية عبر أداة MCP">
-              تحقق حرفي (MCP) 🔍
             </button>
             <button class="btn-flat-secondary" onclick="copyPassageText(${idx})" style="padding: 4px 10px; font-size: 12.5px;">
               نسخ النص
@@ -310,7 +306,208 @@ function renderSearchResults(results, query, duration, rawData = {}) {
   if (typeof enhanceProjectCitationsWithBookReader === 'function') {
     enhanceProjectCitationsWithBookReader(container);
   }
+  // نافذة «بحث في النتائج» مفتوحة: إعادة التحديد على النتائج الجديدة تلقائيًا
+  refreshResultsSearchIfOpen();
 }
+
+// =============================================================================
+// 🔭 بحث في نتائج البحث المعروضة: نسخة مطابقة لنافذة «بحث في الإجابة» —
+// نافذة عائمة قابلة للسحب، تظليل تلقائي فوري أثناء الكتابة، عدّادات،
+// وقائمة جمل يقفز منها الباحث إلى الموضع، مع سابق/تالٍ.
+// =============================================================================
+let _resultsSearch = { marks: [], current: -1 };
+
+function _rsNormChar(ch) {
+  if (/[\u064B-\u0652\u0670\u0640]/.test(ch)) return '';
+  if ('إأآٱ'.includes(ch)) return 'ا';
+  if (ch === 'ى') return 'ي';
+  if (ch === 'ة') return 'ه';
+  if (ch === 'ؤ') return 'و';
+  if (ch === 'ئ') return 'ي';
+  return ch;
+}
+function _rsNormalize(s) { return (s || '').split('').map(_rsNormChar).join(''); }
+
+function _ensureResultsSearchModal() {
+  if (document.getElementById('resultsSearchModal')) return;
+  const st = document.createElement('style');
+  st.textContent = 'mark.res-hit{background:#ffe58a;color:inherit;padding:0 1px;border-radius:3px;} mark.res-hit.res-current{background:#ff9d45;outline:2px solid #e07b1f;}';
+  document.head.appendChild(st);
+  const d = document.createElement('div');
+  d.id = 'resultsSearchModal';
+  d.style.cssText = 'display:none;position:fixed;inset:0;z-index:9999;background:transparent;direction:rtl;pointer-events:none;';
+  d.innerHTML = `
+    <div id="resultsSearchPanel" style="pointer-events:auto;position:absolute;top:7vh;left:50%;transform:translateX(-50%);width:min(640px,94vw);background:var(--bg-surface,#fff);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,0.35);padding:16px 18px;max-height:84vh;display:flex;flex-direction:column;">
+      <div id="resultsSearchDragHandle" title="اسحب من هذا الشريط لتحريك النافذة ومشاهدة التظليل في النتائج" style="display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:move;touch-action:none;user-select:none;-webkit-user-select:none;">
+        <strong style="font-size:15px;">🔭 بحث في نتائج البحث <span style="font-size:11px;opacity:0.65;font-weight:400;">(قابلة للسحب ⠿)</span></strong>
+        <button type="button" class="btn-msg-export" onclick="closeResultsSearch()">إغلاق ✕</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        <input id="resultsSearchInput" type="text" placeholder="اكتب حرفًا أو كلمة أو جملة للبحث داخل النتائج المعروضة..." style="flex:1;min-width:220px;padding:9px 12px;border:1px solid var(--border-subtle,#ccc);border-radius:9px;font-size:14px;" oninput="runResultsSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();stepResultsSearch(1);}">
+        <button type="button" class="btn-msg-export" onclick="stepResultsSearch(-1)">▲ السابق</button>
+        <button type="button" class="btn-msg-export" onclick="stepResultsSearch(1)">▼ التالي</button>
+      </div>
+      <label style="margin-top:8px;font-size:12.5px;display:flex;gap:6px;align-items:center;cursor:pointer;">
+        <input id="resultsSearchFlex" type="checkbox" checked onchange="runResultsSearch()">
+        بحث مرن: تجاهل التشكيل والهمزات والألف المقصورة والتاء المربوطة
+      </label>
+      <div id="resultsSearchStats" style="margin-top:9px;font-size:13px;line-height:1.9;color:var(--accent-gold,#9a6b1f);background:rgba(184,115,51,0.07);border:1px solid var(--border-subtle,#e2d8c3);border-radius:9px;padding:7px 11px;">اكتب عبارة البحث وستُظلَّل مواضعها في النتائج تلقائيًا مع عدّاداتها هنا.</div>
+      <div id="resultsSearchList" style="margin-top:10px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+    </div>`;
+  document.body.appendChild(d);
+  const panel = d.querySelector('#resultsSearchPanel');
+  const handle = d.querySelector('#resultsSearchDragHandle');
+  if (panel && handle) {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      const rect = panel.getBoundingClientRect();
+      panel.style.left = rect.left + 'px';
+      panel.style.top = rect.top + 'px';
+      panel.style.transform = 'none';
+      const offX = e.clientX - rect.left, offY = e.clientY - rect.top;
+      handle.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const w = panel.offsetWidth, h = panel.offsetHeight;
+        let x = ev.clientX - offX, y = ev.clientY - offY;
+        x = Math.max(-w + 90, Math.min(x, window.innerWidth - 90));
+        y = Math.max(0, Math.min(y, window.innerHeight - 44));
+        panel.style.left = x + 'px';
+        panel.style.top = y + 'px';
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+  }
+}
+
+function openResultsSearch() {
+  _ensureResultsSearchModal();
+  _clearResultsHighlights();
+  _resultsSearch = { marks: [], current: -1 };
+  const m = document.getElementById('resultsSearchModal');
+  m.style.display = 'block';
+  const inp = document.getElementById('resultsSearchInput');
+  if (inp) { inp.focus(); if (inp.value.trim().length >= 2) runResultsSearch(); }
+}
+function closeResultsSearch() {
+  _clearResultsHighlights();
+  const m = document.getElementById('resultsSearchModal');
+  if (m) m.style.display = 'none';
+  _resultsSearch = { marks: [], current: -1 };
+}
+function _clearResultsHighlights() {
+  const content = document.getElementById('searchResultsList');
+  if (content) {
+    content.querySelectorAll('mark.res-hit').forEach(mk => {
+      const parent = mk.parentNode;
+      if (parent) { parent.replaceChild(document.createTextNode(mk.textContent), mk); parent.normalize(); }
+    });
+  }
+  _resultsSearch.marks = []; _resultsSearch.current = -1;
+}
+function refreshResultsSearchIfOpen() {
+  const m = document.getElementById('resultsSearchModal');
+  if (!m || m.style.display === 'none') return;
+  const inp = document.getElementById('resultsSearchInput');
+  if (inp && inp.value.trim().length >= 2) runResultsSearch();
+}
+function runResultsSearch() {
+  _clearResultsHighlights();
+  const stats = document.getElementById('resultsSearchStats');
+  const results = document.getElementById('resultsSearchList');
+  const q = (document.getElementById('resultsSearchInput')?.value || '').trim();
+  const flex = !!document.getElementById('resultsSearchFlex')?.checked;
+  if (results) results.innerHTML = '';
+  if (!q || q.length < 2) { if (stats) stats.textContent = 'اكتب حرفين على الأقل للبحث داخل النتائج المعروضة.'; return; }
+  const content = document.getElementById('searchResultsList');
+  if (!content || !content.querySelector('.result-card')) { if (stats) stats.textContent = 'لا نتائج معروضة الآن — نفّذ بحثًا أولًا.'; return; }
+
+  const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      if (node.parentElement && node.parentElement.closest('button')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  const nq = flex ? _rsNormalize(q) : q;
+  let total = 0;
+  for (const node of nodes) {
+    const text = node.nodeValue;
+    let hay = text, map = null;
+    if (flex) {
+      hay = ''; map = [];
+      for (let i = 0; i < text.length; i++) { const nc = _rsNormChar(text[i]); if (nc) { hay += nc; map.push(i); } }
+    }
+    const spans = [];
+    let pos = 0;
+    while (true) {
+      const hit = hay.indexOf(nq, pos);
+      if (hit < 0) break;
+      const s = flex ? map[hit] : hit;
+      const e = flex ? (map[hit + nq.length - 1] + 1) : (hit + nq.length);
+      spans.push([s, e]); total++;
+      pos = hit + Math.max(nq.length, 1);
+    }
+    if (!spans.length) continue;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    for (const [s, e] of spans) {
+      if (s > last) frag.appendChild(document.createTextNode(text.slice(last, s)));
+      const mk = document.createElement('mark');
+      mk.className = 'res-hit'; mk.textContent = text.slice(s, e);
+      frag.appendChild(mk);
+      last = e;
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+  }
+  _resultsSearch.marks = Array.from(content.querySelectorAll('mark.res-hit'));
+
+  // العدّادات والجمل من متون النتائج وحدها لا من أزرار البطاقات وترويساتها
+  let sentHits = [], markCursor = 0;
+  content.querySelectorAll('.result-text').forEach(el => {
+    const sentences = (el.textContent || '').split(/(?<=[.!؟؛:])\s+|\n+/).map(s => s.trim()).filter(Boolean);
+    for (const s of sentences) {
+      const ns = flex ? _rsNormalize(s) : s;
+      let c = 0, p = 0;
+      while (true) { const h = ns.indexOf(nq, p); if (h < 0) break; c++; p = h + Math.max(nq.length, 1); }
+      if (c) { sentHits.push({ sentence: s, count: c, firstMark: markCursor }); markCursor += c; }
+    }
+  });
+  const wordsCount = q.split(/\s+/).filter(Boolean).length;
+  if (stats) {
+    stats.innerHTML = total
+      ? `وُجدت العبارة <strong>${total}</strong> مرة في النتائج المعروضة | عبارة البحث: ${q.length} حرفًا و${wordsCount} ${wordsCount === 1 ? 'كلمة' : 'كلمات'} | وردت في <strong>${sentHits.length}</strong> جملة من متون النتائج | تنقّل بالسابق/التالي أو اضغط أي جملة للقفز إلى موضعها.`
+      : 'لا مواضع لهذه العبارة في النتائج المعروضة. جرّب البحث المرن أو عبارة أقصر.';
+  }
+  if (results && sentHits.length) {
+    results.innerHTML = sentHits.slice(0, 40).map((h, i) =>
+      `<button type="button" onclick="jumpToResultsMark(${h.firstMark})" style="text-align:right;padding:8px 11px;border:1px solid var(--border-subtle,#ddd);border-radius:9px;background:transparent;cursor:pointer;font-size:12.5px;line-height:1.8;">
+         <span style="color:var(--accent-gold,#9a6b1f);font-weight:700;">${i + 1}.</span> ${escapeHtml(h.sentence.slice(0, 220))}${h.sentence.length > 220 ? '…' : ''} <span style="opacity:0.7;">(${h.count}×)</span>
+       </button>`).join('');
+  }
+  if (_resultsSearch.marks.length) jumpToResultsMark(0);
+}
+function jumpToResultsMark(i) {
+  const content = document.getElementById('searchResultsList');
+  const marks = content ? Array.from(content.querySelectorAll('mark.res-hit')) : [];
+  _resultsSearch.marks = marks;
+  if (!marks.length) return;
+  _resultsSearch.current = ((i % marks.length) + marks.length) % marks.length;
+  marks.forEach((mk, j) => mk.classList.toggle('res-current', j === _resultsSearch.current));
+  marks[_resultsSearch.current].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const stats = document.getElementById('resultsSearchStats');
+  if (stats && marks.length) stats.innerHTML = stats.innerHTML.replace(/\| الموضع الحالي:.*$/, '') + ` | الموضع الحالي: ${_resultsSearch.current + 1} من ${marks.length}`;
+}
+function stepResultsSearch(dir) { jumpToResultsMark((_resultsSearch.current < 0 ? 0 : _resultsSearch.current) + dir); }
 
 // متغير للاحتفاظ بمعلومات النتيجة التي تم فحصها لفتحها في القارئ
 let _mcpLastVerifiedItem = null;

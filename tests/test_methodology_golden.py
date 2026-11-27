@@ -876,6 +876,29 @@ class BookIdentityProbesTests(unittest.TestCase):
         self.assertIn('data-book-id="128"', out)
 
 
+class SearchTabCleanupTests(unittest.TestCase):
+    """تبويب البحث: لا شارة «دلالي مباشر %» ولا زر «تحقق حرفي (MCP)»
+    على البطاقات، وزر «بحث في النتائج» بجانب عدد النتائج يفتح نافذة
+    على نسق «بحث في الإجابة» (تحديد تلقائي وسابق/تالٍ)."""
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_badges_removed_and_results_search_exists(self):
+        search = self._read("web_ui/static/js/search.js")
+        self.assertNotIn("دلالي مباشر", search)
+        self.assertNotIn("تحقق حرفي (MCP)", search)
+        index = self._read("web_ui/templates/index.html")
+        self.assertIn("btnSearchInResults", index)
+        self.assertIn('onclick="openResultsSearch()"', index)
+        for fn in ("openResultsSearch", "closeResultsSearch", "runResultsSearch",
+                   "jumpToResultsMark", "stepResultsSearch",
+                   "refreshResultsSearchIfOpen", "_ensureResultsSearchModal"):
+            self.assertIn(fn, search, fn)
+        self.assertIn('oninput="runResultsSearch()"', search)
+
+
 class BridgeSpeedContractTests(unittest.TestCase):
     """سرعة البحث على منهج الشاملة: فهرسهم الجاهز بجسر واحد دائم
     الإحماء حيث الكلفة أغلى من التوازي، وصيغة بحث واحدة ذكية،
