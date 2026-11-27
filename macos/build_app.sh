@@ -55,6 +55,7 @@ cp -p "$ROOT/web_ui/madhhab_authority.json" "$STAGE/source/web_ui/madhhab_author
 cp -p "$ROOT/web_ui/discipline_books.json" "$STAGE/source/web_ui/discipline_books.json"
 cp -p "$ROOT/web_ui/templates/auth.html" "$ROOT/web_ui/templates/index.html" \
   "$STAGE/source/web_ui/templates/"
+cp -p "$ROOT/web_ui/static/js/"*.js "$STAGE/source/web_ui/static/js/"
 cp -p "$ROOT/web_ui/static/js/projects.js" "$STAGE/source/web_ui/static/js/projects.js"
 cp -p "$ROOT/web_ui/static/js/reader.js" "$STAGE/source/web_ui/static/js/reader.js"
 cp -p "$ROOT/web_ui/static/js/search.js" "$STAGE/source/web_ui/static/js/search.js"
