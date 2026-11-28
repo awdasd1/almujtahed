@@ -2934,62 +2934,41 @@ async function removeAppBackground() {
 window.uploadAppBackground = uploadAppBackground;
 window.removeAppBackground = removeAppBackground;
 
-// معالجة رفع التمبلت الجديد
-function handleTemplateUpload(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function (evt) {
-    try {
-      if (file.name.endsWith('.json')) {
-        const custom = JSON.parse(evt.target.result);
-        if (custom.theme) applyVisualThemePreset(custom.theme, { silent: true });
-        if (custom.colors) {
-          for (const [k, v] of Object.entries(custom.colors)) {
-            if (String(k).startsWith('--') && v) {
-              document.documentElement.style.setProperty(k, v);
-            }
-          }
-        }
-        if (custom.fonts && typeof custom.fonts === 'object') {
-          if (custom.fonts.heading) currentSettings.fontHeading = custom.fonts.heading;
-          if (custom.fonts.subheading) currentSettings.fontSubheading = custom.fonts.subheading;
-          if (custom.fonts.tabs) currentSettings.fontTabs = custom.fonts.tabs;
-          if (custom.fonts.app) currentSettings.fontApp = custom.fonts.app;
-          if (custom.fonts.reading) currentSettings.fontReading = custom.fonts.reading;
-          if (typeof populateFontSelects === 'function') populateFontSelects();
-          applyFontRoles();
-        }
-        if (custom.visualLab && typeof custom.visualLab === 'object') {
-          currentSettings.visualLab = custom.visualLab;
-          applyVisualLab();
-          writeVisualLabForm(custom.visualLab);
-        }
-        persistFontSettings();
-        if (custom.textSize) updateTextSize(custom.textSize);
-        showToast('تم تحميل وتطبيق القالب بنجاح');
-      } else if (file.name.endsWith('.css')) {
-        const style = document.createElement('style');
-        style.textContent = evt.target.result;
-        document.head.appendChild(style);
-        showToast('تم تطبيق ملف الستايل بنجاح');
-      }
-    } catch (err) {
-      showToast('تعذر قراءة ملف التمبلت: ' + err.message);
+function applyImportedVisualTemplate(custom) {
+  if (!custom || typeof custom !== 'object') throw new Error('القالب فارغ');
+  if (custom.theme) applyVisualThemePreset(custom.theme, { silent: true });
+  if (custom.colors) {
+    for (const [k, v] of Object.entries(custom.colors)) {
+      if (String(k).startsWith('--') && v) document.documentElement.style.setProperty(k, v);
     }
-  };
-  reader.readAsText(file);
-  e.target.value = '';
+  }
+  if (custom.fonts && typeof custom.fonts === 'object') {
+    if (custom.fonts.heading) currentSettings.fontHeading = custom.fonts.heading;
+    if (custom.fonts.subheading) currentSettings.fontSubheading = custom.fonts.subheading;
+    if (custom.fonts.tabs) currentSettings.fontTabs = custom.fonts.tabs;
+    if (custom.fonts.app) currentSettings.fontApp = custom.fonts.app;
+    if (custom.fonts.reading) currentSettings.fontReading = custom.fonts.reading;
+    if (typeof populateFontSelects === 'function') populateFontSelects();
+    applyFontRoles();
+  }
+  if (custom.visualLab && typeof custom.visualLab === 'object') {
+    currentSettings.visualLab = custom.visualLab;
+    applyVisualLab();
+    writeVisualLabForm(custom.visualLab);
+    paintAppBackgroundThumb(custom.visualLab.background?.imageUrl || '');
+  }
+  persistFontSettings();
+  if (custom.textSize) updateTextSize(custom.textSize);
 }
 
-function exportVisualTemplate() {
+function visualTemplatePayload(name) {
+  if (typeof commitVisualLab === 'function') commitVisualLab();
   const styles = getComputedStyle(document.documentElement);
   const colors = {};
-  const remember = (name) => {
-    if (!name || !String(name).startsWith('--')) return;
-    const value = styles.getPropertyValue(name).trim();
-    if (value) colors[name] = value;
+  const remember = (token) => {
+    if (!token || !String(token).startsWith('--')) return;
+    const value = styles.getPropertyValue(token).trim();
+    if (value) colors[token] = value;
   };
   for (const sheet of document.styleSheets) {
     let rules;
@@ -3002,8 +2981,9 @@ function exportVisualTemplate() {
   for (let i = 0; i < document.documentElement.style.length; i += 1) {
     remember(document.documentElement.style[i]);
   }
-  const payload = {
+  return {
     app: 'almoghni-visual-template',
+    name,
     theme: document.documentElement.getAttribute('data-theme') || 'sand',
     textSize: parseInt(localStorage.getItem(STORAGE_KEYS.FONT_SIZE) || '19', 10),
     fonts: {
@@ -3013,18 +2993,84 @@ function exportVisualTemplate() {
       app: currentSettings.fontApp || '',
       reading: currentSettings.fontReading || '',
     },
-    visualLab: currentSettings.visualLab || null,
+    visualLab: currentSettings.visualLab ? cloneVisualData(currentSettings.visualLab) : null,
     colors,
   };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = 'almoghni-visual-template.json';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-  showToast('تم تصدير القالب');
+}
+
+function currentVisualTemplateName() {
+  const saved = findSavedVisualTheme(currentSettings.activeThemeId);
+  if (saved && saved.name) return String(saved.name).trim();
+  const preset = normalizeTheme(document.documentElement.getAttribute('data-theme') || currentSettings.themePreset || 'sand');
+  return (THEME_META[preset] && THEME_META[preset].label) || 'قالب المغني';
+}
+
+function safeTemplateFilename(name) {
+  return String(name || 'قالب المغني').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'قالب المغني';
+}
+
+async function handleTemplateUpload(e) {
+  const file = (e.target.files || [])[0];
+  e.target.value = '';
+  if (!file) return;
+  const filename = file.name.toLowerCase();
+  try {
+    if (filename.endsWith('.zip')) {
+      const body = new FormData();
+      body.append('file', file);
+      const response = await fetch('/api/visual/template/import', { method: 'POST', body });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.template) {
+        showToast(apiErrorDetail(data, 'تعذر استيراد القالب'));
+        return;
+      }
+      applyImportedVisualTemplate(data.template);
+      const label = data.name || 'القالب';
+      showToast(data.background_installed ? `تم استيراد قالب «${label}» مع صورة الخلفية` : `تم استيراد قالب «${label}»`);
+      return;
+    }
+    const text = await file.text();
+    if (filename.endsWith('.json')) {
+      applyImportedVisualTemplate(JSON.parse(text));
+      showToast('تم تحميل وتطبيق القالب بنجاح');
+    } else if (filename.endsWith('.css')) {
+      const style = document.createElement('style');
+      style.textContent = text;
+      document.head.appendChild(style);
+      showToast('تم تطبيق ملف الستايل بنجاح');
+    } else {
+      showToast('اختر ملف ZIP للقالب');
+    }
+  } catch (err) {
+    showToast('تعذر قراءة ملف التمبلت: ' + err.message);
+  }
+}
+
+async function exportVisualTemplate() {
+  const name = currentVisualTemplateName();
+  try {
+    const response = await fetch('/api/visual/template/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(visualTemplatePayload(name)),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      showToast(apiErrorDetail(data, 'تعذر تصدير القالب'));
+      return;
+    }
+    const blob = await response.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${safeTemplateFilename(name)}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    showToast(`تم تصدير قالب «${name}»`);
+  } catch (error) {
+    showToast('تعذر تصدير القالب');
+  }
 }
 window.exportVisualTemplate = exportVisualTemplate;
 

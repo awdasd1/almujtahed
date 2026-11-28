@@ -1095,6 +1095,88 @@ async def import_print_template(file: UploadFile = File(...)):
         "background_installed": background_installed,
     }
 
+
+def _safe_template_name(value, fallback):
+    name = str(value or "").replace("\n", " ").replace("\r", " ").strip()[:80]
+    return name or fallback
+
+
+@app.post("/api/visual/template/export")
+async def export_visual_template(payload: dict = Body(...)):
+    """تحزيم قالب الواجهة مع صورة الخلفية في ملف ZIP باسم القالب."""
+    name = _safe_template_name(payload.get("name"), "قالب المغني")
+    template = dict(payload)
+    template["app"] = "almoghni-visual-template"
+    template["name"] = name
+    lab = template.get("visualLab") if isinstance(template.get("visualLab"), dict) else {}
+    background_info = lab.get("background") if isinstance(lab.get("background"), dict) else {}
+    wants_image = bool(str(background_info.get("imageUrl") or "").strip())
+    buffer = _io.BytesIO()
+    with _zipfile.ZipFile(buffer, "w", _zipfile.ZIP_DEFLATED) as bundle:
+        background_name = None
+        background = _visual_bg_current() if wants_image else None
+        if background:
+            background_name = background.name
+            bundle.write(background, f"background/{background.name}")
+        template["backgroundFile"] = background_name
+        bundle.writestr("template.json", json.dumps(template, ensure_ascii=False, indent=2))
+    return Response(content=buffer.getvalue(), media_type="application/zip")
+
+
+@app.post("/api/visual/template/import")
+async def import_visual_template(file: UploadFile = File(...)):
+    """فك حزمة قالب الواجهة وتنصيب صورة خلفيتها وإرجاع القالب للتطبيق."""
+    contents = await file.read()
+    if len(contents) > MAX_TEMPLATE_BYTES:
+        raise HTTPException(status_code=413, detail="حزمة القالب أكبر من 80 ميغابايت")
+    try:
+        bundle = _zipfile.ZipFile(_io.BytesIO(contents))
+    except Exception:
+        raise HTTPException(status_code=400, detail="ملف القالب غير صالح (ليس حزمة ZIP سليمة)")
+    infos = bundle.infolist()
+    if len(infos) > 40 or sum(max(0, info.file_size) for info in infos) > MAX_TEMPLATE_BYTES:
+        raise HTTPException(status_code=400, detail="محتوى حزمة القالب أكبر من الحد المسموح")
+    manifest_info = next((info for info in infos if Path(info.filename).name == "template.json"), None)
+    if manifest_info is None:
+        raise HTTPException(status_code=400, detail="الحزمة ليست قالب واجهة (لا يوجد template.json)")
+    try:
+        template = json.loads(bundle.read(manifest_info).decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="بيان القالب (template.json) تالف")
+    if not isinstance(template, dict):
+        raise HTTPException(status_code=400, detail="بيان القالب غير صالح")
+    background_installed = False
+    for info in infos:
+        parts = [part for part in Path(info.filename).parts if part not in ("", ".", "..")]
+        if len(parts) != 2 or info.is_dir():
+            continue
+        folder, filename = parts[0], Path(parts[1]).name
+        ext = Path(filename).suffix.lower()
+        if folder != "background" or ext not in PRINT_BG_EXTENSIONS or ext == ".svg":
+            continue
+        if info.file_size > MAX_PRINT_BG_BYTES:
+            raise HTTPException(status_code=413, detail="صورة الخلفية داخل القالب أكبر من 12 ميغابايت")
+        for old in VISUAL_BG_DIR.glob("background.*"):
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        (VISUAL_BG_DIR / f"background{ext}").write_bytes(bundle.read(info))
+        background_installed = True
+        break
+    lab = template.get("visualLab") if isinstance(template.get("visualLab"), dict) else None
+    if background_installed and lab is not None:
+        background = lab.get("background") if isinstance(lab.get("background"), dict) else {}
+        background["imageUrl"] = _visual_bg_payload().get("url") or ""
+        lab["background"] = background
+        template["visualLab"] = lab
+    return {
+        "success": True,
+        "name": _safe_template_name(template.get("name"), "قالب المغني"),
+        "template": template,
+        "background_installed": background_installed,
+    }
+
 # الحالة العامة للنظام والنموذج
 # أُزيل مخزن Qdrant ونموذج التضمين نهائيًا من التطبيق (1.10.565):
 # البحث اللفظي المضبوط (Lucene FTS) هو المحرك الوحيد، ولا قناة دلالية ولا متجهات.
@@ -10325,7 +10407,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.885"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.886"},
         },
     })
     if opened.get("error"):

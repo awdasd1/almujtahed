@@ -28,7 +28,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.885 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.886 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -4603,8 +4603,8 @@
 
                         <div class="settings-section-title" style="margin-top: 15px;">رفع وتصدير القالب</div>
                         <div class="form-group">
-                            <label>استيراد قالب (JSON / CSS):</label>
-                            <input type="file" id="templateFileInput" accept=".json,.css" class="form-input"
+                            <label>استيراد قالب (ZIP):</label>
+                            <input type="file" id="templateFileInput" accept=".zip,.json,.css,application/zip" class="form-input"
                                 onchange="handleTemplateUpload(event)">
                             <div class="lab-row" style="margin-top: 10px;">
                                 <button type="button" class="btn-flat-secondary" onclick="saveVisualThemeAs()">حفظ التعديلات باسم</button>
@@ -4613,7 +4613,7 @@
                                 <button type="button" class="btn-flat-secondary" onclick="exportVisualTemplate()">تصدير القالب الحالي</button>
                                 <button type="button" class="btn-flat-secondary" onclick="resetVisualLab()">إعادة الألوان إلى الثيم</button>
                             </div>
-                            <span class="form-help">التصدير يحفظ ألوان المعمل والخطوط وحجم النص. الاستيراد يعيد تطبيق القالب نفسه.</span>
+                            <span class="form-help">التصدير ينزّل ملف ZIP باسم القالب وفيه الألوان والخطوط وصورة الخلفية. الاستيراد يرفع ملف ZIP ويعيد القالب مع صورته.</span>
                         </div>
                     </div>
 
@@ -7663,7 +7663,7 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.884"></script>
+    <script src="/static/js/app.js?v=1.10.886"></script>
     <script src="/static/js/search.js?v=1.10.844"></script>
     <script src="/static/js/reader.js?v=1.10.844"></script>
     <script src="/static/js/force3d.js?v=1.10.844"></script>
