@@ -949,6 +949,23 @@ class ChatBeautifyTests(unittest.TestCase):
         self.assertIn(".math-display", css)
 
 
+class EmbeddedLayerReflowTests(unittest.TestCase):
+    """ملفات PDF بطبقة نص مدمجة مفرّقة كلمةً في كل سطر (طبقة OCR خفية
+    من الناشر): التحويل كان ينسخها كما هي فتخرج الكلمات عمودية ولا
+    تصلها قراءة بصرية. نظيفة الحروف تُعاد تدفقها أسطرًا أفقية،
+    وفاسدة الحروف تُقرأ بصريًا."""
+
+    def test_embedded_reflow_wiring(self):
+        with open(os.path.join(ROOT, "web_ui/doc_convert.py"), encoding="utf-8") as fh:
+            conv = fh.read()
+        self.assertIn("bang_ratio > 2.5", conv)
+        self.assertIn("single_ratio > 0.7", conv)
+        # إعادة تدفق الطبقة المدمجة تجري قبل اعتمادها نصًا للصفحة
+        idx_reflow = conv.index("elif words_per_line < 2.0 and single_ratio > 0.7:")
+        idx_append = conv.index('parts.append(f"[صفحة {i + 1}]\\n{embedded}")')
+        self.assertLess(idx_reflow, idx_append)
+
+
 class OcrModelReflowTests(unittest.TestCase):
     """نماذج قراءة الصفحات على ويندوز قد ترجع كلمة في كل سطر (لوحظ في
     Gemini Flash): تُعاد تدفق الكلمات أسطرًا أفقية عند قلة كلمات السطر،

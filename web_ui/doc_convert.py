@@ -412,6 +412,21 @@ def _convert_one(src: Path, progress, dpi: int = 300, only=None, ocr: dict | Non
             except Exception:
                 embedded = ""
         if len(embedded) >= 20:
+            # طبقة نص مدمجة مفرّقة كلمةً في كل سطر (ناشرون يزرعون طبقة
+            # OCR خفية بهذا الشكل): نظيفة الحروف تُعاد تدفقها أسطرًا
+            # أفقية، وفاسدتها (تشوّه كثيف كعلامات ! مكان الحروف) تُترك
+            # فتُقرأ الصفحة بصريًا بدل نسخ الفاسد كما هو
+            emb_lines = [l.strip() for l in embedded.splitlines() if l.strip()]
+            if len(emb_lines) >= 6:
+                words_per_line = sum(len(l.split()) for l in emb_lines) / len(emb_lines)
+                single_ratio = sum(1 for l in emb_lines if len(l.split()) == 1) / len(emb_lines)
+                bang_ratio = embedded.count("!") / max(1, len(embedded)) * 100
+                if bang_ratio > 2.5:
+                    embedded = ""
+                elif words_per_line < 2.0 and single_ratio > 0.7:
+                    embedded = "\n".join(
+                        l["text"] for l in _reflow_model_lines([{"text": l} for l in emb_lines]))
+        if len(embedded) >= 20:
             parts.append(f"[صفحة {i + 1}]\n{embedded}")
         else:
             # بالدقة المختارة (افتراضي 300): خط الحواشي الصغير لا يلتقطه
