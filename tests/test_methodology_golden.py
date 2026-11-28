@@ -949,6 +949,33 @@ class ChatBeautifyTests(unittest.TestCase):
         self.assertIn(".math-display", css)
 
 
+class OcrModelReflowTests(unittest.TestCase):
+    """نماذج قراءة الصفحات على ويندوز قد ترجع كلمة في كل سطر (لوحظ في
+    Gemini Flash): تُعاد تدفق الكلمات أسطرًا أفقية عند قلة كلمات السطر،
+    والأسطر الطبيعية لا تُمس، والتوجيه يمنع التفريق أصلًا."""
+
+    def test_reflow_wiring_and_behavior(self):
+        import importlib.util
+        with open(os.path.join(ROOT, "web_ui/doc_convert.py"), encoding="utf-8") as fh:
+            conv = fh.read()
+        self.assertIn("def _reflow_model_lines", conv)
+        self.assertIn("_reflow_model_lines([{\"text\": l} for l in lines])", conv)
+        self.assertIn("ولا تضع كلمة واحدة في سطر أبدًا", conv)
+        spec = importlib.util.spec_from_file_location(
+            "doc_convert_g", os.path.join(ROOT, "web_ui/doc_convert.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        frag = [{"text": w} for w in
+                "قال رسول الله صلى الله عليه وسلم كلمة كلمة في أسطر كثيرة متفرقة هنا حتى يطول النص المفرق كثيرًا جدًا".split()]
+        out = mod._reflow_model_lines(frag)
+        self.assertLess(len(out), len(frag))
+        self.assertGreater(len(out[0]["text"].split()), 5)
+        normal = [{"text": "هذا سطر طبيعي كامل الكلمات في صفحة مقروءة"},
+                  {"text": "وسطر ثان كامل أيضًا بكلماته المتصلة"}]
+        self.assertEqual([l["text"] for l in mod._reflow_model_lines(normal)],
+                         [n["text"] for n in normal])
+
+
 class OcrVisualLineGroupingTests(unittest.TestCase):
     """قراءة الصفحات المصورة محليًا: محرك Vision يفرّق العربية كلمةً
     كلمة أحيانًا، فتُجمَّع الكلمات المتقاربة رأسيًا في أسطر أفقية

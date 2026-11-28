@@ -171,8 +171,36 @@ def request_cancel(doc_id: str, owner: str) -> bool:
 _OCR_PROMPT = (
     "استخرج نص هذه الصفحة العربية كاملًا كما هو مكتوب، سطرًا سطرًا من أولها "
     "إلى آخرها شاملاً الحواشي أسفلها وعلاماتها، دون أي شرح أو تعليق أو "
-    "عناوين من عندك، ودون تنسيق ماركداون أو أسوار رمزية."
+    "عناوين من عندك، ودون تنسيق ماركداون أو أسوار رمزية. "
+    "تنبيه صارم: كل سطر مكتوب في الصفحة يخرج سطرًا واحدًا كاملًا بكلماته "
+    "كلها متصلة، ولا تضع كلمة واحدة في سطر أبدًا."
 )
+
+
+def _reflow_model_lines(lines: list) -> list:
+    """إعادة تدفق مخرجات نموذج قراءة يفرّق الكلمات سطرًا لكل كلمة (لوحظ
+    في Gemini Flash على ويندوز): إن كان متوسط كلمات السطر ضئيلًا جُمعت
+    الكلمات أسطرًا متدفقة تُختم بنهاية جملة أو بطول سطر طبيعي، فتخرج
+    الصفحة أسطرًا أفقية مقروءة لا عمودًا من الكلمات المفردة."""
+    texts = [str(l.get("text") or "").strip() for l in lines or []]
+    texts = [t for t in texts if t]
+    if not texts:
+        return []
+    words_per_line = sum(len(t.split()) for t in texts) / len(texts)
+    if words_per_line > 3.2:
+        return [{"text": t, "y": i / max(1, len(texts))} for i, t in enumerate(texts)]
+    out: list[str] = []
+    buf: list[str] = []
+    for t in texts:
+        buf.append(t)
+        joined = " ".join(buf)
+        sentence_end = bool(re.search(r"[.!؟?؛…»)\]]\s*$", t))
+        if (sentence_end and len(joined) > 40) or len(joined) >= 130:
+            out.append(joined)
+            buf = []
+    if buf:
+        out.append(" ".join(buf))
+    return [{"text": t, "y": i / max(1, len(out))} for i, t in enumerate(out)]
 
 
 def set_ocr_runtime(doc_id: str, api_key: str) -> None:
@@ -225,8 +253,7 @@ def _ocr_openrouter_lines(png_path: str, model: str, api_key: str, doc_id: str =
             content = "".join(str(c.get("text") or "") for c in content if isinstance(c, dict))
         lines = [l.strip() for l in str(content).splitlines() if l.strip()]
         lines = [l for l in lines if not l.startswith("```")]
-        total = max(1, len(lines))
-        return [{"text": l, "y": i / total} for i, l in enumerate(lines)]
+        return _reflow_model_lines([{"text": l} for l in lines])
     except Exception as exc:
         # يُحفظ سبب الفشل ليُعرض على الباحث قبل أي رجوع للمحرك المحلي
         if doc_id:
