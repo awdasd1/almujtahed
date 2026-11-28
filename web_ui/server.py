@@ -1119,6 +1119,10 @@ async def export_visual_template(payload: dict = Body(...)):
             background_name = background.name
             bundle.write(background, f"background/{background.name}")
         template["backgroundFile"] = background_name
+        logo = STATIC_DIR / "brand-mark.png"
+        template["logoFile"] = "brand-mark.png" if logo.is_file() else None
+        if logo.is_file():
+            bundle.write(logo, "brand-mark.png")
         bundle.writestr("template.json", json.dumps(template, ensure_ascii=False, indent=2))
     return Response(content=buffer.getvalue(), media_type="application/zip")
 
@@ -1146,6 +1150,7 @@ async def import_visual_template(file: UploadFile = File(...)):
     if not isinstance(template, dict):
         raise HTTPException(status_code=400, detail="بيان القالب غير صالح")
     background_installed = False
+    logo_installed = False
     for info in infos:
         parts = [part for part in Path(info.filename).parts if part not in ("", ".", "..")]
         if len(parts) != 2 or info.is_dir():
@@ -1163,6 +1168,21 @@ async def import_visual_template(file: UploadFile = File(...)):
                 pass
         (VISUAL_BG_DIR / f"background{ext}").write_bytes(bundle.read(info))
         background_installed = True
+        continue
+    for info in infos:
+        parts = [part for part in Path(info.filename).parts if part not in ("", ".", "..")]
+        if info.is_dir() or parts not in (["brand-mark.png"], ["logo", "brand-mark.png"]):
+            continue
+        if info.file_size > MAX_PRINT_BG_BYTES:
+            raise HTTPException(status_code=413, detail="شعار القالب أكبر من 12 ميغابايت")
+        data = bundle.read(info)
+        if len(data) < 32 or not data.startswith(b"\x89PNG"):
+            raise HTTPException(status_code=400, detail="شعار القالب يجب أن يكون ملف PNG باسم brand-mark.png")
+        try:
+            (STATIC_DIR / "brand-mark.png").write_bytes(data)
+        except OSError:
+            raise HTTPException(status_code=500, detail="تعذر حفظ شعار القالب")
+        logo_installed = True
         break
     lab = template.get("visualLab") if isinstance(template.get("visualLab"), dict) else None
     if background_installed and lab is not None:
@@ -1175,6 +1195,8 @@ async def import_visual_template(file: UploadFile = File(...)):
         "name": _safe_template_name(template.get("name"), "قالب المغني"),
         "template": template,
         "background_installed": background_installed,
+        "logo_installed": logo_installed,
+        "logo_url": f"/static/brand-mark.png?v={int(time.time())}" if logo_installed else None,
     }
 
 # الحالة العامة للنظام والنموذج
@@ -10407,7 +10429,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.886"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.887"},
         },
     })
     if opened.get("error"):

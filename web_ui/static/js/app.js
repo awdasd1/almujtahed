@@ -3025,8 +3025,13 @@ async function handleTemplateUpload(e) {
         return;
       }
       applyImportedVisualTemplate(data.template);
+      if (data.logo_installed) {
+        const mark = document.querySelector('.brand-mark');
+        if (mark) mark.src = data.logo_url || `/static/brand-mark.png?v=${Date.now()}`;
+      }
       const label = data.name || 'القالب';
-      showToast(data.background_installed ? `تم استيراد قالب «${label}» مع صورة الخلفية` : `تم استيراد قالب «${label}»`);
+      const extras = [data.background_installed ? 'صورة الخلفية' : '', data.logo_installed ? 'الشعار' : ''].filter(Boolean);
+      showToast(extras.length ? `تم استيراد قالب «${label}» مع ${extras.join(' و')}` : `تم استيراد قالب «${label}»`);
       return;
     }
     const text = await file.text();
