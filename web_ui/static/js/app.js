@@ -2577,6 +2577,7 @@ function readVisualLabForm() {
       canvas: labHex('panelCanvas', '#F1E9DC'), canvasAlpha: labNum('panelCanvasA', 100),
       glass: labHex('glassFill', '#FBF7F0'), glassAlpha: labNum('glassFillA', 92),
     },
+    logoUrl: currentSettings.visualLab?.logoUrl || '',
   };
 }
 
@@ -2751,6 +2752,7 @@ function applyVisualLab() {
   if (!lab) {
     root.removeAttribute('data-visual-lab');
     LAB_VARS.forEach((name) => root.style.removeProperty(name));
+    applyThemeLogo('');
     return;
   }
   const buttons = lab.buttons || {};
@@ -2837,6 +2839,15 @@ function applyVisualLab() {
   set('--glass', labRgba(palette.glass, palette.glassAlpha ?? 92));
   set('--bg-canvas', labRgba(palette.canvas, palette.canvasAlpha ?? 100));
   root.setAttribute('data-visual-lab', 'on');
+  applyThemeLogo(lab.logoUrl || '');
+}
+
+const DEFAULT_BRAND_MARK = '/static/brand-mark.png?v=1.10.844';
+
+function applyThemeLogo(url) {
+  const mark = document.querySelector('.brand-mark');
+  if (!mark) return;
+  mark.src = url || DEFAULT_BRAND_MARK;
 }
 
 function commitVisualLab() {
@@ -2922,7 +2933,12 @@ async function uploadAppBackground(event) {
 }
 
 async function removeAppBackground() {
-  try { await fetch('/api/visual/background', { method: 'DELETE' }); } catch (error) {}
+  const current = currentSettings.visualLab?.background?.imageUrl || '';
+  const name = String(current).split('?')[0].split('/').pop();
+  try {
+    const query = name ? `?name=${encodeURIComponent(name)}` : '';
+    await fetch(`/api/visual/background${query}`, { method: 'DELETE' });
+  } catch (error) {}
   if (currentSettings.visualLab && currentSettings.visualLab.background) {
     currentSettings.visualLab.background.imageUrl = '';
     applyVisualLab();
@@ -2998,6 +3014,26 @@ function visualTemplatePayload(name) {
   };
 }
 
+function storeImportedTheme(custom) {
+  const name = String((custom && custom.name) || '').trim();
+  if (!name || !currentSettings.visualLab) return;
+  const list = listSavedVisualThemes();
+  let rec = list.find((item) => item && item.name === name);
+  if (!rec) {
+    rec = { id: `saved:${Date.now().toString(36)}`, name };
+    currentSettings.savedVisualThemes = list.concat([rec]);
+  }
+  rec.themePreset = normalizeTheme(custom.theme || currentSettings.themePreset || 'sand');
+  rec.visualLab = cloneVisualData(currentSettings.visualLab);
+  rec.fonts = snapshotVisualFonts();
+  rec.textSize = parseInt(localStorage.getItem(STORAGE_KEYS.FONT_SIZE) || '19', 10);
+  currentSettings.activeThemeId = rec.id;
+  localStorage.setItem(STORAGE_KEYS.THEME, rec.id);
+  fillSavedThemeOptions();
+  updateThemeIcon(rec.id);
+  persistFontSettings();
+}
+
 function currentVisualTemplateName() {
   const saved = findSavedVisualTheme(currentSettings.activeThemeId);
   if (saved && saved.name) return String(saved.name).trim();
@@ -3025,10 +3061,7 @@ async function handleTemplateUpload(e) {
         return;
       }
       applyImportedVisualTemplate(data.template);
-      if (data.logo_installed) {
-        const mark = document.querySelector('.brand-mark');
-        if (mark) mark.src = data.logo_url || `/static/brand-mark.png?v=${Date.now()}`;
-      }
+      storeImportedTheme(data.template);
       const label = data.name || 'القالب';
       const extras = [data.background_installed ? 'صورة الخلفية' : '', data.logo_installed ? 'الشعار' : ''].filter(Boolean);
       showToast(extras.length ? `تم استيراد قالب «${label}» مع ${extras.join(' و')}` : `تم استيراد قالب «${label}»`);

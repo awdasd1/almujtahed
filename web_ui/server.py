@@ -954,11 +954,35 @@ def _visual_bg_current():
             return path
     return None
 
+def _visual_asset_url(path):
+    return f"/visual-background/{path.name}?v={int(path.stat().st_mtime)}"
+
 def _visual_bg_payload():
     path = _visual_bg_current()
     if not path:
         return {"url": None}
-    return {"url": f"/visual-background/{path.name}?v={int(path.stat().st_mtime)}"}
+    return {"url": _visual_asset_url(path)}
+
+def _new_visual_asset(prefix, ext, data):
+    filename = f"{prefix}-{secrets.token_hex(8)}{ext}"
+    path = VISUAL_BG_DIR / filename
+    path.write_bytes(data)
+    return path
+
+def _visual_file_from_url(url):
+    text = str(url or "")
+    name = Path(text.split("?", 1)[0]).name
+    if not name or name != Path(name).name:
+        return None
+    if "/visual-background/" in text:
+        path = (VISUAL_BG_DIR / name).resolve()
+        if path.parent == VISUAL_BG_DIR.resolve() and path.is_file():
+            return path
+        return None
+    if name == "brand-mark.png":
+        path = STATIC_DIR / name
+        return path if path.is_file() else None
+    return None
 
 @app.get("/api/visual/background")
 async def get_visual_background():
@@ -974,18 +998,13 @@ async def upload_visual_background(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="ملف الصورة فارغ أو تالف")
     if len(contents) > MAX_PRINT_BG_BYTES:
         raise HTTPException(status_code=413, detail="حجم الصورة أكبر من 12 ميغابايت")
-    for old in VISUAL_BG_DIR.glob("background.*"):
-        try:
-            old.unlink()
-        except OSError:
-            pass
-    (VISUAL_BG_DIR / f"background{ext}").write_bytes(contents)
-    return {"success": True, **_visual_bg_payload()}
+    path = _new_visual_asset("bg", ext, contents)
+    return {"success": True, "url": _visual_asset_url(path)}
 
 @app.delete("/api/visual/background")
-async def delete_visual_background():
-    path = _visual_bg_current()
-    if path:
+async def delete_visual_background(name: str = ""):
+    path = _visual_file_from_url(f"/visual-background/{Path(name).name}") if name else _visual_bg_current()
+    if path and path.parent == VISUAL_BG_DIR.resolve() and path.name.startswith(("background.", "bg-")):
         try:
             path.unlink()
         except OSError:
@@ -1121,12 +1140,14 @@ async def export_visual_template(payload: dict = Body(...)):
     buffer = _io.BytesIO()
     with _zipfile.ZipFile(buffer, "w", _zipfile.ZIP_DEFLATED) as bundle:
         background_name = None
-        background = _visual_bg_current() if wants_image else None
+        background = _visual_file_from_url(background_info.get("imageUrl")) if wants_image else None
+        if background is None and wants_image:
+            background = _visual_bg_current()
         if background:
-            background_name = background.name
-            bundle.write(background, f"background/{background.name}")
+            background_name = f"background{background.suffix.lower()}"
+            bundle.write(background, f"background/{background_name}")
         template["backgroundFile"] = background_name
-        logo = STATIC_DIR / "brand-mark.png"
+        logo = _visual_file_from_url(lab.get("logoUrl")) or (STATIC_DIR / "brand-mark.png")
         template["logoFile"] = "brand-mark.png" if logo.is_file() else None
         if logo.is_file():
             bundle.write(logo, "brand-mark.png")
@@ -1169,12 +1190,7 @@ async def import_visual_template(file: UploadFile = File(...)):
             continue
         if info.file_size > MAX_PRINT_BG_BYTES:
             raise HTTPException(status_code=413, detail="صورة الخلفية داخل القالب أكبر من 12 ميغابايت")
-        for old in VISUAL_BG_DIR.glob("background.*"):
-            try:
-                old.unlink()
-            except OSError:
-                pass
-        (VISUAL_BG_DIR / f"background{ext}").write_bytes(bundle.read(info))
+        background_path = _new_visual_asset("bg", ext, bundle.read(info))
         background_installed = True
         break
     for info in infos:
@@ -1189,16 +1205,19 @@ async def import_visual_template(file: UploadFile = File(...)):
         if len(data) < 32 or not data.startswith(b"\x89PNG"):
             raise HTTPException(status_code=400, detail="شعار القالب يجب أن يكون ملف PNG باسم brand-mark.png")
         try:
-            (STATIC_DIR / "brand-mark.png").write_bytes(data)
+            logo_path = _new_visual_asset("logo", ".png", data)
         except OSError:
             raise HTTPException(status_code=500, detail="تعذر حفظ شعار القالب")
         logo_installed = True
         break
-    lab = template.get("visualLab") if isinstance(template.get("visualLab"), dict) else None
-    if background_installed and lab is not None:
+    lab = template.get("visualLab") if isinstance(template.get("visualLab"), dict) else {}
+    if background_installed:
         background = lab.get("background") if isinstance(lab.get("background"), dict) else {}
-        background["imageUrl"] = _visual_bg_payload().get("url") or ""
+        background["imageUrl"] = _visual_asset_url(background_path)
         lab["background"] = background
+    if logo_installed:
+        lab["logoUrl"] = _visual_asset_url(logo_path)
+    if lab:
         template["visualLab"] = lab
     return {
         "success": True,
@@ -1206,7 +1225,7 @@ async def import_visual_template(file: UploadFile = File(...)):
         "template": template,
         "background_installed": background_installed,
         "logo_installed": logo_installed,
-        "logo_url": f"/static/brand-mark.png?v={int(time.time())}" if logo_installed else None,
+        "logo_url": lab.get("logoUrl") if logo_installed else None,
     }
 
 # الحالة العامة للنظام والنموذج
@@ -10439,7 +10458,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.888"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.889"},
         },
     })
     if opened.get("error"):
