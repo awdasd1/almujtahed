@@ -281,12 +281,15 @@ def _ocr_lines(png_path: str, ocr: dict | None = None, strict: bool = False):
         return []
     finally:
         _unregister_active(doc_key, proc)
-    out = []
+    raw = []
     for l in data.get("lines") or []:
         text = str(l.get("text") or "").strip()
         if text:
-            out.append({"text": text, "y": float(l.get("y") or 0)})
-    return out
+            raw.append({"text": text, "y": float(l.get("y") or 0),
+                        "x": float(l.get("x") or 0), "h": float(l.get("h") or 0)})
+    # محرك Vision يفرّق العربية كلمةً كلمة في مسوح كثيرة: تُجمَّع الكلمات
+    # المتقاربة رأسيًا في أسطر بصرية أفقية وإلا خرج النص عموديًا
+    return shamela_pdf.group_visual_lines(raw)
 
 
 def _ocr_png(png_path: str, ocr: dict | None = None, strict: bool = False):

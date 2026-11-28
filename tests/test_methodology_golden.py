@@ -949,6 +949,43 @@ class ChatBeautifyTests(unittest.TestCase):
         self.assertIn(".math-display", css)
 
 
+class OcrVisualLineGroupingTests(unittest.TestCase):
+    """قراءة الصفحات المصورة محليًا: محرك Vision يفرّق العربية كلمةً
+    كلمة أحيانًا، فتُجمَّع الكلمات المتقاربة رأسيًا في أسطر أفقية
+    يمينًا إلى يسار وإلا خرج النص عموديًا كلمةً في كل سطر."""
+
+    def test_grouping_source_and_wiring(self):
+        with open(os.path.join(ROOT, "web_ui/shamela_pdf.py"), encoding="utf-8") as fh:
+            shamela = fh.read()
+        self.assertIn("def group_visual_lines", shamela)
+        self.assertIn("group_visual_lines(data.get(\"lines\") or [])", shamela)
+        with open(os.path.join(ROOT, "web_ui/doc_convert.py"), encoding="utf-8") as fh:
+            conv = fh.read()
+        self.assertIn("shamela_pdf.group_visual_lines(raw)", conv)
+
+    def test_grouping_behavior(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "shamela_pdf_g", os.path.join(ROOT, "web_ui/shamela_pdf.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        frag = [
+            {"text": "كيف", "y": 0.205, "x": 0.75, "h": 0.03},
+            {"text": "رأينا", "y": 0.206, "x": 0.85, "h": 0.03},
+            {"text": "الإمام", "y": 0.2055, "x": 0.60, "h": 0.03},
+            {"text": "في", "y": 0.244, "x": 0.80, "h": 0.03},
+            {"text": "القصة", "y": 0.243, "x": 0.70, "h": 0.03},
+        ]
+        out = mod.group_visual_lines(frag)
+        self.assertEqual([l["text"] for l in out], ["رأينا كيف الإمام", "في القصة"])
+        full = [
+            {"text": "سطر كامل أول", "y": 0.20, "x": 0.09, "h": 0.03},
+            {"text": "سطر كامل ثان", "y": 0.24, "x": 0.09, "h": 0.03},
+        ]
+        self.assertEqual([l["text"] for l in mod.group_visual_lines(full)],
+                         ["سطر كامل أول", "سطر كامل ثان"])
+
+
 class DefaultModelsTabTests(unittest.TestCase):
     """تبويب «النماذج الافتراضية»: مرجع واحد لنسخ الصوت والصوت المولّد
     وقراء المخطوطات والمدقق وقارئ الصفحات المصورة ورسم الصور، والاختيارات

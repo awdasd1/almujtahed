@@ -398,6 +398,29 @@ def list_volumes(book_id=None, rel_path: str = "") -> dict:
     return out
 
 
+def group_visual_lines(lines):
+    """تجميع ملاحظات التعرف البصري في أسطر بصرية حقيقية: محرك Vision
+    يرجع العربية أحيانًا كلمةً كلمة (ملاحظة لكل كلمة) فتخرج الكلمات
+    عمودية سطرًا لكل كلمة إن جُمعت كما هي. الكلمات المتقاربة رأسيًا
+    (ضمن ارتفاع سطر) سطرٌ واحد يُرتب يمينًا إلى يسار كما يُقرأ."""
+    rows = []
+    for line in sorted(lines or [], key=lambda z: (float(z.get("y") or 0), -float(z.get("x") or 0))):
+        text = str(line.get("text") or "").strip()
+        if not text:
+            continue
+        y = float(line.get("y") or 0)
+        tol = max(0.008, 0.6 * float(line.get("h") or 0.02))
+        if rows and abs(y - rows[-1]["y"]) <= tol:
+            rows[-1]["items"].append({"text": text, "x": float(line.get("x") or 0)})
+        else:
+            rows.append({"y": y, "items": [{"text": text, "x": float(line.get("x") or 0)}]})
+    out = []
+    for row in rows:
+        items = sorted(row["items"], key=lambda z: -z["x"])
+        out.append({"text": " ".join(item["text"] for item in items), "y": row["y"]})
+    return out
+
+
 def _ocr_helper():
     env = os.getenv("ALMOGHNI_OCR_HELPER", "").strip()
     cands = [
@@ -460,8 +483,8 @@ def ocr_region_text(book_id=None, rel_path: str = "", part=None, page_num=None,
             os.remove(name)
         except OSError:
             pass
-    lines = data.get("lines") or []
-    text = "\n".join(str(l.get("text") or "").strip() for l in lines if str(l.get("text") or "").strip())
+    lines = group_visual_lines(data.get("lines") or [])
+    text = "\n".join(l["text"] for l in lines)
     if not text:
         out["reason"] = "لم يُقرأ نص في هذه القصاصة"
         return out
