@@ -1252,6 +1252,7 @@ async def import_visual_template(file: UploadFile = File(...)):
         "background_installed": background_installed,
         "logo_installed": logo_installed,
         "logo_url": lab.get("logoUrl") if logo_installed else None,
+        "manuscripts_installed": manuscripts_installed,
     }
 
 # الحالة العامة للنظام والنموذج
@@ -10484,7 +10485,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.890"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.891"},
         },
     })
     if opened.get("error"):

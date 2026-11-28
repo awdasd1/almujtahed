@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS = {
   fontHeading: 'google:Amiri',
   fontSubheading: 'google:Amiri',
   fontTabs: 'google:Amiri',
+  fontTabsSize: 16,
   fontApp: 'google:Amiri',
   fontReading: 'google:Noto Naskh Arabic',
   printH1Font: 'google:Amiri', printH1Size: 25, printH1Weight: 700, printH1Color: '',
@@ -492,6 +493,7 @@ function snapshotVisualFonts() {
     heading: currentSettings.fontHeading || '',
     subheading: currentSettings.fontSubheading || '',
     tabs: currentSettings.fontTabs || '',
+    tabsSize: tabsFontSize(),
     app: currentSettings.fontApp || '',
     reading: currentSettings.fontReading || '',
   };
@@ -502,6 +504,7 @@ function applyVisualFonts(fonts) {
   if (fonts.heading) currentSettings.fontHeading = fonts.heading;
   if (fonts.subheading) currentSettings.fontSubheading = fonts.subheading;
   if (fonts.tabs) currentSettings.fontTabs = fonts.tabs;
+  if (fonts.tabsSize) currentSettings.fontTabsSize = tabsFontSizeValue(fonts.tabsSize);
   if (fonts.app) currentSettings.fontApp = fonts.app;
   if (fonts.reading) currentSettings.fontReading = fonts.reading;
   if (typeof populateFontSelects === 'function') populateFontSelects();
@@ -1055,9 +1058,33 @@ function applyFontFamily(font) {
   applyFontRoles();
 }
 
+function tabsFontSizeValue(value) {
+  const size = parseFloat(value);
+  return Math.max(12, Math.min(28, Number.isFinite(size) ? size : 16));
+}
+
+function tabsFontSize() {
+  return tabsFontSizeValue(currentSettings.fontTabsSize);
+}
+
+function updateTabsFontSize(size, save = true) {
+  currentSettings.fontTabsSize = tabsFontSizeValue(size);
+  applyFontRoles();
+  if (!save) return;
+  persistFontSettings();
+  const saved = typeof findSavedVisualTheme === 'function' ? findSavedVisualTheme(currentSettings.activeThemeId) : null;
+  if (saved) saved.fonts = snapshotVisualFonts();
+}
+
 function applyFontRoles() {
   const root = document.documentElement;
   root.style.setProperty('--font-tabs', stackForFontChoice(currentSettings.fontTabs || currentSettings.fontApp));
+  root.style.setProperty('--font-tabs-size', `${tabsFontSize()}px`);
+  const tabsSlider = document.getElementById('fontTabsSize');
+  const tabsSize = tabsFontSize();
+  if (tabsSlider) tabsSlider.value = String(tabsSize);
+  const tabsLabel = document.getElementById('fontTabsSizeVal');
+  if (tabsLabel) tabsLabel.textContent = `${tabsSize} بكسل`;
   root.style.setProperty('--font-heading', stackForFontChoice(currentSettings.fontHeading));
   root.style.setProperty('--font-subheading', stackForFontChoice(currentSettings.fontSubheading || currentSettings.fontHeading));
   root.style.setProperty('--font-app', stackForFontChoice(currentSettings.fontApp));
@@ -1070,6 +1097,7 @@ function updateFontPreviews() {
     const preview = document.getElementById(field.previewId);
     if (!preview) return;
     preview.style.setProperty('font-family', stackForFontChoice(currentSettings[field.key]), 'important');
+    if (field.key === 'fontTabs') preview.style.setProperty('font-size', `${tabsFontSize()}px`, 'important');
   });
 }
 
@@ -1453,10 +1481,6 @@ function applyMsVisual() {
   pane.style.setProperty('--ms-bg-zoom', String(size / 100));
   pane.style.setProperty('--ms-bg-opacity', image ? String((parseInt(s.msBgOpacity, 10) || 0) / 100) : '0');
   pane.style.setProperty('--ms-bg-blur', `${Math.max(0, Math.min(24, parseInt(s.msBgBlur, 10) || 0))}px`);
-  pane.style.setProperty('--ms-card-bg', msHex(s.msCardColor, '#fdfaf4'));
-  pane.style.setProperty('--ms-card-alpha', `${Math.max(0, Math.min(100, parseInt(s.msCardOpacity, 10) || 0))}%`);
-  pane.style.setProperty('--ms-border', msHex(s.msBorderColor, '#c9c2b8'));
-  pane.style.setProperty('--ms-border-alpha', `${Math.max(0, Math.min(100, parseInt(s.msBorderOpacity, 10) || 0))}%`);
   pane.style.setProperty('--ms-title-font', stackForFontChoice(s.msTitleFont || 'google:Amiri'));
   pane.style.setProperty('--ms-title-size', `${Math.max(14, Math.min(40, parseInt(s.msTitleSize, 10) || 22))}px`);
   const textFont = s.msTextFont ? stackForFontChoice(s.msTextFont) : '';
@@ -3045,6 +3069,7 @@ function applyImportedVisualTemplate(custom) {
     if (custom.fonts.heading) currentSettings.fontHeading = custom.fonts.heading;
     if (custom.fonts.subheading) currentSettings.fontSubheading = custom.fonts.subheading;
     if (custom.fonts.tabs) currentSettings.fontTabs = custom.fonts.tabs;
+    if (custom.fonts.tabsSize) currentSettings.fontTabsSize = tabsFontSizeValue(custom.fonts.tabsSize);
     if (custom.fonts.app) currentSettings.fontApp = custom.fonts.app;
     if (custom.fonts.reading) currentSettings.fontReading = custom.fonts.reading;
     if (typeof populateFontSelects === 'function') populateFontSelects();
@@ -3055,6 +3080,7 @@ function applyImportedVisualTemplate(custom) {
     applyVisualLab();
     writeVisualLabForm(custom.visualLab);
     paintAppBackgroundThumb(custom.visualLab.background?.imageUrl || '');
+    applyManuscriptsFromLab(custom.visualLab);
   }
   persistFontSettings();
   if (custom.textSize) updateTextSize(custom.textSize);
@@ -3062,6 +3088,7 @@ function applyImportedVisualTemplate(custom) {
 
 function visualTemplatePayload(name) {
   if (typeof commitVisualLab === 'function') commitVisualLab();
+  if (currentSettings.visualLab) currentSettings.visualLab.manuscripts = currentManuscriptsBlock();
   const styles = getComputedStyle(document.documentElement);
   const colors = {};
   const remember = (token) => {
@@ -3089,6 +3116,7 @@ function visualTemplatePayload(name) {
       heading: currentSettings.fontHeading || '',
       subheading: currentSettings.fontSubheading || '',
       tabs: currentSettings.fontTabs || '',
+      tabsSize: tabsFontSize(),
       app: currentSettings.fontApp || '',
       reading: currentSettings.fontReading || '',
     },
@@ -3146,7 +3174,7 @@ async function handleTemplateUpload(e) {
       applyImportedVisualTemplate(data.template);
       storeImportedTheme(data.template);
       const label = data.name || 'القالب';
-      const extras = [data.background_installed ? 'صورة الخلفية' : '', data.logo_installed ? 'الشعار' : ''].filter(Boolean);
+      const extras = [data.background_installed ? 'صورة الخلفية' : '', data.logo_installed ? 'الشعار' : '', data.manuscripts_installed ? 'صورة قسم المخطوطات' : ''].filter(Boolean);
       showToast(extras.length ? `تم استيراد قالب «${label}» مع ${extras.join(' و')}` : `تم استيراد قالب «${label}»`);
       return;
     }
