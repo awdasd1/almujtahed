@@ -580,7 +580,7 @@ body[data-theme="dark"] {
   background: transparent;
   border: none;
   color: var(--text-muted);
-  font-family: var(--font-amiri);
+  font-family: var(--font-tabs, var(--font-amiri));
   font-size: 15.5px;
   font-weight: 700;
   padding: 8px 14px;
@@ -3729,7 +3729,7 @@ input:checked+.slider-toggle:before {
   background: transparent;
   border: none;
   color: var(--text-muted);
-  font-family: var(--font-amiri);
+  font-family: var(--font-tabs, var(--font-amiri));
   font-size: 15.5px;
   font-weight: 600;
   padding: 10px 14px;
@@ -10938,7 +10938,7 @@ h3, h4, h5, h6 {
 }
 
 body,
-button:not(.theme-select-option),
+button:not(.theme-select-option):not(.nav-tab-btn):not(.settings-tab-btn),
 input,
 textarea,
 select,
@@ -10970,8 +10970,8 @@ select,
   font-family: var(--font-reading) !important;
 }
 
-.nav-tab-btn,
-.settings-tab-btn {
+button.nav-tab-btn,
+button.settings-tab-btn {
   font-family: var(--font-tabs, var(--font-app)) !important;
 }
 
