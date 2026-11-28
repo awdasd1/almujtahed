@@ -1101,6 +1101,13 @@ def _safe_template_name(value, fallback):
     return name or fallback
 
 
+def _template_zip_parts(filename):
+    parts = [part for part in Path(str(filename or "")).parts if part not in ("", ".", "..", "/", "\\")]
+    if not parts or any(part == "__MACOSX" or part.startswith("._") for part in parts):
+        return []
+    return parts
+
+
 @app.post("/api/visual/template/export")
 async def export_visual_template(payload: dict = Body(...)):
     """تحزيم قالب الواجهة مع صورة الخلفية في ملف ZIP باسم القالب."""
@@ -1152,12 +1159,13 @@ async def import_visual_template(file: UploadFile = File(...)):
     background_installed = False
     logo_installed = False
     for info in infos:
-        parts = [part for part in Path(info.filename).parts if part not in ("", ".", "..")]
-        if len(parts) != 2 or info.is_dir():
+        if info.is_dir():
             continue
-        folder, filename = parts[0], Path(parts[1]).name
-        ext = Path(filename).suffix.lower()
-        if folder != "background" or ext not in PRINT_BG_EXTENSIONS or ext == ".svg":
+        parts = _template_zip_parts(info.filename)
+        if len(parts) < 2 or parts[-2] != "background":
+            continue
+        ext = Path(parts[-1]).suffix.lower()
+        if ext not in PRINT_BG_EXTENSIONS or ext == ".svg":
             continue
         if info.file_size > MAX_PRINT_BG_BYTES:
             raise HTTPException(status_code=413, detail="صورة الخلفية داخل القالب أكبر من 12 ميغابايت")
@@ -1168,10 +1176,12 @@ async def import_visual_template(file: UploadFile = File(...)):
                 pass
         (VISUAL_BG_DIR / f"background{ext}").write_bytes(bundle.read(info))
         background_installed = True
-        continue
+        break
     for info in infos:
-        parts = [part for part in Path(info.filename).parts if part not in ("", ".", "..")]
-        if info.is_dir() or parts not in (["brand-mark.png"], ["logo", "brand-mark.png"]):
+        if info.is_dir():
+            continue
+        parts = _template_zip_parts(info.filename)
+        if not parts or parts[-1] != "brand-mark.png":
             continue
         if info.file_size > MAX_PRINT_BG_BYTES:
             raise HTTPException(status_code=413, detail="شعار القالب أكبر من 12 ميغابايت")
@@ -10429,7 +10439,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.887"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.888"},
         },
     })
     if opened.get("error"):
