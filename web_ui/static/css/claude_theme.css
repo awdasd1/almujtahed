@@ -11983,15 +11983,16 @@ body:has(#paneManuscripts.active) #paneManuscripts > .ms-wrap {
   width: 100%;
 }
 
-/* خلفية تبويب تحقيق المخطوطات: تُضبط من «الواجهة البصرية للمخطوطات» */
+/* خلفية قسم المخطوطات: صورة خاصة بالثيم، وإلا تظهر خلفية الثيم العامة */
 #paneManuscripts {
   position: relative;
   overflow: hidden;
-  --ms-bg-image: url("/static/img/ms-folio-bg.jpg");
+  background: transparent;
+  --ms-bg-image: none;
   --ms-bg-size: cover;
   --ms-bg-repeat: no-repeat;
   --ms-bg-zoom: 1;
-  --ms-bg-opacity: 0.55;
+  --ms-bg-opacity: 0;
   --ms-bg-blur: 0px;
   --ms-card-bg: #fdfaf4;
   --ms-card-alpha: 12%;

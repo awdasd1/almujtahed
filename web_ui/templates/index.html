@@ -7,7 +7,7 @@
     <title>المغني</title>
     <meta name="description"
         content="منظومة المغني - من الفكرة إلي النشر، مع محادثة ذكية ووكلاء مساعدين">
-    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.885">
+    <link rel="stylesheet" href="/static/css/claude_theme.css?v=1.10.890">
     <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,7 +28,7 @@
                 <div class="brand-title">
                     <img class="brand-mark" src="/static/brand-mark.png?v=1.10.844" alt="المغني">
                 </div>
-                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.889 (نسخة تجريبية)</span>
+                <span class="brand-subtitle-1" id="appVersionLabel">إصدار رقم 1.10.890 (نسخة تجريبية)</span>
             </div>
 
             <div class="header-actions">
@@ -4030,9 +4030,6 @@
                     <button class="settings-tab-btn active" id="setNavVisual" onclick="switchSettingsTab('visual')">
                         إعدادات الواجهة البصرية
                     </button>
-                    <button class="settings-tab-btn" id="setNavMsVisual" onclick="switchSettingsTab('msvisual')">
-                        الواجهة البصرية للمخطوطات
-                    </button>
                     <button class="settings-tab-btn" id="setNavProviders" onclick="switchSettingsTab('providers')">
                         وكلاء النماذج والمزودين
                     </button>
@@ -4601,36 +4598,45 @@
                             </div>
                         </div>
 
-                        <div class="settings-section-title" style="margin-top: 15px;">رفع وتصدير القالب</div>
+                        <div class="settings-section-title" style="margin-top: 15px;">قسم المخطوطات</div>
+                        <div class="form-help" style="margin-bottom: 10px;">صورة هذا القسم، إن وُجدت، تلغي خلفية الثيم داخل تبويب المخطوطات فقط. بلا صورة يأخذ القسم خلفية الثيم العامة.</div>
+                        <div class="settings-section-title" style="font-size: 15px;">خط العناوين في قسم المخطوطات</div>
                         <div class="form-group">
-                            <label>استيراد قالب (ZIP):</label>
-                            <input type="file" id="templateFileInput" accept=".zip,.json,.css,application/zip" class="form-input"
-                                onchange="handleTemplateUpload(event)">
-                            <div class="lab-row" style="margin-top: 10px;">
-                                <button type="button" class="btn-flat-secondary" onclick="saveVisualThemeAs()">حفظ التعديلات باسم</button>
-                            </div>
-                            <div class="lab-row" style="margin-top: 10px;">
-                                <button type="button" class="btn-flat-secondary" onclick="exportVisualTemplate()">تصدير القالب الحالي</button>
-                                <button type="button" class="btn-flat-secondary" onclick="resetVisualLab()">إعادة الألوان إلى الثيم</button>
-                            </div>
-                            <span class="form-help">التصدير ينزّل ملف ZIP باسم القالب وفيه ألوانه وخطوطه وصورته وشعاره. كل ثيم يحتفظ بخلفيته وشعاره، وعند التبديل بينهما تُسترجع صورة ذلك الثيم وشعاره.</span>
+                            <label for="msTitleFontSelect">الخط</label>
+                            <select id="msTitleFontSelect" class="form-select" onchange="handleMsSetting('msTitleFont', this.value)"></select>
+                            <span class="font-role-preview" id="msTitlePreview">تحقيق المخطوطات</span>
+                            <input type="file" id="msTitleFontUpload" class="form-input"
+                                accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+                                onchange="uploadMsTitleFont(event)">
+                            <span class="form-help">خطوط جوجل من القائمة، أو ارفع خطًا خاصًا (TTF أو OTF أو WOFF) فيُعيَّن لعناوين هذا القسم.</span>
                         </div>
-                    </div>
-
-                    <!-- الواجهة البصرية لتبويب تحقيق المخطوطات -->
-                    <div class="settings-pane" id="setPaneMsVisual" style="display: none;">
-                        <div class="settings-section-title">صورة الخلفية</div>
+                        <div class="form-group">
+                            <label for="msTitleColor">لون الخط</label>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="color" id="msTitleColor" class="form-input" style="max-width:90px;padding:2px;height:38px;" value="#1C1611" onchange="handleMsSetting('msTitleColor', this.value)">
+                                <button type="button" class="btn-flat-secondary" onclick="handleMsSetting('msTitleColor', '')">لون القسم</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="msTitleSize">مقاس الخط</label>
+                            <div class="slider-container">
+                                <input type="range" id="msTitleSize" min="14" max="40" step="1" value="22"
+                                    oninput="handleMsRange('msTitleSize', this.value, ' بكسل')">
+                                <span class="slider-value" id="msTitleSizeVal">٢٢ بكسل</span>
+                            </div>
+                        </div>
+                        <div class="settings-section-title" style="font-size: 15px;">صورة الخلفية الخاصة بتبويب المخطوطات</div>
                         <div class="form-group">
                             <label for="msBgInput">رفع صورة</label>
                             <div style="display:flex;gap:10px;align-items:flex-start;">
                                 <label for="msBgInput" title="رفع صورة الخلفية" style="cursor:pointer;border:1px dashed var(--border-hover, #c9c2b8);border-radius:8px;padding:10px 14px;font-size:22px;line-height:1;background:var(--accent-subtle, #f5efe6);">🖼️</label>
                                 <img id="msBgThumb" alt="معاينة خلفية المخطوطات" style="display:none;width:74px;height:96px;object-fit:cover;border:1px solid var(--border-hover, #c9c2b8);border-radius:6px;background:#fff;">
-                                <button type="button" id="msBgRemove" class="btn-flat-secondary" style="display:none;" onclick="removeMsBackground()">حذف الصورة والعودة للافتراضية</button>
+                                <button type="button" id="msBgRemove" class="btn-flat-secondary" style="display:none;" onclick="removeMsBackground()">حذف الصورة واستخدام خلفية الثيم</button>
                             </div>
                             <input type="file" id="msBgInput" class="form-input" style="display:none;"
                                 accept="image/png,image/jpeg,image/webp,image/gif"
                                 onchange="uploadMsBackground(event)">
-                            <span class="form-help">PNG أو JPG أو WEBP أو GIF حتى 12 ميغابايت. بلا رفع تبقى لوحة المخطوط الافتراضية.</span>
+                            <span class="form-help">PNG أو JPG أو WEBP أو GIF حتى 12 ميغابايت. تخص هذا الثيم داخل قسم المخطوطات.</span>
                         </div>
                         <div class="form-group">
                             <label for="msBgOpacity">شفافية الخلفية</label>
@@ -4668,84 +4674,22 @@
                             </div>
                         </div>
 
-                        <div class="settings-section-title" style="margin-top: 15px;">حاويات القسم</div>
+                        <div class="settings-section-title" style="margin-top: 15px;">رفع وتصدير القالب</div>
                         <div class="form-group">
-                            <label for="msCardColor">لون خلفية الحاويات</label>
-                            <input type="color" id="msCardColor" class="form-input" style="max-width:90px;padding:2px;height:38px;" value="#fdfaf4" onchange="handleMsSetting('msCardColor', this.value)">
-                        </div>
-                        <div class="form-group">
-                            <label for="msCardOpacity">شفافية اللون</label>
-                            <div class="slider-container">
-                                <input type="range" id="msCardOpacity" min="0" max="100" step="1" value="12"
-                                    oninput="handleMsRange('msCardOpacity', this.value, '٪')">
-                                <span class="slider-value" id="msCardOpacityVal">١٢٪</span>
+                            <label>استيراد قالب (ZIP):</label>
+                            <input type="file" id="templateFileInput" accept=".zip,.json,.css,application/zip" class="form-input"
+                                onchange="handleTemplateUpload(event)">
+                            <div class="lab-row" style="margin-top: 10px;">
+                                <button type="button" class="btn-flat-secondary" onclick="saveVisualThemeAs()">حفظ التعديلات باسم</button>
                             </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="msBorderColor">لون الحدود</label>
-                            <input type="color" id="msBorderColor" class="form-input" style="max-width:90px;padding:2px;height:38px;" value="#c9c2b8" onchange="handleMsSetting('msBorderColor', this.value)">
-                        </div>
-                        <div class="form-group">
-                            <label for="msBorderOpacity">شفافية الحدود</label>
-                            <div class="slider-container">
-                                <input type="range" id="msBorderOpacity" min="0" max="100" step="1" value="55"
-                                    oninput="handleMsRange('msBorderOpacity', this.value, '٪')">
-                                <span class="slider-value" id="msBorderOpacityVal">٥٥٪</span>
+                            <div class="lab-row" style="margin-top: 10px;">
+                                <button type="button" class="btn-flat-secondary" onclick="exportVisualTemplate()">تصدير القالب الحالي</button>
+                                <button type="button" class="btn-flat-secondary" onclick="resetVisualLab()">إعادة الألوان إلى الثيم</button>
                             </div>
-                        </div>
-
-                        <div class="settings-section-title" style="margin-top: 15px;">خط القسم</div>
-                        <div class="form-group">
-                            <label for="msTextFontSelect">نوع الخط</label>
-                            <select id="msTextFontSelect" class="form-select" onchange="handleMsSetting('msTextFont', this.value)"></select>
-                            <span class="font-role-preview" id="msTextPreview">نص قسم تحقيق المخطوطات</span>
-                            <input type="file" id="msTextFontUpload" class="form-input"
-                                accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
-                                onchange="uploadMsTextFont(event)">
-                            <span class="form-help">لنصوص القسم. العنوان «تحقيق المخطوطات» من قسم العناوين.</span>
-                        </div>
-                        <div class="form-group">
-                            <label for="msTextSize">مقاس الخط</label>
-                            <div class="slider-container">
-                                <input type="range" id="msTextSize" min="12" max="28" step="1" value="15"
-                                    oninput="handleMsRange('msTextSize', this.value, ' بكسل')">
-                                <span class="slider-value" id="msTextSizeVal">١٥ بكسل</span>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="msTextColor">لون الخط</label>
-                            <div style="display:flex;gap:8px;align-items:center;">
-                                <input type="color" id="msTextColor" class="form-input" style="max-width:90px;padding:2px;height:38px;" value="#2A221A" onchange="handleMsSetting('msTextColor', this.value)">
-                                <button type="button" class="btn-flat-secondary" onclick="handleMsSetting('msTextColor', '')">اللون الافتراضي</button>
-                            </div>
-                        </div>
-
-                        <div class="settings-section-title" style="margin-top: 15px;">خط العناوين في قسم المخطوطات</div>
-                        <div class="form-group">
-                            <label for="msTitleFontSelect">الخط</label>
-                            <select id="msTitleFontSelect" class="form-select" onchange="handleMsSetting('msTitleFont', this.value)"></select>
-                            <span class="font-role-preview" id="msTitlePreview">تحقيق المخطوطات</span>
-                            <input type="file" id="msTitleFontUpload" class="form-input"
-                                accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
-                                onchange="uploadMsTitleFont(event)">
-                            <span class="form-help">خطوط جوجل من القائمة، أو ارفع خطًا خاصًا (TTF أو OTF أو WOFF) فيُعيَّن لعناوين هذا القسم.</span>
-                        </div>
-                        <div class="form-group">
-                            <label for="msTitleColor">لون الخط</label>
-                            <div style="display:flex;gap:8px;align-items:center;">
-                                <input type="color" id="msTitleColor" class="form-input" style="max-width:90px;padding:2px;height:38px;" value="#1C1611" onchange="handleMsSetting('msTitleColor', this.value)">
-                                <button type="button" class="btn-flat-secondary" onclick="handleMsSetting('msTitleColor', '')">لون القسم</button>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="msTitleSize">مقاس الخط</label>
-                            <div class="slider-container">
-                                <input type="range" id="msTitleSize" min="14" max="40" step="1" value="22"
-                                    oninput="handleMsRange('msTitleSize', this.value, ' بكسل')">
-                                <span class="slider-value" id="msTitleSizeVal">٢٢ بكسل</span>
-                            </div>
+                            <span class="form-help">التصدير ينزّل ملف ZIP باسم القالب وفيه ألوانه وخطوطه وصورته وشعاره. كل ثيم يحتفظ بخلفيته وشعاره، وعند التبديل بينهما تُسترجع صورة ذلك الثيم وشعاره.</span>
                         </div>
                     </div>
+
 
                     <!-- تبويب الطباعة: خطوط الورقة المقسّمة والخط الفاصل -->
                     <div class="settings-pane" id="setPanePrint" style="display: none;">
@@ -7663,7 +7607,7 @@
     <script src="/static/js/markmap-lib.min.js"></script>
     <script src="/static/js/g6.min.js"></script>
     <script src="/static/js/g2.min.js"></script>
-    <script src="/static/js/app.js?v=1.10.889"></script>
+    <script src="/static/js/app.js?v=1.10.890"></script>
     <script src="/static/js/search.js?v=1.10.844"></script>
     <script src="/static/js/reader.js?v=1.10.844"></script>
     <script src="/static/js/force3d.js?v=1.10.844"></script>

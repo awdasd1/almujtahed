@@ -925,13 +925,8 @@ async def upload_manuscript_background(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="ملف الصورة فارغ أو تالف")
     if len(contents) > MAX_PRINT_BG_BYTES:
         raise HTTPException(status_code=413, detail="حجم الصورة أكبر من 12 ميغابايت")
-    for old in MS_BG_DIR.glob("background.*"):
-        try:
-            old.unlink()
-        except OSError:
-            pass
-    (MS_BG_DIR / f"background{ext}").write_bytes(contents)
-    return {"success": True, **_ms_bg_payload()}
+    path = _new_visual_asset("msbg", ext, contents)
+    return {"success": True, "url": _visual_asset_url(path)}
 
 @app.delete("/api/manuscripts/background")
 async def delete_manuscript_background():
@@ -979,6 +974,11 @@ def _visual_file_from_url(url):
         if path.parent == VISUAL_BG_DIR.resolve() and path.is_file():
             return path
         return None
+    if "/ms-background/" in text:
+        path = (MS_BG_DIR / name).resolve()
+        if path.parent == MS_BG_DIR.resolve() and path.is_file():
+            return path
+        return None
     if name == "brand-mark.png":
         path = STATIC_DIR / name
         return path if path.is_file() else None
@@ -1004,7 +1004,7 @@ async def upload_visual_background(file: UploadFile = File(...)):
 @app.delete("/api/visual/background")
 async def delete_visual_background(name: str = ""):
     path = _visual_file_from_url(f"/visual-background/{Path(name).name}") if name else _visual_bg_current()
-    if path and path.parent == VISUAL_BG_DIR.resolve() and path.name.startswith(("background.", "bg-")):
+    if path and path.parent == VISUAL_BG_DIR.resolve() and path.name.startswith(("background.", "bg-", "msbg-")):
         try:
             path.unlink()
         except OSError:
@@ -1151,6 +1151,13 @@ async def export_visual_template(payload: dict = Body(...)):
         template["logoFile"] = "brand-mark.png" if logo.is_file() else None
         if logo.is_file():
             bundle.write(logo, "brand-mark.png")
+        manuscripts = lab.get("manuscripts") if isinstance(lab.get("manuscripts"), dict) else {}
+        manuscripts_file = _visual_file_from_url(manuscripts.get("bgUrl"))
+        template["manuscriptsFile"] = None
+        if manuscripts_file:
+            manuscripts_name = f"background{manuscripts_file.suffix.lower()}"
+            bundle.write(manuscripts_file, f"manuscripts/{manuscripts_name}")
+            template["manuscriptsFile"] = manuscripts_name
         bundle.writestr("template.json", json.dumps(template, ensure_ascii=False, indent=2))
     return Response(content=buffer.getvalue(), media_type="application/zip")
 
@@ -1179,6 +1186,7 @@ async def import_visual_template(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="بيان القالب غير صالح")
     background_installed = False
     logo_installed = False
+    manuscripts_installed = False
     for info in infos:
         if info.is_dir():
             continue
@@ -1210,6 +1218,20 @@ async def import_visual_template(file: UploadFile = File(...)):
             raise HTTPException(status_code=500, detail="تعذر حفظ شعار القالب")
         logo_installed = True
         break
+    for info in infos:
+        if info.is_dir():
+            continue
+        parts = _template_zip_parts(info.filename)
+        if len(parts) < 2 or parts[-2] != "manuscripts":
+            continue
+        ext = Path(parts[-1]).suffix.lower()
+        if ext not in PRINT_BG_EXTENSIONS or ext == ".svg":
+            continue
+        if info.file_size > MAX_PRINT_BG_BYTES:
+            raise HTTPException(status_code=413, detail="صورة قسم المخطوطات داخل القالب أكبر من 12 ميغابايت")
+        manuscripts_path = _new_visual_asset("msbg", ext, bundle.read(info))
+        manuscripts_installed = True
+        break
     lab = template.get("visualLab") if isinstance(template.get("visualLab"), dict) else {}
     if background_installed:
         background = lab.get("background") if isinstance(lab.get("background"), dict) else {}
@@ -1217,6 +1239,10 @@ async def import_visual_template(file: UploadFile = File(...)):
         lab["background"] = background
     if logo_installed:
         lab["logoUrl"] = _visual_asset_url(logo_path)
+    if manuscripts_installed:
+        manuscripts = lab.get("manuscripts") if isinstance(lab.get("manuscripts"), dict) else {}
+        manuscripts["bgUrl"] = _visual_asset_url(manuscripts_path)
+        lab["manuscripts"] = manuscripts
     if lab:
         template["visualLab"] = lab
     return {
@@ -10458,7 +10484,7 @@ def mcp_open_session(url: str) -> Tuple[str, Optional[str], List[dict]]:
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "almoghni", "version": "1.10.889"},
+            "clientInfo": {"name": "almoghni", "version": "1.10.890"},
         },
     })
     if opened.get("error"):

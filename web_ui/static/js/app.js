@@ -584,6 +584,7 @@ function applyNamedThemePackage(baseTheme, lab, options = {}) {
   currentSettings.themePreset = theme;
   if (!options.keepLab) {
     currentSettings.visualLab = lab ? cloneVisualData(lab) : null;
+    applyManuscriptsFromLab(currentSettings.visualLab);
   }
   if (typeof applyVisualLab === 'function') applyVisualLab();
   if (!options.keepLab) {
@@ -1445,11 +1446,12 @@ function applyMsVisual() {
   const size = Math.max(40, Math.min(250, parseInt(s.msBgSize, 10) || 100));
   const repeat = mode === 'repeat' ? 'repeat' : mode === 'repeat-x' ? 'repeat-x' : mode === 'repeat-y' ? 'repeat-y' : 'no-repeat';
   const bgSize = mode === 'contain' ? 'contain' : (mode === 'cover' ? 'cover' : (mode === 'center' ? 'auto' : size + '%'));
-  pane.style.setProperty('--ms-bg-image', `url("${s.msBgUrl || '/static/img/ms-folio-bg.jpg'}")`);
+  const image = String(s.msBgUrl || '').trim();
+  pane.style.setProperty('--ms-bg-image', image ? `url("${image}")` : 'none');
   pane.style.setProperty('--ms-bg-size', bgSize);
   pane.style.setProperty('--ms-bg-repeat', repeat);
   pane.style.setProperty('--ms-bg-zoom', String(size / 100));
-  pane.style.setProperty('--ms-bg-opacity', String((parseInt(s.msBgOpacity, 10) || 0) / 100));
+  pane.style.setProperty('--ms-bg-opacity', image ? String((parseInt(s.msBgOpacity, 10) || 0) / 100) : '0');
   pane.style.setProperty('--ms-bg-blur', `${Math.max(0, Math.min(24, parseInt(s.msBgBlur, 10) || 0))}px`);
   pane.style.setProperty('--ms-card-bg', msHex(s.msCardColor, '#fdfaf4'));
   pane.style.setProperty('--ms-card-alpha', `${Math.max(0, Math.min(100, parseInt(s.msCardOpacity, 10) || 0))}%`);
@@ -1508,9 +1510,13 @@ function populateMsVisual() {
   fillMsFontSelect('msTextFontSelect', s.msTextFont || '', true);
   const thumb = document.getElementById('msBgThumb');
   if (thumb) {
-    const url = s.msBgUrl || '/static/img/ms-folio-bg.jpg';
-    thumb.src = url;
-    thumb.style.display = 'block';
+    if (s.msBgUrl) {
+      thumb.src = s.msBgUrl;
+      thumb.style.display = 'block';
+    } else {
+      thumb.removeAttribute('src');
+      thumb.style.display = 'none';
+    }
   }
   const removeBtn = document.getElementById('msBgRemove');
   if (removeBtn) removeBtn.style.display = s.msBgUrl ? '' : 'none';
@@ -1542,6 +1548,74 @@ function fillMsFontSelect(selectId, selected, allowCurrent) {
   select.dispatchEvent(new CustomEvent('theme-select-sync'));
 }
 
+function currentManuscriptsBlock() {
+  const s = currentSettings;
+  return {
+    bgUrl: s.msBgUrl || '',
+    bgMode: s.msBgMode || 'cover',
+    bgSize: s.msBgSize ?? 100,
+    bgOpacity: s.msBgOpacity ?? 55,
+    bgBlur: s.msBgBlur ?? 0,
+    titleFont: s.msTitleFont || 'google:Amiri',
+    titleSize: s.msTitleSize ?? 22,
+    titleColor: s.msTitleColor || '',
+  };
+}
+
+function applyManuscriptsFromLab(lab) {
+  const m = lab && lab.manuscripts;
+  currentSettings.msBgUrl = (m && m.bgUrl) || '';
+  currentSettings.msBgMode = (m && m.bgMode) || 'cover';
+  currentSettings.msBgSize = (m && m.bgSize) ?? 100;
+  currentSettings.msBgOpacity = (m && m.bgOpacity) ?? 55;
+  currentSettings.msBgBlur = (m && m.bgBlur) ?? 0;
+  currentSettings.msTitleFont = (m && m.titleFont) || 'google:Amiri';
+  currentSettings.msTitleSize = (m && m.titleSize) ?? 22;
+  currentSettings.msTitleColor = (m && m.titleColor) || '';
+  if (typeof populateMsVisual === 'function') populateMsVisual();
+}
+
+function rememberManuscriptsOnTheme() {
+  const block = currentManuscriptsBlock();
+  if (currentSettings.visualLab) currentSettings.visualLab.manuscripts = block;
+  const saved = typeof findSavedVisualTheme === 'function' ? findSavedVisualTheme(currentSettings.activeThemeId) : null;
+  if (saved && saved.visualLab) saved.visualLab.manuscripts = block;
+}
+
+function adoptManuscriptsIntoActiveTheme() {
+  let changed = false;
+  if (currentSettings.visualLab && !currentSettings.visualLab.manuscripts) {
+    currentSettings.visualLab.manuscripts = currentManuscriptsBlock();
+    changed = true;
+  }
+  const saved = typeof findSavedVisualTheme === 'function' ? findSavedVisualTheme(currentSettings.activeThemeId) : null;
+  if (saved && saved.visualLab && !saved.visualLab.manuscripts) {
+    saved.visualLab.manuscripts = currentManuscriptsBlock();
+    changed = true;
+  }
+  if (changed) persistFontSettings();
+}
+
+function manuscriptImageShared(url) {
+  const name = String(url || '').split('?')[0].split('/').pop();
+  if (!name) return false;
+  return (currentSettings.savedVisualThemes || []).some((theme) => {
+    if (!theme || theme.id === currentSettings.activeThemeId) return false;
+    const other = theme.visualLab && theme.visualLab.manuscripts && theme.visualLab.manuscripts.bgUrl;
+    return String(other || '').split('?')[0].endsWith('/' + name);
+  });
+}
+
+async function forgetManuscriptImage(url) {
+  if (!url || manuscriptImageShared(url)) return;
+  const name = String(url).split('?')[0].split('/').pop();
+  if (!name) return;
+  const endpoint = String(url).includes('/ms-background/')
+    ? '/api/manuscripts/background'
+    : `/api/visual/background?name=${encodeURIComponent(name)}`;
+  try { await fetch(endpoint, { method: 'DELETE' }); } catch (error) {}
+}
+
 function handleMsSetting(key, value) {
   const numeric = ['msBgOpacity', 'msBgSize', 'msBgBlur', 'msCardOpacity', 'msBorderOpacity', 'msTitleSize', 'msTextSize'];
   currentSettings[key] = numeric.includes(key) ? parseInt(value, 10) : value;
@@ -1550,6 +1624,7 @@ function handleMsSetting(key, value) {
     if (el) el.value = msHex(value, key === 'msTitleColor' ? '#1C1611' : '#2A221A');
   }
   persistFontSettings();
+  rememberManuscriptsOnTheme();
   applyMsVisual();
 }
 
@@ -1573,9 +1648,12 @@ async function uploadMsBackground(event) {
       showToast(apiErrorDetail(data, 'تعذر رفع صورة الخلفية'));
       return;
     }
+    const previous = currentSettings.msBgUrl;
     currentSettings.msBgUrl = data.url;
     persistFontSettings();
+    rememberManuscriptsOnTheme();
     populateMsVisual();
+    if (previous && previous !== data.url) forgetManuscriptImage(previous);
     showToast('تم تعيين صورة خلفية تبويب المخطوطات');
   } catch (error) {
     showToast('تعذر رفع صورة الخلفية');
@@ -1583,11 +1661,13 @@ async function uploadMsBackground(event) {
 }
 
 async function removeMsBackground() {
-  try { await fetch('/api/manuscripts/background', { method: 'DELETE' }); } catch (error) {}
+  const previous = currentSettings.msBgUrl;
   currentSettings.msBgUrl = '';
   persistFontSettings();
+  rememberManuscriptsOnTheme();
   populateMsVisual();
-  showToast('عُدت إلى لوحة المخطوط الافتراضية');
+  forgetManuscriptImage(previous);
+    showToast('يستخدم قسم المخطوطات خلفية هذا الثيم');
 }
 
 async function uploadMsTitleFont(event) {
@@ -1607,6 +1687,7 @@ async function uploadMsTitleFont(event) {
     try { await loadCustomFonts(); } catch (error) {}
     currentSettings.msTitleFont = `custom:${data.font.filename}`;
     persistFontSettings();
+    rememberManuscriptsOnTheme();
     populateFontSelects();
     showToast('تم حفظ الخط وتعيينه لعناوين قسم المخطوطات');
   } catch (error) {
@@ -2166,6 +2247,7 @@ function handleModalOverlayClick(e) {
 }
 
 function switchSettingsTab(tabKey) {
+  if (tabKey === 'msvisual') tabKey = 'visual';
   // إخفاء محتوى التبويبات وإلغاء تنشيط الأزرار
   document.querySelectorAll('.settings-pane').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.settings-tab-btn').forEach(el => el.classList.remove('active'));
@@ -2177,8 +2259,7 @@ function switchSettingsTab(tabKey) {
     'modelParams': { pane: 'setPaneModelParams', btn: 'setNavModelParams' },
     'auxiliary': { pane: 'setPaneAuxiliary', btn: 'setNavAuxiliary' },
     'defaultModels': { pane: 'setPaneDefaultModels', btn: 'setNavDefaultModels' },
-    'print': { pane: 'setPanePrint', btn: 'setNavPrint' },
-    'msvisual': { pane: 'setPaneMsVisual', btn: 'setNavMsVisual' }
+    'print': { pane: 'setPanePrint', btn: 'setNavPrint' }
   };
 
   const target = map[tabKey];
@@ -2305,6 +2386,7 @@ function loadSettings() {
   } catch (e) {
     console.error('Error reading settings from localStorage:', e);
   }
+  adoptManuscriptsIntoActiveTheme();
   applyMsVisual();
   // بذرة الضبط المشحونة مع النسخة الافتراضية (خطوط وألوان وصور): تُزرع
   // عند أول تشغيل بلا ضبط محفوظ، وتُرقّي مظهر التنصيبات القائمة التي
@@ -2578,6 +2660,7 @@ function readVisualLabForm() {
       glass: labHex('glassFill', '#FBF7F0'), glassAlpha: labNum('glassFillA', 92),
     },
     logoUrl: currentSettings.visualLab?.logoUrl || '',
+    manuscripts: currentManuscriptsBlock(),
   };
 }
 
