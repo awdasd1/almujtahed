@@ -2451,12 +2451,27 @@ const LAB_VARS = [
   '--lab-header-bg', '--lab-chat-bg',
   '--lab-color-tabs', '--lab-color-heading', '--lab-color-sub', '--lab-color-reading',
   '--accent-emerald', '--emerald-hover', '--emerald-light', '--emerald-subtle', '--wash-b',
+  '--accent-clay', '--accent-hover', '--accent-light', '--accent-subtle', '--wash-a',
+  '--text-main', '--text-muted', '--text-light', '--ink-deep', '--glass',
   '--bg-canvas', '--bg-surface', '--bg-surface-hover', '--bg-muted', '--border-subtle', '--border-hover',
   '--btn-bg', '--btn-text',
   '--lab-page-image', '--lab-image-opacity', '--lab-image-size', '--lab-image-blur', '--lab-page-shield',
 ];
 
 let visualLabBinding = false;
+
+function mixHex(hex, toward, amount) {
+  const parse = (value) => {
+    const raw = String(value || '').replace('#', '');
+    const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw.padEnd(6, '0').slice(0, 6);
+    return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) || 0);
+  };
+  const from = parse(hex);
+  const to = parse(toward);
+  const ratio = Math.max(0, Math.min(1, Number(amount) || 0));
+  const mixed = from.map((channel, index) => Math.round(channel + (to[index] - channel) * ratio));
+  return `#${mixed.map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+}
 
 function labRgba(hex, alphaPercent) {
   const raw = String(hex || '#000000').replace('#', '');
@@ -2550,6 +2565,42 @@ function readVisualLabForm() {
       light: labHex('emLight', '#E3EFEA'), lightAlpha: labNum('emLightA', 100),
       subtle: labHex('emSubtle', '#2F6F5E'), subtleAlpha: labNum('emSubtleA', 12),
     },
+    palette: {
+      clay: labHex('clayAccent', '#B56A4C'), clayAlpha: labNum('clayAccentA', 100),
+      hover: labHex('clayHover', '#9A5740'), hoverAlpha: labNum('clayHoverA', 100),
+      light: labHex('clayLight', '#F2E3DA'), lightAlpha: labNum('clayLightA', 100),
+      subtle: labHex('claySubtle', '#B56A4C'), subtleAlpha: labNum('claySubtleA', 14),
+      main: labHex('inkMain', '#2A221A'), mainAlpha: labNum('inkMainA', 100),
+      muted: labHex('inkMuted', '#6A5C4D'), mutedAlpha: labNum('inkMutedA', 100),
+      faint: labHex('inkFaint', '#978675'), faintAlpha: labNum('inkFaintA', 100),
+      deep: labHex('inkDeep', '#1C1611'), deepAlpha: labNum('inkDeepA', 100),
+      canvas: labHex('panelCanvas', '#F1E9DC'), canvasAlpha: labNum('panelCanvasA', 100),
+      glass: labHex('glassFill', '#FBF7F0'), glassAlpha: labNum('glassFillA', 92),
+    },
+  };
+}
+
+function resolvedPalette(lab) {
+  const saved = lab && lab.palette;
+  if (saved && saved.clay) return saved;
+  const buttons = (lab && lab.buttons) || {};
+  const fonts = (lab && lab.fontColors) || {};
+  const boxes = (lab && lab.containers) || {};
+  const bg = (lab && lab.background) || {};
+  const fill = buttons.fill || '#B56A4C';
+  const reading = fonts.reading?.color || '#2A221A';
+  const heading = fonts.heading?.color || reading;
+  return {
+    clay: fill, clayAlpha: buttons.fillAlpha ?? 100,
+    hover: mixHex(fill, '#000000', 0.2), hoverAlpha: 100,
+    light: boxes.light?.fill || mixHex(fill, '#ffffff', 0.82), lightAlpha: boxes.light?.fillAlpha ?? 100,
+    subtle: fill, subtleAlpha: 14,
+    main: reading, mainAlpha: fonts.reading?.alpha ?? 100,
+    muted: mixHex(reading, '#ffffff', 0.38), mutedAlpha: 100,
+    faint: mixHex(reading, '#ffffff', 0.58), faintAlpha: 100,
+    deep: heading, deepAlpha: fonts.heading?.alpha ?? 100,
+    canvas: bg.color || '#F1E9DC', canvasAlpha: 100,
+    glass: boxes.header?.fill || boxes.light?.fill || '#FBF7F0', glassAlpha: boxes.header?.fillAlpha ?? 92,
   };
 }
 
@@ -2609,6 +2660,17 @@ function writeVisualLabForm(lab) {
   setLabField('emHover', em.hover || emBase.hover.hex); setLabField('emHoverA', em.hoverAlpha ?? emBase.hover.alpha);
   setLabField('emLight', em.light || emBase.light.hex); setLabField('emLightA', em.lightAlpha ?? emBase.light.alpha);
   setLabField('emSubtle', em.subtle || emBase.subtle.hex); setLabField('emSubtleA', em.subtleAlpha ?? emBase.subtle.alpha);
+  const palette = resolvedPalette(lab);
+  setLabField('clayAccent', palette.clay); setLabField('clayAccentA', palette.clayAlpha);
+  setLabField('clayHover', palette.hover); setLabField('clayHoverA', palette.hoverAlpha);
+  setLabField('clayLight', palette.light); setLabField('clayLightA', palette.lightAlpha);
+  setLabField('claySubtle', palette.subtle); setLabField('claySubtleA', palette.subtleAlpha);
+  setLabField('inkMain', palette.main); setLabField('inkMainA', palette.mainAlpha);
+  setLabField('inkMuted', palette.muted); setLabField('inkMutedA', palette.mutedAlpha);
+  setLabField('inkFaint', palette.faint); setLabField('inkFaintA', palette.faintAlpha);
+  setLabField('inkDeep', palette.deep); setLabField('inkDeepA', palette.deepAlpha);
+  setLabField('panelCanvas', palette.canvas); setLabField('panelCanvasA', palette.canvasAlpha);
+  setLabField('glassFill', palette.glass); setLabField('glassFillA', palette.glassAlpha);
   visualLabBinding = false;
   refreshLabVisibility();
 }
@@ -2622,8 +2684,12 @@ function seedVisualLabForm() {
   const border = pick('--border-subtle', '#D6CBB8');
   const borderHover = pick('--border-hover', '#BFAE96');
   const clay = pick('--accent-clay', '#B56A4C');
+  const clayHover = pick('--accent-hover', '#9A5740');
+  const clayLight = pick('--accent-light', '#F2E3DA');
+  const claySubtle = pick('--accent-subtle', '#B56A4C');
   const text = pick('--text-main', '#2A221A');
   const mutedText = pick('--text-muted', '#6A5C4D');
+  const faintText = pick('--text-light', '#978675');
   const glass = pick('--glass', '#FBF7F0');
   const ink = pick('--ink-deep', '#1C1611');
   writeVisualLabForm({
@@ -2652,6 +2718,18 @@ function seedVisualLabForm() {
         subtle: em.subtle.hex, subtleAlpha: em.subtle.alpha,
       };
     })(),
+    palette: {
+      clay: clay.hex, clayAlpha: 100,
+      hover: clayHover.hex, hoverAlpha: 100,
+      light: clayLight.hex, lightAlpha: 100,
+      subtle: claySubtle.hex, subtleAlpha: claySubtle.alpha,
+      main: text.hex, mainAlpha: 100,
+      muted: mutedText.hex, mutedAlpha: 100,
+      faint: faintText.hex, faintAlpha: 100,
+      deep: ink.hex, deepAlpha: 100,
+      canvas: canvas.hex, canvasAlpha: 100,
+      glass: glass.hex, glassAlpha: glass.alpha,
+    },
   });
 }
 
@@ -2708,8 +2786,6 @@ function applyVisualLab() {
   set('--lab-image-opacity', imageUrl ? String(Math.max(0, Math.min(100, Number(bg.imageOpacity) || 0)) / 100) : '0');
   set('--lab-image-size', fit);
   set('--lab-image-blur', `${Math.max(0, Math.min(24, Number(bg.imageBlur) || 0))}px`);
-  if (bg.mode !== 'gradient') set('--bg-canvas', page);
-  else root.style.removeProperty('--bg-canvas');
   set('--lab-btn-fill', labRgba(buttons.fill, buttons.fillAlpha));
   set('--lab-btn-text', labRgba(buttons.text, buttons.textAlpha));
   set('--btn-bg', labRgba(buttons.fill, buttons.fillAlpha));
@@ -2748,6 +2824,18 @@ function applyVisualLab() {
   } else {
     ['--accent-emerald', '--emerald-hover', '--emerald-light', '--emerald-subtle', '--wash-b'].forEach((name) => root.style.removeProperty(name));
   }
+  const palette = resolvedPalette(lab);
+  set('--accent-clay', labRgba(palette.clay, palette.clayAlpha ?? 100));
+  set('--accent-hover', labRgba(palette.hover || palette.clay, palette.hoverAlpha ?? 100));
+  set('--accent-light', labRgba(palette.light || palette.clay, palette.lightAlpha ?? 100));
+  set('--accent-subtle', labRgba(palette.subtle || palette.clay, palette.subtleAlpha ?? 14));
+  set('--wash-a', labRgba(palette.clay, 10));
+  set('--text-main', labRgba(palette.main, palette.mainAlpha ?? 100));
+  set('--text-muted', labRgba(palette.muted || palette.main, palette.mutedAlpha ?? 100));
+  set('--text-light', labRgba(palette.faint || palette.main, palette.faintAlpha ?? 100));
+  set('--ink-deep', labRgba(palette.deep || palette.main, palette.deepAlpha ?? 100));
+  set('--glass', labRgba(palette.glass, palette.glassAlpha ?? 92));
+  set('--bg-canvas', labRgba(palette.canvas, palette.canvasAlpha ?? 100));
   root.setAttribute('data-visual-lab', 'on');
 }
 
