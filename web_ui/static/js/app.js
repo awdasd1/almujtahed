@@ -2450,6 +2450,7 @@ const LAB_VARS = [
   '--lab-mid-width', '--lab-mid-border', '--lab-dark-bg', '--lab-dark-width', '--lab-dark-border',
   '--lab-header-bg', '--lab-chat-bg',
   '--lab-color-tabs', '--lab-color-heading', '--lab-color-sub', '--lab-color-reading',
+  '--accent-emerald', '--emerald-hover', '--emerald-light', '--emerald-subtle', '--wash-b',
   '--bg-canvas', '--bg-surface', '--bg-surface-hover', '--bg-muted', '--border-subtle', '--border-hover',
   '--btn-bg', '--btn-text',
   '--lab-page-image', '--lab-image-opacity', '--lab-image-size', '--lab-image-blur', '--lab-page-shield',
@@ -2543,6 +2544,23 @@ function readVisualLabForm() {
       subheading: { color: labHex('fontSubColor', '#2A221A'), alpha: labNum('fontSubAlpha', 100) },
       reading: { color: labHex('fontReadingColor', '#2A221A'), alpha: labNum('fontReadingAlpha', 100) },
     },
+    emerald: {
+      accent: labHex('emAccent', '#2F6F5E'), accentAlpha: labNum('emAccentA', 100),
+      hover: labHex('emHover', '#245A4C'), hoverAlpha: labNum('emHoverA', 100),
+      light: labHex('emLight', '#E3EFEA'), lightAlpha: labNum('emLightA', 100),
+      subtle: labHex('emSubtle', '#2F6F5E'), subtleAlpha: labNum('emSubtleA', 12),
+    },
+  };
+}
+
+function emeraldDefaults() {
+  const styles = getComputedStyle(document.documentElement);
+  const pick = (name, fallback) => parseCssColor(styles.getPropertyValue(name)) || { hex: fallback, alpha: 100 };
+  return {
+    accent: pick('--accent-emerald', '#2F6F5E'),
+    hover: pick('--emerald-hover', '#245A4C'),
+    light: pick('--emerald-light', '#E3EFEA'),
+    subtle: pick('--emerald-subtle', '#2F6F5E'),
   };
 }
 
@@ -2585,6 +2603,12 @@ function writeVisualLabForm(lab) {
   setLabField('fontHeadingColor', fonts.heading?.color); setLabField('fontHeadingAlpha', fonts.heading?.alpha);
   setLabField('fontSubColor', fonts.subheading?.color); setLabField('fontSubAlpha', fonts.subheading?.alpha);
   setLabField('fontReadingColor', fonts.reading?.color); setLabField('fontReadingAlpha', fonts.reading?.alpha);
+  const em = lab.emerald || {};
+  const emBase = emeraldDefaults();
+  setLabField('emAccent', em.accent || emBase.accent.hex); setLabField('emAccentA', em.accentAlpha ?? emBase.accent.alpha);
+  setLabField('emHover', em.hover || emBase.hover.hex); setLabField('emHoverA', em.hoverAlpha ?? emBase.hover.alpha);
+  setLabField('emLight', em.light || emBase.light.hex); setLabField('emLightA', em.lightAlpha ?? emBase.light.alpha);
+  setLabField('emSubtle', em.subtle || emBase.subtle.hex); setLabField('emSubtleA', em.subtleAlpha ?? emBase.subtle.alpha);
   visualLabBinding = false;
   refreshLabVisibility();
 }
@@ -2619,6 +2643,15 @@ function seedVisualLabForm() {
     fontColors: {
       tabs: mutedText, heading: ink, subheading: text, reading: text,
     },
+    emerald: (() => {
+      const em = emeraldDefaults();
+      return {
+        accent: em.accent.hex, accentAlpha: em.accent.alpha,
+        hover: em.hover.hex, hoverAlpha: em.hover.alpha,
+        light: em.light.hex, lightAlpha: em.light.alpha,
+        subtle: em.subtle.hex, subtleAlpha: em.subtle.alpha,
+      };
+    })(),
   });
 }
 
@@ -2705,6 +2738,16 @@ function applyVisualLab() {
   set('--lab-color-heading', labRgba(fonts.heading?.color, fonts.heading?.alpha));
   set('--lab-color-sub', labRgba(fonts.subheading?.color, fonts.subheading?.alpha));
   set('--lab-color-reading', labRgba(fonts.reading?.color, fonts.reading?.alpha));
+  const em = lab.emerald || {};
+  if (em.accent) {
+    set('--accent-emerald', labRgba(em.accent, em.accentAlpha ?? 100));
+    set('--emerald-hover', labRgba(em.hover || em.accent, em.hoverAlpha ?? 100));
+    set('--emerald-light', labRgba(em.light || em.accent, em.lightAlpha ?? 100));
+    set('--emerald-subtle', labRgba(em.subtle || em.accent, em.subtleAlpha ?? 12));
+    set('--wash-b', labRgba(em.accent, 9));
+  } else {
+    ['--accent-emerald', '--emerald-hover', '--emerald-light', '--emerald-subtle', '--wash-b'].forEach((name) => root.style.removeProperty(name));
+  }
   root.setAttribute('data-visual-lab', 'on');
 }
 
